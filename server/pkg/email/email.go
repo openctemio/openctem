@@ -1,0 +1,480 @@
+// Package email provides email sending functionality using SMTP.
+package email
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"net"
+	"net/smtp"
+	"slices"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+)
+
+var (
+	// ErrNotConfigured is returned when SMTP is not configured.
+	ErrNotConfigured = errors.New("email: SMTP not configured")
+	// ErrInvalidRecipient is returned when the recipient email is invalid.
+	ErrInvalidRecipient = errors.New("email: invalid recipient email")
+	// ErrSendFailed is returned when email sending fails.
+	ErrSendFailed = errors.New("email: failed to send email")
+)
+
+// Config holds SMTP configuration.
+type Config struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	From     string
+	FromName string
+	TLS      bool // STARTTLS after the greeting
+	// ImplicitTLS wraps the connection in TLS before the greeting (port 465).
+	ImplicitTLS bool
+	SkipVerify  bool
+	// RootCAs, when set, is the only set of roots the relay's certificate is
+	// verified against (an internal CA); nil uses the system roots.
+	RootCAs *x509.CertPool
+	Timeout time.Duration
+	// ResolveHost and Dial replace the SSRF-guarded host resolution and the
+	// dial, so a test can reach a local relay. Production callers leave both
+	// nil; a value set from configuration would bypass the guard.
+	ResolveHost func(ctx context.Context, host string) (net.IP, error)
+	Dial        func(ctx context.Context, timeout time.Duration, addr string) (net.Conn, error)
+}
+
+// Message represents an email message.
+type Message struct {
+	To      []string
+	Subject string
+	Body    string
+	IsHTML  bool
+	ReplyTo string
+	Headers map[string]string
+	// TextBody is the text/plain alternative of an HTML message. When empty it
+	// is generated from Body.
+	TextBody string
+	// Inline images the HTML body references as cid:<CID>; sent as a
+	// multipart/related message.
+	Inline []InlineImage
+}
+
+// Sender defines the interface for sending emails.
+type Sender interface {
+	Send(ctx context.Context, msg *Message) error
+	SendTemplate(ctx context.Context, to string, template Template, data any) error
+	IsConfigured() bool
+}
+
+// SMTPSender implements Sender using SMTP.
+type SMTPSender struct {
+	config    Config
+	templates *TemplateEngine
+}
+
+// NewSMTPSender creates a new SMTP sender.
+func NewSMTPSender(cfg Config) *SMTPSender {
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 30 * time.Second
+	}
+	return &SMTPSender{
+		config:    cfg,
+		templates: NewTemplateEngine(),
+	}
+}
+
+// IsConfigured returns true if SMTP is properly configured.
+func (s *SMTPSender) IsConfigured() bool {
+	return s.config.Host != "" && s.config.Port > 0 && s.config.From != ""
+}
+
+// Send sends an email message.
+func (s *SMTPSender) Send(ctx context.Context, msg *Message) error {
+	if !s.IsConfigured() {
+		return ErrNotConfigured
+	}
+
+	if len(msg.To) == 0 {
+		return ErrInvalidRecipient
+	}
+
+	// Build email content
+	content := s.buildMessage(msg)
+
+	// Send email
+	if err := s.sendSMTP(ctx, msg.To, content); err != nil {
+		return fmt.Errorf("%w: %w", ErrSendFailed, err)
+	}
+
+	return nil
+}
+
+// SendTemplate sends an email using a predefined template.
+func (s *SMTPSender) SendTemplate(ctx context.Context, to string, template Template, data any) error {
+	if to == "" {
+		return ErrInvalidRecipient
+	}
+
+	subject, body, err := s.templates.Render(template, data)
+	if err != nil {
+		return fmt.Errorf("email: failed to render template: %w", err)
+	}
+
+	msg := &Message{
+		To:      []string{to},
+		Subject: subject,
+		Body:    body,
+		IsHTML:  true,
+	}
+	if usesLogo(body) {
+		msg.Inline = []InlineImage{{CID: logoCID, ContentType: "image/png", Data: logoPNG}}
+	}
+	return s.Send(ctx, msg)
+}
+
+// SanitizeHeaderValue strips CR and LF from a value that will be
+// written into an SMTP header line. Without this, attacker-controlled
+// values in Subject / To / From / ReplyTo / custom headers would let
+// an attacker inject additional headers by embedding "\r\n" + a
+// forged header name. Classic email-header-injection / CRLF-injection
+// vector; see CodeQL rule go/email-content-injection.
+//
+// We strip rather than reject so a benign stray "\r" in a scanner-
+// generated title (e.g. copy-pasted from a Windows log file) does
+// not fail the notification outright. Any downstream templating can
+// always re-add structure by choosing its own delimiters — it never
+// needs literal CR/LF in an address, subject, or header key/value.
+func SanitizeHeaderValue(v string) string {
+	// Replace CR / LF with a single space so visible content still
+	// round-trips intact in the email client.
+	v = strings.ReplaceAll(v, "\r", " ")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return v
+}
+
+// sendSMTP sends the email via SMTP.
+func (s *SMTPSender) sendSMTP(ctx context.Context, to []string, content []byte) error {
+	// SSRF guard: Host is tenant-configurable (per-tenant SMTP), so resolve it
+	// once, refuse it if any answer is in a blocked range, and dial the vetted
+	// IP. Dialing the hostname would resolve it a second time, and a
+	// DNS-rebinding answer (TTL 0) could then point the connection at an
+	// internal address after the check passed. TLS and the SMTP greeting still
+	// use the hostname, so certificate verification is unchanged.
+	resolve, dial := resolveSMTPHost, dialSMTP
+	if s.config.ResolveHost != nil {
+		resolve = s.config.ResolveHost
+	}
+	if s.config.Dial != nil {
+		dial = s.config.Dial
+	}
+	safeIP, err := resolve(ctx, s.config.Host)
+	if err != nil {
+		return fmt.Errorf("smtp host rejected: %w", err)
+	}
+	addr := net.JoinHostPort(safeIP.String(), strconv.Itoa(s.config.Port))
+
+	conn, err := dial(ctx, s.config.Timeout, addr)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer conn.Close()
+
+	// Bound the whole SMTP session, not only the dial: a relay that accepts
+	// the connection and then never answers (or trickles one byte at a time)
+	// would otherwise hold this goroutine forever. The context deadline wins
+	// when it is earlier.
+	deadline := time.Now().Add(sessionTimeout(s.config.Timeout))
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return fmt.Errorf("failed to set deadline: %w", err)
+	}
+
+	// Implicit TLS (port 465): the handshake comes before the greeting.
+	if s.config.ImplicitTLS {
+		tc := tls.Client(conn, s.tlsConfig())
+		if err := tc.HandshakeContext(ctx); err != nil {
+			return fmt.Errorf("failed to complete TLS handshake: %w", err)
+		}
+		conn = tc
+	}
+
+	// Create SMTP client
+	client, err := smtp.NewClient(conn, s.config.Host)
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	defer client.Close()
+
+	// Start TLS if configured
+	if s.config.TLS {
+		if err := client.StartTLS(s.tlsConfig()); err != nil {
+			return fmt.Errorf("failed to start TLS: %w", err)
+		}
+	}
+
+	// Authenticate if credentials provided
+	if s.config.User != "" && s.config.Password != "" {
+		auth := smtp.PlainAuth("", s.config.User, s.config.Password, s.config.Host)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+	}
+
+	// Set sender
+	if err := client.Mail(s.config.From); err != nil {
+		return fmt.Errorf("failed to set sender: %w", err)
+	}
+
+	// Set recipients
+	for _, recipient := range to {
+		if err := client.Rcpt(recipient); err != nil {
+			return fmt.Errorf("failed to set recipient %s: %w", recipient, err)
+		}
+	}
+
+	// Send message body
+	writer, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("failed to get data writer: %w", err)
+	}
+
+	if _, err := writer.Write(content); err != nil {
+		return fmt.Errorf("failed to write message: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("failed to close writer: %w", err)
+	}
+
+	// Quit
+	return client.Quit()
+}
+
+// resolveSMTPHost and dialSMTP are the network seams of sendSMTP; tests
+// replace them to observe the dialed address without real DNS.
+var (
+	resolveSMTPHost = httpsec.ResolveSafeHost
+	dialSMTP        = func(ctx context.Context, timeout time.Duration, addr string) (net.Conn, error) {
+		d := &net.Dialer{Timeout: timeout}
+		return d.DialContext(ctx, "tcp", addr)
+	}
+)
+
+// sessionTimeout is the budget for one complete SMTP session (greeting,
+// STARTTLS, AUTH, MAIL/RCPT/DATA, QUIT): a few round trips of the dial
+// timeout.
+func sessionTimeout(dial time.Duration) time.Duration {
+	if dial <= 0 {
+		dial = 30 * time.Second
+	}
+	return 4 * dial
+}
+
+// NoOpSender is a sender that does nothing (for development/testing).
+type NoOpSender struct{}
+
+// NewNoOpSender creates a new no-op sender.
+func NewNoOpSender() *NoOpSender {
+	return &NoOpSender{}
+}
+
+// IsConfigured always returns true for no-op sender.
+func (s *NoOpSender) IsConfigured() bool {
+	return true
+}
+
+// Send does nothing and returns nil.
+func (s *NoOpSender) Send(_ context.Context, _ *Message) error {
+	return nil
+}
+
+// SendTemplate does nothing and returns nil.
+func (s *NoOpSender) SendTemplate(_ context.Context, _ string, _ Template, _ any) error {
+	return nil
+}
+
+// LoggingSender wraps a sender and logs all email operations.
+type LoggingSender struct {
+	sender Sender
+	logger Logger
+}
+
+// Logger is a simple logging interface.
+type Logger interface {
+	Info(msg string, args ...any)
+}
+
+// NewLoggingSender creates a new logging sender.
+func NewLoggingSender(sender Sender, logger Logger) *LoggingSender {
+	return &LoggingSender{
+		sender: sender,
+		logger: logger,
+	}
+}
+
+// IsConfigured returns true if the underlying sender is configured.
+func (s *LoggingSender) IsConfigured() bool {
+	return s.sender.IsConfigured()
+}
+
+// sanitizeRecipientsForLog runs SanitizeHeaderValue on every address
+// and returns them joined. Logging callsites flowed the raw recipient
+// slice into the structured logger before; any CRLF in a malicious
+// address would let an attacker forge fake log lines (CodeQL rule
+// go/log-injection). The header-sanitiser already strips CR/LF, so
+// reusing it keeps one definition.
+func sanitizeRecipientsForLog(to []string) string {
+	safe := make([]string, 0, len(to))
+	for _, r := range to {
+		safe = append(safe, SanitizeHeaderValue(r))
+	}
+	return strings.Join(safe, ", ")
+}
+
+// Send logs and sends the email.
+func (s *LoggingSender) Send(ctx context.Context, msg *Message) error {
+	safeTo := sanitizeRecipientsForLog(msg.To)
+	safeSubject := SanitizeHeaderValue(msg.Subject)
+	s.logger.Info("sending email",
+		"to", safeTo,
+		"subject", safeSubject,
+	)
+	err := s.sender.Send(ctx, msg)
+	if err != nil {
+		s.logger.Info("email send failed",
+			"to", safeTo,
+			"error", err,
+		)
+	} else {
+		s.logger.Info("email sent successfully",
+			"to", safeTo,
+		)
+	}
+	return err
+}
+
+// SendTemplate logs and sends a templated email.
+func (s *LoggingSender) SendTemplate(ctx context.Context, to string, template Template, data any) error {
+	safeTo := SanitizeHeaderValue(to)
+	s.logger.Info("sending templated email",
+		"to", safeTo,
+		"template", template,
+	)
+	err := s.sender.SendTemplate(ctx, to, template, data)
+	if err != nil {
+		s.logger.Info("templated email send failed",
+			"to", safeTo,
+			"template", template,
+			// Logger is an interface here, so the escaping of the slog
+			// handler behind it is not visible to the log-injection query.
+			"error", SanitizeHeaderValue(err.Error()),
+		)
+	} else {
+		s.logger.Info("templated email sent successfully",
+			"to", safeTo,
+			"template", template,
+		)
+	}
+	return err
+}
+
+// TLSConfig is the client TLS configuration for SMTP (implicit TLS and
+// STARTTLS). TLS 1.2 is the floor: every SMTP relay still in service supports
+// it, and anything older (SSLv3/TLS 1.0/1.1) is deprecated by RFC 8996.
+// skipVerify is the operator's explicit SMTP_SKIP_VERIFY escape hatch for
+// self-signed relays; it does not lower the protocol floor.
+func TLSConfig(host string, skipVerify bool) *tls.Config {
+	return &tls.Config{
+		ServerName:         host,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: skipVerify, //nolint:gosec // G402: explicit operator opt-in for self-signed relays
+	}
+}
+
+// tlsConfig is the client TLS configuration of this sender: the system roots,
+// or only the configured internal CA bundle.
+func (s *SMTPSender) tlsConfig() *tls.Config {
+	cfg := TLSConfig(s.config.Host, s.config.SkipVerify)
+	cfg.RootCAs = s.config.RootCAs
+	return cfg
+}
+
+// TenantSMTPPorts are the ports an organization's SMTP relay may use: SMTP
+// (25), submission with implicit TLS (465), submission (587) and the common
+// alternative submission port (2525). An organization chooses the relay host,
+// so any other port would let it point the platform's SMTP client at a
+// service that is not a mail relay (a datastore, an admin interface) on a
+// reachable host. The platform's own relay, set by the operator, is not
+// restricted.
+var TenantSMTPPorts = []int{25, 465, 587, 2525}
+
+// TenantPortAllowed reports whether an organization's SMTP relay may use port.
+func TenantPortAllowed(port int) bool {
+	return slices.Contains(TenantSMTPPorts, port)
+}
+
+// ErrTenantPortNotAllowed refuses an organization's relay on another port.
+var ErrTenantPortNotAllowed = errors.New("the SMTP port must be 25, 465, 587 or 2525")
+
+// ManagedSubmissionPorts are the ports an organization's relay may use on a
+// managed (hosted, multi-tenant) service: submission with implicit TLS (465)
+// and submission (587, 2525). Port 25 is server-to-server delivery: from the
+// platform's egress it would be direct-to-MX mail with a sender the
+// organization chose, carrying the platform's address reputation.
+var ManagedSubmissionPorts = []int{465, 587, 2525}
+
+// ErrTenantRelayPolicy is wrapped by every refusal of a relay by the managed
+// service rules, so callers can tell a policy refusal from a network failure.
+var ErrTenantRelayPolicy = errors.New("this organization relay does not meet the managed service rules")
+
+var (
+	// ErrTenantRelayPort25 refuses port 25 on a managed service.
+	ErrTenantRelayPort25 = fmt.Errorf("%w: the SMTP port must be 465, 587 or 2525 (port 25 is not allowed)", ErrTenantRelayPolicy)
+	// ErrTenantRelayNeedsAuth refuses a relay without a username and password.
+	ErrTenantRelayNeedsAuth = fmt.Errorf("%w: a username and password are required", ErrTenantRelayPolicy)
+	// ErrTenantRelayNeedsTLS refuses a relay that is not encrypted.
+	ErrTenantRelayNeedsTLS = fmt.Errorf("%w: TLS or STARTTLS is required", ErrTenantRelayPolicy)
+)
+
+var managedTenantRelay atomic.Bool
+
+// SetManagedTenantRelay turns the managed service rules for organization
+// relays on or off. The server sets it once at start-up from MANAGED_SERVICE.
+func SetManagedTenantRelay(on bool) { managedTenantRelay.Store(on) }
+
+// ManagedTenantRelay reports whether the managed service rules apply.
+func ManagedTenantRelay() bool { return managedTenantRelay.Load() }
+
+// ValidateTenantRelay is the one transport rule for an organization's SMTP
+// relay, used when it is saved, tested and every time mail is sent. On every
+// install the port must be one of TenantSMTPPorts. On a managed service it
+// must also be a submission port, authenticated (username and password) and
+// encrypted (implicit TLS or STARTTLS), so the platform never speaks
+// unauthenticated or clear-text SMTP to a host an organization chose.
+func ValidateTenantRelay(port int, useTLS, useSTARTTLS bool, username, password string) error {
+	if !TenantPortAllowed(port) {
+		return ErrTenantPortNotAllowed
+	}
+	if !ManagedTenantRelay() {
+		return nil
+	}
+	if !slices.Contains(ManagedSubmissionPorts, port) {
+		return ErrTenantRelayPort25
+	}
+	if username == "" || password == "" {
+		return ErrTenantRelayNeedsAuth
+	}
+	if !useTLS && !useSTARTTLS {
+		return ErrTenantRelayNeedsTLS
+	}
+	return nil
+}

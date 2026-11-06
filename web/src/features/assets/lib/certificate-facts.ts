@@ -6,7 +6,7 @@ import { propertyValue, type AssetPropertyKey } from '@/features/asset-types/lib
  * TLS on a service and the other web-service facts live in service-facts.ts.
  *
  * The facts are the flat schema keys of a certificate
- * (api/configs/asset-types.yaml: `not_after`, `issuer_org`, `issuer_cn`,
+ * (server/configs/asset-types.yaml: `not_after`, `issuer_org`, `issuer_cn`,
  * `subject_cn`, `sans`, `fingerprint_sha256`, `is_self_signed`, …), named
  * through the registry's `AssetPropertyKey` so a key outside the schema does
  * not compile. Ingest promotes a CTIS certificate block to them before the

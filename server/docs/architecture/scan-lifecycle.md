@@ -1,0 +1,275 @@
+# Scan lifecycle: Scan → Run → Task
+
+> Last updated: 2026-10-03. Design: [RFC-046](../rfcs/RFC-046-scans-redesign.md)
+> (status audit in its [appendix A](../rfcs/RFC-046-appendix-status-audit.md)).
+> Dispatch details: [RFC-030](../rfcs/RFC-030-scan-work-distribution.md).
+> Older component walkthrough: [scan-orchestration.md](scan-orchestration.md).
+
+This page describes how a scan becomes work on a sensor and how its outcome is
+recorded: first the model every change now moves towards, then where the code
+stands today, so a reader can tell which parts are real.
+
+## Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05.
+
+### Trigger: the gates in order
+
+`TriggerScan` (`server/internal/app/scan/trigger.go`) runs the same gates for
+every origin: `POST /api/v1/scans/{id}/trigger` (`scans:write` +
+`scans:execute`, rate-limited, tenant from the token), a quick scan, the
+scheduler (compare-and-set on `scans.next_run_at`), continuous coverage
+(`scan.StartCoverage`, `TriggerTypeSystem`, `NoBlockedRun`), the retry
+controller, an approved request (`RunApproved`) and a scope approval
+(`StartScansAwaitingScope`).
+
+```mermaid
+flowchart TD
+  T["TriggerScan: scan loaded by tenant"] --> M{"Managed scan and a<br/>member, automation<br/>or approval trigger?"}
+  M -- yes --> R1["Refused: SCAN_MANAGED_BY_POLICY"]
+  M -- no --> G1{"Scan triggerable, workflow owned,<br/>no active run (overlap),<br/>owner active, active scanning entitled?"}
+  G1 -- no --> RB["Refusal code"]
+  G1 -- yes --> AP{"Approval required<br/>(scangov.CheckRun)?"}
+  AP -- "no valid approval" --> RA["SCAN_APPROVAL_REQUIRED<br/>or SCAN_APPROVAL_PENDING"]
+  AP -- "ok (run-only approval consumed)" --> G2{"Rule sources, sensor opt-ins,<br/>intensity, tool and sensor support,<br/>no wildcard, a sensor online?"}
+  G2 -- no --> RB
+  G2 -- yes --> TG{"Target gate: exclusions, attribution,<br/>act scope, private ranges, tier"}
+  TG -- "nothing left" --> RB
+  TG -- ok --> Z["Program rules, rollover first,<br/>zones, sensor routing"]
+  Z --> W{"Scan windows"}
+  W -- "never open" --> RW["SCAN_WINDOW_NEVER_OPENS"]
+  W -- "scheduled, all closed" --> DF["Occurrence moved to the<br/>next opening, no run row"]
+  W -- ok --> L{"Under 3 active runs per scan<br/>and 50 per organization?"}
+  L -- no --> RL["MAX_CONCURRENT_RUNS"]
+  L -- yes --> RUN["scan_runs row, pinned workflow version,<br/>scan_run_steps, first commands"]
+  RB --> BL["Blocked run with refusal_code<br/>(unless NoBlockedRun)"]
+  RA --> BL
+  RW --> BL
+  RL --> BL
+```
+
+From v0.20.0: a workflow step whose tool is missing, disabled, has no sensor
+or whose capability no tool implements no longer refuses the trigger. It is
+created `skipped` with `NO_MATCHING_TOOL`, `TOOL_NOT_INSTALLED`,
+`TOOL_DISABLED` or `NO_SENSOR_FOR_TOOL`, its dependents with
+`DEPENDENCY_SKIPPED` (`server/internal/app/scan/step_support.go`), and only a
+trigger where no step can run is refused with `NO_RUNNABLE_STEPS`. A single
+scanner still refuses. During the run, `noToolSkip`
+(`server/internal/app/scanrun/step_policy.go`) skips instead of failing, and a
+run with an unsupported skip ends `partial`.
+
+### Run: steps, tasks, settling
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant SV as scan.Service (trigger)
+  participant RS as scanrun.Service
+  participant DB as Postgres
+  participant SE as Sensor (sensor key, tenant from the key)
+  participant H as Command handlers (v2)
+  SV->>DB: CreateRunIfUnderLimit (scan row lock, overlap check)
+  SV->>DB: scan_run_steps (skipped steps with their code)
+  SV->>RS: scheduleWorkflowSteps: roots, at most 3 in parallel
+  RS->>RS: per step: tool, intensity, depth, seeds,<br/>stale names dropped, hop router
+  RS->>DB: dispatchStep: one commands row per host chunk,<br/>host_keys, dispatch_gate, budget, run deadline
+  alt not enough time before the deadline
+    RS->>DB: step failed DEADLINE_TOO_CLOSE
+  end
+  SE->>H: claim, start (lease and epoch)
+  H->>RS: OnStepStarted
+  SE->>H: results (CTIS), complete or fail
+  H->>RS: OnStepCompletedPartial or OnStepFailed (30 s, tenant re-checked)
+  RS->>RS: terminal run or step ignores the result
+  RS->>RS: last chunk of the step? settle the step
+  RS->>RS: advanceRun: skip blocked steps, start steps whose<br/>dependencies produced results (stage streaming starts early)
+  RS->>DB: settleRun: completed, partial or failed (guarded, once)
+```
+
+- Outcome (`runStats.outcome`): `completed` when no step failed or ended
+  partial (and, from v0.20.0, none was skipped as unsupported); `failed` when
+  steps failed and none produced results; `partial` otherwise. A completed run
+  with targets zone routing could not place becomes `partial`.
+- A missed wake-up is repaired by the `stalled-run-repair` controller
+  (`RepairStalledRuns`). Step progression is not a durable job: it runs in a
+  goroutine with a 30-second timeout, and the repair controller and the
+  timeout reaper are the backstops.
+
+### Cancel, deadline, retry
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Member (scans:write)
+  participant API as POST /api/v1/scan-runs/{id}/cancel
+  participant DB as Postgres
+  participant C as Controllers (every minute)
+  participant SE as Sensor
+  U->>API: cancel (guardRun: tenant and data scope)
+  API->>DB: run canceled (guarded), CloseCanceledRun:<br/>open steps and commands canceled, leases cleared
+  SE->>API: next heartbeat lists running commands
+  API-->>SE: cancel_command_ids (held no longer)
+  C->>DB: scan-timeout: runs past deadline_at end partial<br/>(work kept) or timeout, open commands failed,<br/>unfinished_targets recorded for the next run
+  C->>DB: scan-timeout: runs no sensor took in 4 h<br/>(scheduled) or 1 h (other) fail
+  C->>DB: scan-retry: failed or timeout runs, no permanent step code,<br/>scan active, backoff due, retry_dispatched_at claimed
+  C->>C: RetryScanRun: the full trigger path again
+```
+
+- Queue wait does not count against the deadline (`runWaitsInQueueSQL`), and
+  a claim extends it (`ExtendRunDeadlinesAtClaim`).
+- `partial`, `canceled` and `blocked` runs are never retried; a timed-out run
+  at most twice. There is no manual retry endpoint and no step retry.
+
+## 1. The model
+
+```
+Scan (definition) ──fires──▶ Run (one occurrence) ──is cut into──▶ Task (one tool, a slice of targets)
+  targets: selection            trigger, scheduled_for               attempt, lease (epoch), sensor
+  engine spec (stages)          status, deadline                     status, coverage, report ids
+  schedule: rrule + tz          progress, unfinished targets
+```
+
+- **Scan**: what to scan (a selection resolved through the one target gate,
+  RFC-042 §6.11), how (an engine spec over the stage catalogue, RFC-046 §5),
+  when (rrule + timezone, minimum 15 minutes, overlap = skip). Quick scans are
+  ad-hoc scans (`scans.ad_hoc`), saved on request.
+- **Run**: one firing of a scan. Exactly one run per scheduled occurrence
+  (`UNIQUE(scan_id, scheduled_for)`). Triggers: `schedule`, `manual`, `api`,
+  `ci`, `retest`, `automation`, `rollover`.
+- **Task**: one unit a sensor claims under a lease: today one command of a
+  step; with RFC-030 Phase 2, a chunk cut at claim time.
+
+### 1.1 Run states
+
+| Status | Meaning | Terminal | Counted as |
+|---|---|---|---|
+| `pending` | Created, no task claimed yet | no | — |
+| `running` | At least one task claimed or started | no | — |
+| `completed` | Every task completed. Targets that did not answer (`unreachable_target_count`) or that the sensor's local policy skipped (`skipped_target_count`) do not change the status: they are facts about the targets, recorded in the run context and shown as a note ("Completed · N unreachable") | yes | success |
+| `partial` | Some tasks completed, some failed, or the deadline passed with work done, or a sensor left coverage gaps or unfinished targets; results kept, unfinished targets recorded. Also when every step finished but zone routing left targets uncovered (`uncovered_targets`): the run did not scan everything it was asked to | yes | success with coverage gaps |
+| `failed` | No task completed (all failed, or nobody claimed within 4 h scheduled / 1 h interactive), or a step tried more than one target and reached none (`TARGET_UNREACHABLE`: the sensor may be cut off). A single target that did not answer is `completed`, one unreachable | yes | failure |
+| `timeout` | Deadline passed and no task completed | yes | failure |
+| `canceled` | Stopped by a user with `scans:write` | yes | not counted in the success rate |
+| `blocked` | Refused before anything was dispatched (scope gate, unconfirmed targets, no sensor, scan window, scanner); `refusal_code` says why | yes | not counted in the success rate |
+
+**Success rate.** The share of counted runs that did their job: (completed +
+partial) / (completed + partial + failed + timeout). A partial run finished
+with coverage gaps; a host that did not answer is a fact about the target, not
+a scan failure, so it never lowers the rate. Blocked, canceled and live runs
+are not counted. Below three counted runs there is no rate ("-"). The scan
+list reads it over the scan's latest ten runs (`recent_runs` of `GET /scans`,
+newest first, tenant-scoped, one batch query per page); the scan page and the
+scan drawer read it over the scan's lifetime counters with the same rule.
+
+A terminal run never changes again, and neither does a terminal step run: a
+late or duplicate sensor result, a cancel racing a completion or the reaper
+cannot reopen one, recount its findings or record its outcome twice.
+
+### 1.2 What happens when
+
+| Event | Effect |
+|---|---|
+| Occurrence due | The scheduler claims it (compare-and-set on `next_run_at`, plus the occurrence key on the run), skips it if the scan's previous run is still active, else creates the run |
+| Trigger | Targets resolved through the target gate; routed to zones; tasks created; the run starts |
+| Sensor poll | Claims tasks it may run (verified tool, zone, capacity), lease + epoch set in the same update |
+| Heartbeat | Renews leases of tasks the sensor still runs; returns `cancel_command_ids` for those it no longer holds and `stop_command_ids` for stalled ones it holds; records each task's progress: finished targets and liveness counters (`records`, `output_bytes`, `cpu_ms`), all monotonic hints bounded by the task's own target count and a maximum |
+| Stall | A running task with a budget whose holder reports progress or liveness is stalled when none of finished targets, records, output bytes or CPU time (by at least 2 s since it last counted) moved for its stall window. Its sensor is asked to stop it and hand back what it finished (`stop_command_ids`; it completes partial and only the unfinished targets run again); with no answer within 5 min it is re-queued whole (one more dispatch attempt). A task that stops with nothing finished is re-queued, not failed. A task past its deadline plus 5 min is re-queued at once, whatever its signals say: faked liveness can delay a stall decision, never the overrun cap or the run's deadline. The deadline is the one the sensor enforces: the step's `timeout_seconds` when the payload carries one (at most 24 h), else twice the task budget; a budget is an estimate and never cuts a task the step allows more time. A hand-back that only means "not now" (hosts busy on this sensor, no free slot) and a command waiting for its hosts never count a dispatch attempt |
+| Task completes | Results ingested (idempotent report ids); coverage-scoped auto-resolve for that task's targets (dry-run by default); the step and run settle when their last task settles |
+| Task completes partial | A result with `target_outcomes` (ctis `outcome`: `done`, `failed`, `skipped`, `unfinished`) settles every target with an outcome (a `failed` target of class `egress_refused` was kept from the network by the sensor's own confinement: it is settled, and the run's task list counts it as `egress_refused_targets` so the page says the step could not reach it, never that it produced nothing); the unfinished ones go out again as a new task with only those targets (`retry_of` names the task it continues), in the same transaction as the completion. It keeps the parent's placement (step, zone, host keys, dispatch gate, refusing sensors, queue age). Dispatch attempts count per chunk: a run that settled targets leaves the rest's count as it was, a run that settled none adds one, so one host that never answers exhausts only its own task. Outcomes for targets the task does not carry are ignored; a task of a run step without its step id is not followed up |
+| Deadline | Queued tasks dropped, leased tasks canceled, run ends `partial` or `timeout`, unfinished targets recorded for the next occurrence. The deadline counts active work, not queue wait: a claim moves it to the time the claimed task needs (below), and a run whose open tasks all wait for a busy sensor of the organization or for their hosts is not settled (within the 24 h cap; a scan's own max duration always applies) |
+| Cancel | Run → `canceled`; open step runs and tasks canceled in one statement, leases cleared (never re-queued); the holding sensor is asked to ring within 5 s and gets `cancel_command_ids`; an offline sensor gets them when it reports the task again; canceling again is a no-op |
+| Failure | Classified: permanent codes never retried; lost work and timeouts retried twice with backoff; others by the scan's `max_retries` |
+
+## 2. Where the code stands (2026-10-03)
+
+| Part | State | Where |
+|---|---|---|
+| Runs and tasks | `scan_runs`, `scan_run_steps`, `commands`; a run's tasks are its commands (by `payload.scan_run_id`, index `idx_commands_scan_run`), read with `CommandRepository.ListRunTasks` / `TaskSummaries` and returned as `task_summary` (run list) and `tasks` (run, first 200; targets counted, never listed; a platform sensor is never named) | `server/internal/app/scanrun/run.go`, `server/internal/app/scan/trigger.go`, `zones.go` |
+| Run terminal guard | done | `server/internal/infra/postgres/scan_run_repository.go` (`terminalRunStatusesSQL`) |
+| Step terminal guard | RFC-046 P1.1 (first implementation PR) | same file |
+| `partial` | done: settle matrix (P1.2) and deadline → `partial` (P1.3) | `server/internal/app/scanrun/run.go`, `scan_run_repository.go` (`MarkTimedOutRuns`) |
+| Deadline + rollover | done: `deadline_at` set when the run starts (scan timeout, else the workflow timeout, 24 h cap); when a sensor claims a task the run gets at least the time the task's targets need at that sensor's measured speed (its load report's targets per minute for the tool, twice over plus 5 min, at least 10 min, at most twice the configured timeout), or the configured timeout from the claim when the sensor reports no speed; the deadline only moves forward, never past started + 24 h and never for a scan's own max duration (`deadline_reason` `work_estimate`), and every claimed task's payload `deadline` is set to the run's current deadline (whether or not this claim moved it) so the sensor budgets the job to it, never to a deadline an earlier claim already moved past; a run whose open tasks all wait for a busy sensor (one that could take them is online with no free slot) or for their hosts is not timed out; every scan command carries the run's deadline (`deadline`) and the sensor ends the job's time budget a margin before it (a tenth of the time left, 1 to 10 min), so a run cut there still reports what it settled; at the deadline open commands fail and lose their lease (the sensor is told to stop on its next heartbeat) with a message that says what is known (not picked up by a sensor; the tool finished every target but its result did not arrive; no result), unfinished targets (≤ 10,000, dispatch order) are recorded; the next **scheduled** run plans them first, reordering only targets the gate resolved again | `scan_run_repository.go` (`runDeadlineSQL`, `MarkTimedOutRuns`, `LatestRollover`), `scan_run_deadline_work.go` (`ExtendRunDeadlinesAtClaim`, `runWaitsInQueueSQL`), `server/internal/app/scan/rollover.go` |
+| Occurrence claim | compare-and-set on `next_run_at`; occurrence key planned (P1.5) | `server/internal/app/scan/scheduler.go`, `scan_repository.go` (`ClaimScheduledRun`) |
+| Overlap skip | done; checked in the run-insert transaction under the scan row lock (P1.6), so a manual trigger cannot slip in between | `scheduler.go` (`SkipIfRunning`), `scan_run_repository.go` (`CreateRunIfUnderLimit`, `ErrScanRunActive`) |
+| rrule | `schedule_type` `rrule`: an RFC 5545 rule (RRULE parts only, e.g. `FREQ=WEEKLY;BYDAY=MO;BYHOUR=2`) in `scans.schedule_rrule`, evaluated in `schedule_timezone` from a fixed anchor (2024-01-01 00:00 local, so INTERVAL counts the same everywhere; no BYHOUR means midnight); refused on save if it does not parse, has no future occurrence, uses SECONDLY/BYSECOND/COUNT/DTSTART, or fires more often than every 15 minutes over the next year. Legacy daily/weekly/monthly/crontab still work; their backfill to rules is pending. Crontabs and rules more frequent than 15 minutes are refused; legacy ones are spaced when claimed; missed occurrences are skipped (`skipped_misfire`) | `server/pkg/domain/scan/rrule.go`, `entity.go` |
+| One-off run | `schedule_type` `once` with `run_at` (RFC 3339; stored in `scans.schedule_run_at`, migration 001694): the scan runs once at that instant, then has no next run (it is not reported as an inert schedule). `run_at` must be between a minute and a year ahead on save; `schedule_timezone` only says how to show it. An edit that sends the stored run back unchanged keeps it, even once it has run. A one-off run missed by more than an hour (the platform was down) is skipped and recorded (`skipped_misfire`), never started at a time nobody chose; a freeze window defers it like any run. Import turns a one-off run that is no longer ahead into a manual scan. The wizard sends the viewer's timezone (or the one chosen) with every schedule; before, every time was read as UTC and "Schedule for later > Once" saved a manual scan that never ran | `server/pkg/domain/scan/once.go`, `web/src/features/scans/lib/zoned-time.ts` |
+| Schedule preview | done: `POST /api/v1/scans/schedule-preview` (`scans:read`, stateless, reads and stores nothing) validates a schedule with the save rules and lists its next 1-10 occurrences (`Scan.UpcomingOccurrences` = the scheduler's `OccurrenceAfter` repeated) as RFC 3339 in the scan timezone. The web shows them on the scan page, the scan drawer and the wizard's schedule step (with the viewer's local time when it differs); a refused schedule shows the save error inline. The browser never evaluates a cron or RRULE itself | `server/internal/app/scan/schedule_preview.go`, `web/src/features/scans/components/schedule-preview.tsx` |
+| Claim + leases + fencing | dispatch order: priority class (one class up per 30 min waited, never into critical), then round-robin across runs, then age; claim-1 by id, and claim-N for a v2 sensor that names the `capacity` feature (`GET /api/v2/sensor/commands` returns its commands already claimed, at most `max_jobs` minus the scans it holds, one `UPDATE … FOR UPDATE SKIP LOCKED`); platform-sensor tenant fair share still to do | `command_repository.go` (`ClaimForSensor`), `command_lease.go`, `server/pkg/domain/command/lease.go` |
+| Cancel to sensor | via heartbeat `cancel_command_ids`; doorbell busy interval while a held task was just canceled; run cancel closes steps + tasks (`CloseCanceledRun`) | `command_lease.go` (`CommandsToCancel`), sdk-go `pkg/core/doorbell.go` |
+| Abort unclaimed | done (4 h / 1 h; a run whose work waits for its scan window, for its hosts (held by another task of the tenant), or for a busy sensor of the tenant that could take it, is not unclaimed) | `scan_run_repository.go` (`AbortUnclaimedRuns`), `controller/scan_timeout.go` |
+| Retry classes | done (run-level) | `server/pkg/domain/scanrun/failure.go`, `scan_run_repository.go` (`ListPendingRetries`) |
+| Coverage auto-resolve | done, **stays dry-run** (D-22 postponed until the closure evaluator ships) | `server/internal/app/ingest/coverage_autoresolve.go`, `INGEST_COVERAGE_AUTO_RESOLVE` |
+| Controller leases | done (P1.8): `controller_leases` (name, holder, epoch, expires_at); take by compare-and-set on expiry, renew every third of the TTL, epoch bumps on every take; `Exclusive` controllers skip a tick when another replica holds the lease and stop if they lose it | `server/internal/infra/postgres/controller_lease_repository.go`, `server/internal/infra/controller/controller.go` |
+| Workflow version pin | done (P0-10): when a workflow run starts, the workflow's settings and steps are saved as an immutable version in `scan_workflow_versions` unless the latest version has the same `spec_digest` (sha256 of the spec without the builder layout); the run records `scan_workflow_version` and `spec_digest` and every later read of its workflow (advance, fail-fast, stall repair, stage chaining) uses that version, so an edit made while it runs changes the next run only. A pinned version that cannot be read stops the run's progress instead of falling back to the live workflow. Runs from before versions and runs without a workflow stay unpinned. Versions go with their workflow and tenant | `server/pkg/domain/scanworkflow/version.go`, `server/pkg/domain/scanrun/pin.go`, `server/internal/infra/postgres/scan_workflow_version_repository.go` |
+| Run map | `GET /scan-runs/{id}/map` (`scans:read`, run guard): the run drawn on the workflow version it executes. Each step has a state (pending, waiting, running, succeeded, partial, failed, skipped, canceled), a reason (for a waiting step `waiting_for_hosts` when every queued chunk waits for hosts another task of the organization scans, `waiting_after_refusal` when every one was refused by a sensor's local policy, else `waiting_for_sensor`; otherwise the error code and class), its chunks by state (with `hosts_busy` and `refused`, the queued chunks each of those gates holds, counted with the claim's own host predicate), findings, planned inputs and outputs by asset type. Each dependency carries the upstream output count. Output counts cover only the caller's data scope, no target or asset is named, and a platform job's message is masked. A fixed number of queries per call, none per step or per asset. Live: a run that changes (a step started, finished or queued, the run settled or canceled) sends `run.changed` on the websocket channel `run:{id}` (at most one a second per run; `scans:read` and a run the subscriber may read, finding scope for retests); the event carries no data, the page re-reads the gated endpoints, and polling stays as the fallback. Compared with the previous run: each step's outputs carry `previous`, `added` and `gone` against the latest completed or partial run of the same scan (`previous_run_id`), in the caller's data scope, only for a step that finished its work (completed or partial): a step that failed, timed out, was canceled or skipped, or has not finished carries no comparison, so a run no sensor picked up never shows the last run's assets as gone; the page warns about a finished step that produced no asset and no finding, or, when its tasks report `egress_refused_targets`, that it could not reach those targets (the sensor's network confinement refused them); when its tasks report `guard_refused_targets`, the step and its card say how many targets the sensor's target guard refused (never run: a blocked or unresolvable address, an unsafe target; `refused_targets` entries with rule `target_guard`, counted from the bounded list and, when every listed entry is the guard's, `refused_targets_total`, never more than the task's targets). The page draws the map as one flow (`web/src/features/scans/components/run-flow.tsx`): a card per step with its state, tool, chunk progress, outputs, findings and duration, a skipped step naming the upstream step it waited on; steps that run side by side are laid out as a graph (layers by longest dependency path, ordered to avoid crossings, left to right or top to bottom by what fits), a chain and a phone screen get the list; a card opens the step's panel. `GET /scan-runs/{id}/outputs?step_key=` (`scans:read`) lists up to 50 of a step's assets, new ones first, in the caller's data scope | `server/internal/app/scanrun/run_map.go`, `server/internal/infra/http/handler/scan_run_map.go` |
+| Stage chaining | done: a step's targets come from its dependencies' outputs; with stage streaming (`SCAN_STAGE_STREAMING`, on by default) a dependent step starts on the first finished task of its one unfinished dependency | `server/internal/app/scanrun/stream.go`, [scan stages](scan-stages.md) |
+| Automations | in-process executor fed by callbacks; outbox planned (P2). Cancel skips open steps and the executor stops before its next step; finished runs and steps are never rewritten | `server/internal/app/workflow/` |
+| `scan_sessions` | **removed** (migration 001148): table, `/api/v1/scan-sessions`, web hooks. CI coverage counts a daemon scan from a completed command's report | `server/internal/infra/postgres/ci_coverage_repository.go` |
+
+## 3. Things that are deliberately not wired
+
+- **Scope schedules** (`scan_schedules`, Scoping › Schedules) were inert by
+  Scoping IA decision D10 and have been **removed**: the
+  `/api/v1/scope/schedules` API, the service, the repository and the
+  `total_schedules` / `enabled_schedules` fields of `GET /scope/stats` are
+  gone, and migration 001069 drops `scan_schedules`. Schedules belong to the
+  Scan; do not reintroduce a second scheduler.
+- **Interactsh** is off on the sensor unless the sensor-local policy and the
+  job both allow it (RFC-040, RFC-046 D6).
+- **Adaptive chunk sizing** is deferred (RFC-046 D9, RFC-030 Phase 2).
+- **Automations offer only what they run.** The removed types (the schedule,
+  finding_age, finding_updated and webhook triggers, the assign_team,
+  update_priority, run_script, http_request and trigger_pipeline actions and
+  the pagerduty notification) are refused on create, graph save, node edit
+  and activation with 400 `UNSUPPORTED_WORKFLOW_FEATURE`; stored ones stay
+  readable, flagged and switched off ([automations.md](automations.md)). A graph save is also refused, before anything
+  is written, when the graph has a cycle (`WORKFLOW_GRAPH_CYCLE`), a node no
+  trigger reaches (`WORKFLOW_GRAPH_UNREACHABLE`), an edge into a trigger or
+  a condition edge without a yes/no handle (`WORKFLOW_GRAPH_EDGE`). Adding
+  one edge checks the same except reachability; activation checks
+  reachability too. The canvas refuses the same connections while dragging.
+
+## 4. Invariants (each has a test)
+
+1. One run per scheduled occurrence.
+2. A terminal run or step run never changes.
+3. A task's results are accepted only from the sensor holding its live lease
+   (epoch match), for that task's tool and targets.
+4. Auto-resolve never acts on a failed, canceled, expired, timed-out or
+   partially covered task, and only on the targets the task covered.
+5. Every path that turns a selection into work goes through the one target
+   gate.
+6. Every query is tenant-scoped from the credential; a foreign id is a 404.
+7. A run executes the workflow version it started with.
+
+## Outcome of a target
+
+How a target's outcome affects the run (the coverage ledger settles per target
+from each task's own results, never from the run status, so an unreachable
+target stays failed in the ledger even when its run completes):
+
+| Per-target outcome | Run status effect | Ledger |
+|---|---|---|
+| scanned | none | covered |
+| skipped by the sensor's local policy or a server gate (exclusion, tier, act scope) | none; counted in `skipped_target_count` | blocked, re-checked later |
+| unreachable (timeout, no route, DNS) | none; counted in `unreachable_target_count` | failed `unreachable`, backoff |
+| unroutable (no zone or sensor can place it) | `partial` (a gap the tenant can fix) | blocked: zone |
+| unfinished (deadline, crash, coverage gap) | `partial` | failed, planned first |
+
+A step that tried more than one target and reached none of them (with no
+findings) fails as `TARGET_UNREACHABLE`. The counts are written to the step's
+`output` and summed into the run context when the run settles.
+
+## Console: platform scans and run notes
+
+The Scans area separates the platform's own scans from people's:
+
+- The scans list has an **Origin** filter (People, System; `origin=user|system`). System lists managed scans (continuous coverage, automatic enrichment).
+- A managed scan's page shows a "Managed by the platform · Continuous coverage" banner (with a link to the coverage settings under Scope settings) in place of the "no active owner" notice, a System badge and "Automatic coverage" instead of schedule and state, and none of Edit, Run now, the schedule switch, Take ownership or Delete. Clone stays and reads "Clone as my scan". The list's row menu and the scan drawer follow the same rule.
+- A run a platform policy started is labelled "Automatic coverage" (or "Automatic enrichment") in the Trigger column, not "System".
+- A run's status badge carries the target note when it has one: "Completed · 3 unreachable", "· 2 skipped" (`unreachable_target_count`, `skipped_target_count` of the run response). The note never changes the status.
+- The success-rate labels of the list and the scan page come from the dictionary (en and vi).
+- The list's **Recent runs** column shows the latest ten runs as run-state glyphs (oldest to newest, the glyphs of the run status label) and the success rate over them; its tooltip and accessible name give the breakdown (completed, completed with coverage gaps, failed, blocked and canceled not counted).
+- A blocked latest run says why under its state, without hovering, with a link to where it is fixed: unconfirmed targets to the scope, excluded targets to the exclusions, no sensor to the sensors, a scan window, a disabled scanner. Other refusal codes read "Refused before it started" and the run has the details.
+- On a phone each scan is one card: the name and the latest run's state on the first line, then the type, the kind and the intensity as separate elements, then when it last ran, the run count and the recent runs. Every line wraps; no element can overflow into another.
+- Scan intensity uses the label system: passive and active are plain tags (icon and word, neutral ink), intrusive is a neutral signal chip. No hue, so it never reads as a severity or a run state.

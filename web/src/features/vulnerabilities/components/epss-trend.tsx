@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * EPSS trend (api/docs/architecture/vulnerability-page.md, "EPSS trend"):
+ * EPSS trend (server/docs/architecture/vulnerability-page.md, "EPSS trend"):
  * the daily exploit-prediction score of a CVE over the last 30 feed days.
  * The list shows a small line beside the score, the vulnerability page a
  * chart with the dashboard kit's tooltip and table view. The API sends the

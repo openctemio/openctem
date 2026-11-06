@@ -1,0 +1,247 @@
+package tenant
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+var slugRegex = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+
+// Tenant represents a tenant (displayed as "Team" in UI) entity.
+type Tenant struct {
+	id          shared.ID
+	name        string
+	slug        string
+	description string
+	logoURL     string
+	settings    map[string]any
+	createdBy   string // Keycloak user ID
+	// initial are the limits, feature denies and idle policy written with the
+	// organization when it is created; never loaded back.
+	initial InitialEntitlements
+	// region is the data region set when the organization was created
+	// (DEPLOYMENT_REGION); empty for organizations from before. Never
+	// changed afterwards.
+	region    string
+	createdAt time.Time
+	updatedAt time.Time
+}
+
+// NewTenant creates a new Tenant entity.
+func NewTenant(name, slug, createdBy string) (*Tenant, error) {
+	if name == "" {
+		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+	if slug == "" {
+		return nil, fmt.Errorf("%w: slug is required", shared.ErrValidation)
+	}
+	if !IsValidSlug(slug) {
+		return nil, fmt.Errorf("%w: invalid slug format (use lowercase letters, numbers, and hyphens)", shared.ErrValidation)
+	}
+	if createdBy == "" {
+		return nil, fmt.Errorf("%w: createdBy is required", shared.ErrValidation)
+	}
+
+	now := time.Now().UTC()
+	// A new organization asks personal accounts for a second factor
+	// (RFC-058) and its owners and admins for one too; organizations created
+	// before keep their settings.
+	initial := DefaultSettings()
+	initial.Security.PersonalAccounts = PersonalAccountsAllowedWithMFA
+	// Owners and admins of a new organization use a second factor.
+	initial.Security.MFARequiredForAdmins = true
+	// A new organization lets the platform close findings per the tier rule;
+	// organizations created before stay in review (an absent mode).
+	initial.Closure.Mode = ClosingModeAuto
+	return &Tenant{
+		id:        shared.NewID(),
+		name:      name,
+		slug:      strings.ToLower(slug),
+		settings:  initial.ToMap(),
+		createdBy: createdBy,
+		createdAt: now,
+		updatedAt: now,
+	}, nil
+}
+
+// Reconstitute recreates a Tenant from persistence.
+func Reconstitute(
+	id shared.ID,
+	name, slug, description, logoURL string,
+	settings map[string]any,
+	createdBy string,
+	createdAt, updatedAt time.Time,
+) *Tenant {
+	if settings == nil {
+		settings = make(map[string]any)
+	}
+	return &Tenant{
+		id:          id,
+		name:        name,
+		slug:        slug,
+		description: description,
+		logoURL:     logoURL,
+		settings:    settings,
+		createdBy:   createdBy,
+		createdAt:   createdAt,
+		updatedAt:   updatedAt,
+	}
+}
+
+// ID returns the tenant ID.
+func (t *Tenant) ID() shared.ID {
+	return t.id
+}
+
+// Name returns the tenant name.
+func (t *Tenant) Name() string {
+	return t.name
+}
+
+// Slug returns the tenant slug (URL-friendly identifier).
+func (t *Tenant) Slug() string {
+	return t.slug
+}
+
+// Description returns the tenant description.
+func (t *Tenant) Description() string {
+	return t.description
+}
+
+// LogoURL returns the tenant logo URL.
+func (t *Tenant) LogoURL() string {
+	return t.logoURL
+}
+
+// InitialEntitlements are written in the transaction that creates the
+// organization, so it never exists without them: the instance's
+// self-service defaults, or what the control plane provisioned.
+type InitialEntitlements struct {
+	Limits []limits.Limit
+	Denies []limits.FeatureDeny
+	// IdlePolicy turns the idle policy on, with IdleReason.
+	IdlePolicy bool
+	IdleReason string
+}
+
+// InitialLimits returns the limits written with the organization when it is
+// created.
+func (t *Tenant) InitialLimits() []limits.Limit { return t.initial.Limits }
+
+// Initial returns everything written with the organization when it is
+// created.
+func (t *Tenant) Initial() InitialEntitlements { return t.initial }
+
+// SetInitialLimits sets the limits the organization starts with.
+func (t *Tenant) SetInitialLimits(l []limits.Limit) { t.initial.Limits = l }
+
+// SetInitial sets everything the organization starts with.
+func (t *Tenant) SetInitial(in InitialEntitlements) { t.initial = in }
+
+// Settings returns the tenant settings.
+func (t *Tenant) Settings() map[string]any {
+	result := make(map[string]any, len(t.settings))
+	for k, v := range t.settings {
+		result[k] = v
+	}
+	return result
+}
+
+// CreatedBy returns the user ID who created this tenant.
+func (t *Tenant) CreatedBy() string {
+	return t.createdBy
+}
+
+// CreatedAt returns the creation timestamp.
+func (t *Tenant) CreatedAt() time.Time {
+	return t.createdAt
+}
+
+// UpdatedAt returns the last update timestamp.
+func (t *Tenant) UpdatedAt() time.Time {
+	return t.updatedAt
+}
+
+// UpdateName updates the tenant name.
+func (t *Tenant) UpdateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+	t.name = name
+	t.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdateDescription updates the tenant description.
+func (t *Tenant) UpdateDescription(description string) {
+	t.description = description
+	t.updatedAt = time.Now().UTC()
+}
+
+// UpdateLogoURL updates the tenant logo URL.
+func (t *Tenant) UpdateLogoURL(logoURL string) {
+	t.logoURL = logoURL
+	t.updatedAt = time.Now().UTC()
+}
+
+// UpdateSlug updates the tenant slug.
+// Note: Caller must verify uniqueness before calling this method.
+func (t *Tenant) UpdateSlug(slug string) error {
+	if !IsValidSlug(slug) {
+		return fmt.Errorf("%w: slug must be 3-100 characters and contain only lowercase letters, numbers, and hyphens", shared.ErrValidation)
+	}
+	t.slug = slug
+	t.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// SetSetting sets a setting value.
+func (t *Tenant) SetSetting(key string, value any) {
+	if key == "" {
+		return
+	}
+	t.settings[key] = value
+	t.updatedAt = time.Now().UTC()
+}
+
+// GetSetting gets a setting value.
+func (t *Tenant) GetSetting(key string) (any, bool) {
+	v, ok := t.settings[key]
+	return v, ok
+}
+
+// IsValidSlug checks if a slug is valid.
+func IsValidSlug(slug string) bool {
+	if len(slug) < 3 || len(slug) > 100 {
+		return false
+	}
+	return slugRegex.MatchString(slug)
+}
+
+// GenerateSlug generates a slug from a name.
+func GenerateSlug(name string) string {
+	slug := strings.ToLower(name)
+	slug = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+	if len(slug) > 100 {
+		slug = slug[:100]
+	}
+	return slug
+}
+
+// Region is the organization's data region ("" when it predates regions).
+func (t *Tenant) Region() string { return t.region }
+
+// WithRegion sets the region from persistence or at creation; a region once
+// set is never replaced.
+func (t *Tenant) WithRegion(region string) *Tenant {
+	if t.region == "" {
+		t.region = region
+	}
+	return t
+}

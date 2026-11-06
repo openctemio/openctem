@@ -43,7 +43,7 @@ describe('scope code catalogs', () => {
   })
 
   it('covers every refusal code the API sends', () => {
-    // api/pkg/domain/scope/refusal.go
+    // server/pkg/domain/scope/refusal.go
     const server = [
       'invalid_target',
       'deny_list',

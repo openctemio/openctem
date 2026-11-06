@@ -1,0 +1,92 @@
+package postgres
+
+import (
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+)
+
+// The from-state lists of every SQL statement that moves findings.status in
+// bulk. Each is built from the domain lifecycle (pkg/domain/vulnerability
+// status_lifecycle.go) and checked against it when the package loads, so a
+// statement can never move a finding along an edge the lifecycle does not
+// have: a list that drifts makes the binary and every test of this package
+// panic at start.
+//
+// The values are FindingStatus constants, never input, so they are safe to
+// splice into a statement.
+var (
+	// Open work an automated close acts on, per target.
+	autoResolveFromSQL      = platformFromSQL(vulnerability.FindingStatusResolved, vulnerability.AutoCloseFromStatuses()...)
+	vexFalsePositiveFromSQL = platformFromSQL(vulnerability.FindingStatusFalsePositive, vulnerability.AutoCloseFromStatuses()...)
+	// Open work a stale source marks stale (observation_state; the status
+	// stays, so this is a set, not a lifecycle move).
+	staleFromSQL = vulnerability.StatusListSQL(vulnerability.AutoCloseFromStatuses())
+
+	// A retired CI source closes its open findings, stale ones included.
+	sourceRetiredFromSQL = platformFromSQL(vulnerability.FindingStatusResolved, vulnerability.AutoCloseFromStatuses()...)
+
+	// A feature branch that expires marks its untriaged findings stale; a
+	// branch-only finding also when it was confirmed (observation only).
+	branchExpiryFromSQL     = vulnerability.StatusListSQL([]vulnerability.FindingStatus{vulnerability.FindingStatusNew})
+	branchOnlyExpiryFromSQL = vulnerability.StatusListSQL([]vulnerability.FindingStatus{
+		vulnerability.FindingStatusNew, vulnerability.FindingStatusConfirmed})
+
+	// A scan that reports a finding again.
+	regressionReopenFromSQL = platformFromSQL(vulnerability.FindingStatusConfirmed, vulnerability.RegressionReopenFromStatuses()...)
+	// A license policy that flags a finding again reopens only findings
+	// closed as fixed.
+	fixedReopenFromSQL = platformFromSQL(vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusResolved)
+
+	// A suppression rule lifted (the finding returns to new) or re-linked to
+	// another rule (the finding takes that rule's disposition).
+	suppressionLiftFromSQL   = platformFromSQL(vulnerability.FindingStatusNew, vulnerability.SuppressedStatuses()...)
+	suppressionRelinkFromSQL = platformFromSQLEach(vulnerability.SuppressedStatuses(), vulnerability.SuppressedStatuses()...)
+)
+
+// suppressionApplyFrom is, per disposition, the from-state list of the bulk
+// update an approved suppression rule makes to the open findings it matches
+// (suppression_apply.go), checked against the lifecycle when the package
+// loads. It is a pq.Array parameter, not a spliced list.
+var suppressionApplyFrom = func() map[vulnerability.FindingStatus][]string {
+	out := map[vulnerability.FindingStatus][]string{}
+	for _, target := range vulnerability.SuppressedStatuses() {
+		from := vulnerability.SuppressionApplyFromStatuses(target)
+		if err := vulnerability.CheckPlatformTransitions(target, from...); err != nil {
+			panic(err)
+		}
+		out[target] = statusStrings(from)
+	}
+	return out
+}()
+
+// platformFromSQL renders from as a SQL list, ('a', 'b'), after checking that
+// the platform may move each of them to target. It panics otherwise: the lists
+// are package variables, so a wrong one stops the program at start.
+func platformFromSQL(target vulnerability.FindingStatus, from ...vulnerability.FindingStatus) string {
+	if err := vulnerability.CheckPlatformTransitions(target, from...); err != nil {
+		panic(err)
+	}
+	return sqlStatusList(from)
+}
+
+// platformFromSQLEach is platformFromSQL for a statement whose target is one
+// of targets (chosen per row).
+func platformFromSQLEach(targets []vulnerability.FindingStatus, from ...vulnerability.FindingStatus) string {
+	for _, t := range targets {
+		platformFromSQL(t, from...)
+	}
+	return sqlStatusList(from)
+}
+
+// sqlStatusList renders statuses as a SQL list: ('a', 'b').
+func sqlStatusList(statuses []vulnerability.FindingStatus) string {
+	return vulnerability.StatusListSQL(statuses)
+}
+
+// statusStrings is statuses as strings, for a pq.Array parameter.
+func statusStrings(statuses []vulnerability.FindingStatus) []string {
+	out := make([]string, len(statuses))
+	for i, s := range statuses {
+		out[i] = string(s)
+	}
+	return out
+}

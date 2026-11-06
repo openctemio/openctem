@@ -1,0 +1,530 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/server/pkg/domain/apikey"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+// APIKeyRepository is the PostgreSQL implementation of apikey.Repository.
+type APIKeyRepository struct {
+	db *DB
+	tokenPepper
+	limitChecks // api_keys
+}
+
+// NewAPIKeyRepository creates a new APIKeyRepository.
+func NewAPIKeyRepository(db *DB) *APIKeyRepository {
+	return &APIKeyRepository{db: db}
+}
+
+var _ apikey.Repository = (*APIKeyRepository)(nil)
+
+// Create inserts a new API key.
+func (r *APIKeyRepository) Create(ctx context.Context, key *apikey.APIKey) error {
+	if err := r.checkLimit(ctx, key.TenantID(), limits.APIKeys, 1); err != nil {
+		return err
+	}
+	query := `
+		INSERT INTO api_keys (
+			id, tenant_id, user_id, name, description,
+			key_hash, key_prefix, scopes, rate_limit,
+			status, expires_at, created_by, created_at, updated_at, key_pepper_id
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+		)
+	`
+
+	var userID, createdBy *string
+	if key.UserID() != nil {
+		s := key.UserID().String()
+		userID = &s
+	}
+	if key.CreatedBy() != nil {
+		s := key.CreatedBy().String()
+		createdBy = &s
+	}
+
+	_, err := r.db.ExecContext(ctx, query,
+		key.ID().String(),
+		key.TenantID().String(),
+		userID,
+		key.Name(),
+		key.Description(),
+		key.KeyHash(),
+		key.KeyPrefix(),
+		pq.Array(key.Scopes()),
+		key.RateLimit(),
+		string(key.Status()),
+		key.ExpiresAt(),
+		createdBy,
+		key.CreatedAt(),
+		key.UpdatedAt(),
+		r.value(),
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return apikey.ErrAPIKeyNameExists
+		}
+		return fmt.Errorf("create api key: %w", err)
+	}
+	return nil
+}
+
+// GetByID retrieves an API key by ID and tenant.
+func (r *APIKeyRepository) GetByID(ctx context.Context, id, tenantID apikey.ID) (*apikey.APIKey, error) {
+	query := `
+		SELECT id, tenant_id, user_id, name, description,
+			key_hash, key_prefix, scopes, rate_limit,
+			status, expires_at, last_used_at, last_used_ip, use_count,
+			created_by, created_at, updated_at, revoked_at, revoked_by
+		FROM api_keys WHERE id = $1 AND tenant_id = $2
+	`
+	row := r.db.QueryRowContext(ctx, query, id.String(), tenantID.String())
+	return r.scanAPIKey(row)
+}
+
+// GetByHash retrieves an API key by its hash.
+func (r *APIKeyRepository) GetByHash(ctx context.Context, hash string) (*apikey.APIKey, error) {
+	query := `
+		SELECT id, tenant_id, user_id, name, description,
+			key_hash, key_prefix, scopes, rate_limit,
+			status, expires_at, last_used_at, last_used_ip, use_count,
+			created_by, created_at, updated_at, revoked_at, revoked_by
+		FROM api_keys WHERE key_hash = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, hash)
+	return r.scanAPIKey(row)
+}
+
+// List retrieves a paginated list of API keys.
+func (r *APIKeyRepository) List(ctx context.Context, filter apikey.Filter) (apikey.ListResult, error) {
+	result := apikey.ListResult{
+		Data:    make([]*apikey.APIKey, 0),
+		Page:    filter.Page,
+		PerPage: filter.PerPage,
+	}
+
+	if filter.Page < 1 {
+		filter.Page = 1
+	}
+	if filter.PerPage < 1 {
+		filter.PerPage = 20
+	}
+
+	conditions := make([]string, 0)
+	args := make([]any, 0)
+	argIdx := 1
+
+	if filter.TenantID != nil {
+		conditions = append(conditions, fmt.Sprintf("tenant_id = $%d", argIdx))
+		args = append(args, filter.TenantID.String())
+		argIdx++
+	}
+
+	if filter.UserID != nil {
+		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argIdx))
+		args = append(args, filter.UserID.String())
+		argIdx++
+	}
+
+	if filter.Status != nil {
+		conditions = append(conditions, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, string(*filter.Status))
+		argIdx++
+	}
+
+	if filter.Search != "" {
+		conditions = append(conditions, fmt.Sprintf("(name ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx))
+		args = append(args, wrapLikePattern(filter.Search))
+		// argIdx not incremented — no further conditions
+	}
+
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	// Count
+	countQuery := "SELECT COUNT(*) FROM api_keys " + whereClause
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&result.Total); err != nil {
+		return result, fmt.Errorf("count api keys: %w", err)
+	}
+
+	result.TotalPages = int((result.Total + int64(filter.PerPage) - 1) / int64(filter.PerPage))
+	result.Page = filter.Page
+
+	// Sort — switch on input.SortBy so CodeQL sees a LITERAL column
+	// name on every branch. The previous map-allowlist + string
+	// concatenation was functionally safe (lookup before concat) but
+	// CodeQL's go/sql-injection flow analysis couldn't trace the
+	// map-lookup guard and kept flagging. Explicit case literals
+	// eliminate the tainted data-flow entirely.
+	orderBy := defaultSortOrder
+	order := "ASC"
+	if strings.EqualFold(filter.SortOrder, "desc") {
+		order = "DESC"
+	}
+	switch filter.SortBy {
+	case "name":
+		orderBy = "name " + order
+	case "status":
+		orderBy = "status " + order
+	case "created_at":
+		orderBy = "created_at " + order
+	case "last_used_at":
+		orderBy = "last_used_at " + order
+	case "expires_at":
+		orderBy = "expires_at " + order
+	}
+
+	offset := (filter.Page - 1) * filter.PerPage
+	args = append(args, filter.PerPage, offset)
+
+	query := fmt.Sprintf(`
+		SELECT id, tenant_id, user_id, name, description,
+			key_hash, key_prefix, scopes, rate_limit,
+			status, expires_at, last_used_at, last_used_ip, use_count,
+			created_by, created_at, updated_at, revoked_at, revoked_by
+		FROM api_keys
+		%s
+		ORDER BY %s
+		LIMIT $%d OFFSET $%d
+	`, whereClause, orderBy, argIdx, argIdx+1)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return result, fmt.Errorf("list api keys: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		key, err := r.scanAPIKeyRow(rows)
+		if err != nil {
+			return result, err
+		}
+		result.Data = append(result.Data, key)
+	}
+
+	if err := rows.Err(); err != nil {
+		return result, fmt.Errorf("iterate api key rows: %w", err)
+	}
+
+	return result, nil
+}
+
+// Update updates an API key.
+// TouchLastUsed records that the key was just used. A single indexed UPDATE;
+// callers treat its error as best-effort so usage telemetry never blocks auth.
+func (r *APIKeyRepository) TouchLastUsed(ctx context.Context, tenantID, id apikey.ID, ip string) error {
+	const q = `
+		UPDATE api_keys
+		SET last_used_at = now(), last_used_ip = $2, use_count = use_count + 1
+		WHERE id = $1 AND tenant_id = $3`
+	_, err := r.db.ExecContext(ctx, q, id.String(), ip, tenantID.String())
+	if err != nil {
+		return fmt.Errorf("touch api key last-used: %w", err)
+	}
+	return nil
+}
+
+func (r *APIKeyRepository) Update(ctx context.Context, key *apikey.APIKey) error {
+	query := `
+		UPDATE api_keys SET
+			name = $2, description = $3, scopes = $4, rate_limit = $5,
+			status = $6, expires_at = $7, last_used_at = $8, last_used_ip = $9,
+			use_count = $10, revoked_at = $11, revoked_by = $12, updated_at = $13
+		WHERE id = $1 AND tenant_id = $14
+	`
+
+	var revokedBy *string
+	if key.RevokedBy() != nil {
+		s := key.RevokedBy().String()
+		revokedBy = &s
+	}
+
+	result, err := r.db.ExecContext(ctx, query,
+		key.ID().String(),
+		key.Name(),
+		key.Description(),
+		pq.Array(key.Scopes()),
+		key.RateLimit(),
+		string(key.Status()),
+		key.ExpiresAt(),
+		key.LastUsedAt(),
+		key.LastUsedIP(),
+		key.UseCount(),
+		key.RevokedAt(),
+		revokedBy,
+		key.UpdatedAt(),
+		key.TenantID().String(),
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return apikey.ErrAPIKeyNameExists
+		}
+		return fmt.Errorf("update api key: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return apikey.ErrAPIKeyNotFound
+	}
+	return nil
+}
+
+// Delete deletes an API key by ID and tenant.
+func (r *APIKeyRepository) Delete(ctx context.Context, id, tenantID apikey.ID) error {
+	query := `DELETE FROM api_keys WHERE id = $1 AND tenant_id = $2`
+	result, err := r.db.ExecContext(ctx, query, id.String(), tenantID.String())
+	if err != nil {
+		return fmt.Errorf("delete api key: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return apikey.ErrAPIKeyNotFound
+	}
+	return nil
+}
+
+// --- Scan Helpers ---
+
+func (r *APIKeyRepository) scanAPIKey(row *sql.Row) (*apikey.APIKey, error) {
+	var (
+		id, tenantID          string
+		userID, createdBy     sql.NullString
+		name                  string
+		description           sql.NullString
+		keyHash, keyPrefix    string
+		scopes                pq.StringArray
+		rateLimit             int
+		status                string
+		expiresAt, lastUsedAt sql.NullTime
+		lastUsedIP            sql.NullString
+		useCount              int64
+		createdAt, updatedAt  time.Time
+		revokedAt             sql.NullTime
+		revokedBy             sql.NullString
+	)
+
+	err := row.Scan(
+		&id, &tenantID, &userID, &name, &description,
+		&keyHash, &keyPrefix, &scopes, &rateLimit,
+		&status, &expiresAt, &lastUsedAt, &lastUsedIP, &useCount,
+		&createdBy, &createdAt, &updatedAt, &revokedAt, &revokedBy,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, apikey.ErrAPIKeyNotFound
+		}
+		return nil, fmt.Errorf("scan api key: %w", err)
+	}
+
+	return r.reconstruct(id, tenantID, userID, name, description.String,
+		keyHash, keyPrefix, []string(scopes), rateLimit, status,
+		expiresAt, lastUsedAt, lastUsedIP, useCount,
+		createdBy, createdAt, updatedAt, revokedAt, revokedBy)
+}
+
+func (r *APIKeyRepository) scanAPIKeyRow(rows *sql.Rows) (*apikey.APIKey, error) {
+	var (
+		id, tenantID          string
+		userID, createdBy     sql.NullString
+		name                  string
+		description           sql.NullString
+		keyHash, keyPrefix    string
+		scopes                pq.StringArray
+		rateLimit             int
+		status                string
+		expiresAt, lastUsedAt sql.NullTime
+		lastUsedIP            sql.NullString
+		useCount              int64
+		createdAt, updatedAt  time.Time
+		revokedAt             sql.NullTime
+		revokedBy             sql.NullString
+	)
+
+	err := rows.Scan(
+		&id, &tenantID, &userID, &name, &description,
+		&keyHash, &keyPrefix, &scopes, &rateLimit,
+		&status, &expiresAt, &lastUsedAt, &lastUsedIP, &useCount,
+		&createdBy, &createdAt, &updatedAt, &revokedAt, &revokedBy,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("scan api key row: %w", err)
+	}
+
+	return r.reconstruct(id, tenantID, userID, name, description.String,
+		keyHash, keyPrefix, []string(scopes), rateLimit, status,
+		expiresAt, lastUsedAt, lastUsedIP, useCount,
+		createdBy, createdAt, updatedAt, revokedAt, revokedBy)
+}
+
+func (r *APIKeyRepository) reconstruct(
+	id, tenantID string,
+	userID sql.NullString,
+	name, description, keyHash, keyPrefix string,
+	scopes []string, rateLimit int, status string,
+	expiresAt, lastUsedAt sql.NullTime,
+	lastUsedIP sql.NullString,
+	useCount int64,
+	createdBy sql.NullString,
+	createdAt, updatedAt time.Time,
+	revokedAt sql.NullTime,
+	revokedBy sql.NullString,
+) (*apikey.APIKey, error) {
+	keyID, _ := shared.IDFromString(id)
+	keyTenantID, _ := shared.IDFromString(tenantID)
+
+	var uid *shared.ID
+	if userID.Valid {
+		u, _ := shared.IDFromString(userID.String)
+		uid = &u
+	}
+
+	var expAt *time.Time
+	if expiresAt.Valid {
+		expAt = &expiresAt.Time
+	}
+
+	var luAt *time.Time
+	if lastUsedAt.Valid {
+		luAt = &lastUsedAt.Time
+	}
+
+	var cbID *shared.ID
+	if createdBy.Valid {
+		c, _ := shared.IDFromString(createdBy.String)
+		cbID = &c
+	}
+
+	var revAt *time.Time
+	if revokedAt.Valid {
+		revAt = &revokedAt.Time
+	}
+
+	var revBy *shared.ID
+	if revokedBy.Valid {
+		rb, _ := shared.IDFromString(revokedBy.String)
+		revBy = &rb
+	}
+
+	luIP := ""
+	if lastUsedIP.Valid {
+		luIP = lastUsedIP.String
+	}
+
+	return apikey.Reconstruct(
+		keyID, keyTenantID, uid,
+		name, description, keyHash, keyPrefix,
+		scopes, rateLimit, apikey.Status(status),
+		expAt, luAt, luIP, useCount,
+		cbID, createdAt, updatedAt, revAt, revBy,
+	), nil
+}
+
+// RehashKey replaces the stored hash of an oct_ API key made with an earlier pepper
+// by its hash under the current pepper, only while the stored hash is still
+// oldHash. Reports whether the row changed.
+func (r *APIKeyRepository) RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error) {
+	return r.rehash(ctx, r.db, apiKeyTokens, id, oldHash, newHash)
+}
+
+// CountKeysNotUnderPepper counts active tokens not hashed with the current
+// pepper (they still need APP_ENCRYPTION_KEY_PREVIOUS).
+func (r *APIKeyRepository) CountKeysNotUnderPepper(ctx context.Context) (int, error) {
+	return r.countNotCurrent(ctx, r.db, apiKeyTokens)
+}
+
+// RevokeByUser implements apikey.Repository.
+func (r *APIKeyRepository) RevokeByUser(ctx context.Context, userID, revokedBy apikey.ID, now time.Time) (int, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE api_keys SET status = 'revoked', revoked_at = $3, revoked_by = $2, updated_at = $3
+		 WHERE user_id = $1 AND status = 'active'`, userID.String(), revokedBy.String(), now)
+	if err != nil {
+		return 0, fmt.Errorf("revoke api keys of user: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// CountActiveByUser implements apikey.Repository.
+func (r *APIKeyRepository) CountActiveByUser(ctx context.Context, userID apikey.ID, now time.Time) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM api_keys
+		 WHERE user_id = $1 AND status = 'active' AND (expires_at IS NULL OR expires_at > $2)`,
+		userID.String(), now).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count api keys of user: %w", err)
+	}
+	return n, nil
+}
+
+// ListExpiringUnnoticed lists, across organizations (a system sweep), the
+// active keys that expire before `before` and whose holder was not told yet,
+// soonest first.
+func (r *APIKeyRepository) ListExpiringUnnoticed(ctx context.Context, before time.Time, limit int) ([]apikey.ExpiringKey, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, tenant_id, name, key_prefix, expires_at, user_id, created_by
+		  FROM api_keys
+		 WHERE status = 'active' AND expiry_notified_at IS NULL
+		   AND expires_at IS NOT NULL AND expires_at > now() AND expires_at <= $1
+		 ORDER BY expires_at
+		 LIMIT $2`, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list expiring api keys: %w", err)
+	}
+	defer rows.Close()
+	var out []apikey.ExpiringKey
+	for rows.Next() {
+		var (
+			k               apikey.ExpiringKey
+			userID, creator sql.NullString
+		)
+		if err := rows.Scan(&k.ID, &k.TenantID, &k.Name, &k.Prefix, &k.ExpiresAt, &userID, &creator); err != nil {
+			return nil, fmt.Errorf("scan expiring api key: %w", err)
+		}
+		if userID.Valid {
+			if id, err := shared.IDFromString(userID.String); err == nil {
+				k.UserID = &id
+			}
+		}
+		if creator.Valid {
+			if id, err := shared.IDFromString(creator.String); err == nil {
+				k.CreatedBy = &id
+			}
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
+
+// MarkExpiryNoticed records that the key's holder was told it expires soon.
+// It reports false when another replica already did (compare-and-swap).
+func (r *APIKeyRepository) MarkExpiryNoticed(ctx context.Context, tenantID, id shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE api_keys SET expiry_notified_at = now()
+		 WHERE id = $1 AND tenant_id = $2 AND expiry_notified_at IS NULL`, id.String(), tenantID.String())
+	if err != nil {
+		return false, fmt.Errorf("mark api key expiry notice: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}

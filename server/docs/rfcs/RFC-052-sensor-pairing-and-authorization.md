@@ -1,0 +1,640 @@
+# RFC-052: Sensor pairing and per-sensor authorization
+
+| | |
+|---|---|
+| Status | Accepted (decisions SA-1..SA-6 and the secure defaults D-1..D-7, 2026-10-05); SP1 and SP2 implemented; self-binding of bearer-key sensors (§4.8, owner 2026-10-11) implemented; approval context and organization binding (§4.5, threats 22-25) implemented; one install path, the approval link and the fingerprint pick (§4.9, threats 30-33); console re-pair (§4.6, threats 26-27) implemented |
+| Workflow | [sensor-platform-workflow.md](../architecture/sensor-platform-workflow.md) (the end-to-end sensor and platform flow as implemented today) |
+| Scope | api, web, sdk-go (`pkg/sensorsig`, `pkg/sensorproto/pairing`, `pkg/sensorkit`, `pkg/httpsec`), sensor |
+| Builds on | [RFC-032](RFC-032-sensor-enrollment-and-identity.md) (sensor-held Ed25519 key, RFC 9421 signatures, enrollment, `octs_`/`octe_`), [RFC-040](RFC-040-platform-sensor-mutual-distrust.md) (result binding, signed jobs, local ceiling), [RFC-023](RFC-023-scan-zones-and-scanners.md) (zones), [RFC-046](RFC-046-scans-redesign.md) and the stage catalog (tiers T0/T1/T2) |
+| Architecture | [sensor-pairing.md](../architecture/sensor-pairing.md), [sensor-platform-trust.md](../architecture/sensor-platform-trust.md), [authorization-matrix.md](../architecture/authorization-matrix.md) |
+| How-to | [pair-a-sensor.md](../how-to/pair-a-sensor.md) |
+
+## 1. Summary
+
+Two changes that make a sensor's identity and its privileges explicit.
+
+**Pairing (SP1).** A new sensor needs only the platform URL (and, from the
+install snippet, the fingerprint of the platform's certificate authority). It
+creates its own Ed25519 key, asks the platform to pair, and prints a short
+**pairing code** and a **fingerprint** (a short authentication string, SAS,
+such as `821 · melon · basil · bagel`). An administrator enters the code in
+**Sensors → Pair a sensor**, checks that the fingerprint on the screen is the
+one on the sensor's console, sees the host facts and the address the request
+came from, re-authenticates, and chooses the zone, role and **grant profile**.
+Only then does the key become an identity in that organization. No secret is
+ever typed, copied or pasted: the code and the fingerprint are useless to a
+thief who does not hold the sensor's private key.
+
+Every request of a paired sensor is signed with its key (RFC 9421 HTTP message
+signatures, RFC 9530 `Content-Digest`); no bearer key exists for it.
+
+**Grants (SP2).** Every sensor carries a **grant**: which zones, job types,
+tools and capabilities, which tier (T0 passive, T1 active, T2 intrusive),
+which targets, whether it may receive credentials, push results without a job,
+or act on remote actions. The platform checks the grant on every poll, claim
+and result, even for a job a person scheduled. New identities start at trust
+level **New** (T0 only, no credentials, no push ingest) and stay there until an
+administrator promotes them. Existing sensors get a **legacy-broad** grant that
+keeps today's behaviour and is flagged in the console until someone narrows it.
+
+```
+ sensor host                       platform (unauthenticated, capped)          admin (console)
+ ───────────                       ─────────────────────────────────           ───────────────
+ key = Ed25519 (0600)
+ POST /pairing  pub, H(nS), host ──▶ store (no tenant), code, nP, sig(P) ──┐
+       ◀── pairing_id, code, P_pub, nP, sig, expiry                         │
+ verify sig, pin                                                            │
+ POST /pairing/{id}/reveal  nS ────▶ check H(nS); SAS = H(pub‖P‖nS‖nP)       │
+ print  Code K7QM-4ZTD                                                       │
+        Fingerprint 821 · melon · basil · bagel                             ▼
+                                                     lookup code ◀── sensors:pair: shows SAS, host facts, IP
+                                                     approve     ◀── sensors:approve + step-up +
+                                                                     fingerprint pick (1 of 3) + zone/role/profile
+ GET /pairing/{id} (signed) ◀────── approved: sensor id, tenant, key id
+ POST /pairing/{id}/confirm (signed identity statement) ──▶ key active, audit, timeline, admins notified
+ every later request: RFC 9421 signature, keyid = thumbprint
+```
+
+## 2. Decisions
+
+Adopted, choosing the most secure option at each point:
+
+| # | Decision |
+|---|---|
+| SA-1 | Interactive pairing with a short code and a SAS fingerprint compare is the default for manual installs; no secret is ever handled by a person. |
+| SA-2 | Pairing, workload attestation (SP5) and the RFC-032 one-time token end in one state: a key-bound identity, authenticated per request by its key. |
+| SA-3 | A per-sensor grant created from a profile, enforced server-side on every request. Effective permission = grant ∩ trust level ∩ the sensor's local ceiling ∩ the signed job. |
+| SA-4 | Trust levels; new identities get no credentials, no push ingest and no T1/T2 work until promoted. Risk signals restrict automatically (SP3). |
+| SA-5 | One identity = one tenant. Widening needs a stronger permission and is audited and notified; narrowing is instant. Time-boxed intrusive grants (SP4). |
+| SA-6 | "Purge everything sensor X wrote since T" and kill switches are part of the design (SP3/SP4). |
+
+Secure defaults (decided 2026-10-05):
+
+| # | Default |
+|---|---|
+| D-1 | **No automatic promotion.** A New sensor stays New until an administrator promotes it. A later tenant opt-in may auto-promote after N healthy hours for T0/T1 only; T2 and credentials always need an explicit administrator action. |
+| D-2 | **Approval needs step-up re-authentication** (TOTP when the administrator has it, else the password, else a sign-in younger than 10 minutes for SSO-only accounts) and shows the fingerprint, host facts and source address. The administrator picks the fingerprint the host shows out of three (§4.9); the API refuses an approval without a pick and closes the request on a wrong one. |
+| D-3 | **Pairing codes**: 10-minute expiry, single use, 40 bits, per-address and global rate limits, a cap on open requests, uniform responses. |
+| D-4 | **New organizations require key-bound identity**: no bearer (`octs_`) sensor key can be created in them. Existing organizations keep the option (migration sets it), existing bearer-key sensors keep working and are flagged "legacy key". |
+| D-5 | **Profiles default to the narrowest**: no credentials, no push ingest, T2 off, remote actions only pause and drain. Widening needs `sensors:grant:widen`, is audited at high severity and notifies every administrator. Two-person approval of widening is SP4; the grant service has the hook (`WideningApprover`) and today approves with the single actor. |
+| D-6 | **Everything is audited and on the sensor's timeline**: pairing requested/approved/denied/confirmed, re-pair, grant change (with a diff), trust change, credential refusal, out-of-grant claim refusal, key revocation. |
+| D-7 | **Key at rest**: the private key is a 0600 file in a 0700 directory owned by the sensor's user. The sensor refuses to start when the permissions are looser (a preflight failure that names the fix). OS keystore / TPM storage is SP6. |
+
+## 3. Current state (develop 1d4e6c3b9, sdk-go 2d7ab2a, sensor e40514d)
+
+- RFC-032 Phases 1 and 2 (key-bound identity, enrollment tokens) are **not
+  implemented**: no `sensor_keys`, no RFC 9421 verifier, no `octe_` route.
+  Every sensor authenticates with a bearer key (`octs_`, legacy `rda_`) that an
+  administrator created and pasted into an install command.
+- Poll and claim are scoped by tenant, pin, zone, tool and capability, but the
+  tool and capability gates trust what the sensor reports when the
+  administrator set no limit; **claim by id does not check required
+  capabilities** (`ClaimForSensor` has no capability predicate), so a sensor
+  can claim a `validate:nuclei` command that poll would never have offered it.
+- Results are bound to commands the sensor holds (`ingest.OpenCommand`);
+  unsolicited reports are admitted by sensor role (collector) and the
+  tenant's result policy (`warn` / `quarantine`). There is no per-sensor
+  switch.
+- No platform-held credential is delivered to sensors, but `scanner_config` is
+  forwarded verbatim and can carry a token a person typed (RFC-032 G7).
+- Remote actions: `pause`, `rotate_key`, `cancel`, `send_manifest` are emitted;
+  `drain` and `update` are reserved.
+- Tenant users have no step-up primitive (the console has one for platform
+  administrators).
+
+## 4. Pairing protocol (SP1)
+
+### 4.1 Endpoints
+
+Sensor plane, unauthenticated by bearer key but every request **signed with
+the key being paired** (§4.3). They live under `/api/v2/sensor/pairing` (the
+sensor plane of RFC-041; the edge already routes `/api/v2/sensor/*` to the
+API), outside the authenticated group:
+
+| Method and path | Purpose |
+|---|---|
+| `POST /api/v2/sensor/pairing` | Start: public key, commitment to the sensor nonce, host facts, optional reverse-mode code, optional `sensor_id` (re-pair). Answers `201` with the pairing id, the user code (default mode), the platform key and nonce, the platform signature and the expiry. |
+| `POST /api/v2/sensor/pairing/{id}/reveal` | The sensor nonce; the platform checks it against the commitment and computes the SAS. |
+| `GET /api/v2/sensor/pairing/{id}` | Poll: `pending`, `approved` (with the identity), `denied`, `expired`, `completed`. |
+| `POST /api/v2/sensor/pairing/{id}/confirm` | The sensor's signed statement accepting the identity; the key becomes active. |
+
+User plane (tenant from the session, as every user route):
+
+| Method and path | Permission | Purpose |
+|---|---|---|
+| `POST /api/v1/sensor-pairings/lookup` | `sensors:pair` | Find an open pairing by code: SAS, key fingerprint, host facts, source address, expiry. Uniform `404` for unknown, expired, used or foreign codes. |
+| `POST /api/v1/sensor-pairings/expectations` | `sensors:pair` | Reverse mode ("Create a pairing code first" in the console): returns a code for `openctemio-sensor pair <CODE>`. |
+| `GET /api/v1/sensor-pairings/expectations/{id}` | `sensors:pair` | Poll an expectation: once the sensor connected, the SAS and host facts to compare. |
+| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up | Bind the key to a new sensor (or to the registration being re-paired) with the chosen name, type, zones, grant profile. Requires `fingerprint`, the one of the review's `fingerprint_choices` the host shows (§4.9). |
+| `POST /api/v1/sensor-pairings/{id}/deny` | `sensors:pair` | Refuse a pairing (audited). |
+| `GET/PUT /api/v1/sensors/identity-policy` | read: `sensors:read`; write: `sensors:grant:narrow` to require key-bound identity, `sensors:grant:widen` and step-up to allow bearer keys again | D-4 switch. |
+
+### 4.2 Exchange and the SAS
+
+1. The sensor creates (or reuses, after a restart) its key `S` and a 32-byte
+   nonce `nS`, and sends `S`, `C = SHA-256("openctem/sensor-pairing/commit/v1" ‖ 0 ‖ nS)`
+   and its host facts.
+2. The platform stores the request **without a tenant**, draws a 32-byte
+   nonce `nP` and an 8-character code (Crockford base32, 40 bits; stored as a
+   keyed HMAC, never in clear), and signs the transcript
+   `"openctem/sensor-pairing/platform/v1" ‖ 0 ‖ id ‖ 0 ‖ S ‖ C ‖ P ‖ nP ‖ expiry`
+   with the platform pairing key `P` (Ed25519, derived from the installation's
+   encryption key with HKDF, info `openctem/sensor-pairing/platform-key/v1`).
+3. The sensor verifies the signature (and `P` against a pinned fingerprint
+   when the install snippet carries one), then reveals `nS`.
+4. Both sides compute
+   `d = SHA-256("openctem/sensor-pairing/sas/v1" ‖ 0 ‖ S ‖ P ‖ nS ‖ nP)`;
+   the SAS is the number `(d[0]·256 + d[1]) mod 1000` (three digits) and the
+   words `W[d[2]]`, `W[d[3]]`, `W[d[4]]` from a fixed list of 256 words
+   (about 34 bits). The word list is part of the protocol; its SHA-256 is
+   pinned in the test vectors.
+
+**Why the commitment.** Without it, a man in the middle who sees `nS` could
+try `nP` values offline until the SAS it shows the sensor equals the one the
+platform shows the administrator (2^34 hashes: seconds). The sensor commits
+to `nS` before it sees `nP`, and `nP` is fixed before `nS` is revealed, so an
+attacker gets one guess (2^-34).
+
+Test vectors (keys, nonces, commitment, SAS, platform signature, confirm
+signature, code encoding and normalisation, and the RFC 9421 signature base
+and header values) are one file, byte-identical in
+`server/pkg/sensorproto/pairing/testdata/vectors.json` and
+`sdk-go/pkg/sensorproto/pairing/testdata/vectors.json`; both test suites
+check their implementation against it.
+
+### 4.3 Request signatures (the RFC 9421 profile)
+
+Shared by pairing and by every request of a key-bound sensor:
+
+```
+Content-Digest: sha-256=:<base64>:                        (when there is a body)
+Signature-Input: sig1=("@method" "@path" "@query" "content-digest");created=…;expires=…;
+                 nonce="…";keyid="<RFC 7638 thumbprint>";alg="ed25519";tag="openctem-sensor/v1"
+Signature: sig1=:<base64 Ed25519 signature>:
+```
+
+- The verifier accepts exactly this shape (one signature, these components
+  in this order, these parameters in this order, re-serialised and compared
+  byte for byte) and refuses everything else.
+- `expires − created ≤ 5 min`; clocks may differ by 2 minutes.
+- A request whose signature verifies with the key it names but whose time
+  lies outside that tolerance answers `401` with the `clock-skew` problem
+  (`https://openctem.io/problems/sensor/clock-skew`), carrying `server_time`
+  and `clock_offset_seconds` (created minus the server's time), and the API
+  logs it at WARN with the offset. The window is checked only after the
+  signature verified, so an unknown key or a bad signature keeps the
+  generic `401`; the server's time is no secret (every response carries a
+  `Date` header). The sensor SDK prints the offset and tells the operator
+  to fix NTP on the host or the server.
+- The nonce is single-use per key within the window (Redis `SET NX`, a
+  per-replica cache when Redis is unavailable).
+- The body is checked against `Content-Digest` after the signature verifies
+  (so an unauthenticated client cannot make the API buffer a body).
+- `@authority` is not covered: gateways rewrite the host and the platform
+  URL is configuration on both sides. `@path` is covered as dialed, so a
+  gateway must not rewrite paths (the gateway smoke test checks it).
+- A sensor with an active signing key has no bearer key; a bearer request for
+  it can never match. A signed request for a key that is pending, revoked or
+  whose sensor is revoked is refused with the same `401`.
+
+### 4.4 Caps and uniform answers
+
+| Limit | Value |
+|---|---|
+| Start requests per source address, before any check | 60 per hour (burst 10) |
+| Verified starts without a code or token, per source address | 10 per hour (burst 3) |
+| Verified starts with a reverse-mode code or an enrollment token | 5 per hour (burst 3) per code or token, and 30 per hour (burst 10) per source address |
+| Start requests, whole platform | 600 per hour |
+| Open (unclaimed) requests, whole platform | 1000; a start beyond it answers `503` with `Retry-After` |
+| Reveal / poll / confirm per pairing | 1 per second (burst 5) |
+| Lookups per administrator | 10 per minute; 20 failed lookups per hour lock lookups for that user for an hour |
+| Expiry | 10 minutes from start; an approved pairing must be confirmed within 10 minutes of approval |
+| Code | single use; a used, denied or expired code is never valid again |
+
+A start spends the per-address entry budget first. Only a start whose
+signature verified with the key in its body reaches the budget of verified
+starts, so starts refused for a bad signature, a clock skew or a malformed
+body (a sensor restarting on an error, probes from the same network) do not
+lock out a correct requester behind the same address for an hour. A start
+carrying a code or a token is budgeted by that credential (kept as its
+SHA-256 in memory) under a wider per-address cap, so a site behind one
+address can pair several sensors with their own codes. Which budget applies
+depends only on what the request carries, never on whether the code is
+open, so the budget answer reveals nothing about a guessed code. A refused
+start answers `429` with a `Retry-After` of the time until the budget
+holds a token again (with jitter, at most 5 minutes).
+
+**A key starts again (restart before approval).** A sensor keeps the key it
+generated in its data volume, so it may start pairing again with the same
+key before anyone approved it: it was stopped while it waited, or the
+administrator made a new code. Such a start closes the key's open requests
+that nobody approved (status `expired`, whatever their deadline, audited as
+`sensor.pairing_superseded` in the organization of each one that had one) and
+opens the new one. Started again with the same reverse-mode code, the key's
+own request is re-armed in place (same id, new nonces, the fingerprint is
+shown again after the reveal). A key that was ever registered to a sensor
+(an approval inserted it into `sensor_keys`; a thumbprint is never reused,
+whatever became of the key) is refused `409 pairing-key-registered`, for any
+code and any organization; a start that loses a race for the key to another
+open request answers `409 pairing-key-busy` with a `Retry-After`. Both are
+told only to the holder of the key, since the start is signed by it, and
+neither depends on the code, so they reveal nothing about a guessed code. A
+code another key already holds is never taken over: the start gets the
+uniform answer of a code that matches nothing (threat 5).
+
+Uniformity:
+
+- A start with a reverse-mode code that is unknown, expired or used answers
+  exactly like a valid one (`201`, same shape, no user code); the pairing then
+  simply never gets approved and expires. The sensor's operator sees it wait;
+  the administrator who created the expectation sees no sensor arrive.
+- Lookup answers one `404 pairing_not_found` for unknown, expired, used,
+  denied, already-claimed and other-tenant re-pair codes.
+- Poll for an unknown pairing id, or with a key other than the pairing's,
+  answers `404`.
+- The pending request belongs to no tenant until an administrator claims it,
+  so nothing about any organization can be learned through it.
+
+### 4.5 Approval
+
+`POST /api/v1/sensor-pairings/{id}/approve`:
+
+```json
+{
+  "fingerprint": "821 · melon · basil · bagel", // picked from fingerprint_choices
+  "organization_id": "…",                   // the organization the review showed
+  "step_up": { "totp": "123456" },          // or { "password": "…" }
+  "name": "dmz-scanner-01",
+  "type": "worker",
+  "zone_ids": ["…"],
+  "grant_profile": "internal-network-scanner"
+}
+```
+
+- `sensors:approve`; the pairing must be revealed (SAS known), open and not
+  expired. The first claim wins (compare-and-set on the row).
+- The review (lookup, expectation) states the organization the approval binds
+  the sensor to (`organization_id`, `organization_name`: the session's), the
+  request's address with its class (`source_network`: `private` or `public`;
+  `source_provider` when the address classifier knows the edge or hosting
+  provider), the approver's own address (`approver_ip`), the product and SDK
+  version the sensor reported, when the request was made, and
+  `fingerprint_choices` (§4.9). The console warns on the path where the
+  sensor showed the code: approve only a sensor you or your team started,
+  never a link or a code someone sent you.
+- `organization_id` must equal the session's organization, else
+  `409 ORGANIZATION_MISMATCH`, checked before step-up so no second factor is
+  spent, and audited (`sensor.pairing_approved`, failure, medium). It only
+  confirms what the reviewer saw: the tenant always comes from the session.
+  The console also refuses to approve when the organization it shows differs
+  from the review's.
+- Step-up (D-2): the platform has TOTP for tenant users (RFC-024). An
+  administrator with TOTP must give a current code; one without TOTP but with
+  a password gives the password; an SSO-only account without TOTP must have
+  signed in within the last 10 minutes. Failures count towards the account's
+  lockout like a sign-in.
+- In one transaction: create the sensor in the administrator's tenant (or
+  load the registration being re-paired, which must be in the same tenant,
+  else `404`), insert the key as `pending`, create the grant from the profile
+  at trust level **New**, assign the zones (tenant-checked), mark the pairing
+  `approved`.
+- Audit `sensor.pairing_approved` (high), with the fingerprint, SAS, host
+  facts, source address and the profile; timeline event; in-app notification
+  to every administrator of the organization ("Sensor X was paired by Y from
+  address Z; fingerprint F").
+
+`confirm` activates the key (`sensor.pairing_completed`). An approval not
+confirmed within 10 minutes expires and its key is revoked.
+
+`POST /api/v1/sensor-pairings/{id}/reject` (`sensors:pair`) refuses an
+expectation of the organization, or a request no organization claimed yet
+with its code in the body (`{"code": "K7QM-4ZTD"}`): like an approval, the id
+alone is never enough.
+
+The failed lookup that locks a user's lookups (20 within an hour) is audited
+`sensor.pairing_lookup_locked` (high).
+
+### 4.6 Re-pair
+
+Re-pair gives an existing registration a new key. The console decides it:
+
+- **Console re-pair (the default).** An administrator opens the sensor and
+  chooses **Re-pair…**, gives a reason (`lost_identity`, `host_moved`,
+  `key_compromised`, `install_method`; stored as `sensor_pairings.repair_reason`,
+  audited and on the timeline) and gets a reverse-mode code bound to the sensor
+  (`POST /api/v1/sensor-pairings/expectations` with `repair_sensor_id` and
+  `repair_reason`; `sensors:pair`; the sensor must be the organization's own,
+  not shared, not revoked, else `404`). The code works for that sensor only; a
+  newer re-pair code of the same sensor closes the earlier ones. The request
+  names no name, zones or profile: a re-pair keeps the registration.
+- **The code decides the target.** A sensor that starts with a code never sets
+  the target: an ordinary code stays a new-sensor request whatever `sensor_id`
+  the sensor sends (logged), and a re-pair code keeps its target. A
+  default-mode request carrying `sensor_id` (`openctemio-sensor pair -repair`,
+  the sensor shows the code) is shown as **Re-pairing <name>**.
+- **The approval confirms the target.** `repair_sensor_id` in the approval must
+  name the sensor the request re-pairs, and be empty for a request that adds a
+  sensor; otherwise `409 REPAIR_NOT_ACKNOWLEDGED` and nothing is written. Same
+  permission (`sensors:approve`), step-up, fingerprint tick and organization
+  echo as every approval.
+- **Approval.** In the approval's transaction every active key of the sensor is
+  revoked (`revoked_reason = repaired`), a bearer key on the row is cleared
+  (the sensor becomes key-bound), the trust level returns to New and the grant
+  is kept (its version moves on); the approval's name, type, zones and profile
+  are ignored. After it, the commands the sensor held under a lease are taken
+  back (routed scan work re-queued, the rest failed, the old holder fenced
+  off), the re-pair is on the sensor's timeline (`repair_started`,
+  `repaired`), audited (`sensor.repaired`, high) and every administrator is
+  notified. The history (keys, events, results) is kept.
+- **The old key until then.** It keeps working until the approval, so a
+  failed re-pair never takes a working sensor offline. For a key that may be
+  compromised the console offers to revoke it at once
+  (`POST /api/v1/sensors/{id}/keys/{key_id}/revoke`); revoking a sensor's last
+  active key also takes back its leased commands.
+- **Not a re-pair.** Moving a sensor to another organization (SA-5): add a new
+  sensor there and remove the old one.
+
+The review shows, next to the host facts of the request, what the platform
+last knew of the sensor (`repair_before`: hostname, address, system, version,
+status, last seen) and the reason.
+
+### 4.7 Sensor side
+
+- `openctemio-sensor pair [CODE]` pairs and exits; without a code it prints
+  the code and fingerprint for the administrator, with one it attaches to an
+  expectation (reverse mode) and prints the fingerprint to compare in the
+  console.
+- The daemon pairs on first start when it has neither an identity nor a
+  configured key, prints the same lines, waits for approval (a new request
+  every 10 minutes) and then runs.
+- `SENSOR_CA_FINGERPRINT` (from the install snippet) pins the platform's TLS
+  chain to a certificate with that SHA-256 fingerprint; `SENSOR_PLATFORM_KEY`
+  optionally pins the pairing key.
+- Identity lives in `<state dir>/identity/`: `signing.key` (PKCS #8 PEM,
+  0600) and `identity.json` (0600), directory 0700. Looser permissions, or
+  another owner, stop the sensor with the exact `chmod`/`chown` to run.
+
+### 4.8 Self-binding (bearer-key sensors)
+
+Owner decision 2026-10-11: a sensor that authenticates with an API key moves
+to a key-bound identity by itself, so the whole fleet reaches signed requests
+(and protocol v3, RFC-059) without a re-install.
+
+- `POST /api/v2/sensor/identity/bind`, authenticated by the sensor's API key
+  (the v2 sensor plane), body `{public_key, issued_at, proof}`: the sensor's
+  new Ed25519 public key and a signature by that key of
+  `openctem-sensor-key-bind/v1\n<thumbprint>\n<issued_at>` (proof of
+  possession; `issued_at` within 5 minutes). Hello lists the feature
+  `key_bind`.
+- One transaction: the sensor row becomes `key_bound` (compare-and-set on
+  `auth_kind`, so of two concurrent binds exactly one wins), the key is
+  inserted `active`, every API key of the sensor is retired
+  (`bound_to_signing_key`). One way: no API key is ever minted for the sensor
+  again (RFC-032 D3). The answer names the sensor, tenant and key id the
+  sensor signs as from now on.
+- Unchanged: the sensor id, tenant, grant, trust level, zones and history.
+  The bind changes only how the sensor authenticates.
+- Refused (`key-bind-refused`, `409`): a key-bound, disabled, revoked or
+  platform sensor; a key already registered anywhere; a proof that does not
+  verify or is stale. Refused (`key-bind-approval-required`, `403`): the
+  organization's policy `key_bind_requires_approval` is on; such sensors keep
+  their API key until an administrator re-pairs them (§4.6).
+- Audited at high severity (`sensor.key_bound`, `sensor.key_bind_refused`,
+  with the key fingerprint and source address) and on the sensor's timeline
+  (`key_bound`). The route takes the per-sensor key renewal budget (a burst of
+  5, then one every 2 minutes).
+- Policy: `GET/PUT /api/v1/sensors/identity-policy` field
+  `key_bind_requires_approval` (default `false`). Requiring approval narrows
+  (`sensors:grant:narrow`); allowing self-binding again widens
+  (`sensors:grant:widen` and step-up). A field left out of the `PUT` body is
+  unchanged.
+- Sensor side (sdk-go): a bearer-key daemon whose platform lists `key_bind`
+  makes its key in `<state dir>/identity/` (0600 in 0700), writes it before
+  the call, binds, and from then on signs; an identity in the state directory
+  wins over a configured `API_KEY`. If the answer is lost, the next start
+  binds the same key again or, its API key already retired, sends the same
+  request signed by that key: the platform answers `200` with the identity
+  and changes nothing (a key-bound sensor can only confirm its own active
+  key, never bind another).
+
+Threat model of the bind (rows 18 to 21 in §6): no privilege is gained
+(same sensor, tenant and grant); a replayed request is useless once the API
+key is retired; a stolen API key could bind an attacker's key, which the
+legitimate sensor notices at once (its API key stops working and it fails
+loudly), and the administrator sees the bind in the audit log and on the
+timeline, revokes the key and re-pairs; an organization that wants every key
+approved turns self-binding off.
+
+### 4.9 One install path
+
+A person installs a sensor with one command and one approval (research
+356). The Add sensor panel offers one path, not a choice between "the
+console shows a code" and "the sensor shows a code":
+
+- **One code everywhere.** A start that carries a code uses it as the
+  request's own: it attaches to the organization's open expectation with
+  that code; otherwise rows of that code past their expiry are closed and
+  the request opens under the same code, bound to no organization; a code
+  another open request holds gives a new code. Every start without a token
+  answers `user_code`. The console's command, the sensor's output and the
+  link show the same code, and a command run after its code expired still
+  pairs (through the link) instead of silently changing code.
+- **The link.** `StartResponse` carries `verification_uri`
+  (`<APP_URL>/activate`) and `verification_uri_complete`
+  (`…/activate?code=K7QM-4ZTD`) when `APP_URL` is an absolute http(s)
+  origin. The code is an index, never a credential (§4.4): the link only
+  saves typing. The page reads the code once, removes it from the address
+  bar, looks it up (`POST /lookup`, the same budgets and lockout) and shows
+  the review; it never approves on load.
+- **The Add sensor panel finds the sensor by itself**: its command carries
+  an expectation's code (one per opened dialog), so the panel polls the
+  expectation. A sensor started any other way is approved from its link.
+- **The fingerprint pick.** The review carries `fingerprint_choices`: the
+  SAS and two decoys that differ from it in the number and every word,
+  derived from a key that derives from the platform pairing key and the
+  pairing id (stable across reloads, different per request) and ordered by
+  a keyed hash. The approval sends `fingerprint`; the server compares it with
+  the SAS in constant time after step-up and the request checks. A wrong pick
+  denies the request (audited `sensor.pairing_denied`, failure, high, reason
+  `fingerprint_mismatch`; every administrator notified): a coached approver
+  gets one try per request. A pick needs the host's screen, which is also
+  the proof typing the code gave before the code arrived in a link.
+- **No local policy at install.** The commands write no policy file and set
+  no `SENSOR_LOCAL_POLICY`; `/etc/openctem` stays mounted read-only for an
+  optional narrowing `sensor-policy.yaml` (read when present) and the kill
+  switch (`SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP`). The sensor follows
+  the organization's signed scope ([RFC-040](RFC-040-platform-sensor-mutual-distrust.md)).
+- **The command finishes the job.** The Docker and Linux commands end with a
+  watch of the sensor's output that stops by itself on `Paired:`.
+- Code-first stays for automation (`POST /expectations`,
+  `SENSOR_PAIRING_CODE`) and enrollment tokens for fleets.
+
+## 5. Grants (SP2)
+
+### 5.1 Model
+
+One row per sensor in `sensor_grants` (composite foreign key on
+`(tenant_id, sensor_id)`):
+
+| Dimension | Column | Meaning (NULL = no limit from the grant) |
+|---|---|---|
+| Profile | `profile` | The profile it was created from (label only; the columns are the grant) |
+| Trust | `sensors.trust_level` (on the sensor row) | `new` or `trusted` (SP3 adds `restricted`, `quarantined`) |
+| Job types | `job_types` | `scan`, `collect`, `validate`, `retest`, `connector_sync`, `connector_scan`, … |
+| Zones | `zone_ids` | A zoned command must be in one of these zones |
+| Tools | `tools` | The command's tool must be listed |
+| Capabilities | `capabilities` | The command's required capabilities must be listed |
+| Tier ceiling | `tier_ceiling` | `T0`, `T1` or `T2`; the command's tier (§5.3) must not exceed it |
+| Target network | `target_network` | `any`, `public` (no private, loopback or internal-suffix targets) or `none` (no network targets: code and connector jobs only) |
+| Target scope | `target_cidrs`, `target_domains` | Every target must lie in one CIDR or be one of the domains or below it |
+| Credentials | `allow_credentials` | May receive jobs that carry credentials |
+| Push ingest | `allow_push_ingest` | May send results without a job |
+| Remote actions | `remote_actions` | Which gated actions the platform may send (`update`, `rotate_key`, `diagnostics`); `pause`, `resume`, `drain`, `cancel` and `send_manifest` only narrow and are always allowed |
+| Version | `version` | Incremented on every change; the audit diff names old and new |
+
+**Effective grant** = the row, then the trust level: `new` caps the tier at
+T0 and turns credentials and push ingest off.
+
+### 5.2 Profiles
+
+| Profile | Job types | Tier | Targets | Credentials | Push ingest | Remote actions |
+|---|---|---|---|---|---|---|
+| `easm-external` | scan, validate, retest | T1 | public only | no | no | pause, drain |
+| `internal-network-scanner` (default) | scan, validate, retest | T1 | any, zones chosen at approval | no | no | pause, drain |
+| `authenticated-scanner` | scan, validate, retest | T1 | any, zones | yes (still off while New) | no | pause, drain |
+| `collector:<integration>` | collect, connector_sync | T0 | none | no | yes (still off while New) | pause, drain |
+| `ci-runner` | scan, validate, retest | T0 | none (code only) | no | yes (still off while New) | pause, drain |
+| `endpoint-agent` | scan, collect, validate, retest | T0 | none | no | yes (still off while New) | pause, drain |
+| `legacy-broad` | any | T2 | any | yes | yes | all |
+
+A profile that may scan may also validate and retest: a validate or retest
+command re-runs one check of a tool the sensor scans with, on a target the
+grant already covers, and is held to the same zones, target network, target
+scope and tier ceiling (a retest is rated at the tier of the detection it
+repeats, §5.3). Migration 001263 added `retest` (and `validate` where it was
+missing) to every grant still on one of these profiles and to the insert
+trigger's default; a grant an administrator edited (`custom`) keeps its job
+types.
+
+`legacy-broad` exists only for sensors that existed before this RFC (the
+migration gives it to all of them at trust level `trusted`, so nothing
+changes for them). It cannot be chosen for a new sensor. The console flags it
+("broad legacy grant: narrow it") on the list and the detail.
+
+### 5.3 Enforcement
+
+| Where | Check |
+|---|---|
+| Poll, claim-N, claim by id (v1 acknowledge, v2 claim) | The Go dispatch gate (`dispatchGate.refusal`, the one place poll, claim and acknowledge all pass) evaluates the effective grant against the command: job type, zone, tool, required capabilities, tier, target network, target scope, credentials. A refused command is not offered on poll, and a claim by id answers like a lost claim (`command-claimed`) so a deployed sensor drops the command instead of reading a 403 as a lost key; the refusal is audited (`sensor.claim_refused_grant`, or `sensor.credential_refused` for the credentials dimension) with the dimension and recorded on the sensor's timeline. The capability predicate is added to `ClaimForSensor` too (the gap in §3). |
+| Command tier | The stage catalog's tier for the command's tool (lowest stage it implements); custom templates or out-of-band callbacks raise it to T2; an unknown tool is T2 (fail closed); `collect` and `connector_sync` are T0. A `retest` takes the tier of the detection it repeats: the scan tier of the finding's tool under the contract the sensor reported for it, never lower and never higher, so the retest of a T1 finding is T1 and only a T2 detection (an intrusive or operator-installed tool, a declared side effect) retests at T2. Trust `new` still caps every command at T0. |
+| Credentials | A command whose `scanner_config`/`config` carries credential-looking values (the existing secret detector) needs `allow_credentials` and trust `trusted`; otherwise it is refused at claim (`sensor.credential_refused`, audited). Sealed credential delivery (RFC-032 Phase 3) will use the same gate. |
+| Results with a job | Unchanged: bound to a command the sensor holds (`ingest.OpenCommand`), same tool. |
+| Results without a job | A sensor whose effective grant has `allow_push_ingest = false` is refused (the segment's items are rejected with item error `push_ingest_not_granted`, not a 403, which sensors read as a lost key) before the role and tenant policy are consulted, audited (`sensor.push_refused_grant`); with it, today's path applies (role, tenant `warn`/`quarantine`, limited powers). |
+| Remote actions | The heartbeat doorbell rings a gated action only when the grant lists it. |
+| Grant changes | `sensors:grant:narrow` when every dimension is equal or narrower; `sensors:grant:widen` otherwise. A widening is audited at high severity and notifies every administrator; the SP4 hook asks a second approver. Narrowing takes effect on the next request. |
+| Trust | Promote (`new` → `trusted`) needs `sensors:grant:widen`; demote needs `sensors:grant:narrow`. |
+
+### 5.4 Permissions
+
+| Permission | Owner | Admin | Member | Viewer | Admin-only (custom roles) |
+|---|---|---|---|---|---|
+| `sensors:pair` | ✓ | ✓ | | | ✓ |
+| `sensors:approve` | ✓ | ✓ | | | ✓ |
+| `sensors:grant:narrow` | ✓ | ✓ | | | ✓ |
+| `sensors:grant:widen` | ✓ | ✓ | | | ✓ |
+| `sensors:revoke` | ✓ | ✓ | | | ✓ |
+
+`POST /api/v1/sensors/{id}/revoke` accepts `sensors:write` or
+`sensors:revoke` (revoking only narrows). Business-unit scoped sensor
+administration is SP4.
+
+## 6. Threat model
+
+Each line is a test in the implementation PRs.
+
+| # | Threat | Control | Test |
+|---|---|---|---|
+| 1 | Install snippet leaks | It holds only the URL and fingerprints; a code is useless without the key | start without a key cannot approve/confirm |
+| 2 | Attacker runs a sensor and talks an admin into approving it | Fingerprint + host facts + source address on the approval screen, the fingerprint picked out of three (§4.9), step-up, trust New (T0, no credentials, no push), all admins notified | approve without a pick `400`, with a decoy `409` and the request closed; New sensor refused a T1 claim and a credential job |
+| 3 | MITM or fake platform at first contact | CA pin from the snippet; the SAS covers both keys and nonces; commitment | vectors: changing any input changes the SAS; tampered platform signature refused by the SDK; pinned-CA mismatch refused |
+| 4 | Code brute force, spam | 40-bit codes, 10 min, single use, per-address + global caps, open-request cap, per-admin lookup limit and lockout | rate-limit tests; used code `404` |
+| 5 | Tenant enumeration | Pending requests have no tenant; uniform `201`/`404` | invalid reverse code gets the same shape; foreign re-pair `404` |
+| 6 | Cloned key | Clone detection (RFC-032 E13) keeps working on instance ids; SP3 quarantines | existing tests |
+| 7 | Stolen key | Revocation is read on every request; re-pair revokes | revoked key `401` |
+| 8 | Replay | Nonce single use, 5-minute window, digest over the body | same nonce twice `401`; changed body `401` |
+| 9 | Stolen code without the key | Poll and confirm need a signature by the pairing's key; the identity is bound to that key | poll with another key `404` |
+| 10 | Admin who paired leaves | The sensor belongs to the organization; the audit keeps who did what | — |
+| 11 | Compromised sensor claims other zones' or tools' jobs | Grant check on poll and every claim path; capability predicate on claim by id | out-of-grant claim `403` and audited, per dimension |
+| 12 | Results for other jobs (BOLA) | `OpenCommand` (existing) | other sensor's command `command-not-found` |
+| 13 | Push poisoning | Push ingest off unless granted and trusted | unsolicited report from a profile without push `403` |
+| 14 | Credential exfiltration | Credential jobs only to trusted sensors with `allow_credentials` | credential job refused to New and to a grant without it |
+| 15 | Scans outside scope | Target network and target scope in the grant, on top of the ownership gate and the local ceiling | private target refused to `easm-external`; target outside CIDRs refused |
+| 16 | Insider widens a sensor | `sensors:grant:widen`, audit, notification, SP4 second approver | narrow-only actor refused a widening |
+| 17 | Compromised platform orders an attack | RFC-040 separate signer and local ceiling (unchanged); the grant is defence in depth on the platform side | — |
+| 18 | Bind gains privileges | The bind keeps the sensor row, tenant, grant, trust and zones; the tenant comes from the API key only | bound sensor keeps its tenant; the same key presented by another tenant's sensor `409` |
+| 19 | Two binds race, or a bind is replayed | Compare-and-set on `auth_kind`; thumbprints unique; the API key is retired in the same transaction | concurrent binds: exactly one `201`, one active key; the old API key `401` after the bind |
+| 20 | Stolen API key binds an attacker's key | Audit `sensor.key_bound` (high) and timeline with fingerprint and address; the legitimate sensor's API key stops working (loud failure); policy `key_bind_requires_approval` for organizations that want approval | bind audited; approval policy refuses `403` and the API key keeps working |
+| 21 | Bind without the private key, or a stale proof | Ed25519 proof over context, thumbprint and a timestamp within 5 minutes | forged, stale, future and malformed proofs `409`, nothing changed |
+| 22 | An approver of several organizations switches organization after the review, or is talked into approving in the wrong one | The review names the organization; the approval must echo its id (`409 ORGANIZATION_MISMATCH` before step-up, audited); the console blocks on a mismatch | approval naming another organization, none or a malformed id refused before step-up, nothing written; refusals audited |
+| 23 | A code sent by someone else (device-code phishing) | Warning on the code path, the request's address and class next to the approver's own, product, SDK version and age shown, plus threat 2's controls | view carries `organization_id`, `approver_ip`, `source_network` (public and private cases) |
+| 24 | A user of another organization rejects a request by its id | Reject of an unclaimed request needs its code | reject with no, a wrong or a malformed code `404` and the request stays open; with the code: rejected; another organization cannot reject an expectation even with its code |
+| 25 | Code guessing goes unnoticed | The lookup lock is audited at high severity, once per lock | audited exactly once after the limit |
+| 26 | A sensor restarted before approval cannot pair again with the key it kept (the old request holds the key) | A start by the same key closes the key's unapproved requests (audited) and opens a new one; only the key's holder can do it (the start is signed by the key) | same key, new code: new request, old one `expired` and not approvable; same key, same code: re-armed; codeless restart: new code, old code `404`; `201` over HTTP, never `500` |
+| 27 | An approved key is reused to pair into another sensor or organization | A key ever registered in `sensor_keys` is refused `409 pairing-key-registered`, before any code is looked at; no request is changed | approved and completed keys refused with a code of their own and another organization's; that organization's code stays open |
+| 28 | A start with a code another sensor holds displaces that sensor (code hijack) | A code matches only an `expecting` row or the same key's own request; another key gets a request of its own under a new code (§4.9) | second key with a held code gets a new code; the first sensor's request is unchanged and approvable |
+| 29 | Holding keys to block pairings (denial of service) | Only the key's own requests are closed by its start; requests are bounded by the open-request cap and the start budgets; a key never blocks a code it does not hold | — |
+| 30 | Device-code phishing through the printed link (an attacker starts a sensor and sends an administrator its link) | The link opens the full review (organization, host, the request's address next to the approver's, age, warning) and never approves on load; the administrator must pick the host's fingerprint out of three, and a wrong pick closes the request, is audited high and notifies every administrator; step-up; trust New | wrong pick: `409 FINGERPRINT_MISMATCH`, request `denied`, audit high; right pick approves |
+| 31 | Blind approval (a tick clicked without looking at the host) | The approval carries the picked fingerprint; the server compares it with the SAS in constant time | no pick `400` before step-up; a wrong pick with a failed step-up closes nothing |
+| 32 | A start with a code as an oracle for open codes | Every start without a token answers `user_code`; a code is the request's own whether or not it was expected, so expected and unexpected codes answer alike; budgets unchanged | unexpected code: `user_code` equal to it, a tenantless request reachable only by that code |
+| 33 | The attached request of one organization reached by another through the link | Lookup of an attached request is scoped to the session's organization; tenantless requests only by code | another organization's lookup and approval of an attached code `404` |
+| 34 | A sensor (or whoever holds an ordinary code) turns an "add a sensor" code into a re-pair of an existing sensor and gets its working key revoked | The code's target is set by the console only; the approval must name the re-paired sensor | ordinary code + `sensor_id` stays a new-sensor request; approval without or with another `repair_sensor_id` `409`; re-pair code never creates a sensor |
+| 35 | Work claimed with a key a re-pair or revocation withdrew keeps running or reports later | Leased commands taken back at approval and when the last key is revoked; the lease fence refuses the old holder | release called once per re-pair and per last-key revocation |
+| — | Cross-tenant access | Every query tenant-scoped; approval binds to the approver's tenant; grants and pairings of another tenant answer `404` | cross-tenant grant read/update `404`; re-pair of another tenant's sensor `404` |
+
+## 7. Data and migrations
+
+- `sensor_keys (id, tenant_id, sensor_id, thumbprint UNIQUE, public_key, alg,
+  status pending|active|revoked, created_at, activated_at, revoked_at,
+  revoked_reason, last_used_at, last_used_ip)`, composite FK
+  `(tenant_id, sensor_id)`.
+- `sensor_pairings (id, mode forward|reverse, tenant_id NULL until claimed,
+  code_hash, public_key, thumbprint, commitment, sensor_nonce,
+  platform_nonce, sas, host_facts, source_ip, sensor_id (re-pair target or
+  created sensor), status, expires_at, approved_by, approved_at, …)`,
+  indexed for the caps; rows older than 30 days are purged by the
+  housekeeping job (audit keeps the record).
+- `sensor_grants` (§5.1) and `sensors.trust_level`; the migration inserts a
+  `legacy-broad` grant for every existing sensor in one statement and leaves
+  existing sensors `trusted`; new sensors start `new`.
+- `tenants.sensor_bearer_keys_allowed boolean NOT NULL DEFAULT true`, then
+  default changed to `false`: existing organizations keep bearer keys, new
+  ones require key-bound identity (D-4).
+- Permissions: the five new ids in `permissions`, granted to owner and admin,
+  added to the admin-only list (Go, the custom-role trigger, web constants).
+
+## 8. Plan
+
+| Phase | Deliverable | Repos |
+|---|---|---|
+| SP1a | This RFC, architecture doc, matrix, how-to | api |
+| SP1b | Key-bound identity: `sensor_keys`, the RFC 9421 verifier on v1 and v2, nonce store | api |
+| SP1c | Pairing endpoints, SAS, approval with step-up, re-pair, permissions, identity policy (D-4), audit, notifications | api |
+| SP1d | Signer, pairing client, identity store with permission checks, CA pin, auto-pair | sdk-go |
+| SP1e | `openctemio-sensor pair`, auto-pair on first start, snippet variables | sensor |
+| SP2a | Grants, profiles, trust New/Trusted, enforcement on poll/claim/results/credentials/remote actions, legacy-broad migration | api |
+| SP1f/SP2b | Console: Add sensor (enter a code / create a pairing code first), fingerprint compare, step-up, grant view and narrow, legacy flags, identity policy | web |
+| SP3 | Restricted / Quarantined, automatic signals, kill switches | api, sdk-go |
+| SP4 | Two-person widening, time-boxed grants, BU-scoped sensor admin, purge-by-sensor, asset-group target scopes | api |
+| SP5 | Workload attestation enrollment unified with CI trust rules; sensor pools | all |
+| SP6 | Transport v3 certificates bound to the pairing key; keystore/TPM; key self-rotation | all |
+
+## 9. Alternatives considered
+
+| Alternative | Why not |
+|---|---|
+| Pairing that hands the sensor an `octs_` bearer key | A bearer secret would again exist on the wire and in logs (RFC-032 D3: no enrollment that issues bearer keys). |
+| A code without a SAS | A phished approval of an attacker's sensor would be indistinguishable from the real one. |
+| SAS without a commitment | Offline nonce grinding defeats a 34-bit SAS in seconds (§4.2). |
+| A longer SAS (six words) | The commitment already limits an attacker to one guess; three words and three digits are what people actually compare. |
+| Grants as JSON on the sensor row | Typed columns let the claim SQL and audits name the dimension and keep the diff exact. |
+| Enforcing only in the sensor | The sensor is the party we must not trust; the platform enforces, the sensor's local ceiling adds the other half (RFC-040). |

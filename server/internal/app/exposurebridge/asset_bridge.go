@@ -1,0 +1,474 @@
+package exposurebridge
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// SourceReconScan is the provenance label carried on both the exposure event
+// source column and the discovery_source detail for exposures projected from
+// recon-discovered assets (open ports, exposed services, TLS certificates). It
+// marks the event as an INTERNAL attack-surface discovery, distinct from a
+// manual bulk-ingest of exposures or an external breach import.
+const SourceReconScan = "recon_scan"
+
+// certificateExpiryWindow is how far in the future a certificate's not_after may
+// be before it is treated as "expiring" (an actionable exposure) rather than
+// simply present.
+const certificateExpiryWindow = 30 * 24 * time.Hour
+
+// minRSAKeyBits is the floor below which an RSA public key is treated as weak.
+const minRSAKeyBits = 2048
+
+// AssetBridge projects recon-discovered ASSETS (open ports, exposed services,
+// TLS certificates) into the Exposure Register as first-class exposure events,
+// realizing the CTEM Discovery "exposure ≠ vulnerability" principle for the
+// attack-surface facts that today land only as assets. It mirrors the
+// finding-side Bridge: typed projections over existing signals, reusing the
+// exposure domain + repository and the shared dedupe/reactivate helper — NOT a
+// separate event table.
+//
+// The event types it emits (port_open, service_detected, certificate_expiring,
+// certificate_expired, ssl_issue) were defined in the exposure vocabulary but
+// had no producer until now. It is best-effort: a failure here must never fail
+// asset ingest.
+type AssetBridge struct {
+	exposureRepo exposure.Repository
+	historyRepo  exposure.StateHistoryRepository
+	logger       *logger.Logger
+	// resolver resolves host certificate exposures a later scan no longer
+	// sees (host_certificate.go); nil resolves none.
+	resolver ExposureAutoResolver
+}
+
+// NewAssetBridge creates an AssetBridge. historyRepo may be nil (state-change
+// history is then simply not recorded).
+func NewAssetBridge(
+	exposureRepo exposure.Repository,
+	historyRepo exposure.StateHistoryRepository,
+	log *logger.Logger,
+) *AssetBridge {
+	return &AssetBridge{
+		exposureRepo: exposureRepo,
+		historyRepo:  historyRepo,
+		logger:       log.With("service", "exposure_asset_bridge"),
+	}
+}
+
+// ProjectAssets bridges every open-port / service / certificate asset in the
+// batch into the exposure store. Assets of other types are ignored. Per-asset
+// failures are logged and skipped; the method never returns an error so it
+// cannot abort ingest. Tenant is taken from each asset (asset.TenantID()),
+// never from a caller-supplied report.
+func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, assets []*asset.Asset) error {
+	if b == nil || b.exposureRepo == nil {
+		return nil
+	}
+
+	var projected, failed int
+	// Certificates are judged per host that served them (host_certificate.go).
+	pairs, served := pairHostCertificates(tenantID, assets)
+	now := time.Now().UTC()
+	var clearFPs, supersededFPs, staleRiskyFPs []string
+	hostEvents := map[shared.ID][]*exposure.ExposureEvent{}
+	for _, p := range pairs {
+		evs, clear := b.hostCertificateEvents(p, now)
+		hostEvents[p.svc.ID()] = append(hostEvents[p.svc.ID()], evs...)
+		clearFPs = append(clearFPs, clear...)
+	}
+	for _, a := range assets {
+		if a == nil {
+			continue
+		}
+		// Tenant integrity: use the asset's own tenant and skip anything that
+		// does not match the ingest tenant (defense-in-depth against a
+		// cross-tenant asset slipping into the batch).
+		if a.TenantID().IsZero() || a.TenantID() != tenantID {
+			continue
+		}
+
+		events := b.buildEventsForAsset(a)
+		if a.Type() == asset.AssetTypeCertificate && served[certificateFingerprintOf(a)] {
+			// A host of this batch served the certificate: its expiry is an
+			// exposure of that host, not of the certificate.
+			events = withoutExpiry(events)
+			supersededFPs = append(supersededFPs, b.legacyCertificateExpiryFingerprints(a)...)
+		}
+		events = append(events, hostEvents[a.ID()]...)
+		if a.Type() == asset.AssetTypeService && a.SubType() == subTypeOpenPort {
+			var risky *exposure.ExposureEvent
+			for _, ev := range events {
+				if ev != nil && ev.EventType() == exposure.EventTypeRiskyServiceExposed {
+					risky = ev
+				}
+			}
+			staleRiskyFPs = append(staleRiskyFPs, staleRiskyFingerprints(a, risky)...)
+		}
+		for _, ev := range events {
+			if err := upsertExposureEvent(ctx, b.exposureRepo, b.historyRepo, b.logger, ev,
+				fmt.Sprintf("asset: %s", a.ID().String())); err != nil {
+				failed++
+				b.logger.Warn("failed to project asset into exposure store",
+					"tenant_id", tenantID.String(),
+					"asset_id", a.ID().String(),
+					"event_type", ev.EventType().String(),
+					"error", err,
+				)
+				continue
+			}
+			projected++
+		}
+	}
+
+	b.resolveAuto(ctx, tenantID, clearFPs, AutoResolveCertNote)
+	b.resolveAuto(ctx, tenantID, supersededFPs, AutoResolveSupersededNote)
+	b.resolveAuto(ctx, tenantID, staleRiskyFPs, AutoResolveServiceKindNote)
+
+	if projected > 0 || failed > 0 {
+		b.logger.Info("projected recon assets into exposure store",
+			"tenant_id", tenantID.String(),
+			"projected", projected,
+			"failed", failed,
+		)
+	}
+	return nil
+}
+
+// withoutExpiry drops the expiry events of a certificate's projection.
+func withoutExpiry(events []*exposure.ExposureEvent) []*exposure.ExposureEvent {
+	out := events[:0]
+	for _, ev := range events {
+		if ev == nil {
+			continue
+		}
+		if t := ev.EventType(); t == exposure.EventTypeCertificateExpired || t == exposure.EventTypeCertificateExpiring {
+			continue
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+// resolveAuto resolves the tenant's open recon exposures with the given
+// fingerprints (best effort: a failure is logged, never fails ingest).
+func (b *AssetBridge) resolveAuto(ctx context.Context, tenantID shared.ID, fps []string, note string) {
+	if b.resolver == nil || len(fps) == 0 {
+		return
+	}
+	n, err := b.resolver.ResolveAuto(ctx, tenantID, SourceReconScan, fps, note)
+	if err != nil {
+		b.logger.Warn("failed to resolve recon exposures", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	if n > 0 {
+		b.logger.Info("resolved recon exposures", "tenant_id", tenantID.String(), "resolved", n)
+	}
+}
+
+// buildEventsForAsset dispatches an asset to the right exposure projection(s).
+// A single asset can yield more than one event (e.g. a certificate that is both
+// self-signed AND expiring). Returns nil for asset types with no clean mapping.
+func (b *AssetBridge) buildEventsForAsset(a *asset.Asset) []*exposure.ExposureEvent {
+	switch a.Type() {
+	case asset.AssetTypeService:
+		// Recon collapses open_port / http_service into the service core type
+		// via TypeAliases, distinguished by sub_type.
+		if a.SubType() == "open_port" {
+			var out []*exposure.ExposureEvent
+			if ev := b.buildPortEvent(a); ev != nil {
+				out = append(out, ev)
+			}
+			if ev := b.buildRiskyServiceEvent(a); ev != nil {
+				out = append(out, ev)
+			}
+			return out
+		}
+		if ev := b.buildServiceEvent(a); ev != nil {
+			return []*exposure.ExposureEvent{ev}
+		}
+		return nil
+	case asset.AssetTypeCertificate:
+		return b.buildCertificateEvents(a)
+	default:
+		return nil
+	}
+}
+
+// buildPortEvent projects an open-port asset (sub_type "open_port", flat
+// port/protocol/service properties from Naabu) into a port_open exposure. The
+// whitelisted port/protocol/service details make the dedupe fingerprint stable
+// per (asset, port, protocol) across re-scans.
+func (b *AssetBridge) buildPortEvent(a *asset.Asset) *exposure.ExposureEvent {
+	props := a.Properties()
+	port := propInt(props, "port")
+	if port <= 0 {
+		return nil // no port → nothing meaningful to track
+	}
+	// The transport is the dedupe key. Older port-scan ingest filed it under
+	// protocol, which now holds the application protocol: reading that would
+	// re-key the exposure once a detection names the protocol.
+	protocol := portTransport(props)
+	service := propString(props, "service")
+
+	title := fmt.Sprintf("Open port %d/%s", port, protocol)
+	if service != "" {
+		title = fmt.Sprintf("%s (%s)", title, service)
+	}
+
+	details := map[string]any{
+		discoverySourceKey: SourceReconScan,
+		"port":             port,     // whitelisted → dedupe key
+		"protocol":         protocol, // whitelisted → dedupe key
+	}
+	if service != "" {
+		details["service"] = service // whitelisted → dedupe key
+	}
+	if v := propString(props, "version"); v != "" {
+		details["version"] = v
+	}
+	if h := propString(props, "host"); h != "" {
+		details["host"] = h
+	}
+	// The service kind: a measured one by name, a port guess only as a
+	// guess (not dedupe keys).
+	if kind, src := asset.ServiceKindOf(props); kind != "" {
+		details[detailServiceKind] = kind
+		details[detailKindSource] = string(src)
+		if def, ok := asset.LookupServiceKind(kind); ok {
+			if src.IsGuess() {
+				details[detailServiceGuess] = def.Label
+			} else {
+				details[detailServiceLabel] = def.Label
+			}
+		}
+	}
+
+	return b.newEvent(a, exposure.EventTypePortOpen, exposure.SeverityInfo, title, details,
+		"Open network port discovered by recon scan")
+}
+
+// buildServiceEvent projects a service / http_service asset into a
+// service_detected exposure. Service technical detail lives in a nested
+// "service" property map (buildServiceProperties); fall back to flat keys.
+func (b *AssetBridge) buildServiceEvent(a *asset.Asset) *exposure.ExposureEvent {
+	props := a.Properties()
+	svc := propMap(props, "service")
+	if svc == nil {
+		svc = props
+	}
+
+	port := propInt(svc, "port")
+	name := propString(svc, "name")
+	if name == "" {
+		name = propString(props, "service")
+	}
+	if name == "" && port <= 0 {
+		return nil // nothing identifying to track
+	}
+
+	protocol := propString(svc, "protocol")
+	title := "Exposed service"
+	switch {
+	case name != "" && port > 0:
+		title = fmt.Sprintf("Exposed service: %s (port %d)", name, port)
+	case name != "":
+		title = fmt.Sprintf("Exposed service: %s", name)
+	default:
+		title = fmt.Sprintf("Exposed service on port %d", port)
+	}
+
+	details := map[string]any{
+		discoverySourceKey: SourceReconScan,
+	}
+	if port > 0 {
+		details["port"] = port // whitelisted → dedupe key
+	}
+	if protocol != "" {
+		details["protocol"] = protocol // whitelisted → dedupe key
+	}
+	if name != "" {
+		details["service"] = name // whitelisted → dedupe key
+	}
+	if tv := propString(svc, "tls_version"); tv != "" {
+		details["tls_version"] = tv
+	}
+
+	return b.newEvent(a, exposure.EventTypeServiceDetected, exposure.SeverityInfo, title, details,
+		"Network service discovered by recon scan")
+}
+
+// buildCertificateEvents projects a certificate asset into expiry and/or
+// weak-TLS exposures. Certificate detail lives in a nested "certificate"
+// property map (buildCertificateProperties). Multiple issues on one cert yield
+// multiple events, each with a distinct title (and therefore fingerprint).
+func (b *AssetBridge) buildCertificateEvents(a *asset.Asset) []*exposure.ExposureEvent {
+	// A stored certificate asset carries its facts as flat properties; the
+	// nested map is the ingest mapper's shape (certificateProps).
+	cert := certificateProps(a)
+	if cert == nil {
+		return nil
+	}
+
+	subject := propString(cert, "subject_cn")
+	label := subject
+	if label == "" {
+		label = a.Name()
+	}
+
+	baseDetails := func() map[string]any {
+		d := map[string]any{discoverySourceKey: SourceReconScan}
+		if subject != "" {
+			d["subject_cn"] = subject
+		}
+		if na := propString(cert, "not_after"); na != "" {
+			d["not_after"] = na
+		}
+		return d
+	}
+
+	var events []*exposure.ExposureEvent
+	now := time.Now().UTC()
+
+	// Expiry: prefer the parsed not_after; fall back to the scanner's expired flag.
+	notAfter, hasNotAfter := parseTime(propString(cert, "not_after"))
+	switch {
+	case certFlag(cert, "expired") || (hasNotAfter && notAfter.Before(now)):
+		events = append(events, b.newEvent(a, exposure.EventTypeCertificateExpired, exposure.SeverityHigh,
+			fmt.Sprintf("Certificate expired: %s", label), baseDetails(),
+			"TLS certificate has expired (discovered by recon scan)"))
+	case hasNotAfter && notAfter.Before(now.Add(certificateExpiryWindow)):
+		events = append(events, b.newEvent(a, exposure.EventTypeCertificateExpiring, exposure.SeverityMedium,
+			fmt.Sprintf("Certificate expiring soon: %s", label), baseDetails(),
+			"TLS certificate expires within 30 days (discovered by recon scan)"))
+	}
+
+	// Weak-TLS posture: self-signed, weak RSA key, or a weak signature algorithm.
+	if reason := weakTLSReason(cert); reason != "" {
+		d := baseDetails()
+		d["issue"] = reason
+		events = append(events, b.newEvent(a, exposure.EventTypeSSLIssue, exposure.SeverityMedium,
+			fmt.Sprintf("Weak TLS certificate (%s): %s", reason, label), d,
+			"Weak TLS/SSL certificate posture (discovered by recon scan)"))
+	}
+
+	return events
+}
+
+// weakTLSReason returns a short reason string when the certificate has a weak
+// posture, or "" when it looks fine. Only signals we can read cleanly are used,
+// to avoid the CTEM-ID mislabel trap: a self-signed cert, a small RSA key, or a
+// deprecated signature algorithm.
+func weakTLSReason(cert map[string]any) string {
+	if certFlag(cert, "self_signed") {
+		return "self-signed"
+	}
+	// Only judge key size for RSA — EC keys are legitimately much smaller.
+	keyAlgo := strings.ToLower(propString(cert, "key_algorithm"))
+	if strings.Contains(keyAlgo, "rsa") {
+		if bits := propInt(cert, "key_size"); bits > 0 && bits < minRSAKeyBits {
+			return "weak RSA key"
+		}
+	}
+	sig := strings.ToLower(propString(cert, "signature_algorithm"))
+	if strings.Contains(sig, "sha1") || strings.Contains(sig, "md5") {
+		return "weak signature algorithm"
+	}
+	return ""
+}
+
+// newEvent constructs an exposure event linked to the source asset. SetAssetID
+// recomputes the fingerprint so it embeds the (authoritative, persisted) asset
+// id — call it before any consumer reads the fingerprint.
+func (b *AssetBridge) newEvent(
+	a *asset.Asset,
+	eventType exposure.EventType,
+	severity exposure.Severity,
+	title string,
+	details map[string]any,
+	description string,
+) *exposure.ExposureEvent {
+	ev, err := exposure.NewExposureEvent(a.TenantID(), eventType, severity, title, SourceReconScan, details)
+	if err != nil {
+		b.logger.Warn("failed to build asset exposure event",
+			"asset_id", a.ID().String(),
+			"event_type", eventType.String(),
+			"error", err,
+		)
+		return nil
+	}
+	aid := a.ID()
+	ev.SetAssetID(&aid)
+	if description != "" {
+		ev.UpdateDescription(description)
+	}
+	return ev
+}
+
+// --- JSONB-safe property readers ---
+// Properties round-trip through JSONB, so numbers come back as float64 and
+// nested maps as map[string]any. These helpers read defensively across the
+// shapes a value may take.
+
+func propString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	if v, ok := m[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+func propBool(m map[string]any, key string) bool {
+	if m == nil {
+		return false
+	}
+	b, _ := m[key].(bool)
+	return b
+}
+
+func propInt(m map[string]any, key string) int {
+	if m == nil {
+		return 0
+	}
+	switch v := m[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return 0
+	}
+}
+
+func propMap(m map[string]any, key string) map[string]any {
+	if m == nil {
+		return nil
+	}
+	if sub, ok := m[key].(map[string]any); ok {
+		return sub
+	}
+	return nil
+}
+
+func parseTime(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.UTC(), true
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.UTC(), true
+	}
+	return time.Time{}, false
+}

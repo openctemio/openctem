@@ -1,0 +1,212 @@
+// B4 wire: SLA breach events → notification outbox. Lives
+// alongside sla.Service/Applier so a single `sla` package owns both
+// deadline computation and breach fan-out. Previously a separate
+// `slabreach` subpackage to dodge an (outdated) import-cycle concern.
+//
+// The adapter uses the NotificationEnqueuer interface so it can be
+// unit-tested without the full outbox graph. *outbox.Service
+// satisfies the interface at runtime (structural typing).
+
+package sla
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
+)
+
+// NotificationEnqueuer is the narrow surface the BreachOutboxAdapter
+// needs. *outbox.Service satisfies it directly.
+type NotificationEnqueuer interface {
+	Enqueue(ctx context.Context, params outbox.EnqueueParams) error
+	EnqueueInTx(ctx context.Context, tx *sql.Tx, params outbox.EnqueueParams) error
+}
+
+// BreachOutboxAdapter satisfies controller.SLABreachPublisher by
+// translating each breach event into an outbox notification. Wire via
+// SLAEscalationController.SetBreachPublisher(adapter).
+type BreachOutboxAdapter struct {
+	outbox NotificationEnqueuer
+}
+
+// NewBreachOutboxAdapter wires the enqueuer into the adapter.
+func NewBreachOutboxAdapter(outbox NotificationEnqueuer) *BreachOutboxAdapter {
+	return &BreachOutboxAdapter{outbox: outbox}
+}
+
+// Publish enqueues a single breach notification. Implements
+// controller.SLABreachPublisher.
+//
+// Severity is max(high, finding severity): a breach is always at least
+// "high", so a default critical+high channel receives every breach, and a
+// critical finding's breach is "critical", so it also reaches critical-only
+// channels.
+func (a *BreachOutboxAdapter) Publish(ctx context.Context, event controller.SLABreachEvent) error {
+	if a == nil || a.outbox == nil {
+		return nil // misconfigured → silent no-op, escalation is advisory
+	}
+	params, err := buildBreachParams(event)
+	if err != nil {
+		return err
+	}
+	if err := a.outbox.Enqueue(ctx, params); err != nil {
+		return fmt.Errorf("enqueue sla breach notification: %w", err)
+	}
+	return nil
+}
+
+// PublishTx enqueues the breach notification inside the caller's transaction,
+// so the finding's `breached` transition and this notification commit together.
+// Implements controller.SLABreachTxPublisher.
+func (a *BreachOutboxAdapter) PublishTx(ctx context.Context, tx *sql.Tx, event controller.SLABreachEvent) error {
+	if a == nil || a.outbox == nil {
+		return nil
+	}
+	params, err := buildBreachParams(event)
+	if err != nil {
+		return err
+	}
+	if err := a.outbox.EnqueueInTx(ctx, tx, params); err != nil {
+		return fmt.Errorf("enqueue sla breach notification in tx: %w", err)
+	}
+	return nil
+}
+
+// WarningOutboxAdapter satisfies controller.SLAWarningPublisher by translating
+// each "approaching deadline" event into an outbox notification. Wire via
+// SLAEscalationController.SetWarningPublisher(adapter). Mirrors
+// BreachOutboxAdapter; kept separate so breach (high, transactional) and warning
+// (medium, advisory) stay independently routable by channel config.
+type WarningOutboxAdapter struct {
+	outbox NotificationEnqueuer
+}
+
+// NewWarningOutboxAdapter wires the enqueuer into the adapter.
+func NewWarningOutboxAdapter(outbox NotificationEnqueuer) *WarningOutboxAdapter {
+	return &WarningOutboxAdapter{outbox: outbox}
+}
+
+// PublishWarning enqueues a single SLA-warning notification. Implements
+// controller.SLAWarningPublisher. Severity is "medium" — approaching, not missed.
+func (a *WarningOutboxAdapter) PublishWarning(ctx context.Context, event controller.SLAWarningEvent) error {
+	if a == nil || a.outbox == nil {
+		return nil // misconfigured → silent no-op, warnings are advisory
+	}
+	params, err := buildWarningParams(event)
+	if err != nil {
+		return err
+	}
+	if err := a.outbox.Enqueue(ctx, params); err != nil {
+		return fmt.Errorf("enqueue sla warning notification: %w", err)
+	}
+	return nil
+}
+
+// PublishWarningTx enqueues the warning inside the escalation job's
+// transaction, so the at-risk mark and its notification commit together.
+func (a *WarningOutboxAdapter) PublishWarningTx(ctx context.Context, tx *sql.Tx, event controller.SLAWarningEvent) error {
+	if a == nil || a.outbox == nil {
+		return nil
+	}
+	params, err := buildWarningParams(event)
+	if err != nil {
+		return err
+	}
+	if err := a.outbox.EnqueueInTx(ctx, tx, params); err != nil {
+		return fmt.Errorf("enqueue sla warning notification in tx: %w", err)
+	}
+	return nil
+}
+
+// buildWarningParams translates a warning event into outbox enqueue params.
+func buildWarningParams(event controller.SLAWarningEvent) (outbox.EnqueueParams, error) {
+	fidUUID, err := uuid.Parse(event.FindingID.String())
+	if err != nil {
+		return outbox.EnqueueParams{}, fmt.Errorf("parse finding id: %w", err)
+	}
+
+	remaining := event.TimeRemaining.Round(time.Minute)
+	if remaining < 0 {
+		remaining = 0
+	}
+	return outbox.EnqueueParams{
+		TenantID:      event.TenantID,
+		EventType:     "sla_warning",
+		AggregateType: "finding",
+		AggregateID:   &fidUUID,
+		Title:         fmt.Sprintf("SLA approaching: %s (%s left)", findingLabel(event.FindingTitle, event.FindingID.String()), remaining),
+		Body: fmt.Sprintf(
+			"Finding %s is approaching its SLA deadline (%s) — about %s remaining. Resolve or request an exception before it breaches.",
+			findingLabel(event.FindingTitle, event.FindingID.String()),
+			event.SLADeadline.UTC().Format(time.RFC3339),
+			remaining,
+		),
+		Severity: "medium",
+		Metadata: map[string]any{
+			"finding_id":        event.FindingID.String(),
+			"sla_deadline":      event.SLADeadline.UTC().Format(time.RFC3339),
+			"time_remaining":    event.TimeRemaining.String(),
+			"remaining_seconds": int64(event.TimeRemaining.Seconds()),
+			"warned_at":         event.At.UTC().Format(time.RFC3339),
+			"escalation_source": "sla_escalation_controller",
+		},
+	}, nil
+}
+
+// buildBreachParams translates a breach event into outbox enqueue params.
+func buildBreachParams(event controller.SLABreachEvent) (outbox.EnqueueParams, error) {
+	fidUUID, err := uuid.Parse(event.FindingID.String())
+	if err != nil {
+		return outbox.EnqueueParams{}, fmt.Errorf("parse finding id: %w", err)
+	}
+
+	overdue := event.OverdueDuration.Round(time.Minute)
+	return outbox.EnqueueParams{
+		TenantID:      event.TenantID,
+		EventType:     "sla_breach",
+		AggregateType: "finding",
+		AggregateID:   &fidUUID,
+		Title:         fmt.Sprintf("SLA breached: %s (overdue %s)", findingLabel(event.FindingTitle, event.FindingID.String()), overdue),
+		Body: fmt.Sprintf(
+			"Finding %s missed its SLA deadline (%s) by %s. The escalation controller marked it breached at %s.",
+			findingLabel(event.FindingTitle, event.FindingID.String()),
+			event.SLADeadline.UTC().Format(time.RFC3339),
+			overdue,
+			event.At.UTC().Format(time.RFC3339),
+		),
+		Severity: breachSeverity(event.FindingSeverity),
+		Metadata: map[string]any{
+			"finding_id":        event.FindingID.String(),
+			"sla_deadline":      event.SLADeadline.UTC().Format(time.RFC3339),
+			"overdue_duration":  event.OverdueDuration.String(),
+			"overdue_seconds":   int64(event.OverdueDuration.Seconds()),
+			"breached_at":       event.At.UTC().Format(time.RFC3339),
+			"escalation_source": "sla_escalation_controller",
+		},
+	}, nil
+}
+
+// breachSeverity is max(high, finding severity). Only "critical" outranks
+// "high"; anything else (including an unknown or empty value) is "high".
+func breachSeverity(findingSeverity string) string {
+	if strings.EqualFold(strings.TrimSpace(findingSeverity), "critical") {
+		return "critical"
+	}
+	return "high"
+}
+
+// findingLabel names a finding in a notification by its title, falling back
+// to its id when the title is empty. The id stays in the metadata either way.
+func findingLabel(title, id string) string {
+	if t := strings.TrimSpace(title); t != "" {
+		return fmt.Sprintf("%q", t)
+	}
+	return "finding " + id
+}

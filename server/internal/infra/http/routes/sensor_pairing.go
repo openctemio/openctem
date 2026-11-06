@@ -1,0 +1,208 @@
+package routes
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"net/netip"
+	"strconv"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+)
+
+// Pairing caps (docs/rfcs/RFC-052-sensor-pairing-and-authorization.md §4.4).
+// Variables so a test can lift them.
+var (
+	// Every start request per source address, before any work: 60 per hour,
+	// burst 10. A refused start (bad signature, clock skew, malformed body)
+	// spends only this budget, which refills in minutes, so a sensor that
+	// failed for a reason it then fixed is not locked out for an hour.
+	pairingStartPerIPRate  = 60.0 / 3600
+	pairingStartPerIPBurst = 10
+	// Verified starts without a code or token per source address: 10 per
+	// hour, burst 3. Each one opens a request with a fresh user code.
+	pairingCodelessPerIPRate  = 10.0 / 3600
+	pairingCodelessPerIPBurst = 3
+	// Verified starts with a pairing code or an enrollment token: 5 per hour,
+	// burst 3, per code or token, and 30 per hour, burst 10, per source
+	// address (a site behind one address installing several sensors, each
+	// with its own code). The address cap holds whether or not the code is
+	// open, so neither cap tells a caller whether a guessed code exists.
+	pairingPerCredentialRate    = 5.0 / 3600
+	pairingPerCredentialBurst   = 3
+	pairingCredentialPerIPRate  = 30.0 / 3600
+	pairingCredentialPerIPBurst = 10
+	// Start requests platform-wide: 600 per hour, burst 50. The open-request
+	// cap (sensorpairing.DefaultMaxOpen) is the hard limit across replicas.
+	pairingStartGlobalRate  = 600.0 / 3600
+	pairingStartGlobalBurst = 50
+	// Reveal, poll and confirm per pairing: 1 per second, burst 5.
+	pairingPerRequestRate  = 1.0
+	pairingPerRequestBurst = 5
+	// User-plane lookups and approvals per user: 10 per minute.
+	pairingPerUserRate  = 10.0 / 60
+	pairingPerUserBurst = 10
+)
+
+// pairingStartBudget charges verified start requests (handler.PairingStartBudget):
+// a start with a code or token by that credential and by address, a start
+// without either by address alone.
+type pairingStartBudget struct {
+	codeless, credentialIP, credential *middleware.TelemetryRateLimiter
+}
+
+func newPairingStartBudget(log *logger.Logger) *pairingStartBudget {
+	return &pairingStartBudget{
+		codeless:     middleware.NewTelemetryRateLimiter(pairingCodelessPerIPRate, pairingCodelessPerIPBurst, 2*time.Hour, log),
+		credentialIP: middleware.NewTelemetryRateLimiter(pairingCredentialPerIPRate, pairingCredentialPerIPBurst, 2*time.Hour, log),
+		credential:   middleware.NewTelemetryRateLimiter(pairingPerCredentialRate, pairingPerCredentialBurst, 2*time.Hour, log),
+	}
+}
+
+// ChargeStart implements handler.PairingStartBudget. The credential is kept
+// only as a SHA-256 key, so the limiter never holds a code or token.
+func (b *pairingStartBudget) ChargeStart(r *http.Request, credential string) (time.Duration, bool) {
+	ip := pairingSourceKey(r)
+	if credential == "" {
+		if !b.codeless.Allow(ip) {
+			return b.codeless.RefillTime(ip), false
+		}
+		return 0, true
+	}
+	sum := sha256.Sum256([]byte(credential))
+	key := hex.EncodeToString(sum[:])
+	if !b.credential.Allow(key) {
+		return b.credential.RefillTime(key), false
+	}
+	if !b.credentialIP.Allow(ip) {
+		return b.credentialIP.RefillTime(ip), false
+	}
+	return 0, true
+}
+
+// registerSensorPairingRoutes mounts pairing: the sensor plane under
+// /api/v2/sensor/pairings (no bearer key; every request signed by the key
+// being paired, verified in the handler) and the user plane under
+// /api/v1/sensor-pairings.
+func registerSensorPairingRoutes(router Router, h *handler.SensorPairingHandler, authMiddleware, userSyncMiddleware Middleware, log *logger.Logger) {
+	perIP := middleware.NewTelemetryRateLimiter(pairingStartPerIPRate, pairingStartPerIPBurst, 2*time.Hour, log)
+	global := middleware.NewTelemetryRateLimiter(pairingStartGlobalRate, pairingStartGlobalBurst, 2*time.Hour, log)
+	perRequest := middleware.NewTelemetryRateLimiter(pairingPerRequestRate, pairingPerRequestBurst, 30*time.Minute, log)
+	perUser := middleware.NewTelemetryRateLimiter(pairingPerUserRate, pairingPerUserBurst, time.Hour, log)
+
+	h.SetStartBudget(newPairingStartBudget(log))
+	start := []Middleware{
+		pairingLimit(perIP, pairingSourceKey),
+		pairingLimit(global, func(*http.Request) string { return "global" }),
+	}
+	perPairing := perPairingChain(perRequest)
+
+	// Sensor plane. V2Observe labels the metrics; the handler authenticates
+	// every request by its signature (no sensor-key authenticator: the key
+	// is not registered yet).
+	router.Group("/api/v2/sensor/pairings", func(r Router) {
+		r.POST("/", h.Start, start...)
+		r.PUT("/{pairing_id}/nonce", h.Reveal, perPairing...)
+		r.GET("/{pairing_id}", h.Status, perPairing...)
+		r.POST("/{pairing_id}/complete", h.Confirm, perPairing...)
+	}, middleware.V2Observe(pairingRouteName))
+
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	userLimit := perUser.MiddlewareKeyed(handler.UserKey, "Too many pairing requests; try again later")
+	router.Group("/api/v1/sensor-pairings", func(r Router) {
+		r.POST("/lookup", h.Lookup, middleware.Require(permission.SensorsPair), userLimit)
+		r.POST("/expectations", h.Expect, middleware.Require(permission.SensorsPair), userLimit)
+		r.GET("/expectations/{id}", h.GetExpectation, middleware.Require(permission.SensorsPair))
+		r.POST("/{id}/approve", h.Approve, middleware.Require(permission.SensorsApprove), userLimit)
+		r.POST("/{id}/reject", h.Deny, middleware.Require(permission.SensorsPair), userLimit)
+		// Sensors waiting for an administrator (token requires approval,
+		// or an expectation a sensor attached to).
+		r.GET("/pending", h.ListPendingPairings, middleware.Require(permission.SensorsPair))
+		// Organization enrollment tokens: a token is a pre-approval, so
+		// creating one needs sensors:approve and a recent re-authentication;
+		// revoking narrows and needs no step-up.
+		r.GET("/enrollment-tokens", h.ListEnrollmentTokens, middleware.Require(permission.SensorsRead))
+		r.POST("/enrollment-tokens", h.CreateEnrollmentToken, middleware.Require(permission.SensorsApprove), requireStepUp(), requireCredentialFactor(), userLimit)
+		r.POST("/enrollment-tokens/{id}/revoke", h.RevokeEnrollmentToken, middleware.Require(permission.SensorsApprove), userLimit)
+	}, tenantMiddlewares...)
+}
+
+// pairingSourceKey is the per-source key of the pairing start budget: the
+// client address, an IPv6 address grouped by its /64. One IPv6 host
+// usually holds a whole /64, so a per-address budget would give a single
+// caller 2^64 budgets to exhaust the platform-wide open-pairing cap with.
+func pairingSourceKey(r *http.Request) string {
+	ip := middleware.ClientIP(r)
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	a = a.Unmap()
+	if a.Is4() {
+		return a.String()
+	}
+	p, err := a.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
+}
+
+// perPairingChain guards the routes of one pairing: a path id that is not
+// a pairing id is the pairing-not-found answer every mismatch gets, before
+// the per-pairing limiter can store it as a key.
+func perPairingChain(rl *middleware.TelemetryRateLimiter) []Middleware {
+	requireID := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if handler.PairingKey(r) == "" {
+				protov2.NewProblem(protov2.ProblemPairingNotFound).Write(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	return []Middleware{requireID, pairingLimit(rl, handler.PairingKey)}
+}
+
+// pairingLimit refuses a request over the key's budget with the v2
+// rate-limited problem and a Retry-After.
+func pairingLimit(rl *middleware.TelemetryRateLimiter, key func(*http.Request) string) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if k := key(r); k != "" && !rl.Allow(k) {
+				w.Header().Set("Retry-After", strconv.Itoa(middleware.JitteredRetryAfter(rl.RefillTime(k))))
+				protov2.NewProblem(protov2.ProblemRateLimited).Write(w)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// pairingRouteName labels the pairing routes in the v2 metrics.
+func pairingRouteName(r *http.Request) string {
+	if r.Method == http.MethodPost && r.URL.Path == protov2.PathPrefix+"/pairings" {
+		return "pairing_start"
+	}
+	return "pairing"
+}
+
+// registerSensorInstallRoutes mounts the public files the install commands
+// download, the same for every organization and without tenant data, rate
+// limited per IP: the sensor's seccomp profile (the open-source release's
+// file) and the platform's private CA bundle (public certificates only;
+// 404 when none is configured).
+func registerSensorInstallRoutes(router Router, platformCA *handler.PlatformCAHandler, rateLimit Middleware) {
+	router.GET("/api/v1/sensors/install/seccomp-profile", handler.ServeSensorSeccompProfile, rateLimit)
+	if platformCA == nil {
+		platformCA = handler.NewPlatformCAHandler(nil, nil) // answers 404
+	}
+	// A literal path: the route manifest and the contract checks read it
+	// from the source (sensorapp.PlatformCAPath must stay equal, tested).
+	router.GET("/api/v1/sensors/platform-ca", platformCA.Serve, rateLimit)
+}

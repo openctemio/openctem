@@ -1,7 +1,7 @@
 # OpenCTEM API image, assembled from the released openctem-server archive
 # (no source code, no compiler, no RUN step: it builds unprivileged on any
 # runner and for any arch). Same layout, users and entrypoint as
-# ghcr.io/openctemio/openctem-api. Guide: api/docs/deployment/air-gapped.md.
+# ghcr.io/openctemio/openctem-api. Guide: server/docs/deployment/air-gapped.md.
 #
 # Context: this kit directory after unpack.sh, which puts the verified
 # archives under dist/<arch>/.

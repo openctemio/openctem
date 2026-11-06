@@ -1,0 +1,734 @@
+#!/usr/bin/env bash
+#
+# Security lint — catches "primitive built, but not mounted" regressions.
+#
+# The audit kept finding the same class of bug: a defence primitive
+# existed in pkg/* but the business code still used a vulnerable
+# pattern directly (&http.Client{} outside pkg/httpsec, etc.). Once
+# fixed, we do not want someone to reintroduce the bad pattern in a
+# follow-up PR without noticing. This script runs in CI and fails the
+# build on any regression.
+#
+# The rules are deliberately conservative: the audit lists every
+# allow-listed exception below. If you genuinely need a new
+# exception, edit this script in the same PR so the reviewer sees it.
+#
+# Rules 1, 4 and 6 read sibling repositories (agent/, sdk-go/), so the script
+# expects a workspace laid out as <root>/{server,agent,sdk-go}. Point SECLINT_ROOT
+# at that workspace when the script is not being run from inside it — CI checks
+# the three repositories out side by side and does exactly that.
+#
+# SECLINT_STRICT=1 turns a missing sibling into a failure instead of a warning.
+# CI must set it. Without it a workspace holding only server/ runs 4 of 6 rules,
+# prints warnings nobody reads, and exits 0 — a green check that verified two
+# thirds of what it claims. That failure mode is the reason this gate spent its
+# whole life in a repository that does not exist on GitHub.
+#
+# Exit codes: 0 pass, 1 at least one rule failed, 2 script-usage bug.
+
+set -u -o pipefail
+
+ROOT="${SECLINT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+cd "$ROOT" || exit 2
+
+STRICT="${SECLINT_STRICT:-0}"
+
+RED=$'\033[0;31m'
+GRN=$'\033[0;32m'
+YEL=$'\033[1;33m'
+RST=$'\033[0m'
+
+fail=0
+
+say_fail() { printf '%s[FAIL]%s %s\n' "$RED" "$RST" "$*"; fail=1; }
+say_pass() { printf '%s[PASS]%s %s\n' "$GRN" "$RST" "$*"; }
+say_warn() { printf '%s[WARN]%s %s\n' "$YEL" "$RST" "$*"; }
+
+# A rule that cannot run is not a rule that passed. In strict mode this is
+# fatal; locally it stays a warning so the script is still usable from a
+# partial checkout.
+# Distinct from say_skip. say_skip means "I could not run" — a misconfiguration,
+# fatal in strict mode. say_gap means "I ran, and the thing being asserted has
+# genuinely not been built yet". A gap is tracked and printed loudly on every
+# run, but it does not block, because a permanently-red gate gets switched off
+# and then protects nothing.
+say_gap() { printf '%s[GAP]%s %s\n' "$YEL" "$RST" "$*"; }
+
+say_skip() {
+    if [[ "$STRICT" == "1" ]]; then
+        say_fail "$* (SECLINT_STRICT=1: a rule that cannot run counts as failed)"
+    else
+        say_warn "$*"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Rule 1: outbound HTTP clients must use pkg/httpsec.
+#
+# The "&http.Client{" literal outside pkg/httpsec is the audit's C1/C2
+# fingerprint — it means the outbound client bypasses the SSRF dialer
+# that rejects loopback / RFC1918 / link-local / CGNAT targets.
+#
+# Exceptions: test files (fine to construct a naive client for unit
+# tests) and pkg/httpsec itself.
+# ---------------------------------------------------------------------------
+check_http_client() {
+    # Scope: server/ and agent/. We do NOT scan sdk-go/ — the SDK is its
+    # own Go module and cannot import server/pkg/httpsec without a cross-
+    # module dep. Lifting httpsec into a shared module is tracked as a
+    # follow-up (see RFC-007 roadmap). For now SDK clients are
+    # outbound-to-tenant-configured-URLs only and the dialer hygiene
+    # is accepted as risk at that layer.
+    #
+    # Allow-list: specific file:line sites that legitimately construct
+    # &http.Client{...} — each justified in a comment at the site.
+    # NEW additions MUST be paired with a comment explaining why httpsec
+    # is not applicable; the reviewer checks this list during code review.
+    local allow_sites=(
+        # pkg/httpsec itself builds the SafeHTTPClient wrapper.
+        'server/pkg/httpsec/ssrf.go'
+        # `server -healthcheck`: the container healthcheck probes this
+        # process's own loopback listener (fixed 127.0.0.1, SERVER_PORT
+        # validated, no proxy, no redirects), which SafeHTTPClient refuses by
+        # design. No URL comes from a tenant or the network.
+        'server/cmd/server/healthcheck.go'
+        # Admin CLI talks to its own API over an operator-provided URL
+        # (same trust domain as the server). Not tenant-facing.
+        'server/cmd/openctem-admin/cmd/client.go'
+        # Fetchers already import httpsec and use ValidateURL /
+        # IsIPBlocked with a custom dialer. The &http.Client{...} here
+        # wraps that custom dialer, equivalent to SafeHTTPClient.
+        'server/internal/infra/fetchers/http_fetcher.go'
+        # Notifier clients (newHTTPClient): SafeHTTPClient with redirects
+        # refused in production; the plain &http.Client fires only on the
+        # AllowLoopback unit-test path (httptest binds 127.0.0.1), and it
+        # refuses redirects too.
+        'server/internal/infra/notifier/client.go'
+        # Sensor Tenable.sc connector (RFC-047): reaches an operator-configured
+        # Tenable.sc that usually sits on a private address, so the RFC1918
+        # block of SafeHTTPClient cannot apply. Its own dialer resolves once
+        # and dials the checked IP (no DNS rebinding), refuses redirects, and
+        # requires a configured CA or certificate pin; the URL comes only from
+        # the sensor-local config, never from the platform.
+        agent/internal/connector/tenablesc/client.go
+        # Workflow HTTPRequestHandler implements its own SSRF guard
+        # inline (validateURL + safeDialer + CheckRedirect). Functionally
+        # equivalent to SafeHTTPClient; consolidation is a follow-up.
+        'server/internal/app/automation/handlers.go'
+        # Job signer client (RFC-040 §5.6): its transport dials only the
+        # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
+        # the request host, so no network destination exists to guard.
+        'server/internal/infra/signer/client.go'
+        # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
+        # server's environment, never from a tenant or a request, and is
+        # usually a log collector on a private network, which SafeHTTPClient
+        # refuses. https only, TLS 1.2+, no redirects.
+        'server/internal/infra/auditsink/sink.go'
+        # System page probes (RFC-114): InternalProbeClient checks the platform's
+        # own components at URLs from the server's environment (never a tenant
+        # or a request), usually on private addresses that SafeHTTPClient
+        # refuses. No proxy, no redirects, bounded timeout.
+        'server/pkg/httpsec/internal_probe.go'
+        # Sensor relay connector (RFC-116): two fixed destinations from the
+        # operator's environment, never a tenant or a request. The relay
+        # client dials CONNECTOR_RELAY_URL over TLS 1.3 with a client
+        # certificate and the relay's pinned public key. The API client reaches
+        # CONNECTOR_API_URL on the private network, which SafeHTTPClient
+        # refuses; it uses no proxy and follows no redirects.
+        'server/internal/sensorrelay/connector.go'
+        # Authorization-matrix test harness: drives a disposable test stack
+        # started by the suite itself on loopback (never a tenant or request
+        # URL), which SafeHTTPClient refuses by design. Test-only package
+        # (server/tests/authzmatrix), never linked into a shipped binary.
+        'server/tests/authzmatrix/client.go'
+        'server/tests/authzmatrix/console.go'
+    )
+
+    local hits
+    hits="$(grep -RnE '&http\.Client\{' \
+        --include='*.go' \
+        --exclude-dir='pkg/httpsec' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        --exclude='*_test.go' \
+        server/ agent/ 2>/dev/null || true)"
+
+    local filtered=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local file="${line%%:*}"
+        local ok=0
+        for a in "${allow_sites[@]}"; do
+            if [[ "$file" == *"$a" ]]; then ok=1; break; fi
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            filtered+="$line"$'\n'
+        fi
+    done <<< "$hits"
+
+    if [[ -n "${filtered// /}" && "$filtered" != $'\n' ]]; then
+        say_fail "Rule 1: &http.Client{...} outside pkg/httpsec — swap for httpsec.SafeHTTPClient:"
+        printf '%s' "$filtered" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 1: no raw &http.Client{} outside pkg/httpsec (server/, agent/; 6 documented exceptions)"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 2: no dev-default secrets hardcoded anywhere the repo would ship.
+#
+# The AUTH_JWT_SECRET / APP_ENCRYPTION_KEY literals in docker-compose.yml
+# are intentionally matched by the startup sentinel in
+# server/internal/config/config.go — refuse to boot outside APP_ENV=development.
+# If the literal appears in any OTHER place (.env.*.example copied too
+# aggressively, handbook snippet, new compose file), the sentinel stops
+# protecting and an ops team can ship the known value to prod.
+# ---------------------------------------------------------------------------
+check_dev_default_secrets() {
+    local sentinels=(
+        'this-is-a-development-secret-key-at-least-64-characters-long-for-security'
+        'this-is-a-development-secret-key-at-least-32-characters'
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    )
+
+    local allow=(
+        # Expected: docker-compose.yml is the canonical dev bundle and
+        # the sentinel check refuses to use these values outside dev.
+        'docker-compose.yml'
+        'docker-compose.monitoring.yml'
+        'docker-compose.dev.yml'
+        # The development env template (APP_ENV=development); the API
+        # refuses both values whenever APP_ENV is not development.
+        'server/.env.example'
+        # The registry server/.env.example is generated from (its dev examples).
+        'server/internal/config/env_registry.yaml'
+        # Expected: config validator explicitly lists these as the
+        # forbidden values — it MUST hold the exact literal.
+        'server/internal/config/config.go'
+        # Expected: security-lint script itself (this file).
+        'scripts/security-lint.sh'
+    )
+
+    # tmp/ and build artefacts are local-only, never committed.
+    local skip_globs=(
+        '*/tmp/*'
+        '*/node_modules/*'
+        '*/.next/*'
+        '*/dist/*'
+        '*/build/*'
+    )
+    # Test files legitimately hard-code sentinel values to exercise
+    # the sentinel check itself; the actual binary would never ship
+    # with these tests baked into config.
+    local skip_test_globs=(
+        '*_test.go'
+        '*.test.ts'
+        '*.test.tsx'
+        '*.spec.ts'
+    )
+
+    local f before_fail=$fail
+    for s in "${sentinels[@]}"; do
+        # -I: never match inside binaries. A locally-built ./api/server has the
+        # dev sentinels compiled into it and would be reported as a source leak.
+        hits="$(grep -RlFI "$s" \
+            --exclude-dir='.git' \
+            --exclude-dir='.claude' \
+            --exclude-dir='vendor' \
+            --exclude-dir='node_modules' \
+            --exclude-dir='tmp' \
+            --exclude-dir='.next' \
+            --exclude-dir='dist' \
+            --exclude-dir='build' \
+            . 2>/dev/null || true)"
+
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+
+            # Skip test files (they legitimately use the sentinels as
+            # fixtures to verify the startup guard).
+            local is_test=0
+            for g in "${skip_test_globs[@]}"; do
+                if [[ "$f" == $g ]]; then is_test=1; break; fi
+            done
+            [[ "$is_test" -eq 1 ]] && continue
+
+            # Skip .env files outside git — dev machines carry them.
+            if [[ "$f" == *".env" || "$f" == *".env.local" ]]; then
+                if command -v git >/dev/null 2>&1 && \
+                   ! git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+                    continue # untracked local file, fine
+                fi
+            fi
+
+            local ok=0
+            for a in "${allow[@]}"; do
+                if [[ "$f" == *"$a" ]]; then ok=1; break; fi
+            done
+            if [[ "$ok" -eq 0 ]]; then
+                say_fail "Rule 2: dev-default secret $s found in $f (not on allow-list)"
+            fi
+        done <<< "$hits"
+    done
+
+    if [[ $fail -eq $before_fail ]]; then
+        say_pass "Rule 2: no dev-default secrets outside docker-compose/config allow-list"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Rule 3: .env files must not be tracked by git.
+#
+# .gitignore covers .env / .env.* but only for new commits; if an .env
+# sneaked in earlier and the .gitignore was added later, `git ls-files`
+# still lists it. This rule catches that residual case.
+# ---------------------------------------------------------------------------
+check_env_files_tracked() {
+    if ! command -v git >/dev/null 2>&1; then
+        say_warn "Rule 3: git not available; skipping .env tracked check"
+        return
+    fi
+    local tracked
+    tracked="$(git ls-files | grep -E '(^|/)\.env($|\.[^e])' | grep -v '\.example$' || true)"
+    if [[ -n "$tracked" ]]; then
+        say_fail "Rule 3: tracked .env file(s) in git (secrets risk):"
+        echo "$tracked" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 3: no tracked .env files in git"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 4: the scanner extra-args guard must include the audit-required set.
+#
+# The audit (Pass-6 P6-1, P6-10) identified the flag classes attackers
+# abuse for SSRF / path-traversal / privilege escalation via user-
+# supplied ExtraArgs. If someone refactors the map and drops a flag,
+# the runtime validator will silently permit that arg on the scanner
+# CLI. We pin the minimum viable set here. The set lives in sdk-go
+# (core.DangerousToolFlags, applied by every SDK scanner); it moved there
+# from the sensor's platform-mode executor when sensor#107 removed that mode.
+# ---------------------------------------------------------------------------
+check_agent_dangerous_flags() {
+    local f="sdk-go/pkg/core/extra_args.go"
+    if [[ ! -f "$f" ]]; then
+        say_skip "Rule 4: $f not found; cannot verify the scanner extra-args flag set"
+        return
+    fi
+    local required=(
+        '"-proxy"' '"--proxy"'
+        '"-c"' '"--config"'
+        '"-t"' '"--templates"'
+        '"-r"' '"--resolvers"'
+        '"--interactsh-url"'
+        '"--headless"'
+    )
+    local missing=()
+    for flag in "${required[@]}"; do
+        if ! grep -qF "$flag" "$f"; then
+            missing+=("$flag")
+        fi
+    done
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        say_fail "Rule 4: core.DangerousToolFlags missing required entries: ${missing[*]}"
+        return
+    fi
+    say_pass "Rule 4: core.DangerousToolFlags contains the required SSRF/RCE flag set"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 5: httpsec package must be used by every outbound-client site
+# that the audit flagged. Not strictly a leak — a gentle reminder for
+# the next PR author that these files are load-bearing.
+# ---------------------------------------------------------------------------
+check_httpsec_used() {
+    local required=(
+        # API outbound clients — tenant-configurable URLs.
+        'server/internal/infra/llm/claude.go'
+        'server/internal/infra/llm/gemini.go'
+        'server/internal/infra/llm/openai.go'
+        # Every notifier client is built by newHTTPClient here.
+        'server/internal/infra/notifier/client.go'
+        'server/internal/infra/notifier/webhook.go'
+        'server/internal/infra/jira/client.go'
+        'server/internal/app/auth/sso.go'
+        'server/internal/app/auth/oauth.go'
+        'server/internal/app/threat/intel_service.go'
+        'server/internal/app/threat/intel_refresher.go'
+        'server/pkg/keycloak/validator.go'
+    )
+    # sdk-go was meant to get a mirror of pkg/httpsec. An earlier version of
+    # this rule listed these files as required and described the mirror as
+    # done. It is not: sdk-go/pkg/httpsec exists neither locally nor upstream,
+    # so these seven outbound clients have no SSRF guard. The rule asserted a
+    # control that was never built, and because this script ran in a repository
+    # that does not exist on GitHub, it never got the chance to say so.
+    local sdk_gap=(
+        'sdk-go/pkg/client/client.go'
+        'sdk-go/pkg/core/base_collector.go'
+        'sdk-go/pkg/enrichers/kev/kev.go'
+        'sdk-go/pkg/enrichers/epss/epss.go'
+        'sdk-go/pkg/platform/lease.go'
+        'sdk-go/pkg/platform/bootstrap.go'
+        'sdk-go/pkg/platform/poller.go'
+    )
+    local missing=()
+    for f in "${required[@]}"; do
+        if [[ -f "$f" ]] && ! grep -q 'httpsec' "$f"; then
+            missing+=("$f")
+        fi
+    done
+    local gap=()
+    for f in "${sdk_gap[@]}"; do
+        if [[ -f "$f" ]] && ! grep -q 'httpsec' "$f"; then
+            gap+=("$f")
+        fi
+    done
+    if [[ ${#gap[@]} -gt 0 ]]; then
+        say_gap "Rule 5: sdk-go/pkg/httpsec does not exist; ${#gap[@]} sdk-go outbound clients are unguarded (tracked, not blocking)"
+    fi
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        say_fail "Rule 5: expected httpsec import missing in: ${missing[*]}"
+        return
+    fi
+    say_pass "Rule 5: httpsec wired in all api outbound client sites"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 6: server/pkg/httpsec and sdk-go/pkg/httpsec blocklists must match.
+# The two packages are independent copies (cross-module). Drift means
+# one tree becomes more permissive than the other — a DoS waiting to
+# happen.
+#
+# Covers both tables: hardBlockedIPRanges (always-blocked — cloud
+# IMDS, loopback, CGNAT, multicast) AND privateIPRanges (RFC1918 /
+# ULA, blocked by default but opt-in via env). If either drifts
+# between server/ and sdk-go/ the on-prem story breaks in asymmetric
+# ways, which is worse than just one side being wrong.
+# ---------------------------------------------------------------------------
+check_httpsec_drift() {
+    local api_file='server/pkg/httpsec/ssrf.go'
+    local sdk_file='sdk-go/pkg/httpsec/ssrf.go'
+    if [[ ! -f "$api_file" || ! -f "$sdk_file" ]]; then
+        say_gap "Rule 6: $sdk_file does not exist, so there is no second CIDR table to compare (tracked, not blocking)"
+        return
+    fi
+
+    local tables=(hardBlockedIPRanges privateIPRanges)
+    # sdk-go takes its deny list from addrscope (IsInternal), the one shared
+    # definition. It lives in the contract module (github.com/openctemio/contract/
+    # addrscope); sdk-go before the contract split imported it from ctis. The
+    # module path is read from sdk-go's own import, so the rule follows
+    # whichever module sdk-go uses, and compares against that same source. instead of a local table. Then the API's tables are
+    # checked against addrscope itself: every addrscope range is blocked by
+    # the API (hard or private), and the API blocks nothing addrscope does not
+    # name (its ranges and the IPv4-embedding carriers it checks). A missing
+    # ctis module fails the rule: it is never skipped.
+    local scope_mod
+    scope_mod=$(grep -oE 'github\.com/openctemio/(contract|ctis)(/v[0-9]+)?/addrscope"' "$sdk_file" | head -n1 | sed 's#/addrscope"$##')
+    if ! grep -q '^var hardBlockedIPRanges ' "$sdk_file" && [[ -n "$scope_mod" ]]; then
+        local ctis_dir
+        # `go mod download` fetches the exact ctis version sdk-go pins (go.sum
+        # verified) when the module cache does not have it; `go list -m`
+        # alone never downloads. GOTOOLCHAIN=auto: sdk-go main may require a
+        # newer Go than this job's (CI pins GOTOOLCHAIN=local); fetching the
+        # toolchain only serves this download, nothing is built with it.
+        ctis_dir=$(cd sdk-go && GOTOOLCHAIN=auto GOWORK=off GOFLAGS=-mod=mod go mod download -json "$scope_mod" 2>/dev/null |
+            python3 -c 'import json,sys; print(json.load(sys.stdin).get("Dir", ""))' 2>/dev/null)
+        if [[ -z "$ctis_dir" || ! -f "$ctis_dir/addrscope/addrscope.go" ]]; then
+            say_fail "Rule 6: $sdk_file uses addrscope but its source could not be downloaded (go mod download $scope_mod in sdk-go/)"
+            return
+        fi
+        local out
+        if out=$(python3 - "$api_file" "$ctis_dir/addrscope/addrscope.go" <<'PY'
+import ipaddress, re, sys
+api = open(sys.argv[1]).read()
+scope = open(sys.argv[2]).read()
+def table(src, name):
+    m = re.search(r"^var %s = \[\]string\{(.*?)^\}" % name, src, re.S | re.M)
+    return [ipaddress.ip_network(c) for c in re.findall(r'"([0-9a-fA-F:.]+/\d+)"', m.group(1))] if m else []
+def prefixes(block):
+    return [ipaddress.ip_network(c) for c in re.findall(r'MustParsePrefix\("([^"]+)"\)', block)]
+direct = []
+for name in ("internalV4", "internalV6"):
+    m = re.search(r"^var %s = \[\]netip.Prefix\{(.*?)^\}" % name, scope, re.S | re.M)
+    if not m:
+        print("addrscope: no %s table" % name); sys.exit(1)
+    direct += prefixes(m.group(1))
+carriers = prefixes(scope) 
+hard, private = table(api, "hardBlockedIPRanges"), table(api, "privateIPRanges")
+def covered(n, nets):
+    return any(n.version == o.version and n.subnet_of(o) for o in nets)
+bad = []
+bad += ["addrscope range %s is not blocked by the API (add it to hardBlockedIPRanges)" % n for n in direct if not covered(n, hard + private)]
+bad += ["API hardBlockedIPRanges %s is not in addrscope" % n for n in hard if not covered(n, carriers)]
+bad += ["API privateIPRanges %s is not in addrscope" % n for n in private if not covered(n, direct)]
+print("\n".join(bad)); sys.exit(1 if bad else 0)
+PY
+        ); then
+            say_pass "Rule 6: api httpsec tables match addrscope ($scope_mod), sdk-go's deny list ($ctis_dir)"
+        else
+            say_fail "Rule 6: api httpsec tables drift from addrscope ($scope_mod), sdk-go's deny list"
+            printf '%s\n' "$out" | sed 's/^/       /'
+        fi
+        return
+    fi
+    local any_drift=0
+    for t in "${tables[@]}"; do
+        if ! diff <(awk "/^var ${t} /,/^}/" "$api_file") \
+                  <(awk "/^var ${t} /,/^}/" "$sdk_file") > /dev/null; then
+            say_fail "Rule 6: ${t} drift between $api_file and $sdk_file"
+            diff <(awk "/^var ${t} /,/^}/" "$api_file") \
+                 <(awk "/^var ${t} /,/^}/" "$sdk_file") | sed 's/^/       /'
+            any_drift=1
+        fi
+    done
+    if [[ $any_drift -eq 0 ]]; then
+        say_pass "Rule 6: api and sdk-go httpsec CIDR tables agree (hardBlockedIPRanges, privateIPRanges)"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Rule 7: client-IP forwarding headers are read only by pkg/httpsec.
+#
+# httpsec.ClientIP believes X-Real-IP / X-Forwarded-For only when the TCP peer
+# is a configured trusted proxy, and walks X-Forwarded-For from the right. Code
+# that reads one of these headers itself lets any caller choose the IP that
+# lands in the audit log, keys a rate limit, or passes an IP allowlist (the
+# scan zone handler copied raw X-Forwarded-For into the audit log). Use
+# getClientIP (handler, middleware) or middleware.ClientIP instead.
+#
+# The match is the header name as a quoted Go string, any case, so a
+# r.Header.Get, r.Header["..."], r.Header.Values or a named constant are all
+# caught. Exceptions: tests, pkg/httpsec itself, and the sites listed below.
+# ---------------------------------------------------------------------------
+check_client_ip_headers() {
+    local allow_sites=(
+        # Outbound workflow HTTP action: refuses to let a workflow author SET
+        # these headers on the request it sends. Nothing is read from a
+        # client request.
+        'server/internal/app/automation/handlers.go'
+        # Job signer client (RFC-040 §5.6): its transport dials only the
+        # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
+        # the request host, so no network destination exists to guard.
+        'server/internal/infra/signer/client.go'
+        # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
+        # server's environment, never from a tenant or a request, and is
+        # usually a log collector on a private network, which SafeHTTPClient
+        # refuses. https only, TLS 1.2+, no redirects.
+        'server/internal/infra/auditsink/sink.go'
+        # Authorization-matrix test harness: only SETS X-Forwarded-For on the
+        # requests it sends to its own disposable test stack, to give each
+        # simulated user a distinct client identity for the rate limiter.
+        # Nothing is read from a client request; test-only package.
+        'server/tests/authzmatrix/client.go'
+        'server/tests/authzmatrix/console.go'
+    )
+
+    local hits
+    hits="$(grep -RniE '"(x-forwarded-for|x-real-ip|forwarded|cf-connecting-ip|true-client-ip|x-client-ip|x-cluster-client-ip|fastly-client-ip)"' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        server/ 2>/dev/null | grep -v '^server/pkg/httpsec/' || true)"
+
+    local filtered=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local file="${line%%:*}"
+        local ok=0
+        for a in "${allow_sites[@]}"; do
+            if [[ "$file" == "$a" ]]; then ok=1; break; fi
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            filtered+="$line"$'\n'
+        fi
+    done <<< "$hits"
+
+    if [[ -n "$filtered" ]]; then
+        say_fail "Rule 7: client-IP forwarding header read outside pkg/httpsec — use getClientIP / middleware.ClientIP (trusted-proxy aware):"
+        printf '%s' "$filtered" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 7: client-IP forwarding headers read only through pkg/httpsec (server/; 1 documented exception)"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 8: an HTTP response body is never read without a size limit.
+#
+# io.ReadAll(resp.Body) or json.NewDecoder(resp.Body) buffers whatever an
+# upstream sends (a hostile SCM, ticketing, OAuth or LLM endpoint, or a feed),
+# so one response can exhaust the API's memory (RFC-049 F-12). Read through
+# httpsec.ReadLimited / httpsec.DecodeJSON (oversize is an error, never
+# truncated data), or httpsec.NewLimitedReader for a stream parsed as it is
+# read. Inbound request bodies are capped by the BodyLimit middleware and are
+# not matched (r.Body / req.Body). Tests are excluded.
+# ---------------------------------------------------------------------------
+check_bounded_response_reads() {
+    local hits
+    hits="$(grep -RnE '(io|ioutil)\.ReadAll\([A-Za-z_]*(resp|res|response|Resp)\.Body\)|(json|xml|yaml)\.NewDecoder\([A-Za-z_]*(resp|res|response|Resp)\.Body\)' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        server/ 2>/dev/null | grep -v '^server/tests/' || true)"
+
+    if [[ -n "$hits" ]]; then
+        say_fail "Rule 8: unbounded read of an HTTP response body — use httpsec.ReadLimited / httpsec.DecodeJSON:"
+        printf '%s\n' "$hits" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 8: every HTTP response body read is bounded (server/)"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 9: an upstream response body never goes into an error.
+#
+# Errors reach API responses, audit entries and the tenant's UI; a third-party
+# body can echo request data, tokens or upstream internals (RFC-049 F-2).
+# Return httpsec.NewUpstreamStatusError (provider + status; the body is logged
+# at debug level, bounded and sanitized). Tests are excluded.
+# ---------------------------------------------------------------------------
+check_upstream_body_in_errors() {
+    local hits
+    hits="$(grep -RnE 'Errorf\(.*string\((resp|res|response)?[Bb]ody\)|Errorf\(.*string\(respBody\)' \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='tmp' \
+        --exclude-dir='.claude' \
+        --exclude-dir='node_modules' \
+        server/ 2>/dev/null | grep -v '^server/tests/' | grep -v '/includetest/' || true)"
+
+    if [[ -n "$hits" ]]; then
+        say_fail "Rule 9: an upstream response body in an error — use httpsec.NewUpstreamStatusError:"
+        printf '%s\n' "$hits" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 9: no upstream response body in errors (server/)"
+}
+
+# ---------------------------------------------------------------------------
+# Rule 10: outbound network primitives only through pkg/httpsec.
+#
+# Rule 1 catches the &http.Client{ literal. This rule catches every other way
+# to open a connection without the guard (docs/architecture/outbound-
+# requests.md): the package-level http helpers and default client/transport
+# (they dial anything and take a proxy from the environment), a bare
+# http.Transport or http.Client value, net/tls dialers, net/smtp's own dial,
+# a proxy from the environment, and go-git transports other than the guarded
+# http one. A new site either uses httpsec (SafeHTTPClient, SafeDialContext,
+# ResolveSafeHost) or joins the allow-list below with its reason.
+# ---------------------------------------------------------------------------
+check_outbound_primitives() {
+    local allow_sites=(
+        # The guard itself.
+        'server/pkg/httpsec/'
+        # Signer: a fixed local Unix socket from the server's environment.
+        'server/cmd/signer/main.go'
+        'server/internal/infra/signer/client.go'
+        # `server -healthcheck`: this process's own loopback listener.
+        'server/cmd/server/healthcheck.go'
+        # Scan-zone resolver: the recursive resolver the operator names in
+        # the server's environment (SCOPE_ZONE_RESOLVER).
+        'server/cmd/server/scope_zone_resolver.go'
+        # Admin audit sink: destination from the server's environment only.
+        'server/internal/infra/auditsink/sink.go'
+        # Sensor transport probe: the platform's own sensor endpoint.
+        'server/internal/infra/sensortransport/probe.go'
+        # Sensor relay connector: two destinations from the server's
+        # environment; no proxy, no redirects.
+        'server/internal/sensorrelay/connector.go'
+        # Sensor-side request signing transport (used by sensor clients that
+        # talk to the platform), not a platform outbound call.
+        'server/pkg/sensorsig/sensorsig.go'
+        # EASM DNS client: port 53 only, every server address checked with
+        # httpsec.IsIPBlocked before the dial.
+        'server/pkg/dnsprobe/client.go'
+        # ClamAV daemon: address from the server's environment (STORAGE_CLAMD_ADDRESS).
+        'server/internal/infra/malware/clamd.go'
+        # SMTP: dials the address httpsec.ResolveSafeHost vetted (an IP
+        # literal), never a host name.
+        'server/pkg/email/email.go'
+        'server/internal/infra/notifier/email.go'
+        # Rule sources: installs the guarded http transport and removes the
+        # others.
+        'server/internal/infra/fetchers/git_snapshot.go'
+    )
+    local pattern='http\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|http\.DefaultTransport|(^|[^&])http\.Client\{|new\(http\.Client\)|http\.Transport\{|net\.Dial(Timeout|TCP|UDP|IP|Unix)?\(|net\.Dialer\b|tls\.Dial(WithDialer)?\(|tls\.Dialer\b|httputil\.(NewSingleHostReverseProxy|ReverseProxy)\b|smtp\.(Dial|SendMail)\(|ProxyFromEnvironment|InstallProtocol\(|go-git/v5/plumbing/transport/(ssh|git|file)"'
+
+    # Fail closed: a run that scanned nothing (no SECLINT_ROOT and the script
+    # cd'd into server/, so "server/" does not exist) must not report a pass.
+    if [[ ! -d server ]] || [[ -z "$(find server -name '*.go' -not -name '*_test.go' -print -quit 2>/dev/null)" ]]; then
+        say_fail "Rule 10: no server/ Go sources under $ROOT — set SECLINT_ROOT to the workspace root"
+        return
+    fi
+
+    local hits
+    hits="$(grep -RnE "$pattern" \
+        --include='*.go' \
+        --exclude='*_test.go' \
+        --exclude-dir='vendor' \
+        --exclude-dir='node_modules' \
+        --exclude-dir='.claude' \
+        server/ 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' || true)"
+
+    local filtered=""
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local file="${line%%:*}"
+        local ok=0
+        for a in "${allow_sites[@]}"; do
+            if [[ "$file" == *"$a"* ]]; then ok=1; break; fi
+        done
+        if [[ "$ok" -eq 0 ]]; then
+            filtered+="$line"$'\n'
+        fi
+    done <<< "$hits"
+
+    if [[ -n "${filtered//[[:space:]]/}" ]]; then
+        say_fail "Rule 10: outbound network primitive outside pkg/httpsec — use httpsec.SafeHTTPClient / SafeDialContext / ResolveSafeHost, or add the site with its reason:"
+        printf '%s' "$filtered" | sed 's/^/       /'
+        return
+    fi
+    say_pass "Rule 10: outbound connections only through pkg/httpsec (server/; ${#allow_sites[@]} documented sites)"
+}
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+printf '== security-lint ==\n'
+
+# Preflight. Rule 1 greps 'server/ agent/' and tolerates a missing path, so an
+# absent sibling would quietly shrink its search space rather than fail. Check
+# the layout up front instead of trusting each rule to notice.
+for sibling in server agent sdk-go; do
+    if [[ ! -d "$ROOT/$sibling" ]]; then
+        say_skip "workspace is missing $sibling/ (looked in $ROOT) — rules covering it cannot run"
+    fi
+done
+
+check_http_client
+check_dev_default_secrets
+check_env_files_tracked
+check_agent_dangerous_flags
+check_httpsec_used
+check_httpsec_drift
+check_client_ip_headers
+check_bounded_response_reads
+check_upstream_body_in_errors
+check_outbound_primitives
+printf '\n'
+if [[ $fail -ne 0 ]]; then
+    printf '%sSecurity lint FAILED.%s Fix the rules above before merging.\n' "$RED" "$RST"
+    exit 1
+fi
+printf '%sSecurity lint passed.%s\n' "$GRN" "$RST"
+exit 0

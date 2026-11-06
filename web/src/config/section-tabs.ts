@@ -72,7 +72,7 @@ export const EXPOSURES_SECTION_TABS: readonly SectionTab[] = [
 ]
 
 /**
- * Remediation (api/docs/rfcs/RFC-098-remediation-tasks.md): the fix plan,
+ * Remediation (server/docs/rfcs/RFC-098-remediation-tasks.md): the fix plan,
  * the suggestions to review, the tasks people work on, and the campaigns
  * that track them.
  */
@@ -434,7 +434,7 @@ export const ATTACK_SURFACE_SECTION_TABS: readonly SectionTab[] = [
   },
   {
     // The posture grade of the external surface, what takes points away and
-    // what to fix to reach the next grade (api/docs/architecture/easm-posture.md).
+    // what to fix to reach the next grade (server/docs/architecture/easm-posture.md).
     label: 'Posture',
     labelKey: 'nav.tab.posture',
     href: '/attack-surface/posture',

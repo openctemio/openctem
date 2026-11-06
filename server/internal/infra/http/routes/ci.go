@@ -1,0 +1,151 @@
+package routes
+
+// CI runner identity and the CI gate (docs/rfcs/RFC-051-ci-runner-identity-and-gate.md).
+//
+// Three kinds of caller share /api/v1/ci, each with its own chain on each
+// route (one chi mount, no group middleware):
+//
+//   - POST /oidc/exchange: public. A CI job's OIDC token is the credential;
+//     a budget per organization + issuer at each address, under a wide
+//     per-address backstop (middleware/ci_exchange_ratelimit.go), 32 KB body.
+//   - /runs/{id}/{results,results/{report_id},baseline-diff,evaluate}: a run upload token
+//     (octci_..., 15 minutes, one run on one repository). Per-run rate
+//     limit; results add the ingest per-tenant limit and concurrency cap.
+//   - everything else: the console session (token-tenant chain), the scans
+//     module and scans:ci:* permissions.
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// Budgets. A run uploads a handful of reports and evaluates once. Hosted CI
+// runners share egress addresses, so the per-IP budgets are wider than a
+// person's sign-in budget.
+const (
+	ciRunRatePerSecond = 2.0
+	ciRunBurst         = 30
+	ciIPRatePerSecond  = 10.0
+	ciIPBurst          = 100
+	// Token exchanges: per organization + issuer at one address, and per
+	// address across organizations. Shared runners put many customers
+	// behind one egress address; the backstop is sized for that.
+	ciExchangePerMinute   = 60
+	ciExchangeIPPerMinute = 600
+	// A trust preview reads an issuer's keys: ten a minute per person.
+	ciPreviewPerSecond = 10.0 / 60
+	ciPreviewBurst     = 10
+)
+
+func registerCIRoutes(
+	router Router,
+	admin *handler.CIAdminHandler,
+	runner *handler.CIRunnerHandler,
+	authMiddleware, userSyncMiddleware, moduleGate Middleware,
+	ingestRateLimiter *middleware.TelemetryRateLimiter,
+	log *logger.Logger,
+) {
+	var exchangeRL, runRL Middleware
+	var runChain, resultsChain []Middleware
+	if runner != nil {
+		exchangeRL = middleware.NewCIExchangeRateLimiter(middleware.CIExchangeRateLimitConfig{
+			PerIdentityPerMin: ciExchangePerMinute, PerIPPerMin: ciExchangeIPPerMinute,
+		}, authRateLimitBackend, log).Middleware()
+		// Before the token lookup: a client guessing tokens is throttled by
+		// address before it reaches the database.
+		ipRL := middleware.NewTelemetryRateLimiter(ciIPRatePerSecond, ciIPBurst, time.Hour, log).
+			MiddlewareKeyed(middleware.ClientIPKey, "CI rate limit exceeded")
+		runLimiter := middleware.NewTelemetryRateLimiter(ciRunRatePerSecond, ciRunBurst, time.Hour, log)
+		runRL = runLimiter.MiddlewareKeyed(func(r *http.Request) string {
+			if run := handler.CIRunFromContext(r.Context()); run != nil {
+				return run.ID.String()
+			}
+			return ""
+		}, "CI run rate limit exceeded")
+		runChain = []Middleware{ipRL, runner.AuthenticateRun, runRL}
+		resultsChain = append(append([]Middleware{}, runChain...), ingestMiddlewareChain(ingestRateLimiter,
+			middleware.NewTenantConcurrencyLimiter(IngestMaxConcurrentPerTenant),
+			middleware.BodyLimit(middleware.IngestMaxBodySize), middleware.DecompressForIngest())...)
+	}
+
+	// Pipeline routes: their own authentication, mounted on the root router
+	// (the console group below carries the session chain).
+	if runner != nil {
+		router.POST("/api/v1/ci/oidc/exchange", runner.Exchange, exchangeRL)
+		router.POST("/api/v1/ci/runs/{id}/results", runner.UploadResults, resultsChain...)
+		router.GET("/api/v1/ci/runs/{id}/results/{report_id}", runner.UploadStatus, runChain...)
+		router.POST("/api/v1/ci/runs/{id}/baseline-diff", runner.BaselineDiff, runChain...)
+		router.POST("/api/v1/ci/runs/{id}/evaluate", runner.Evaluate, runChain...)
+	}
+	if admin == nil {
+		return
+	}
+	previewRL := middleware.NewTelemetryRateLimiter(ciPreviewPerSecond, ciPreviewBurst, time.Hour, log).
+		MiddlewareKeyed(func(r *http.Request) string {
+			if uid := middleware.GetUserID(r.Context()); uid != "" {
+				return "user:" + uid
+			}
+			return "ip:" + middleware.ClientIPKey(r)
+		}, "CI trust preview rate limit exceeded")
+	router.Group("/api/v1/ci", func(r Router) {
+		r.GET("/settings", admin.GetSettings, middleware.Require(permission.CIRead))
+		// Who may send results is the CI trust: creating or changing a trust
+		// configuration, or letting CI sensor keys back in, grants upload
+		// rights, so it needs a recent sign-in like a break-glass does.
+		// Deleting a configuration only withdraws trust.
+		r.PUT("/settings", admin.UpdateSettings, middleware.Require(permission.CIWrite), requireStepUp())
+
+		r.GET("/trust-configs", admin.ListTrustConfigs, middleware.Require(permission.CIRead))
+		r.POST("/trust-configs", admin.CreateTrustConfig, middleware.Require(permission.CIWrite), requireStepUp())
+		// Fetches the draft issuer's keys (SSRF-guarded): per-user budget.
+		r.POST("/trust-configs/preview", admin.PreviewTrustConfig, middleware.Require(permission.CIWrite), previewRL)
+		r.GET("/trust-configs/{id}", admin.GetTrustConfig, middleware.Require(permission.CIRead))
+		r.PUT("/trust-configs/{id}", admin.UpdateTrustConfig, middleware.Require(permission.CIWrite), requireStepUp())
+		r.DELETE("/trust-configs/{id}", admin.DeleteTrustConfig, middleware.Require(permission.CIWrite))
+
+		r.GET("/pipelines", admin.ListPipelines, middleware.Require(permission.CIRead))
+		r.GET("/pipelines/{id}", admin.GetPipeline, middleware.Require(permission.CIRead))
+		r.POST("/pipelines/{id}/retire", admin.RetirePipeline, middleware.Require(permission.CIWrite))
+
+		// Refused pipelines name repositories that may not be assets yet:
+		// the people who set up CI trust (write) see them.
+		r.GET("/trust-refusals", admin.ListTokenRefusals, middleware.Require(permission.CIWrite))
+
+		r.GET("/coverage", admin.GetCoverage, middleware.Require(permission.CIRead))
+		r.PUT("/coverage/expectations/{id}", admin.SetCoverageExpectation, middleware.Require(permission.CIPolicy))
+		r.DELETE("/coverage/expectations/{id}", admin.DeleteCoverageExpectation, middleware.Require(permission.CIPolicy))
+
+		r.GET("/runs", admin.ListRuns, middleware.Require(permission.CIRead))
+		r.GET("/runs/{id}", admin.GetRun, middleware.Require(permission.CIRead))
+
+		r.GET("/gate-policies", admin.ListGatePolicies, middleware.Require(permission.CIRead))
+		r.POST("/gate-policies", admin.CreateGatePolicy, middleware.Require(permission.CIPolicy))
+		r.PATCH("/gate-policies/{id}", admin.UpdateGatePolicy, middleware.Require(permission.CIPolicy))
+		r.DELETE("/gate-policies/{id}", admin.DeleteGatePolicy, middleware.Require(permission.CIPolicy))
+
+		r.GET("/code-scanning/settings", admin.GetCodeScanTemplate, middleware.Require(permission.CIRead))
+		r.PUT("/code-scanning/settings", admin.UpdateCodeScanTemplate, middleware.Require(permission.CIWrite))
+		r.GET("/code-scanning/repositories", admin.ListCodeScanRepositories, middleware.Require(permission.CIRead))
+		r.GET("/code-scanning/repositories/{id}", admin.GetCodeScanRepository, middleware.Require(permission.CIRead))
+		r.PUT("/code-scanning/repositories/{id}/settings", admin.UpdateCodeScanRepository, middleware.Require(permission.CIWrite))
+		r.DELETE("/code-scanning/repositories/{id}/settings", admin.ResetCodeScanRepository, middleware.Require(permission.CIWrite))
+		r.POST("/code-scanning/repositories/{id}/baseline", admin.RebaselineCodeScanRepository, middleware.Require(permission.CIWrite))
+
+		// A repository's gate baseline: recording one lets its open findings
+		// pass default-branch runs, so it needs the policy permission and
+		// step-up; removing it is stricter.
+		r.GET("/gate-settings/{id}", admin.GetRepositorySettings, middleware.Require(permission.CIRead))
+		r.GET("/gate-baselines/{id}", admin.GetGateBaseline, middleware.Require(permission.CIRead))
+		r.PUT("/gate-baselines/{id}", admin.SetGateBaseline, middleware.Require(permission.CIPolicy), requireStepUp())
+		r.DELETE("/gate-baselines/{id}", admin.DeleteGateBaseline, middleware.Require(permission.CIPolicy))
+
+		r.GET("/gate-overrides", admin.ListOverrides, middleware.Require(permission.CIRead))
+		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride), requireStepUp())
+		r.POST("/gate-overrides/{id}/revoke", admin.RevokeOverride, middleware.Require(permission.CIOverride))
+	}, append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)...)
+}

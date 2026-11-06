@@ -10,8 +10,8 @@ on:
   push:
     branches: [develop]
     paths:
-      - 'api/internal/infra/storage/**'
-      - 'api/pkg/domain/attachment/**'
+      - 'server/internal/infra/storage/**'
+      - 'server/pkg/domain/attachment/**'
       - '.github/workflows/api-s3-r2-integration.yml'
   schedule:
     - cron: '41 4 * * 1'
@@ -39,7 +39,7 @@ jobs:
       OPENCTEM_TEST_S3_REGION: auto
     defaults:
       run:
-        working-directory: api
+        working-directory: server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,8 +48,8 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Integration test (skips when the secrets are unset)
         run: go test ./internal/infra/storage -run 'TestS3Integration' -count=1 -v

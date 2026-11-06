@@ -1,6 +1,6 @@
 /**
  * The organization's approval policy as the web console sees it
- * (api/docs/rfcs/RFC-111-approval-policy.md): tiers per kind and risk class,
+ * (server/docs/rfcs/RFC-111-approval-policy.md): tiers per kind and risk class,
  * the security pool, exclusions, caps and material-change behavior, and the
  * evaluation of one request. The API is the only authority: everything here
  * only shapes what the editor offers and how a decision is explained.

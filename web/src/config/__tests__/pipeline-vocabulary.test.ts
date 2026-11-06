@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 /**
- * Pipeline vocabulary guard (glossary: api/docs/architecture/scan-naming.md).
+ * Pipeline vocabulary guard (glossary: server/docs/architecture/scan-naming.md).
  *
  * "Pipeline" is a CI word. The graph of steps a scan runs is a scan workflow,
  * one execution of a scan is a scan run, and an event rule is an automation.

@@ -13,7 +13,7 @@ name: Web E2E
 #
 # When the suite runs
 #   merge queue   the WHOLE suite, when the queued PR (merge_group.base_sha..
-#                 head_sha) changed web/, api/ or anything shared (.github/,
+#                 head_sha) changed web/, server/ or anything shared (.github/,
 #                 deploy/, root Makefile, go.work): .github/scripts/changed.sh,
 #                 the same rules as the other workflows. Docs-only changes skip.
 #   develop       on every push, the WHOLE suite: the queue ran only the specs
@@ -39,7 +39,7 @@ name: Web E2E
 # by their recorded durations (artifact `e2e-timings` of the last green
 # develop run, the median for a spec without one), longest first, and the
 # every-page request budget check runs only when the @budget specs are
-# selected. Details: api/docs/development/ci-cd.md.
+# selected. Details: server/docs/development/ci-cd.md.
 #
 # How it stays fast
 #   images   the two images come from build-images.yml: built once per content
@@ -175,7 +175,7 @@ jobs:
               # more with the run-e2e label or a changed suite).
               elif [ "$WEB" = true ]; then run=true; fi ;;
             *)
-              # merge_group, push: web/, api/ or a shared file changed.
+              # merge_group, push: web/, server/ or a shared file changed.
               if [ "$WEB" = true ] || [ "$API" = true ]; then run=true; fi ;;
           esac
           echo "run=$run" >> "$GITHUB_OUTPUT"
@@ -202,10 +202,10 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-          # Area reuse: web/ and the shared files, plus api/ (the contract this
+          # Area reuse: web/ and the shared files, plus server/ (the contract this
           # workflow generates and the image it builds come from it).
           TREE_AREA: Web E2E
-          TREE_PATHS: web api Makefile go.work go.work.sum .github deploy
+          TREE_PATHS: web server Makefile go.work go.work.sum .github deploy
           TREE_CHECKS: E2E OK
           TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
@@ -386,7 +386,7 @@ jobs:
 
       # No shared images (a fork pull request): build here. The web image
       # compiles against the generated contract files, which are not committed
-      # (api/docs/development/ci-cd.md).
+      # (server/docs/development/ci-cd.md).
       - name: Generate the contract files
         if: env.SHARED != 'true'
         uses: ./.github/actions/generate-contract

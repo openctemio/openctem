@@ -3,7 +3,7 @@ name: Security Gate
 # Required check `security-gate`: a pull request that changes a path listed in
 # .github/security-paths.yml (or adds a high-risk pattern) merges only after a
 # maintainer adds the `security-ack` label and no HIGH finding is open. Every
-# other pull request passes at once. Guide: api/docs/development/ci-cd.md#security-gate.
+# other pull request passes at once. Guide: server/docs/development/ci-cd.md#security-gate.
 #
 # Safety:
 # - `pull_request` and `merge_group` only (no `pull_request_target`): fork pull

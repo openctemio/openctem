@@ -1,0 +1,418 @@
+-- =============================================================================
+-- OpenCTEM least-privilege database roles (owner decision D-6)
+-- =============================================================================
+-- Creates or repairs two roles and moves the schema to them:
+--
+--   migrator (default openctem_migrator)  owns the schema; runs migrations.
+--   app      (default openctem_app)       what the API connects as: DML on the
+--                                         application tables, nothing else.
+--
+-- Neither role is SUPERUSER, CREATEDB, CREATEROLE, REPLICATION or BYPASSRLS,
+-- and neither is a member of pg_read_server_files, pg_write_server_files or
+-- pg_execute_server_program (so no COPY ... TO/FROM a server file or PROGRAM).
+--
+-- Run as a superuser, connected to the OpenCTEM database. Idempotent: run it
+-- again after restoring a dump, after a migration was applied as another role,
+-- or to rotate a password.
+--
+--   psql "postgres://<superuser>@<host>:5432/<db>" -v ON_ERROR_STOP=1 \
+--        -v app_password="$DB_PASSWORD" -v migrator_password="$DB_MIGRATE_PASSWORD" \
+--        -f least-privilege-roles.sql
+--
+-- Optional variables: app_user (openctem_app), migrator_user
+-- (openctem_migrator), app_statement_timeout (60s) and
+-- app_idle_in_transaction_timeout (60s): role-level limits of the app role, so
+-- a runaway query or a transaction left open by a crashed worker cannot hold
+-- locks and block vacuum. 0 turns a limit off. They apply to new connections
+-- (restart the API after changing them); migrations run as the migrator, which
+-- has no limit. A password variable left empty keeps the role's current
+-- password (a new role then has none and cannot log in until one is set).
+--
+-- See docs/deployment/database-roles.md.
+-- =============================================================================
+
+\set ON_ERROR_STOP on
+\if :{?app_user}
+\else
+  \set app_user openctem_app
+\endif
+\if :{?migrator_user}
+\else
+  \set migrator_user openctem_migrator
+\endif
+\if :{?app_password}
+\else
+  \set app_password ''
+\endif
+\if :{?migrator_password}
+\else
+  \set migrator_password ''
+\endif
+\if :{?app_statement_timeout}
+\else
+  \set app_statement_timeout 60s
+\endif
+\if :{?app_idle_in_transaction_timeout}
+\else
+  \set app_idle_in_transaction_timeout 60s
+\endif
+
+-- Keep the passwords below out of the server log whatever log_statement says.
+SET log_statement = 'none';
+SET log_min_duration_statement = -1;
+SET client_min_messages = warning;
+
+SELECT set_config('openctem.app_user', :'app_user', false),
+       set_config('openctem.migrator_user', :'migrator_user', false);
+
+DO $$
+BEGIN
+    IF NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
+        RAISE EXCEPTION 'run this script as a superuser (connected as %)', current_user;
+    END IF;
+    IF current_setting('openctem.app_user') = current_setting('openctem.migrator_user') THEN
+        RAISE EXCEPTION 'app_user and migrator_user must be different roles';
+    END IF;
+    IF current_setting('openctem.app_user') = current_user
+       OR current_setting('openctem.migrator_user') = current_user THEN
+        RAISE EXCEPTION 'app_user/migrator_user must not be the superuser running this script (%)', current_user;
+    END IF;
+END
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 1. The roles: LOGIN, and explicitly none of the dangerous attributes.
+-- -----------------------------------------------------------------------------
+SELECT format('CREATE ROLE %I LOGIN', r)
+FROM unnest(ARRAY[:'migrator_user', :'app_user']) AS r
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) \gexec
+
+SELECT format('ALTER ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT', r)
+FROM unnest(ARRAY[:'migrator_user', :'app_user']) AS r \gexec
+
+SELECT format('ALTER ROLE %I PASSWORD %L', :'migrator_user', :'migrator_password')
+WHERE :'migrator_password' <> '' \gexec
+SELECT format('ALTER ROLE %I PASSWORD %L', :'app_user', :'app_password')
+WHERE :'app_password' <> '' \gexec
+
+-- Limits for the app role only. A statement that legitimately needs longer
+-- raises its own limit with SET LOCAL statement_timeout inside its transaction.
+SELECT format('ALTER ROLE %I SET statement_timeout = %L', :'app_user', :'app_statement_timeout') \gexec
+SELECT format('ALTER ROLE %I SET idle_in_transaction_session_timeout = %L', :'app_user', :'app_idle_in_transaction_timeout') \gexec
+
+-- No role memberships at all for the app (the predefined pg_* file/program
+-- roles included), and none of the file/program roles for the migrator.
+SELECT format('REVOKE %I FROM %I', g.rolname, m.rolname)
+FROM pg_auth_members am
+JOIN pg_roles g ON g.oid = am.roleid
+JOIN pg_roles m ON m.oid = am.member
+WHERE m.rolname = :'app_user'
+   OR (m.rolname = :'migrator_user'
+       AND g.rolname IN ('pg_read_server_files', 'pg_write_server_files',
+                         'pg_execute_server_program', 'pg_read_all_data',
+                         'pg_write_all_data')) \gexec
+
+-- -----------------------------------------------------------------------------
+-- 2. Extensions the migrations use. Created here by the superuser so the
+--    migrator never needs to; CREATE EXTENSION IF NOT EXISTS in a migration is
+--    then a no-op.
+-- -----------------------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- -----------------------------------------------------------------------------
+-- 3. Database and schemas. The application schemas are public plus any schema
+--    a migration created (000213 created `deprecated`; 001059 dropped it).
+--    Nobody else (PUBLIC) may
+--    connect, create temp tables or create objects in them.
+-- -----------------------------------------------------------------------------
+CREATE TEMP VIEW app_schemas AS
+    SELECT n.oid, n.nspname FROM pg_namespace n
+    WHERE n.nspname NOT LIKE 'pg\_%' AND n.nspname <> 'information_schema'
+      AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.classid = 'pg_namespace'::regclass AND d.objid = n.oid AND d.deptype = 'e');
+
+SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', current_database()) \gexec
+SELECT format('GRANT CONNECT, TEMPORARY, CREATE ON DATABASE %I TO %I', current_database(), :'migrator_user') \gexec
+-- TEMPORARY: the EPSS import stages rows in a temp table (threatintel_repository).
+SELECT format('GRANT CONNECT, TEMPORARY ON DATABASE %I TO %I', current_database(), :'app_user') \gexec
+
+SELECT format('REVOKE CREATE ON SCHEMA %I FROM PUBLIC', nspname) FROM app_schemas \gexec
+SELECT format('ALTER SCHEMA %I OWNER TO %I', nspname, :'migrator_user') FROM app_schemas \gexec
+SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
+SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
+
+-- The migration runner's two tables (server/internal/migrate), created ahead of
+-- the first migration on a fresh database (same definitions the runner uses)
+-- so they are the migrator's and the app only ever gets SELECT on them
+-- (section 5): a role that could write them could make the next migration run
+-- skip a migration, or run one again.
+CREATE TABLE IF NOT EXISTS public.schema_migrations (version bigint NOT NULL PRIMARY KEY, dirty boolean NOT NULL);
+CREATE TABLE IF NOT EXISTS public.schema_migrations_applied (
+    version bigint NOT NULL PRIMARY KEY,
+    name text NOT NULL,
+    applied_at timestamptz NOT NULL DEFAULT clock_timestamp());
+
+-- -----------------------------------------------------------------------------
+-- 4. Ownership: every object in those schemas that is not part of an
+--    extension moves to the migrator (earlier migrations ran as a superuser).
+-- -----------------------------------------------------------------------------
+-- Tables, partitioned tables, views, materialized views, foreign tables.
+-- Sequences owned by a column follow their table.
+SELECT format('ALTER %s %I.%I OWNER TO %I',
+              CASE c.relkind WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW'
+                             WHEN 'f' THEN 'FOREIGN TABLE' ELSE 'TABLE' END,
+              n.nspname, c.relname, :'migrator_user')
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.oid IN (SELECT oid FROM app_schemas)
+  AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+  AND c.relowner <> (SELECT oid FROM pg_roles WHERE rolname = :'migrator_user')
+  AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                  WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e') \gexec
+
+-- Free-standing sequences.
+SELECT format('ALTER SEQUENCE %I.%I OWNER TO %I', n.nspname, c.relname, :'migrator_user')
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.oid IN (SELECT oid FROM app_schemas) AND c.relkind = 'S'
+  AND c.relowner <> (SELECT oid FROM pg_roles WHERE rolname = :'migrator_user')
+  AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                  WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype IN ('e', 'a', 'i')) \gexec
+
+-- Functions and procedures.
+SELECT format('ALTER %s %s OWNER TO %I',
+              CASE p.prokind WHEN 'p' THEN 'PROCEDURE' WHEN 'a' THEN 'AGGREGATE' ELSE 'FUNCTION' END,
+              p.oid::regprocedure, :'migrator_user')
+FROM pg_proc p
+WHERE p.pronamespace IN (SELECT oid FROM app_schemas)
+  AND p.proowner <> (SELECT oid FROM pg_roles WHERE rolname = :'migrator_user')
+  AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                  WHERE d.classid = 'pg_proc'::regclass AND d.objid = p.oid AND d.deptype = 'e') \gexec
+
+-- Enums, domains, ranges and stand-alone composite types (not a table's row type).
+SELECT format('ALTER %s %I.%I OWNER TO %I',
+              CASE t.typtype WHEN 'd' THEN 'DOMAIN' ELSE 'TYPE' END,
+              n.nspname, t.typname, :'migrator_user')
+FROM pg_type t
+JOIN pg_namespace n ON n.oid = t.typnamespace
+WHERE n.oid IN (SELECT oid FROM app_schemas)
+  AND t.typtype IN ('e', 'd', 'c', 'r')
+  AND (t.typtype <> 'c' OR (SELECT c.relkind FROM pg_class c WHERE c.oid = t.typrelid) = 'c')
+  AND t.typowner <> (SELECT oid FROM pg_roles WHERE rolname = :'migrator_user')
+  AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                  WHERE d.classid = 'pg_type'::regclass AND d.objid = t.oid AND d.deptype IN ('e', 'i')) \gexec
+
+-- -----------------------------------------------------------------------------
+-- 5. What the app may do, on today's objects...
+-- -----------------------------------------------------------------------------
+SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
+SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
+-- The migration tracking tables are read (the startup schema check, the
+-- console), never written.
+SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations FROM %I', :'app_user') \gexec
+SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations_applied FROM %I', :'app_user') \gexec
+-- The administrators' audit log is append-only: insert and read only. Its
+-- retention anchors are written by admin_audit_prune (the owner) alone.
+SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.admin_audit_logs FROM %I', :'app_user')
+WHERE to_regclass('public.admin_audit_logs') IS NOT NULL \gexec
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.admin_audit_chain_anchors FROM %I', :'app_user')
+WHERE to_regclass('public.admin_audit_chain_anchors') IS NOT NULL \gexec
+-- The tenant audit log is never updated (its rows are chained by a trigger;
+-- retention deletes the oldest prefix). The chain evidence tables are never
+-- updated either; only a rebaseline rewrites audit_log_chain hashes.
+SELECT format('REVOKE UPDATE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['audit_logs', 'audit_chain_anchors', 'audit_chain_rebaselines',
+                  'audit_chain_rebaseline_entries']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('REVOKE TRUNCATE ON public.audit_log_chain FROM %I', :'app_user')
+WHERE to_regclass('public.audit_log_chain') IS NOT NULL \gexec
+-- The EPSS and KEV feeds replace their whole global catalog with TRUNCATE.
+SELECT format('GRANT TRUNCATE ON public.%I TO %I', t, :'app_user')
+FROM unnest(ARRAY['epss_scores', 'kev_catalog']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
+SELECT format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
+SELECT format('GRANT USAGE ON TYPE %I.%I TO %I', n.nspname, t.typname, :'app_user')
+FROM pg_type t
+JOIN pg_namespace n ON n.oid = t.typnamespace
+WHERE n.oid IN (SELECT oid FROM app_schemas) AND t.typtype IN ('e', 'd', 'r')
+  AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                  WHERE d.classid = 'pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e') \gexec
+
+-- -----------------------------------------------------------------------------
+-- 6. ...and on everything a later migration (run as the migrator) creates.
+-- -----------------------------------------------------------------------------
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I', :'migrator_user', :'app_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'app_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'app_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE ON TYPES TO %I', :'migrator_user', :'app_user') \gexec
+
+-- -----------------------------------------------------------------------------
+-- 7. Verify. Any failure here aborts with a non-zero exit.
+-- -----------------------------------------------------------------------------
+DO $$
+DECLARE
+    app  text := current_setting('openctem.app_user');
+    mig  text := current_setting('openctem.migrator_user');
+    r    record;
+    bad  text;
+BEGIN
+    FOR r IN SELECT rolname, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+             FROM pg_roles WHERE rolname IN (app, mig) LOOP
+        IF r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls THEN
+            RAISE EXCEPTION 'role % still has a privileged attribute', r.rolname;
+        END IF;
+    END LOOP;
+
+    SELECT string_agg(g, ', ') INTO bad
+    FROM unnest(ARRAY['pg_read_server_files', 'pg_write_server_files', 'pg_execute_server_program',
+                      'pg_read_all_data', 'pg_write_all_data', 'pg_signal_backend', 'pg_monitor']) AS g
+    WHERE pg_has_role(app, g, 'USAGE') OR (g LIKE 'pg\_%server%' AND pg_has_role(mig, g, 'USAGE'));
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'app/migrator inherit a predefined role: %', bad;
+    END IF;
+
+    SELECT string_agg(nspname, ', ') INTO bad FROM app_schemas
+    WHERE has_schema_privilege(app, oid, 'CREATE') OR NOT has_schema_privilege(app, oid, 'USAGE');
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'role % can create objects in (or cannot use) schema: %', app, bad;
+    END IF;
+
+    SELECT string_agg(c.relname, ', ') INTO bad
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.oid IN (SELECT oid FROM app_schemas) AND c.relkind IN ('r', 'p')
+      AND NOT has_table_privilege(app, c.oid, 'SELECT, INSERT, UPDATE, DELETE')
+      AND c.relname NOT IN ('schema_migrations', 'schema_migrations_applied');
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'role % is missing DML on: %', app, bad;
+    END IF;
+
+    SELECT string_agg(c.relname, ', ') INTO bad
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.oid IN (SELECT oid FROM app_schemas) AND c.relkind IN ('r', 'p', 'v', 'm', 'S')
+      AND pg_get_userbyid(c.relowner) <> mig
+      AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e');
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'not owned by %: %', mig, bad;
+    END IF;
+END
+$$;
+
+\echo 'least-privilege roles: OK (' :migrator_user ' owns the schema, ' :app_user ' has DML only)'
+
+-- -----------------------------------------------------------------------------
+-- 8. Optional: the platform console's identity tables get their own role
+--    (admin_user / admin_password; the API's DB_ADMIN_USER). The API opens a
+--    second pool with it for administrators, console sessions and the
+--    platform identity provider, and the app role keeps no write on those
+--    tables (and no read but of admin_users, which the membership trigger and
+--    the platform-admin checks need). A SQL injection anywhere in the tenant
+--    plane then cannot add an administrator or a console session, nor plant a
+--    console passkey or a known recovery code for an administrator.
+-- -----------------------------------------------------------------------------
+\if :{?admin_user}
+\if :{?admin_password}
+\else
+  \set admin_password ''
+\endif
+SELECT set_config('openctem.admin_user', :'admin_user', false);
+DO $$
+BEGIN
+    IF current_setting('openctem.admin_user') IN (current_setting('openctem.app_user'), current_setting('openctem.migrator_user'), current_user) THEN
+        RAISE EXCEPTION 'admin_user must differ from app_user, migrator_user and the superuser';
+    END IF;
+END
+$$;
+SELECT format('CREATE ROLE %I LOGIN', :'admin_user')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'admin_user') \gexec
+SELECT format('ALTER ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT', :'admin_user') \gexec
+SELECT format('ALTER ROLE %I PASSWORD %L', :'admin_user', :'admin_password')
+WHERE :'admin_password' <> '' \gexec
+SELECT format('REVOKE %I FROM %I', g.rolname, m.rolname)
+FROM pg_auth_members am JOIN pg_roles g ON g.oid = am.roleid JOIN pg_roles m ON m.oid = am.member
+WHERE m.rolname = :'admin_user' \gexec
+
+SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), :'admin_user') \gexec
+SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
+-- The console role starts from no table privilege (an earlier release granted
+-- it the app's row access) and gets exactly what the console's repositories
+-- touch: full DML on its own identity tables (second factors included), append and read of its audit
+-- log, read of the audit chain anchors, link/unlink of an administrator to a
+-- users row (SELECT, UPDATE on users) and the membership check that refuses
+-- linking an account that belongs to an organization (SELECT on tenant_members).
+-- Tenant data (findings, assets, ...) is not readable or writable by it.
+SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT, INSERT ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['admin_audit_logs']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['admin_audit_chain_anchors', 'tenant_members']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT SELECT, UPDATE ON public.%I TO %I', t, :'admin_user')
+FROM unnest(ARRAY['users']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+SELECT format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO %I', nspname, :'admin_user') FROM app_schemas \gexec
+-- ...but not the owner-rights partition upkeep of the dashboard facts
+-- (SECURITY DEFINER; only the app's background controller calls it).
+SELECT format('REVOKE EXECUTE ON FUNCTION public.dash_asset_day_maintain() FROM %I', :'admin_user')
+WHERE to_regprocedure('public.dash_asset_day_maintain()') IS NOT NULL \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I REVOKE ALL ON TABLES FROM %I', :'migrator_user', :'admin_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'admin_user') \gexec
+SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'admin_user') \gexec
+
+-- The app keeps reading admin_users, nothing else of the console's identity
+-- (four-eyes approvals included: a tenant-plane injection cannot forge one;
+-- platform roles included: the tenant plane neither reads nor grants them;
+-- the console's second factors included: passkeys, recovery codes and the
+-- passkey ceremonies, so it cannot plant a factor for an administrator).
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['admin_users', 'admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+SELECT format('REVOKE SELECT ON public.%I FROM %I', t, :'app_user')
+FROM unnest(ARRAY['admin_credentials', 'admin_sessions', 'platform_identity_provider', 'admin_idp_login_states', 'admin_approvals', 'platform_roles', 'platform_role_permissions', 'platform_role_assignments', 'admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
+WHERE to_regclass('public.' || t) IS NOT NULL \gexec
+
+DO $$
+DECLARE
+    adm text := current_setting('openctem.admin_user');
+    app text := current_setting('openctem.app_user');
+    r record;
+    bad text;
+BEGIN
+    FOR r IN SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls FROM pg_roles WHERE rolname = adm LOOP
+        IF r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls THEN
+            RAISE EXCEPTION 'role % still has a privileged attribute', adm;
+        END IF;
+    END LOOP;
+    IF to_regclass('public.admin_users') IS NOT NULL AND
+       (has_table_privilege(app, 'public.admin_users', 'INSERT') OR has_table_privilege(app, 'public.admin_users', 'UPDATE')
+        OR has_table_privilege(app, 'public.admin_users', 'DELETE')
+        OR NOT has_table_privilege(adm, 'public.admin_users', 'INSERT')) THEN
+        RAISE EXCEPTION 'admin_users is not written by % alone', adm;
+    END IF;
+    SELECT string_agg(t, ', ') INTO bad
+    FROM unnest(ARRAY['admin_webauthn_credentials', 'admin_recovery_codes', 'admin_webauthn_ceremonies']) AS t
+    WHERE to_regclass('public.' || t) IS NOT NULL
+      -- A privilege list is true when ANY of them is held.
+      AND (has_table_privilege(app, 'public.' || t, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE')
+           OR NOT (has_table_privilege(adm, 'public.' || t, 'SELECT') AND has_table_privilege(adm, 'public.' || t, 'INSERT')
+                   AND has_table_privilege(adm, 'public.' || t, 'UPDATE') AND has_table_privilege(adm, 'public.' || t, 'DELETE')));
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'console second factors are not % alone: %', adm, bad;
+    END IF;
+    IF to_regprocedure('public.dash_asset_day_maintain()') IS NOT NULL
+       AND has_function_privilege(adm, 'public.dash_asset_day_maintain()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'role % may run dash_asset_day_maintain (owner rights)', adm;
+    END IF;
+END
+$$;
+\echo 'least-privilege roles: ' :admin_user ' writes the console identity tables; ' :app_user ' no longer does'
+\endif

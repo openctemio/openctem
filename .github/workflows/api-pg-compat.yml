@@ -8,7 +8,7 @@ name: API PostgreSQL Compatibility
 #   - schedule: nightly (02:17 UTC). GitHub runs the default branch's (main's)
 #     copy of this file; the checkout tests develop.
 #   - pull_request: only a change to this file or to the role script
-#     (api/deploy/postgres), to prove the change works before it lands
+#     (server/deploy/postgres), to prove the change works before it lands
 #   - workflow_dispatch: any time
 #
 # No push trigger: every migration is already applied on PostgreSQL 18 by API
@@ -27,7 +27,7 @@ on:
     - cron: "17 2 * * *"
   pull_request:
     paths:
-      - api/deploy/postgres/**
+      - server/deploy/postgres/**
       - .github/workflows/api-pg-compat.yml
   workflow_dispatch:
 
@@ -47,7 +47,7 @@ env:
 
 defaults:
   run:
-    working-directory: api
+    working-directory: server
 
 jobs:
   suite:
@@ -133,9 +133,9 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
 
       # The spec is generated, not committed; the contract tests read it.
       - name: Generate the OpenAPI spec

@@ -1,0 +1,800 @@
+// Package outbox implements the application service for the outbox bounded context — orchestrates pkg/domain/outbox entities and cross-cutting concerns (audit, notifications, RBAC).
+package outbox
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	notificationclient "github.com/openctemio/openctem/server/internal/infra/notifier"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	emailpkg "github.com/openctemio/openctem/server/pkg/email"
+	"github.com/openctemio/openctem/server/pkg/weblink"
+)
+
+// Status constants for notification results.
+const (
+	notificationStatusFailed  = "failed"
+	notificationStatusSuccess = "success"
+)
+
+// =============================================================================
+// Service Interface
+// =============================================================================
+
+// Service handles notification outbox operations.
+type Service struct {
+	outboxRepo       outboxdom.OutboxRepository
+	eventRepo        outboxdom.EventRepository
+	notificationRepo integration.NotificationExtensionRepository
+	clientFactory    *notificationclient.ClientFactory
+	// newClient builds the provider client of one send (the factory; tests
+	// replace it to observe sends without a network).
+	newClient         func(notificationclient.Config) (notificationclient.Client, error)
+	credentialDecrypt func(string) (string, error)
+	log               *slog.Logger
+
+	// delivery decides where events about private program assets may go
+	// (bountyprogram.Delivery). Nil delivers every event as before.
+	delivery bountyprogram.DeliveryResolver
+
+	// relayRefused stops an e-mail channel whose relay the managed service
+	// rules refuse and tells the owners (nil: the failure is only recorded).
+	relayRefused RelayRefusedHandler
+
+	// linkBase is the console's base URL: the console-relative link of an
+	// event is sent out absolute (empty: sent as stored).
+	linkBase string
+}
+
+// SetLinkBase sets the console base URL the links of delivered events are
+// joined to.
+func (s *Service) SetLinkBase(base string) { s.linkBase = base }
+
+// RelayRefusedHandler is told when a delivery was refused because an
+// organization's e-mail relay does not meet the managed service rules.
+type RelayRefusedHandler interface {
+	EmailRelayRefused(ctx context.Context, tenantID, integrationID shared.ID, cause error)
+}
+
+// SetRelayRefusedHandler wires the stop-and-notify reaction.
+func (s *Service) SetRelayRefusedHandler(h RelayRefusedHandler) { s.relayRefused = h }
+
+// SetDeliveryResolver wires the private program routing rule: an event
+// about an asset only private programs list reaches only the integrations
+// attached to one of them (unless an owner opted the programs in), and the
+// names of private programs are scrubbed for every other destination.
+// SetBrand names the instance brand in the notifications this service
+// delivers (docs/architecture/brand.md).
+func (s *Service) SetBrand(b brand.Brand) { s.clientFactory.SetBrand(b) }
+
+func (s *Service) SetDeliveryResolver(r bountyprogram.DeliveryResolver) { s.delivery = r }
+
+// NewService creates a new Service.
+func NewService(
+	outboxRepo outboxdom.OutboxRepository,
+	eventRepo outboxdom.EventRepository,
+	notificationRepo integration.NotificationExtensionRepository,
+	credentialDecrypt func(string) (string, error),
+	log *slog.Logger,
+) *Service {
+	s := &Service{
+		outboxRepo:        outboxRepo,
+		eventRepo:         eventRepo,
+		notificationRepo:  notificationRepo,
+		clientFactory:     notificationclient.NewClientFactory(),
+		credentialDecrypt: credentialDecrypt,
+		log:               log,
+	}
+	s.newClient = s.clientFactory.CreateClient
+	return s
+}
+
+// =============================================================================
+// Outbox Entry Creation
+// =============================================================================
+
+// EnqueueParams contains parameters for enqueuing a notification.
+type EnqueueParams struct {
+	TenantID      shared.ID
+	EventType     string     // e.g., "new_finding", "scan_completed"
+	AggregateType string     // e.g., "finding", "scan"
+	AggregateID   *uuid.UUID // ID of the source entity
+	Title         string
+	Body          string
+	Severity      string // critical, high, medium, low, info
+	URL           string
+	Metadata      map[string]any
+}
+
+// Enqueue creates an outbox entry for a notification.
+// This should be called within the same transaction as the business event.
+func (s *Service) Enqueue(ctx context.Context, params EnqueueParams) error {
+	outbox := outboxdom.NewOutbox(outboxdom.OutboxParams{
+		TenantID:      params.TenantID,
+		EventType:     params.EventType,
+		AggregateType: params.AggregateType,
+		AggregateID:   params.AggregateID,
+		Title:         params.Title,
+		Body:          params.Body,
+		Severity:      outboxdom.Severity(params.Severity),
+		URL:           params.URL,
+		Metadata:      params.Metadata,
+	})
+
+	if err := s.outboxRepo.Create(ctx, outbox); err != nil {
+		return fmt.Errorf("create outbox entry: %w", err)
+	}
+
+	s.log.Debug("enqueued notification",
+		"outbox_id", outbox.ID().String(),
+		"tenant_id", params.TenantID.String(),
+		"event_type", params.EventType,
+		"aggregate_type", params.AggregateType,
+	)
+
+	return nil
+}
+
+// EnqueueInTx creates an outbox entry within an existing transaction.
+// This is the preferred method for the transactional outbox pattern.
+func (s *Service) EnqueueInTx(ctx context.Context, tx *sql.Tx, params EnqueueParams) error {
+	outbox := outboxdom.NewOutbox(outboxdom.OutboxParams{
+		TenantID:      params.TenantID,
+		EventType:     params.EventType,
+		AggregateType: params.AggregateType,
+		AggregateID:   params.AggregateID,
+		Title:         params.Title,
+		Body:          params.Body,
+		Severity:      outboxdom.Severity(params.Severity),
+		URL:           params.URL,
+		Metadata:      params.Metadata,
+	})
+
+	if err := s.outboxRepo.CreateInTx(ctx, tx, outbox); err != nil {
+		return fmt.Errorf("create outbox entry in tx: %w", err)
+	}
+
+	s.log.Debug("enqueued notification in transaction",
+		"outbox_id", outbox.ID().String(),
+		"tenant_id", params.TenantID.String(),
+		"event_type", params.EventType,
+	)
+
+	return nil
+}
+
+// =============================================================================
+// Outbox Processing (implements jobs.NotificationProcessor)
+// =============================================================================
+
+// ProcessOutboxBatch processes a batch of pending outbox entries.
+func (s *Service) ProcessOutboxBatch(ctx context.Context, workerID string, batchSize int) (processed, failed int, err error) {
+	// Fetch and lock pending entries
+	entries, err := s.outboxRepo.FetchPendingBatch(ctx, workerID, batchSize)
+	if err != nil {
+		return 0, 0, fmt.Errorf("fetch pending batch: %w", err)
+	}
+
+	if len(entries) == 0 {
+		return 0, 0, nil
+	}
+
+	s.log.Debug("processing notification batch",
+		"worker_id", workerID,
+		"batch_size", len(entries),
+	)
+
+	// Process each entry
+	for _, entry := range entries {
+		if err := s.processOutboxEntry(ctx, entry); err != nil {
+			s.log.Error("failed to process outbox entry",
+				"outbox_id", entry.ID().String(),
+				"error", err,
+			)
+			failed++
+		} else {
+			processed++
+		}
+	}
+
+	return processed, failed, nil
+}
+
+// processOutboxEntry processes a single outbox entry: one pass over its
+// channels. Each channel (integration) has its own delivery state
+// (outboxdom.ChannelDelivery): a channel that got the event is never sent it
+// again, a failed one is retried on its own backoff whatever the other
+// channels did, and the entry is archived only when every channel is
+// delivered or dead.
+func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbox) error {
+	// Get all notification integrations for this tenant
+	integrations, err := s.getNotificationIntegrationsForTenant(ctx, entry.TenantID())
+	if err != nil {
+		s.failEntry(ctx, entry, fmt.Sprintf("failed to get integrations: %v", err))
+		return err
+	}
+
+	// Where the event may go. An unknown decision is a failure (retried),
+	// never a delivery: an NDA-covered event must not leak on a DB error.
+	delivery, err := s.resolveDelivery(ctx, entry)
+	if err != nil {
+		s.failEntry(ctx, entry, fmt.Sprintf("failed to resolve delivery: %v", err))
+		return err
+	}
+
+	// First pass: the channels are the integrations whose filters match the
+	// event and that may receive it. Later passes keep that set: an
+	// integration added after the event does not get it.
+	if !entry.HasDeliveries() {
+		var ds []outboxdom.ChannelDelivery
+		for _, intg := range integrations {
+			if !s.shouldSendToIntegration(intg, entry) || !delivery.Allows(intg.Integration.ID()) {
+				continue
+			}
+			ds = append(ds, outboxdom.NewChannelDelivery(
+				intg.Integration.ID().String(), intg.Integration.Name(), intg.Integration.Provider().String()))
+		}
+		entry.SetDeliveries(ds)
+	}
+
+	byID := make(map[string]*integration.IntegrationWithNotification, len(integrations))
+	for _, intg := range integrations {
+		byID[intg.Integration.ID().String()] = intg
+	}
+
+	now := time.Now()
+	deliveries := entry.Deliveries()
+	for i := range deliveries {
+		d := &deliveries[i]
+		if !d.Due(now) {
+			continue
+		}
+		intg, ok := byID[d.IntegrationID]
+		switch {
+		case !ok:
+			// Deleted, disabled or disconnected since the event: a failed
+			// attempt, so a channel that comes back within the retry window
+			// still gets the event.
+			d.RecordFailure(now, "integration is not connected")
+			continue
+		case !delivery.Allows(intg.Integration.ID()):
+			// The routing rule changed (the event's asset moved into a
+			// private program): never deliver it to this channel.
+			d.Abandon(now, "channel may no longer receive this event")
+			continue
+		}
+		result := s.sendToIntegration(ctx, intg, entry, delivery)
+		if result.Status == notificationStatusSuccess {
+			d.RecordSuccess(now, result.MessageID)
+		} else {
+			d.RecordFailure(now, result.Error)
+		}
+	}
+	entry.SetDeliveries(deliveries)
+
+	if !entry.SettleDeliveries(now) {
+		// A channel is still pending: the entry stays in the outbox, due at
+		// the earliest channel retry.
+		return s.outboxRepo.Update(ctx, entry)
+	}
+
+	succeeded, failed, sendResults := entry.DeliveryResults()
+	for _, r := range sendResults {
+		if r.Status != notificationStatusSuccess {
+			metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel).Inc()
+			s.log.Error("notification channel dead-lettered after exhausting retries",
+				"outbox_id", entry.ID().String(),
+				"tenant_id", entry.TenantID().String(),
+				"event_type", entry.EventType(),
+				"integration_id", r.IntegrationID,
+				"attempts", r.Attempts,
+				"last_error", r.Error,
+			)
+		}
+	}
+	results := outboxdom.ProcessingResults{
+		IntegrationsTotal:     len(integrations),
+		IntegrationsMatched:   len(sendResults),
+		IntegrationsSucceeded: succeeded,
+		IntegrationsFailed:    failed,
+		SendResults:           sendResults,
+	}
+
+	// Archive to notification_events
+	event := outboxdom.NewEventFromOutbox(entry, results)
+	if err := s.eventRepo.Create(ctx, event); err != nil {
+		s.log.Error("failed to archive notification event",
+			"outbox_id", entry.ID().String(),
+			"error", err,
+		)
+		// Don't fail the processing, just log the error
+		// Update the outbox status and continue
+		return s.outboxRepo.Update(ctx, entry)
+	}
+
+	// Delete from outbox after successful archive
+	if err := s.outboxRepo.Delete(ctx, entry.ID()); err != nil {
+		s.log.Error("failed to delete outbox entry after archive",
+			"outbox_id", entry.ID().String(),
+			"error", err,
+		)
+		// Fall back to updating status if delete fails
+		return s.outboxRepo.Update(ctx, entry)
+	}
+
+	s.log.Debug("notification processed and archived",
+		"outbox_id", entry.ID().String(),
+		"event_status", event.Status(),
+		"integrations_matched", results.IntegrationsMatched,
+		"integrations_succeeded", results.IntegrationsSucceeded,
+	)
+
+	return nil
+}
+
+// Where a notification gave up (metrics.NotificationDeadLettersTotal).
+const (
+	deadLetterChannel = "channel"
+	deadLetterEntry   = "entry"
+)
+
+// failEntry records an entry-level failure (its integrations or routing
+// could not be read). When the retries are spent the entry is dead: an
+// ERROR log and the dead-letter counter, which the OutboxDeadLetters alert
+// reads.
+func (s *Service) failEntry(ctx context.Context, entry *outboxdom.Outbox, reason string) {
+	entry.MarkFailed(reason)
+	if entry.Status() == outboxdom.OutboxStatusFailed {
+		metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterEntry).Inc()
+		s.log.Error("notification dead-lettered after exhausting retries",
+			"outbox_id", entry.ID().String(),
+			"tenant_id", entry.TenantID().String(),
+			"event_type", entry.EventType(),
+			"retry_count", entry.RetryCount(),
+			"max_retries", entry.MaxRetries(),
+			"last_error", entry.LastError(),
+		)
+	}
+	if updateErr := s.outboxRepo.Update(ctx, entry); updateErr != nil {
+		s.log.Error("failed to update outbox entry after error", "error", updateErr)
+	}
+}
+
+// resolveDelivery returns the routing decision for the entry's subject:
+// its aggregate (finding, asset, exposure, approval) and the assets a
+// batch notice lists in its metadata ("assets": [{"id": …}]).
+func (s *Service) resolveDelivery(ctx context.Context, entry *outboxdom.Outbox) (bountyprogram.Delivery, error) {
+	if s.delivery == nil {
+		return bountyprogram.Delivery{}, nil
+	}
+	subject := DeliverySubject(entry.AggregateType(), entry.AggregateID(), entry.Metadata())
+	return s.delivery.Resolve(ctx, entry.TenantID(), subject)
+}
+
+// DeliverySubject maps an outbox entry's aggregate and metadata to what it
+// is about. Aggregates that name no asset (sensor, scope target, workflow,
+// CI run, digest) give an empty subject.
+func DeliverySubject(aggregateType string, aggregateID *uuid.UUID, metadata map[string]any) bountyprogram.DeliverySubject {
+	var subj bountyprogram.DeliverySubject
+	if aggregateID != nil {
+		id, err := shared.IDFromString(aggregateID.String())
+		if err == nil {
+			switch aggregateType {
+			case "finding":
+				subj.FindingIDs = append(subj.FindingIDs, id)
+			case "asset":
+				subj.AssetIDs = append(subj.AssetIDs, id)
+			case "exposure":
+				subj.ExposureIDs = append(subj.ExposureIDs, id)
+			case "approval":
+				subj.ApprovalIDs = append(subj.ApprovalIDs, id)
+			}
+		}
+	}
+	// Stored metadata decodes as []any; a freshly built entry holds
+	// []map[string]any.
+	var items []map[string]any
+	switch v := metadata["assets"].(type) {
+	case []map[string]any:
+		items = v
+	case []any:
+		for _, it := range v {
+			if m, ok := it.(map[string]any); ok {
+				items = append(items, m)
+			}
+		}
+	}
+	for _, m := range items {
+		if id, err := shared.IDFromString(getStringFromMap(m, "id")); err == nil {
+			subj.AssetIDs = append(subj.AssetIDs, id)
+		}
+	}
+	return subj
+}
+
+// getNotificationIntegrationsForTenant gets all connected notification integrations for a tenant.
+func (s *Service) getNotificationIntegrationsForTenant(ctx context.Context, tenantID shared.ID) ([]*integration.IntegrationWithNotification, error) {
+	// Convert shared.ID to integration.ID
+	intTenantID, err := integration.ParseID(tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("parse tenant id: %w", err)
+	}
+
+	// List all notification integrations with their extensions
+	intgs, err := s.notificationRepo.ListIntegrationsWithNotification(ctx, intTenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list integrations: %w", err)
+	}
+
+	// Filter to only connected integrations
+	connected := make([]*integration.IntegrationWithNotification, 0, len(intgs))
+	for _, intg := range intgs {
+		if intg.Integration != nil && intg.Integration.Status() == integration.StatusConnected {
+			connected = append(connected, intg)
+		}
+	}
+
+	return connected, nil
+}
+
+// shouldSendToIntegration checks if a notification should be sent to an integration.
+// It evaluates severity filters, event type filters, and (future) group-based routing.
+//
+// Group-based notification routing (planned):
+// When a finding is assigned to groups via assignment rules, notifications can be
+// routed to group-specific channels based on the group's NotificationConfig.
+// The NotificationConfig on each group specifies:
+//   - SlackChannel: which Slack channel to notify
+//   - NotifyCritical/High/Medium/Low: severity-based filtering
+//   - NotifySLAWarn/SLABreach: SLA event filtering
+//   - WeeklyDigest: whether to include in weekly digest
+//
+// To implement group-based routing, the outbox entry's metadata should include
+// the target group IDs, and this method should cross-reference the group's
+// notification config with the integration's channel configuration.
+func (s *Service) shouldSendToIntegration(intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox) bool {
+	ext := intg.Notification
+	if ext == nil {
+		return true // No extension = send all
+	}
+
+	// Check severity filter — only for events whose severity describes a
+	// finding. Approval, new-asset and sensor events carry a constant picked
+	// by the enqueue site; filtering those on it silently dropped them (an
+	// approval request at "medium" never reached a default critical+high
+	// channel), the drop integration.SeverityFilterApplies exists to prevent.
+	if integration.SeverityFilterApplies(integration.EventType(entry.EventType())) &&
+		!ext.ShouldNotify(entry.Severity().String()) {
+		return false
+	}
+
+	// Check event type filter
+	if !ext.ShouldNotifyEventType(integration.EventType(entry.EventType())) {
+		return false
+	}
+
+	return true
+}
+
+// sendToIntegration sends a notification to a specific integration.
+// Returns a SendResult with success/failure status for archiving.
+func (s *Service) sendToIntegration(ctx context.Context, intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox, delivery bountyprogram.Delivery) outboxdom.SendResult {
+	ext := intg.Notification
+	sentAt := time.Now()
+
+	// Base result info
+	result := outboxdom.SendResult{
+		IntegrationID:   intg.Integration.ID().String(),
+		IntegrationName: intg.Integration.Name(),
+		Provider:        intg.Integration.Provider().String(),
+		SentAt:          sentAt,
+	}
+
+	// Decrypt credentials
+	credentials, err := s.credentialDecrypt(intg.Integration.CredentialsEncrypted())
+	if err != nil {
+		result.Status = notificationStatusFailed
+		result.Error = fmt.Sprintf("decrypt credentials: %v", err)
+		return result
+	}
+
+	// Build notification client config based on provider
+	config := notificationclient.Config{
+		Provider: notificationclient.Provider(intg.Integration.Provider().String()),
+	}
+
+	// Parse credentials and set appropriate config fields based on provider
+	if err := s.configureClientFromCredentials(&config, intg.Integration, credentials, ext); err != nil {
+		result.Status = notificationStatusFailed
+		result.Error = fmt.Sprintf("configure client: %v", err)
+		return result
+	}
+
+	// Create client
+	client, err := s.newClient(config)
+	if err != nil {
+		if s.relayRefused != nil && errors.Is(err, emailpkg.ErrTenantRelayPolicy) {
+			s.relayRefused.EmailRelayRefused(ctx, intg.Integration.TenantID(), intg.Integration.ID(), err)
+		}
+		result.Status = notificationStatusFailed
+		result.Error = fmt.Sprintf("create client: %v", err)
+		return result
+	}
+
+	msg := s.buildMessage(intg, entry, delivery)
+
+	// Send with timeout
+	sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	sendResult, err := client.Send(sendCtx, msg)
+	if err != nil {
+		result.Status = notificationStatusFailed
+		result.Error = err.Error()
+		return result
+	}
+	// The HTTP clients report a refused delivery (non-2xx, transport
+	// error, a redirect) as a result with Success false, not as an error.
+	if sendResult != nil && !sendResult.Success {
+		result.Status = notificationStatusFailed
+		result.Error = sendResult.Error
+		if result.Error == "" {
+			result.Error = "delivery refused"
+		}
+		return result
+	}
+
+	// Success
+	result.Status = notificationStatusSuccess
+	if sendResult != nil {
+		result.MessageID = sendResult.MessageID
+	}
+
+	return result
+}
+
+// buildMessage builds the message for one integration. F-6: it carries an
+// idempotency key derived from the outbox entry ID so provider-side
+// deduplication suppresses duplicate deliveries if the worker crashes
+// between "provider ACK" and "UPDATE status='completed'" — a race that would
+// otherwise re-queue the entry after UnlockStale. The names of private
+// programs the integration is not attached to are scrubbed from the title
+// and body before any template sees them.
+func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox, delivery bountyprogram.Delivery) notificationclient.Message {
+	msg := notificationclient.Message{
+		Title:          delivery.Scrub(intg.Integration.ID(), entry.Title()),
+		Body:           delivery.Scrub(intg.Integration.ID(), entry.Body()),
+		Severity:       entry.Severity().String(),
+		URL:            deliveryLink(s.linkBase, entry),
+		IdempotencyKey: idempotencyKey(entry),
+		EventType:      entry.EventType(),
+		EventVersion:   integration.EventPayloadVersion(integration.EventType(entry.EventType())),
+		OccurredAt:     entry.CreatedAt(),
+	}
+	// Minimal by default: unless the channel opted in to details, nothing
+	// that names a finding or an asset leaves the platform, only the kind
+	// of event, its severity and a link back to it.
+	if ext := intg.Notification; ext == nil || !ext.IncludeDetails() {
+		msg.Title = minimalTitle(entry)
+		msg.Body = "Open the link to see the details."
+	}
+	if ext := intg.Notification; ext != nil && ext.MessageTemplate() != "" {
+		msg = s.applyTemplate(msg, ext.MessageTemplate())
+	}
+	return msg
+}
+
+// deliveryLink is the event's console link as a channel receives it:
+// absolute (a chat button or an e-mail needs the host) and naming the
+// event's organization (pkg/weblink), so a member of several organizations
+// lands on it whichever one is selected. Applied at delivery, so pending
+// events and redeliveries get it too.
+func deliveryLink(base string, entry *outboxdom.Outbox) string {
+	link := entry.URL()
+	if !strings.HasPrefix(link, "/") || strings.HasPrefix(link, "//") {
+		// Not a console link (empty, or an outside address): the
+		// organization ID never goes to another host.
+		return link
+	}
+	if !entry.TenantID().IsZero() {
+		link = weblink.WithOrg(link, entry.TenantID().String())
+	}
+	return weblink.Absolute(base, link)
+}
+
+// idempotencyKey is "outbox-<event id>": stable across the retries of one
+// event, and a redelivery keeps the key of the event it sends again, so a
+// receiver that already processed it can recognize it.
+func idempotencyKey(entry *outboxdom.Outbox) string {
+	if orig, ok := entry.Metadata()[MetaRedeliveryOf].(string); ok {
+		if _, err := uuid.Parse(orig); err == nil {
+			return "outbox-" + orig
+		}
+	}
+	return "outbox-" + entry.ID().String()
+}
+
+// minimalTitle is the title of a message that carries no details: the event
+// type ("new_finding" becomes "New finding") and the severity.
+func minimalTitle(entry *outboxdom.Outbox) string {
+	kind := strings.ReplaceAll(entry.EventType(), "_", " ")
+	if kind != "" {
+		kind = strings.ToUpper(kind[:1]) + kind[1:]
+	}
+	if kind == "" {
+		kind = "Notification"
+	}
+	return kind + " (" + entry.Severity().String() + ")"
+}
+
+// configureClientFromCredentials configures the notification client based on provider type.
+// It supports both new format (metadata + sensitive credentials) and legacy format (all in credentials).
+func (s *Service) configureClientFromCredentials(
+	config *notificationclient.Config,
+	intg *integration.Integration,
+	credentials string,
+	ext *integration.NotificationExtension,
+) error {
+	provider := intg.Provider()
+	metadata := intg.Metadata()
+
+	switch provider {
+	case integration.ProviderWebhook:
+		config.WebhookURL = credentials
+		// Signed with the integration's secret (and the previous one during
+		// a rotation overlap). A stored secret that does not decrypt fails
+		// the delivery: never send unsigned to a receiver that verifies.
+		secrets, err := integration.SigningSecrets(metadata, s.credentialDecrypt, time.Now())
+		if err != nil {
+			return err
+		}
+		config.SigningSecrets = secrets
+	case integration.ProviderSlack, integration.ProviderTeams:
+		// These providers use webhook URL as credentials
+		config.WebhookURL = credentials
+	case integration.ProviderTelegram:
+		// Telegram uses bot token + chat ID
+		config.BotToken = credentials
+		// Read chat_id from metadata (new format) or fallback to extension (legacy)
+		if chatID, ok := metadata["chat_id"].(string); ok && chatID != "" {
+			config.ChatID = chatID
+		} else if ext != nil && ext.ChannelID() != "" {
+			config.ChatID = ext.ChannelID()
+		}
+	case integration.ProviderEmail:
+		// Check if email config is in metadata (new format)
+		if smtpHost, ok := metadata["smtp_host"].(string); ok && smtpHost != "" {
+			// New format: read non-sensitive from metadata, sensitive from credentials
+			emailConfig := &notificationclient.EmailConfig{
+				SMTPHost:    smtpHost,
+				FromEmail:   getStringFromMap(metadata, "from_email"),
+				FromName:    getStringFromMap(metadata, "from_name"),
+				UseTLS:      getBoolFromMap(metadata, "use_tls"),
+				UseSTARTTLS: getBoolFromMap(metadata, "use_starttls"),
+				ReplyTo:     getStringFromMap(metadata, "reply_to"),
+			}
+
+			// Get smtp_port (can be float64 or int from JSON)
+			if port, ok := metadata["smtp_port"].(float64); ok {
+				emailConfig.SMTPPort = int(port)
+			} else if port, ok := metadata["smtp_port"].(int); ok {
+				emailConfig.SMTPPort = port
+			}
+
+			// Get to_emails array
+			if toEmails, ok := metadata["to_emails"].([]any); ok {
+				emailConfig.ToEmails = make([]string, 0, len(toEmails))
+				for _, e := range toEmails {
+					if email, ok := e.(string); ok {
+						emailConfig.ToEmails = append(emailConfig.ToEmails, email)
+					}
+				}
+			}
+
+			// Parse sensitive credentials (username, password)
+			if credentials != "" {
+				var sensitive struct {
+					Username string `json:"username"`
+					Password string `json:"password"`
+				}
+				if err := json.Unmarshal([]byte(credentials), &sensitive); err == nil {
+					emailConfig.Username = sensitive.Username
+					emailConfig.Password = sensitive.Password
+				}
+			}
+
+			config.Email = emailConfig
+		} else {
+			// Legacy format: all config in credentials
+			var emailConfig notificationclient.EmailConfig
+			if err := json.Unmarshal([]byte(credentials), &emailConfig); err != nil {
+				return fmt.Errorf("parse email config: %w", err)
+			}
+			config.Email = &emailConfig
+		}
+	default:
+		// Generic: try webhook URL
+		config.WebhookURL = credentials
+	}
+
+	return nil
+}
+
+// applyTemplate applies a custom message template with variable substitution.
+// Supported variables: {title}, {body}, {severity}, {url}
+func (s *Service) applyTemplate(msg notificationclient.Message, template string) notificationclient.Message {
+	if template == "" {
+		return msg
+	}
+
+	replacer := strings.NewReplacer(
+		"{title}", msg.Title,
+		"{body}", msg.Body,
+		"{severity}", msg.Severity,
+		"{url}", msg.URL,
+	)
+
+	result := replacer.Replace(template)
+	msg.Body = result
+	return msg
+}
+
+// =============================================================================
+// Cleanup Operations
+// =============================================================================
+
+// CleanupOldEntries removes old completed and failed entries.
+func (s *Service) CleanupOldEntries(ctx context.Context, completedDays, failedDays int) (deletedCompleted, deletedFailed int64, err error) {
+	deletedCompleted, err = s.outboxRepo.DeleteOldCompleted(ctx, completedDays)
+	if err != nil {
+		return 0, 0, fmt.Errorf("delete old completed: %w", err)
+	}
+
+	deletedFailed, err = s.outboxRepo.DeleteOldFailed(ctx, failedDays)
+	if err != nil {
+		return deletedCompleted, 0, fmt.Errorf("delete old failed: %w", err)
+	}
+
+	return deletedCompleted, deletedFailed, nil
+}
+
+// UnlockStaleEntries releases locks on stale processing entries.
+func (s *Service) UnlockStaleEntries(ctx context.Context, olderThanMinutes int) (unlocked int64, err error) {
+	return s.outboxRepo.UnlockStale(ctx, olderThanMinutes)
+}
+
+// CleanupOldEvents removes notification events older than the specified retention days.
+// If retentionDays <= 0, no deletion is performed (unlimited retention).
+func (s *Service) CleanupOldEvents(ctx context.Context, retentionDays int) (deleted int64, err error) {
+	return s.eventRepo.DeleteOldEvents(ctx, retentionDays)
+}
+
+// getStringFromMap / getBoolFromMap are copied from app.integration_service
+// to avoid cross-package access to unexported helpers. Kept local — they
+// are tiny and unlikely to diverge.
+func getStringFromMap(m map[string]any, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func getBoolFromMap(m map[string]any, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
+}

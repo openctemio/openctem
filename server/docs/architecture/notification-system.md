@@ -1,0 +1,975 @@
+# Notification System Architecture
+
+## Overview
+
+OpenCTEM's notification system provides real-time alerts when security findings are detected. It supports multiple providers (Slack, Teams, Telegram, Email, Webhook) with severity filtering, event routing, and full audit history.
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Providers | Slack, Microsoft Teams, Telegram, Email (SMTP), Generic Webhook, Splunk HEC |
+| Encryption | AES-256-GCM for credentials |
+| Async Pattern | **Transactional Outbox** (PostgreSQL) + Polling scheduler |
+| Rate Limiting | In-memory with sync.RWMutex |
+| Archive | `notification_events` table with JSONB send results |
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          NOTIFICATION SYSTEM FLOW                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+TRIGGER SOURCES              TRANSACTIONAL OUTBOX           ARCHIVE
+───────────────              ────────────────────           ───────
+
+┌──────────────────┐
+│ VulnerabilityService │     ┌─────────────────────────┐
+│ CreateFinding()      │     │  notification_outbox    │
+│   └─ EnqueueInTx()   │────▶│  (transient queue)      │
+└──────────────────────┘     │  - status: pending      │
+                             │  - status: processing   │
+┌──────────────────┐         │  - status: failed       │
+│ ExposureService  │         │  - deleted on success   │
+│ CreateExposure() │────────▶│                         │
+└──────────────────┘         └───────────┬─────────────┘
+                                         │
+┌──────────────────┐                     │ Scheduler (5s polling)
+│ Future Triggers  │                     │
+│ - SLA breaches   │                     ▼
+│ - Alert rules    │         ┌─────────────────────────┐
+└──────────────────┘         │  NotificationService    │
+                             │  processOutboxEntry()   │
+                             │    ├─ Match integrations│
+                             │    ├─ Send to providers │────▶ Slack/Teams/etc
+                             │    ├─ Collect results   │
+                             │    └─ Archive & delete  │
+                             └───────────┬─────────────┘
+                                         │
+                                         ▼
+                             ┌─────────────────────────┐
+                             │  notification_events    │
+                             │  (permanent archive)    │
+                             │  - status: completed    │
+                             │  - status: failed       │
+                             │  - status: skipped      │
+                             │  - send_results JSONB   │
+                             │  - retention: 90 days   │
+                             └─────────────────────────┘
+```
+
+## Flow
+
+Same in v0.19.1 and on develop. Outgoing webhooks are a provider of this
+system (there is no separate webhook sender): see "Generic webhook payload",
+"Webhook signing" and "Redelivery" below.
+
+### Enqueue and deliver
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box Platform (tenant on every row)
+    participant P as Producer service
+    participant O as notification_outbox
+    participant W as outbox.Scheduler and outbox.Service
+    participant B as bountyprogram DeliveryResolver
+    participant N as notifier.ClientFactory client
+  end
+  participant X as Slack, Teams, Telegram, SMTP, webhook, Splunk HEC
+  P->>O: EnqueueInTx(tx, EnqueueParams) or Enqueue after the write
+  loop every 5 s (processLoop)
+    W->>O: FetchPendingBatch: status pending AND scheduled_at <= now,<br/>LIMIT 50 FOR UPDATE SKIP LOCKED, set processing
+  end
+  W->>W: ListIntegrationsWithNotification(tenant), connected only
+  W->>B: Resolve(tenant, subject). Error: MarkFailed, retried
+  W->>W: first pass: shouldSendToIntegration and delivery.Allows,<br/>SetDeliveries (fixed for later passes)
+  W->>W: per due channel: decrypt credentials, configure, buildMessage<br/>(Scrub, minimal unless include_details, template, weblink)
+  W->>N: Send (30 s context)
+  N->>X: SafeHTTPClient, redirects refused, Message.Cleaned
+  X-->>N: 2xx success, anything else failure
+  W->>W: RecordSuccess or RecordFailure (DeliveryBackoff), Abandon if routing changed
+  alt a channel still pending
+    W->>O: SettleDeliveries false: pending, scheduled at the earliest retry
+  else every channel delivered or dead
+    W->>O: archive to notification_events, then DELETE the outbox row
+  end
+```
+
+Background loops of `outbox.Scheduler` (`DefaultSchedulerConfig`): process
+every 5 s (batch 50, at most 100, 2 min per batch), unlock entries locked for
+more than 10 minutes every minute (`UnlockStaleEntries`), clean up every
+24 hours (5 min budget). Every API process runs the scheduler; `FOR UPDATE
+SKIP LOCKED` keeps one worker per entry.
+
+### Channel delivery state
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: first pass picks the channel
+  pending --> success: 2xx (RecordSuccess)
+  pending --> pending: failure, next_attempt_at from DeliveryBackoff
+  pending --> dead: 8th failed attempt (RecordFailure)
+  pending --> dead: routing no longer allows it (Abandon, no attempt counted)
+  success --> [*]
+  dead --> [*]
+```
+
+A channel whose integration is gone, disabled or disconnected records a
+failed attempt ("integration is not connected"). An entry whose channels
+cannot be resolved (integration list or routing lookup failed) takes the
+entry-level path instead: `MarkFailed` retries it after 2 and then 4 minutes,
+and the third failure leaves it `failed` in the outbox (kept 30 days,
+**Retry** in the console queue).
+
+## Data Flow
+
+### 1. Transactional Outbox (Queue)
+
+The `notification_outbox` table acts as a **transient queue**:
+
+```sql
+CREATE TABLE notification_outbox (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    event_type VARCHAR(100) NOT NULL,      -- 'new_finding', 'scan_completed'
+    aggregate_type VARCHAR(100) NOT NULL,  -- 'finding', 'scan'
+    aggregate_id UUID,
+    title VARCHAR(500) NOT NULL,
+    body TEXT,
+    severity VARCHAR(20) NOT NULL,
+    url VARCHAR(2000),
+    metadata JSONB DEFAULT '{}',
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    locked_by VARCHAR(100),
+    locked_at TIMESTAMPTZ,
+    retry_count INT NOT NULL DEFAULT 0,
+    last_error TEXT,
+    processed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deliveries JSONB NOT NULL DEFAULT '[]'  -- per-channel state (migration 003326)
+);
+```
+
+**Status Lifecycle:**
+```
+pending → processing → pending (a channel is due for a retry)
+                    ↳ [archived + DELETED once every channel is delivered or dead]
+                    ↳ pending again after 2 then 4 min, then failed
+                      (the channels could not be resolved; entry-level retry)
+```
+
+### Delivery per channel
+
+Each channel (integration) an event goes to has its own delivery state in
+`deliveries`: `{integration_id, name, provider, status, attempts,
+next_attempt_at, last_attempt_at, last_error, message_id}` with status
+`pending`, `success` or `dead` (`pkg/domain/outbox/delivery.go`).
+
+- The first pass resolves the channels: the connected integrations whose
+  severity and event filters match and that the private-program routing
+  allows. Later passes keep that set: an integration created after the event
+  does not get it.
+- A pass attempts only the channels that are due. A channel that got the
+  event is never sent it again; a failed one waits its own backoff, whatever
+  the other channels did. Before this, one channel's success marked the whole
+  entry done and the failed channels were never retried.
+- Backoff after each failure: 1 min, 5 min, 30 min, 2 h, 6 h, 12 h, 24 h, so 8
+  attempts in about 45 hours, then the channel is `dead` and an ERROR is
+  logged per dead channel.
+- A channel whose integration is deleted, disabled or disconnected counts a
+  failed attempt (it may come back in the window). A channel the routing rule
+  no longer allows (the asset moved into a private program) is abandoned at
+  once, never delivered.
+- The entry goes back to `pending`, scheduled at the earliest channel retry,
+  until every channel is terminal; then it is archived with one send result
+  per channel (with its `attempts`) and deleted.
+- A refused delivery is a failure: a non-2xx answer, a transport error, or a
+  redirect (redirects are never followed, see Security). Before this, the
+  HTTP clients reported a refused delivery as a result rather than an error
+  and it was archived as a success.
+- A manual retry (`POST /api/v1/notification-outbox/{id}/retry`) is accepted
+  only for an entry in status `failed` or `dead`. `ResetForRetry` gives dead
+  channels a fresh budget and leaves delivered ones alone, but an entry whose
+  channels all ended is archived and deleted at once (`SettleDeliveries`
+  marks it `completed`, never `dead`), so in practice a retry applies to
+  entries that failed before their channels were resolved. A channel that
+  gave up is sent again with a redelivery (below).
+- When a channel ends dead, one ERROR per channel is logged ("notification
+  channel dead-lettered after exhausting retries"). `alertIfDeadLettered`
+  checks for an entry in status `dead`, which the per-channel path never
+  sets, so it does not fire.
+
+### 2. Notification Events (Archive)
+
+The `notification_events` table stores **permanent audit trail**:
+
+```sql
+CREATE TABLE notification_events (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    aggregate_type VARCHAR(100) NOT NULL,
+    aggregate_id UUID,
+    title VARCHAR(500) NOT NULL,
+    body TEXT,
+    severity VARCHAR(20) NOT NULL,
+    url VARCHAR(2000),
+    metadata JSONB DEFAULT '{}',
+
+    -- Processing results
+    status VARCHAR(20) NOT NULL,           -- 'completed', 'failed', 'skipped'
+    integrations_total INT NOT NULL,
+    integrations_matched INT NOT NULL,
+    integrations_succeeded INT NOT NULL,
+    integrations_failed INT NOT NULL,
+    send_results JSONB DEFAULT '[]',       -- Per-integration results
+    last_error TEXT,
+    retry_count INT NOT NULL,
+
+    -- Timestamps
+    created_at TIMESTAMPTZ NOT NULL,       -- When original event was created
+    processed_at TIMESTAMPTZ NOT NULL      -- When processing completed
+);
+```
+
+**Event Status:**
+- `completed`: At least one integration succeeded
+- `failed`: All integrations failed after retries
+- `skipped`: No integrations matched filters
+
+**Send Results JSONB Format:**
+```json
+[
+  {
+    "integration_id": "uuid",
+    "name": "Slack Alerts",
+    "provider": "slack",
+    "status": "success",
+    "message_id": "1234567890.123456",
+    "sent_at": "2024-01-15T10:30:00Z"
+  },
+  {
+    "integration_id": "uuid",
+    "name": "Teams Security",
+    "provider": "teams",
+    "status": "failed",
+    "error": "webhook returned 403",
+    "sent_at": "2024-01-15T10:30:01Z"
+  }
+]
+```
+
+## Processing Flow
+
+### Step 1: Enqueue in Transaction
+
+The new-finding event is written in the finding's transaction
+(`internal/app/finding/vulnerability_service.go`). Other producers
+use `EnqueueInTx` where they hold the transaction, or call `Enqueue` right
+after their own write, where a crash between the two can lose that one
+event.
+
+```go
+// internal/app/finding/vulnerability_service.go (shape)
+
+tx, err := s.db.BeginTx(ctx, nil)
+defer func() { _ = tx.Rollback() }()
+
+// 1. Create finding in transaction
+if err := s.findingRepo.CreateInTx(ctx, tx, f); err != nil {
+    return err
+}
+
+// 2. Enqueue notification in the SAME transaction (outbox.Service)
+err = s.notificationService.EnqueueInTx(ctx, tx, outbox.EnqueueParams{
+    TenantID:      f.TenantID(),
+    EventType:     "new_finding",
+    AggregateType: "finding",
+    AggregateID:   &findingUUID,
+    Title:         fmt.Sprintf("New %s Finding: %s", f.Severity(), toolName),
+    Body:          f.Message(),
+    Severity:      f.Severity().String(),
+    URL:           fmt.Sprintf("/findings/%s", f.ID()),
+})
+
+// 3. Commit transaction - both finding and notification are atomic
+return tx.Commit()
+```
+
+### Step 2: Scheduler Processing
+
+The scheduler polls every 5 seconds:
+
+```go
+// internal/app/outbox/scheduler.go
+
+func (s *Scheduler) processBatch() {
+    // 1. Fetch and lock pending entries (FOR UPDATE SKIP LOCKED)
+    entries, _ := s.service.ProcessOutboxBatch(ctx, workerID, batchSize)
+
+    // Each entry is processed individually
+}
+```
+
+### Step 3: Process Each Entry
+
+`processOutboxEntry` (`internal/app/outbox/service.go`) loads the tenant's
+connected notification integrations and the private-program routing, resolves
+the entry's channels on its first pass, sends to each due channel, records
+the outcome on that channel, and then either reschedules the entry (a channel
+is pending) or archives it to `notification_events` and deletes it. See
+"Delivery per channel" above.
+
+## Retention & Cleanup
+
+The scheduler runs cleanup daily:
+
+| Table | Retention | Notes |
+|-------|-----------|-------|
+| `notification_outbox` | 7 days (completed), 30 days (failed) | Most entries deleted immediately after archive |
+| `notification_events` | 90 days (configurable) | Permanent audit trail |
+
+```go
+// internal/app/outbox/scheduler.go
+
+type SchedulerConfig struct {
+    ProcessInterval        time.Duration  // 5 seconds
+    CleanupInterval        time.Duration  // 24 hours
+    UnlockInterval         time.Duration  // 1 minute
+    BatchSize              int            // 50 (the repository caps it at 100)
+    CompletedRetentionDays int            // 7
+    FailedRetentionDays    int            // 30
+    EventRetentionDays     int            // 90 (set to 0 for unlimited)
+    StaleMinutes           int            // 10 (for unlocking)
+}
+```
+
+## API Endpoints
+
+### Tenant-Scoped Outbox API
+
+> **Note**: These endpoints are tenant-scoped. Tenants can only view/manage their own notifications.
+
+```
+GET  /api/v1/notification-outbox          # List pending/failed entries
+GET  /api/v1/notification-outbox/stats    # Get statistics
+GET  /api/v1/notification-outbox/{id}     # Get single entry
+POST /api/v1/notification-outbox/{id}/retry # Retry failed entry
+DELETE /api/v1/notification-outbox/{id}   # Delete entry
+```
+
+**Permissions Required** (every route also needs `integrations:manage`):
+- `integrations:notifications:read` for GET endpoints
+- `integrations:notifications:write` for POST (retry)
+- `integrations:notifications:delete` for DELETE
+
+`GET /api/v1/integrations/{id}/notification-events` (a channel's delivery
+history) needs `integrations:manage`.
+
+**Why channel managers only:** the outbox gets a row for every event, whether
+or not a channel is configured: new findings (message, asset id, owner name
+and email), new assets, exposures, SLA and approval events, for the whole
+organization and without data scope. Members and viewers hold
+`integrations:notifications:read` for their own in-app notices; that
+permission no longer opens this stream to them. Whoever holds
+`integrations:manage` already decides which of these events leave for Slack,
+Teams or a webhook, so the history shows them nothing new. The web console
+hides *View events* and *Queue* without that permission.
+
+### Event History API (**Planned**)
+
+```
+GET /api/v1/notification-events           # List archived events
+GET /api/v1/notification-events/stats     # Get statistics
+GET /api/v1/notification-events/{id}      # Get event with send results
+```
+
+## Notification Providers
+
+### Provider Factory Pattern
+
+```go
+// internal/infra/notifier/client.go
+
+type Client interface {
+    Send(ctx context.Context, msg Message) (*SendResult, error)
+    TestConnection(ctx context.Context) (*SendResult, error)
+    Provider() string
+}
+
+func (f *ClientFactory) CreateClient(config Config) (Client, error) {
+    switch config.Provider {
+    case ProviderSlack:    return NewSlackClient(config)
+    case ProviderTeams:    return NewTeamsClient(config)
+    case ProviderTelegram: return NewTelegramClient(config)
+    case ProviderEmail:    return NewEmailClient(config)
+    case ProviderWebhook:  return NewWebhookClient(config)
+    case ProviderSplunk:   return NewSplunkClient(config)
+    }
+}
+```
+
+### Provider Comparison
+
+| Provider | Config | Format | Special Features |
+|----------|--------|--------|------------------|
+| **Slack** | Webhook URL | Slack Blocks + Attachments | Colored sidebars, emoji indicators |
+| **Teams** | Webhook URL | Adaptive Cards | Container styles (attention/warning) |
+| **Telegram** | Bot Token + Chat ID | Markdown + Inline Buttons | URL buttons, markdown escaping |
+| **Email** | SMTP config | HTML with CSS, plain-text alternative | TLS/STARTTLS, multiple recipients |
+| **Webhook** | Custom URL | JSON payload | Signed (Standard Webhooks), any endpoint |
+| **Splunk** | HEC URL + token | HEC event | Index and sourcetype from metadata |
+
+### Message format and the one SMTP stack
+
+Every e-mail the platform sends (account mail, invitations, security notices and the notification channel) is
+built and delivered by `pkg/email`; the channel in `internal/infra/notifier/email.go` has no SMTP code of its
+own. It passes its relay (host, port, TLS or STARTTLS, credentials, sender) to the shared sender, so the SSRF
+guard (the vetted IP is dialed), the session deadline, the TLS 1.2 floor, the fail-closed STARTTLS and the
+always-verified certificate of an organization's relay are the same everywhere. Relay selection (platform relay
+or organization relay) is unchanged.
+
+The message format, defined once in `pkg/email/message.go`:
+
+- headers: `Date`, a unique `Message-ID` on the domain of the From address, `Auto-Submitted: auto-generated`
+  (so out-of-office replies do not come back), `MIME-Version`;
+- `Subject` and the From display name are RFC 2047 encoded when they are not ASCII (organization names are often
+  Vietnamese), and a long subject is folded;
+- the body is `multipart/alternative` with a `text/plain` part (the message's `TextBody`, or generated from the
+  HTML, keeping each link's target) and the `text/html` part; a message with the logo is `multipart/related`
+  around that alternative; plain-text messages are a single `text/plain` part;
+- text and HTML parts are quoted-printable, wrapped at 76 characters, so a long HTML line never breaks the
+  998-octet limit;
+- CR and LF are replaced by a space in every header value and name before encoding, so a value cannot start
+  another header (Bcc, Content-Type); a custom header cannot override one the builder writes, and a custom
+  header name with a space or colon is dropped.
+
+### Mail server rules for the e-mail channel
+
+An organization chooses the SMTP host of its e-mail channel, so the platform holds that relay to one
+transport rule (`pkg/email` `ValidateTenantRelay`), applied when the channel is saved, when it is tested
+and before every send:
+
+- Every install: the port is 25, 465, 587 or 2525 (never another service), the host passes the outbound
+  address guard (private and metadata ranges are blocked unless the operator allows them), and the
+  certificate is always verified.
+- `MANAGED_SERVICE=true` (a hosted service): the port is a submission port (465, 587 or 2525; port 25 is
+  refused), a username and password are required, and TLS (465) or STARTTLS (587, 2525) is required.
+  Plain-text login is never attempted.
+
+A channel that was saved before the rule and no longer passes stops sending: its status becomes
+`INTEGRATION_EMAIL_RELAY_POLICY` ("Sending is stopped until you edit it and test again"), shown on the
+integration, and every active owner of the organization gets an in-app notice and an e-mail through the
+platform relay, once. Editing the channel to a compliant relay and testing it resumes delivery. Shipped:
+the transport rules and the stop-and-notify. Designed, not shipped: sender-domain verification and the
+`email.tenant_relay` mode (research 308, D12).
+
+### Organization mail relay
+
+An organization can send its business mail (invitation notices, member suspended or reactivated notices,
+notifications, scheduled reports) through its e-mail notification channel's mail server. Tick "Also send my
+organization's business mail through this server" on the channel (`org_mail` in its metadata; off for every
+channel until ticked, new or saved before the flag). Turning it on needs an owner or administrator of the
+organization: the right to manage integrations is not enough (403), and a request that keeps an already-on
+flag, or turns it off, is open to anyone who may manage integrations.
+
+Mail that carries a credential or proves control of an account never takes an organization relay: account
+setup and set-password links, password reset, owner recovery, the first owner's link, e-mail verification and
+two-factor mail use the platform relay only, whatever the organization has configured, and an organization relay
+never decides whether such a link can be mailed (owner decision of 2026-10-27, research 308 D12 amendment).
+
+The platform setting `email.tenant_relay` (console page Settings > E-mail, API `/admin/settings/email-relay`, env default
+`ORG_EMAIL_RELAY_MODE`) decides whether that is allowed:
+
+| Mode | Behaviour | Default |
+|---|---|---|
+| `off` | organization mail always uses the platform relay; a stored organization relay stays inactive | |
+| `verified_sender` | the relay is used only when its sender address is on a DNS-verified domain of the same organization (any verification purpose) and it meets the managed transport rules | `MANAGED_SERVICE=true` |
+| `on` | the relay is used as configured; the transport rule still applies | self-managed |
+
+Plans are not modeled on the platform yet, so a hosted service has one default for every organization
+(`verified_sender`). Setting `off` for free organizations arrives with the plan model. A change needs a super
+admin, a fresh step-up and a reason, is audited as critical and is told to every administrator. An unreadable
+stored value counts as `off`.
+
+Mail classes:
+
+| Class | Mail | Relay | When the organization relay cannot be used |
+|---|---|---|---|
+| Account security | account setup and set-password links (account setup, first owner, owner recovery), verification, password reset, password changed, welcome, MFA turned off, recovery code used, sign-in and security notices, domain managed, SSO change pending, SAML certificate expiry, support access, ownership transfer, notice that an e-mail channel was stopped | platform relay only, always (a test lists every mail method and pins its class) | not applicable |
+| Organization, no credential and no exposure data | invitation notice, member suspended or reactivated | organization relay when active | falls back to the platform relay |
+| Organization content | scheduled reports | organization relay when active | does not fall back: the error is returned (the organization may have chosen its relay for data-handling reasons) |
+
+Because verification mail is account security mail, an organization relay never counts as "e-mail is
+available" for the sign-up verification decision.
+
+Shipped: the mode setting, the resolver reading the stored shape (connection settings in the channel
+metadata, the login from the encrypted credentials), the sender-domain rule, implicit TLS (port 465) for the
+organization relay, the fallback rules and the class test. Designed, not shipped (research 308): the
+activation test and owner notice on a destination change, per-organization rate limits and delivery log,
+the failing state with an in-app banner, member-only recipients for organizations whose relay is off, and
+per-plan defaults. The e-mail notification channel's own alerts are not yet subject to the mode.
+
+### Generic webhook payload
+
+```json
+{
+  "event_type": "new_finding",
+  "event_version": 1,
+  "idempotency_key": "outbox-0192…",
+  "occurred_at": "2026-10-22T08:00:00Z",
+  "timestamp": "2026-10-22T08:00:03Z",
+  "title": "New finding (high)",
+  "body": "Open the link to see the details.",
+  "severity": "high",
+  "url": "https://console.example.com/findings/…?org=<organization id>",
+  "source": "openctem.io"
+}
+```
+
+- `event_type` is the catalogue type (`AllEventTypes`, e.g. `new_finding`,
+  `sensor.offline`, `ci.gate_failing`); a test delivery is `test`. Before
+  this it was always `notification`.
+- `event_version` is the payload version of that type
+  (`integration.EventPayloadVersion`, 1 for every type today). An
+  incompatible change to what a type sends bumps it and is listed in the
+  changelog; a receiver routes on the pair.
+- `idempotency_key` equals the `Idempotency-Key` header and stays the same
+  across retries of one event, so a receiver can drop a duplicate.
+- `occurred_at` is when the event was recorded; `timestamp` is when this
+  attempt was sent.
+
+### Links back to the console
+
+Every link the platform sends to a console page names the organization it
+belongs to in the `org` query parameter, the organization ID
+(`server/pkg/weblink`). One rule covers every sender:
+
+- in-app notifications: `NotificationService.Notify` adds it to the stored
+  (relative) link;
+- channel deliveries (e-mail, Slack, Teams, Telegram, webhook): the outbox adds
+  it when the message is built, and joins the link to the console base URL
+  (`SMTP_BASE_URL`), so a chat button or an e-mail gets an absolute address.
+  Pending events and redeliveries get it too. A link that is not a console
+  path (another host) is sent unchanged: the organization ID never goes to
+  another host;
+- direct e-mails (emerging-threat digest, finding approvals, scope approvals
+  and attestations, CI trust alerts), CI check runs and commit statuses, Jira
+  task descriptions and ticket field `finding.url`, and the links in AI agent
+  tool results use `weblink.Console`.
+
+The organization ID is used rather than the slug: it never changes, so a
+renamed organization keeps working links. The console accepts a slug too.
+
+The console reads the parameter on every page (`OrgLinkGate` in the dashboard
+layout). When the signed-in person is a member of that organization and it is
+not the selected one, it switches through the organization switcher's own flow
+(`POST /api/auth/switch-team`: the API checks the membership and issues the
+new session), says so in a toast, removes the parameter from the address and
+then loads the page. Only the person's own membership list is consulted: for
+an organization the person does not belong to, or an unknown one, the page
+loads in the selected organization and answers with the same "not found" as
+without the parameter, so a link tells nothing about whether a record or an
+organization exists. The parameter grants nothing; every request is still
+authorized against the session's organization and the person's data scope.
+Copy-link buttons build their links the same way (`shareableLink`).
+
+### Webhook signing
+
+Every generic webhook delivery carries the Standard Webhooks headers
+(`pkg/webhooksig`):
+
+| Header | Value |
+|---|---|
+| `webhook-id` | the idempotency key (`outbox-<event id>`), the same on every retry and redelivery of the event; `msg_<uuid>` for a test delivery |
+| `webhook-timestamp` | unix seconds when this attempt was sent |
+| `webhook-signature` | `v1,<base64 HMAC-SHA256(key, id + "." + timestamp + "." + body)>`, one per valid secret, space separated |
+
+- **Secret.** `whsec_` + base64 of 32 random bytes, generated by the
+  platform (`POST /api/v1/integrations/{id}/signing-secret/rotate`,
+  integrations:manage plus step-up, audited as
+  `integration.webhook_secret_rotated`). It is returned in that response only
+  (`Cache-Control: no-store`), stored encrypted with `APP_ENCRYPTION_KEY` in
+  the integration's metadata (`signing_secret_encrypted`), never returned by
+  a read (`GET .../signing-secret` gives only `configured`, `rotated_at`,
+  `previous_valid_until`; the integration read redacts every key containing
+  `secret`), and cannot be set by a caller (the metadata allowlist does not
+  name it). `cmd/rekey` re-encrypts it.
+- **Rotation overlap.** A rotation keeps the replaced secret signing for 24
+  hours (`SigningSecretOverlap`): deliveries carry two signatures, so the
+  receiver can switch without dropping any. A rotation inside an overlap
+  drops the oldest secret at once; at most two ever sign.
+- **No secret yet.** An integration created before signing, or never
+  rotated, sends unsigned deliveries (still with `webhook-id` and
+  `webhook-timestamp`). The first rotation creates the secret.
+- **Fail closed.** A stored secret that does not decrypt fails the delivery
+  (retried, then dead) rather than sending it unsigned to a receiver that
+  verifies.
+- **Test delivery.** `POST .../test-notification` is signed the same way, so
+  the receiver's check can be tried before real events flow.
+- **Console.** The signing secret and redelivery have no console control yet
+  (API only); the console shows the delivery history (**View events**) and
+  the queue.
+- **No auto-disable.** A failing endpoint is never disabled: each event is
+  retried on the channel backoff and then given up for that channel.
+- **Receiver.** Recompute the HMAC over the raw body with the key decoded
+  from the secret, compare in constant time with each `v1` signature, refuse a
+  timestamp more than 5 minutes from the receiver's clock (replay window),
+  and drop a `webhook-id` already processed. `webhooksig.Verify` is the
+  reference check; the public docs have snippets.
+
+### Redelivery
+
+`POST /api/v1/integrations/{id}/deliveries/{delivery_id}/redeliver`
+(integrations:manage, 30 a minute per organization, audited as
+`integration.delivery_redelivered`) sends an archived event (`delivery_id` is
+the id in the delivery history) again to that integration only:
+
+- The event must be the caller's organization's (tenant-scoped lookup) and
+  must list the integration in its send results; anything else is 404, one
+  answer for every cause. The integration must be connected (else 400).
+- It queues a new outbox entry whose only channel is that integration, with
+  `metadata.redelivery_of` naming the first event. The entry goes through the
+  normal pass: private-program routing is checked again, the delivery is
+  signed with the current secret, retried and archived like any other.
+- The redelivery keeps the original `webhook-id`, so a receiver that already
+  processed the event recognises it.
+
+### Severity Indicators
+
+| Severity | Color | Emoji | Teams Style |
+|----------|-------|-------|-------------|
+| Critical | `#dc2626` (Red) | :rotating_light: | attention |
+| High | `#ea580c` (Orange) | :warning: | warning |
+| Medium | `#ca8a04` (Yellow) | :large_yellow_circle: | accent |
+| Low | `#2563eb` (Blue) | :large_blue_circle: | good |
+
+## Security
+
+### Credentials follow their destination
+
+A stored secret is never sent to a destination someone else just chose. An
+update (`PUT /integrations/{id}/notification`) that moves an email channel to
+another SMTP host or port, or switches TLS or STARTTLS off, or moves a Splunk
+channel to another `hec_url` host, is refused with 400 unless it carries new
+credentials; they replace the stored ones, and nothing is saved on a refusal.
+The test delivery that follows an update therefore only ever uses credentials
+entered for the destination it goes to. Webhook, Slack and Teams channels
+keep the destination itself as the secret, and Telegram sends its token only to
+the Telegram API. Destination changes are audited at high severity.
+
+### Credentials Encryption
+
+All notification credentials are encrypted at rest using AES-256-GCM:
+
+```go
+// internal/app/outbox/service.go
+
+credentials, err := s.credentialDecrypt(intg.CredentialsEncrypted())
+```
+
+**Environment Variable:** `APP_ENCRYPTION_KEY` (32-byte key, hex or base64 format)
+
+### Outbound requests: SSRF guard, no redirects
+
+A channel URL is chosen by the organization, so every notifier client
+(`newHTTPClient` in `internal/infra/notifier/client.go`) uses
+`httpsec.SafeHTTPClient`: the URL is validated when the client is built, and
+every dial resolves once and refuses loopback, private, link-local, metadata
+and the other blocked ranges, so DNS rebinding cannot reach them. Redirects
+are refused: a 3xx answer is a failed delivery. Following one would hand the
+event body and headers to a host the channel was not configured with (a
+public host the guard allows, chosen by whoever controls the endpoint).
+
+### Untrusted message text
+
+Titles, bodies and fields often carry finding text that a scan target controls.
+Every client returned by `ClientFactory.CreateClient` sends `Message.Cleaned()`
+(`internal/infra/notifier/client.go`). That removes control, bidi-control and
+zero-width characters (Trojan Source: an RLO override would make a message
+display something other than what it says) and caps lengths: 300 characters
+for a title, 2,000 for a field and 20,000 for a body. Each provider then
+escapes its own markup: Slack mrkdwn (`&`, `<`, `>`, so no `<!channel>` or
+disguised links), Telegram markdown, and `html/template` for e-mail. The
+generic webhook sends JSON. See RFC-040 §5.4.
+
+### Minimal message by default
+
+A channel's `include_details` switch decides what leaves the platform. Off (the
+default for a new channel): the message carries the event type, the severity
+and a link back to the object, with no finding title, asset name or body text,
+so the provider (Slack, Teams, e-mail, a webhook receiver) learns nothing about
+the finding. On: the title and body are sent as before. The switch is applied
+when the message is built (`buildMessage`), before the channel's message
+template, so a template can only use what the channel is allowed to send.
+
+### Rate Limiting
+
+Test notifications (`POST /integrations/{id}/test-notification`) are limited
+to 5 a minute per user and integration (`testNotificationRateLimiter` in
+`internal/infra/http/handler/integration_handler.go`, in memory per process).
+Redelivery is limited to 30 a minute per organization (burst 10).
+
+## Private program events
+
+Before sending, the outbox worker resolves what an entry is about (its
+`finding`, `asset`, `exposure` or `approval` aggregate, and the assets in
+`metadata.assets`). An event about an asset that only private bug-bounty
+programs list goes only to the integrations attached to one of those
+programs; private program names, handles and tags are scrubbed from the
+title and body for every other destination. If the decision cannot be made,
+the entry fails and is retried rather than sent. See
+[bounty-programs.md](bounty-programs.md#outbound-delivery-of-private-program-events)
+and RFC-065 §15.4.
+
+## Event Types
+
+Dynamic event types stored as JSONB:
+
+```go
+// pkg/domain/integration/notification_extension.go
+
+type EventType string
+
+const (
+    EventTypeFindings  EventType = "findings"
+    EventTypeExposures EventType = "exposures"
+    EventTypeScans     EventType = "scans"
+    EventTypeAlerts    EventType = "alerts"
+)
+```
+
+Integrations can filter which event types they receive.
+
+Emerging-threat alerts (`emerging_threat`, `emerging_threat_digest`,
+[emerging-threat-alerts.md](emerging-threat-alerts.md)) are on by default and
+were added to every channel that receives `new_finding` or
+`finding_priority_escalated` (migration `threat_alerts`). Their severity is a
+constant (critical for an immediate alert, info for the digest), so the
+severity filter does not apply; the event-type list is the switch.
+
+The registry clients render is `integration.AllEventTypes()` (served by
+`GET /api/v1/me/event-types`). A channel's severity filter applies only to
+events whose severity describes a finding; `integration.SeverityFilterApplies`
+lists the exempt ones (approval events, `new_asset`, `sensor.offline`), whose
+severity is a constant chosen by the emitter. The outbox honours that list when
+it matches an entry to a channel.
+
+**Only emitted types are listed** (settings plan P0-08). A type goes into
+`AllEventTypes()` together with its producer, which is code that enqueues or
+sends a notification with that type. `tests/unit/event_type_producer_test.go`
+fails on a listed type nothing emits.
+
+These types had no producer and were removed from the catalog:
+
+- `security_alert`, which was on by default;
+- `system_error`, `asset_changed`, `asset_deleted`;
+- `scan_started`, `scan_completed`, `scan_failed`;
+- `finding_confirmed`, `finding_triaged`, `exposure_resolved`.
+
+The "System Events" and "Scan Events" groups went with them. Every remaining
+type belongs to a module, so a tenant with no optional modules is offered no
+types. If a subscription saved earlier still lists a removed type, that entry
+never matches anything. To bring a type back, add its producer in the same
+change.
+
+### Sensor events
+
+| Event | Emitted by | When |
+|---|---|---|
+| `sensor.offline` | `SensorHealthController` (`internal/infra/controller/sensor_health.go`) | A tenant sensor's health goes `online` -> `offline` (no heartbeat for 90s). Once per transition: a sensor that stays offline is not re-announced on later ticks; one that reconnects and drops again is a new event. Severity `high`. Opt-in (not in the defaults). |
+
+The same transition writes the `sensor.disconnected` audit event. Platform
+sensors (no tenant) produce neither. `sensor.error` exists in the `event_types`
+catalog but has no emitter: nothing in the platform sets a sensor's health to
+`error`, so there is no transition to announce.
+
+## Wiring in Main
+
+```go
+// cmd/server/services.go
+s.Outbox = outbox.NewService(
+    repos.Outbox,
+    repos.OutboxEvent,
+    repos.IntegrationNotificationExt,
+    s.Encryptor.DecryptString,
+    log.Logger,
+)
+s.Outbox.SetDeliveryResolver(postgres.NewProgramDeliveryRepository(...)) // private programs
+s.Outbox.SetBrand(cfg.Brand)
+s.Outbox.SetLinkBase(cfg.SMTP.BaseURL)          // absolute links naming the organization
+s.Outbox.SetRelayRefusedHandler(s.Integration)  // stop-and-notify for e-mail relays
+s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
+s.Exposure.SetOutboxService(deps.DB, s.Outbox)
+
+// cmd/server/workers.go
+w.OutboxScheduler = outbox.NewScheduler(svc.Outbox, outbox.DefaultSchedulerConfig(), log)
+```
+
+## In-App Inbox (user notifications)
+
+Separate from the outbox above, `NotificationService.Notify`
+(`internal/app/integration/notification.go`) stores one row per event in
+`notifications` with an audience: `user` (one user), `group` (the members of
+one group) or `all` (every member of the tenant). Read state and preferences
+are per user (`notification_reads`, `notification_state`,
+`notification_preferences`).
+
+### Who sees a notification
+
+One rule decides it, applied in three places so they never disagree:
+
+| Path | Where |
+|------|-------|
+| Inbox list `GET /api/v1/notifications` | `NotificationRepository.List` |
+| Unread badge `GET /api/v1/notifications/unread-count` | `NotificationRepository.UnreadCount` |
+| Real-time push over the WebSocket | `NotificationRepository.ListRecipients` |
+
+A user sees a notification when they are in its audience **and** their
+preferences allow it:
+
+- `in_app_enabled = false` hides every in-app notification;
+- a type in `muted_types` is hidden;
+- a severity below `min_severity` is hidden (critical > high > medium > low > info).
+
+A user with no preferences row gets the defaults (everything shown). The SQL
+predicate (`preferenceFilter`) is the twin of `notification.Preferences.Allows`;
+`tests/integration/notification_ws_isolation_test.go` checks every combination
+against it.
+
+A notification about a **finding** or an **asset** is shown only to owners,
+administrators, roles with full data access and members whose data scope
+covers the asset. A notification about a **remediation task**
+(`resource_type = remediation_task`) follows the rule that decides who can open
+the task: the reader must be able to read at least one of its active member
+findings. The same predicate runs in all three paths, so a task title never
+reaches a member outside the task's scope.
+
+### Task owner notices
+
+`TaskService` (`internal/app/remediation/task_notify.go`) tells people about a
+task they own, with type `remediation_task`, one row addressed to the user or to
+the owner team:
+
+- a task is created with an owner, or its owner changes: the new owner user
+  and/or team is told (a person who assigns themself is not);
+- findings are moved, split off, merged or claimed from another task: the owners
+  of both tasks are told, with counts and task titles only (never finding
+  titles).
+
+`email_digest` (`none` / `daily` / `weekly`) is stored but no digest sender
+exists yet, and no in-app notification is emailed individually, so the in-app
+filters above have no email path to apply to.
+
+### Why you got it, and folded events
+
+`notifications.reason` says why a person got a notice about a work item (`assigned`: they are the
+assignee; `watching`: they watch it); the API returns it as `reason`. Events on one finding within
+10 minutes are folded into the person's unread notice of the same type (`coalesced_count`). The
+recipients of finding events come from `participation.Service.Recipients`; see
+[participants-and-watchers.md](./participants-and-watchers.md).
+
+### Real-time push
+
+Each recipient gets the notification on their own channel,
+`user:{tenant_id}:{user_id}` (`notification.UserChannel`). The hub lets a
+connection subscribe only to the channel of the user and tenant it
+authenticated as, and delivers a user channel only to that user's
+connections. Notifications are never sent on `tenant:{id}` (every member can
+watch it) or `group:{id}`. The UI's notification bell subscribes to its user
+channel.
+
+The connection is opened on the UI's own origin and authenticated by the
+session cookie through the tenant gates (SSO enforcement, organization IP
+allowlist, active membership) and the Origin allowlist. A suspended or
+removed member therefore gets no stream, and an open socket is closed when its session is
+signed out or revoked, when the member is suspended, removed or changes
+role, and at its token's expiry ([RFC-045](../rfcs/RFC-045-websocket-auth.md)),
+so a stream never outlives the access that opened it. See
+[authorization-matrix.md](./authorization-matrix.md#real-time-websocket-apiv1ws).
+
+## Deprecation Notice
+
+### notification_history (REMOVED)
+
+The `notification_history` table has been **removed** in migration `000075_drop_notification_history`. It was replaced by the `notification_events` table which provides:
+
+- **Event-centric view**: One record per notification event (vs per-integration)
+- **JSONB send_results**: All integration results in one place
+- **Better querying**: Filter by event type, aggregate, status
+- **Cleaner architecture**: Outbox = Queue, Events = Archive
+
+All related code (repository, service methods, API endpoints) has been removed.
+
+### Outbound webhooks `/api/v1/webhooks` (REMOVED)
+
+`/api/v1/webhooks` stored endpoint URLs and signing secrets, but no worker
+ever delivered to them. Nothing was sent, and nothing wrote
+`webhook_deliveries`. Decision B9 removed the feature: the routes,
+handler, service, repository and domain package are gone. Migration `001032`
+does three things:
+
+- archives and removes the `integrations:webhooks:*` permissions and their role
+  grants (the down migration restores them);
+- deprecates the `integrations.webhooks` module toggle;
+- keeps the `webhooks` and `webhook_deliveries` tables untouched (no data is
+  destroyed).
+
+Migration `001059` later dropped `webhook_deliveries`, which never held a row.
+The `webhooks` table is still there, unread.
+
+For outbound delivery, use a notification channel (Slack, Teams, Telegram,
+email, or a custom webhook channel, all sent through the outbox) or the SIEM
+integration. Inbound webhooks (`/api/v1/webhooks/incoming/*`, HMAC-verified)
+are unaffected. `tests/unit/outbound_webhooks_removed_test.go` keeps the
+permissions and the module toggle from coming back without a sender.
+
+## Related Documents
+
+- [Clean Architecture](./clean-arch.md)
+- [Security policy](../../../SECURITY.md)
+
+## Integration safety rules (all categories)
+
+- **Request metadata is an allowlist.** A create or update may only set the
+  non-secret keys `hec_url`, `index`, `sourcetype` and `channel_name` (string,
+  at most 2048 characters). Every other metadata key is written by the server
+  (chat ids, SMTP settings, sync state), and a request that names one is
+  refused with 400. Secrets go in the encrypted credentials field, never in
+  metadata (`internal/app/integration/hardening.go`).
+- **Disabled stays disabled.** A test, a sync or a read (listing an SCM
+  integration's repositories) never moves a disabled integration back to
+  connected or error; only `POST /integrations/{id}/enable` does. Listing the
+  repositories of a disabled SCM integration is refused without calling the
+  provider.
+- **Credentials do not follow a new host.** Changing `base_url` to another
+  scheme, host or port while credentials are stored requires new credentials
+  in the same request (400 otherwise), so a manager cannot point Jira or SCM at
+  their own server and receive the stored token.
+
+## Transactional e-mail language
+
+Account and organization e-mail (verification, password reset and changed,
+welcome, invitation, account setup, member suspended and reactivated, security
+notices, domain managed) renders in one language per message. Supported:
+`en`, `vi`.
+
+- **Choice.** The recipient account's language (`users.preferences.language`);
+  else the default language of the organization the e-mail is sent for (tenant
+  settings, General); else `en`. An unsupported value at a level is skipped.
+- **Tenant safety.** The organization default is read only for the tenant id the
+  e-mail is already sent for. The address is looked up among accounts only
+  (`auth.EmailLocaleResolver`); no search across organizations. A failed lookup
+  is `en`; it never blocks or fails the send.
+- **Catalog.** `server/pkg/email/locales/{en,vi}.json` hold subjects, headings,
+  paragraphs, buttons and footer lines, keyed identically; values are
+  placeholders (`{0}`, `{1}`) filled in one pass. The HTML layout is shared by
+  all languages. User-controlled values are template data: the HTML templates
+  keep `html/template` escaping, and the few catalog strings with inline markup
+  escape every value. A test fails when a key or placeholder differs between
+  locales or a template refers to a missing key.
+- **Adding a language.** Add `locales/<code>.json` with every key, register the
+  code in `mustLoadCatalog`, and add it to the tests' locale lists.

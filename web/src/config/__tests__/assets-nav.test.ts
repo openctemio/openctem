@@ -183,7 +183,7 @@ describe('Asset groups live under /assets/groups', () => {
   })
 
   // Reserved /assets/* page segments: no asset type, class or lens may take
-  // these names (api/cmd/gen-asset-types rejects them; RFC-042 §6.3.6).
+  // these names (server/cmd/gen-asset-types rejects them; RFC-042 §6.3.6).
   it.each(['attention', 'attention/no-owner', 'changes', 'duplicates', 'groups', 'suggestions'])(
     '/assets/%s is a reserved static page',
     (segment) => {

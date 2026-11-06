@@ -1,7 +1,7 @@
 /**
  * Why a closed finding is closed (closure reason) and how a closing claim was
  * proven (verification). The server owns both sets
- * (api/pkg/domain/vulnerability/closure.go); this module holds the reasons a
+ * (server/pkg/domain/vulnerability/closure.go); this module holds the reasons a
  * person may choose per status and their translated labels.
  */
 

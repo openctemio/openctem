@@ -3,7 +3,7 @@
  * host:port. Format only: whether a target may be scanned (scope, zones,
  * private ranges, tiers) is the API's answer (POST /scope/check), never
  * decided here. The rules mirror the API's target validator
- * (api/pkg/validator/target.go) so that nothing accepted here is refused at
+ * (server/pkg/validator/target.go) so that nothing accepted here is refused at
  * create: CIDRs of at most 2^16 addresses, `[v6]:port`, service names
  * (`host:25/tcp`), and paths or repositories refused as network targets.
  * Unicode domain names are sent in their ASCII (punycode) form.

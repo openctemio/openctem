@@ -1,8 +1,8 @@
 name: Generate contract files
 description: >-
-  Generates the contract files that are not committed (api/docs/development/ci-cd.md,
+  Generates the contract files that are not committed (server/docs/development/ci-cd.md,
   "Generated contract files"): the OpenAPI spec, the route manifest and the web
-  route permission map from the Go source (`make -C api contract`), and, with
+  route permission map from the Go source (`make -C server contract`), and, with
   `web-types`, the web API types from the spec. Run it after checkout and before
   anything that compiles, tests or builds an image of the web console.
 
@@ -22,15 +22,15 @@ runs:
     - name: Setup Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version-file: api/go.mod
+        go-version-file: server/go.mod
         cache: ${{ inputs.cache == 'true' }}
-        cache-dependency-path: api/go.sum
+        cache-dependency-path: server/go.sum
 
     - name: Generate the spec, the route manifest and the route permission map
       shell: bash
       env:
         GOWORK: 'off'
-      run: make -C api contract
+      run: make -C server contract
 
     - name: Setup Node.js
       if: inputs.web-types == 'true'

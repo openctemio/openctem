@@ -24,7 +24,7 @@ import { useTranslation } from '@/context/i18n-provider'
  * audit log); an owner can cancel from the sign-in page until then. User
  * accounts survive and keep their other organizations. Confirmation is by
  * typing the organization's name
- * (api/docs/architecture/organization-deletion.md).
+ * (server/docs/architecture/organization-deletion.md).
  *
  * Afterwards the session moves to another organization the user belongs to,
  * or to onboarding when there is none.

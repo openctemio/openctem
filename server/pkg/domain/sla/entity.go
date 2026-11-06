@@ -1,0 +1,440 @@
+// Package sla provides public types and helpers reusable across the codebase.
+package sla
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+// Policy represents an SLA policy for findings remediation.
+type Policy struct {
+	id           shared.ID
+	tenantID     shared.ID
+	assetID      *shared.ID // nil = tenant default policy
+	name         string
+	description  string
+	isDefault    bool
+	criticalDays int
+	highDays     int
+	mediumDays   int
+	lowDays      int
+	infoDays     int
+	// Priority-class SLA days. When a finding has a PriorityClass
+	// (P0..P3), these take precedence over severity-based days. They are
+	// persisted in sla_policies.p0_days..p3_days; NULL there means
+	// "inherit DefaultPriorityDays".
+	p0Days int
+	p1Days int
+	p2Days int
+	p3Days int
+	// kevCapDays caps the deadline of a known exploited (CISA KEV) finding:
+	// at most this many days after the platform first sees it as KEV.
+	// 0 = off.
+	kevCapDays          int
+	warningThresholdPct int
+	escalationEnabled   bool
+	escalationConfig    map[string]any
+	isActive            bool
+	createdAt           time.Time
+	updatedAt           time.Time
+}
+
+// DefaultSLADays contains the default remediation days per severity.
+//
+// info is 0 = NoSLA: an informational finding reports a fact (a detected
+// technology, an open port by design) rather than a weakness, so it gets no
+// remediation deadline unless a tenant opts in by setting info days.
+var DefaultSLADays = map[string]int{
+	"critical": 2,
+	"high":     15,
+	"medium":   30,
+	"low":      60,
+	"info":     NoSLA,
+}
+
+// NoSLA as a policy's info days means informational findings get no deadline.
+const NoSLA = 0
+
+// isInformational reports whether a raw severity is informational (info, or
+// none = CVSS 0.0). Kept local so the SLA domain does not import findings.
+func isInformational(severity string) bool {
+	return severity == "info" || severity == "none"
+}
+
+// DefaultPriorityDays is the default remediation window per CTEM priority
+// class. These are tighter than severity-based defaults because priority
+// class is supposed to express "how much does this matter now given the
+// business context + exploit landscape".
+var DefaultPriorityDays = map[string]int{
+	"P0": 2,  // Exploited-in-wild on a crown jewel — near-immediate.
+	"P1": 5,  // High EPSS + reachable + critical asset.
+	"P2": 15, // Mitigated by compensating control OR unreachable critical.
+	"P3": 30, // Everything else.
+}
+
+// DefaultKEVCapDays is the default known exploited deadline cap: a finding
+// whose CVE is in CISA KEV is due within 14 days of the platform first
+// seeing it as known exploited, whatever its priority class or severity.
+const DefaultKEVCapDays = 14
+
+// MaxSLADays is the longest remediation window a policy may set.
+const MaxSLADays = 365
+
+// NewPolicy creates a new SLA Policy with default values.
+func NewPolicy(
+	tenantID shared.ID,
+	name string,
+) (*Policy, error) {
+	if tenantID.IsZero() {
+		return nil, fmt.Errorf("%w: tenant id is required", shared.ErrValidation)
+	}
+	if name == "" {
+		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+
+	now := time.Now().UTC()
+	return &Policy{
+		id:                  shared.NewID(),
+		tenantID:            tenantID,
+		name:                name,
+		isDefault:           false,
+		criticalDays:        DefaultSLADays["critical"],
+		highDays:            DefaultSLADays["high"],
+		mediumDays:          DefaultSLADays["medium"],
+		lowDays:             DefaultSLADays["low"],
+		infoDays:            DefaultSLADays["info"],
+		p0Days:              DefaultPriorityDays["P0"],
+		p1Days:              DefaultPriorityDays["P1"],
+		p2Days:              DefaultPriorityDays["P2"],
+		p3Days:              DefaultPriorityDays["P3"],
+		kevCapDays:          DefaultKEVCapDays,
+		warningThresholdPct: 80,
+		// Escalation (approaching/breached notifications) is on by default:
+		// a new policy must not silently stop the alerts a tenant without a
+		// policy gets.
+		escalationEnabled: true,
+		escalationConfig:  make(map[string]any),
+		isActive:          true,
+		createdAt:         now,
+		updatedAt:         now,
+	}, nil
+}
+
+// NewDefaultPolicy creates a new default SLA Policy for a tenant.
+func NewDefaultPolicy(tenantID shared.ID) (*Policy, error) {
+	policy, err := NewPolicy(tenantID, "Default SLA Policy")
+	if err != nil {
+		return nil, err
+	}
+	policy.isDefault = true
+	policy.description = "Default SLA policy applied to all assets without a specific policy"
+	return policy, nil
+}
+
+// Reconstitute recreates a Policy from persistence.
+func Reconstitute(
+	id shared.ID,
+	tenantID shared.ID,
+	assetID *shared.ID,
+	name string,
+	description string,
+	isDefault bool,
+	criticalDays int,
+	highDays int,
+	mediumDays int,
+	lowDays int,
+	infoDays int,
+	warningThresholdPct int,
+	escalationEnabled bool,
+	escalationConfig map[string]any,
+	isActive bool,
+	createdAt time.Time,
+	updatedAt time.Time,
+) *Policy {
+	if escalationConfig == nil {
+		escalationConfig = make(map[string]any)
+	}
+	return &Policy{
+		id:           id,
+		tenantID:     tenantID,
+		assetID:      assetID,
+		name:         name,
+		description:  description,
+		isDefault:    isDefault,
+		criticalDays: criticalDays,
+		highDays:     highDays,
+		mediumDays:   mediumDays,
+		lowDays:      lowDays,
+		infoDays:     infoDays,
+		// Priority-class days start at DefaultPriorityDays; the repository
+		// applies the persisted values with WithPriorityDays (NULL = keep
+		// the default).
+		p0Days:              DefaultPriorityDays["P0"],
+		p1Days:              DefaultPriorityDays["P1"],
+		p2Days:              DefaultPriorityDays["P2"],
+		p3Days:              DefaultPriorityDays["P3"],
+		kevCapDays:          DefaultKEVCapDays,
+		warningThresholdPct: warningThresholdPct,
+		escalationEnabled:   escalationEnabled,
+		escalationConfig:    escalationConfig,
+		isActive:            isActive,
+		createdAt:           createdAt,
+		updatedAt:           updatedAt,
+	}
+}
+
+// WithPriorityDays attaches priority-class SLA days to a reconstituted
+// Policy. Zero values keep the default — a persisted value of 0 is
+// treated as "inherit default" so the column can be safely added to
+// existing rows without breaking anything.
+func (p *Policy) WithPriorityDays(p0, p1, p2, p3 int) *Policy {
+	if p0 > 0 {
+		p.p0Days = p0
+	}
+	if p1 > 0 {
+		p.p1Days = p1
+	}
+	if p2 > 0 {
+		p.p2Days = p2
+	}
+	if p3 > 0 {
+		p.p3Days = p3
+	}
+	return p
+}
+
+// WithKEVCapDays attaches the persisted known exploited deadline cap to a
+// reconstituted Policy (0 = off; the column is NOT NULL, default 14).
+func (p *Policy) WithKEVCapDays(days int) *Policy {
+	if days >= 0 && days <= MaxSLADays {
+		p.kevCapDays = days
+	}
+	return p
+}
+
+// Getters
+
+func (p *Policy) ID() shared.ID            { return p.id }
+func (p *Policy) TenantID() shared.ID      { return p.tenantID }
+func (p *Policy) AssetID() *shared.ID      { return p.assetID }
+func (p *Policy) Name() string             { return p.name }
+func (p *Policy) Description() string      { return p.description }
+func (p *Policy) IsDefault() bool          { return p.isDefault }
+func (p *Policy) CriticalDays() int        { return p.criticalDays }
+func (p *Policy) HighDays() int            { return p.highDays }
+func (p *Policy) MediumDays() int          { return p.mediumDays }
+func (p *Policy) LowDays() int             { return p.lowDays }
+func (p *Policy) InfoDays() int            { return p.infoDays }
+func (p *Policy) WarningThresholdPct() int { return p.warningThresholdPct }
+func (p *Policy) EscalationEnabled() bool  { return p.escalationEnabled }
+func (p *Policy) IsActive() bool           { return p.isActive }
+func (p *Policy) CreatedAt() time.Time     { return p.createdAt }
+func (p *Policy) UpdatedAt() time.Time     { return p.updatedAt }
+
+func (p *Policy) EscalationConfig() map[string]any {
+	config := make(map[string]any, len(p.escalationConfig))
+	for k, v := range p.escalationConfig {
+		config[k] = v
+	}
+	return config
+}
+
+// P0Days returns the priority-class P0 SLA days.
+func (p *Policy) P0Days() int { return p.p0Days }
+
+// P1Days returns the priority-class P1 SLA days.
+func (p *Policy) P1Days() int { return p.p1Days }
+
+// P2Days returns the priority-class P2 SLA days.
+func (p *Policy) P2Days() int { return p.p2Days }
+
+// P3Days returns the priority-class P3 SLA days.
+func (p *Policy) P3Days() int { return p.p3Days }
+
+// KEVCapDays returns the known exploited deadline cap in days (0 = off).
+func (p *Policy) KEVCapDays() int { return p.kevCapDays }
+
+// GetDaysForSeverity returns the remediation days for a given severity.
+func (p *Policy) GetDaysForSeverity(severity string) int {
+	switch severity {
+	case "critical":
+		return p.criticalDays
+	case "high":
+		return p.highDays
+	case "medium":
+		return p.mediumDays
+	case "low":
+		return p.lowDays
+	case "info", "none":
+		return p.infoDays
+	default:
+		return p.infoDays
+	}
+}
+
+// GetDaysForPriorityClass returns the remediation days for a CTEM
+// priority class (P0..P3). Returns 0 for unrecognised values so the
+// caller can fall back to severity-based days.
+func (p *Policy) GetDaysForPriorityClass(priorityClass string) int {
+	switch priorityClass {
+	case "P0":
+		return p.p0Days
+	case "P1":
+		return p.p1Days
+	case "P2":
+		return p.p2Days
+	case "P3":
+		return p.p3Days
+	default:
+		return 0
+	}
+}
+
+// InformationalHasSLA reports whether the policy gives informational
+// findings a deadline at all (info days > 0).
+func (p *Policy) InformationalHasSLA() bool {
+	return p.infoDays > NoSLA
+}
+
+// CalculateDeadline calculates the SLA deadline using severity only.
+// Retained for backward compatibility; prefer CalculateDeadlineFor for
+// priority-aware deadlines. It returns the zero time when the finding gets
+// no SLA (an informational finding under a policy with info days = 0).
+func (p *Policy) CalculateDeadline(severity string, detectedAt time.Time) time.Time {
+	days := p.GetDaysForSeverity(severity)
+	if days <= 0 {
+		return time.Time{}
+	}
+	return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
+}
+
+// CalculateDeadlineFor computes the SLA deadline honouring CTEM priority
+// class first, falling back to severity when the priority class is
+// empty or unknown (legacy findings without a class yet). This is the
+// single entry point downstream services should use.
+//
+// An informational finding under a policy without an info SLA gets no
+// deadline (zero time) whatever its priority class: the class must not hand
+// a remediation clock to a finding that has nothing to remediate.
+func (p *Policy) CalculateDeadlineFor(priorityClass, severity string, detectedAt time.Time) time.Time {
+	if isInformational(severity) && !p.InformationalHasSLA() {
+		return time.Time{}
+	}
+	if days := p.GetDaysForPriorityClass(priorityClass); days > 0 {
+		return detectedAt.Add(time.Duration(days) * 24 * time.Hour)
+	}
+	return p.CalculateDeadline(severity, detectedAt)
+}
+
+// Mutators
+
+func (p *Policy) SetAssetID(assetID shared.ID) {
+	p.assetID = &assetID
+	p.updatedAt = time.Now().UTC()
+}
+
+func (p *Policy) UpdateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+	p.name = name
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+func (p *Policy) UpdateDescription(description string) {
+	p.description = description
+	p.updatedAt = time.Now().UTC()
+}
+
+func (p *Policy) SetDefault(isDefault bool) {
+	p.isDefault = isDefault
+	p.updatedAt = time.Now().UTC()
+}
+
+// UpdateSLADays sets the per-severity windows. critical..low must be at least
+// 1 day; info may be NoSLA (0) = informational findings get no deadline.
+func (p *Policy) UpdateSLADays(critical, high, medium, low, info int) error {
+	if critical < 1 || high < 1 || medium < 1 || low < 1 || info < NoSLA {
+		return fmt.Errorf("%w: SLA days must be at least 1 (info may be 0 = no SLA)", shared.ErrValidation)
+	}
+	if critical > MaxSLADays || high > MaxSLADays || medium > MaxSLADays || low > MaxSLADays || info > MaxSLADays {
+		return fmt.Errorf("%w: SLA days must be at most %d", shared.ErrValidation, MaxSLADays)
+	}
+	p.criticalDays = critical
+	p.highDays = high
+	p.mediumDays = medium
+	p.lowDays = low
+	p.infoDays = info
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdatePriorityDays sets the P0..P3 remediation windows. Each must be
+// 1..365 days and they must be non-decreasing (P0 <= P1 <= P2 <= P3): a
+// more urgent class never gets a longer window.
+func (p *Policy) UpdatePriorityDays(p0, p1, p2, p3 int) error {
+	for _, d := range []int{p0, p1, p2, p3} {
+		if d < 1 || d > MaxSLADays {
+			return fmt.Errorf("%w: priority SLA days must be between 1 and %d", shared.ErrValidation, MaxSLADays)
+		}
+	}
+	if p0 > p1 || p1 > p2 || p2 > p3 {
+		return fmt.Errorf("%w: priority SLA days must be in order: P0 <= P1 <= P2 <= P3", shared.ErrValidation)
+	}
+	p.p0Days = p0
+	p.p1Days = p1
+	p.p2Days = p2
+	p.p3Days = p3
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// UpdateKEVCapDays sets the known exploited deadline cap: 0 (off) to
+// MaxSLADays.
+func (p *Policy) UpdateKEVCapDays(days int) error {
+	if days < 0 || days > MaxSLADays {
+		return fmt.Errorf("%w: known exploited deadline cap must be between 0 (off) and %d days", shared.ErrValidation, MaxSLADays)
+	}
+	p.kevCapDays = days
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+func (p *Policy) SetWarningThreshold(percent int) error {
+	if percent < 1 || percent > 100 {
+		return fmt.Errorf("%w: warning threshold must be between 1 and 100", shared.ErrValidation)
+	}
+	p.warningThresholdPct = percent
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// EnableEscalation turns on approaching/breached deadline notifications for
+// findings governed by this policy.
+func (p *Policy) EnableEscalation() {
+	p.escalationEnabled = true
+	p.updatedAt = time.Now().UTC()
+}
+
+func (p *Policy) DisableEscalation() {
+	p.escalationEnabled = false
+	p.updatedAt = time.Now().UTC()
+}
+
+func (p *Policy) Activate() {
+	p.isActive = true
+	p.updatedAt = time.Now().UTC()
+}
+
+func (p *Policy) Deactivate() {
+	p.isActive = false
+	p.updatedAt = time.Now().UTC()
+}
+
+// IsAssetSpecific checks if this policy is for a specific asset.
+func (p *Policy) IsAssetSpecific() bool {
+	return p.assetID != nil && !p.assetID.IsZero()
+}

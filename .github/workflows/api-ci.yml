@@ -1,9 +1,9 @@
 name: API CI
 
-# The Go API lives in api/. This workflow ALWAYS starts (no `paths:` filter, which
+# The Go API lives in server/. This workflow ALWAYS starts (no `paths:` filter, which
 # would leave required checks Pending); the `changes` job decides whether the
 # real jobs run, and `API CI OK` is the single required check. The real jobs run
-# for api/ and shared files only (rules: .github/scripts/changed.sh), so a
+# for server/ and shared files only (rules: .github/scripts/changed.sh), so a
 # web-only change costs this workflow two ~10 s jobs and nothing else.
 #
 # Two tiers (`changes` decides; the `full` output of .github/scripts/changed.sh):
@@ -48,15 +48,15 @@ permissions:
   # Service containers pull the CI image mirror (ghcr.io/openctemio/mirror).
   packages: read
 
-# Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
-# version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
+# Go version: setup-go reads server/go.mod (its `toolchain` directive), the same
+# version server/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
 # separate pin here would silently test and govulncheck an OLDER Go than ships.
 env:
   GOWORK: "off"
 
 defaults:
   run:
-    working-directory: api
+    working-directory: server
 
 jobs:
   changes:
@@ -132,15 +132,15 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-          # Area reuse: this workflow's tests depend on api/ and the shared files.
+          # Area reuse: this workflow's tests depend on server/ and the shared files.
           TREE_AREA: API CI
-          TREE_PATHS: api Makefile go.work go.work.sum .github deploy
+          TREE_PATHS: server Makefile go.work go.work.sum .github deploy
           TREE_CHECKS: API CI OK
           TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
 
       # Runs on every PR, also a docs-only one that skips the jobs below.
-      # Changelog entries live one file per change in api/changelog.d/, so
+      # Changelog entries live one file per change in server/changelog.d/, so
       # pull requests never conflict on CHANGELOG.md. This also refuses
       # merge-conflict markers committed anywhere in the repository.
       - name: Changelog fragments
@@ -167,8 +167,8 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # base branch for the migration diff and golangci --new-from-rev
 
-      # security-lint.sh expects <root>/{api,agent,sdk-go}. The monorepo root
-      # already has api/; the two siblings are checked out next to it.
+      # security-lint.sh expects <root>/{server,agent,sdk-go}. The monorepo root
+      # already has server/; the two siblings are checked out next to it.
       - name: Checkout sensor (as agent/)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -187,7 +187,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false # ./.github/actions/go-cache restores; only warm-cache saves
       - name: Go caches
         id: gocache
@@ -204,9 +204,9 @@ jobs:
           path: |
             ~/.cache/golangci-lint
             ~/go/bin/staticcheck
-          key: lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-${{ github.sha }}
+          key: lint-${{ runner.os }}-${{ hashFiles('server/go.sum', 'server/.golangci.yml', 'server/Makefile') }}-${{ github.sha }}
           restore-keys: |
-            lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml', 'api/Makefile') }}-
+            lint-${{ runner.os }}-${{ hashFiles('server/go.sum', 'server/.golangci.yml', 'server/Makefile') }}-
             lint-${{ runner.os }}-
 
       - name: Fetch base branch
@@ -244,11 +244,11 @@ jobs:
         run: |
           bash .github/scripts/check-migration-versions.test.sh >/dev/null
           bash .github/scripts/pr-migration-renumber.test.sh >/dev/null
-          bash api/scripts/released-migrations.test.sh >/dev/null
-          bash api/scripts/released-migrations.sh --check
-          bash api/scripts/dev-tools.test.sh >/dev/null
-          bash api/deploy/backup.test.sh >/dev/null
-          bash api/deploy/backup/overlay.test.sh >/dev/null
+          bash server/scripts/released-migrations.test.sh >/dev/null
+          bash server/scripts/released-migrations.sh --check
+          bash server/scripts/dev-tools.test.sh >/dev/null
+          bash server/deploy/backup.test.sh >/dev/null
+          bash server/deploy/backup/overlay.test.sh >/dev/null
           case "$EVENT" in
             pull_request) MIGRATION_DUPLICATE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;
             merge_group)  bash .github/scripts/check-migration-versions.sh "$MG_BASE" ;;
@@ -308,7 +308,7 @@ jobs:
         env:
           SECLINT_ROOT: ${{ github.workspace }}
           SECLINT_STRICT: "1"
-        run: bash api/scripts/security-lint.sh
+        run: bash server/scripts/security-lint.sh
 
       - name: Security Gates (tenant-scope analyzer)
         run: go test ./tools/lint/getbyid/... -count=1
@@ -348,7 +348,7 @@ jobs:
       - name: OpenAPI Contract
         run: bash scripts/check-openapi.sh
 
-      # Gateway: the single public entry point (api/deploy/gateway). Validates
+      # Gateway: the single public entry point (server/deploy/gateway). Validates
       # the Caddyfile in every TLS mode, the entrypoint's refusals, and the
       # routing table against stub upstreams; and that the production compose
       # renders. The all-in-one image (deploy/allinone) embeds the same files.
@@ -356,7 +356,7 @@ jobs:
         run: bash deploy/gateway/smoke-test.sh
 
       - name: Gateway Routing (production compose renders)
-        working-directory: api/deploy
+        working-directory: server/deploy
         run: |
           # The first-start path: setup.sh writes .env (host name + generated secrets).
           ./setup.sh ctem.example.com --version v0.0.0-ci
@@ -456,7 +456,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false # ./.github/actions/go-cache restores; only warm-cache saves
       - name: Go caches
         uses: ./.github/actions/go-cache
@@ -465,7 +465,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: openapi-spec
-          path: api/api/openapi/swagger.yaml
+          path: server/api/openapi/swagger.yaml
           if-no-files-found: error
           retention-days: 1
       - name: Fail fast
@@ -582,7 +582,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false # ./.github/actions/go-cache restores; only warm-cache saves
       - name: Go caches
         id: gocache
@@ -595,7 +595,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: openapi-spec
-          path: api/api/openapi
+          path: server/api/openapi
 
       # The run's plan (spec job): the affected packages of a pull request and
       # the recorded durations that balance the shards.
@@ -716,7 +716,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false # ./.github/actions/go-cache restores; only warm-cache saves
       - name: Go caches
         uses: ./.github/actions/go-cache
@@ -724,7 +724,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: openapi-spec
-          path: api/api/openapi
+          path: server/api/openapi
       - name: Packages affected by this PR
         id: pkgs
         env:
@@ -812,7 +812,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false # ./.github/actions/go-cache restores; only warm-cache saves
       - name: Go caches
         id: gocache
@@ -903,7 +903,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false # ./.github/actions/go-cache restores; only warm-cache saves
       - name: Go caches
         id: gocache
@@ -993,7 +993,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false
       - name: Go caches
         id: gocache
@@ -1038,7 +1038,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false # ./.github/actions/go-cache restores; only warm-cache saves
       - name: Go caches
         id: gocache
@@ -1054,13 +1054,13 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: api-linux-amd64
-          path: api/dist/openctem
+          path: server/dist/openctem
 
       - name: Upload Bootstrap Admin artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bootstrap-admin-linux-amd64
-          path: api/dist/bootstrap-admin
+          path: server/dist/bootstrap-admin
       - name: Fail fast
         if: failure()
         uses: ./.github/actions/fail-fast

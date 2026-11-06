@@ -4,7 +4,7 @@
  * Errors are logged to the console in development and reported to the API
  * by kind only (`@/lib/client-errors`): no message, stack or user detail
  * leaves the browser. The operator is alerted when error kinds spike
- * (api/docs/operations/monitoring.md, WebClientErrors).
+ * (server/docs/operations/monitoring.md, WebClientErrors).
  *
  * Usage:
  * ```typescript

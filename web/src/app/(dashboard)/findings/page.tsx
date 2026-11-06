@@ -703,7 +703,7 @@ function FindingsContent() {
   // Informational findings (info and none): the work views leave them out
   // unless the person's preference or the organization's default includes
   // them, the URL's `informational` overrides that for this view, and an
-  // explicit severity always wins (api/docs/architecture/findings-work-views.md).
+  // explicit severity always wins (server/docs/architecture/findings-work-views.md).
   const includeInformational = quickViewData?.include_informational ?? false
   const hideInfo = !savedId && informationalHidden(searchParams, includeInformational)
   const informationalShownForView =

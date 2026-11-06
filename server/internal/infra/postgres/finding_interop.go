@@ -1,0 +1,286 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+)
+
+// Source interoperability data of findings (migration 001117, CTIS 1.4).
+// Written and read here only, never by the generic finding SELECT, so lists,
+// exports, tickets and notifications cannot carry it. Every statement is
+// scoped by tenant_id.
+
+// maxInteropBatch bounds one UPDATE (rows per statement).
+const maxInteropBatch = 500
+
+// UpdateInteropBatch stores each sighting's interop data on the tenant's
+// finding with that fingerprint. A member the sighting does not carry keeps
+// the stored value; one it carries replaces it (the latest sighting wins).
+// Data is sanitized again here (defense in depth).
+func (r *FindingRepository) UpdateInteropBatch(ctx context.Context, tenantID shared.ID, updates []vulnerability.InteropUpdate) (int64, error) {
+	// The global lock order of findings rows (finding_lock_order.go), across
+	// the statements and inside each.
+	updates = slices.Clone(updates)
+	sortByFingerprint(updates, func(u vulnerability.InteropUpdate) string { return u.Fingerprint })
+	var total int64
+	for start := 0; start < len(updates); start += maxInteropBatch {
+		end := min(start+maxInteropBatch, len(updates))
+		n := end - start
+		fps := make([]string, 0, n)
+		nativeIDs := make([]sql.NullString, 0, n)
+		schemes := make([]sql.NullString, 0, n)
+		metas := make([]sql.NullString, 0, n)
+		scores := make([]sql.NullString, 0, n)
+		vids := make([]sql.NullString, 0, n)
+		extras := make([]sql.NullString, 0, n)
+		locs := make([]sql.NullString, 0, n)
+		vexStatus := make([]sql.NullString, 0, n)
+		vexJust := make([]sql.NullString, 0, n)
+		vexStmt := make([]sql.NullString, 0, n)
+		vexSrc := make([]sql.NullString, 0, n)
+		vexAt := make([]sql.NullString, 0, n) // RFC 3339, cast to timestamptz
+		for _, u := range updates[start:end] {
+			d := vulnerability.SanitizeInteropData(u.Data)
+			if u.Fingerprint == "" || d.IsEmpty() {
+				continue
+			}
+			fps = append(fps, u.Fingerprint)
+			var nid, scheme string
+			if d.Native != nil {
+				nid, scheme = d.Native.VulnID, d.Native.Scheme
+			}
+			nativeIDs = append(nativeIDs, nullString(nid))
+			schemes = append(schemes, nullString(scheme))
+			metas = append(metas, jsonOrNull(d.SourceMeta()))
+			scores = append(scores, jsonOrNull(d.Scores))
+			vids = append(vids, jsonOrNull(d.VulnerabilityIDs))
+			extras = append(extras, jsonOrNull(d.SourceExtra))
+			locs = append(locs, nullString(d.LocationKey))
+			if v := d.VEX; v != nil {
+				vexStatus = append(vexStatus, nullString(v.Status))
+				vexJust = append(vexJust, nullString(v.Justification))
+				vexStmt = append(vexStmt, nullString(v.Statement))
+				vexSrc = append(vexSrc, nullString(v.Source))
+				at := time.Now().UTC()
+				if v.AsOf != nil {
+					at = *v.AsOf
+				}
+				vexAt = append(vexAt, sql.NullString{String: at.UTC().Format(time.RFC3339Nano), Valid: true})
+			} else {
+				vexStatus = append(vexStatus, sql.NullString{})
+				vexJust = append(vexJust, sql.NullString{})
+				vexStmt = append(vexStmt, sql.NullString{})
+				vexSrc = append(vexSrc, sql.NullString{})
+				vexAt = append(vexAt, sql.NullString{})
+			}
+		}
+		if len(fps) == 0 {
+			continue
+		}
+		args := []any{tenantID.String(), pq.Array(fps), pq.Array(nativeIDs), pq.Array(schemes), pq.Array(metas),
+			pq.Array(scores), pq.Array(vids), pq.Array(extras), pq.Array(locs),
+			pq.Array(vexStatus), pq.Array(vexJust), pq.Array(vexStmt), pq.Array(vexSrc), pq.Array(vexAt)}
+		var res sql.Result
+		err := retryWriteConflict(ctx, func() error {
+			var execErr error
+			res, execErr = r.db.ExecContext(ctx, interopUpdateSQL, args...)
+			return execErr
+		})
+		if err != nil {
+			return total, fmt.Errorf("update finding interop data: %w", err)
+		}
+		rows, _ := res.RowsAffected()
+		total += rows
+	}
+	return total, nil
+}
+
+// interopInput is the sightings of UpdateInteropBatch, one row per
+// fingerprint.
+const interopInput = `unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[],
+			$9::text[], $10::text[], $11::text[], $12::text[], $13::text[], $14::text[])
+			AS d(fingerprint, native_vuln_id, native_scheme, source_meta, scores, vulnerability_ids, source_extra,
+				location_key, vex_status, vex_justification, vex_statement, vex_source, vex_at)`
+
+// interopChanges selects the findings a sighting changes. A sighting that
+// changes nothing is skipped: every rewritten row is a new tuple in all of
+// the findings indexes, and a rescan re-reports the same data for nearly
+// every finding. A VEX statement always writes (it carries its own time).
+const interopChanges = `f.tenant_id = $1 AND f.fingerprint = d.fingerprint
+		  AND (d.vex_status IS NOT NULL
+		       OR (f.native_vuln_id, f.native_scheme, f.source_meta, f.scores, f.vulnerability_ids,
+		           f.source_extra, f.location_key)
+		          IS DISTINCT FROM
+		          (COALESCE(d.native_vuln_id, f.native_vuln_id), COALESCE(d.native_scheme, f.native_scheme),
+		           COALESCE(d.source_meta::jsonb, f.source_meta), COALESCE(d.scores::jsonb, f.scores),
+		           COALESCE(d.vulnerability_ids::jsonb, f.vulnerability_ids),
+		           COALESCE(d.source_extra::jsonb, f.source_extra), COALESCE(d.location_key, f.location_key)))`
+
+// interopUpdateSQL writes the interop data of UpdateInteropBatch. The rows
+// it changes are locked first in the global order (finding_lock_order.go);
+// the update rechecks the same condition. A VEX statement replaces the
+// previous one as a whole (status, justification, statement, source, time),
+// so a new statement never keeps an old justification.
+var interopUpdateSQL = `
+		WITH ` + findingLockCTE("findings f, "+interopInput, interopChanges) + `
+		UPDATE findings AS f SET
+			native_vuln_id    = COALESCE(d.native_vuln_id, f.native_vuln_id),
+			native_scheme     = COALESCE(d.native_scheme, f.native_scheme),
+			source_meta       = COALESCE(d.source_meta::jsonb, f.source_meta),
+			scores            = COALESCE(d.scores::jsonb, f.scores),
+			vulnerability_ids = COALESCE(d.vulnerability_ids::jsonb, f.vulnerability_ids),
+			source_extra      = COALESCE(d.source_extra::jsonb, f.source_extra),
+			location_key      = COALESCE(d.location_key, f.location_key),
+			vex_status        = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_status ELSE f.vex_status END,
+			vex_justification = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_justification ELSE f.vex_justification END,
+			vex_statement     = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_statement ELSE f.vex_statement END,
+			vex_source        = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_source ELSE f.vex_source END,
+			vex_at            = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_at::timestamptz ELSE f.vex_at END
+		FROM locked l, ` + interopInput + `
+		WHERE f.id = l.locked_id AND ` + interopChanges
+
+func jsonOrNull(v any) sql.NullString {
+	b := vulnerability.MarshalJSONOrNil(v)
+	if b == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: string(b), Valid: true}
+}
+
+// GetInterop returns the interop data of one finding of the tenant. The
+// caller has already authorized the finding (tenant, data scope, pentest
+// membership); a missing finding is ErrNotFound. Nil without an error when
+// the finding has none.
+func (r *FindingRepository) GetInterop(ctx context.Context, tenantID, findingID shared.ID) (*vulnerability.InteropData, error) {
+	var meta, scores, vids, extra []byte
+	var loc, vexStatus, vexJust, vexStmt, vexSrc sql.NullString
+	var vexAt sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT source_meta, scores, vulnerability_ids, source_extra, location_key,
+			vex_status, vex_justification, vex_statement, vex_source, vex_at
+		FROM findings WHERE tenant_id = $1 AND id = $2`,
+		tenantID.String(), findingID.String()).Scan(&meta, &scores, &vids, &extra, &loc,
+		&vexStatus, &vexJust, &vexStmt, &vexSrc, &vexAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, shared.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get finding interop data: %w", err)
+	}
+	var d vulnerability.InteropData
+	if len(meta) > 0 {
+		var m vulnerability.InteropSourceMeta
+		if json.Unmarshal(meta, &m) == nil {
+			d.Native, d.Lifecycle, d.Solution = m.Native, m.Lifecycle, m.Solution
+		}
+	}
+	if len(scores) > 0 {
+		_ = json.Unmarshal(scores, &d.Scores)
+	}
+	if len(vids) > 0 {
+		_ = json.Unmarshal(vids, &d.VulnerabilityIDs)
+	}
+	if len(extra) > 0 {
+		_ = json.Unmarshal(extra, &d.SourceExtra)
+	}
+	d.LocationKey = loc.String
+	if vexStatus.Valid {
+		d.VEX = &vulnerability.InteropVEX{
+			Status: vexStatus.String, Justification: vexJust.String,
+			Statement: vexStmt.String, Source: vexSrc.String,
+		}
+		if vexAt.Valid {
+			t := vexAt.Time.UTC()
+			d.VEX.AsOf = &t
+		}
+	}
+	// Stored rows were sanitized on write; sanitizing on read keeps a row
+	// written by any other path within the same bounds.
+	d = vulnerability.SanitizeInteropData(d)
+	if d.IsEmpty() {
+		return nil, nil //nolint:nilnil // no interop data recorded
+	}
+	return &d, nil
+}
+
+// ApplyVEXNotAffected requests a false positive for the tenant's open
+// findings that a VEX not_affected statement covers (a pending four-eyes
+// request by the actor "vex", with the statement's reason as justification,
+// and an approval_requested timeline entry), or with dryRun only returns the
+// ones it would request. A finding qualifies only when it is the tenant's, on
+// the stated asset, under the stated key, last reported by tool, open, and
+// not from a human source (pentest, manual, bug bounty, red team). Returns
+// the ids requested (or that would be).
+func (r *FindingRepository) ApplyVEXNotAffected(ctx context.Context, tenantID shared.ID, tool string,
+	items []vulnerability.VEXNotAffected, dryRun bool) ([]shared.ID, error) {
+	if len(items) == 0 || tool == "" {
+		return nil, nil
+	}
+	fps := make([]string, len(items))
+	assets := make([]string, len(items))
+	reasons := make([]string, len(items))
+	codes := make([]string, len(items))
+	for i, it := range items {
+		fps[i] = it.Fingerprint
+		assets[i] = it.AssetID
+		reasons[i] = it.Resolution
+		codes[i] = string(vulnerability.ClosureReasonFromVEXJustification(string(it.ClosureReason)))
+	}
+	match := `
+		WITH m AS (
+			SELECT * FROM unnest($2::text[], $3::uuid[], $4::text[], $6::text[]) AS m(fingerprint, asset_id, reason, code)
+		)
+		SELECT f.id, m.reason, m.code
+		FROM findings f
+		JOIN m ON m.fingerprint = f.fingerprint AND m.asset_id = f.asset_id
+		WHERE f.tenant_id = $1
+			AND f.status IN ` + vexFalsePositiveFromSQL + `
+			AND f.source NOT IN ` + coverageProtectedSources + `
+			AND lower(COALESCE(f.last_seen_tool, f.tool_name)) = $5`
+	query := `SELECT id::text FROM (` + match + `) x`
+	if !dryRun {
+		// A false positive needs four-eyes: the statement requests it (a
+		// pending request by the actor "vex"); a person with the approve
+		// permission decides. A finding with a pending request, or whose
+		// earlier VEX request a person rejected or canceled, gets none.
+		query = `
+		WITH x AS (` + match + `), ins AS (
+			INSERT INTO finding_status_approvals (tenant_id, finding_id, requested_status, requested_by_actor, justification, status, closure_reason, decide_by)
+			SELECT $1::uuid, x.id, 'false_positive', '` + vulnerability.ApprovalActorVEX + `', LEFT(x.reason, 1000), 'pending', x.code,
+			       NOW() + INTERVAL '14 days' -- vulnerability.DefaultDecisionWindow
+			FROM x
+			WHERE NOT EXISTS (
+				SELECT 1 FROM finding_status_approvals p
+				WHERE p.tenant_id = $1::uuid AND p.finding_id = x.id
+				  AND (p.status = 'pending' OR (p.requested_by_actor = '` + vulnerability.ApprovalActorVEX + `' AND p.status IN ('rejected', 'canceled'))))
+			ON CONFLICT DO NOTHING
+			RETURNING id, finding_id
+		), timeline AS (
+			INSERT INTO finding_activities (tenant_id, finding_id, activity_type, actor_type, actor_name, changes, source, message)
+			SELECT $1::uuid, i.finding_id, 'approval_requested', 'scanner', 'system: VEX in a scan report',
+			       jsonb_build_object('requested_status', 'false_positive', 'requested_by', '` + vulnerability.ApprovalActorVEX + `', 'approval_id', i.id),
+			       'auto', 'A VEX statement in a scan report says the component is not affected; a person decides'
+			FROM ins i
+		)
+		SELECT finding_id::text FROM ins`
+	}
+	out, err := r.db.queryIDsWithTransition(ctx, findingTransition{
+		Source: "vex", Reason: "vex_not_affected", ActorType: "scanner", ActorName: "system: VEX in a scan report",
+		Message: "A VEX statement in a scan report says the component is not affected",
+	}, query, tenantID.String(), pq.Array(fps), pq.Array(assets), pq.Array(reasons), strings.ToLower(tool), pq.Array(codes))
+	if err != nil {
+		return nil, fmt.Errorf("apply vex not_affected: %w", err)
+	}
+	return out, nil
+}

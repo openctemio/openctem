@@ -25,12 +25,15 @@ const tVi: Translate = (k, f, v) => translate(viDict, k, f, v)
 // The API's registered codes, read from its source: a code the API
 // registers without console words fails here.
 function registeredCodes(): string[] {
-  const src = readFileSync(resolve(__dirname, '../../../../../api/pkg/apierror/codes.go'), 'utf8')
+  const src = readFileSync(
+    resolve(__dirname, '../../../../../server/pkg/apierror/codes.go'),
+    'utf8'
+  )
   const block = src.slice(src.indexOf('var registry = map[Code]Spec{'))
   const body = block.slice(0, block.indexOf('\n}\n'))
   const names = [...body.matchAll(/^\s*(Code\w+):/gm)].map((m) => m[1])
   const all =
-    readFileSync(resolve(__dirname, '../../../../../api/pkg/apierror/apierror.go'), 'utf8') + src
+    readFileSync(resolve(__dirname, '../../../../../server/pkg/apierror/apierror.go'), 'utf8') + src
   const values = new Map(
     [...all.matchAll(/^\s*(Code\w+)\s+Code\s*=\s*"([A-Z0-9_]+)"/gm)].map((m) => [m[1], m[2]])
   )

@@ -1,0 +1,27 @@
+--- a/server/Makefile
++++ b/server/Makefile
+@@ -176,6 +176,11 @@
+ 	@# The list query params come from the field registries (RFC-048).
+ 	@GOWORK=off go run ./tools/gen/filterparams
+ 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
++	@# swag names definitions after the Go package path. The published names keep
++	@# the module's pre-rename spelling (openctem/api), so the backend directory
++	@# rename to server/ changed no schema name of the contract. The Dockerfile
++	@# does the same.
++	@perl -pi -e 's/github_com_openctemio_openctem_server_/github_com_openctemio_openctem_api_/g' api/openapi/swagger.yaml
+ 	@echo "Swagger docs generated in api/openapi/"
+ 
+ ## contract: Generate every contract file derived from the Go source. None of
+--- a/server/Dockerfile
++++ b/server/Dockerfile
+@@ -77,7 +77,10 @@
+ COPY go.mod go.sum ./
+ RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
+ COPY . .
++# The published definition names keep the module's pre-rename spelling (see
++# the swagger target in the Makefile).
+ RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
++ && sed -i 's/github_com_openctemio_openctem_server_/github_com_openctemio_openctem_api_/g' api/openapi/swagger.yaml \
+  && test -s api/openapi/swagger.yaml
+ 
+ # -----------------------------------------------------------------------------

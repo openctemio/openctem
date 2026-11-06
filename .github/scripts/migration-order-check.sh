@@ -26,7 +26,7 @@
 set -euo pipefail
 
 base="${1:?usage: migration-order-check.sh <base-commit>}"
-dir=api/migrations
+dir=server/migrations
 : "${SUPER_URL:?SUPER_URL is required}"
 
 work="$(mktemp -d)"
@@ -37,8 +37,12 @@ if [[ -z "$base_dir" ]]; then
     exit 0
   fi
   mkdir -p "$work/base"
-  git archive "$base" "$dir" | tar -x -C "$work/base"
-  base_dir="$work/base/$dir"
+  # A base from before the backend directory rename has its migrations in the
+  # old directory.
+  bdir="$dir"
+  git cat-file -e "$base:$bdir" 2>/dev/null || bdir="api/migrations" # rename-guard: allow
+  git archive "$base" "$bdir" | tar -x -C "$work/base"
+  base_dir="$work/base/$bdir"
 fi
 
 # url_for <db>: SUPER_URL pointed at another database of the same server.

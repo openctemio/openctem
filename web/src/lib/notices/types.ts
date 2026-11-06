@@ -1,8 +1,8 @@
 /**
  * Third-party notices (About > Open-source licenses): the components a build
  * ships, with their license identifiers and texts. Same shape for the API
- * (api/pkg/notices) and the web build (scripts/third-party-notices.mjs).
- * Design: api/docs/architecture/third-party-notices.md.
+ * (server/pkg/notices) and the web build (scripts/third-party-notices.mjs).
+ * Design: server/docs/architecture/third-party-notices.md.
  */
 export interface NoticePackage {
   name: string

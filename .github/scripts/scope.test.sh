@@ -61,11 +61,11 @@ expect "en catalog flags i18n_en" merge_group "$W" "web_i18n=true i18n_en=true w
   web/src/lib/i18n/dictionaries/en/findings.json
 expect "i18n test file is app code" merge_group "$W" "web_app=true web_i18n=false" \
   web/src/lib/i18n/dictionaries/dictionaries.test.ts
-expect "go is api code" merge_group "$A" "api_code=true web_app=false" api/internal/x.go
+expect "go is api code" merge_group "$A" "api_code=true web_app=false" server/internal/x.go
 expect "shared build file is both" merge_group "$A" "api_code=true web_app=true" deploy/allinone/Dockerfile
 expect "docs are nothing" merge_group "$A" "api_code=false web_app=false web_e2e=false ci_self=false" \
-  api/docs/x.md api/changelog.d/x.md web/README.md
-expect "env reference is api code" merge_group "$A" "api_code=true" api/docs/configuration/environment-variables.md
+  server/docs/x.md server/changelog.d/x.md web/README.md
+expect "env reference is api code" merge_group "$A" "api_code=true" server/docs/configuration/environment-variables.md
 expect "own workflow file is ci_self" merge_group "$W" "ci_self=true ci_other=false" .github/workflows/web-ci.yml
 expect "another workflow file is ci_other" merge_group "$A" "ci_self=false ci_other=true api_code=false" \
   .github/workflows/web-ci.yml

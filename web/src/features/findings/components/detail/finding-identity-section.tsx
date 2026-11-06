@@ -5,7 +5,7 @@
  * words from the names of the fields its key was built from, the tools that
  * reported it and the duplicates merged into it that the caller may see.
  * The API returns field names only, never a key, fingerprint or value
- * (api/docs/architecture/deduplication.md, "Why a finding is one").
+ * (server/docs/architecture/deduplication.md, "Why a finding is one").
  */
 
 import { Fingerprint } from 'lucide-react'

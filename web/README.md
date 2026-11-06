@@ -6,7 +6,7 @@ Prioritization, Validation and Mobilization.
 
 This is `web/` in the [`openctemio/openctem`](https://github.com/openctemio/openctem)
 monorepo (formerly the `openctemio/ui` repository, now archived); the Go API it
-talks to is [`../api/`](../api/). User documentation is at
+talks to is [`../server/`](../server/). User documentation is at
 [docs.openctem.io](https://docs.openctem.io).
 
 ## Tech stack

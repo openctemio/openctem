@@ -1,4 +1,4 @@
-# Flaky-test quarantine (api/docs/development/ci-cd.md#flaky-test-quarantine).
+# Flaky-test quarantine (server/docs/development/ci-cd.md#flaky-test-quarantine).
 #
 # A test listed here is skipped on pull requests and in the merge queue until
 # its `fix_by` date (at most 14 days after `added`); after that it runs again.
@@ -6,7 +6,7 @@
 # quarantined. Changing this file needs the maintainer's `security-ack`.
 # Checked by .github/scripts/quarantine.py check (Workflow Lint).
 #
-# - test: go:github.com/openctemio/openctem/api/tests/integration.TestName
+# - test: go:github.com/openctemio/openctem/server/tests/integration.TestName
 #   issue: 1234
 #   owner: ingest
 #   added: 2026-10-25
