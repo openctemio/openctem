@@ -1027,6 +1027,7 @@
   "assets.riskImpact.previewFailed": "Không đọc được tác động của thay đổi này",
   "assets.riskImpact.reason": "Lý do hạ mức rủi ro",
   "assets.riskImpact.reasonPlaceholder": "Vì sao tài sản này ít bị phơi bày hoặc ít quan trọng hơn so với ghi nhận?",
+  "assets.riskImpact.reasonPlaceholderCrownJewel": "Vì sao tài sản này không còn là tài sản trọng yếu?",
   "assets.riskImpact.title": "Hạ mức rủi ro",
   "assets.safeDelete.archiveAction": "Lưu trữ",
   "assets.safeDelete.archiveFailed": "Không thể lưu trữ {count} tài sản",
