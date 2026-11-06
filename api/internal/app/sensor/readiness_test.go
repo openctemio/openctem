@@ -1,7 +1,9 @@
 package sensor
 
 import (
+	"encoding/json"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,9 +104,9 @@ func TestBuildReadiness_HostAndScopeStates(t *testing.T) {
 		Zones: []*scanzone.Zone{zoneOf(s, "10.0.0.0/16", "192.168.4.0/24")}, ZonesKnown: true,
 		PendingScope: []*scopedom.Target{target(t, s, scopedom.TargetTypeCIDR, "10.0.0.0/16")}, ScopeKnown: true,
 		ConfigKnown: true, ConfigChecks: []sensordom.ConfigCheck{{ID: "runtime.sandbox_network", Status: sensordom.CheckWarn}}}
-	got := items(BuildReadiness(in, func(p string) bool { return p == permScopeWrite }))
+	got := items(BuildReadiness(in, func(p string) bool { return p == permScopeWrite || p == permZonesRead }))
 	if got[ReadyPrivate].State != ReadyStateBlocked || got[ReadyKill].State != ReadyStateBlocked ||
-		got[ReadyKill].Fix.HostLine == "" {
+		got[ReadyKill].Fix.HostLine != killSwitchHostLine || strings.Contains(got[ReadyKill].Fix.HostLine, "/etc/") {
 		t.Fatalf("host items %+v %+v", got[ReadyPrivate], got[ReadyKill])
 	}
 	sc := got[ReadyScope]
@@ -113,6 +115,16 @@ func TestBuildReadiness_HostAndScopeStates(t *testing.T) {
 	}
 	if got[ReadySandbox].State != ReadyStateBlocked || got[ReadySandbox].Fix.Docs != HostRequirementsDocs {
 		t.Fatalf("sandbox %+v", got[ReadySandbox])
+	}
+
+	// A caller who may write scope but not read zones gets the count, never
+	// the zones' private ranges.
+	noZones := items(BuildReadiness(in, func(p string) bool { return p == permScopeWrite }))[ReadyScope]
+	if noZones.State != ReadyStateBlocked || noZones.Count != 1 || noZones.Fix == nil || !noZones.Fix.Allowed || len(noZones.Fix.Patterns) != 0 {
+		t.Fatalf("scope without zones:read %+v %+v", noZones, noZones.Fix)
+	}
+	if b, err := json.Marshal(noZones); err != nil || strings.Contains(string(b), "192.168.4.0") {
+		t.Fatalf("the answer leaks the zone range: %s %v", b, err)
 	}
 
 	// Only a pending entry left: waiting for someone else's approval.

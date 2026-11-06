@@ -29,6 +29,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { reportBulkResult } from '@/features/scope/components/add-to-scope-action'
 import { createScopeTargetsBulk, invalidateScopeCache } from '@/features/scope/api/use-scope-api'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { isStepUpRequired } from '@/lib/api/step-up'
 import { grantUpdateRequest, updateSensorGrant, useSensorGrant } from '@/lib/api/sensor-grant-hooks'
 import {
   useSensorReadiness,
@@ -38,6 +39,7 @@ import {
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 
+import { grantErrorMessage, isVersionConflict } from './sensor-grant-section'
 import { Snippet } from './sensor-install-snippets'
 
 /** The scope entry type of one range. */
@@ -250,7 +252,16 @@ function PromoteAction({ sensorId, onDone }: { sensorId: string; onDone: () => v
       setOpen(false)
       onDone()
     } catch (err) {
-      toast.error(getErrorMessage(err, t('sensors.readiness.fixFailed')))
+      // The grant change is the Grant section's: the API client opens its
+      // re-authentication dialog on STEP_UP_REQUIRED and retries; when the
+      // person cancels it, say so as the Grant section does, and reload a
+      // grant that changed under us.
+      toast.error(
+        isStepUpRequired(err as { statusCode?: number; code?: string })
+          ? t('errors.STEP_UP_REQUIRED')
+          : grantErrorMessage(err, t)
+      )
+      if (isVersionConflict(err)) await mutate()
     } finally {
       setBusy(false)
     }

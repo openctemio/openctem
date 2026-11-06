@@ -66,6 +66,7 @@ const HostRequirementsDocs = "https://docs.openctem.io/sensors/host-requirements
 const (
 	permGrantWiden = "sensors:grant:widen"
 	permZonesWrite = "sensors:zones:write"
+	permZonesRead  = "sensors:zones:read"
 	permScopeWrite = "attack_surface:scope:write"
 )
 
@@ -214,8 +215,10 @@ const sandboxCheckID = "runtime.sandbox_network"
 
 // privateHostLine and killSwitchHostLine are what the host owner runs.
 const (
-	privateHostLine    = "SENSOR_ALLOW_PRIVATE_TARGETS=1"
-	killSwitchHostLine = "sudo rm /etc/openctem/STOP"
+	privateHostLine = "SENSOR_ALLOW_PRIVATE_TARGETS=1"
+	// The stop file's path is the sensor's setting (SENSOR_KILL_SWITCH_FILE)
+	// and is not reported to the platform, so the text names no path.
+	killSwitchHostLine = "remove the STOP file the sensor reads at SENSOR_KILL_SWITCH_FILE"
 )
 
 // readinessFixer builds fixes with Allowed from the caller's permissions.
@@ -363,7 +366,11 @@ func scopeItem(in ReadinessInput, ranges []netip.Prefix, fx readinessFixer) Read
 	switch {
 	case len(missing) > 0:
 		f := fx.fix(FixAddScope, permScopeWrite)
-		f.Patterns = missing
+		// The ranges are the zones' private networks: only a caller who
+		// may read zones gets them; the others get the count.
+		if fx != nil && fx(permZonesRead) {
+			f.Patterns = missing
+		}
 		return ReadinessItem{Key: ReadyScope, State: ReadyStateBlocked, Count: len(missing), Fix: f}
 	case waiting > 0:
 		return ReadinessItem{Key: ReadyScope, State: ReadyStateWaiting, Count: waiting}
