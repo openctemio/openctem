@@ -173,6 +173,11 @@ func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Re
 	if data.Policy.AllowPrivate {
 		multi += sensorapp.MultiKitPrivateNote
 	}
+	if data.HostAllowedRanges != "" {
+		// Only the docker, compose and CLI snippets read the pin.
+		multi += sensorapp.MultiKitPinNote
+		rendered.Kubernetes += sensorapp.KubernetesPinNote
+	}
 	resp := SensorConfigTemplatesResponse{
 		Docker: rendered.Docker, Compose: rendered.Compose, Kubernetes: rendered.Kubernetes, CLI: rendered.CLI,
 		Policy: rendered.Policy, Image: product.Image, Product: product.ID, APIURL: baseURL,
