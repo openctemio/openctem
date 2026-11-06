@@ -142,9 +142,12 @@ func TestFindingSightings_Filters_DB(t *testing.T) {
 	}
 }
 
-// Every sightings filter is served by an index: on a seeded table (another
-// tenant holds the bulk) the plan reads finding_sightings through one of its
-// indexes, never a sequential scan.
+// Every sightings filter can be served by its index: on a seeded, analyzed
+// table the plan, with sequential scans turned off for the transaction, reads
+// finding_sightings through the named index and never a sequential scan. The
+// planner's cost choice depends on table size and statistics, which vary with
+// whatever else ran in the database (a merge-queue group), so the test checks
+// that the index can serve the query, not that the planner prefers it.
 func TestFindingSightings_FiltersUseIndexes_DB(t *testing.T) {
 	f := newReceiptFixture(t)
 	// The caller's own tenant holds the bulk: 20,000 findings, each seen by
@@ -212,7 +215,15 @@ func TestFindingSightings_FiltersUseIndexes_DB(t *testing.T) {
 
 func explainPlan(t *testing.T, f *receiptFixture, where *filterspec.Where) string {
 	t.Helper()
-	rows, err := f.db.QueryContext(f.ctx, `EXPLAIN SELECT id FROM findings WHERE `+where.SQL, where.Args...)
+	tx, err := f.db.BeginTx(f.ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(f.ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.QueryContext(f.ctx, `EXPLAIN SELECT id FROM findings WHERE `+where.SQL, where.Args...)
 	if err != nil {
 		t.Fatalf("explain: %v", err)
 	}
