@@ -20,9 +20,9 @@ func TestKeysStopAtRegistrableDomain(t *testing.T) {
 
 func TestNormalizeDomainFilter(t *testing.T) {
 	ok := map[string]string{
-		"Example.COM.vn.":   "example.com.vn",
+		"Example.COM.vn.":    "example.com.vn",
 		"*.Example.com":      "*.example.com",
-		"vé.example.com.vn": "xn--v-bga.example.com.vn",
+		"vé.example.com.vn":  "xn--v-bga.example.com.vn",
 		"_dmarc.example.com": "_dmarc.example.com",
 	}
 	for in, want := range ok {
