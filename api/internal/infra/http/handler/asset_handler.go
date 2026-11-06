@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/liveness"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -40,6 +41,7 @@ type AssetHandler struct {
 	validator          *validator.Validator
 	logger             *logger.Logger
 	programFlags       ProgramAssetFlagReader
+	liveness           AssetLivenessReader
 	triageGate         AssetTriageGate
 	unclassifiedPolicy AssetUnclassifiedPolicy
 	monitoringReader   AssetMonitoringReader
@@ -308,6 +310,10 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
+	// Liveness is what the coverage loop observed about whether the asset
+	// is still there (alive, unreachable, unresolvable, gone), absent when
+	// no active check has looked at it.
+	Liveness *liveness.View `json:"liveness,omitempty"`
 	// SystemTags are derived by the platform from program links (bug-bounty, source:…, platform:…, program:…:…,
 	// program-unattested); no request can change them.
 	SystemTags []string `json:"system_tags,omitempty"`
@@ -630,6 +636,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        criticalities query     string  false  "Filter by criticalities (comma-separated)"
 // @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
+// @Param        liveness      query     string  false  "Filter by liveness state (comma-separated: unknown, alive, unreachable, unresolvable, gone)"
 // @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
 // @Param        exposures     query     string  false  "Filter by exposures (comma-separated)"
 // @Param        tags          query     string  false  "Filter by tags, system tags included (comma-separated, at most 20)"
@@ -731,6 +738,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		CoveredBy:            query.Get("covered_by"),
 		ScopeStatus:          parseQueryArray(query.Get("scope_status")),
 		MonitoringState:      parseQueryArray(query.Get("monitoring_state")),
+		Liveness:             parseQueryArray(query.Get("liveness")),
 		Primary:              query.Get("primary") == "true",
 		DiscoveredBy:         parseQueryArray(query.Get("discovered_by")),
 		DiscoveryTechnique:   parseQueryArray(query.Get("discovery_technique")),
@@ -832,6 +840,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		ptrs[i] = &data[i]
 	}
 	h.addProgramFlags(r, input.TenantID, ptrs)
+	h.addLiveness(r, input.TenantID, ptrs)
 	h.addTriage(r, input.TenantID, ptrs, result.Data)
 	h.addMonitoringStates(r, input.TenantID, ptrs)
 	h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, ptrs)
@@ -977,6 +986,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	resp := toAssetResponse(a)
 	h.addProgramFlags(r, tenantID, []*AssetResponse{&resp})
+	h.addLiveness(r, tenantID, []*AssetResponse{&resp})
 	h.addTechnologies(r, tenantID, getTechnologiesPerAsset, []*AssetResponse{&resp})
 	h.addPendingRiskRequest(r, tenantID, &resp)
 

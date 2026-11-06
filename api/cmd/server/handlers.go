@@ -975,6 +975,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
 	// Program asset flags on asset responses (RFC-065 §16.5).
 	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
+	handlers.Asset.SetLiveness(postgres.NewAssetLivenessRepository(deps.DB))
 	if svc.ActiveGate != nil {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)

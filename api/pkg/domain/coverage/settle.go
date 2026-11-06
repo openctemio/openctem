@@ -88,7 +88,8 @@ type Verdict struct {
 	Outcome string // ok, a failure class (unreachable, timeout, tool_error, egress_refused), unfinished, failed
 	Reason  string // for blocked: the skip class (refused, excluded)
 	Error   string
-	// Observer is the task's TaskResult.Observer for a failed verdict.
+	// Observer is the task's TaskResult.Observer (any kind but the run's
+	// own unfinished targets).
 	Observer string
 	// Vendor is the edge protection behind an edge_blocked or
 	// edge_challenged outcome (a token), "" when unknown.
@@ -138,9 +139,9 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 	for _, task := range tasks {
 		t := task
 		put := func(target string, v Verdict) {
-			if v.Kind == VerdictFailed {
-				v.Observer = t.Observer
-			}
+			// Every verdict names who saw it: the target-side streak and
+			// the liveness observers read it.
+			v.Observer = t.Observer
 			put(target, v)
 		}
 		outcomes, unreached, has := readResult(t.Result)
