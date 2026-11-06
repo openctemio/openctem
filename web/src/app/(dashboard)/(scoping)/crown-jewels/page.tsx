@@ -89,6 +89,11 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 import { getAssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
 import { ASSET_TYPE_LABELS } from '@/features/assets/types/asset.types'
 import { formatDateOnly } from '@/lib/date-only'
+import { getErrorMessage } from '@/lib/api/error-handler'
+import {
+  AssetRiskImpactNotice,
+  type RiskNoticeState,
+} from '@/features/assets/components/asset-risk-impact-notice'
 
 const CROWN_JEWELS_KEY = '/api/v1/assets?is_crown_jewel=true&per_page=100'
 
@@ -237,6 +242,22 @@ export default function CrownJewelsPage() {
   const canWriteAssets = useHasPermission(Permission.AssetsWrite)
   const [editJewel, setEditJewel] = useState<CrownJewel | null>(null)
   const [deleteJewel, setDeleteJewel] = useState<CrownJewel | null>(null)
+  // Removing a crown jewel with open P0/P1 findings needs a reason, and may
+  // wait for a second person's approval (the API answers 202 and changes
+  // nothing until then).
+  const [removeReason, setRemoveReason] = useState('')
+  const [removeRisk, setRemoveRisk] = useState<RiskNoticeState>({
+    needsReason: false,
+    blocked: false,
+  })
+  const removeAsset = useMemo(
+    () => (deleteJewel ? { id: deleteJewel.id, isCrownJewel: true } : null),
+    [deleteJewel]
+  )
+  useEffect(() => {
+    setRemoveReason('')
+    setRemoveRisk({ needsReason: false, blocked: false })
+  }, [deleteJewel])
   // Filters and search live in the URL so a filtered view can be linked to.
   // Exposure and asset type are what the assets API actually returns; the old
   // status/category filters matched fields it never sends, so they emptied the list.
@@ -349,8 +370,13 @@ export default function CrownJewelsPage() {
       setSelectedAssetId('')
       setAssetSearch('')
       resetForm()
-    } catch {
-      toast.error(t('crownJewels.toast.designateFailed', 'Could not designate the crown jewel.'))
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('crownJewels.toast.designateFailed', 'Could not designate the crown jewel.')
+        )
+      )
     }
   }
 
@@ -371,20 +397,42 @@ export default function CrownJewelsPage() {
       toast.success(t('crownJewels.toast.updated', 'Crown jewel updated.'))
       setEditJewel(null)
       resetForm()
-    } catch {
-      toast.error(t('crownJewels.toast.updateFailed', 'Could not update the crown jewel.'))
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('crownJewels.toast.updateFailed', 'Could not update the crown jewel.')
+        )
+      )
     }
   }
 
   const handleDelete = async () => {
     if (!deleteJewel) return
     try {
-      await undesignate({ assetId: deleteJewel.id as string })
+      const res = await undesignate({
+        assetId: deleteJewel.id as string,
+        reason: removeReason.trim() || undefined,
+      })
       await mutate(CROWN_JEWELS_KEY)
-      toast.success(t('crownJewels.toast.removed', 'Crown jewel removed.'))
+      if (res?.pending_risk_request) {
+        toast.info(
+          t(
+            'crownJewels.toast.removalPending',
+            'Removal is pending approval. The asset stays a crown jewel until a second person approves it.'
+          )
+        )
+      } else {
+        toast.success(t('crownJewels.toast.removed', 'Crown jewel removed.'))
+      }
       setDeleteJewel(null)
-    } catch {
-      toast.error(t('crownJewels.toast.removeFailed', 'Could not remove the crown jewel.'))
+    } catch (err) {
+      toast.error(
+        getErrorMessage(
+          err,
+          t('crownJewels.toast.removeFailed', 'Could not remove the crown jewel.')
+        )
+      )
     }
   }
 
@@ -1062,8 +1110,19 @@ export default function CrownJewelsPage() {
         }
         destructive
         isLoading={isUndesignating}
+        disabled={removeRisk.blocked || (removeRisk.needsReason && !removeReason.trim())}
         handleConfirm={handleDelete}
-      />
+      >
+        {removeAsset && (
+          <AssetRiskImpactNotice
+            asset={removeAsset}
+            crownJewel={false}
+            reason={removeReason}
+            onReasonChange={setRemoveReason}
+            onStateChange={setRemoveRisk}
+          />
+        )}
+      </ConfirmDialog>
     </>
   )
 }
