@@ -217,7 +217,7 @@
   "findings.closureReason.inline_mitigations_already_exist": "Mitigations already in place",
   "findings.closureReason.mitigated": "Mitigated by a control",
   "findings.closureReason.no_fix_available": "No fix available",
-  "findings.closureReason.obsolete_asset": "Asset retired",
+  "findings.closureReason.obsolete_asset": "Asset gone (not fixed)",
   "findings.closureReason.obsolete_rule": "Check or rule changed",
   "findings.closureReason.obsolete_source": "Source removed",
   "findings.closureReason.out_of_scope": "Asset out of scope",

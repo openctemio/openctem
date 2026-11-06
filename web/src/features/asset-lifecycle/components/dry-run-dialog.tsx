@@ -154,6 +154,54 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
                 />
               </div>
 
+              {report.liveness && (
+                <div className="grid grid-cols-2 gap-3" data-testid="dry-run-liveness">
+                  <StatBox
+                    label={t('settings.assetLifecycle.dialog.gone', 'Assets gone')}
+                    value={(report.liveness.states.gone ?? 0).toLocaleString()}
+                  />
+                  <StatBox
+                    label={t(
+                      'settings.assetLifecycle.dialog.unreachable',
+                      'Unreachable or unresolvable'
+                    )}
+                    value={(
+                      (report.liveness.states.unreachable ?? 0) +
+                      (report.liveness.states.unresolvable ?? 0)
+                    ).toLocaleString()}
+                  />
+                  <StatBox
+                    label={
+                      report.liveness.close_findings_when_gone
+                        ? t(
+                            'settings.assetLifecycle.dialog.wouldClose',
+                            'Findings that would close as obsolete'
+                          )
+                        : t(
+                            'settings.assetLifecycle.dialog.wouldCloseOff',
+                            'Findings that would close if closing were on'
+                          )
+                    }
+                    value={t(
+                      'settings.assetLifecycle.dialog.closeCount',
+                      '{count} ({critical} critical, P0 or KEV)',
+                      {
+                        count: report.liveness.would_close_findings,
+                        critical: report.liveness.would_close_critical,
+                      }
+                    )}
+                    emphasize={report.liveness.would_close_findings > 0}
+                  />
+                  <StatBox
+                    label={t(
+                      'settings.assetLifecycle.dialog.wouldReopen',
+                      'Findings that would reopen'
+                    )}
+                    value={report.liveness.would_reopen_findings.toLocaleString()}
+                  />
+                </div>
+              )}
+
               {report.skipped && (
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
