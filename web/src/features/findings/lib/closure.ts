@@ -57,7 +57,7 @@ export const PERSON_CLOSURE_REASONS: Partial<Record<FindingStatus, ClosureReason
 const REASON_FALLBACK: Record<ClosureReason, string> = {
   fixed: 'Fixed',
   mitigated: 'Mitigated by a control',
-  obsolete_asset: 'Asset retired',
+  obsolete_asset: 'Asset gone (not fixed)',
   obsolete_source: 'Source removed',
   obsolete_rule: 'Check or rule changed',
   out_of_scope: 'Asset out of scope',

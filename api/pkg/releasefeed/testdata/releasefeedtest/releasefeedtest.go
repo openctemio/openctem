@@ -66,10 +66,7 @@ func (s *Sigstore) Verifier(t testing.TB) *cpsigstore.Verifier {
 // the transparency log entry from the bundle.
 func (s *Sigstore) Sign(t testing.TB, artifact []byte, identity, issuer string, integrated time.Time, withoutTlog bool) []byte {
 	t.Helper()
-	e, err := s.vs.SignAtTime(identity, issuer, artifact, integrated)
-	if err != nil {
-		t.Fatal(err)
-	}
+	e := s.signAtTime(t, identity, issuer, artifact, integrated)
 	vc, err := e.VerificationContent()
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +110,34 @@ func (s *Sigstore) Sign(t testing.TB, artifact []byte, identity, issuer string, 
 		t.Fatal(err)
 	}
 	return out
+}
+
+// signAtTime signs at integrated. The virtual authority issues the leaf
+// certificate valid from the current second, while the log entry carries
+// integrated in whole seconds; a signature made just before a second boundary
+// by a caller that read the clock earlier would then be logged before its
+// certificate existed, and verification refuses it ("integrated time outside
+// certificate validity"). When that is all that is wrong (the certificate
+// starts within one second after integrated) the signature is made again at
+// the certificate's start. Anything staler stays an error, so tests of
+// out-of-validity signatures still fail the way they should.
+func (s *Sigstore) signAtTime(t testing.TB, identity, issuer string, artifact []byte, integrated time.Time) *ca.TestEntity {
+	t.Helper()
+	for attempt := 0; ; attempt++ {
+		e, err := s.vs.SignAtTime(identity, issuer, artifact, integrated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		vc, err := e.VerificationContent()
+		if err != nil {
+			t.Fatal(err)
+		}
+		gap := vc.Certificate().NotBefore.Unix() - integrated.Unix()
+		if gap <= 0 || gap > 1 || attempt == 3 {
+			return e
+		}
+		integrated = vc.Certificate().NotBefore
+	}
 }
 
 // serialisable adds what the virtual log keeps outside the entry: the kind

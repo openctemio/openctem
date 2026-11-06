@@ -54,6 +54,20 @@ var (
 		[]string{"status"},
 	)
 
+	// NotificationDeadLettersTotal counts notifications the outbox gave up
+	// on, by where: channel (one integration's retries ran out; the event
+	// still went to the other channels) or entry (the event reached no
+	// channel: its integrations or routing could not be read within the
+	// retries). The outbox archives and removes a finished entry at once,
+	// so the outbox gauge never holds them: this counter is what alerts.
+	NotificationDeadLettersTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "openctem_notification_dead_letters_total",
+			Help: "Notifications the outbox gave up on after their retries, by where (channel, entry)",
+		},
+		[]string{"where"},
+	)
+
 	// AutomationsAutoPausedTotal counts automations the platform switched off
 	// because their latest runs all failed.
 	AutomationsAutoPausedTotal = promauto.NewCounter(

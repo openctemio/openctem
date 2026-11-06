@@ -6,6 +6,8 @@
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 > How scan traffic identifies itself to targets (User-Agent and headers, merged platform and organization layers): [scan-identification.md](scan-identification.md).
+> Secrets a sensor's tools use (provider keys, proxy pool credentials; refs in
+> the signed job, values from a sealed per-task fetch): [task-secrets.md](task-secrets.md).
 > Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
 > the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
@@ -1598,6 +1600,16 @@ command past its expiry reads `expired`); a lost claim race is `409
 command-claimed`; another sensor's or tenant's command is `404
 command-not-found`. The state rules and the atomic claim live in the command service.
 
+**Task secrets** ([task-secrets.md](task-secrets.md)). A claimed scan,
+retest, validate or proxy test job carries the payload member `secrets`
+(names only, covered by the job signature). The values come from
+`POST /api/v2/sensor/commands/{id}/secrets`: a body signed by the sensor's
+key-bound identity with the lease epoch and a single-use reply key, answered
+`application/vnd.openctem.secrets+sealed` (HPKE-sealed to that key,
+`Cache-Control: no-store`) only to the trusted lease holder for refs
+recorded at claim, at most `max_fetches` times; every refusal is `404
+command-not-found`. v2 HTTPS only.
+
 **Hello** lists `results` plus the control features (`heartbeat`,
 `commands`, `suppressions`, `fingerprints`, `keys`). `deprecations` is
 empty.
@@ -1973,6 +1985,8 @@ inside the reporting organization.
 | `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
 | A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
 | An asset that matches a scope exclusion | Not added | Item error `asset_excluded`, counted neither as accepted nor as rejected, so it does not stop the not-seen sweep of a complete report. |
+| An asset or finding of a type the command's tool does not produce | Held for review in the results quarantine | Item error `held_for_review`, counted as quarantined (a finding held for its own type too, even when its asset was applied); `quarantine_full` and rejected when the quarantine could not keep it. |
+| An asset beyond the cap on assets recorded outside the command's targets (see above), or outside the upload actor's data scope | Not applied | Item error `too_many` or `out_of_scope` on the asset and on its findings, counted as rejected. `asset_invalid` is left for an asset ingest could not store for any other reason. |
 | `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
 
 ## Result binding and the results quarantine (RFC-040)

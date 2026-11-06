@@ -155,8 +155,9 @@ func TestExclusions_EndToEnd(t *testing.T) {
 		t.Fatalf("cut range: %+v (all %+v)", e, left)
 	}
 
-	// Ingest drops a result outside the job's assignment (the excluded
-	// address, which the pieces leave out) and keeps one inside.
+	// Ingest records a result outside the job's assignment instead of
+	// dropping it (research 436), but the excluded address still never
+	// becomes an asset: the exclusion refuses to create it.
 	pieces := payloadTargets(portJob)
 	pg := &postgres.DB{DB: db}
 	ing := ingest.NewService(
@@ -164,6 +165,7 @@ func TestExclusions_EndToEnd(t *testing.T) {
 		postgres.NewVulnerabilityRepository(pg), postgres.NewComponentRepository(pg),
 		postgres.NewSensorRepository(pg), postgres.NewBranchRepository(pg), postgres.NewTenantRepository(pg),
 		postgres.NewAuditRepository(pg), logger.NewNop())
+	ing.SetExclusionSource(scopeService(db))
 	tid := tenant
 	sensorID := shared.NewID()
 	agt := &sensor.Sensor{ID: sensorID, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
