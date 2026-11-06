@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 
+	scandom "github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
@@ -94,6 +95,9 @@ type SensorSettings struct {
 	IgnoredConfigKeys []string                 `json:"ignored_config_keys,omitempty"`
 }
 
+// MaskedSensorValue replaces a reported setting that looks like a credential.
+const MaskedSensorValue = "[masked]"
+
 // IsZero reports whether nothing was reported.
 func (s SensorSettings) IsZero() bool {
 	return len(s.Effective) == 0 && len(s.IgnoredConfigKeys) == 0
@@ -160,6 +164,11 @@ func ParseSensorSettings(effective, ignored json.RawMessage) SensorSettings {
 			val, ok := safeSensorValue(eff[k]["value"])
 			if !ok {
 				continue
+			}
+			// A value that looks like a credential (a URL with user:pass@, a
+			// bearer token, a provider key) is shown masked, never as reported.
+			if len(scandom.DetectConfigSecrets(map[string]any{ck: val})) > 0 {
+				val = MaskedSensorValue
 			}
 			src, _ := eff[k]["source"].(string)
 			if out.Effective == nil {
