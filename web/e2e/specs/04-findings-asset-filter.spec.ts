@@ -65,7 +65,10 @@ test.describe('Findings asset-id filter', { tag: ['@findings'] }, () => {
         },
         { timeout: 30_000 }
       )
-      await page.goto(`/findings?assetId=${candidate.id}`)
+      // The default list leaves informational findings out while the asset's
+      // finding_count includes them, so an asset with only informational
+      // findings would come back empty: ask for them, this test is about assetId.
+      await page.goto(`/findings?assetId=${candidate.id}&informational=true`)
       const res = await findingsRes
       expect(res.ok()).toBeTruthy()
       const rows = ((await res.json()) as { data?: Array<{ asset_id: string }> }).data ?? []
