@@ -91,7 +91,7 @@ check_http_client() {
         # process's own loopback listener (fixed 127.0.0.1, SERVER_PORT
         # validated, no proxy, no redirects), which SafeHTTPClient refuses by
         # design. No URL comes from a tenant or the network.
-        'api/cmd/server/healthcheck.go'
+        'api/internal/server/healthcheck.go'
         # Admin CLI talks to its own API over an operator-provided URL
         # (same trust domain as the server). Not tenant-facing.
         'api/cmd/openctem-admin/cmd/client.go'
@@ -635,10 +635,10 @@ check_outbound_primitives() {
         'api/cmd/signer/main.go'
         'api/internal/infra/signer/client.go'
         # `server -healthcheck`: this process's own loopback listener.
-        'api/cmd/server/healthcheck.go'
+        'api/internal/server/healthcheck.go'
         # Scan-zone resolver: the recursive resolver the operator names in
         # the server's environment (SCOPE_ZONE_RESOLVER).
-        'api/cmd/server/scope_zone_resolver.go'
+        'api/internal/server/scope_zone_resolver.go'
         # Admin audit sink: destination from the server's environment only.
         'api/internal/infra/auditsink/sink.go'
         # Sensor transport probe: the platform's own sensor endpoint.

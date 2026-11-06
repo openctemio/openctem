@@ -790,7 +790,7 @@ catalog but has no emitter: nothing in the platform sets a sensor's health to
 ## Wiring in Main
 
 ```go
-// cmd/server/services.go
+// internal/server/services.go
 s.Outbox = outbox.NewService(
     repos.Outbox,
     repos.OutboxEvent,

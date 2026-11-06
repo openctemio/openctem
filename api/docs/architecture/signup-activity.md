@@ -97,5 +97,5 @@ No tenant route reads or resets the events or the counters.
 `internal/infra/postgres/signup_event_repository.go`,
 `internal/infra/http/handler/admin_signup_event_handler.go`,
 `internal/infra/controller/signup_event_retention.go`,
-`cmd/server/signup_events_wiring.go`, migration `signup_events`; console page
+`internal/server/signup_events_wiring.go`, migration `signup_events`; console page
 `web/src/app/(admin-console)/admin/signups`.

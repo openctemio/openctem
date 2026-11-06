@@ -653,5 +653,5 @@ internal/app/finding/status_effects.go        ticketSyncCtx: queues the pushes, 
 internal/app/jira/create_policy.go            PolicyGate: create policy, holds, per-finding lock
 internal/infra/http/handler/jira_webhook_handler.go   create-ticket + inbound webhook
 internal/app/finding/vulnerability_service.go  status writes queue the outbound sync (EnableTicketStatusSync)
-cmd/server/{services,workers,main}.go          wiring (resolvers, worker handler, enqueue hook)
+internal/server/{services,workers,main}.go         wiring (resolvers, worker handler, enqueue hook)
 ```

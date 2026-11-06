@@ -1,0 +1,861 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	nethttp "net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+
+	accessrequestapp "github.com/openctemio/openctem/api/internal/app/accessrequest"
+	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/tenant"
+	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/infra/http"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/api/internal/infra/http/routes"
+	"github.com/openctemio/openctem/api/internal/infra/jobs"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/internal/infra/redis"
+	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
+	"github.com/openctemio/openctem/api/internal/infra/websocket"
+	"github.com/openctemio/openctem/api/internal/versions"
+	"github.com/openctemio/openctem/api/pkg/brand"
+	emailpkg "github.com/openctemio/openctem/api/pkg/email"
+	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/keycloak"
+	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/api/pkg/version"
+)
+
+// @title           OpenCTEM API
+// @version         1.0
+// @description     Unified Continuous Threat Exposure Management (CTEM) Platform API
+// @termsOfService  https://openctem.io/terms/
+
+// @contact.name   OpenCTEM Team
+// @contact.url    https://github.com/openctemio/openctem
+// @contact.email  support@openctem.io
+
+// @license.name  GPL-3.0-only
+// @license.url   https://www.gnu.org/licenses/gpl-3.0.html
+
+// @host      localhost:8080
+// @BasePath  /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT access token, or a tenant oct_ API key (read-only: GET/HEAD on tenant routes, within the key's scopes). Format: "Bearer {token}". An oct_ key may instead be sent as X-API-Key.
+
+// @securityDefinitions.apikey CIRunToken
+// @in header
+// @name Authorization
+// @description CI run upload token from POST /ci/oidc/exchange: "Bearer octci_...", 15 minutes, one run on one repository.
+
+// @externalDocs.description  OpenAPI
+// @externalDocs.url          https://swagger.io/resources/open-api/
+
+// Command line flags. They are defined on a FlagSet owned by Main (see
+// defineFlags), so importing this package registers nothing on the process-wide
+// flag.CommandLine.
+var (
+	showRoutes         *bool
+	routeFormat        *string
+	routeMethod        *string
+	routePath          *string
+	routeSort          *string
+	checkConfig        *bool
+	sensorUpgradeCheck *bool
+	healthcheck        *bool
+	showVersion        *bool
+	signerLedgerExport *string
+)
+
+// Until Main parses the real arguments the variables point at a private
+// FlagSet's defaults, so code and tests that run without Main never read nil.
+func init() { defineFlags(flag.NewFlagSet("server", flag.ContinueOnError)) }
+
+// defineFlags registers the server flags on fs and points the package-level
+// flag variables at them.
+func defineFlags(fs *flag.FlagSet) {
+	showRoutes = fs.Bool("routes", false, "Print all registered routes and exit")
+	routeFormat = fs.String("route-format", "table", "Route output format: table, json, csv, simple")
+	routeMethod = fs.String("route-method", "", "Filter routes by HTTP method")
+	routePath = fs.String("route-path", "", "Filter routes containing this path")
+	routeSort = fs.String("route-sort", "path", "Sort routes by: path, method, handler")
+
+	checkConfig = fs.Bool("check-config", false,
+		"Load and validate the configuration from the environment, print the result and exit (0 = valid, 1 = invalid); connects to nothing")
+
+	sensorUpgradeCheck = fs.Bool("sensor-upgrade-check", false,
+		"Report data and schema still carrying the pre-sensor 'agent' vocabulary after migration 000230, then exit (0 = clean, 1 = leftovers)")
+
+	healthcheck = fs.Bool("healthcheck", false,
+		"GET /health on 127.0.0.1:$SERVER_PORT (default 8080) and exit 0 when it answers 200, 1 otherwise; "+
+			"the container healthcheck, so the image needs no shell or wget")
+
+	showVersion = fs.Bool("version", false, "Print the version, commit and build time, then exit")
+
+	signerLedgerExport = fs.String("signer-ledger-export", "",
+		"Write every organization's scope in effect as a job-signer ledger snapshot to this new file (0600), then exit; "+
+			"the operator imports it with `openctem-signer ledger import`")
+}
+
+// Main is the server entry point: it dispatches on argv[0] to the bundled
+// command-line tools (see toolFor), parses the server flags, and otherwise runs
+// the API server until it stops. It does not return normally; it exits the
+// process with the server's exit status.
+func Main() {
+	if tool := toolFor(os.Args[0]); tool != nil {
+		tool()
+		return
+	}
+	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ExitOnError)
+	defineFlags(fs)
+	_ = fs.Parse(os.Args[1:]) // ExitOnError: never returns an error
+	if *showVersion {
+		fmt.Println("openctem-server", version.Get())
+		return
+	}
+	if *healthcheck {
+		os.Exit(runHealthcheck(os.Stderr))
+	}
+	os.Exit(run())
+}
+
+func run() int {
+	ctx := context.Background()
+
+	// ==========================================================================
+	// Configuration & Logger
+	// ==========================================================================
+	cfg, err := config.Load()
+	if *checkConfig {
+		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err, os.Environ())
+	}
+	if err != nil {
+		log := logger.NewDefault()
+		log.Error("failed to load configuration", "error", err)
+		return 1
+	}
+
+	brand.SetInstance(cfg.Brand)
+	// A hosted service holds organization mail relays to the managed rules
+	// (submission port, AUTH, TLS).
+	emailpkg.SetManagedTenantRelay(cfg.App.ManagedService)
+	log := initLogger(cfg)
+	log.Info("starting application", "app", cfg.App.Name, "env", cfg.App.Env)
+	for _, w := range cfg.EnvWarnings {
+		log.Warn("environment: " + w)
+	}
+	// A wide trusted-proxy range lets any host in it set the client IP the
+	// API believes; it should name the gateway and the web server only.
+	for _, w := range cfg.WideTrustedProxies() {
+		log.Warn("SECURITY: a trusted-proxy range covers more than 16 addresses; every host in it can set the client IP (rate limits, audit, IP allowlists)",
+			"setting", w, "remediation", "list only the gateway's and the web server's addresses")
+	}
+
+	// Sensor products the operator adds to the built-in catalog (a
+	// customer's own sensor): data only, read before anything uses the
+	// catalog. An invalid file stops the start.
+	if err := versions.LoadExtraProducts(cfg.SensorConfig.ProductsFile); err != nil {
+		log.Error("failed to load the sensor products file", "error", err)
+		return 1
+	}
+	if n := len(versions.Products()) - len(versions.Embedded().Products); n > 0 {
+		log.Info("sensor products added from SENSOR_PRODUCTS_FILE", "count", n)
+	}
+
+	if httpsec.AllowPrivate() {
+		log.Warn("outbound requests may reach every private network range (" + httpsec.EnvAllowPrivate + "=1, development only)")
+	}
+	if host := httpsec.FeedProxyHost(); host != "" {
+		log.Info("platform feeds go through the feed proxy ("+httpsec.EnvFeedProxy+")", "proxy", host)
+	}
+	if cidrs := httpsec.AllowedPrivateCIDRs(); len(cidrs) > 0 {
+		log.Warn("outbound requests may reach these private ranges for every tenant ("+httpsec.EnvAllowPrivateCIDRs+")",
+			"cidrs", strings.Join(cidrs, ","))
+	}
+
+	// ==========================================================================
+	// Infrastructure
+	// ==========================================================================
+	db, err := postgres.New(&cfg.Database)
+	if err != nil {
+		log.Error("failed to connect to database", "error", err)
+		return 1
+	}
+	defer closeWithLog(db, "database", log)
+	log.Info("database connected")
+
+	// The platform console's identity tables (administrators, console
+	// sessions, the platform identity provider) through their own role
+	// (DB_ADMIN_USER) when one is set: the API's DB_USER then cannot write
+	// them, so a SQL injection anywhere in the tenant plane cannot add an
+	// administrator or a console session.
+	adminDB := db
+	if acfg := cfg.Database.AdminConfig(); acfg != nil {
+		adminDB, err = postgres.New(acfg)
+		if err != nil {
+			log.Error("failed to connect to the database as DB_ADMIN_USER", "error", err)
+			return 1
+		}
+		defer closeWithLog(adminDB, "console database pool", log)
+		log.Info("console identity tables use their own database role", "role", cfg.Database.AdminUser)
+	}
+	// Ingest writes (assets, findings, components, branches) go through
+	// their own pool (DB_INGEST_MAX_CONNS): a burst of uploads cannot take
+	// the connections the API's requests need.
+	ingestDB, err := postgres.New(cfg.Database.IngestConfig())
+	if err != nil {
+		log.Error("failed to open the ingest database pool", "error", err)
+		return 1
+	}
+	defer closeWithLog(ingestDB, "ingest database pool", log)
+	if err := checkAppRoleConsoleTables(ctx, db.DB, cfg, log); err != nil {
+		log.Error("database role check failed: refusing to start", "error", err)
+		return 1
+	}
+
+	// Fail fast if the DB schema is behind the migrations shipped with this
+	// binary — otherwise every request touching a not-yet-migrated column 500s
+	// (a silent, total outage). Refuse to start with an actionable message
+	// instead. Best-effort / bypassable via SKIP_SCHEMA_CHECK=true.
+	if err := verifySchemaUpToDate(ctx, db.DB, migrationsDirPath(), log); err != nil {
+		log.Error("database schema check failed — refusing to start", "error", err)
+		return 1
+	}
+
+	if *sensorUpgradeCheck {
+		return runSensorUpgradeCheck(ctx, db.DB, os.Stdout)
+	}
+	if *signerLedgerExport != "" {
+		return runSignerLedgerExport(ctx, db, *signerLedgerExport, os.Stdout, log)
+	}
+	logSensorUpgradeLeftovers(ctx, db.DB, log)
+	registerOpsMetrics(db.DB, cfg, log)
+
+	redisClient, err := redis.New(&cfg.Redis, log)
+	if err != nil {
+		log.Error("failed to connect to redis", "error", err)
+		return 1
+	}
+	defer closeWithLog(redisClient, "redis", log)
+	log.Info("redis connected")
+
+	jobNotifier := redis.NewJobNotifier(redisClient, log)
+	if err := jobNotifier.StartListener(ctx); err != nil {
+		log.Error("failed to start job notifier", "error", err)
+		return 1
+	}
+	log.Info("job notifier initialized")
+
+	// ==========================================================================
+	// Authentication
+	// ==========================================================================
+	var keycloakValidator *keycloak.Validator
+	if cfg.Auth.Provider.SupportsOIDC() {
+		keycloakValidator, err = initKeycloakValidator(cfg, log)
+		if err != nil {
+			return 1
+		}
+		defer closeWithLog(keycloakValidator, "keycloak validator", log)
+	}
+
+	// ==========================================================================
+	// Repositories
+	// ==========================================================================
+	// The byte budget of sensor result uploads in flight, from this
+	// replica's memory limit: a quarter, at most 1 GiB (research/191 R-1).
+	// Set once, before anything serves.
+	if mem := middleware.ContainerMemoryLimit(); mem > 0 {
+		middleware.SetV2DecodeBudget(middleware.V2DecodeBudgetForMemory(mem))
+		log.Info("sensor result upload memory budget", "bytes", middleware.V2DecodeBudgetBytes, "memory_limit", mem)
+	}
+
+	repos := NewRepositories(db)
+	repos.UseAdminDB(adminDB)
+	repos.InitIntegrationExtensions(db)
+	log.Info("repositories initialized")
+
+	// ==========================================================================
+	// Services
+	// ==========================================================================
+	services, err := NewServices(&ServiceDeps{
+		Config:      cfg,
+		Log:         log,
+		DB:          db.DB,
+		Repos:       repos,
+		IngestDB:    ingestDB,
+		RedisClient: redisClient,
+	})
+	if err != nil {
+		log.Error("failed to initialize services", "error", err)
+		return 1
+	}
+	log.Info("services initialized")
+
+	// Warn about connected Jira integrations without their own webhook
+	// secret: their inbound deliveries are refused until one is set.
+	warnJiraIntegrationsWithoutSecret(ctx, db.DB, log)
+
+	// Initialize auth services if local auth is supported
+	if cfg.Auth.Provider.SupportsLocal() {
+		services.InitAuthServices(cfg, repos, log, redisClient)
+		log.Info("auth services initialized")
+	}
+
+	// Initialize email services
+	if err := services.InitEmailServices(cfg, log); err != nil {
+		log.Error("failed to initialize email services", "error", err)
+		return 1
+	}
+	// Console setting changes are told to every administrator (e-mail and
+	// the alert webhook).
+	services.SettingRecorder.SetNotifier(newAdminNotifier(cfg, repos, services, log))
+
+	// Account security e-mails (2FA turned off, recovery code used, password
+	// changed) go to the user through the system SMTP server.
+	if services.Auth != nil && services.Email != nil {
+		services.Auth.SetSecurityNotifier(services.Email)
+	}
+	// A social sign-in method linked or unlinked is told to the account's
+	// mailbox.
+	if services.OAuth != nil && services.Email != nil {
+		services.OAuth.SetIdentityNotifier(services.Email)
+	}
+	if services.SSO != nil && services.Email != nil {
+		services.SSO.SetIdentityNotifier(services.Email)
+	}
+
+	// Owners of an organization whose e-mail channel was stopped by the
+	// managed service rules are told in-app and through the system SMTP.
+	if services.Integration != nil {
+		services.Integration.SetRelayPolicyNotices(repos.Tenant, services.Notification)
+		if services.Email != nil {
+			services.Integration.SetRelayPolicyMailer(services.Email)
+		}
+	}
+
+	// Owners are emailed about an SSO change that waits for their approval.
+	if services.SSOChange != nil && services.Email != nil {
+		services.SSOChange.SetMailer(services.Email)
+		if services.SAML != nil {
+			services.SAML.SetCertExpiryMailer(services.Email)
+		}
+	}
+
+	// Wire SMTP availability checker into auth service for smart email verification.
+	// When no SMTP is configured (system or tenant), email verification is auto-disabled
+	// so first-time deployments can register users without setting up SMTP first.
+	if services.Auth != nil && services.Email != nil {
+		services.Auth.SetSMTPChecker(services.Email)
+	}
+
+	// An organization's own mail relay (its e-mail notification channel with
+	// "organization mail" ticked) carries its invitation notices
+	// and reports when the platform mode email.tenant_relay allows it. Account
+	// security mail never uses it. Without the mode setting the relay stays
+	// off.
+	if services.Email != nil {
+		var mode auth.RelayModeSource
+		if services.OrgRelay != nil {
+			mode = services.OrgRelay
+		}
+		var domains auth.SenderDomains
+		if repos.VerifiedDomain != nil {
+			domains = repos.VerifiedDomain
+		}
+		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
+		services.Email.SetLocaleResolver(auth.NewRepoEmailLocaleResolver(repos.User, repos.Tenant, log))
+	}
+
+	// ==========================================================================
+	// Job Queue
+	// ==========================================================================
+	jobClient, err := NewJobClient(cfg, log)
+	if err != nil {
+		log.Error("failed to initialize job client", "error", err)
+		return 1
+	}
+	defer closeWithLog(jobClient, "job client", log)
+
+	// Outbound ticket status sync (RFC-006): a status change of a linked
+	// finding queues a durable job in the status write's transaction; the
+	// durable-jobs controller pushes it (workers no-op unless the tenant
+	// opted in, config.ticketing.sync_enabled).
+	if services.Vulnerability != nil {
+		services.Vulnerability.EnableTicketStatusSync()
+	}
+
+	// The tenant service is built once, in NewServices, with everything it can
+	// get there. Only collaborators that do not exist until this point are
+	// added here, on that same instance. It used to be rebuilt here instead,
+	// which silently dropped every setter NewServices had applied (session,
+	// membership cache, SSO checker, role service, data-scope store, ...).
+	// Invitation e-mails are durable jobs queued with the invitation.
+	services.Tenant.SetEmailEnqueuer(jobs.NewInvitationEmailJobs(services.Encryptor))
+	// Suspend/reactivate emails need the email service, built above.
+	if services.Email != nil {
+		services.Tenant.SetMemberStatusEmailNotifier(services.Email)
+		services.Tenant.SetOwnershipTransferNotifier(services.Email)
+		services.Tenant.SetOwnerInvitationNotifier(services.Email)
+	}
+	// Administrator-created accounts. The set-password link is emailed
+	// when SMTP is configured, otherwise returned once to the administrator.
+	var setupMailer tenant.AccountSetupMailer
+	if services.Email != nil {
+		setupMailer = services.Email
+	}
+	if services.Role != nil {
+		services.UserProvisioning = tenant.NewUserProvisioningService(repos.Tenant, repos.User, services.Role, setupMailer, services.Audit, log)
+		services.UserProvisioning.SetAddressClassifier(services.AddressClassifier)
+	}
+
+	// The request-access queue: approval creates the organization with the
+	// requester as owner, through the same creator as the console.
+	if services.Signup != nil && services.Tenant != nil {
+		// The CAPTCHA in force (console keys, or the environment's), asked
+		// only while keys are configured.
+		var captcha accessrequestapp.Captcha
+		if services.PlatformCaptcha != nil {
+			captcha = services.PlatformCaptcha
+		}
+		services.AccessRequest = accessrequestapp.NewService(repos.AccessRequest, services.Signup,
+			tenant.NewOrganizationCreator(services.Tenant, services.UserProvisioning, repos.User, log),
+			accessRequestMailer{email: services.Email, appName: cfg.Brand.DisplayName(), log: log},
+			captcha, cfg.SMTP.BaseURL, log)
+		services.AccessRequest.SetUserLookup(repos.User)
+	}
+	wireSignupEvents(services, repos, redisClient, cfg, log)
+
+	// Wire AI triage job enqueuer if service is enabled
+	if services.AITriage != nil {
+		aiTriageEnqueuer := jobs.NewAITriageEnqueuerAdapter(jobClient)
+		services.AITriage.SetJobEnqueuer(aiTriageEnqueuer)
+		log.Info("AI triage job enqueuer wired")
+	}
+
+	// ==========================================================================
+	// Handlers
+	// ==========================================================================
+	v := validator.New()
+	// Handlers are constructed before workers because workers
+	// subscribe to some service events that need handler-side
+	// dependencies wired. The AssetLifecycleWorker dry-run endpoint
+	// is back-wired after workers.Start below.
+	handlers := NewHandlers(&HandlerDeps{
+		Config:       cfg,
+		Log:          log,
+		Validator:    v,
+		DB:           db,
+		RedisClient:  redisClient,
+		WebSocketHub: services.WebSocketHub,
+		Repos:        repos,
+		Services:     services,
+	})
+
+	// Initialize local auth handler if supported
+	if cfg.Auth.Provider.SupportsLocal() {
+		InitLocalAuthHandler(&handlers, services, repos, cfg, log)
+		// The CAPTCHA after repeated failed sign-ins counts failures per
+		// client address across replicas.
+		// The counter is always wired: the CAPTCHA keys can be set in the
+		// console at any time, and it is asked only while they are.
+		if handlers.LocalAuth != nil && services.PlatformCaptcha != nil {
+			handlers.LocalAuth.SetLoginFailureCounter(newLoginFailureCounter(redisClient, log))
+		}
+	}
+	// The console sign-in gets the same CAPTCHA after repeated failures, with
+	// its own per-address counter keys.
+	if handlers.AdminConsole != nil && services.PlatformCaptcha != nil {
+		handlers.AdminConsole.SetLoginGuard(services.PlatformCaptcha, newLoginFailureCounter(redisClient, log))
+	}
+	wireStepUpGate(&handlers, services)
+
+	// ==========================================================================
+	// WebSocket Hub
+	// ==========================================================================
+	// Create cancellable context for graceful shutdown
+
+	wsCtx, wsCancel := context.WithCancel(ctx)
+	defer wsCancel()
+
+	// Start WebSocket hub in background
+	go services.WebSocketHub.Run(wsCtx)
+	log.Info("websocket hub started")
+
+	// F-7: wire Redis pubsub bridge so broadcasts fan out across pods.
+	// Silent dependency until now: without this, a BroadcastEvent on
+	// Pod-A never reaches a client on Pod-B in a multi-replica
+	// deployment. Enabled whenever Redis is available, which covers
+	// every production configuration.
+	if redisClient != nil {
+		bridge := websocket.NewRedisBridge(redisClient.Client(), services.WebSocketHub, &websocket.BridgeConfig{
+			Logger: log,
+		})
+		go func() {
+			if err := bridge.Start(wsCtx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Error("websocket bridge stopped with error", "error", err)
+			}
+		}()
+		log.Info("websocket redis bridge started")
+	}
+	if services.ModuleChangeBus != nil {
+		if err := services.ModuleChangeBus.Start(wsCtx); err != nil {
+			// Toggles still apply here at once and elsewhere after the gate TTL.
+			log.Error("module change bus not subscribed", "error", err)
+		}
+	}
+
+	if services.IPAllowlistBus != nil {
+		if err := services.IPAllowlistBus.Start(wsCtx); err != nil {
+			// Changes still apply here at once and elsewhere after the gate TTL.
+			log.Error("ip allowlist change bus not subscribed", "error", err)
+		}
+	}
+
+	// ==========================================================================
+	// HTTP Server
+	// ==========================================================================
+	authCfg := routes.AuthConfig{
+		Provider:       cfg.Auth.Provider,
+		LocalValidator: services.JWTGenerator,
+		OIDCValidator:  keycloakValidator,
+	}
+	if services.SessionRevocations != nil {
+		authCfg.RevokedSessions = services.SessionRevocations
+	}
+
+	// Close a socket whose session was revoked while its upgrade was in flight.
+	if handlers.WebSocket != nil && services.SessionRevocations != nil {
+		handlers.WebSocket.SetSessionRevocationChecker(services.SessionRevocations)
+	}
+
+	server := http.NewServer(cfg, log)
+	routes.Register(server.Router(), handlers, cfg, log, authCfg, repos.Tenant, services.User, services.MembershipCache, services.PermCache, services.PermVersion)
+	// An admin-plane process (OPENCTEM_PLANE=admin) serves only the console
+	// API: no sensor binding, no background work (the tenant plane runs it).
+	servesTenant := cfg.AdminPlane.ServesTenant()
+	if !servesTenant {
+		log.Info("serving only the platform console API (OPENCTEM_PLANE=admin)")
+	}
+
+	// Sensor protocol v3 HTTPS binding (RFC-059): ahead of the router, which
+	// would cut its control stream; it carries its own guards.
+	if handlers.SensorV3 != nil && servesTenant {
+		server.MountPrefix(sensortransport.PathPrefix, handlers.SensorV3.HTTPSHandler(handlers.SensorResultsV2.AuthenticateV3))
+		// When the API terminates TLS itself, a ClientHello offering the
+		// sensor ALPN id is served by the gRPC binding on the same port.
+		server.SetTLSSplitter(handlers.SensorV3.SplitTLS)
+	}
+
+	// Handle --routes flag
+	if *showRoutes {
+		stats := http.CollectRoutes(server.Router())
+		filters := http.RouteFilters{
+			Method: *routeMethod,
+			Path:   *routePath,
+			SortBy: *routeSort,
+		}
+		http.PrintRoutes(os.Stdout, stats, *routeFormat, filters)
+		return 0
+	}
+
+	// ==========================================================================
+	// Workers (none on the admin plane)
+	// ==========================================================================
+	var workers *Workers
+	if servesTenant {
+		w, err := NewWorkers(&WorkerDeps{
+			Config:   cfg,
+			Log:      log,
+			DB:       db.DB,
+			Repos:    repos,
+			Services: services,
+		})
+		if err != nil {
+			log.Error("failed to initialize workers", "error", err)
+			return 1
+		}
+
+		workers = w
+		if err := workers.Start(ctx, log); err != nil {
+			log.Error("failed to start workers", "error", err)
+			return 1
+		}
+
+		// Back-wire the lifecycle worker into the tenant handler so the
+		// dry-run HTTP endpoint and the cron controller share one worker
+		// instance. Handlers are built before workers (see note above);
+		// this call closes that loop.
+		if workers.AssetLifecycleWorker != nil {
+			WireAssetLifecycleWorker(workers.AssetLifecycleWorker)
+		}
+
+		// Seal leaked-credential secrets still stored in plaintext (rows written
+		// before secrets were encrypted, or without a key), then move every
+		// leaked-secret fingerprint from the install-wide key to its
+		// organization's key, recomputed from the sealed value. Both are
+		// idempotent, batched and resumable: safe on every start and across
+		// replicas. The re-key's reversal: encrypt-credentials
+		// -revert-credential-fingerprints.
+		go func() {
+			n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
+			if err != nil {
+				log.Error("leaked credential secret backfill failed", "error", err, "sealed", n)
+				return
+			}
+			if n > 0 {
+				log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
+			}
+			rep, err := postgres.RekeyLeakedCredentialFingerprints(ctx, db.DB, services.CredentialSecrets)
+			if err != nil {
+				log.Error("leaked credential fingerprint re-key failed", "error", err, "rekeyed", rep.Rekeyed)
+				return
+			}
+			if rep.Rekeyed > 0 || rep.Unrecomputable > 0 {
+				log.Info("leaked credential fingerprints keyed per organization",
+					"rekeyed", rep.Rekeyed, "unrecomputable", rep.Unrecomputable)
+			}
+		}()
+
+		// Request/responses recorded before they went through the evidence
+		// service are still in clear in findings.metadata: mask them, encrypt
+		// their secret values and remove them from the finding. Idempotent,
+		// batched, SKIP LOCKED: safe on every start and across replicas.
+		if services.Evidence != nil {
+			go func() {
+				n, err := services.Evidence.MoveLegacyRequestResponses(ctx)
+				if err != nil {
+					log.Error("legacy request/response evidence move failed", "error", err, "findings", n)
+					return
+				}
+				if n > 0 {
+					log.Info("legacy request/responses moved to masked evidence", "findings", n)
+				}
+			}()
+		}
+
+		// Stored asset names to the CTIS 2.0 canonical form first
+		// (asset_canonical.go), then stored findings to the current identity
+		// recipe (version 4, the CTIS fingerprint recipe v2; finding_rekey.go).
+		// In this order, in one goroutine: an asset merge moves findings,
+		// which the re-key then keys once, and the two never contend for the
+		// same rows. Both are idempotent and resumable; the re-key runs on one
+		// replica at a time (advisory lock), and ingest re-keys a finding on
+		// its next sighting, so nothing is split while they run. Down steps:
+		// asset-canonical -revert, refingerprint -down -apply.
+		go func() {
+			runAssetCanonicalOnStart(ctx, db, log)
+			runFindingRekeyOnStart(ctx, db, log)
+		}()
+
+		// Host keys for commands queued before every command got them at
+		// create (research/130). Idempotent and SKIP LOCKED: safe on every
+		// start and across replicas.
+		go func() {
+			n, err := postgres.BackfillPendingHostKeys(ctx, db.DB)
+			if err != nil {
+				log.Error("pending command host key backfill failed", "error", err, "updated", n)
+				return
+			}
+			if n > 0 {
+				log.Info("pending commands given host keys", "count", n)
+			}
+		}()
+	}
+
+	if err := requireSelfServiceStartLimits(ctx, cfg, services); err != nil {
+		log.Error("refusing to start", "error", err)
+		return 1
+	}
+
+	// ==========================================================================
+	// Start Server
+	// ==========================================================================
+	// A listener that cannot start (port in use, bad TLS material) ends the
+	// process with a non-zero exit so the orchestrator restarts it, instead of
+	// leaving a replica that runs controllers but serves no HTTP.
+	serverFailed := make(chan error, 1)
+	go func() {
+		if err := server.Start(); fatalListenerError(err) {
+			log.Error("server error", "error", err)
+			serverFailed <- err
+		}
+	}()
+	if handlers.SensorV3 != nil && servesTenant {
+		if err := handlers.SensorV3.Start(ctx); err != nil {
+			log.Error("sensor protocol v3 gRPC binding not listening", "error", err)
+		}
+	}
+	// Sensors whose stored manifest has tools or capabilities this
+	// platform's catalog did not know are asked once to send it again.
+	if services.Sensor != nil && servesTenant {
+		go services.Sensor.LoadManifestRechecks(ctx)
+	}
+	internalAPI, err := startInternalAPI(cfg, repos, services, redisClient, log)
+	if err != nil {
+		log.Error("internal API not started", "error", err)
+		return 1
+	}
+	log.Info("application started", "http_addr", cfg.Server.Addr())
+
+	// ==========================================================================
+	// Graceful Shutdown
+	// ==========================================================================
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	exitCode := 0
+	select {
+	case <-quit:
+	case <-serverFailed:
+		exitCode = 1
+	}
+
+	log.Info("shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Server.ShutdownTimeout)
+	defer cancel()
+
+	// Stop WebSocket hub first (closes all connections)
+	wsCancel()
+	log.Info("websocket hub stopped")
+
+	// Stop workers (none on the admin plane)
+	if workers != nil {
+		workers.Stop(log)
+	}
+
+	// Flush any buffered new-internet-facing-asset summary so a graceful
+	// restart does not drop it (the DB is still open here).
+	if services.AssetDiscoveryNotifier != nil {
+		services.AssetDiscoveryNotifier.Stop()
+	}
+
+	// Then stop server
+	if handlers.SensorV3 != nil {
+		if err := handlers.SensorV3.Shutdown(shutdownCtx); err != nil {
+			log.Error("sensor protocol v3 gRPC binding shutdown", "error", err)
+		}
+	}
+	stopInternalAPI(internalAPI, log)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Error("shutdown error", "error", err)
+		return 1
+	}
+	// Last sensor liveness checkpoint and heartbeat history batch, once no
+	// heartbeat can arrive any more.
+	if services.Sensor != nil {
+		services.Sensor.FlushLiveness(shutdownCtx)
+	}
+
+	log.Info("application stopped")
+	return exitCode
+}
+
+// fatalListenerError reports whether an error from the HTTP server's Start
+// means it is not serving: any error except a normal close.
+func fatalListenerError(err error) bool {
+	return err != nil && !errors.Is(err, nethttp.ErrServerClosed)
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+func initLogger(cfg *config.Config) *logger.Logger {
+	log := logger.New(loggerConfig(cfg))
+	log.SetDefault()
+	return log
+}
+
+// loggerConfig turns LOG_LEVEL, LOG_FORMAT and LOG_SAMPLING_* into the logger
+// settings, in every environment. (Outside APP_ENV=production they used to be
+// ignored: always debug + text, so a non-production deployment such as the
+// live demo could neither lower the volume nor switch to JSON.)
+func loggerConfig(cfg *config.Config) logger.Config {
+	// SamplingThreshold is validated to be non-negative in config validation
+	//nolint:gosec // G115: safe conversion, value validated non-negative in config.Validate()
+	threshold := uint64(cfg.Log.SamplingThreshold)
+	return logger.Config{
+		Level:  cfg.Log.Level,
+		Format: cfg.Log.Format,
+		Output: os.Stdout,
+		Attrs: []slog.Attr{
+			slog.String("service", "api"),
+			slog.String("version", version.Get().Version),
+			slog.String("env", cfg.App.Env),
+		},
+		Sampling: logger.SamplingConfig{
+			Enabled:   cfg.Log.SamplingEnabled,
+			Tick:      time.Second,
+			Threshold: threshold,
+			Rate:      cfg.Log.SamplingRate,
+			ErrorRate: cfg.Log.ErrorSamplingRate,
+		},
+	}
+}
+
+type closer interface {
+	Close() error
+}
+
+func closeWithLog(c closer, name string, log *logger.Logger) {
+	if err := c.Close(); err != nil {
+		log.Error("failed to close "+name, "error", err)
+	}
+}
+
+// =============================================================================
+// Keycloak Validator
+// =============================================================================
+
+func initKeycloakValidator(cfg *config.Config, log *logger.Logger) (*keycloak.Validator, error) {
+	keycloakValidator, err := keycloak.NewValidator(context.Background(), keycloak.ValidatorConfig{
+		JWKSURL:             cfg.Keycloak.JWKSURL(),
+		IssuerURL:           cfg.Keycloak.IssuerURL(),
+		Audience:            cfg.Keycloak.ClientID,
+		RefreshInterval:     cfg.Keycloak.JWKSRefreshInterval,
+		HTTPTimeout:         cfg.Keycloak.HTTPTimeout,
+		RequireInitialFetch: false,
+		OnRefreshError: func(err error, consecutiveFailures int) {
+			log.Error("JWKS refresh failed",
+				"error", err,
+				"consecutive_failures", consecutiveFailures,
+				"jwks_url", cfg.Keycloak.JWKSURL(),
+			)
+			if consecutiveFailures >= 3 {
+				log.Error("CRITICAL: JWKS refresh failing repeatedly, authentication may fail",
+					"consecutive_failures", consecutiveFailures,
+				)
+			}
+		},
+	})
+	if err != nil {
+		log.Error("failed to initialize keycloak validator", "error", err)
+		return nil, err
+	}
+
+	if keycloakValidator.HasKeys() {
+		log.Info("keycloak validator initialized",
+			"jwks_url", cfg.Keycloak.JWKSURL(),
+			"issuer", cfg.Keycloak.IssuerURL(),
+		)
+	} else {
+		log.Warn("keycloak validator initialized without keys, will retry in background",
+			"jwks_url", cfg.Keycloak.JWKSURL(),
+			"issuer", cfg.Keycloak.IssuerURL(),
+		)
+	}
+	return keycloakValidator, nil
+}

@@ -7,6 +7,7 @@
 # Go API
 /api/                               @0xmanhnv
 /api/migrations/                    @0xmanhnv
+/api/pkg/server/                   @0xmanhnv
 
 # Next.js web app
 /web/                               @0xmanhnv
@@ -42,7 +43,7 @@
 /api/internal/infra/http/routes/auth.go @0xmanhnv
 /api/internal/infra/http/routes/admin.go @0xmanhnv
 /api/internal/infra/http/internalapi/** @0xmanhnv
-/api/cmd/server/internal_api.go @0xmanhnv
+/api/internal/server/internal_api.go @0xmanhnv
 /api/internal/app/entitlement/** @0xmanhnv
 /api/internal/infra/http/routes/misc.go @0xmanhnv
 /api/internal/infra/http/routes/scim.go @0xmanhnv

@@ -102,7 +102,7 @@ build_server() {
 	gobuild "$WORK/gobin/" ./cmd/server ./cmd/signer ./cmd/openctem-migrate
 	install -m 0755 "$WORK/gobin/server" "$d/bin/openctem-server"
 	install -m 0755 "$WORK/gobin/signer" "$d/bin/openctem-signer"
-	# The operator commands: links to the server binary (api/cmd/server/tools.go).
+	# The operator commands: links to the server binary (api/internal/server/tools.go).
 	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical; do
 		ln -s openctem-server "$d/bin/$t"
 	done
