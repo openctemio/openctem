@@ -298,6 +298,10 @@ func Accepts(r *LocalPolicyReport, job Job, opts DispatchOptions) *DispatchRefus
 		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleNoLocalPolicy,
 			Detail: "the sensor requires a local policy and has none, so it refuses every job with a network target; " + LocalPolicyFileHint}
 	}
+	if job.PrivateAddress && r != nil && r.AllowPrivate != nil && !*r.AllowPrivate {
+		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RuleTargetsAllowPrivate,
+			Detail: "the job names a private address; this sensor's host does not allow private targets (" + PrivateTargetsHostHint + ")"}
+	}
 	if !r.Enforced() || r.Summary == nil {
 		return nil
 	}

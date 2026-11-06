@@ -42,6 +42,12 @@ const (
 	RefusalUnresolved         = "unresolved"
 	RefusalZoneNoSensor       = "zone_no_sensor"
 	RefusalZoneSensorMismatch = "zone_sensor_mismatch"
+	// RefusalZoneSensorNew: every sensor of the target's zone is New
+	// (passive work only) and the job is above T0 (research 466 g).
+	RefusalZoneSensorNew = "zone_sensor_new"
+	// RefusalZoneSensorNoPrivate: the target is private and every sensor of
+	// its zone says its host does not allow private targets.
+	RefusalZoneSensorNoPrivate = "zone_sensor_no_private"
 	// RefusalConstrained: only port- or path-limited entries cover the
 	// target and the job could reach other ports or paths (RFC-065 §16.8).
 	RefusalConstrained = "constrained"
@@ -76,6 +82,11 @@ const (
 	FixAddZone          = "add_zone"
 	FixContactSupport   = "contact_support"
 	FixRaiseTier        = "raise_tier"
+	// FixTrustSensor promotes the sensor (ID) to Trusted.
+	FixTrustSensor = "trust_sensor"
+	// FixAllowPrivateTargets is the host owner's step: set the sensor's
+	// private-range switch on its host (ID: the sensor).
+	FixAllowPrivateTargets = "allow_private_targets"
 )
 
 // Permissions fixes need (strings, so the domain does not import RBAC).
@@ -85,6 +96,7 @@ const (
 	permExclApprove    = "attack_surface:scope:exclusions:approve"
 	permAssetsWrite    = "assets:write"
 	permScanZonesWrite = "sensors:zones:write"
+	permSensorsWiden   = "sensors:grant:widen"
 )
 
 // Fix is one action that would let a refused target through.
@@ -121,32 +133,34 @@ const (
 
 // RefusalMessages are the messages shown with each code.
 var RefusalMessages = map[string]string{
-	RefusalInvalidTarget:      "Not a valid scan target here (malformed, loopback, link-local, metadata, or a private address outside every scan zone).",
-	RefusalDenyList:           "The platform does not allow this target.",
-	RefusalExcluded:           "An active scope exclusion covers this target.",
-	RefusalRejected:           "Your organization marked this name, or a name above it, as not yours.",
-	RefusalNeedsReview:        "This asset's ownership is waiting for review.",
-	RefusalCandidate:          "This asset is a discovery candidate; its ownership is not confirmed.",
-	RefusalDependency:         "This name runs on third-party infrastructure; only passive and takeover checks apply.",
-	RefusalMonitorOnly:        "This asset is watched passively only.",
-	RefusalWildcardOnly:       "This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.",
-	RefusalNoEntry:            "No scope entry covers this target.",
-	RefusalEntryPending:       "The scope entry that covers this target is waiting for approval.",
-	RefusalEntryExpired:       "The scope entry that covered this target has expired.",
-	RefusalEntryInactive:      "The scope entry that covers this target is deactivated.",
-	RefusalTierExceeds:        "The scope entries covering this target do not allow this probe's tier.",
-	RefusalProofRequired:      "This probe needs a verified domain of your organization.",
-	RefusalProgramPlatform:    "Platform sensors never probe bug-bounty program targets; use your own sensors.",
-	RefusalOutOfDataScope:     "This asset is outside your data scope.",
-	RefusalNotAnAsset:         "You may scan only assets in your data scope.",
-	RefusalZoneNone:           "No scan zone covers this private target.",
-	RefusalUnresolved:         "This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.",
-	RefusalZoneNoSensor:       "The scan zone of this target has no sensors.",
-	RefusalZoneSensorMismatch: "The chosen sensor is not in this target's scan zone.",
-	RefusalConstrained:        "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
-	RefusalGuardrailed:        "No scope entry covers this asset and a platform guardrail keeps it passive (shared or unknown network, shared hosting, or a name outside your domains). Add its exact scope entry to scan it.",
-	RefusalLowImpact:          "No scope entry covers this asset, so it gets low-impact checks only, and this job goes beyond them. Add it to scope for the full scan.",
-	RefusalWebPortsOnly:       "An address this name resolves to is not in scope, so a port scan of the name reaches only the web ports. Add the address to scope for a full port scan.",
+	RefusalInvalidTarget:       "Not a valid scan target here (malformed, loopback, link-local, metadata, or a private address outside every scan zone).",
+	RefusalDenyList:            "The platform does not allow this target.",
+	RefusalExcluded:            "An active scope exclusion covers this target.",
+	RefusalRejected:            "Your organization marked this name, or a name above it, as not yours.",
+	RefusalNeedsReview:         "This asset's ownership is waiting for review.",
+	RefusalCandidate:           "This asset is a discovery candidate; its ownership is not confirmed.",
+	RefusalDependency:          "This name runs on third-party infrastructure; only passive and takeover checks apply.",
+	RefusalMonitorOnly:         "This asset is watched passively only.",
+	RefusalWildcardOnly:        "This name resolves only through a wildcard DNS record; it is watched passively until a person confirms it or it resolves without the wildcard.",
+	RefusalNoEntry:             "No scope entry covers this target.",
+	RefusalEntryPending:        "The scope entry that covers this target is waiting for approval.",
+	RefusalEntryExpired:        "The scope entry that covered this target has expired.",
+	RefusalEntryInactive:       "The scope entry that covers this target is deactivated.",
+	RefusalTierExceeds:         "The scope entries covering this target do not allow this probe's tier.",
+	RefusalProofRequired:       "This probe needs a verified domain of your organization.",
+	RefusalProgramPlatform:     "Platform sensors never probe bug-bounty program targets; use your own sensors.",
+	RefusalOutOfDataScope:      "This asset is outside your data scope.",
+	RefusalNotAnAsset:          "You may scan only assets in your data scope.",
+	RefusalZoneNone:            "No scan zone covers this private target.",
+	RefusalUnresolved:          "This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.",
+	RefusalZoneNoSensor:        "The scan zone of this target has no sensors.",
+	RefusalZoneSensorMismatch:  "The chosen sensor is not in this target's scan zone.",
+	RefusalZoneSensorNew:       "Every sensor of this target's scan zone is New and runs passive checks only. Trust a sensor of the zone to run this scan.",
+	RefusalZoneSensorNoPrivate: "No sensor of this target's scan zone allows private targets on its host. On the sensor's host, set SENSOR_ALLOW_PRIVATE_TARGETS=1 and restart the sensor.",
+	RefusalConstrained:         "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
+	RefusalGuardrailed:         "No scope entry covers this asset and a platform guardrail keeps it passive (shared or unknown network, shared hosting, or a name outside your domains). Add its exact scope entry to scan it.",
+	RefusalLowImpact:           "No scope entry covers this asset, so it gets low-impact checks only, and this job goes beyond them. Add it to scope for the full scan.",
+	RefusalWebPortsOnly:        "An address this name resolves to is not in scope, so a port scan of the name reaches only the web ports. Add the address to scope for a full port scan.",
 }
 
 // Refusal is one refused target, as every API refusal and the dry run carry it.
@@ -244,10 +258,30 @@ func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
 		return []Fix{{Action: FixUseTenantSensor}}
 	case RefusalZoneNone, RefusalZoneNoSensor, RefusalZoneSensorMismatch:
 		return []Fix{{Action: FixAddZone, Requires: permScanZonesWrite}}
+	case RefusalZoneSensorNew:
+		return []Fix{{Action: FixTrustSensor, Requires: permSensorsWiden}}
+	case RefusalZoneSensorNoPrivate:
+		// A step on the host, by its owner: no console permission applies.
+		return []Fix{{Action: FixAllowPrivateTargets}}
 	case RefusalDenyList:
 		return []Fix{{Action: FixContactSupport}}
 	}
 	return nil
+}
+
+// WithSensor sets the sensor a sensor fix acts on (trust_sensor,
+// allow_private_targets) and returns r. The id must be the caller's own
+// tenant's sensor.
+func (r Refusal) WithSensor(sensorID string) Refusal {
+	if sensorID == "" {
+		return r
+	}
+	for i := range r.Fixes {
+		if r.Fixes[i].Action == FixTrustSensor || r.Fixes[i].Action == FixAllowPrivateTargets {
+			r.Fixes[i].ID = sensorID
+		}
+	}
+	return r
 }
 
 // FilterFixes keeps the fixes the caller may take (has reports whether the
