@@ -396,6 +396,38 @@ component as the dialog (`PairingReview`). The review carries
 `fingerprint`, and a wrong pick denies the request, audited high, every
 administrator notified.
 
+### Approve with trust and networks
+
+The approval may also set up what an internal scan needs (research note
+466, `internal/app/sensorpairing/approve_setup.go`). Each part is its own
+decision with its own permission and audit, checked before anything is
+written, so a refusal creates nothing:
+
+- `trusted`: the new sensor starts Trusted. Only for a request that attached
+  to a console expectation of the approver's organization
+  (`TrustEligible`: reverse mode, created by a person, not an enrollment or
+  instance token, not a re-pair; the view says `trust_eligible`), only for
+  profiles whose grant has no credentials and no push ingest
+  (`sensordom.TrustableAtApproval`: internal-network-scanner, easm-external,
+  scan-connector), and only with `sensors:grant:widen` through
+  `sensorgrant.AuthorizeTrust` and the widening approver. The approval's
+  verified step-up proof is the recent re-authentication the approver asks
+  for (`sensorgrant.Actor.StepUpVerified`). The grant is written Trusted in
+  the approval transaction and audited after the commit as
+  `sensor.grant_changed` (trust level widened, high, every administrator
+  notified), as a promotion. A code the sensor printed (`/activate`) can be
+  phished; those requests always start New.
+- `ranges`: the private networks the sensor scans (`scanzone.ParseLANRanges`,
+  RFC 1918 and ULA only), for profiles that scan zones, with
+  `sensors:zones:write`. A non-default zone of the organization with exactly
+  these ranges gets the sensor; otherwise a zone "<sensor> networks" is
+  created with the sensor assigned (`ScanZoneRepository.CreateWithSensorTx`)
+  in the approval transaction, and the zone limit of the grant includes it.
+  Audited as `scan_zone.created` and `scan_zone.sensor_assigned`.
+- Scope is never written by the approval. The console adds the ranges with
+  `POST /api/v1/scope/targets/bulk` after it, so the scope service, its
+  permission and its approvals decide as for any other entry.
+
 ### Re-pair (the sensor keeps its registration)
 
 RFC-052 §4.6. **Sensors → sensor → Re-pair…** (`sensor-repair-dialog.tsx`):

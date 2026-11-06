@@ -27,7 +27,8 @@ targets:
 {{- else if .Policy.HasAllow}}
 {{- if eq .Policy.Source "host_pin"}}
   # The networks you listed when adding this sensor. The install command
-  # pins the same list (SENSOR_ALLOWED_RANGES); this file replaces that pin.
+  # pins the same list. If you use this file, remove SENSOR_ALLOWED_RANGES
+  # from the command; the sensor refuses both.
 {{- else if eq .Policy.Source "scope"}}
   # Your organization's scope (active entries): this sensor has no scan zone,
   # so it may scan what your organization may scan. Remove what this sensor

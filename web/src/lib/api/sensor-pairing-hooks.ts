@@ -62,6 +62,17 @@ export interface ApprovePairingRequest {
    * grant, so name, type, zone_ids and grant_profile are ignored.
    */
   repair_sensor_id?: string
+  /**
+   * Make the new sensor Trusted for active scanning at once. Only when
+   * view.trust_eligible, for a profile without credentials or push ingest,
+   * with sensors:grant:widen; the API refuses anything else.
+   */
+  trusted?: boolean
+  /**
+   * Private networks the sensor scans: it joins the zone with exactly these
+   * ranges, or a new one, in the approval (sensors:zones:write).
+   */
+  ranges?: string[]
 }
 
 /** Why an administrator re-pairs a sensor (required with repair_sensor_id). */

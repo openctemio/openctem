@@ -2336,6 +2336,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SensorGrant.SetZoneChecker(repos.SensorGrant)
 	if s.SensorPairing != nil {
 		s.SensorPairing.SetApprovalHook(s.SensorGrant)
+		s.SensorPairing.SetZones(repos.ScanZone)
 	}
 	// Optional short-lived sensor credentials (RFC-014 Phase 1b). Zero =
 	// disabled (renewed keys never expire), preserving today's behavior.
