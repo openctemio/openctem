@@ -23,7 +23,11 @@ import {
   type DetailMenuItem,
   type DetailTab,
 } from '@/features/shared'
-import { AssetStatusBadge, LifecycleSnoozeMenu } from '@/features/asset-lifecycle'
+import {
+  AssetLivenessBadge,
+  AssetStatusBadge,
+  LifecycleSnoozeMenu,
+} from '@/features/asset-lifecycle'
 import { AssetFindings } from './asset-findings'
 import { AssetSoftwareTab } from '@/features/vuln-matching'
 import { TimelineSection, TechnicalDetailsSection, TagsSection } from './sheet-sections'
@@ -392,6 +396,7 @@ export function AssetDetailSheet<T extends Asset>({
                   status={asset.status}
                   daysSinceLastSeen={daysSinceLastSeen(asset.lastSeen)}
                 />
+                <AssetLivenessBadge liveness={asset.liveness} />
                 {/* May scans reach it now: the scope gate's own answer. */}
                 {assetBacked && <AssetScopeChip asset={asset} />}
                 {/* Named values, so "Internal" (network zone) never reads

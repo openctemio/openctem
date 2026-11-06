@@ -108,9 +108,18 @@ test(
         'aria-pressed',
         'true'
       )
-      const box = await full.boundingBox()
+      // The dialog opens with a zoom-in animation, and boundingBox reports the
+      // transformed box: poll until it has settled at the full viewport.
       const vp = page.viewportSize()
-      expect(box && vp && box.width >= vp.width - 2 && box.height >= vp.height - 2).toBe(true)
+      await expect
+        .poll(
+          async () => {
+            const box = await full.boundingBox()
+            return !!(box && vp && box.width >= vp.width - 2 && box.height >= vp.height - 2)
+          },
+          { message: 'the full-screen graph fills the viewport once it has opened' }
+        )
+        .toBe(true)
       await page.keyboard.press('Escape')
       await expect(full).toBeHidden()
       await expect(canvas).toBeVisible()
