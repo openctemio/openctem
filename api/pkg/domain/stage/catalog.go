@@ -369,14 +369,13 @@ var catalog = []Stage{
 	},
 	{
 		// Active (T1): one GET per origin in a headless browser. The result
-		// is the web_evidence property of the origin the sensor re-reports
-		// (the same service, annotated). While the organization
+		// is the web_evidence property of the origin the sensor re-reports,
+		// so the stage has no output port of its own. While the organization
 		// has screenshots off the capability is not planned for it (coverage
 		// readiness): no picture is taken.
 		Key: CaptureScreenshot, Name: "Screenshot",
 		Description: "Take a picture of a web page and keep it as evidence on the web service.",
 		Inputs:      []asset.TypeRef{tHTTPService},
-		Outputs:     []asset.TypeRef{tHTTPService},
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: toolWebshot, Default: true},

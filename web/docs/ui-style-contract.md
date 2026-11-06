@@ -204,12 +204,23 @@ reference implementations.
   findings.
 - **Group by is a toolbar select** (`Layers` icon, "No grouping" / "Group" as
   the first option) and lives in the URL (`?group=`). Not tabs.
-- **The header row** (`renderHeader`): the group's name first (`font-medium`,
-  foreground), then muted meta joined with `·` (type, owner, CVSS, counts).
-  Summary counts go on the end (`renderActions`), compact: a status mix such
-  as `3 open · 1 fixing · 0 applied · 2 resolved` with a dot coloured only when
-  the number is above zero, and at most one mini bar (`% verified`). Hide the
-  summary below `lg` before it wraps the name.
+- **The header row** is one cell spanning every column, laid out as one
+  wrapping line of three slots, never positioned over the columns:
+  - identity (`renderHeader`): the group's name first (`font-medium`,
+    foreground), then muted meta joined with commas (type, owner, CVSS,
+    counts);
+  - summary (`renderSummary`): a compact status mix such as `3 open`,
+    `1 fixing`, `0 applied`, `2 resolved` as separate items with a dot
+    coloured only when the number is above zero, and at most one mini bar
+    (`% verified`);
+  - actions (`renderActions`): buttons only, in their own slot that never
+    shrinks, aligned to the end.
+
+  When the header is too narrow for one line, the summary and then the
+  actions move to the next line; nothing overflows the frame (an overflowing
+  header widens the table and slides its buttons under the pinned row-actions
+  column).
+
 - **Group actions** (`renderActions`): `size="sm"` buttons at `h-7`, ghost for
   navigation (View), outline for a change (Mark fixed, Approve). Gate each on
   its permission **and** on the API being able to do it for that group type;
