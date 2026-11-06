@@ -301,11 +301,6 @@ const (
 	// exposures (closure reason reclassified_exposure, never fixed): the
 	// counts and the run id. One entry per tenant per run.
 	ActionFindingsReclassified Action = "findings.reclassified"
-	// ActionFindingsEmailsMasked records one run of `refingerprint
-	// -mask-emails` masking the e-mail addresses left in a tenant's stored
-	// findings and evidence: counts and the run id, never a value. One entry
-	// per tenant per run.
-	ActionFindingsEmailsMasked Action = "findings.emails_masked"
 	// ActionAssetsMerged records one run of the repomerge command folding a
 	// tenant's duplicate repository assets together: counts, and the run id.
 	// One entry per tenant per run.
@@ -926,7 +921,7 @@ func (a Action) IsValid() bool {
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
-		ActionFindingsRefingerprinted, ActionFindingsEmailsMasked, ActionFindingsReclassified, ActionAssetsMerged,
+		ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -1072,7 +1067,7 @@ func (a Action) Category() string {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
-		ActionFindingsRefingerprinted, ActionFindingsEmailsMasked, ActionFindingsReclassified,
+		ActionFindingsRefingerprinted, ActionFindingsReclassified,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
@@ -1408,7 +1403,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionFindingsEmailsMasked, ActionFindingsReclassified, ActionAssetsMerged,
+		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
