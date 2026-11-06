@@ -4,13 +4,13 @@ import "testing"
 
 // capture.screenshot is routed to the sensor's webshot tool, which takes
 // capability jobs and a list of targets; it annotates the web service it
-// was given (the web_evidence property): its output is that same service.
+// was given (the web_evidence property), so it has no output port.
 func TestCaptureScreenshot_RoutedToWebshot(t *testing.T) {
 	st, ok := Lookup(CaptureScreenshot)
 	if !ok || !st.Available() || IsPlanned(CaptureScreenshot) {
 		t.Fatal("capture.screenshot is not a routed stage")
 	}
-	if st.Tier != TierActive || st.Tier.Passive() || st.Findings || len(st.Outputs) != 1 || st.Outputs[0] != tHTTPService {
+	if st.Tier != TierActive || st.Tier.Passive() || st.Findings || len(st.Outputs) != 0 {
 		t.Fatalf("stage: %+v", st)
 	}
 	if len(st.Inputs) != 1 || st.Inputs[0] != tHTTPService {
