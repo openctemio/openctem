@@ -365,7 +365,7 @@ func (h *SensorPairingHandler) writeUserError(w http.ResponseWriter, err error) 
 	case errors.Is(err, sensorpairing.ErrZonesForbidden):
 		apierror.Forbidden("Setting up a sensor's networks needs the sensors:zones:write permission").WriteJSON(w)
 	case errors.Is(err, sensorpairing.ErrRangesInvalid):
-		apierror.New(http.StatusBadRequest, "INVALID_RANGES", err.Error()).WriteJSON(w)
+		apierror.New(http.StatusBadRequest, "INVALID_RANGES", "The networks must be private ranges (inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7, at most /8, outside loopback, link-local and reserved space), for a profile that scans zones, within the organization's zone limit").WriteJSON(w)
 	case errors.Is(err, scanzone.ErrZoneNameTaken):
 		apierror.Conflict("A scan zone with that name was created meanwhile; approve again").WriteJSON(w)
 	case middleware.WriteStepUpError(w, err, authapp.StepUpWindow):
