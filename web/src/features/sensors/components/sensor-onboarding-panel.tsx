@@ -68,6 +68,8 @@ import {
   InstallPurposeStep,
   OptionCards,
   installIntentOf,
+  parseRangeList,
+  scansInternal,
   type InstallPurposeDraft,
 } from './sensor-install-purpose'
 
@@ -132,6 +134,9 @@ export function SensorOnboardingPanel({
         <InstallSession
           platform={platform}
           intent={intent}
+          defaultRanges={
+            scansInternal(purpose.purpose) ? parseRangeList(purpose.ranges) : undefined
+          }
           autoStart={autoStart}
           onStage={setStage}
           onOpenSensor={onOpenSensor}
@@ -292,6 +297,7 @@ function sensorSeenInterval(s?: Sensor): number {
 function InstallSession({
   platform,
   intent,
+  defaultRanges,
   autoStart,
   onStage,
   onOpenSensor,
@@ -299,6 +305,8 @@ function InstallSession({
 }: {
   platform: OnboardingPlatform
   intent: InstallIntent
+  /** The networks named in the first question: they prefill the approval. */
+  defaultRanges?: string[]
   autoStart: boolean
   /** Where the pairing stands, for the step's heading. */
   onStage?: (s: OnboardingStage) => void
@@ -427,7 +435,12 @@ function InstallSession({
       )}
 
       {stage === 'compare' && view && (
-        <PairingReview view={view} onApproved={setApproved} onDone={() => onDone?.()} />
+        <PairingReview
+          view={view}
+          onApproved={setApproved}
+          onDone={() => onDone?.()}
+          defaultRanges={defaultRanges}
+        />
       )}
 
       {stage === 'ended' && (

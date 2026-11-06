@@ -84,7 +84,25 @@ review:
 4. The name is prefilled from the host name. **More options** holds the
    role, the grant profile and the scan zones; the defaults fit a scanner
    inside your network.
-5. Enter your TOTP code or password (nothing when you signed in less than 10
+5. **Set it up for scanning** (shown when it applies):
+   - **Networks it scans**: the private ranges the sensor scans, prefilled
+     from the first question of Add sensor. The sensor joins the scan zone
+     that has exactly these ranges, or a new zone named "<sensor> networks"
+     is created for it, in the same step. Private ranges only; needs
+     **Manage scan zones** (`sensors:zones:write`).
+   - **Also add these networks to scope**: after the approval, the console
+     adds them to scope as a separate entry, through your organization's
+     usual scope approvals (needs `attack_surface:scope:write`). An entry
+     that waits for someone else's approval shows as waiting.
+   - **Trusted for active scanning**: the sensor may run active checks at
+     once instead of only passive ones. Offered only for a sensor that
+     started with the code this console made (never for a code the sensor
+     printed itself, an enrollment token or a re-pair), for the internal
+     scanner, external attack surface and scanner connector profiles (no
+     credentials, no pushed results), and to someone with **Widen sensor
+     grants**. It is recorded and announced to every administrator exactly
+     like a promotion.
+6. Enter your TOTP code or password (nothing when you signed in less than 10
    minutes ago) and **Approve**.
 
 The sensor picks up its identity within a few seconds, confirms it, and
@@ -104,7 +122,8 @@ stops every job while the file exists.
 
 ## 4. What the new sensor may do
 
-A newly paired sensor is at trust level **New**: it gets passive (T0) jobs
+Unless you ticked **Trusted for active scanning** at approval, a newly
+paired sensor is at trust level **New**: it gets passive (T0) jobs
 only, no credentials, and cannot send results without a job. Open the sensor,
 review its **Grant**, narrow it if you need to, and **Promote to Trusted**
 when you are satisfied (this needs the **Widen sensor grants** permission).

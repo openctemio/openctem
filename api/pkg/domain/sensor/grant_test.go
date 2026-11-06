@@ -377,3 +377,24 @@ func TestScanConnectorProfile(t *testing.T) {
 		t.Fatalf("another tool: %v", r)
 	}
 }
+
+func TestTrustableAtApproval(t *testing.T) {
+	for profile, want := range map[string]bool{
+		ProfileInternalScanner:            true,
+		ProfileEASMExternal:               true,
+		ProfileScanConnector:              true,
+		ProfileScanConnector + ":tenable": true,
+		ProfileAuthenticatedScanner:       false,
+		ProfileCollector:                  false,
+		ProfileCollector + ":aws":         false,
+		ProfileCIRunner:                   false,
+		ProfileEndpoint:                   false,
+		ProfileLegacyBroad:                false,
+		ProfileCustom:                     false,
+		"":                                false,
+	} {
+		if got := TrustableAtApproval(profile); got != want {
+			t.Errorf("TrustableAtApproval(%q) = %v, want %v", profile, got, want)
+		}
+	}
+}
