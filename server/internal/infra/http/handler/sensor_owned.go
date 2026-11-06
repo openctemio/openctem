@@ -7,10 +7,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // OwnSensor guards every tenant route on one sensor (/sensors/{id}/...): the

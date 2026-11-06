@@ -9,8 +9,8 @@ package widgets
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ModuleChecker reports whether a module's data may be read for an

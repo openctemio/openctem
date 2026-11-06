@@ -10,9 +10,9 @@ trap 'find "$work" -delete 2>/dev/null || true' EXIT
 
 clean_tree() {
   local d="$1"
-  mkdir -p "$d/api/internal/x" "$d/web/src/lib"
-  cat >"$d/api/go.mod" <<'EOF'
-module github.com/openctemio/openctem/api
+  mkdir -p "$d/server/internal/x" "$d/web/src/lib"
+  cat >"$d/server/go.mod" <<'EOF'
+module github.com/openctemio/openctem/server
 
 go 1.26.0
 
@@ -22,8 +22,8 @@ require (
 	github.com/openctemio/contract/transfer v1.0.1
 )
 EOF
-  printf 'github.com/openctemio/ctis/v2 v2.0.0 h1:x=\n' >"$d/api/go.sum"
-  cat >"$d/api/internal/x/x.go" <<'EOF'
+  printf 'github.com/openctemio/ctis/v2 v2.0.0 h1:x=\n' >"$d/server/go.sum"
+  cat >"$d/server/internal/x/x.go" <<'EOF'
 package x
 
 import (
@@ -53,31 +53,31 @@ case_dir() { n=$((n + 1)); local d="$work/$n"; clean_tree "$d"; echo "$d"; }
 d="$(case_dir)"; expect pass "clean tree" "$d"
 
 d="$(case_dir)"
-printf 'require github.com/openctemio/sdk-go v0.33.0\n' >>"$d/api/go.mod"
+printf 'require github.com/openctemio/sdk-go v0.33.0\n' >>"$d/server/go.mod"
 expect fail "go.mod requires sdk-go" "$d"
 
 d="$(case_dir)"
-printf 'require github.com/openctemio/sdk-go/pkg/transfer v0.1.0\n' >>"$d/api/go.mod"
+printf 'require github.com/openctemio/sdk-go/pkg/transfer v0.1.0\n' >>"$d/server/go.mod"
 expect fail "go.mod requires an sdk-go nested module" "$d"
 
 d="$(case_dir)"
-printf 'replace github.com/openctemio/sensor => ../sensor\n' >>"$d/api/go.mod"
+printf 'replace github.com/openctemio/sensor => ../sensor\n' >>"$d/server/go.mod"
 expect fail "go.mod replaces the sensor" "$d"
 
 d="$(case_dir)"
-printf 'github.com/openctemio/sdk-go v0.33.0/go.mod h1:y=\n' >>"$d/api/go.sum"
+printf 'github.com/openctemio/sdk-go v0.33.0/go.mod h1:y=\n' >>"$d/server/go.sum"
 expect fail "go.sum carries sdk-go (indirect)" "$d"
 
 d="$(case_dir)"
-printf 'package x\n\nimport "github.com/openctemio/sdk-go/pkg/jobsig"\n' >"$d/api/internal/x/y.go"
+printf 'package x\n\nimport "github.com/openctemio/sdk-go/pkg/jobsig"\n' >"$d/server/internal/x/y.go"
 expect fail "single import of sdk-go" "$d"
 
 d="$(case_dir)"
-printf 'package x\n\nimport (\n\tsdk "github.com/openctemio/sensor/internal/x"\n)\n' >"$d/api/internal/x/y.go"
+printf 'package x\n\nimport (\n\tsdk "github.com/openctemio/sensor/internal/x"\n)\n' >"$d/server/internal/x/y.go"
 expect fail "aliased import of the sensor in a block" "$d"
 
 d="$(case_dir)"
-printf 'package x\n\nimport (\n\t"github.com/openctemio/connector-tenable/pkg/x"\n)\n' >"$d/api/internal/x/y.go"
+printf 'package x\n\nimport (\n\t"github.com/openctemio/connector-tenable/pkg/x"\n)\n' >"$d/server/internal/x/y.go"
 expect fail "import of a connector product" "$d"
 
 d="$(case_dir)"

@@ -11,14 +11,14 @@ import (
 	"errors"
 	"net/http"
 
-	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
-	scangovapp "github.com/openctemio/openctem/api/internal/app/scangov"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
+	scangovapp "github.com/openctemio/openctem/server/internal/app/scangov"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ScanGovernanceHandler serves the scan approval settings.

@@ -6,7 +6,7 @@
 # the required `security-gate` check only once a maintainer listed under
 # `ackers` adds the `security-ack` label and the review has no open HIGH
 # finding. How it works and how to override it in an emergency:
-# api/docs/development/ci-cd.md#security-gate.
+# server/docs/development/ci-cd.md#security-gate.
 #
 # Format (kept to this subset so the gate parses it without a YAML library):
 # a top-level `key:` line followed by `  - pattern` lines. Patterns are
@@ -30,98 +30,98 @@ removal-only:
   - '**/*.test.tsx'
   - '**/*.spec.ts'
   - '**/testdata/**'
-  - api/tools/lint/tenantsql/tenant_tables.txt
+  - server/tools/lint/tenantsql/tenant_tables.txt
 
 # Authentication, sessions, authorization gates and the permission model.
 authn-authz:
-  - api/internal/infra/http/middleware/**
-  - api/internal/infra/http/routes/auth.go
-  - api/internal/infra/http/routes/admin.go
-  - api/internal/infra/http/internalapi/**
-  - api/cmd/server/internal_api.go
-  - api/internal/app/entitlement/**
-  - api/internal/infra/http/routes/misc.go
-  - api/internal/infra/http/routes/scim.go
-  - api/internal/infra/http/routes/mcp_oauth.go
-  - api/internal/infra/http/routes/ci.go
-  - api/internal/infra/http/handler/*auth*.go
-  - api/internal/infra/http/handler/oauth*.go
-  - api/internal/infra/http/handler/mcp_oauth*.go
-  - api/pkg/domain/permission/**
-  - api/internal/app/accesscontrol/**
-  - api/internal/app/auth/**
-  - api/internal/app/apikey/**
-  - api/internal/app/mcpoauth/**
-  - api/internal/app/scim/**
-  - api/pkg/jwt/**
-  - api/pkg/oidc/**
-  - api/pkg/totp/**
-  - api/pkg/password/**
-  - api/pkg/dpop/**
+  - server/internal/infra/http/middleware/**
+  - server/internal/infra/http/routes/auth.go
+  - server/internal/infra/http/routes/admin.go
+  - server/internal/infra/http/internalapi/**
+  - server/cmd/server/internal_api.go
+  - server/internal/app/entitlement/**
+  - server/internal/infra/http/routes/misc.go
+  - server/internal/infra/http/routes/scim.go
+  - server/internal/infra/http/routes/mcp_oauth.go
+  - server/internal/infra/http/routes/ci.go
+  - server/internal/infra/http/handler/*auth*.go
+  - server/internal/infra/http/handler/oauth*.go
+  - server/internal/infra/http/handler/mcp_oauth*.go
+  - server/pkg/domain/permission/**
+  - server/internal/app/accesscontrol/**
+  - server/internal/app/auth/**
+  - server/internal/app/apikey/**
+  - server/internal/app/mcpoauth/**
+  - server/internal/app/scim/**
+  - server/pkg/jwt/**
+  - server/pkg/oidc/**
+  - server/pkg/totp/**
+  - server/pkg/password/**
+  - server/pkg/dpop/**
 
 # Tenant isolation and data scope, and the static guards that enforce them.
 tenant-isolation:
-  - api/internal/app/datascope/**
-  - api/internal/app/actscope/**
-  - api/internal/infra/postgres/data_scope_repository.go
-  - api/internal/infra/postgres/tenant_repository.go
-  - api/internal/infra/http/handler/data_scope_filter.go
-  - api/tools/lint/tenantsql/**
-  - api/tools/lint/getbyid/**
-  - api/tools/lint/routeperm/**
-  - api/scripts/security-lint.sh
+  - server/internal/app/datascope/**
+  - server/internal/app/actscope/**
+  - server/internal/infra/postgres/data_scope_repository.go
+  - server/internal/infra/postgres/tenant_repository.go
+  - server/internal/infra/http/handler/data_scope_filter.go
+  - server/tools/lint/tenantsql/**
+  - server/tools/lint/getbyid/**
+  - server/tools/lint/routeperm/**
+  - server/scripts/security-lint.sh
 
 # Encryption, key handling and signatures.
 crypto-keys-signing:
-  - api/pkg/crypto/**
-  - api/pkg/jobsign/**
-  - api/pkg/feedsign/**
-  - api/pkg/sensorsig/**
-  - api/pkg/sensorkey/**
-  - api/internal/signer/**
-  - api/internal/infra/signer/**
-  - api/internal/app/rekey/**
-  - api/cmd/signer/**
-  - api/cmd/rekey/**
-  - api/cmd/encrypt-credentials/**
+  - server/pkg/crypto/**
+  - server/pkg/jobsign/**
+  - server/pkg/feedsign/**
+  - server/pkg/sensorsig/**
+  - server/pkg/sensorkey/**
+  - server/internal/signer/**
+  - server/internal/infra/signer/**
+  - server/internal/app/rekey/**
+  - server/cmd/signer/**
+  - server/cmd/rekey/**
+  - server/cmd/encrypt-credentials/**
 
 # Sensor protocol: transports (HTTPS v2, gRPC v3 with mTLS), ALPN routing at
 # the gateway, pairing and job signatures.
 sensor-protocol:
-  - api/internal/infra/sensortransport/**
-  - api/pkg/sensorproto/**
-  - api/internal/infra/http/tls.go
-  - api/internal/infra/http/handler/sensor_signature*.go
-  - api/internal/infra/http/handler/sensor_identity_handler.go
-  - api/internal/infra/http/handler/sensor_pairing_handler.go
-  - api/internal/infra/http/handler/sensor_v3_bridge.go
-  - api/internal/app/sensorpairing/**
-  - api/deploy/gateway/**
+  - server/internal/infra/sensortransport/**
+  - server/pkg/sensorproto/**
+  - server/internal/infra/http/tls.go
+  - server/internal/infra/http/handler/sensor_signature*.go
+  - server/internal/infra/http/handler/sensor_identity_handler.go
+  - server/internal/infra/http/handler/sensor_pairing_handler.go
+  - server/internal/infra/http/handler/sensor_v3_bridge.go
+  - server/internal/app/sensorpairing/**
+  - server/deploy/gateway/**
 
 # The scope gate: what may be scanned, approvals and attestations.
 scope-gate:
-  - api/internal/app/scope/service.go
-  - api/internal/app/scope/rule.go
-  - api/internal/app/scope/exclusion_matcher.go
-  - api/internal/app/scopeauth/**
-  - api/internal/app/scangov/gate.go
-  - api/internal/app/scan/dispatch_gate.go
-  - api/internal/app/command/scope_recheck.go
+  - server/internal/app/scope/service.go
+  - server/internal/app/scope/rule.go
+  - server/internal/app/scope/exclusion_matcher.go
+  - server/internal/app/scopeauth/**
+  - server/internal/app/scangov/gate.go
+  - server/internal/app/scan/dispatch_gate.go
+  - server/internal/app/command/scope_recheck.go
   # The web scope of every web job (path exclusions): the command create
   # guard and its fail-closed fallback.
-  - api/internal/app/scope/web_job.go
-  - api/internal/infra/postgres/command_web_scope.go
-  - api/pkg/domain/command/web_scope.go
+  - server/internal/app/scope/web_job.go
+  - server/internal/infra/postgres/command_web_scope.go
+  - server/pkg/domain/command/web_scope.go
 
 # Sensor results: which existing objects a report may change (result
 # binding), trusted collectors and their complete reports, and exclusions at
 # ingest.
 sensor-result-trust:
-  - api/internal/app/ingest/binding.go
-  - api/internal/app/ingest/collector_trust.go
-  - api/internal/app/ingest/collector_reports.go
-  - api/internal/app/ingest/exclusions.go
-  - api/internal/infra/postgres/collector_asset_repository.go
+  - server/internal/app/ingest/binding.go
+  - server/internal/app/ingest/collector_trust.go
+  - server/internal/app/ingest/collector_reports.go
+  - server/internal/app/ingest/exclusions.go
+  - server/internal/infra/postgres/collector_asset_repository.go
 
 # Web session, CSRF, proxying and security headers.
 web-session-headers:
@@ -146,21 +146,21 @@ web-session-headers:
 # (routes/admin.go under authn-authz) and handlers.
 platform-console:
   - web/console/**
-  - api/internal/infra/http/handler/admin_*.go
-  - api/internal/app/adminconsole/**
+  - server/internal/infra/http/handler/admin_*.go
+  - server/internal/app/adminconsole/**
 
 # File upload, storage and download handlers.
 upload-download:
-  - api/internal/infra/storage/**
-  - api/internal/infra/http/handler/attachment_handler.go
-  - api/internal/infra/http/handler/*_import_handler.go
-  - api/internal/infra/http/handler/finding_evidence*.go
-  - api/internal/infra/http/handler/*export*.go
-  - api/internal/infra/http/handler/pentest_export.go
+  - server/internal/infra/storage/**
+  - server/internal/infra/http/handler/attachment_handler.go
+  - server/internal/infra/http/handler/*_import_handler.go
+  - server/internal/infra/http/handler/finding_evidence*.go
+  - server/internal/infra/http/handler/*export*.go
+  - server/internal/infra/http/handler/pentest_export.go
 
 # Outbound HTTP: the SSRF guard and client-IP handling.
 outbound-ssrf:
-  - api/pkg/httpsec/**
+  - server/pkg/httpsec/**
 
 # CI, release tooling and this gate.
 ci-release:
@@ -172,77 +172,77 @@ ci-release:
   - .github/quarantine.yml
   - .github/CODEOWNERS
   - .githooks/**
-  - api/scripts/release-branch.sh
+  - server/scripts/release-branch.sh
 
 # Images and deployment defaults. Security-relevant defaults in
-# api/internal/config/config.go are caught by the CONFIG-SECURITY-DEFAULT
+# server/internal/config/config.go are caught by the CONFIG-SECURITY-DEFAULT
 # content rule instead of the whole file.
 deploy-defaults:
   - '**/Dockerfile*'
-  - api/deploy/**
+  - server/deploy/**
   - deploy/**
 
 # Finding lifecycle: status is a security control (dispositions hide risk, the
 # CI gate honours them), so every writer of a finding's status, decision,
 # acceptance end, review flag or SLA, and their migrations, is reviewed.
 finding-lifecycle:
-  - api/pkg/domain/vulnerability/finding.go
-  - api/pkg/domain/vulnerability/status_*.go
-  - api/pkg/domain/vulnerability/approval*.go
-  - api/pkg/domain/vulnerability/duplicate.go
-  - api/pkg/domain/vulnerability/transition_evidence.go
-  - api/pkg/domain/vulnerability/finding_activity.go
-  - api/pkg/domain/vulnerability/finding_interop.go
-  - api/pkg/domain/vulnerability/finding_vex_document.go
-  - api/pkg/domain/vulnerability/taint_source.go
-  - api/internal/app/finding/vulnerability_service.go
-  - api/internal/app/finding/actions.go
-  - api/internal/app/finding/duplicate.go
-  - api/internal/app/finding/bulk_action_guard.go
-  - api/internal/app/finding/lifecycle_scheduler.go
-  - api/internal/app/vex/**
-  - api/internal/app/sla/**
-  - api/internal/app/ioc/reopen_adapter.go
-  - api/internal/app/validation/proof_of_fix.go
-  - api/internal/app/automation/action_handlers.go
-  - api/internal/app/remediation/group_service.go
-  - api/internal/app/exposure/remediation_campaign.go
-  - api/internal/app/exposure/disposition.go
-  - api/internal/app/ingest/interop.go
-  - api/internal/app/ingest/source_resolve.go
-  - api/internal/app/ingest/processor_findings.go
-  - api/internal/app/ingest/processor_suppression.go
-  - api/internal/app/ingest/coverage_autoresolve.go
-  - api/internal/infra/controller/approval_expiration.go
-  - api/internal/infra/postgres/finding_repository.go
-  - api/internal/infra/postgres/finding_status_sql.go
-  - api/internal/infra/postgres/finding_transition.go
-  - api/internal/infra/postgres/finding_approval_repository.go
-  - api/internal/infra/postgres/finding_acceptance_expiry.go
-  - api/internal/infra/postgres/finding_decision_review.go
-  - api/internal/infra/postgres/finding_taint_source.go
-  - api/internal/infra/postgres/finding_interop.go
-  - api/internal/infra/postgres/finding_vex_document.go
-  - api/internal/infra/postgres/vex_statement_repository.go
-  - api/internal/infra/postgres/finding_duplicate.go
-  - api/internal/infra/postgres/finding_pentest_duplicate.go
-  - api/internal/infra/postgres/finding_human_resolved.go
-  - api/internal/infra/postgres/finding_*coverage_autoresolve.go
-  - api/internal/infra/postgres/finding_correlation_repository.go
-  - api/internal/infra/postgres/finding_sla_restart_repository.go
-  - api/internal/infra/postgres/sla_repository.go
-  - api/internal/infra/postgres/suppression_*.go
-  - api/pkg/domain/suppression/**
-  - api/internal/infra/http/handler/suppression_handler.go
-  - api/internal/infra/postgres/exposure_disposition_repository.go
-  - api/internal/infra/postgres/asset_merge_findings.go
-  - api/internal/infra/http/handler/vulnerability_handler.go
-  - api/internal/infra/http/handler/finding_actions_handler.go
-  - api/internal/infra/http/handler/vex_statement_handler.go
-  - api/internal/infra/http/handler/remediation_group_handler.go
-  - api/internal/infra/http/handler/remediation_campaign_handler.go
-  - api/migrations/*finding*
-  - api/migrations/*approval*
-  - api/migrations/*vex*
-  - api/migrations/*sla*
-  - api/migrations/*suppression*
+  - server/pkg/domain/vulnerability/finding.go
+  - server/pkg/domain/vulnerability/status_*.go
+  - server/pkg/domain/vulnerability/approval*.go
+  - server/pkg/domain/vulnerability/duplicate.go
+  - server/pkg/domain/vulnerability/transition_evidence.go
+  - server/pkg/domain/vulnerability/finding_activity.go
+  - server/pkg/domain/vulnerability/finding_interop.go
+  - server/pkg/domain/vulnerability/finding_vex_document.go
+  - server/pkg/domain/vulnerability/taint_source.go
+  - server/internal/app/finding/vulnerability_service.go
+  - server/internal/app/finding/actions.go
+  - server/internal/app/finding/duplicate.go
+  - server/internal/app/finding/bulk_action_guard.go
+  - server/internal/app/finding/lifecycle_scheduler.go
+  - server/internal/app/vex/**
+  - server/internal/app/sla/**
+  - server/internal/app/ioc/reopen_adapter.go
+  - server/internal/app/validation/proof_of_fix.go
+  - server/internal/app/automation/action_handlers.go
+  - server/internal/app/remediation/group_service.go
+  - server/internal/app/exposure/remediation_campaign.go
+  - server/internal/app/exposure/disposition.go
+  - server/internal/app/ingest/interop.go
+  - server/internal/app/ingest/source_resolve.go
+  - server/internal/app/ingest/processor_findings.go
+  - server/internal/app/ingest/processor_suppression.go
+  - server/internal/app/ingest/coverage_autoresolve.go
+  - server/internal/infra/controller/approval_expiration.go
+  - server/internal/infra/postgres/finding_repository.go
+  - server/internal/infra/postgres/finding_status_sql.go
+  - server/internal/infra/postgres/finding_transition.go
+  - server/internal/infra/postgres/finding_approval_repository.go
+  - server/internal/infra/postgres/finding_acceptance_expiry.go
+  - server/internal/infra/postgres/finding_decision_review.go
+  - server/internal/infra/postgres/finding_taint_source.go
+  - server/internal/infra/postgres/finding_interop.go
+  - server/internal/infra/postgres/finding_vex_document.go
+  - server/internal/infra/postgres/vex_statement_repository.go
+  - server/internal/infra/postgres/finding_duplicate.go
+  - server/internal/infra/postgres/finding_pentest_duplicate.go
+  - server/internal/infra/postgres/finding_human_resolved.go
+  - server/internal/infra/postgres/finding_*coverage_autoresolve.go
+  - server/internal/infra/postgres/finding_correlation_repository.go
+  - server/internal/infra/postgres/finding_sla_restart_repository.go
+  - server/internal/infra/postgres/sla_repository.go
+  - server/internal/infra/postgres/suppression_*.go
+  - server/pkg/domain/suppression/**
+  - server/internal/infra/http/handler/suppression_handler.go
+  - server/internal/infra/postgres/exposure_disposition_repository.go
+  - server/internal/infra/postgres/asset_merge_findings.go
+  - server/internal/infra/http/handler/vulnerability_handler.go
+  - server/internal/infra/http/handler/finding_actions_handler.go
+  - server/internal/infra/http/handler/vex_statement_handler.go
+  - server/internal/infra/http/handler/remediation_group_handler.go
+  - server/internal/infra/http/handler/remediation_campaign_handler.go
+  - server/migrations/*finding*
+  - server/migrations/*approval*
+  - server/migrations/*vex*
+  - server/migrations/*sla*
+  - server/migrations/*suppression*

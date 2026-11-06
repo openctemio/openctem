@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"testing"
 
-	commandapp "github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	commandapp "github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The dispatch pre-check against the real SQL (research/25 §3.6, T-P0a):

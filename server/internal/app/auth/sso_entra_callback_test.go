@@ -18,14 +18,14 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/oidc"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/oidc"
 )
 
 // End-to-end organization SSO against a mock Microsoft Entra ID: the real

@@ -5,7 +5,7 @@
   pr-labels.py --files FILE.json            (test input: the pulls/files array)
 
 The labels group the pull request's changelog fragment under an operator
-heading in the release notes (api/scripts/changelog.py, `--labels`):
+heading in the release notes (server/scripts/changelog.py, `--labels`):
 
   notes:migration              a migration is added or changed
   notes:destructive-migration  a migration drops, renames or truncates
@@ -38,7 +38,7 @@ ALL_LABELS = {
 }
 
 # A statement that removes or renames something a running pod may still use.
-# Same families as api/scripts/check-migrations.sh.
+# Same families as server/scripts/check-migrations.sh.
 DESTRUCTIVE_SQL = re.compile(
     r"\bdrop\s+(table|column|schema|type)\b"
     r"|\btruncate\b"
@@ -49,16 +49,16 @@ DESTRUCTIVE_SQL = re.compile(
 )
 
 IDENTITY_PATHS = [
-    "api/pkg/domain/vulnerability/identity*.go",
-    "api/pkg/domain/vulnerability/fingerprint*.go",
-    "api/pkg/domain/vulnerability/secret_fingerprint*.go",
-    "api/internal/app/ingest/identity*.go",
+    "server/pkg/domain/vulnerability/identity*.go",
+    "server/pkg/domain/vulnerability/fingerprint*.go",
+    "server/pkg/domain/vulnerability/secret_fingerprint*.go",
+    "server/internal/app/ingest/identity*.go",
 ]
 CONTRACT_PATHS = [
-    "api/internal/infra/http/handler/*.go",
-    "api/internal/infra/http/routes/*.go",
-    "api/pkg/sensorproto/*",
-    "api/pkg/sensorproto/**/*",
+    "server/internal/infra/http/handler/*.go",
+    "server/internal/infra/http/routes/*.go",
+    "server/pkg/sensorproto/*",
+    "server/pkg/sensorproto/**/*",
 ]
 CTIS_REQUIRE = re.compile(r"^[+-]\s*github\.com/openctemio/(ctis(/v2)?|contract)\s")
 
@@ -83,7 +83,7 @@ def labels_for(files):
         path = f.get("filename", "")
         status = f.get("status", "")
         patch = f.get("patch") or ""
-        if re.fullmatch(r"api/migrations/[^/]+\.up\.sql", path):
+        if re.fullmatch(r"server/migrations/[^/]+\.up\.sql", path):
             out.add(MIGRATION)
             # A removed file is not a change that runs; an added or edited
             # one is judged by the lines it adds.
@@ -94,7 +94,7 @@ def labels_for(files):
                     out.add(DESTRUCTIVE)
         if not is_test(path) and matches(path, IDENTITY_PATHS):
             out.add(IDENTITY)
-        if path == "api/go.mod" and any(CTIS_REQUIRE.match(ln) for ln in patch.splitlines()):
+        if path == "server/go.mod" and any(CTIS_REQUIRE.match(ln) for ln in patch.splitlines()):
             out.add(IDENTITY)
         if not is_test(path) and matches(path, CONTRACT_PATHS):
             out.add(API_CONTRACT)

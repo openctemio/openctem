@@ -9,10 +9,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // IngestJobQueue is the slice of the ingest-job repository the worker needs.

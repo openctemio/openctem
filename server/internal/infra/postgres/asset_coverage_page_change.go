@@ -9,7 +9,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // pageRecaptureGap is the least time between two on-change captures of one

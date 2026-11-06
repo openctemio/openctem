@@ -6,7 +6,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // A statement timeout (query_canceled) on a findings read is the typed

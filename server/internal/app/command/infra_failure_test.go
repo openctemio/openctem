@@ -3,7 +3,7 @@ package command
 import (
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 // The class of a failure: the sensor's class first, then its error code,

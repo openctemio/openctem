@@ -11,15 +11,15 @@ import (
 	"strconv"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/easmchange"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/easmchange"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // EASMSettingsStore reads and writes the tenant's EASM settings

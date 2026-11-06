@@ -3,7 +3,7 @@
 #
 # Gives the migrations a change adds new, unique versions when theirs clash.
 # Used by pull request CI on its test merge (in the runner's working tree
-# only, never committed) and by `make -C api migration-renumber` (which
+# only, never committed) and by `make -C server migration-renumber` (which
 # stages the renames for the author to commit).
 #
 # Migration versions only have to be unique: openctem-migrate applies every
@@ -31,7 +31,7 @@
 #     (so their order is kept) get UTC timestamp versions YYYYMMDDHHMMSS,
 #     starting at the current second (MIGRATION_NOW overrides it, for tests),
 #     each one unused by the base, the tree and MIGRATION_TAKEN; references
-#     to the old file stems outside api/migrations are rewritten.
+#     to the old file stems outside server/migrations are rewritten.
 # A migration baseline (NNNNNN_baseline, RFC-053) is left alone.
 # Nothing is committed or pushed; every change is printed as a warning.
 # merge_group and push never call this: there, check-migration-versions.sh
@@ -40,7 +40,7 @@
 # Tests: .github/scripts/pr-migration-renumber.test.sh
 set -euo pipefail
 
-dir="${MIGRATIONS_DIR:-api/migrations}"
+dir="${MIGRATIONS_DIR:-server/migrations}"
 base="${1:-HEAD^1}"
 pattern='^([0-9]+)_(.+)\.(up|down)\.sql$'
 

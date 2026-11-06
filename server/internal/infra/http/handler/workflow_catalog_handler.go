@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	automationsvc "github.com/openctemio/openctem/server/internal/app/automation"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // The 401/403 answers of the catalog route (named for the spec generator).

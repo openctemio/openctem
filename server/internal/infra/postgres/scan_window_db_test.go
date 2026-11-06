@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Scan window storage against a real schema (RFC-067; migration 001760):

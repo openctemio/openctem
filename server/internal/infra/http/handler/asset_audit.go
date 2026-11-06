@@ -7,9 +7,9 @@ import (
 	"slices"
 	"sort"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 )
 
 // auditAsset writes one audit event about an asset. Metadata carries field

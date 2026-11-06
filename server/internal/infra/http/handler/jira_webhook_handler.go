@@ -12,18 +12,18 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/jira"
-	"github.com/openctemio/openctem/api/internal/app/ticketing"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/server/internal/app/jira"
+	"github.com/openctemio/openctem/server/internal/app/ticketing"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // JiraWebhookHandler handles Jira bidirectional ticket sync endpoints.

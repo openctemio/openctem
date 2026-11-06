@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/pkg/crypto"
 )
 
 // ResendVerification issues a token only for a local, unverified account that

@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // WithWorkflowRunReaders sets the scope checker run reads use and where

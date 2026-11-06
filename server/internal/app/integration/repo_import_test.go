@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/openctem/api/internal/infra/scm"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/scm"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestApplyRepoFields(t *testing.T) {

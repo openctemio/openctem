@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
 )
 
 // GET /api/v1/tenants/{tenant} was registered in the /api/v1/tenants group,

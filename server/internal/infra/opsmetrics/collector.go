@@ -15,12 +15,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/version"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/version"
 )
 
 // Source reads one snapshot of the platform-wide counts.

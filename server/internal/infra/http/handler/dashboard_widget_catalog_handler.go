@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	dashboard "github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/dashboard/widgets"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	dashboard "github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // WidgetCatalogMetric is one metric of the typed widget catalog. Shapes maps

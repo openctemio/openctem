@@ -11,9 +11,9 @@ import (
 
 	"github.com/lib/pq"
 
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ScanWindowAssetRepository matches targets to assets and lists the assets

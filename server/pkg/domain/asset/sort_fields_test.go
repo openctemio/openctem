@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // Criticality and exposure are text columns: sorting them by spelling put

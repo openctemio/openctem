@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // The divergence warning says what the signer does with such jobs: in audit

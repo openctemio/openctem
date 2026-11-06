@@ -22,11 +22,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/internal/app/validation"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/safetext"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/validation"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/safetext"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // Limits of the logs resource.

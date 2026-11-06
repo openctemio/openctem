@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Plans this run's DB-backed Go test shards, once, so every shard reads the
-# same plan (the `spec` job of api-ci.yml calls it; run from api/).
+# same plan (the `spec` job of api-ci.yml calls it; run from server/).
 #
 # Writes to $GO_PLAN_DIR (uploaded as the `go-plan` artifact):
 #   mode.txt        `all` (kept so a shard can also run a narrowed plan)

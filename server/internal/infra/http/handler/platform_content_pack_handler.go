@@ -15,13 +15,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // PlatformContentPackHandler serves the platform content packs (RFC-061):

@@ -1,7 +1,7 @@
 package suppression
 
 // Suppression rules under the approval policy
-// (api/docs/rfcs/RFC-111-approval-policy.md). A rule decides many findings,
+// (server/docs/rfcs/RFC-111-approval-policy.md). A rule decides many findings,
 // including future ones, so it is never decided by one person: its tier is
 // that of the worst open finding it matches (false-positive rules floor at
 // peer; accepted-risk and won't-fix rules follow the accepted-risk floors).
@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // PolicySource evaluates a rule under the organization's approval policy

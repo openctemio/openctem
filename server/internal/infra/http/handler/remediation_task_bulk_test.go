@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A group exception above the bulk ceiling answers 400 BULK_TOO_LARGE (not a

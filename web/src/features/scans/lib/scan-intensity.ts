@@ -2,7 +2,7 @@
  * Scan intensity (RFC-071): the probe ceiling a scan's runs may reach.
  *
  * The tiers below mirror the API's scan-stage catalog
- * (api/pkg/domain/stage): the API is the authority (it refuses a scanner or
+ * (server/pkg/domain/stage): the API is the authority (it refuses a scanner or
  * workflow step above the intensity, and never dispatches one); the wizard
  * uses them only to offer what fits. Anything not listed counts as active,
  * never passive, as on the server.

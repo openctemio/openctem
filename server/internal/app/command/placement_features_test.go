@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // A command the sensor cannot take for a missing feature names that

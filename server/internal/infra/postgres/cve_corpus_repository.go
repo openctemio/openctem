@@ -10,8 +10,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/domain/cvecorpus"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
 // CVECorpusRepository writes the platform-wide CVE corpus (RFC-066 §5.3):

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // A report commit used to run "UPDATE assets SET updated_at = NOW()" over every

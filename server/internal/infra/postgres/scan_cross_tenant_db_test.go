@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // D-11 (research/14 SEC-15): the scan-area repositories delete and update a

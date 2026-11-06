@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/redis"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/infra/redis"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // VersionService tracks a per-tenant "module configuration version"

@@ -16,9 +16,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	cs "github.com/openctemio/openctem/api/pkg/domain/contentsource"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	cs "github.com/openctemio/openctem/server/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ContentSourceRepository implements contentsource.Repository.

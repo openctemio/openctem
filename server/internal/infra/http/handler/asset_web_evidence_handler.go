@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/webevidence"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/webevidence"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // WebEvidenceAssetScope returns an asset only when it is in the caller's data

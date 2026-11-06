@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/assettech"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/assettech"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // TechnologyFacetReader counts technologies over the assets an access scope

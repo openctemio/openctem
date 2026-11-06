@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ListAuditLogsFilter represents filters for listing audit logs.

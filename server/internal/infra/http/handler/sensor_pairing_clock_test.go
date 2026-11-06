@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 type memNonces map[string]bool

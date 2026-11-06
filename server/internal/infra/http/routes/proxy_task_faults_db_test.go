@@ -15,9 +15,9 @@ import (
 
 	"github.com/lib/pq"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/proxypool"
 )
 
 func proxyGapResult(host, otherEndpoint string) map[string]any {

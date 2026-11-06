@@ -23,10 +23,10 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/durablejob"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // ScopeEffectsRepository closes and reopens findings as their assets go out

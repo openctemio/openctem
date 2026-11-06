@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/module"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/module"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // DashboardHandler handles dashboard-related HTTP requests.

@@ -1,6 +1,6 @@
 package audit
 
-// License policy of the organization (api/docs/architecture/software-components.md).
+// License policy of the organization (server/docs/architecture/software-components.md).
 
 // ActionTenantLicensePolicyUpdated records a change to the organization's
 // license policy (before/after in the changes).

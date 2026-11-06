@@ -22,11 +22,11 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/easmseed"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ReviewNetwork is what we hold about the network of an address.

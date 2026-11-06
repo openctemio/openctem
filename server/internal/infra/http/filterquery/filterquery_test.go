@@ -11,7 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 func testRoute(mode filterspec.UnknownMode) Route {

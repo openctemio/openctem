@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // Approval-required just-in-time provisioning (RFC-058): when the

@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // mockMembershipReader satisfies the role membership reader used by

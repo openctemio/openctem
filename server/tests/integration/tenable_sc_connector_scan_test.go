@@ -7,13 +7,13 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/app/tenablesc"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/app/tenablesc"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A scan whose scanner is tenable_sc (RFC-047 §5.2) on a migrated database:

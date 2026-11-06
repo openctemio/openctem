@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/signer"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/internal/signer"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // The offline ceremony end to end: a root, an online key, a key set that

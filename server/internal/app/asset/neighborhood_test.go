@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestParseNeighborhoodInput_BoundsAndFilters(t *testing.T) {

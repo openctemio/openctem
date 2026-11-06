@@ -14,12 +14,12 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ReceiptRecorder writes receipt deltas (ingestreceipt.Repository).

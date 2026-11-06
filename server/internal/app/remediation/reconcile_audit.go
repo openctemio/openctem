@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	remediationdom "github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // systemActor names the actor of a change no person made.

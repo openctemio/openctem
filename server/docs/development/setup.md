@@ -9,9 +9,9 @@
 
 ## Quick Setup
 
-The API is the `api/` directory of the
+The API is the `server/` directory of the
 [`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo; the web
-console is `web/`. Every command on this page runs **in `api/`** (the compose
+console is `web/`. Every command on this page runs **in `server/`** (the compose
 files, `.env.example` and this Makefile are there, not at the repository root).
 From the root, `make setup` installs both components and enables the git hooks
 (`.githooks/`), `make dev-api` / `make dev-web` run each side, and
@@ -23,7 +23,7 @@ From the root, `make setup` installs both components and enables the git hooks
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem/api   # the API lives in api/ of the openctem monorepo
+cd openctem/api   # the API lives in server/ of the openctem monorepo
 
 # 2. Setup env
 cp .env.example .env
@@ -38,7 +38,7 @@ make docker-dev
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem/api   # the API lives in api/ of the openctem monorepo
+cd openctem/api   # the API lives in server/ of the openctem monorepo
 
 # 2. Install tools
 make install-tools
@@ -129,7 +129,7 @@ make tidy             # Tidy go.mod
 ```bash
 make docker-dev       # Start dev environment (hot reload)
 make docker-dev-d     # Start dev environment (background)
-make docker-prod      # Prints how to start the production stack (api/deploy)
+make docker-prod      # Prints how to start the production stack (server/deploy)
 make docker-down      # Stop all containers
 make docker-logs      # View logs
 make docker-logs-app  # View app logs only
@@ -156,10 +156,10 @@ make proto            # Generate protobuf (if using gRPC)
 
 ## Monorepo and Go workspaces
 
-`api/` is one Go module (`github.com/openctemio/openctem/api`) and does not
+`server/` is one Go module (`github.com/openctemio/openctem/server`) and does not
 depend on sdk-go; the monorepo has no `go.work`. A `go.work` in a parent
 directory (for example a checkout that also holds `sdk-go` or `sensor`) would
-still be picked up, so run Go commands from `api/` with `GOWORK=off`, as CI
+still be picked up, so run Go commands from `server/` with `GOWORK=off`, as CI
 and the root `Makefile` do:
 
 ```bash

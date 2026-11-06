@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A handler still running when the timeout fires must not share the header

@@ -6,15 +6,15 @@ import (
 	"net/http"
 	"time"
 
-	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ssochange"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SSO changes a platform administrator submits from the admin console wait

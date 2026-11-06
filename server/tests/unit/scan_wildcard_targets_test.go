@@ -9,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/actscope"
-	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/actscope"
+	scanservice "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Dynamic target selectors (RFC-068). A wildcard domain (*.x) and an

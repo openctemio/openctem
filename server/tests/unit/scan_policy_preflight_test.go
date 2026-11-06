@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scanservice "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The scan-trigger preflight against the sensors' reported local policies

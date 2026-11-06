@@ -14,14 +14,14 @@ import (
 	"errors"
 	"testing"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type riskApprovers []shared.ID

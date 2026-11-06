@@ -1,7 +1,7 @@
 package routes
 
 // The material-change controller on real decisions
-// (api/docs/rfcs/RFC-111-approval-policy.md §6): accepted risks end when the
+// (server/docs/rfcs/RFC-111-approval-policy.md §6): accepted risks end when the
 // finding needs a higher tier, are flagged otherwise (or end under the
 // organization's end_on_any_change); one-person false positives are flagged
 // (or withdrawn under revoke); a change below the EPSS threshold only moves
@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/controller"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type recordedChange struct {

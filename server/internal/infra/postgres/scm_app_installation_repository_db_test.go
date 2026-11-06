@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scmapp"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // One installation belongs to at most one tenant; every tenant read and

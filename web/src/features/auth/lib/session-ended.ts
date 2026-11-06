@@ -3,7 +3,7 @@
  * so instead of silently showing the form. Only these known values show a
  * message: a crafted link cannot put arbitrary text on the page.
  *
- * Design: api/docs/architecture/session-refresh.md
+ * Design: server/docs/architecture/session-refresh.md
  */
 
 export type SessionEndReason =

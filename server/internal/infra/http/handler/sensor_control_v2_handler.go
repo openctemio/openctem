@@ -22,20 +22,20 @@ import (
 	"strings"
 	"time"
 
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/suppression"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/suppression"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // SensorControlV2Handler serves the v2 control-plane routes. Any of its

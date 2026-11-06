@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SharedClaimer is the repository side of the shared claim path

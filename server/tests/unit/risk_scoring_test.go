@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // =============================================================================

@@ -1,7 +1,7 @@
 # Platform permission reference
 
 Generated from `pkg/domain/platformauthz` and `adminRoutePermissions`
-(`internal/infra/http/routes/admin_permissions.go`) by `make -C api platform-authz-docs`;
+(`internal/infra/http/routes/admin_permissions.go`) by `make -C server platform-authz-docs`;
 do not edit by hand. Design: RFC-134. These permissions exist only on the
 console; the tenant permission reference never lists them.
 

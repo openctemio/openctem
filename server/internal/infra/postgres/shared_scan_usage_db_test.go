@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
 )
 
 // Shared-sensor scans started today count one per run (a run's chunks

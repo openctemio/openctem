@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ownSelector has (or has not) one online tenant sensor that takes the job.

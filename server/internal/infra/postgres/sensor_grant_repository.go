@@ -8,8 +8,8 @@ import (
 
 	"github.com/lib/pq"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SensorGrantRepository persists per-sensor grants (sensor_grants,

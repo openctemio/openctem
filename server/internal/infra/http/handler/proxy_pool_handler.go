@@ -8,11 +8,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ProxyPoolHandler serves an organization's proxy pools for sensor scan

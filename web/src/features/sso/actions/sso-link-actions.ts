@@ -1,7 +1,7 @@
 /**
  * Link an organization's single sign-on to the signed-in account
  * (Account > Security, "Organization sign-in"). API design:
- * api/docs/architecture/sso-authentication.md, "Linking an existing account".
+ * server/docs/architecture/sso-authentication.md, "Linking an existing account".
  *
  * The start sends the proof typed in the confirm dialog to the API from the
  * server, with the session cookie. The API's one-time browser binding never

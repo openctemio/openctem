@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
 )
 
 // One-off (ad-hoc) scans exist so their runs have a scan to belong to (RFC-046

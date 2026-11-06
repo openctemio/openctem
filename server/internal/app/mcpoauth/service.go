@@ -18,13 +18,13 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/dpop"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/dpop"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // MembershipChecker reports whether a user is an active member of a tenant

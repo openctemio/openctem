@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func errorBody(t *testing.T, rec *httptest.ResponseRecorder) (code, message string) {

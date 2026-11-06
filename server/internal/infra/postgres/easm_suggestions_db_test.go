@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The suggestion card reads on the real schema: addresses that names resolve

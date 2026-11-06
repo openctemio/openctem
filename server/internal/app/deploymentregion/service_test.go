@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/consolesetting"
-	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
 )
 
 type orgs struct{ exist bool }

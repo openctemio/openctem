@@ -20,10 +20,10 @@ import (
 	"sync"
 	"time"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 // KeyResolver resolves a key thumbprint to its sensor identity

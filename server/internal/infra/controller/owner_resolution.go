@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // OwnerResolutionController periodically resolves asset ownership by matching

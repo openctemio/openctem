@@ -24,8 +24,8 @@ import (
 
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/vulnbundle"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
 // RelayFile is one file the relay is asked for. SHA256 and Size pin it when

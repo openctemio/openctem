@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/retestcheck"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	dom "github.com/openctemio/openctem/server/pkg/domain/retestcheck"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const okTemplate = `id: xss-search-check

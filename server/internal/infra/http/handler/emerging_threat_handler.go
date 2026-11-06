@@ -15,13 +15,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	threatalertapp "github.com/openctemio/openctem/api/internal/app/threatalert"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/threatalert"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	threatalertapp "github.com/openctemio/openctem/server/internal/app/threatalert"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // EmergingThreatHandler serves /api/v1/emerging-threats.

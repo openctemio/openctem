@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
 )
 
 // The router refuses to mount a prefix twice (it panicked at start, so the

@@ -1,7 +1,7 @@
 package ingest
 
 // Canonical vulnerability ids at ingest (RFC-043 §17.2).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 //
 // A finding that names only advisory ids (GHSA, OSV ecosystem ids) is keyed
 // on the CVE the signed feed ties them to, so a tool that reports
@@ -17,8 +17,8 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // VulnAliasResolver resolves advisory ids to the CVE the feed aliases them

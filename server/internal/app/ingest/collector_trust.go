@@ -11,8 +11,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // trustedCollector reports whether the sensor that submitted a report is a

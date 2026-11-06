@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/dnsprobe"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // scriptedDNS is a recursive resolver plus a set of authoritative servers,

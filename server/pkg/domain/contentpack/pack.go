@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Tier is how intrusive a pack's content is, the same scale as tool tiers:

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/server/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // fakeToolRepo satisfies tooldom.Repository via embedding; only the methods the

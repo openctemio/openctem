@@ -1,5 +1,5 @@
 /**
- * My Work's queues (research 229 §8.5, api/docs/architecture/my-work.md).
+ * My Work's queues (research 229 §8.5, server/docs/architecture/my-work.md).
  * Every queue is a view on the caller's own rows, read through an endpoint
  * that already applies the tenant and the caller's data scope:
  *

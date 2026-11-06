@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestpayload"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Finished jobs leave the queue after the cutoff, unfinished ones never;

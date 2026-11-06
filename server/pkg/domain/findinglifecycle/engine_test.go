@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 func allPermsActor(kind vulnerability.TransitionActorKind) Actor {

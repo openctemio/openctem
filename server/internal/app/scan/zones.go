@@ -8,15 +8,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // Scan-zone routing at trigger time (RFC-023 D4-D6, Phase 1). Design:

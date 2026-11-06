@@ -3,7 +3,7 @@ package sla
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A regression gets a fresh SLA deadline from the reopen (RFC-039 D2, owner

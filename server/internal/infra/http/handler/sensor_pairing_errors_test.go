@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The user-plane refusals of a re-pair reach the console as their own codes

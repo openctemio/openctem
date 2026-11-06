@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Platform content packs against a real schema (migration 001568):

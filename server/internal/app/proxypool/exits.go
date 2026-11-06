@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	pooldom "github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	pooldom "github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Kinds of scanner address.

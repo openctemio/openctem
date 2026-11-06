@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/adminapproval"
-	"github.com/openctemio/openctem/api/internal/app/platformemail"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
-	emaildom "github.com/openctemio/openctem/api/pkg/email"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/adminapproval"
+	"github.com/openctemio/openctem/server/internal/app/platformemail"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
+	emaildom "github.com/openctemio/openctem/server/pkg/email"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const stepUpPurposeEmailSettings = "platform e-mail settings change"

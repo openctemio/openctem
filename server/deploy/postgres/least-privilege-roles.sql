@@ -143,7 +143,7 @@ SELECT format('ALTER SCHEMA %I OWNER TO %I', nspname, :'migrator_user') FROM app
 SELECT format('GRANT USAGE ON SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
 SELECT format('REVOKE CREATE ON SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
 
--- The migration runner's two tables (api/internal/migrate), created ahead of
+-- The migration runner's two tables (server/internal/migrate), created ahead of
 -- the first migration on a fresh database (same definitions the runner uses)
 -- so they are the migrator's and the app only ever gets SELECT on them
 -- (section 5): a role that could write them could make the next migration run

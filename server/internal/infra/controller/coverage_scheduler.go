@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/scancoverage"
-	"github.com/openctemio/openctem/api/internal/app/tenablesc"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/scancoverage"
+	"github.com/openctemio/openctem/server/internal/app/tenablesc"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // CoverageScheduler is the live controller for RFC-007 license-aware rolling

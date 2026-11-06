@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const openVEXDoc = `{"@context":"https://openvex.dev/ns/v0.2.0","@id":"https://example.com/vex/1","author":"Security team",

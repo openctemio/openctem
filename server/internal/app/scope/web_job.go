@@ -15,10 +15,10 @@ import (
 	"slices"
 	"strings"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // WebScopeBuilder builds a web job's scope (*Service).

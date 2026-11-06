@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // recCeilings records tier-ceiling changes and whether save ran before or

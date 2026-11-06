@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/tools/lint/openapischema"
+	"github.com/openctemio/openctem/server/tools/lint/openapischema"
 )
 
 // Marker identifies the report, so CI updates its own pull request comment

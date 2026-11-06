@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assettech"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/assettech"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Technologies embedded in asset responses (docs/rfcs/RFC-112-asset-technologies.md):

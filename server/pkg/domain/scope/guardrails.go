@@ -21,11 +21,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Guardrail refusal codes.

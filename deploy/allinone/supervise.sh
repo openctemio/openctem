@@ -4,7 +4,7 @@
 # 1. migrations: `openctem-migrate up` once, before anything serves, under a
 #    non-blocking advisory lock (see migrate_locked).
 # 2. starts api, web, the platform console (unless OPENCTEM_ADMIN_SITE=off)
-#    and (GATEWAY=on) the gateway: api/deploy/gateway's own
+#    and (GATEWAY=on) the gateway: server/deploy/gateway's own
 #    entrypoint.sh + Caddyfile, upstreams pointed at 127.0.0.1; every output
 #    line is prefixed [api] / [web] / [gateway] on stdout/stderr.
 # 3. fail-fast: when ANY child exits, the others are stopped and the container
@@ -20,7 +20,7 @@
 #    to psql/migrate in PGPASSWORD, never on a command line. Started as a
 #    non-root uid (e.g. --user 1001, or a Kubernetes runAsNonRoot policy) every
 #    child shares that uid: one trust domain, fit for evaluation and small
-#    single-tenant installs only (api/docs/deployment/docker.md, "All-in-one
+#    single-tenant installs only (server/docs/deployment/docker.md, "All-in-one
 #    image: process isolation").
 set -euo pipefail
 
@@ -132,7 +132,7 @@ urldec() (
 )
 
 # The migrations' connection, schema owner first (D-6,
-# api/docs/deployment/database-roles.md): DATABASE_MIGRATE_URL, else
+# server/docs/deployment/database-roles.md): DATABASE_MIGRATE_URL, else
 # DB_MIGRATE_USER/DB_MIGRATE_PASSWORD, else (as before) the API's own DB_USER /
 # DATABASE_URL. Sets MIG_URL WITHOUT the password and MIG_PASS: psql and
 # migrate read the password from PGPASSWORD, so it never shows in ps or
@@ -187,7 +187,7 @@ migrate_locked() {
   done
   if [ "$got" != t ]; then log "could not take the migration lock"; return 1; fi
   log "migration lock held; applying migrations"
-  # openctem-migrate (api/cmd/openctem-migrate): applies every migration the
+  # openctem-migrate (server/cmd/openctem-migrate): applies every migration the
   # database has not applied.
   PGPASSWORD="$MIG_PASS" openctem-migrate -path /opt/openctem/api/migrations -database "$MIG_URL" up 2>&1 | prefix migrate || rc=$?
   fd="${PSQL[1]:-}"
@@ -303,7 +303,7 @@ if console_enabled; then
     ADMIN_API_URL="${ADMIN_API_URL:-http://${ADMIN_LISTEN_ADDR:-127.0.0.1:8080}}" node console/server.js
 fi
 if [ "$GATEWAY" = on ]; then
-  # api/deploy/gateway/entrypoint.sh: validates OPENCTEM_TLS_MODE and its
+  # server/deploy/gateway/entrypoint.sh: validates OPENCTEM_TLS_MODE and its
   # inputs, exports the internal CA root to $OPENCTEM_CA_EXPORT_DIR, then runs
   # Caddy with the shared Caddyfile (OPENCTEM_{API,WEB}_UPSTREAM = 127.0.0.1).
   start gateway /opt/openctem /bin/sh /etc/caddy/entrypoint.sh

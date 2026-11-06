@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestCategoryEventTypes(t *testing.T) {

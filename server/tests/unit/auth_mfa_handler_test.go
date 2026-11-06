@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/jwt"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/totp"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/jwt"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/totp"
 )
 
 func newMFAHandler(h *mfaHarness) *handler.LocalAuthHandler {

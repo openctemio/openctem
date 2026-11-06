@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // pollSensors calls GET /sensors in poll mode for the harness tenant.

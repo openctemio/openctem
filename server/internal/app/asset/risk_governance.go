@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"strings"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RiskContext is who edits and what they said; the HTTP handlers set it so the

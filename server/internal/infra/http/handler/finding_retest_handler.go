@@ -11,14 +11,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/pentest"
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/pentest"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // FindingRetestHandler serves "Retest now" and a finding's retest history

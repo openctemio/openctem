@@ -24,11 +24,11 @@ import (
 	"sync"
 	"time"
 
-	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	dashboardapp "github.com/openctemio/openctem/server/internal/app/dashboard"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Concurrency caps for widget reads (one dashboard read or one preview

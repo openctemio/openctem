@@ -27,17 +27,17 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type capturedNotifications struct {

@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
 )
 
 // CIAlertsInterval is how often the CI alert job runs. Pipelines go stale

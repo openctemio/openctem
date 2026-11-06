@@ -3,8 +3,8 @@ package threatmodel
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tmdom "github.com/openctemio/openctem/server/pkg/domain/threatmodel"
 )
 
 func fact(id shared.ID, assetID shared.ID, technique, status string, cwes ...string) tmdom.FindingFact {

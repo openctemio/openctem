@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type recordingSelector struct{ queries []scan.SelectorQuery }

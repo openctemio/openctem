@@ -32,7 +32,7 @@ var logsItself = regexp.MustCompile(`^(tenantEvent|adminEvent)$`)
 // action that already took effect, or return the error when the action must not
 // happen without its audit row.
 func TestNoDiscardedAuditWrite(t *testing.T) {
-	root := filepath.Join("..", "..", "..") // api/
+	root := filepath.Join("..", "..", "..") // server/
 	fset := token.NewFileSet()
 	var offenders []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {

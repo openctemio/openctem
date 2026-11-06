@@ -9,9 +9,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // LimitsRepository stores per-organization limits (tenant_limits), feature

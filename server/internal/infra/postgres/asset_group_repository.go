@@ -12,12 +12,12 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // AssetGroupRepository implements assetgroup.Repository using PostgreSQL.

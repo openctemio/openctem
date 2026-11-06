@@ -6,9 +6,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/assetcanon"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/assetcanon"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The CTIS 2.0 asset name migration (internal/app/assetcanon): a stored name

@@ -10,12 +10,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 func v2ProblemOf(t *testing.T, rec *httptest.ResponseRecorder) string {

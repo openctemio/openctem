@@ -4,13 +4,13 @@ import (
 	"net/http"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/scangov"
-	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/scangov"
+	"github.com/openctemio/openctem/server/internal/app/scanpolicy"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The scan approval settings through the real routes (RFC-073 §4): Off by

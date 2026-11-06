@@ -21,11 +21,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/easmalert"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/outbox"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/easmalert"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 const (

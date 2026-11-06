@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A failure's code is stored and read back by every reader of the row (the

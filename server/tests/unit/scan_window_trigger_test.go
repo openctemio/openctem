@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	swapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	scanservice "github.com/openctemio/openctem/server/internal/app/scan"
+	swapp "github.com/openctemio/openctem/server/internal/app/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
 )
 
 // Scan windows at trigger time (RFC-067 §6.2, §6.3), through the real scan

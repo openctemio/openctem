@@ -1,7 +1,7 @@
 package routes
 
 // Suppression rules under the approval policy
-// (api/docs/rfcs/RFC-111-approval-policy.md): a rule needs a reason code and
+// (server/docs/rfcs/RFC-111-approval-policy.md): a rule needs a reason code and
 // a note; its tier is that of the worst open finding it matches; asset
 // owners of matched findings never approve; security and dual tiers need
 // step-up; a dual rule needs two approvers; an edit voids earlier
@@ -17,15 +17,15 @@ import (
 
 	"github.com/google/uuid"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/suppression"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/suppression"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type rulePolicyHarness struct {

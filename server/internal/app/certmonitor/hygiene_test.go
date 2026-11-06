@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fakeTombs map[string]bool

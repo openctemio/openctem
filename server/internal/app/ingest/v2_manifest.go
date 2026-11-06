@@ -19,10 +19,10 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreport"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // maxManifestSegments is a hard ceiling on the segment count a manifest may

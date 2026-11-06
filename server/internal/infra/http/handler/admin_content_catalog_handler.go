@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	catalogapp "github.com/openctemio/openctem/server/internal/app/contentcatalog"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentcatalog"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AdminContentCatalogHandler serves /api/v1/admin/content-catalog: the

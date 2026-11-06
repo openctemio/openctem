@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
 )
 
 // Sign-up policy of verified SSO domains (docs/rfcs/RFC-104): what an

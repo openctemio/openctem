@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
 )
 
 // fakeHolderRepo answers only the two reads the privileged-grant guards use.

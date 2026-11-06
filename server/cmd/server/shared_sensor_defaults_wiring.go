@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/redis"
-	"github.com/openctemio/openctem/api/internal/infra/telemetry"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/redis"
+	"github.com/openctemio/openctem/server/internal/infra/telemetry"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // wireSharedSensorDefaults gives the platform scanning policy the

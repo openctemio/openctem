@@ -8,8 +8,8 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // WorkerConfig holds the configuration for the job worker.

@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/relay"
 )
 
 func selfSigned(t *testing.T, pub crypto.PublicKey, priv crypto.Signer, dns string) tls.Certificate {

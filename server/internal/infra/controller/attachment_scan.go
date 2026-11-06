@@ -5,12 +5,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AttachmentScanner scans pending attachments for malware
-// (api/docs/architecture/file-storage.md, "Malware scanning").
+// (server/docs/architecture/file-storage.md, "Malware scanning").
 type AttachmentScanner interface {
 	ScanPending(ctx context.Context) (int, error)
 }

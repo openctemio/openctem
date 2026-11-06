@@ -415,7 +415,7 @@ the run again. Remaining (P1.10):
 
 ## 9. Coverage-scoped auto-resolve (D1, B12)
 
-Shipped in dry-run: `api/internal/app/ingest/coverage_autoresolve.go`. A
+Shipped in dry-run: `server/internal/app/ingest/coverage_autoresolve.go`. A
 finding on asset A last seen by tool T under profile P resolves when a task of
 tool T, profile P, covered A fully (exit 0, every report completed with
 nothing rejected or quarantined, coverage `full`, the sensor declared T), and

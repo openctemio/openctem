@@ -6,15 +6,15 @@ import (
 	"net/http"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/internal/app/scanpolicy"
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/internal/app/scanpolicy"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A person's Confirm on the attack surface adds the asset's exact scope

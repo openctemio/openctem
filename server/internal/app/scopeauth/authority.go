@@ -27,11 +27,11 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Targets lists the tenant's active scope targets (*scope.Service).

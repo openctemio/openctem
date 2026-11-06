@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	savedviewapp "github.com/openctemio/openctem/server/internal/app/savedview"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type svResp struct {

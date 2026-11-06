@@ -11,7 +11,7 @@ import (
 	_ "image/png"  // DecodeConfig for PNG
 )
 
-// Image hygiene for uploaded evidence (api/docs/rfcs/RFC-084-file-storage.md):
+// Image hygiene for uploaded evidence (server/docs/rfcs/RFC-084-file-storage.md):
 // metadata that can identify a person or place (EXIF with GPS, XMP, IPTC,
 // comments, text chunks) is removed without touching the pixels, and an
 // image whose dimensions would decode to an oversized bitmap is refused.

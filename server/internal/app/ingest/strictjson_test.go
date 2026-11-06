@@ -9,7 +9,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // v2ValidReport is a minimal complete v2 segment.

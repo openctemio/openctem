@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // ReconciliationSettingsReader reads a tenant's settings for its

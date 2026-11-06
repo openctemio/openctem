@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func (h *dsHarness) assetState(id string) (criticality, description string, updatedAt string) {

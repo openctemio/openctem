@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
+	"github.com/openctemio/openctem/server/pkg/domain/platformauthz"
 )
 
 const (

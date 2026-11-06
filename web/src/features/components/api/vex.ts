@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The organization's VEX statements (api/docs/rfcs/RFC-070-software-components-inventory.md).
+ * The organization's VEX statements (server/docs/rfcs/RFC-070-software-components-inventory.md).
  * Reading needs components:read; writing needs findings:approve, and the API
  * also checks the caller's data scope (a statement for every asset needs
  * access to every asset).

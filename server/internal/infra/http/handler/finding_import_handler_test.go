@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/findingimport"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/findingimport"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type importIngester struct{ calls []ingest.Input }

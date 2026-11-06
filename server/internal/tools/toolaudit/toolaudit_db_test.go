@@ -6,11 +6,11 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/internal/tools/toolaudit"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/tools/toolaudit"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A run writes one audit row in each tenant it changed and none in a tenant it

@@ -8,8 +8,8 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
 )
 
 type fakePackageWriter struct {

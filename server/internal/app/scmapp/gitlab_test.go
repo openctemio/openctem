@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/scm/gitlabapi"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/scmapp"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fakeGitLab struct {

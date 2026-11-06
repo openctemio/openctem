@@ -1,6 +1,6 @@
 package audit
 
-// Compensating controls (api/docs/architecture/priority-explainability.md).
+// Compensating controls (server/docs/architecture/priority-explainability.md).
 // An effective control lowers the priority (and so the SLA) of every finding
 // on the assets it covers, so every change, test and link is recorded.
 

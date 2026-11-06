@@ -19,11 +19,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/vulnbundle"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeed"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
 // writeAliases writes the release's alias manifest and entries, signed by

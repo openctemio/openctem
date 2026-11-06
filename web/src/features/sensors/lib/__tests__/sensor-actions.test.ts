@@ -10,7 +10,7 @@ const offered = (status: string, perms: SensorActionPerms) => {
   return names.filter((n) => a[n])
 }
 
-// Pinned to api/internal/infra/http/routes/scanning.go: update, regenerate-key,
+// Pinned to server/internal/infra/http/routes/scanning.go: update, regenerate-key,
 // activate, deactivate need sensors:write; revoke needs sensors:write OR
 // sensors:revoke; delete needs sensors:delete. service.go refuses to activate a
 // revoked sensor.

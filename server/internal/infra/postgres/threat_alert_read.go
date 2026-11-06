@@ -17,8 +17,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/threatalert"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
 )
 
 // viewerCountsSQL counts the alert's assets in scope (alias vc); cond is

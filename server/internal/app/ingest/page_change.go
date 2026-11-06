@@ -10,8 +10,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PageChangeNotifier takes the web services (of one tenant) whose page

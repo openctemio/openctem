@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type ppScannerAddresses struct {

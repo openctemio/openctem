@@ -1,5 +1,5 @@
 // Package dashboardfact holds the types of the dashboard fact layer's
-// upkeep (api/docs/architecture/dashboards.md, "Facts maintainer"): the
+// upkeep (server/docs/architecture/dashboards.md, "Facts maintainer"): the
 // dirty-queue batches, the per-tenant full runs and the tenant's fact status.
 package dashboardfact
 
@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RunKind is why a tenant's facts are being rebuilt in full.

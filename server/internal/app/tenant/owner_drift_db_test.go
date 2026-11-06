@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type driftStepUp struct{ err error }

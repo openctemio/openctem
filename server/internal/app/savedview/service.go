@@ -26,13 +26,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/savedview"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/savedview"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AuditLogger records view changes.

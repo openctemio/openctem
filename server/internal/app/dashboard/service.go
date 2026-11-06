@@ -19,14 +19,14 @@ import (
 	"fmt"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	domain "github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	domain "github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AuditLogger records dashboard changes.

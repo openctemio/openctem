@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // tenantTools is a tool registry in which each tool belongs to one tenant:

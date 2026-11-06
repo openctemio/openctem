@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // FieldRejectedError is a 400 from Jira that names the fields it refused

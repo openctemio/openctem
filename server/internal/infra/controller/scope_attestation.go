@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
 )
 
 // ScopeAttestationReconciler runs the t2 attestation job (*scope.Service).

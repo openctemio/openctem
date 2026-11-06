@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/openctemio/openctem/api/internal/app/contentsource"
-	"github.com/openctemio/openctem/api/internal/infra/fetchers"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentsource"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	app "github.com/openctemio/openctem/server/internal/app/contentsource"
+	"github.com/openctemio/openctem/server/internal/infra/fetchers"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
 )
 
 // With every fetch slot taken, Test answers busy (503) and the sync worker

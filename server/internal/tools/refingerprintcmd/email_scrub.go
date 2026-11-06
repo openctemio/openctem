@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/tools/toolaudit"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/tools/toolaudit"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // emailScrubTenants resolves the tenants of -mask-emails: the -tenant list

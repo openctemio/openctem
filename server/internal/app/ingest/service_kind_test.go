@@ -6,9 +6,9 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 func boundReport(capRef string) *ctis.Report {

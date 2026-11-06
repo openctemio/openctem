@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type groupLinksGate map[shared.ID]bool

@@ -3,11 +3,11 @@ package main
 import (
 	"path/filepath"
 
-	"github.com/openctemio/openctem/api/internal/tools/assetcanoncmd"
-	"github.com/openctemio/openctem/api/internal/tools/bootstrapadmin"
-	"github.com/openctemio/openctem/api/internal/tools/citrustscopeplan"
-	"github.com/openctemio/openctem/api/internal/tools/refingerprintcmd"
-	"github.com/openctemio/openctem/api/internal/tools/repomerge"
+	"github.com/openctemio/openctem/server/internal/tools/assetcanoncmd"
+	"github.com/openctemio/openctem/server/internal/tools/bootstrapadmin"
+	"github.com/openctemio/openctem/server/internal/tools/citrustscopeplan"
+	"github.com/openctemio/openctem/server/internal/tools/refingerprintcmd"
+	"github.com/openctemio/openctem/server/internal/tools/repomerge"
 )
 
 // The operator commands of the API image are links to this binary, so the

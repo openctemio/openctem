@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	"github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 func newKeyBindHarness(t *testing.T) *ctlHarness {

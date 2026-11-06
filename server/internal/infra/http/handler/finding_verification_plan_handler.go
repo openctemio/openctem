@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 )
 
 // FindingVerificationPlanResponse is the body of GET /findings/{id}/verification.

@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The four-eyes refusals answer 403/409/404, never 500.

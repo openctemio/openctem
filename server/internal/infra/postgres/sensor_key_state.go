@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // A sensor has up to two kinds of credential: the inline key on the sensors

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Provenance is what every change an AI agent makes carries: which AI agent,

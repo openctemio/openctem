@@ -31,7 +31,7 @@ import (
 //
 // registryFile is named in every failure so whoever added or removed a route
 // knows what to edit.
-const registryFile = "api/tests/unit/route_scope_classification_test.go (dataSurfaceRegistry)"
+const registryFile = "server/tests/unit/route_scope_classification_test.go (dataSurfaceRegistry)"
 
 type dataScopeClass string
 

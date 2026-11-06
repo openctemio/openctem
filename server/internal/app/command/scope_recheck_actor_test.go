@@ -7,11 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type recordingGate struct {

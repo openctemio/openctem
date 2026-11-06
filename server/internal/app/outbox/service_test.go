@@ -10,11 +10,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The alert reads a counter: dead entries are archived and removed at once,

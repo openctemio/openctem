@@ -6,10 +6,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A takeover check step runs nuclei with only its takeover templates, as a

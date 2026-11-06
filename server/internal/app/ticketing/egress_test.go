@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	pentestdom "github.com/openctemio/openctem/server/pkg/domain/pentest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 type fakeLimit struct {

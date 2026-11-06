@@ -21,9 +21,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/internal/app/contentpack"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/internal/app/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // Sources is sources.yaml: what the packs are built from.

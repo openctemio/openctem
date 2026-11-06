@@ -24,10 +24,10 @@ import (
 	"fmt"
 	"slices"
 
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // ErrCodeRunNotAuthorized is the step error code when the run's principal

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ValidateToolReferences refuses a workflow whose steps cannot be planned at

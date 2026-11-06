@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Edge is how the public gateway (api/deploy/gateway) treats a path.
+// Edge is how the public gateway (server/deploy/gateway) treats a path.
 type Edge string
 
 const (
@@ -23,7 +23,7 @@ const (
 )
 
 // PlaneEdges is the edge treatment of each plane. The gateway configuration
-// (api/deploy/gateway/planes.caddy) is generated from this table and Rules,
+// (server/deploy/gateway/planes.caddy) is generated from this table and Rules,
 // so the edge and the route table cannot drift.
 var PlaneEdges = map[Plane]Edge{
 	User:    EdgeWeb,
@@ -79,7 +79,7 @@ type edgeEntry struct {
 	why    string
 }
 
-// GatewayPlanesFile renders api/deploy/gateway/planes.caddy: one Caddy
+// GatewayPlanesFile renders server/deploy/gateway/planes.caddy: one Caddy
 // matcher per plane that the gateway sends straight to the API, and one for
 // the paths it never serves. Everything else is a browser plane and falls
 // through to the Caddyfile's credential rules and the web app.
@@ -137,9 +137,9 @@ func GatewayPlanesFile() (string, error) {
 	}
 
 	var b strings.Builder
-	b.WriteString(`# Code generated from api/internal/infra/http/routes/plane (plane.go, edge.go).
+	b.WriteString(`# Code generated from server/internal/infra/http/routes/plane (plane.go, edge.go).
 # DO NOT EDIT. Regenerate with:
-#   cd api && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile
+#   cd server && UPDATE_GATEWAY_PLANES=1 go test ./internal/infra/http/routes/plane/ -run TestGatewayPlanesFile
 # CI fails when this file and the plane table disagree.
 #
 # The gateway routes by plane, from the same table the route-style lint checks

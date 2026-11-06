@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // RFC-011.2 Phase 2b — routing a finding to the `nuclei` re-verify executor.

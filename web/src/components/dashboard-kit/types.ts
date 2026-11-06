@@ -1,7 +1,7 @@
 /**
  * The result shapes a dashboard widget renders, and the states it can be in.
  * Design: research note 203 (§5.2 result shapes, §9 states), described in
- * api/docs/architecture/dashboards.md ("Widget kit").
+ * server/docs/architecture/dashboards.md ("Widget kit").
  *
  * A widget's data is one of these shapes; any visualization valid for the
  * shape can draw it. Null always means "not measured" and is never drawn as 0.

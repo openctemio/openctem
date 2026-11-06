@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 func TestMigrationFindingsDuplicateOfIndex(t *testing.T) {

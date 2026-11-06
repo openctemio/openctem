@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 type pinsRecorder struct {

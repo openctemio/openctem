@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketlink"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Duplicate-proof issue creation (research 220 P0-8,

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 // Malicious packs: code-class blocks, workflows that reach outside the

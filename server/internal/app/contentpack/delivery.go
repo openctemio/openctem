@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Delivery scopes, as the sensor's cache names them.

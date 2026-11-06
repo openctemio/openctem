@@ -2,7 +2,7 @@ package asset
 
 // The property schema (RFC-042 §6.3.9, docs/rfcs/RFC-042-asset-inventory-v2.md).
 //
-// api/configs/asset-types.yaml declares every property key once: its labels,
+// server/configs/asset-types.yaml declares every property key once: its labels,
 // display format, the synonym keys scanners and older code wrote for it and,
 // for a key like `port`, the only classes whose assets may hold it. The data
 // is generated into registry_generated.go; this file holds the lookups.

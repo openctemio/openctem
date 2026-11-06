@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	freshdom "github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // evidence answers fixed observations per tenant and name.

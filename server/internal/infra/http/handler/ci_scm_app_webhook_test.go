@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scmappsvc "github.com/openctemio/openctem/server/internal/app/scmapp"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakeSCMAppWebhook struct {

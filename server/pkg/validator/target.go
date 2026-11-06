@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // TargetType represents the type of scan target.

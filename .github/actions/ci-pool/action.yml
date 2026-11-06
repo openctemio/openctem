@@ -16,7 +16,7 @@
 # The output only offers a pool. The runs-on expressions (approved and checked
 # by .github/scripts/check-runners.sh) decide where it may be used: never a pull
 # request from a fork, and the CI_RUNNER_* variables override it.
-# Doc: api/docs/development/ci-cd.md, "Runner pools".
+# Doc: server/docs/development/ci-cd.md, "Runner pools".
 name: CI pool
 description: Choose the self-hosted or hosted pool for this run from github.run_id and CI_SELFHOSTED_SHARE.
 inputs:

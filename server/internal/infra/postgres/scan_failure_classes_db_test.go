@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // research/62 SG-9: a run that failed at queue time (no tool, incompatible

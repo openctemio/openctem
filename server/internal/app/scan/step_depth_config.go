@@ -1,6 +1,6 @@
 package scan
 
-import "github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+import "github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
 
 // StepAtDepth is the step as it runs at depth: its config with the depth's
 // overlay merged over it. The step itself is not changed: the result is a

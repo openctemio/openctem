@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // Paths of the signer API (internal/signer).

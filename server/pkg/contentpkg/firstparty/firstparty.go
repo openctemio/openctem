@@ -3,7 +3,7 @@
 // sensor product catalog and the platform feeds. It only describes what
 // already exists; delivery does not change.
 //
-// Design: api/docs/rfcs/RFC-099-content-packages.md §6.
+// Design: server/docs/rfcs/RFC-099-content-packages.md §6.
 package firstparty
 
 import (
@@ -12,8 +12,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/internal/versions"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
 )
 
 // GitHubIssuer is the OIDC issuer of the release workflows' keyless

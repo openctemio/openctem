@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 type fakeGate struct{ err error }

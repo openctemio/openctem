@@ -8,7 +8,7 @@ package auth
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/signupevent"
+	"github.com/openctemio/openctem/server/pkg/domain/signupevent"
 )
 
 // SetSignupRecorder wires the sign-up event recorder.

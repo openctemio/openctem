@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
-# tag-release.sh: tag a merged release (api/docs/rfcs/RFC-037 §4.2).
+# tag-release.sh: tag a merged release (server/docs/rfcs/RFC-037 §4.2).
 #
 #   tag-release.sh --version vX.Y.Z --commit SHA --release-head SHA [--push]
 #                  [--remote origin] [--main main] [--repo DIR]
@@ -11,7 +11,7 @@
 # Refuses unless: the version is vX.Y.Z and greater than every existing
 # release tag, the tag does not exist (locally or on the remote), the commit
 # is on main, the commit's tree is exactly the release branch's tree (what
-# CI tested is what gets the tag), and its api/deploy/VERSION says vX.Y.Z (the
+# CI tested is what gets the tag), and its server/deploy/VERSION says vX.Y.Z (the
 # tag's checkout installs its own version). Then creates an annotated tag and, with
 # --push, pushes only that tag.
 set -euo pipefail

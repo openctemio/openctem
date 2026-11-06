@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/internal/app/template"
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/internal/app/template"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Poll hands a sensor its scan commands with the custom templates sealed in

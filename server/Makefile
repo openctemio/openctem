@@ -176,6 +176,11 @@ swagger: swagger-install
 	@# The list query params come from the field registries (RFC-048).
 	@GOWORK=off go run ./tools/gen/filterparams
 	@GOWORK=off $(SWAG) init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency
+	@# swag names definitions after the Go package path. The published names keep
+	@# the module's pre-rename spelling (openctem/api), so the backend directory
+	@# rename to server/ changed no schema name of the contract. The Dockerfile
+	@# does the same.
+	@perl -pi -e 's/github_com_openctemio_openctem_server_/github_com_openctemio_openctem_api_/g' api/openapi/swagger.yaml
 	@echo "Swagger docs generated in api/openapi/"
 
 ## contract: Generate every contract file derived from the Go source. None of
@@ -249,9 +254,9 @@ docker-dev-d:
 	@echo "Starting development environment (detached)..."
 	docker compose -f $(COMPOSE_BASE) -f $(COMPOSE_DEV) up -d --build
 
-## docker-prod: Production runs from api/deploy (one HTTPS port): see its docker-compose.yml
+## docker-prod: Production runs from server/deploy (one HTTPS port): see its docker-compose.yml
 docker-prod:
-	@echo "Production deployment, from the repository root: cd api/deploy && cp .env.example .env && docker compose up -d"
+	@echo "Production deployment, from the repository root: cd server/deploy && cp .env.example .env && docker compose up -d"
 
 ## docker-down: Stop all Docker Compose services
 docker-down:
@@ -428,8 +433,8 @@ asset-types-sql:
 asset-types-check:
 	@GOWORK=off $(GOCMD) run ./cmd/gen-asset-types -check
 
-## proto: Regenerate the sensor protocol v3 Go code (api/pkg/sensorproto/v3)
-##        from api/proto with pinned buf and plugins (commit the result)
+## proto: Regenerate the sensor protocol v3 Go code (server/pkg/sensorproto/v3)
+##        from server/proto with pinned buf and plugins (commit the result)
 proto:
 	@bash scripts/check-proto.sh --generate
 
@@ -463,7 +468,7 @@ install-tools:
 
 # Commit-time hooks are the repository's .githooks/ (root Makefile: `make hooks`).
 # `pre-commit install` refuses to run while core.hooksPath is set, and would
-# expect a .pre-commit-config.yaml at the repository root; the config in api/
+# expect a .pre-commit-config.yaml at the repository root; the config in server/
 # runs on demand with `make pre-commit-run`.
 ## pre-commit-install: Install the security tools and enable the repository git hooks (.githooks)
 pre-commit-install:

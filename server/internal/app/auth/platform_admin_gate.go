@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // BreakGlassGate answers whether a users-table account is linked to a

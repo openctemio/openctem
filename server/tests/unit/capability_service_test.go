@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	capabilitysvc "github.com/openctemio/openctem/api/internal/app/capability"
-	"github.com/openctemio/openctem/api/pkg/domain/capability"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	capabilitysvc "github.com/openctemio/openctem/server/internal/app/capability"
+	"github.com/openctemio/openctem/server/pkg/domain/capability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // ============================================================================

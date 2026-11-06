@@ -6,10 +6,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	aitriagedom "github.com/openctemio/openctem/server/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakeProposer struct {

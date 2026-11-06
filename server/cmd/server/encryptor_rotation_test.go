@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // With APP_ENCRYPTION_KEY_PREVIOUS set the server encrypts with the new key

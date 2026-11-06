@@ -3,18 +3,18 @@ package main
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/adminapproval"
-	"github.com/openctemio/openctem/api/internal/app/consolesetting"
-	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
-	"github.com/openctemio/openctem/api/internal/app/platformai"
-	"github.com/openctemio/openctem/api/internal/app/platformalert"
-	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
-	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
-	"github.com/openctemio/openctem/api/internal/app/systemstatus"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/llm"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/adminapproval"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	"github.com/openctemio/openctem/server/internal/app/deploymentregion"
+	"github.com/openctemio/openctem/server/internal/app/platformai"
+	"github.com/openctemio/openctem/server/internal/app/platformalert"
+	"github.com/openctemio/openctem/server/internal/app/platformcaptcha"
+	"github.com/openctemio/openctem/server/internal/app/platformsociallogin"
+	"github.com/openctemio/openctem/server/internal/app/systemstatus"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/llm"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // initConsoleSettings builds the settings that moved from the environment

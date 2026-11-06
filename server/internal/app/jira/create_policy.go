@@ -12,13 +12,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/ticketing"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/ticketing"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // holdRetryAfter is how long a failed create waits before the next try.

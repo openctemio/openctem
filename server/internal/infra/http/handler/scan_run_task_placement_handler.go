@@ -15,11 +15,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	commandapp "github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commandapp "github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // taskPlacementExplainer explains a run task's placement

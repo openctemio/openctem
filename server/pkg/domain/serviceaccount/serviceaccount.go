@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // EmailDomain is the unroutable domain of a service account's synthetic

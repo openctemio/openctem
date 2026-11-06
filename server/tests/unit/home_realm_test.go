@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/pkg/domain/orgtrust"
-	"github.com/openctemio/openctem/api/pkg/domain/session"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/pkg/domain/orgtrust"
+	"github.com/openctemio/openctem/server/pkg/domain/session"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // Home-realm sign-in (RFC-058): an external member of host A whose home is B

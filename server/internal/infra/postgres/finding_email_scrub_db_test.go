@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 
-	"github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PRIVACY (research/292): the scrub masks the addresses left in one tenant's

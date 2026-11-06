@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The expiration checker reads expired rows (FindExpired) and later writes each

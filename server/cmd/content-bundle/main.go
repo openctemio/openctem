@@ -1,9 +1,9 @@
 // Command content-bundle creates the catalog keys and builds the signed
-// first-party content bundle (api/docs/rfcs/RFC-099-content-packages.md).
+// first-party content bundle (server/docs/rfcs/RFC-099-content-packages.md).
 // It runs where the catalog keys are (an offline machine for the root, the
 // release pipeline for the online key); an instance only verifies.
 //
-// Usage (from api/):
+// Usage (from server/):
 //
 //	go run ./cmd/content-bundle keygen -out root.key
 //	go run ./cmd/content-bundle keyset -root root.key -online <public key hex>[,<hex>] -version 1 -days 365 -out keyset.dsse.json
@@ -29,10 +29,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/versions"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	"github.com/openctemio/openctem/api/pkg/contentpkg/firstparty"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	"github.com/openctemio/openctem/server/pkg/contentpkg/firstparty"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 func main() {

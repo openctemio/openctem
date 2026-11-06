@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	appjira "github.com/openctemio/openctem/api/internal/app/jira"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
+	appjira "github.com/openctemio/openctem/server/internal/app/jira"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketmap"
 )
 
 // fakeJira serves the create metadata of project SEC: Security Finding

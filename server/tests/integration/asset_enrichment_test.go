@@ -12,15 +12,15 @@ import (
 	"testing"
 	"time"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	freshapp "github.com/openctemio/openctem/api/internal/app/assetfreshness"
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	freshapp "github.com/openctemio/openctem/server/internal/app/assetfreshness"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func seedTypedAsset(t *testing.T, db *sql.DB, tenantID shared.ID, name, typ string) shared.ID {

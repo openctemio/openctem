@@ -3,8 +3,8 @@ package handler
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // unrestrictedRepo is a data-scope repository that is never asked: an owner

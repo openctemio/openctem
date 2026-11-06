@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The registry is generated from api/configs/asset-types.yaml; these tests
+// The registry is generated from server/configs/asset-types.yaml; these tests
 // hold the generated data to the RFC-042 §6.3 contract independently of the
 // generator's own validation.
 

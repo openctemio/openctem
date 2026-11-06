@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/password"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/password"
 )
 
 // ResendVerificationCooldown is the least time between two verification

@@ -8,9 +8,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboardfact"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboardfact"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fakeFactQueue struct {

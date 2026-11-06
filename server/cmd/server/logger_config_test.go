@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // LOG_LEVEL / LOG_FORMAT must apply outside APP_ENV=production too; they were

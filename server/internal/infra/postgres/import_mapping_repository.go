@@ -9,9 +9,9 @@ import (
 
 	"github.com/lib/pq"
 
-	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
-	"github.com/openctemio/openctem/api/pkg/domain/importmapping"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	appimportmapping "github.com/openctemio/openctem/server/internal/app/importmapping"
+	"github.com/openctemio/openctem/server/pkg/domain/importmapping"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ImportMappingRepository stores import mappings and their versions

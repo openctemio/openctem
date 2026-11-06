@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The one-time repair: a closed finding with no close date takes the time of

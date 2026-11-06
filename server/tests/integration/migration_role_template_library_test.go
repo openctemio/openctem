@@ -18,8 +18,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 func TestMigrationRoleTemplateLibrary(t *testing.T) {

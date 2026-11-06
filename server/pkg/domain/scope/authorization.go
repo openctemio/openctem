@@ -8,7 +8,7 @@ package scope
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AuthorizationSource is why a scope entry authorizes probes.

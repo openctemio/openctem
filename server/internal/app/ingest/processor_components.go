@@ -1,7 +1,7 @@
 package ingest
 
 // SBOM dependencies of a CTIS report into the software catalog. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md.
+// server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"context"
@@ -9,12 +9,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/licensepolicy"
+	"github.com/openctemio/openctem/server/internal/app/licensepolicy"
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
 )
 
 // ComponentProcessor writes the dependencies of a report as package

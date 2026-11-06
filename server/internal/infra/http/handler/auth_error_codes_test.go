@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Every refusal in the table has its own code, is a client error (the one 503

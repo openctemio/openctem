@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/mcpoauth"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	mcpoauthdom "github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/mcpoauth"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	mcpoauthdom "github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // fullRoles says who holds a full-data role (a custom role such as a global

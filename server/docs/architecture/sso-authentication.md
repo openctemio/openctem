@@ -143,7 +143,7 @@ The claim is therefore **one organization per domain, platform-wide**
   private-section suffix (`alice.github.io`, `x.vercel.app`); free consumer
   mailbox providers (a maintained list); and disposable-address services (the
   public-domain disposable-email-domains list, embedded at build time and
-  refreshed with `api/scripts/update-disposable-domains.sh`).
+  refreshed with `server/scripts/update-disposable-domains.sh`).
 - **Rows that predate exclusivity.** Migration 001303 does not drop anyone's
   access: when two or more organizations had the same domain verified for SSO,
   every such row is flagged `claim_conflict` and keeps working. The admin

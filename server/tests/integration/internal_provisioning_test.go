@@ -16,13 +16,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/entitlement"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/entitlement"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func TestControlPlaneProvisioningAndSource(t *testing.T) {

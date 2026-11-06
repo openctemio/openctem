@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 const (

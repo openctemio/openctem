@@ -2,7 +2,7 @@
  * Charter schema/converter tests.
  *
  * The converters are the contract with the API charter JSONB
- * (api/pkg/domain/ctemcycle/entity.go): they must round-trip cleanly and drop
+ * (server/pkg/domain/ctemcycle/entity.go): they must round-trip cleanly and drop
  * empty rows so a stored charter never carries blanks.
  */
 

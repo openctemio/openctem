@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
 )
 
 // The roster notice describes role, state and break-glass changes; a name

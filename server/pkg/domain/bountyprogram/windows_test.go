@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestTestingWindow_Validate(t *testing.T) {

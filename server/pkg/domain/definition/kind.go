@@ -2,7 +2,7 @@
 // general, independent of where it was found. A finding is one occurrence of
 // one or more definitions.
 //
-// Design: https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-044-issue-definitions-and-findings.md
+// Design: https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-044-issue-definitions-and-findings.md
 //
 // Definitions live in the vulnerabilities table, extended in place (every
 // existing CVE row keeps its id). The vulnerability package keeps serving the

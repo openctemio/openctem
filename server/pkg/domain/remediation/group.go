@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // KeyInput carries the finding signals used to derive a remediation group key.

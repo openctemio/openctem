@@ -24,12 +24,12 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
-	"github.com/openctemio/openctem/api/internal/signer"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	signerclient "github.com/openctemio/openctem/server/internal/infra/signer"
+	"github.com/openctemio/openctem/server/internal/signer"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
 )
 
 // wireCommand keeps the exact bytes of payload and signed_job as the

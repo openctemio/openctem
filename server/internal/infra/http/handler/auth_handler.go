@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AuthHandler handles authentication requests.

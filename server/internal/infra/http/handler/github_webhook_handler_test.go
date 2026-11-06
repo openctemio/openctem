@@ -15,10 +15,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/internal/app/ticketing"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/internal/app/ticketing"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // fakeGitHubIntegration is one GitHub integration as the verifier sees it.

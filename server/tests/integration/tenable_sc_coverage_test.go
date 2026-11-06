@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"testing"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/app/scancoverage"
-	"github.com/openctemio/openctem/api/internal/app/tenablesc"
-	"github.com/openctemio/openctem/api/internal/infra/controller"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/app/scancoverage"
+	"github.com/openctemio/openctem/server/internal/app/tenablesc"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // coverageDispatcher is cmd/server's connectorCoverageDispatcher.

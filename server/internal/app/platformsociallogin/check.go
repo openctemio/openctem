@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // Result is the outcome of a configuration check.

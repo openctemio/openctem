@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/internal/app/threat"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 )
 
 func bundleKEV(n int) []*threatintel.KEVEntry {

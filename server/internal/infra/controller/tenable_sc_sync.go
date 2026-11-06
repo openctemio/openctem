@@ -8,8 +8,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // TenableSCIntegrationLister lists integrations across tenants (the scheduler

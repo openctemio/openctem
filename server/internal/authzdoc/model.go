@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // RoleInfo is a built-in role or a role template, as the reference shows it.

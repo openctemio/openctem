@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The claim's grant gate withholds a connector command the sensor's grant

@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 
-	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
+	remediationapp "github.com/openctemio/openctem/server/internal/app/remediation"
 )
 
 // OwnerCandidateResponse is one person or team the owner picker offers. It

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/certmonitor"
+	"github.com/openctemio/openctem/server/internal/app/certmonitor"
 )
 
 // The CT sweep's rotation record round-trips through ct_monitor_state, an

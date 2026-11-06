@@ -3,8 +3,8 @@ package scan
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // A wildcard-only name is refused with its own code, a message and the

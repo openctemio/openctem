@@ -1,6 +1,6 @@
 /**
  * The one derived monitoring state of an asset (API `monitoring_state`, see
- * api/docs/architecture/exposure-taxonomy.md): where the asset stands in the
+ * server/docs/architecture/exposure-taxonomy.md): where the asset stands in the
  * external attack surface lifecycle. In the API's precedence order.
  */
 import type { Tone } from '@/components/ui/tone-chip'

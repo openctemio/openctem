@@ -3,8 +3,8 @@ package postgres
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // limitChecks is embedded by the repositories whose inserts count against an

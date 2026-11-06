@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SAMLCertExpirySweeper alerts owners about expiring SAML IdP certificates.

@@ -1089,7 +1089,7 @@ flowchart TD
   network names, provider host suffixes; versioned built-in dataset). The
   suggestion cards, review rules and guardrails read the same classifier.
   The ranges are the providers' own published lists, rebuilt by a maintainer
-  with `api/scripts/edgeaddr-dataset.py` (the platform never downloads them at
+  with `server/scripts/edgeaddr-dataset.py` (the platform never downloads them at
   run time): Amazon CloudFront, Azure Front Door, Cloudflare, Fastly, Gcore,
   bunny.net, Imperva and Sucuri edges (`edge`); Amazon S3 and API Gateway front
   ends and Google's own front ends (`cloud_shared`); AWS Global Accelerator

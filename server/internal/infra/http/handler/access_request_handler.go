@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/accessrequest"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	ardom "github.com/openctemio/openctem/api/pkg/domain/accessrequest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/app/accessrequest"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	ardom "github.com/openctemio/openctem/server/pkg/domain/accessrequest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // AccessRequestHandler serves the request-access queue: the public form and

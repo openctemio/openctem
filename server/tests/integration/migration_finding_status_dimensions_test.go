@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 const dimMigTenant = "77777777-7777-4777-8777-777777777777"

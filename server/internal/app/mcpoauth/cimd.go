@@ -13,9 +13,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // Client ID Metadata Document fetch bounds (draft-ietf-oauth-client-id-

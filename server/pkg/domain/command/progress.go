@@ -16,7 +16,7 @@ package command
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Progress is one command's progress as a heartbeat reports it, untrusted.

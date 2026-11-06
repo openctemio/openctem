@@ -21,7 +21,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	cpsigstore "github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
+	cpsigstore "github.com/openctemio/openctem/server/pkg/contentpkg/sigstore"
 )
 
 // Workflow identities the real publisher has, and ones it does not.

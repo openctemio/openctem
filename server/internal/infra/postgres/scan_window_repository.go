@@ -14,8 +14,8 @@ import (
 
 	"github.com/lib/pq"
 
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ScanWindowPolicyRepository implements scanwindow.Repository.

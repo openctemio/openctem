@@ -14,15 +14,15 @@ import (
 	"testing"
 	"time"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // scopeSettingsFake answers each tenant's scope settings.

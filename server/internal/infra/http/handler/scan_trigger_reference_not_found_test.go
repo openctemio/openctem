@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A trigger whose scan was found but whose workflow, or a reference of a

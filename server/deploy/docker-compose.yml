@@ -56,7 +56,7 @@ services:
     logging: *default-logging
 
   # The gateway image: Caddy with the standard and layer4 modules, built with
-  # the release's Go toolchain (api/deploy/gateway/Dockerfile). Runs as uid
+  # the release's Go toolchain (server/deploy/gateway/Dockerfile). Runs as uid
   # 1000; binds 443 (and 80 with the redirect overlay) as non-root through
   # the namespaced sysctl below, so no-new-privileges stays on and it holds
   # no capability.

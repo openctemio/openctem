@@ -259,15 +259,15 @@ and vi).
 
 ## Key files
 
-- `api/migrations/003308_ingest_receipts.up.sql`
-- `api/pkg/domain/ingestreceipt/receipt.go`
-- `api/internal/infra/postgres/ingest_receipt_repository.go`
-- `api/internal/infra/postgres/finding_absence_receipt.go`
-- `api/internal/app/ingest/receipt.go`, `coverage_autoresolve.go`
-- `api/internal/app/findingimport/service.go`
-- `api/internal/infra/controller/ingest_receipt_retention.go`
-- `api/internal/infra/http/handler/ingest_receipt_handler.go`, `finding_import_idempotency.go`
-- `api/internal/infra/postgres/ingest_receipt_read.go`, `idempotency_key_repository.go`
+- `server/migrations/003308_ingest_receipts.up.sql`
+- `server/pkg/domain/ingestreceipt/receipt.go`
+- `server/internal/infra/postgres/ingest_receipt_repository.go`
+- `server/internal/infra/postgres/finding_absence_receipt.go`
+- `server/internal/app/ingest/receipt.go`, `coverage_autoresolve.go`
+- `server/internal/app/findingimport/service.go`
+- `server/internal/infra/controller/ingest_receipt_retention.go`
+- `server/internal/infra/http/handler/ingest_receipt_handler.go`, `finding_import_idempotency.go`
+- `server/internal/infra/postgres/ingest_receipt_read.go`, `idempotency_key_repository.go`
 
 ## Tests
 

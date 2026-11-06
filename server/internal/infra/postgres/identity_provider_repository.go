@@ -10,7 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/identityprovider"
 )
 
 // IdentityProviderRepository implements identityprovider.Repository.

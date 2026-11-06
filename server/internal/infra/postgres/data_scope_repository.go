@@ -8,10 +8,10 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // DataScopeRepository answers the Layer 2 data-scope questions over

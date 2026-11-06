@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/openctemio/openctem/api/internal/app/contentsource"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentsource"
+	app "github.com/openctemio/openctem/server/internal/app/contentsource"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentsource"
 )
 
 // SECURITY: every member who changed the configuration a snapshot was

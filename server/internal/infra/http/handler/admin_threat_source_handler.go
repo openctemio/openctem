@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/internal/app/threatsource"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/app/threat"
+	"github.com/openctemio/openctem/server/internal/app/threatsource"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 )
 
 // ThreatIntelReadiness reports the signed release's state per feed

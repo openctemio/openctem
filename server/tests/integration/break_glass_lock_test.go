@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 // Migration 20261029050639: the two break-glass triggers share one lock per account,

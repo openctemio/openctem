@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The groups endpoint accepts exactly the dimensions the repository groups by.

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type stubViewSettings struct {

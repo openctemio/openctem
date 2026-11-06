@@ -7,10 +7,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestScopeDryRun(t *testing.T) {

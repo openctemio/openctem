@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	automationsvc "github.com/openctemio/openctem/server/internal/app/automation"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A run that lists several discovered assets, or reports a finished scan, is

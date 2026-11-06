@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // letterContext is the attachment context of an authorization letter's

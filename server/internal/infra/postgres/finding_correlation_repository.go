@@ -17,9 +17,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/pkg/domain/correlation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/pkg/domain/correlation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ResolutionCorrelated marks a duplicate made by correlation.

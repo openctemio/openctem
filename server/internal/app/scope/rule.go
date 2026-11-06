@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
 
-	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/openctem/api/pkg/domain/group"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/server/pkg/domain/group"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // RuleBroadcaster broadcasts scope rule membership change events via WebSocket.

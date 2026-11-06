@@ -15,10 +15,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/releasefeed"
 )
 
 // Origins of the applied feed.

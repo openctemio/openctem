@@ -3,7 +3,7 @@ package scanrun
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RecentRun is one of a scan's latest runs as the scan list shows it: a dot

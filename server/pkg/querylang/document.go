@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // DocumentVersion is the query document version: a filterspec

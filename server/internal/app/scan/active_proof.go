@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ProofVerifier lists the targets that are not at or under a verified

@@ -10,8 +10,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // anyMember admits every user (tests that are not about membership).

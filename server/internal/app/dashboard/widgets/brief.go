@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 )
 
 // Brief sentence kinds, in the order they are picked.

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Platform-side per-host politeness (research/49 §3.12.3) against a real

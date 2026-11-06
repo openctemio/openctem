@@ -6,10 +6,10 @@
 
 This is `web/` in the `openctemio/openctem` monorepo (imported 2026-10-02 from
 `openctemio/ui`, now archived; its tags are kept as `ui/v*`, history only). The
-Go API is `../api/` (see `../api/CLAUDE.md`); rules that span both are in
+Go API is `../server/` (see `../server/CLAUDE.md`); rules that span both are in
 `../CLAUDE.md`. API wire types are generated, not hand-written, and not
 committed: `src/lib/api/generated/api.types.ts` (from
-`../api/api/openapi/swagger.yaml`) and `src/config/api-route-permissions.json`
+`../server/api/openapi/swagger.yaml`) and `src/config/api-route-permissions.json`
 (from the API route table) are written by `make generate` at the repository
 root (needs Go and Node; `make generate-docker` needs only Docker). `npm run
 dev/build/type-check/lint/test` stop with that hint when they are missing.
@@ -197,7 +197,7 @@ Any `href`/`src` whose value comes from data (finding references, evidence URIs,
 The customer-side runtimes are **sensors**: route `/sensors` (Discovery → Sensors,
 tabs by role), `src/features/sensors`, `src/lib/api/sensor-*`, API
 `/api/v1/sensors`, permissions `sensors:*`, module `sensors`. Contract:
-[`api/docs/rfcs/RFC-023-sensor-rename-contract.md`](../api/docs/rfcs/RFC-023-sensor-rename-contract.md).
+[`server/docs/rfcs/RFC-023-sensor-rename-contract.md`](../server/docs/rfcs/RFC-023-sensor-rename-contract.md).
 
 - Never name a sensor concept "agent". `src/config/__tests__/sensor-vocabulary.test.ts`
   fails on the word outside `src/config/sensor-vocabulary-allowlist.json`
@@ -240,7 +240,7 @@ User → Groups + explicit asset access grants → Data Scope (SEE)
 ```
 
 Being an asset owner is not a data-scope grant; the backend
-is the only authority (`api/docs/architecture/authorization-matrix.md`, "Data scope").
+is the only authority (`server/docs/architecture/authorization-matrix.md`, "Data scope").
 
 ```tsx
 const { can } = usePermissions()             // from '@/lib/permissions'

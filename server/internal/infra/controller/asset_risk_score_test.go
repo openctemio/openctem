@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 type fakeRescorer struct {

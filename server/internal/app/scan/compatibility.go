@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
 )
 
 // typeCompatibility answers compatibility questions for one tool.

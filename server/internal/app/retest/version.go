@@ -12,10 +12,10 @@ import (
 	"fmt"
 	"strings"
 
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
 // dispatchVersion starts the fingerprint scan and links its run to the

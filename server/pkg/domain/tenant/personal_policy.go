@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/emaildomain"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/emaildomain"
 )
 
 // Personal accounts and SSO exceptions (RFC-058 §9).

@@ -15,14 +15,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	vexdom "github.com/openctemio/openctem/api/pkg/domain/vex"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	vm "github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	vexapp "github.com/openctemio/openctem/server/internal/app/vex"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	vexdom "github.com/openctemio/openctem/server/pkg/domain/vex"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	vm "github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type pkgMatchEnv struct {

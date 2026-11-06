@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	sladom "github.com/openctemio/openctem/api/pkg/domain/sla"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	sladom "github.com/openctemio/openctem/server/pkg/domain/sla"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Explanation says why a finding's SLA deadline is the date it is: which

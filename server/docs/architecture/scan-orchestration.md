@@ -282,28 +282,28 @@ detail shows a removed step's runs by that snapshot.
 
 ## Key Components
 
-### Scan Scheduler (`api/internal/app/scan_scheduler.go`)
+### Scan Scheduler (`server/internal/app/scan_scheduler.go`)
 
 - Runs as a background goroutine
 - Checks for due scans every minute
 - Uses `sync.Map` to track running scans (prevent double-trigger)
 - Graceful shutdown via `Stop()` method
 
-### Command Expiration Checker (`api/internal/app/command_expiration_checker.go`)
+### Command Expiration Checker (`server/internal/app/command_expiration_checker.go`)
 
 - Handles commands that exceed their timeout
 - Marks expired commands as failed
 - Triggers `OnStepFailed()` for pipeline progression
 - Enables automatic retries if configured
 
-### Pipeline Service (`api/internal/app/pipeline_service.go`)
+### Pipeline Service (`server/internal/app/pipeline_service.go`)
 
 - Orchestrates pipeline execution
 - Manages step dependencies
 - Routes commands to capable agents
 - Handles retries and failure scenarios
 
-### Command Handler (`api/internal/infra/http/handler/command_handler.go`)
+### Command Handler (`server/internal/infra/http/handler/command_handler.go`)
 
 - Receives agent status updates
 - Triggers pipeline progression asynchronously

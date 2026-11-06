@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	codescanapp "github.com/openctemio/openctem/api/internal/app/codescan"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/codescan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	codescanapp "github.com/openctemio/openctem/server/internal/app/codescan"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/codescan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Code scanning of repositories: the tenant's template, each repository's

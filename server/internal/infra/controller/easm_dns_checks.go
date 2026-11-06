@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/easmdns"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/easmdns"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // EASMDNSChecker is the slice of the EASM DNS service the controller runs.

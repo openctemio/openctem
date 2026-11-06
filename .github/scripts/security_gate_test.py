@@ -31,14 +31,14 @@ def F(name: str, *added: str, status: str = "modified", deletions: int = 0, prev
 class GlobTest(unittest.TestCase):
     def test_semantics(self):
         m = lambda g, p: bool(sg.glob_to_regex(g).match(p))  # noqa: E731
-        self.assertTrue(m("api/pkg/httpsec/**", "api/pkg/httpsec/ssrf.go"))
-        self.assertTrue(m("api/pkg/httpsec/**", "api/pkg/httpsec/sub/x.go"))
-        self.assertFalse(m("api/pkg/httpsec/**", "api/pkg/httpsecure/x.go"))
+        self.assertTrue(m("server/pkg/httpsec/**", "server/pkg/httpsec/ssrf.go"))
+        self.assertTrue(m("server/pkg/httpsec/**", "server/pkg/httpsec/sub/x.go"))
+        self.assertFalse(m("server/pkg/httpsec/**", "server/pkg/httpsecure/x.go"))
         self.assertTrue(m("**/Dockerfile*", "Dockerfile"))
-        self.assertTrue(m("**/Dockerfile*", "api/Dockerfile.seed"))
+        self.assertTrue(m("**/Dockerfile*", "server/Dockerfile.seed"))
         self.assertFalse(m("web/src/features/*/actions/**", "web/src/features/a/b/actions/x.ts"))
         self.assertTrue(m("web/src/features/*/actions/**", "web/src/features/auth/actions/x.ts"))
-        self.assertFalse(m("api/internal/infra/http/handler/*auth*.go", "api/internal/infra/http/handler/x/auth.go"))
+        self.assertFalse(m("server/internal/infra/http/handler/*auth*.go", "server/internal/infra/http/handler/x/auth.go"))
         self.assertFalse(m("a/b.go", "a/b.go.orig"))
 
 
@@ -80,25 +80,25 @@ class ConfigTest(unittest.TestCase):
 
 class ClassifyTest(unittest.TestCase):
     def test_sensitive_and_plain(self):
-        hits = sg.classify([F("api/internal/infra/http/middleware/csrf.go"), F("web/src/app/page.tsx")], CONFIG)
-        self.assertEqual(hits, {"authn-authz": ["api/internal/infra/http/middleware/csrf.go"]})
-        self.assertEqual(sg.classify([F("api/internal/app/asset/service.go"), F("README.md")], CONFIG), {})
+        hits = sg.classify([F("server/internal/infra/http/middleware/csrf.go"), F("web/src/app/page.tsx")], CONFIG)
+        self.assertEqual(hits, {"authn-authz": ["server/internal/infra/http/middleware/csrf.go"]})
+        self.assertEqual(sg.classify([F("server/internal/app/asset/service.go"), F("README.md")], CONFIG), {})
 
     def test_added_test_does_not_count_weakened_test_does(self):
-        added = F("api/internal/infra/http/middleware/new_test.go", "func TestX(t *testing.T) {}", status="added")
+        added = F("server/internal/infra/http/middleware/new_test.go", "func TestX(t *testing.T) {}", status="added")
         self.assertEqual(sg.classify([added], CONFIG), {})
-        weakened = F("api/internal/infra/http/middleware/csrf_test.go", deletions=3)
+        weakened = F("server/internal/infra/http/middleware/csrf_test.go", deletions=3)
         self.assertIn("authn-authz", sg.classify([weakened], CONFIG))
-        removed = F("api/internal/infra/http/middleware/csrf_test.go", status="removed", deletions=40)
+        removed = F("server/internal/infra/http/middleware/csrf_test.go", status="removed", deletions=40)
         self.assertIn("authn-authz", sg.classify([removed], CONFIG))
 
     def test_guard_list_addition_is_not_sensitive_removal_is(self):
-        self.assertEqual(sg.classify([F("api/tools/lint/tenantsql/tenant_tables.txt", "new_table")], CONFIG), {})
+        self.assertEqual(sg.classify([F("server/tools/lint/tenantsql/tenant_tables.txt", "new_table")], CONFIG), {})
         self.assertIn("tenant-isolation",
-                      sg.classify([F("api/tools/lint/tenantsql/tenant_tables.txt", deletions=1)], CONFIG))
+                      sg.classify([F("server/tools/lint/tenantsql/tenant_tables.txt", deletions=1)], CONFIG))
 
     def test_rename_out_of_a_sensitive_path_counts(self):
-        f = F("api/internal/app/asset/x.go", status="renamed", prev="api/pkg/httpsec/ssrf.go")
+        f = F("server/internal/app/asset/x.go", status="renamed", prev="server/pkg/httpsec/ssrf.go")
         self.assertIn("outbound-ssrf", sg.classify([f], CONFIG))
 
     def test_workflow_and_gate_files_are_sensitive(self):
@@ -113,15 +113,15 @@ class ReviewTest(unittest.TestCase):
 
     def test_high_rules_fire(self):
         cases = {
-            "GO-TLS-NOVERIFY": ("api/internal/x.go", "tls.Config{InsecureSkipVerify: true}"),
-            "JWT-UNVERIFIED": ("api/pkg/jwt/x.go", "tok, _, err := p.ParseUnverified(s, c)"),
+            "GO-TLS-NOVERIFY": ("server/internal/x.go", "tls.Config{InsecureSkipVerify: true}"),
+            "JWT-UNVERIFIED": ("server/pkg/jwt/x.go", "tok, _, err := p.ParseUnverified(s, c)"),
             "GHA-PR-TARGET": (".github/workflows/x.yml", "  pull_request_target:"),
             "GHA-WRITE-ALL": (".github/workflows/x.yml", "permissions: write-all"),
             "GHA-UNPINNED": (".github/workflows/x.yml", "      - uses: actions/checkout@v4"),
             "GHA-INJECTION": (".github/workflows/x.yml", "        run: echo \"${{ github.event.pull_request.title }}\""),
             "WEB-RAW-HTML": ("web/src/components/x.tsx", "<div dangerouslySetInnerHTML={{ __html: s }} />"),
             "WEB-EVAL": ("web/src/lib/x.ts", "const f = new Function(src)"),
-            "SQL-RLS-OFF": ("api/migrations/000001_x.up.sql", "ALTER TABLE assets DISABLE ROW LEVEL SECURITY;"),
+            "SQL-RLS-OFF": ("server/migrations/000001_x.up.sql", "ALTER TABLE assets DISABLE ROW LEVEL SECURITY;"),
         }
         for rule, (name, line) in cases.items():
             findings = sg.review([F(name, line)])[0]
@@ -133,25 +133,25 @@ class ReviewTest(unittest.TestCase):
                                     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
                                     "      - uses: ./.github/actions/setup",
                                     "        run: echo \"$TITLE\""), set())
-        self.assertEqual(self.rules("api/internal/x_test.go", "InsecureSkipVerify: true"), set())
-        self.assertEqual(self.rules("api/internal/x.go", "// InsecureSkipVerify: true is never allowed"), set())
+        self.assertEqual(self.rules("server/internal/x_test.go", "InsecureSkipVerify: true"), set())
+        self.assertEqual(self.rules("server/internal/x.go", "// InsecureSkipVerify: true is never allowed"), set())
         self.assertEqual(self.rules("web/src/x.test.tsx", "dangerouslySetInnerHTML"), set())
-        self.assertEqual(self.rules("api/migrations/000001_x.down.sql", "DROP POLICY p ON t;"), set())
-        self.assertEqual(self.rules("api/pkg/httpsec/ssrf.go", "c := &http.Client{}"), set())
+        self.assertEqual(self.rules("server/migrations/000001_x.down.sql", "DROP POLICY p ON t;"), set())
+        self.assertEqual(self.rules("server/pkg/httpsec/ssrf.go", "c := &http.Client{}"), set())
         self.assertEqual(self.rules("docs/x.md", "InsecureSkipVerify: true"), set())
 
     def test_waiver_on_the_same_line(self):
         line = "tls.Config{InsecureSkipVerify: true} // security-review: allow GO-TLS-NOVERIFY loopback probe"
-        self.assertEqual(self.rules("api/internal/x.go", line), set())
+        self.assertEqual(self.rules("server/internal/x.go", line), set())
         other = "tls.Config{InsecureSkipVerify: true} // security-review: allow GO-EXEC wrong rule"
-        self.assertEqual(self.rules("api/internal/x.go", other), {"GO-TLS-NOVERIFY"})
+        self.assertEqual(self.rules("server/internal/x.go", other), {"GO-TLS-NOVERIFY"})
 
     def test_content_rules_mark_sensitive_without_a_finding(self):
         r = sg.Result(1)
-        r.findings, _ = sg.review([F("api/migrations/000002_x.up.sql", "INSERT INTO role_permissions (role_id, permission_id)")])
+        r.findings, _ = sg.review([F("server/migrations/000002_x.up.sql", "INSERT INTO role_permissions (role_id, permission_id)")])
         self.assertTrue(r.sensitive)
         self.assertEqual(r.high, [])
-        r.findings, _ = sg.review([F("api/migrations/000002_x.up.sql", "INSERT INTO permissions (id) VALUES ('a:b');")])
+        r.findings, _ = sg.review([F("server/migrations/000002_x.up.sql", "INSERT INTO permissions (id) VALUES ('a:b');")])
         self.assertFalse(r.sensitive)
 
     def test_line_numbers(self):
@@ -159,8 +159,8 @@ class ReviewTest(unittest.TestCase):
         self.assertEqual(list(sg.added_lines(p)), [(2, "c"), (3, "d"), (22, "y")])
 
     def test_missing_patch_is_reported_unreviewed(self):
-        f = sg.ChangedFile("api/internal/big.go", "modified", 0, None)
-        self.assertEqual(sg.review([f])[1], ["api/internal/big.go"])
+        f = sg.ChangedFile("server/internal/big.go", "modified", 0, None)
+        self.assertEqual(sg.review([f])[1], ["server/internal/big.go"])
 
 
 class VerdictTest(unittest.TestCase):
@@ -192,25 +192,25 @@ class DigestTest(unittest.TestCase):
         return sg.sensitive_digest(files_, CONFIG, findings)
 
     def test_context_and_position_do_not_count(self):
-        a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch="@@ -10,2 +10,3 @@\n ctx\n+x := 1\n ctx2")
-        b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch="@@ -40,2 +52,3 @@\n other\n+x := 1\n other2")
+        a = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch="@@ -10,2 +10,3 @@\n ctx\n+x := 1\n ctx2")
+        b = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch="@@ -40,2 +52,3 @@\n other\n+x := 1\n other2")
         self.assertEqual(self.digest(a), self.digest(b))
 
     def test_changed_line_counts(self):
-        a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
-        b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 2"))
+        a = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
+        b = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch=patch("x := 2"))
         self.assertNotEqual(self.digest(a), self.digest(b))
 
     def test_plain_files_do_not_count_new_sensitive_files_do(self):
-        s = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
+        s = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
         plain = sg.ChangedFile("web/src/app/page.tsx", patch=patch("y"))
         self.assertEqual(self.digest(s), self.digest(s, plain))
-        mig = sg.ChangedFile("api/migrations/000999_x.up.sql", status="added", patch=patch("GRANT SELECT ON t TO app;"))
+        mig = sg.ChangedFile("server/migrations/000999_x.up.sql", status="added", patch=patch("GRANT SELECT ON t TO app;"))
         self.assertNotEqual(self.digest(s), self.digest(s, mig))
 
     def test_renumbered_migration_keeps_the_digest_reordered_ones_do_not(self):
-        s = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
-        mig = lambda n, name, body: sg.ChangedFile(f"api/migrations/{n}_{name}.up.sql", status="added",  # noqa: E731
+        s = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch=patch("x := 1"))
+        mig = lambda n, name, body: sg.ChangedFile(f"server/migrations/{n}_{name}.up.sql", status="added",  # noqa: E731
                                                    patch=patch(body))
         before = self.digest(s, mig("003389", "finding_a", "GRANT a;"), mig("003390", "finding_b", "GRANT b;"))
         renumbered = self.digest(s, mig("003410", "finding_a", "GRANT a;"), mig("003411", "finding_b", "GRANT b;"))
@@ -219,12 +219,12 @@ class DigestTest(unittest.TestCase):
         self.assertEqual(before, renumbered)
         self.assertNotEqual(before, reordered)
         self.assertNotEqual(before, edited)
-        self.assertEqual(sg.stable_path("api/migrations/003410_finding_a.up.sql"), "api/migrations/#_finding_a.up.sql")
-        self.assertEqual(sg.stable_path("api/pkg/v2_x.go"), "api/pkg/v2_x.go")
+        self.assertEqual(sg.stable_path("server/migrations/003410_finding_a.up.sql"), "server/migrations/#_finding_a.up.sql")
+        self.assertEqual(sg.stable_path("server/pkg/v2_x.go"), "server/pkg/v2_x.go")
 
     def test_missing_patch_uses_the_blob(self):
-        a = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="a" * 40)
-        b = sg.ChangedFile("api/pkg/httpsec/ssrf.go", patch=None, sha="b" * 40)
+        a = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch=None, sha="a" * 40)
+        b = sg.ChangedFile("server/pkg/httpsec/ssrf.go", patch=None, sha="b" * 40)
         self.assertNotEqual(self.digest(a), self.digest(b))
 
 
@@ -286,7 +286,7 @@ class GateTest(unittest.TestCase):
                 self.ACTIVITY: self.at_label("d" * 40) if pushes is None else pushes,
                 "rules/branches/develop": []}
 
-    SENSITIVE = [{"filename": "api/pkg/httpsec/ssrf.go", "status": "modified", "deletions": 1, "patch": patch("x := 1")}]
+    SENSITIVE = [{"filename": "server/pkg/httpsec/ssrf.go", "status": "modified", "deletions": 1, "patch": patch("x := 1")}]
     PLAIN = [{"filename": "web/src/app/page.tsx", "status": "modified", "deletions": 0, "patch": patch("x")}]
     ACK_BY_OWNER = [{"event": "labeled", "label": {"name": "security-ack"}, "actor": {"login": "0xmanhnv"},
                      "created_at": "2026-10-25T01:00:00Z"}]
@@ -959,15 +959,15 @@ class LargePullRequestTest(unittest.TestCase):
         """main has an old file and a to-be-removed one; the head adds many
         plain files, a sensitive file, a TLS-off line, a binary and a weird name."""
         self.git(d, "init", "-q", "-b", "main")
-        for name, body in (("api/pkg/httpsec/ssrf.go", "package httpsec\n"), ("docs/old.md", "old\n"),
+        for name, body in (("server/pkg/httpsec/ssrf.go", "package httpsec\n"), ("docs/old.md", "old\n"),
                            ("web/src/a.tsx", "a\n")):
             pathlib.Path(d, name).parent.mkdir(parents=True, exist_ok=True)
             pathlib.Path(d, name).write_text(body)
         self.git(d, "add", "."); self.git(d, "commit", "-qm", "base")
         self.git(d, "rev-parse", "HEAD")
         self.git(d, "checkout", "-q", "-b", "feature")
-        pathlib.Path(d, "api/pkg/httpsec/ssrf.go").write_text(f"package httpsec\n{sensitive_line}\n")
-        pathlib.Path(d, "api/pkg/x.go").write_text("package pkg\nvar c = &tls.Config{InsecureSkipVerify: true}\n")
+        pathlib.Path(d, "server/pkg/httpsec/ssrf.go").write_text(f"package httpsec\n{sensitive_line}\n")
+        pathlib.Path(d, "server/pkg/x.go").write_text("package pkg\nvar c = &tls.Config{InsecureSkipVerify: true}\n")
         pathlib.Path(d, "docs/old.md").unlink()
         pathlib.Path(d, "bin.dat").write_bytes(b"\0\1\2")
         pathlib.Path(d, "docs/with space.md").write_text("hi\n")
@@ -991,11 +991,11 @@ class LargePullRequestTest(unittest.TestCase):
         self.assertEqual(files["docs/with space.md"].status, "added")
         self.assertEqual(files["docs/gen/7.md"].patch, "")  # no rule or path category reads it
         self.assertIsNone(files["bin.dat"].patch)
-        self.assertTrue(files["api/pkg/httpsec/ssrf.go"].patch.startswith("@@"))
+        self.assertTrue(files["server/pkg/httpsec/ssrf.go"].patch.startswith("@@"))
         findings, unreviewed = sg.review(list(files.values()))
         self.assertEqual([f.rule for f in findings if f.severity == "HIGH"], ["GO-TLS-NOVERIFY"])
         self.assertIn("bin.dat", unreviewed)
-        self.assertIn("api/pkg/httpsec/ssrf.go", sg.classify(list(files.values()), CONFIG)["outbound-ssrf"])
+        self.assertIn("server/pkg/httpsec/ssrf.go", sg.classify(list(files.values()), CONFIG)["outbound-ssrf"])
 
     def test_digest_follows_the_sensitive_lines_only(self):
         with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as e:
@@ -1058,8 +1058,8 @@ class CoveredByMergesTest(unittest.TestCase):
     change to a sensitive file does not."""
 
     git = LargePullRequestTest.git
-    SENSITIVE = "api/pkg/httpsec/ssrf.go"
-    NAMES = {"api/pkg/httpsec/ssrf.go", "api/migrations/000011_finding_x.up.sql"}
+    SENSITIVE = "server/pkg/httpsec/ssrf.go"
+    NAMES = {"server/pkg/httpsec/ssrf.go", "server/migrations/000011_finding_x.up.sql"}
 
     def write(self, d, name, body):
         pathlib.Path(d, name).parent.mkdir(parents=True, exist_ok=True)
@@ -1075,13 +1075,13 @@ class CoveredByMergesTest(unittest.TestCase):
         self.git(d, "init", "-q", "-b", "develop")
         lines = [f"line {i}" for i in range(40)]
         self.write(d, self.SENSITIVE, "\n".join(lines) + "\n")
-        self.write(d, "api/migrations/000009_base.up.sql", "SELECT 9;\n")
+        self.write(d, "server/migrations/000009_base.up.sql", "SELECT 9;\n")
         self.write(d, "web/a.tsx", "a\n")
         self.commit(d, "base")
         self.git(d, "checkout", "-q", "-b", "feature")
         lines[2] = "line 2 changed by the PR"
         self.write(d, self.SENSITIVE, "\n".join(lines) + "\n")
-        self.write(d, "api/migrations/000010_finding_x.up.sql", "GRANT SELECT ON f TO app;\n")
+        self.write(d, "server/migrations/000010_finding_x.up.sql", "GRANT SELECT ON f TO app;\n")
         self.acked = self.commit(d, "pr")
         # develop moves on: another line of the same sensitive file, and a
         # migration that takes the PR's number.
@@ -1089,7 +1089,7 @@ class CoveredByMergesTest(unittest.TestCase):
         dev = self.SENSITIVE
         text = pathlib.Path(d, dev).read_text().replace("line 30", "line 30 changed on develop")
         self.write(d, dev, text)
-        self.write(d, "api/migrations/000010_other.up.sql", "SELECT 10;\n")
+        self.write(d, "server/migrations/000010_other.up.sql", "SELECT 10;\n")
         self.base = self.commit(d, "develop moves")
         self.git(d, "checkout", "-q", "feature")
 
@@ -1098,7 +1098,7 @@ class CoveredByMergesTest(unittest.TestCase):
 
     def merge_and_renumber(self):
         self.git(self.d, "merge", "-q", "--no-edit", "develop")
-        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.git(self.d, "mv", "server/migrations/000010_finding_x.up.sql", "server/migrations/000011_finding_x.up.sql")
         return self.commit(self.d, "renumber 10 -> 11")
 
     def covered(self, head):
@@ -1122,17 +1122,17 @@ class CoveredByMergesTest(unittest.TestCase):
         self.git(self.d, "merge", "-q", "--no-commit", "develop")
         text = pathlib.Path(self.d, self.SENSITIVE).read_text().replace("line 7", "line 7 in the merge")
         self.write(self.d, self.SENSITIVE, text)
-        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.git(self.d, "mv", "server/migrations/000010_finding_x.up.sql", "server/migrations/000011_finding_x.up.sql")
         self.assertFalse(self.covered(self.commit(self.d, "evil merge")))
 
     def test_renumber_that_also_edits_the_migration_drops_it(self):
         self.merge_and_renumber()
-        self.write(self.d, "api/migrations/000011_finding_x.up.sql", "GRANT ALL ON f TO app;\n")
+        self.write(self.d, "server/migrations/000011_finding_x.up.sql", "GRANT ALL ON f TO app;\n")
         self.assertFalse(self.covered(self.commit(self.d, "edit")))
 
     def test_rebase_drops_it(self):
         self.git(self.d, "rebase", "-q", "develop")
-        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.git(self.d, "mv", "server/migrations/000010_finding_x.up.sql", "server/migrations/000011_finding_x.up.sql")
         self.assertFalse(self.covered(self.commit(self.d, "renumber after rebase")))
 
     def still_covers(self, head):
@@ -1149,11 +1149,11 @@ class CoveredByMergesTest(unittest.TestCase):
 
     def test_rebase_with_the_same_sensitive_lines_keeps_it(self):
         self.git(self.d, "rebase", "-q", "develop")
-        self.git(self.d, "mv", "api/migrations/000010_finding_x.up.sql", "api/migrations/000011_finding_x.up.sql")
+        self.git(self.d, "mv", "server/migrations/000010_finding_x.up.sql", "server/migrations/000011_finding_x.up.sql")
         self.assertTrue(self.still_covers(self.commit(self.d, "renumber after rebase")))
 
     def test_renaming_a_sensitive_file_needs_a_new_ack(self):
-        self.git(self.d, "mv", self.SENSITIVE, "api/pkg/httpsec/ssrf_guard.go")
+        self.git(self.d, "mv", self.SENSITIVE, "server/pkg/httpsec/ssrf_guard.go")
         self.assertFalse(self.still_covers(self.commit(self.d, "rename")))
 
     def test_unknown_acked_commit_does_not_cover(self):
@@ -1178,13 +1178,13 @@ class OnlyBaseMergesTest(unittest.TestCase):
         d = self.d = self.tmp.name
         self.git(d, "init", "-q", "-b", "develop")
         self.write(d, self.WORKFLOW, "name: API CI\non: pull_request\n")
-        self.write(d, "api/x.go", "package x\n")
+        self.write(d, "server/x.go", "package x\n")
         self.commit(d, "base")
         self.git(d, "checkout", "-q", "-b", "feature")
         self.write(d, self.WORKFLOW, "name: API CI\non: pull_request\nenv: {A: 1}\n")
         self.acked = self.commit(d, "pr edits the workflow")
         self.git(d, "checkout", "-q", "develop")
-        self.write(d, "api/y.go", "package x // develop\n")
+        self.write(d, "server/y.go", "package x // develop\n")
         self.base = self.commit(d, "develop moves")
         self.git(d, "checkout", "-q", "feature")
 
@@ -1208,7 +1208,7 @@ class OnlyBaseMergesTest(unittest.TestCase):
 
     def test_any_commit_after_the_merge_drops_it(self):
         self.git(self.d, "merge", "-q", "--no-edit", "develop")
-        self.write(self.d, "api/x.go", "package x // later\n")
+        self.write(self.d, "server/x.go", "package x // later\n")
         self.assertFalse(self.ok(self.commit(self.d, "non-workflow change")))
 
     def test_conflict_resolved_by_hand_drops_it(self):

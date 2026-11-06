@@ -1,7 +1,7 @@
 package tenant
 
 // The organization's finding approval settings
-// (api/docs/architecture/finding-status-lifecycle.md, "Approvals").
+// (server/docs/architecture/finding-status-lifecycle.md, "Approvals").
 
 import (
 	"fmt"
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SectionFindingApprovals is the settings section key.

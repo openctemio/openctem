@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // DashboardNoAssetID is the asset id under which the facts of findings

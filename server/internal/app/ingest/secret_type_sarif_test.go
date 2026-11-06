@@ -5,7 +5,7 @@ import (
 
 	"github.com/openctemio/ctis/v2/interop/sarif"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // betterleaksSARIF is the shape betterleaks writes with --report-format sarif.

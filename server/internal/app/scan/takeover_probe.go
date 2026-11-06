@@ -10,9 +10,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/server/pkg/domain/tool"
 )
 
 // TakeoverGate is the optional part of the AttributionGate that admits

@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	lc "github.com/openctemio/openctem/server/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

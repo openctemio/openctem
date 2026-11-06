@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 func (h *gsHarness) export(t *testing.T, c flCaller, method, query string, body any, perms string) (*http.Response, string) {

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const legacyAllUnresolvable = `invalid scan target: 3 of 3 targets refused: "a.example.com": cannot resolve scan target host "a.example.com" (refusing to scan an unverifiable target): lookup a.example.com: no such host; "b.example.com": cannot resolve scan target host "b.example.com" (refusing to scan an unverifiable target): lookup b.example.com: no such host; and 1 more`

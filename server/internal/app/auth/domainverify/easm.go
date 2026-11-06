@@ -18,8 +18,8 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
 )
 
 // ErrVerifyRateLimited is returned when a tenant has run too many

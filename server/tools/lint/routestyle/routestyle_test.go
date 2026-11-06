@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/tools/lint/routestyle"
+	"github.com/openctemio/openctem/server/tools/lint/routestyle"
 )
 
 func repoRoot(t *testing.T) string {

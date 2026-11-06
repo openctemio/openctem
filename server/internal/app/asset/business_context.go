@@ -3,8 +3,8 @@ package asset
 import (
 	"context"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // BusinessContextLookup resolves, per asset, the business-unit and

@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/controller"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 const soHostile = "Server: <script>alert('so')</script>\x1b[31mSO-MARKER\x1b[0m \u202etxt.exe\r\nline2"

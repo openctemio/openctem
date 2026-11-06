@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
-	"github.com/openctemio/openctem/api/internal/app/tenablesc"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	integrationapp "github.com/openctemio/openctem/server/internal/app/integration"
+	"github.com/openctemio/openctem/server/internal/app/tenablesc"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // =============================================================================

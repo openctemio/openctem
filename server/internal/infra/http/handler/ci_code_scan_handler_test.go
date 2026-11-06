@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	codescanapp "github.com/openctemio/openctem/api/internal/app/codescan"
-	"github.com/openctemio/openctem/api/pkg/domain/codescan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	codescanapp "github.com/openctemio/openctem/server/internal/app/codescan"
+	"github.com/openctemio/openctem/server/pkg/domain/codescan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakeCodeScan struct {

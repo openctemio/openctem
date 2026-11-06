@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	coverageapp "github.com/openctemio/openctem/server/internal/app/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const enumCapability = "enumerate.subdomains"

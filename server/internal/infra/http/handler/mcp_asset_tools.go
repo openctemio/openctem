@@ -14,15 +14,15 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/asset"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/pagination"
-	"github.com/openctemio/openctem/api/pkg/weblink"
+	"github.com/openctemio/openctem/server/internal/app/asset"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/weblink"
 )
 
 // mcpAssetContext is the asset page's reads (*asset.AssetService). Each

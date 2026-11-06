@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PublicProgramResponse is one program of the catalog.

@@ -10,7 +10,7 @@ deployed today.
 |------|-------|--------------|
 | Console app | `web/console/` (Next.js), image `ghcr.io/openctemio/openctem-console` | The console's pages at the root of its site (`/`, `/login`, `/organizations`, `/users`, `/requests`, `/support`, `/scanning/…`, `/security/…`, `/system/…` for the settings pages, `/health`), its API proxy `/api/v1/admin/*` and `/api/health`. Shares `web/`'s packages and imports shared code from `web/src`; contains no tenant route. |
 | Tenant web app | `web/src/` (Next.js), image `openctem-web` | No console route, page or client; refuses to proxy `/api/v1/admin` however the path is spelled. |
-| Gateway console site | `api/deploy/gateway/admin/on.site` | `https://<host>:<OPENCTEM_ADMIN_PORT>` (port mode, default 8443) or `https://<OPENCTEM_ADMIN_HOST>` (host mode); admits only `OPENCTEM_ADMIN_ALLOWED_CIDRS`; proxies to `OPENCTEM_CONSOLE_UPSTREAM`. The main site answers 404 for `/api/v1/admin` (`admin/on.tenant`). |
+| Gateway console site | `server/deploy/gateway/admin/on.site` | `https://<host>:<OPENCTEM_ADMIN_PORT>` (port mode, default 8443) or `https://<OPENCTEM_ADMIN_HOST>` (host mode); admits only `OPENCTEM_ADMIN_ALLOWED_CIDRS`; proxies to `OPENCTEM_CONSOLE_UPSTREAM`. The main site answers 404 for `/api/v1/admin` (`admin/on.tenant`). |
 | Console API listener | `ADMIN_LISTEN_ADDR` (Compose: `<api>:8081`) | Serves only `/api/v1/admin` and `/health`; the main listener answers 404 for the console API. |
 | API planes | `OPENCTEM_PLANE=all\|tenant\|admin` | One image: `all` for self-host; `tenant` (no console routes, no console credentials, the background work) and `admin` (only the console API, console database role, no background work) for a hosted deployment. |
 | Console database role | `DB_ADMIN_USER` ([database roles](../deployment/database-roles.md)) | Writes the administrators, console sessions and platform identity provider; the app role only reads them. |
@@ -399,7 +399,7 @@ action, the target and the caller's open request. Table `admin_approvals`
 Console authorization is by platform permission (RFC-134): the catalog and
 built-in roles live in `pkg/domain/platformauthz`, every console route names
 its permission in `adminRoutePermissions`, and the generated reference is
-[platform-permissions.md](platform-permissions.md) (`make -C api
+[platform-permissions.md](platform-permissions.md) (`make -C server
 platform-authz-docs`). Security > Roles lists the roles, what each allows and
 who holds them; an owner gives or takes the additional roles (operator,
 support, security auditor, billing) there with a step-up and a reason
@@ -422,20 +422,20 @@ named owners exist. Navigation and actions hide by permission
   cross-imports.
 - `web/console/src/__tests__/console-csrf-cookie.test.ts`: the console sets
   `console_csrf` and never `csrf_token`.
-- `api/tests/unit/auth_platform_admin_single_identity_test.go`: an
+- `server/tests/unit/auth_platform_admin_single_identity_test.go`: an
   administrator's account signs in on the main site with no platform role in
   the answer; the console password check still works.
-- `api/internal/infra/http/routes/platform_admin_single_identity_db_test.go`:
+- `server/internal/infra/http/routes/platform_admin_single_identity_db_test.go`:
   the account is an ordinary member (403 on a member-administration route as
   a `member`), the console refuses the app token, the tenant API refuses the
   console token, and the console needs its second factor.
-- `api/internal/infra/http/middleware/admin_audit_test.go`: the write-ahead row
+- `server/internal/infra/http/middleware/admin_audit_test.go`: the write-ahead row
   is written first, and a failing audit write refuses the request.
 - `web/console/src/__tests__/console-origin.test.ts`: a write from the tenant
   origin (same host, other port), another port or a sibling host is refused
   before any API call.
-- `api/internal/infra/http/middleware/admin_auth_test.go`: the CSRF token is
+- `server/internal/infra/http/middleware/admin_auth_test.go`: the CSRF token is
   bound to the session (a planted cookie is refused).
-- `api/internal/infra/http/admin_listener_test.go`: listener and plane splits.
-- `api/deploy/gateway/smoke-test.sh`: both sites, the allow-list, the console
+- `server/internal/infra/http/admin_listener_test.go`: listener and plane splits.
+- `server/deploy/gateway/smoke-test.sh`: both sites, the allow-list, the console
   port checks.

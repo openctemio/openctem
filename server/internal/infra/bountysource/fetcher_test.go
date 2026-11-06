@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 )
 
 func TestFetchAPI(t *testing.T) {

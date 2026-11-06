@@ -12,12 +12,12 @@ import (
 	"net/http"
 	"time"
 
-	supportapp "github.com/openctemio/openctem/api/internal/app/supportaccess"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/supportaccess"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	supportapp "github.com/openctemio/openctem/server/internal/app/supportaccess"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/supportaccess"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SupportAccessHandler serves the organization's support access settings.

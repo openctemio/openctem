@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/refingerprint"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/refingerprint"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestReadOnlyURL(t *testing.T) {

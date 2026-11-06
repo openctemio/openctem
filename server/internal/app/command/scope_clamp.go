@@ -15,9 +15,9 @@ import (
 	"context"
 	"encoding/json"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // clampable reports whether every refusal is a cap a clamp can meet.

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // deepReconWorkflowID is the seeded "Deep recon" system template: stored

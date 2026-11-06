@@ -8,10 +8,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	toolsourceapp "github.com/openctemio/openctem/api/internal/app/toolsource"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	toolsourceapp "github.com/openctemio/openctem/server/internal/app/toolsource"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ToolSourceHandler serves the organization's keys of third-party tool

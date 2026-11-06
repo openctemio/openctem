@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/serviceaccount"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // --- fakes -------------------------------------------------------------------

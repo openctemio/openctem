@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/crypto"
 )
 
 // Set-password, reset and verification tokens go into links; a trailing "="

@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // Status counts on the scope lists (include=status_counts): the scope page

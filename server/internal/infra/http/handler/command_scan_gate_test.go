@@ -8,16 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/command"
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // POST /api/v1/commands with type "scan" (RFC-040 Q5 (c)): owner/admin only,

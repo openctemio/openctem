@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/report/docx"
+	"github.com/openctemio/openctem/server/pkg/report/docx"
 )
 
 // kindOf maps a TemplateData value to its reference type.

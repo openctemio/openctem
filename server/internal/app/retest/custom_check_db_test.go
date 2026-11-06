@@ -12,16 +12,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
-	"github.com/openctemio/openctem/api/internal/app/retestcheck"
-	"github.com/openctemio/openctem/api/internal/app/validation"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	checkdom "github.com/openctemio/openctem/api/pkg/domain/retestcheck"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	"github.com/openctemio/openctem/server/internal/app/retestcheck"
+	"github.com/openctemio/openctem/server/internal/app/validation"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	checkdom "github.com/openctemio/openctem/server/pkg/domain/retestcheck"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // checkService is the retest check service over the test database.

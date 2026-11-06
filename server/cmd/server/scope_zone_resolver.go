@@ -5,7 +5,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/server/internal/config"
 )
 
 // zoneResolver is the resolver scan-zone routing resolves hostnames with:

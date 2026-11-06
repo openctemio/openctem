@@ -18,16 +18,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 // maxPairingBody bounds every pairing request body.

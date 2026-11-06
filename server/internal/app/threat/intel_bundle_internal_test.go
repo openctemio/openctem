@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // FIRST publishes the score date as a full timestamp. A date that fails to

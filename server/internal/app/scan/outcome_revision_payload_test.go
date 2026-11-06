@@ -5,10 +5,10 @@ import (
 
 	"github.com/openctemio/contract/outcome"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Both scan command builders name the outcome revision the platform reads,

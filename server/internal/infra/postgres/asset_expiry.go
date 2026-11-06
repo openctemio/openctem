@@ -5,7 +5,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // expirySQL is an asset's expiry as a timestamptz: the first of its

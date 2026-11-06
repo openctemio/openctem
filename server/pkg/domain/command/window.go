@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // WindowDeferral is how a job waits for its scan window.

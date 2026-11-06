@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // 22c B7: a run whose steps all finished but whose zone routing left

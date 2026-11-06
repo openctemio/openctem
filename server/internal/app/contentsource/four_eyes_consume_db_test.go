@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/openctemio/openctem/api/internal/app/contentsource"
-	"github.com/openctemio/openctem/api/internal/infra/fetchers"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentsource"
+	app "github.com/openctemio/openctem/server/internal/app/contentsource"
+	"github.com/openctemio/openctem/server/internal/infra/fetchers"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentsource"
 )
 
 func (e *env) candidate(t *testing.T, src *dom.Source) *dom.Snapshot {

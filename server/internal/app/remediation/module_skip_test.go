@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	remediationdom "github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type remediationOff map[string]bool

@@ -11,7 +11,7 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/pkg/keycloak"
+	"github.com/openctemio/openctem/server/pkg/keycloak"
 )
 
 type stubRecentAuth struct {

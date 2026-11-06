@@ -1132,9 +1132,9 @@ approval. Security > Approvals lists open requests and the last 30 days.
 - The table belongs to the console's database role (`DB_ADMIN_USER`): the
   tenant plane's role cannot read or forge approvals.
 
-Key files: `api/internal/app/adminapproval/service.go`,
-`api/pkg/domain/admin/approval.go`,
-`api/internal/infra/http/handler/admin_approval_handler.go`, migration
+Key files: `server/internal/app/adminapproval/service.go`,
+`server/pkg/domain/admin/approval.go`,
+`server/internal/infra/http/handler/admin_approval_handler.go`, migration
 `002914_admin_approvals`, `web/console/src/app/(console)/security/approvals/page.tsx`,
 `web/console/src/features/admin-console/components/admin-approval-prompt.tsx`.
 

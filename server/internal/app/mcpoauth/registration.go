@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"slices"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Client registration (RFC-062 §5): clients an organization registers in

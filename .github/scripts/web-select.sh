@@ -10,7 +10,7 @@
 #
 # Narrowed only when every changed file is
 #   - documentation (Markdown), web/e2e/ or web/docs/ (Vitest never runs them),
-#   - the Go API (api/): its effect on the web is the generated contract, which
+#   - the Go API (server/): its effect on the web is the generated contract, which
 #     the workflow's `contract` job decides separately (a changed contract runs
 #     everything), or
 #   - source under web/src/ or web/console/src/, except web/src/test/ (the
@@ -31,7 +31,7 @@ changed="$(git diff --name-only "$base" HEAD)" || { echo ALL; exit 0; }
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   case "$f" in
-    *.md | "$prefix"/e2e/* | "$prefix"/docs/* | api/* | .claude/* | "$prefix"/.claude/*) ;;
+    *.md | "$prefix"/e2e/* | "$prefix"/docs/* | server/* | .claude/* | "$prefix"/.claude/*) ;;
     "$prefix"/src/test/*) echo ALL; exit 0 ;;
     "$prefix"/src/* | "$prefix"/console/src/*) ;;
     *) echo ALL; exit 0 ;;

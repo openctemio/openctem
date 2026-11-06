@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 func TestRequeueableLayer(t *testing.T) {

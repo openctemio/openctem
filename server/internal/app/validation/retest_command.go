@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SensorCapabilityRetestTemplates prefixes the capability a sensor reports

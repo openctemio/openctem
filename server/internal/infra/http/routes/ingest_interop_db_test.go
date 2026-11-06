@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // interopSegment is a CTIS 2.0 report as a Nessus import would send it: the

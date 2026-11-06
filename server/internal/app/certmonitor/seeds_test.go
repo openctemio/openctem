@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
 )
 
 // Discovery hangs off scope entries (research/53 SC1): a permanent domain

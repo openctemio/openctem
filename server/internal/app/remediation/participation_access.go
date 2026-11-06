@@ -3,8 +3,8 @@ package remediation
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/participation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/participation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ParticipationAccess answers the access questions of watchers on remediation

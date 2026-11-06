@@ -1,7 +1,7 @@
 package postgres
 
 // Reads and writes of the approval policy on finding status requests
-// (api/docs/rfcs/RFC-111-approval-policy.md): the facts the evaluator needs,
+// (server/docs/rfcs/RFC-111-approval-policy.md): the facts the evaluator needs,
 // the security pool group, and sign-offs. Every query is scoped to one
 // tenant.
 
@@ -14,11 +14,11 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // nullRequired stores the request's required approvals, NULL when the

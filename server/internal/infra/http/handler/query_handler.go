@@ -9,12 +9,12 @@ import (
 	"errors"
 	"net/http"
 
-	queryapp "github.com/openctemio/openctem/api/internal/app/query"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/querylang"
+	queryapp "github.com/openctemio/openctem/server/internal/app/query"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/querylang"
 )
 
 // maxQueryBody bounds a query request body (the text is at most 4 KB).

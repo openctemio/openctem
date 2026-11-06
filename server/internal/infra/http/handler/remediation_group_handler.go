@@ -5,13 +5,13 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	appremediation "github.com/openctemio/openctem/server/internal/app/remediation"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	remediationdom "github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RemediationGroupHandler exposes remediation groups — the "fix a whole solution

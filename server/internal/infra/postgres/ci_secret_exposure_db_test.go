@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A branch-only secret becomes an organization finding, and its rotation task

@@ -29,12 +29,12 @@ import (
 	"strings"
 	"time"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Actor is who changes a scope entry and whether they hold

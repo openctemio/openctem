@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // maxFindingsPerSync bounds a single sync so a huge DefectDojo backlog can't

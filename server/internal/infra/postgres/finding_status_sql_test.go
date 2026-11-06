@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // The SQL from-state lists are the domain's lists, rendered.

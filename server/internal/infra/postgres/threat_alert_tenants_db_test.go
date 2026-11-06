@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // One lookup answers a page of vulnerabilities: an open finding counts, a

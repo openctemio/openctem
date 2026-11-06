@@ -13,7 +13,7 @@
  * Where it is unavailable (an insecure context, old browsers) the refresh runs
  * unlocked, as before.
  *
- * Design: api/docs/rfcs/RFC-045-websocket-auth.md (§5.5).
+ * Design: server/docs/rfcs/RFC-045-websocket-auth.md (§5.5).
  */
 
 export const AUTH_REFRESH_LOCK = 'openctem:auth-refresh'

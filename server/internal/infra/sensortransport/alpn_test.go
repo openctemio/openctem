@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
 )
 
 // The gateway's ALPN routing (deploy/gateway/sensors/*.wrappers), emulated:

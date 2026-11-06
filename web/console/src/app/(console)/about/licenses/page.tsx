@@ -14,7 +14,7 @@ const web: NoticeSource = { id: 'web', load: () => adminFetch<unknown>(CONSOLE_W
 /**
  * About > Open-source licenses (platform console): the third-party components
  * of the API and the console build, any administrator. Always present,
- * whatever the brand (api/docs/architecture/third-party-notices.md).
+ * whatever the brand (server/docs/architecture/third-party-notices.md).
  */
 export default function ConsoleOpenSourceLicensesPage() {
   const { t } = useTranslation()

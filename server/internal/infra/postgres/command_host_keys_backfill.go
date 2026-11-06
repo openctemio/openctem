@@ -11,7 +11,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 // hostKeysBackfillBatch bounds the rows one backfill statement reads.

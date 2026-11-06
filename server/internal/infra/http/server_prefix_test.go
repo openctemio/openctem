@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A handler mounted ahead of the router (the sensor v3 HTTPS binding) skips

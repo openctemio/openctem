@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/server/internal/config"
 )
 
 // reportConfigCheck is `server -check-config`: the configuration preflight an

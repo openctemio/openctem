@@ -14,8 +14,8 @@ import (
 	"net"
 	"time"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const instanceTokenColumns = `id, token_hash, name, reason, created_by, created_by_email, created_at, expires_at,

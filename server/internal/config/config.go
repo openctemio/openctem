@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/versions"
-	"github.com/openctemio/openctem/api/pkg/brand"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // Environment constants
@@ -2876,7 +2876,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	{"SMTP_TLS", smtpMoved},
 	{"SMTP_SKIP_VERIFY", smtpMoved},
 	{"SMTP_TIMEOUT", smtpMoved},
-	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in api/.env.example)"},
+	{"APP_ALLOW_PLAINTEXT_CREDENTIALS", "unset it; credentials are always encrypted (development uses the key in server/.env.example)"},
 	{"CTEM_ENFORCE_COVERAGE_SLO", "unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles)"},
 	// Cookie names are fixed: the API, the web console and the gateway must
 	// agree on them.
@@ -2888,7 +2888,7 @@ var removedEnv = []struct{ Name, Instead string }{
 	// organization. Each organization's Jira integration has its own secret.
 	{"JIRA_WEBHOOK_SECRET", "unset it; each Jira integration has its own webhook secret (Settings > Integrations > Ticketing, or POST /api/v1/integrations/{id}/jira-webhook/secret/rotate)"},
 	// Each sensor product has its own release line, built into the API
-	// from versions.yaml (api/docs/rfcs/RFC-037): one sensor-wide channel compared
+	// from versions.yaml (server/docs/rfcs/RFC-037): one sensor-wide channel compared
 	// every product with the scanning sensor's.
 	{"SENSOR_LATEST_VERSION", sensorLineMoved},
 	{"SENSOR_MIN_VERSION", sensorLineMoved},

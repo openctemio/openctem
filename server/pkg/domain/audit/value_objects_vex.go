@@ -1,6 +1,6 @@
 package audit
 
-// VEX statements of the organization (api/docs/architecture/software-components.md).
+// VEX statements of the organization (server/docs/architecture/software-components.md).
 // A statement closes findings, so every change, expiry and closure is
 // recorded.
 

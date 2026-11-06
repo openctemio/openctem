@@ -270,7 +270,7 @@ gh workflow run release-train.yml -R openctemio/openctem --ref develop \
 
 The workflow builds `release/vX.Y.Z` from the last tag, cherry-picks each
 commit with `-x` (`-m 1` for a merge commit), adds the version commit
-(`api/deploy/VERSION`), opens the release pull request into `main` and queues
+(`server/deploy/VERSION`), opens the release pull request into `main` and queues
 it.
 
 **When a cherry-pick conflicts** the run stops with "backport it by hand":
@@ -332,12 +332,12 @@ Then:
       and the helm-charts `appVersion` bump. If the back-merge conflicts,
       Release Publish opens an issue instead; resolve it by hand on
       `chore/post-release-vX.Y.Z`.
-- [ ] **`api/migrations/released.json`:** run `make -C api
+- [ ] **`server/migrations/released.json`:** run `make -C server
       migrations-released`. It changes the file only for a release line that
       still shipped the earlier migration tool (v0.15.x and older); when it
       changes, open a pull request at once, since CI checks it against the
       tags.
-- [ ] **Changelog.** The fix's fragment (`api/changelog.d/<slug>.md`,
+- [ ] **Changelog.** The fix's fragment (`server/changelog.d/<slug>.md`,
       category `Security` or `Fixed`) came with the fix. `changelog.py
       release` folds every fragment on `develop`, so it is not run for a
       hotfix; the picked fragments are folded with the next train, whose
@@ -539,7 +539,7 @@ gh run list -R openctemio/openctem -w docker-publish.yml -L 1  # wait for signin
 cosign verify ghcr.io/openctemio/openctem-api:vX.Y.Z \
   --certificate-identity "https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/vX.Y.Z" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-make -C api migrations-released                     # changes only for v0.15.x and older
+make -C server migrations-released                     # changes only for v0.15.x and older
 
 # --- deploy (kit clone)
 scripts/vendor-release.sh vX.Y.Z

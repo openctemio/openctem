@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MCPPath is the path of the MCP endpoint. Its canonical URI is the OAuth

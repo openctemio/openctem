@@ -158,7 +158,7 @@ attacker gets one guess (2^-34).
 Test vectors (keys, nonces, commitment, SAS, platform signature, confirm
 signature, code encoding and normalisation, and the RFC 9421 signature base
 and header values) are one file, byte-identical in
-`api/pkg/sensorproto/pairing/testdata/vectors.json` and
+`server/pkg/sensorproto/pairing/testdata/vectors.json` and
 `sdk-go/pkg/sensorproto/pairing/testdata/vectors.json`; both test suites
 check their implementation against it.
 

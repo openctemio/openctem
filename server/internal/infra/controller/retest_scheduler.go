@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // RetestTicker is the retest service's scheduler pass (RFC-039).

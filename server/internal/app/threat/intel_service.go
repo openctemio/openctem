@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/feedstatus"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const (

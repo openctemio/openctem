@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MaxDispatchAttempts is how many times one command is handed to a sensor,

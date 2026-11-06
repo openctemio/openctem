@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/sensorresult"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The queries behind the automatic release of out-of-contract holds are

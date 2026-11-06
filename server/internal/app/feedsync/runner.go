@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Job runs one pass of a feed: fetch, store, reconcile (the same pass its

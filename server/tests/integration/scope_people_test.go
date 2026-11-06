@@ -7,8 +7,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 func TestScopeActorNamesAndOrigin(t *testing.T) {

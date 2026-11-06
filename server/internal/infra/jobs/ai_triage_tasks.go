@@ -10,8 +10,8 @@ import (
 
 	"github.com/hibiken/asynq"
 
-	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	aitriagedom "github.com/openctemio/openctem/server/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // =============================================================================

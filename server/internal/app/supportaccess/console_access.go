@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	dom "github.com/openctemio/openctem/api/pkg/domain/supportaccess"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	dom "github.com/openctemio/openctem/server/pkg/domain/supportaccess"
 )
 
 // Grant-bypass paths (RFC-063 section 11.5): older console routes that reach an

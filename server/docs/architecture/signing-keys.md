@@ -88,9 +88,9 @@ key set, then re-sign the key set with the new key only.
 The feed has no key to rotate. Two things are maintained:
 
 - **The Sigstore trusted root** embedded in the release
-  (`api/pkg/contentpkg/sigstore/trusted_root.json`, shared with the content
+  (`server/pkg/contentpkg/sigstore/trusted_root.json`, shared with the content
   catalog's publisher signatures): refresh it for every release with
-  `make -C api sigstore-root-refresh` (and commit the file). A test fails when
+  `make -C server sigstore-root-refresh` (and commit the file). A test fails when
   the embedded root has no certificate authority or transparency log valid for
   the next 30 days. Instances may point `CONTENT_SIGSTORE_TRUSTED_ROOT` at a
   newer file.

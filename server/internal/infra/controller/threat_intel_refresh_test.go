@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/threat"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A KEV source that answers 304 for days must not stop the findings from

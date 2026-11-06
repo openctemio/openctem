@@ -46,15 +46,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/api/internal/app/consolesetting"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	dom "github.com/openctemio/openctem/api/pkg/domain/feedrelay"
-	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	dom "github.com/openctemio/openctem/server/pkg/domain/feedrelay"
+	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // Capability is what a relay sensor reports.

@@ -94,11 +94,11 @@ click, tenant configuration from the bootstrap or the cache). A burst of refused
 
 ## Key files
 
-- `api/internal/infra/http/handler/view_parts.go`: the dispatcher.
-- `api/internal/infra/http/handler/finding_view_handler.go`: the finding view and its parts.
-- `api/internal/infra/http/handler/asset_view_handler.go`: the asset view and its parts.
-- `api/internal/infra/http/routes/asset_resolved_ports_db_test.go`: asset view parts, resolved ports scope and tenant.
-- `api/internal/infra/http/handler/dashboard_overview_handler.go`: the dashboard overview.
-- `api/internal/infra/http/routes/finding_view_scope_db_test.go`: parts equal the direct reads, scope and tenant.
+- `server/internal/infra/http/handler/view_parts.go`: the dispatcher.
+- `server/internal/infra/http/handler/finding_view_handler.go`: the finding view and its parts.
+- `server/internal/infra/http/handler/asset_view_handler.go`: the asset view and its parts.
+- `server/internal/infra/http/routes/asset_resolved_ports_db_test.go`: asset view parts, resolved ports scope and tenant.
+- `server/internal/infra/http/handler/dashboard_overview_handler.go`: the dashboard overview.
+- `server/internal/infra/http/routes/finding_view_scope_db_test.go`: parts equal the direct reads, scope and tenant.
 - `web/src/lib/api/view-prime.ts`: primed answers.
 - `web/e2e/request-budget.json`, `web/e2e/specs/16-request-budget.spec.ts`: the budget gate.

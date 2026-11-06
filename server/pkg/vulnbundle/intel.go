@@ -21,8 +21,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 // Intel side manifest format (must match the collector).

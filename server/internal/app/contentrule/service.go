@@ -22,13 +22,13 @@ import (
 	"sync"
 	"time"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/contentrule"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/contentrule"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ExposureSource is the source of the exposures detection rules raise.

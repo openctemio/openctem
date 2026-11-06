@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A run must report every capability its repository is expected to have;

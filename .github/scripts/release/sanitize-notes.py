@@ -11,7 +11,7 @@ place) and:
 Generated notes copy PR titles and commit subjects verbatim, so "@latest" or
 "@types/node" would become a mention that pulls an unrelated account into the
 release's Contributors, and author emails would be published
-(api/docs/rfcs/RFC-037).
+(server/docs/rfcs/RFC-037).
 """
 import re
 import sys

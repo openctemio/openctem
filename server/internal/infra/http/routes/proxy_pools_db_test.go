@@ -19,17 +19,17 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const ppSecret = "pp-Very-Secret-pw"

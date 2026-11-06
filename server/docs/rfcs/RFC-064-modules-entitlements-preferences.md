@@ -74,7 +74,7 @@ One function computes it, with one cache, and every surface reads it.
 
 ### 4.1 Registry (M2)
 
-`api/configs/modules.yaml` is the single declaration, as `asset-types.yaml`
+`server/configs/modules.yaml` is the single declaration, as `asset-types.yaml`
 is for asset types:
 
 ```yaml

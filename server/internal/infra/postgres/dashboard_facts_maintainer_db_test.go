@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboardfact"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboardfact"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The facts maintainer (migration dashboard_facts_maintainer): the queue

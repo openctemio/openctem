@@ -3,7 +3,7 @@ package postgres
 import (
 	"database/sql"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // The network columns of the findings table (migration 000377): the port,

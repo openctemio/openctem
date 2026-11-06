@@ -15,7 +15,7 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // tokenFlow is one consumer of the verification core: how it signs a valid

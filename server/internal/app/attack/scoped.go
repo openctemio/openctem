@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Layer 2 data scope for the attack-surface read endpoints.

@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/testdb/sqlcount"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/testdb/sqlcount"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 var updateReadBudgets = flag.Bool("update-read-budgets", false, "rewrite testdata/read_budget.json with the measured counts")

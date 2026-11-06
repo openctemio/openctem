@@ -13,8 +13,8 @@ import (
 
 	"github.com/openctemio/ctis/v2/weburl"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // webRuleFor validates the web part of a new exclusion: a `path` exclusion

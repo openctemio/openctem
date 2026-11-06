@@ -45,7 +45,7 @@ var synonymKeyAllowed = map[string][]string{
 }
 
 func TestPropertySynonyms_NeverIndexedOrWritten(t *testing.T) {
-	root, err := filepath.Abs("../../..") // api/
+	root, err := filepath.Abs("../../..") // server/
 	if err != nil {
 		t.Fatal(err)
 	}

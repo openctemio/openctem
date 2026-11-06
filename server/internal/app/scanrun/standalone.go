@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Standalone runs (research/62 P0-3, SW1): sensor work that executes no scan

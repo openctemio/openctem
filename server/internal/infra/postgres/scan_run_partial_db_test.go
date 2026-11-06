@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // RFC-046 D5 (`partial`), against the real SQL and migration 000350.

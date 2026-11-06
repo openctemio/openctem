@@ -6,9 +6,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	lc "github.com/openctemio/openctem/server/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // The organization's finding lifecycle on the status paths

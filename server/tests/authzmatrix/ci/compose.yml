@@ -1,4 +1,4 @@
-# Scratch stack for the authorization matrix (api/tests/authzmatrix):
+# Scratch stack for the authorization matrix (server/tests/authzmatrix):
 # Postgres and Redis on 127.0.0.1 only, data in tmpfs, migrations applied.
 # The API itself runs as a host binary started by run.sh, so the suite can
 # also bootstrap organizations in the same database.

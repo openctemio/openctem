@@ -15,11 +15,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/internal/app/template"
-	cpdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	dom "github.com/openctemio/openctem/api/pkg/domain/retestcheck"
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/app/template"
+	cpdom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/retestcheck"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
 )
 
 // Analysis is what the rules found in a check's template.

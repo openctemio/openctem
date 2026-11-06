@@ -12,9 +12,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // E-mail addresses are personal data the platform never stores

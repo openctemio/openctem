@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ReportBytesMover moves files still held in database rows to the file
@@ -20,7 +20,7 @@ const reportMoveBatch = 10
 
 // ReportFileMigrationController copies report templates and stored reports
 // from Postgres to the organization's file storage
-// (api/docs/architecture/file-storage.md). Once every row is moved each run
+// (server/docs/architecture/file-storage.md). Once every row is moved each run
 // is two empty queries.
 type ReportFileMigrationController struct {
 	movers   []ReportBytesMover

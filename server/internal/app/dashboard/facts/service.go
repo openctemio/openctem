@@ -1,5 +1,5 @@
 // Package facts is the "Rebuild dashboard data" action over the dashboard
-// fact layer (api/docs/architecture/dashboards.md, "Facts maintainer"). The
+// fact layer (server/docs/architecture/dashboards.md, "Facts maintainer"). The
 // request is recorded here; the dashboard-facts-reconcile controller runs the
 // rebuild. The tenant always comes from the authenticated caller (the
 // organization's session, or the console's path organization after the
@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboardfact"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboardfact"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Store is the storage the service needs (*postgres.DashboardFactsRepository).

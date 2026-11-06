@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	scanservice "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanservice "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Every command of a single-scanner run (zoned or not) records what its

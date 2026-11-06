@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // allowAllGate lets every target through, unzoned (the gate's decision when

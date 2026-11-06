@@ -13,9 +13,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // maxIntakeSources bounds the sources one intake read returns (the busiest

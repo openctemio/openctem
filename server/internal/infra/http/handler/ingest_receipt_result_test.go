@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
 )
 
 // An upload receipt with no queue job is answered as applied only when the

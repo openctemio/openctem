@@ -3,7 +3,7 @@ package bountyprogram
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // A target limited to a port becomes an entry of its host limited to that

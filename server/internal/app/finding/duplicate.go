@@ -1,16 +1,16 @@
 package finding
 
 // "Mark duplicate of" (RFC-043 §9): a user folds one finding into another.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // duplicateMarker is implemented by the postgres finding repository.

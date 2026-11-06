@@ -22,13 +22,13 @@ import (
 	"strings"
 	"time"
 
-	swapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	swapp "github.com/openctemio/openctem/server/internal/app/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 // WindowLoader loads what governs targets (*scanwindow.Resolver).

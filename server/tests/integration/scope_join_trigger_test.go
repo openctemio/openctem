@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	scopesvc "github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	scopesvc "github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 type unrestrictedScope struct{}

@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"strings"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SetCatalog wires the public program catalog.

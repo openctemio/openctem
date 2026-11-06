@@ -14,11 +14,11 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // DedupReviewEnqueuer enqueues a duplicate-asset review for admin approval when

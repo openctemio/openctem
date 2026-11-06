@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func TestEmailAuthoritative(t *testing.T) {

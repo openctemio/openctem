@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 // fixture is a migrations directory of numbered files that log their runs

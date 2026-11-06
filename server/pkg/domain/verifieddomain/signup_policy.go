@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Sign-up policy of a verified SSO domain (docs/rfcs/RFC-104).

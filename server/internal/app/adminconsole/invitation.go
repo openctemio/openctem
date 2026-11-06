@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A new platform administrator is invited, never handed a password. Provision

@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/controllerlease"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/controllerlease"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Controller defines the interface for a reconciliation loop controller.

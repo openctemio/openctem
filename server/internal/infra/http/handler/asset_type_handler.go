@@ -9,14 +9,14 @@ import (
 	"net/http"
 	"time"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/assettype"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/assettype"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // AssetTypeHandler handles asset type-related HTTP requests.
@@ -152,7 +152,7 @@ func (h *AssetTypeHandler) handleServiceError(w http.ResponseWriter, err error) 
 // AssetTypeRegistryResponse is the body of GET /api/v1/asset-types: the
 // RFC-042 asset type registry (version, lenses, classes, types, sections,
 // cards, core_fields, the property schema), generated from
-// api/configs/asset-types.yaml.
+// server/configs/asset-types.yaml.
 //
 // data, total, page, per_page and total_pages are the legacy asset_types
 // rows that this route returned before the registry. They are kept,
@@ -182,7 +182,7 @@ type AssetTypeRegistryResponse struct {
 
 // ListAssetTypes handles GET /api/v1/asset-types
 // @Summary      Asset type registry
-// @Description  Returns the asset type registry: every asset type with its class, lens, attribute schema, facets, group-by fields, row columns, card renderer, detail sections, allowed relationships and identity keys, plus the classes, lenses, the closed sets of sections and cards, and the property schema (every property key with its labels, display format, synonyms and the classes that may hold it). The registry is generated from api/configs/asset-types.yaml and holds no tenant data. The response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages fields are the legacy asset_types rows (deprecated, kept for one release); the query parameters below filter only those.
+// @Description  Returns the asset type registry: every asset type with its class, lens, attribute schema, facets, group-by fields, row columns, card renderer, detail sections, allowed relationships and identity keys, plus the classes, lenses, the closed sets of sections and cards, and the property schema (every property key with its labels, display format, synonyms and the classes that may hold it). The registry is generated from server/configs/asset-types.yaml and holds no tenant data. The response carries a strong ETag; If-None-Match with it answers 304. The data/total/page/per_page/total_pages fields are the legacy asset_types rows (deprecated, kept for one release); the query parameters below filter only those.
 // @Tags         Asset Types
 // @Accept       json
 // @Produce      json

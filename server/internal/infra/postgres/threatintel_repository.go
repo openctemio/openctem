@@ -12,9 +12,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // openFindingStatusClause is the canonical set of CLOSED finding statuses.

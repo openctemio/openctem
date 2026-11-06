@@ -1,7 +1,7 @@
 name: Observability CI
 
 # Validates the operator monitoring stack (deploy/observability, see
-# api/docs/operations/monitoring.md) with its pinned images: the rendered
+# server/docs/operations/monitoring.md) with its pinned images: the rendered
 # Prometheus and Alertmanager configurations, the alert rules and their unit
 # tests (promtool), the receivers and message templates (amtool), and that no
 # secret is ever written into a rendered configuration.

@@ -16,7 +16,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func nucleiPage(rule, url string) ctis.Finding {

@@ -21,8 +21,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openctemio/contract/secretref"
 
-	tasksecretapp "github.com/openctemio/openctem/api/internal/app/tasksecret"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	tasksecretapp "github.com/openctemio/openctem/server/internal/app/tasksecret"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // TaskSecrets answers a fetch (*tasksecretapp.Service).

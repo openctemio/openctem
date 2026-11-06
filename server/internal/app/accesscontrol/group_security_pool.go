@@ -12,8 +12,8 @@ import (
 	"context"
 	"fmt"
 
-	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	groupdom "github.com/openctemio/openctem/server/pkg/domain/group"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SecurityPoolLookup tells whether a group is the security pool of its

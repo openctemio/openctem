@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const legacySecret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB"

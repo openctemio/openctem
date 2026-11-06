@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
-	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
+	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
 )
 
 // Nothing stored: the direct fetch is the supplier and is allowed, as before

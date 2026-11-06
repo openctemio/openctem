@@ -16,10 +16,10 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // TemplateStatus describes how a custom role relates to its template.

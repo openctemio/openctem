@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
 )
 
 // TenantToolConfigs reads an organization's per-tool settings

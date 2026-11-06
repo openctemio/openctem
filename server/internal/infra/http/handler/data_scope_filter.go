@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // filterLinksInScope keeps the rows whose asset the request's caller may see,

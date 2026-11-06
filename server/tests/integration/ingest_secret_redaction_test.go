@@ -11,11 +11,11 @@ import (
 	"github.com/lib/pq"
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/sensorresult"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A secret scanner's report that repeats the raw secret outside the snippet

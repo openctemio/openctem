@@ -43,7 +43,7 @@ if [[ -n "${GITHUB_ENV:-}" ]]; then
 fi
 
 log "migrations"
-"$BIN_DIR/openctem-migrate" -path="$root/api/migrations" -database "$DATABASE_URL" up >"$STACK_DIR/migrate.log" 2>&1
+"$BIN_DIR/openctem-migrate" -path="$root/server/migrations" -database "$DATABASE_URL" up >"$STACK_DIR/migrate.log" 2>&1
 
 # The console's origin is the one the browser uses; the API checks it.
 CONSOLE_URL="http://127.0.0.1:${CONSOLE_PORT}"

@@ -16,12 +16,12 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/infra/scm/gitlabapi"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/scmapp"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // GitLabAPI is the part of the GitLab client the service and the decoration

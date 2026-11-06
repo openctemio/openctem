@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // KeySetPath serves the current key set on the signer's socket.
