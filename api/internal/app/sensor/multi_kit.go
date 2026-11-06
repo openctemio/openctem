@@ -30,3 +30,9 @@ func MultiKitCommand(name, apiURL, pairingCode, caPins string) string {
 	b.WriteString("\n")
 	return b.String()
 }
+
+// MultiKitPrivateNote follows MultiKitCommand for a sensor that scans
+// internal networks: the kit has no flag for the private-target switch, so
+// the host owner sets it in the sensor's environment.
+const MultiKitPrivateNote = "# This sensor scans internal networks: add SENSOR_ALLOW_PRIVATE_TARGETS=1 to its\n" +
+	"# environment in the kit (the guide shows where), or the host refuses private addresses.\n"
