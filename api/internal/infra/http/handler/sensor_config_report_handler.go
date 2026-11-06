@@ -159,6 +159,14 @@ type SensorCoreAddressRecord struct {
 }
 
 // CoreAddresses handles GET /api/v1/sensors/core-addresses.
+// @Summary      Core infrastructure addresses of the organization's sensors
+// @Description  The resolvers, gateways, own address and platform addresses the organization's active sensors reported, so the scan form can warn before a scan targets them. Only addresses each sensor's local policy allows it to name; nothing for a sensor that turned the network report off.
+// @Tags         Sensors
+// @Produce      json
+// @Success      200  {object}  SensorCoreAddressesResponse
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /sensors/core-addresses [get]
 func (h *SensorHandler) CoreAddresses(w http.ResponseWriter, r *http.Request) {
 	items, err := h.service.CoreAddresses(r.Context(), middleware.GetTenantID(r.Context()))
 	if err != nil {
