@@ -263,9 +263,15 @@ type Output struct {
 	OverCapAssetRefs map[string]bool `json:"-"`
 	// OutsideTargetAssetIDs are the persisted assets of OutsideJobAssetRefs.
 	OutsideTargetAssetIDs map[shared.ID]bool `json:"-"`
-	FindingsCreated       int                `json:"findings_created"`
-	FindingsUpdated       int                `json:"findings_updated"`
-	FindingsSkipped       int                `json:"findings_skipped"`
+	// ContractMismatchTypes are the types a verified first-party tool
+	// reported without declaring them (ingested and flagged);
+	// ContractMismatchRefs are the report refs of those assets
+	// (contract_mismatch.go).
+	ContractMismatchTypes []string        `json:"contract_mismatch_types,omitempty"`
+	ContractMismatchRefs  map[string]bool `json:"-"`
+	FindingsCreated       int             `json:"findings_created"`
+	FindingsUpdated       int             `json:"findings_updated"`
+	FindingsSkipped       int             `json:"findings_skipped"`
 	// InfoObservations counts the template scanner info matches filed as
 	// exposures instead of findings (info_matches.go).
 	InfoObservations int `json:"info_observations,omitempty"`
