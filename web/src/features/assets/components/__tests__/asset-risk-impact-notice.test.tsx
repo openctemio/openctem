@@ -153,4 +153,47 @@ describe('AssetRiskImpactNotice', () => {
     render(<Host criticality="high" exposure="isolated" onState={vi.fn()} />)
     expect(await screen.findByTestId('risk-impact-error')).toBeInTheDocument()
   })
+
+  it('previews removing the crown-jewel flag and asks for its reason', async () => {
+    api.post.mockResolvedValue(preview({ lowered_fields: ['crown_jewel'] }))
+    const onState = vi.fn()
+    function CrownHost() {
+      const [reason, setReason] = useState('')
+      return (
+        <AssetRiskImpactNotice
+          asset={{ id: 'a1', isCrownJewel: true }}
+          crownJewel={false}
+          reason={reason}
+          onReasonChange={setReason}
+          onStateChange={onState}
+        />
+      )
+    }
+    render(<CrownHost />)
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/assets/a1/risk-impact', {
+        is_crown_jewel: false,
+      })
+    )
+    await waitFor(() =>
+      expect(onState).toHaveBeenLastCalledWith({ needsReason: true, blocked: false })
+    )
+    expect(
+      screen.getByPlaceholderText('Why is this asset no longer a crown jewel?')
+    ).toBeInTheDocument()
+  })
+
+  it('asks nothing when the asset is not a crown jewel', () => {
+    const { container } = render(
+      <AssetRiskImpactNotice
+        asset={{ id: 'a1', isCrownJewel: false }}
+        crownJewel={false}
+        reason=""
+        onReasonChange={vi.fn()}
+        onStateChange={vi.fn()}
+      />
+    )
+    expect(container).toBeEmptyDOMElement()
+    expect(api.post).not.toHaveBeenCalled()
+  })
 })

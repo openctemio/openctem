@@ -111,11 +111,12 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 				actions_truncated = actions_truncated OR $15,
 				errors = `+mergeErrorsHead+`$16`+mergeErrorsTail+`,
 				updated_at = GREATEST(updated_at, $17),
-				outcomes = `+addOutcomesSQL("outcomes", "$18")+`
+				outcomes = `+addOutcomesSQL("outcomes", "$18")+`,
+				released_from_quarantine = released_from_quarantine OR $19
 			WHERE tenant_id = $1 AND id = $2`,
 			d.TenantID.String(), id.String(), d.Reports, d.Received, d.AssetsCreated, d.AssetsUpdated,
 			applied.created, applied.still, applied.reopened, applied.closed, d.Skipped, d.Failed, d.Suppressed,
-			applied.rows, applied.truncated, string(errs), at, outcomes)
+			applied.rows, applied.truncated, string(errs), at, outcomes, d.Released)
 		if err != nil {
 			return fmt.Errorf("update receipt counts: %w", err)
 		}
@@ -127,7 +128,7 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 			reports: d.Reports, received: d.Received, created: applied.created, still: applied.still,
 			reopened: applied.reopened, closed: applied.closed, skipped: d.Skipped, failed: d.Failed,
 			suppressed: d.Suppressed, assetsCreated: d.AssetsCreated, assetsUpdated: d.AssetsUpdated,
-			outcomes: outcomes,
+			outcomes: outcomes, released: releasedReports(d),
 		}, at); err != nil {
 			return err
 		}
@@ -161,6 +162,17 @@ type receiptToolCounts struct {
 	assetsCreated, assetsUpdated                        int
 	// outcomes is the delta's outcome map as JSON ("{}" when none).
 	outcomes string
+	// released is the reports applied from the results quarantine.
+	released int
+}
+
+// releasedReports is the number of reports a delta applied from the
+// quarantine (its reports when it is marked released).
+func releasedReports(d *ingestreceipt.Delta) int {
+	if d.Released {
+		return max(d.Reports, 1)
+	}
+	return 0
 }
 
 func (c receiptToolCounts) empty() bool {
@@ -265,8 +277,8 @@ func upsertReceiptTool(ctx context.Context, tx *sql.Tx, tenantID, receiptID shar
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, instance_name,
 			reports, received, created, still_detected, reopened, closed, skipped, failed, suppressed,
-			assets_created, assets_updated, first_at, last_at, outcomes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18, $19::jsonb)
+			assets_created, assets_updated, first_at, last_at, outcomes, released_reports)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18, $19::jsonb, $20)
 		ON CONFLICT (receipt_id, tool, instance_kind, instance_id) DO UPDATE SET
 			instance_name = COALESCE(NULLIF(EXCLUDED.instance_name, ''), ingest_receipt_tools.instance_name),
 			reports = ingest_receipt_tools.reports + EXCLUDED.reports,
@@ -280,11 +292,12 @@ func upsertReceiptTool(ctx context.Context, tx *sql.Tx, tenantID, receiptID shar
 			suppressed = ingest_receipt_tools.suppressed + EXCLUDED.suppressed,
 			assets_created = ingest_receipt_tools.assets_created + EXCLUDED.assets_created,
 			assets_updated = ingest_receipt_tools.assets_updated + EXCLUDED.assets_updated,
+			released_reports = ingest_receipt_tools.released_reports + EXCLUDED.released_reports,
 			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at),
 			outcomes = `+addOutcomesSQL("ingest_receipt_tools.outcomes", "EXCLUDED.outcomes")+``,
 		tenantID.String(), receiptID.String(), tool, kind, iid, name,
 		c.reports, c.received, c.created, c.still, c.reopened, c.closed, c.skipped, c.failed, c.suppressed,
-		c.assetsCreated, c.assetsUpdated, at, outcomesOrEmpty(c.outcomes))
+		c.assetsCreated, c.assetsUpdated, at, outcomesOrEmpty(c.outcomes), c.released)
 	if err != nil {
 		return fmt.Errorf("upsert receipt tool: %w", err)
 	}
@@ -715,7 +728,7 @@ const receiptColumns = `id::text, tenant_id::text, source_kind, source_ref, acto
 	reports, findings_received, assets_created, assets_updated, components, statements, vex_stored, vex_closed,
 	findings_created, findings_updated, findings_reopened, findings_closed, findings_untouched,
 	skipped, findings_failed, findings_suppressed, actions_recorded, actions_truncated, errors,
-	created_at, updated_at, finished_at, outcomes`
+	created_at, updated_at, finished_at, outcomes, released_from_quarantine`
 
 type receiptScanner interface{ Scan(...any) error }
 
@@ -734,7 +747,7 @@ func scanReceipt(s receiptScanner) (*ingestreceipt.Receipt, error) {
 		&rec.Components, &rec.Statements, &rec.VEXStored, &rec.VEXRequested,
 		&rec.Counts.Created, &rec.Counts.StillDetected, &rec.Counts.Reopened, &rec.Counts.Closed, &untouched,
 		&rec.Counts.Skipped, &rec.Counts.Failed, &rec.Counts.Suppressed, &rec.ActionsRecorded, &rec.ActionsTruncated,
-		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished, &outcomes)
+		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished, &outcomes, &rec.ReleasedFromQuarantine)
 	if err != nil {
 		return nil, err
 	}
