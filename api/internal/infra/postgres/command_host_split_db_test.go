@@ -292,8 +292,25 @@ func TestHostSplit_ConcurrentClaimsTwoSensors(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if n := len(claimed[0]) + len(claimed[1]); n != 1 {
-		t.Fatalf("%d commands claimed, want the one started part", n)
+	// The round never hands the started part to both sensors. It may hand it
+	// to neither: the sensor that split holds a running scan, so claim
+	// balancing leaves the part to its idle peer, which may already have
+	// finished its own claim. The part then waits for the peer's next poll.
+	total := len(claimed[0]) + len(claimed[1])
+	if total > 1 {
+		t.Fatalf("%d commands claimed in one round, want at most the one started part", total)
+	}
+	if total == 0 {
+		for _, s := range []shared.ID{a, b} {
+			got, err := svc.Claim(ctx, commandapp.ClaimInput{TenantID: tenant.String(), SensorID: s.String(), MaxJobs: 4, Limit: 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+			total += len(got)
+		}
+	}
+	if total != 1 {
+		t.Fatalf("%d commands claimed after one more claim each, want exactly the one started part", total)
 	}
 	rows := stepRows(ctx, t, sqlDB, tenant, stepRun)
 	if len(rows) != 2 {
