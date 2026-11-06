@@ -1672,6 +1672,39 @@ as many as one bulk create adds, so the inventory's Undo is one call.
 | A temporary exclusion ends after findings were closed | temporary exclusions never close findings |
 
 Design and the wider plan (sensor-side name exclusions, imports, alerts, exports): research note 320.
+### 20.6 Amendment 2026-11-05: an out-of-scope close is never shown as fixed
+
+A finding closed as `out_of_scope` was not fixed, and every consumer now treats it so:
+
+- **Metrics**: `RemediatedSQL` takes its obsolete list from `ClosureReason.IsObsolete`, which includes
+  `out_of_scope`, so MTTR, fix rate, program, CTEM cycle and risk snapshot figures no longer count these closes as
+  remediated (they did; the Go rule `CountsAsRemediated` already said no).
+- **SLA**: the close sets `sla_status = not_applicable` (trigger `recompute_finding_sla_status`, and
+  `Finding.UpdateSLAStatus`); before, it counted as met or missed. A reopen keeps the deadline, so excluding and
+  re-including never resets a clock.
+- **Audit**: every close and reopen writes a `finding.status_changed` row in the same transaction (the action a
+  person's status change writes), with `source: scope_effects`, `trigger` (`out_of_scope` or `back_in_scope`),
+  old and new status, and the cause: `exclusions` (id and kind of each closing exclusion that matched) and
+  `not_ours_decision`. Closing a critical-tier finding (critical, P0 or KEV) is high, any other move medium. The
+  per-pass `scope_exclusion.effects_applied` row stays.
+- **Tickets**: the pass queues the outbound status push (Jira, GitHub) of every moved finding that has a ticket, in
+  its transaction. Jira comments on an out-of-scope close and never transitions the issue; GitHub leaves the issue
+  open. A reopen pushes as usual. Outbound writes stay opt-in per integration.
+- **Critical confirm**: a permanent `not_ours`/`retired` exclusion (create, bulk create, or a kind change that
+  makes it closing) that would close open critical, P0 or KEV findings is refused with 409
+  `EXCLUSION_CLOSES_CRITICAL_FINDINGS` (details `critical_findings`, the organization's count) until the request
+  carries `confirm_critical`; a bulk request is checked as a whole before anything is written. The count runs after
+  the data scope reach check (§20.3), so a member with limited access only counts assets they see. The bulk preview
+  returns `critical_findings` per item.
+
+| Threat | Control |
+|---|---|
+| An insider closes a critical or KEV finding by marking its asset not ours | explicit confirm with the count, server side; high audit row per finding naming the exclusion; never counted as fixed |
+| Exclude then re-include to reset an SLA | the deadline is kept on reopen |
+| A board shows "not ours" as done | Jira gets a comment, never a done transition; GitHub stays open |
+
+Design and the per-use-case plan: research note 438.
+
 ## 20. Amendment 2026-10-26: confirmation only on managed platform sensors
 
 ### 20.1 Decision

@@ -32,6 +32,9 @@ type ScanConfigExport struct {
 	Intensity string `json:"intensity,omitempty"`
 	// Depth is how much of the workflow each run executes.
 	Depth string `json:"depth,omitempty"`
+	// StepParams are the per-step overrides of standard params; checked
+	// against the workflow on import like on create.
+	StepParams scan.StepParams `json:"step_params,omitempty"`
 
 	// Scan Type
 	ScanType       string         `json:"scan_type"`
@@ -124,6 +127,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 	}
 	export.Intensity = string(sc.EffectiveIntensity())
 	export.Depth = string(sc.EffectiveDepth())
+	export.StepParams = sc.StepParams
 	if !sc.TargetOptions.IsZero() {
 		o := sc.TargetOptions
 		export.TargetOptions = &o
@@ -246,6 +250,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TargetOptions:       export.TargetOptions,
 		Intensity:           export.Intensity,
 		Depth:               export.Depth,
+		StepParams:          export.StepParams,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
 		ScheduleRRule:       export.ScheduleRRule,
