@@ -441,6 +441,7 @@ describe('EnterCodePanel', () => {
       const user = userEvent.setup()
       render(review({}, ['10.0.0.0/16']))
       const trusted = await screen.findByRole('checkbox', { name: /trusted for active scanning/i })
+      await user.click(trusted)
       expect(trusted).toBeChecked()
       expect(screen.getByLabelText(/networks it scans/i)).toHaveValue('10.0.0.0/16')
       await user.type(screen.getByLabelText(/networks it scans/i), ', 192.168.5.7')
@@ -475,14 +476,14 @@ describe('EnterCodePanel', () => {
       expect(scope.report).toHaveBeenCalled()
     })
 
-    it('can leave the sensor New and skip scope', async () => {
+    it('starts with Trusted unticked: an explicit choice, never a default', async () => {
       perms.granted = new Set(setupPerms)
       api.approve.mockResolvedValue({ ...pendingView(), status: 'approved', sensor_id: 's1' })
       const user = userEvent.setup()
       render(review({}, ['10.0.0.0/16']))
-      await user.click(
+      expect(
         await screen.findByRole('checkbox', { name: /trusted for active scanning/i })
-      )
+      ).not.toBeChecked()
       await user.click(screen.getByRole('checkbox', { name: /also add these networks to scope/i }))
       await pick(user)
       await user.type(screen.getByLabelText('Authenticator code'), '123456')

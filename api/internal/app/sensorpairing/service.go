@@ -1130,7 +1130,7 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	// Trust and networks are checked before anything is written: a refusal
 	// creates nothing.
 	if in.Trusted {
-		if err := s.authorizeTrust(ctx, actor, p, profile); err != nil {
+		if err := s.authorizeTrust(ctx, actor, p, profile, true); err != nil {
 			return nil, err
 		}
 	}
@@ -1176,7 +1176,7 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 		s.auditZone(ctx, actor, zone, res.SensorID, name)
 	}
 	if in.Trusted && s.hook != nil {
-		s.hook.TrustedAtApproval(ctx, grantActor(actor), res.SensorID)
+		s.hook.TrustedAtApproval(ctx, grantActor(actor, true), res.SensorID)
 	}
 	return s.view(ctx, actor, res.Pairing), nil
 }

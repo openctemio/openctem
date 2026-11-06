@@ -81,11 +81,11 @@ type zonePlan struct {
 }
 
 // authorizeTrust checks a Trusted approval before anything is written.
-func (s *Service) authorizeTrust(ctx context.Context, actor Actor, p *sensordom.Pairing, profile string) error {
+func (s *Service) authorizeTrust(ctx context.Context, actor Actor, p *sensordom.Pairing, profile string, stepUpVerified bool) error {
 	if s.hook == nil || !TrustEligible(p, actor.TenantID) || !sensordom.TrustableAtApproval(profile) {
 		return ErrTrustNotAllowed
 	}
-	return s.hook.AuthorizeTrust(ctx, grantActor(actor))
+	return s.hook.AuthorizeTrust(ctx, grantActor(actor, stepUpVerified))
 }
 
 // planZone validates the stated networks and finds or prepares the zone.
@@ -178,9 +178,10 @@ func (s *Service) auditZone(ctx context.Context, actor Actor, plan *zonePlan, se
 		WithMetadata("sensor_id", sensorID.String()).WithSeverity(auditdom.SeverityMedium))
 }
 
-// grantActor is the approver as the grant service sees it: the approval
-// verified the step-up proof in this request.
-func grantActor(a Actor) sensorgrant.Actor {
+// grantActor is the approver as the grant service sees it. stepUpVerified is
+// true only from Approve, after VerifyStepUp accepted the proof in this
+// request; any other caller passes false.
+func grantActor(a Actor, stepUpVerified bool) sensorgrant.Actor {
 	return sensorgrant.Actor{TenantID: a.TenantID, UserID: a.UserID, Email: a.Email, IP: a.IP, UserAgent: a.UserAgent,
-		SessionID: a.SessionID, CanWiden: a.CanWiden, StepUpVerified: true}
+		SessionID: a.SessionID, CanWiden: a.CanWiden, StepUpVerified: stepUpVerified}
 }
