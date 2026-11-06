@@ -189,7 +189,12 @@ export function sourceViewFor(
   }
 }
 
-/** The switchers of the source view: rank by findings or assets, group by tool or instance. */
+/**
+ * The switchers of the source view: rank by findings or assets, group by tool
+ * or instance. Ranked by assets, a line says that assets are not findings
+ * (and, where wires are drawn, that the wires still carry findings only), so
+ * a row of 1,281 assets with a thin dashed wire never reads as broken.
+ */
 export function SourceViewSwitchers({
   m,
   g,
@@ -197,6 +202,7 @@ export function SourceViewSwitchers({
   hasInstances,
   setMeasure,
   setGroup,
+  wired = false,
 }: {
   m: Measure
   g: Grouping
@@ -204,6 +210,8 @@ export function SourceViewSwitchers({
   hasInstances: boolean
   setMeasure: (m: Measure) => void
   setGroup: (g: Grouping) => void
+  /** Wires are drawn from the rows right now (the note then speaks of them). */
+  wired?: boolean
 }) {
   const { t } = useTranslation()
   if (!hasAssets && !hasInstances) return null
@@ -240,6 +248,19 @@ export function SourceViewSwitchers({
             },
           ]}
         />
+      )}
+      {m === 'assets' && (
+        <p className="basis-full text-xs text-muted-foreground" data-testid="source-measure-note">
+          {wired
+            ? t(
+                'dashboardKit.flow.measure.assetsNoteWired',
+                'Ranked by assets found. Lines carry findings only: a source that sent no findings has a thin dashed line.'
+              )
+            : t(
+                'dashboardKit.flow.measure.assetsNote',
+                'Ranked by assets found. Assets are not findings and are not counted in the findings figures.'
+              )}
+        </p>
       )}
     </div>
   )
@@ -316,4 +337,39 @@ export function sourceRankRows(
       tie: s.assets ?? 0,
     }
   })
+}
+
+/** One source wire of a connected visual: what the row it leaves sent into the findings. */
+export interface SourceWire {
+  /** The row key the wire leaves (`s:<source>` or `i:<instance>`), also its anchor. */
+  key: string
+  /** Findings received in the period: the wire's width and speed, whatever the bars rank by. */
+  received: number
+  health: SourceHealth
+  /** The source behind a tool row (its colour); none for an instance row. */
+  sourceId?: string
+}
+
+/**
+ * The wires of a source view: one per row in either grouping, by tool or by
+ * instance. A wire always carries the findings received, the only thing that
+ * enters the findings count: ranked by assets, a discovery source's bar shows
+ * its assets while its wire stays a thin dashed line (connected, no findings).
+ * Rows that are not shown (behind "Show all") have no anchor and so no wire.
+ */
+export function sourceWires(
+  sources: IntakeSourceRow[],
+  instances: InstanceGroup[],
+  g: Grouping
+): { wires: SourceWire[]; max: number } {
+  const wires: SourceWire[] =
+    g === 'instance'
+      ? instances.map((gr) => ({ key: `i:${gr.key}`, received: gr.received, health: gr.health }))
+      : sources.map((s) => ({
+          key: `s:${s.id}`,
+          received: s.received,
+          health: s.health,
+          sourceId: s.id,
+        }))
+  return { wires, max: Math.max(1, ...wires.map((w) => w.received)) }
 }
