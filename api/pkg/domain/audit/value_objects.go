@@ -296,6 +296,11 @@ const (
 	// command re-keying a tenant's findings to the current identity recipe:
 	// counts re-keyed and merged, and the run id. One entry per tenant per run.
 	ActionFindingsRefingerprinted Action = "findings.refingerprinted"
+	// ActionFindingsReclassified records one run of the refingerprint
+	// command moving a tenant's informational template-scan findings to
+	// exposures (closure reason reclassified_exposure, never fixed): the
+	// counts and the run id. One entry per tenant per run.
+	ActionFindingsReclassified Action = "findings.reclassified"
 	// ActionAssetsMerged records one run of the repomerge command folding a
 	// tenant's duplicate repository assets together: counts, and the run id.
 	// One entry per tenant per run.
@@ -435,6 +440,10 @@ const (
 	// command that lie outside the command's targets: recorded as
 	// discoveries that grant nothing, and refused past the per-report cap.
 	ActionSensorResultsOutsideJob Action = "sensor.results_outside_job"
+	// ActionSensorResultContractMismatch records a verified first-party
+	// tool reporting a type its signed descriptor does not declare: the
+	// in-scope part was ingested and flagged.
+	ActionSensorResultContractMismatch Action = "sensor_result.contract_mismatch"
 
 	// Pairing and key-bound identity (RFC-052). Expected: an administrator
 	// created a reverse-mode code. Approved: a key was bound to the
@@ -916,7 +925,7 @@ func (a Action) IsValid() bool {
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
-		ActionFindingsRefingerprinted, ActionAssetsMerged,
+		ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -934,6 +943,7 @@ func (a Action) IsValid() bool {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob, ActionSensorResultAutoAccepted,
+		ActionSensorResultContractMismatch,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
@@ -1062,7 +1072,7 @@ func (a Action) Category() string {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
-		ActionFindingsRefingerprinted,
+		ActionFindingsRefingerprinted, ActionFindingsReclassified,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
@@ -1398,7 +1408,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionAssetsMerged,
+		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,

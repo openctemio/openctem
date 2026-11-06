@@ -1213,8 +1213,8 @@ profile refuses the namespaces this needs.
 - The default AppArmor profile stays: on hosts that restrict unprivileged
   user namespaces, `apparmor=unconfined` stops confinement working.
 - **Setup checklist:** the sensor reports `runtime.sandbox_network`
-  (`confined`, or the detected cause: `userns_blocked`, `userns_restricted`,
-  `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
+  (`confined`, or the detected cause: `userns_disabled_host`, `userns_restricted`,
+  `userns_blocked`, `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
   its fix ([fix the setup checklist](../how-to/fix-sensor-setup-checklist.md)).
 
 ## Pairing, key-bound identity and grants (RFC-052)

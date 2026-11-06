@@ -46,6 +46,7 @@ export const SUB_STATUS_CLOSURE_REASONS: Partial<Record<FindingStatus, string[]>
     'obsolete_source',
     'obsolete_rule',
     'out_of_scope',
+    'reclassified_exposure',
   ],
   false_positive: [
     'component_not_present',

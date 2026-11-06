@@ -74,6 +74,7 @@ var findingStatusWriters = map[string]int{
 	"suppression_apply.go":                   1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
 	"suppression_repository.go":              2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
 	"license_policy_repository.go":           2, // autoResolveFromSQL (policy no longer flags), fixedReopenFromSQL (flags again)
+	"info_reclassify_repository.go":          2, // move an informational template match to an exposure: open -> resolved(reclassified_exposure) guarded by autoResolveFromSQL; undo: resolved(reclassified_exposure) -> the timeline status, guarded by the closure reason
 	"vex_statement_repository.go":            1, // per-row move decided by vex.Decide (lifecycle edges, TestDecideFollowsLifecycle), guarded by the old status
 }
 
