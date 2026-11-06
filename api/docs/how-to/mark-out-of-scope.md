@@ -20,10 +20,31 @@
 Every exclusion has a **kind**: *Do not scan* (the default: yours, but must
 not be scanned; its findings stay open), *Not ours* or *Retired*. A
 permanent Not ours or Retired exclusion closes the open findings of what it
-matches as **Asset out of scope** (never counted as fixed), and their tasks,
-tickets and SLA clocks follow; removing it, giving it an end date or changing
-it to Do not scan reopens them. "Not ours" on an asset does the same for
-that asset. An exclusion with an end date only pauses scanning.
+matches as **Asset out of scope**; removing it, giving it an end date or
+changing it to Do not scan reopens them. "Not ours" on an asset does the same
+for that asset. An exclusion with an end date only pauses scanning.
+
+A finding closed as out of scope was not fixed, and nothing presents it as
+fixed:
+
+- it is not counted as remediated (MTTR, fix rate, CTEM cycle figures);
+- it leaves the SLA (`not_applicable`, neither met nor missed); re-including
+  the asset reopens it with the deadline it had, so excluding and
+  re-including never resets a clock;
+- a linked Jira issue gets a comment saying so and is not moved (when the
+  integration's outbound sync is on); a linked GitHub issue is left open;
+- its remediation task ends *closed without a verified fix* once all of its
+  findings are closed;
+- every close and reopen writes a `finding.status_changed` audit entry naming
+  the exclusion and its kind (or the "Not ours" decision); closing a
+  critical, P0 or KEV finding is high severity.
+
+When a Not ours or Retired exclusion would close **critical, P0 or KEV**
+findings, the dialog shows how many and asks you to confirm; the API refuses
+the request with `EXCLUSION_CLOSES_CRITICAL_FINDINGS` (409, details
+`critical_findings`) until it carries `confirm_critical`. If the asset is
+still yours, choose Do not scan instead: its findings stay open and keep
+counting.
 
 Only decisions made after the feature went live close findings: an asset
 already marked "Not ours" before then stays unscanned and keeps its findings
