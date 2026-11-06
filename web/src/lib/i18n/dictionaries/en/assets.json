@@ -1027,6 +1027,7 @@
   "assets.riskImpact.previewFailed": "The impact of this change could not be read",
   "assets.riskImpact.reason": "Reason for lowering the risk",
   "assets.riskImpact.reasonPlaceholder": "Why is this asset less exposed or less critical than recorded?",
+  "assets.riskImpact.reasonPlaceholderCrownJewel": "Why is this asset no longer a crown jewel?",
   "assets.riskImpact.title": "Lowering risk",
   "assets.safeDelete.archiveAction": "Archive",
   "assets.safeDelete.archiveFailed": "Could not archive {count} assets",
