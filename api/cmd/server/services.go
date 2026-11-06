@@ -1292,6 +1292,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	scopeGuardrails = scopeGuardrails.WithPublicCodeHosts(cfg.Scope.PublicCodeHostsExtra)
 	s.Scope.SetGuardrails(scopeGuardrails)
+	s.Scope.SetZones(repos.ScanZone) // the scan zones a pattern replacement reports on
 	s.ScopeGuardrails = scopeGuardrails
 	scopeCoverage := postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
