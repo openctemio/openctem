@@ -23,6 +23,7 @@ type Service struct {
 	addresses    AddressReader
 	starter      RunStarter
 	readiness    ReadinessChecker
+	unclassified UnclassifiedMode
 	tenantSwitch TenantSwitch
 	cfg          Config
 	alerts       *alerting

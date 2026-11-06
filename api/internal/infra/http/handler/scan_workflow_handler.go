@@ -639,6 +639,10 @@ type SkipReasonResponse struct {
 // StepRunResponse represents a step run in the response.
 type StepRunResponse struct {
 	ID string `json:"id"`
+	// EffectiveConfig is the standard params the step's command carried with
+	// their source; SensorSettings what the sensor reported it ran with.
+	EffectiveConfig *scanrundom.EffectiveConfig `json:"effective_config,omitempty"`
+	SensorSettings  *scanrundom.SensorSettings  `json:"sensor_settings,omitempty"`
 	// StepID is empty once the step was removed from the scan workflow; the step
 	// run keeps its key, name and tool.
 	StepID   string `json:"step_id,omitempty"`
@@ -1860,6 +1864,9 @@ func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 		InfoObservations: sr.InfoObservations,
 		FindingsHeld:     sr.FindingsHeld,
 		FindingsRefused:  sr.FindingsRefused,
+
+		EffectiveConfig: sr.EffectiveConfig,
+		SensorSettings:  sr.SensorSettings,
 	}
 	if !sr.StepID.IsZero() {
 		resp.StepID = sr.StepID.String()

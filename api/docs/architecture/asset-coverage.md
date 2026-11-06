@@ -160,7 +160,7 @@ organization at all. The first failing check is the reason:
 | Reason | Check |
 |---|---|
 | `policy_disabled` | the capability's default tool is switched off for the organization; or the trigger refused for an organization policy (scan approval, a window that never opens, the managed scan paused) |
-| `no_scope` | the organization has no active, unexpired scope entry (the gate would refuse every target) |
+| `no_scope` | the organization has no active, unexpired scope entry and its unclassified-scans setting in force is `off` or unreadable (the gate would refuse every active target). With `low_impact` or `full` the capability is not paused: everything found is in scope unless excluded, and the gate decides each target (RFC-054 §16) |
 | `tool_missing` | no sensor of the organization reports the tool |
 | `tool_not_allowed` | sensors report the tool, but their grant or local policy does not allow it |
 | `sensor_offline` | sensors with the tool exist and none takes work now |

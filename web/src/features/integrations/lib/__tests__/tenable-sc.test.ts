@@ -235,11 +235,14 @@ describe('validation messages', () => {
 describe('license rotation settings', () => {
   const ok = { ...DEFAULT_CONNECTOR_SETTINGS, sensorId: 's1' }
 
-  it('defaults to off with a 12 hour wait when the config has none', () => {
+  it('defaults to off with a 26 hour wait when the config has none', () => {
     const s = readConnectorSettings(integration(connectorCfg))
     expect(s.rotation).toBe('off')
     expect(s.rotationAcknowledged).toBe(false)
-    expect(s.rotationWaitHours).toBe(12)
+    expect(s.rotationWaitHours).toBe(26)
+    expect(readConnectorSettings(integration({ coverage_rotation: 'PURGE' })).rotation).toBe(
+      'purge'
+    )
   })
 
   it('reads the config keys, tolerating case, strings and unknown modes', () => {
@@ -264,17 +267,17 @@ describe('license rotation settings', () => {
       ...ok,
       rotation: 'aging',
       rotationAcknowledged: true,
-      rotationWaitHours: 6,
+      rotationWaitHours: 30,
     })
     expect(cfg).toMatchObject({
       coverage_rotation: 'aging',
       coverage_rotation_acknowledged: true,
-      coverage_rotation_wait_hours: 6,
+      coverage_rotation_wait_hours: 30,
     })
     expect(readConnectorSettings(integration(cfg))).toMatchObject({
       rotation: 'aging',
       rotationAcknowledged: true,
-      rotationWaitHours: 6,
+      rotationWaitHours: 30,
     })
   })
 
@@ -283,7 +286,7 @@ describe('license rotation settings', () => {
     expect(cfg.coverage_rotation_acknowledged).toBe(false)
   })
 
-  it('refuses rotation without the acknowledgement and a wait outside 1-72 hours', () => {
+  it('refuses rotation without the acknowledgement and a wait outside 24-72 hours', () => {
     expect(connectorSettingsError({ ...ok, rotation: 'aging' })?.key).toBe(
       'tenableSc.error.rotationNeedsAck'
     )
@@ -293,12 +296,15 @@ describe('license rotation settings', () => {
     expect(
       connectorSettingsError({ ...ok, rotation: 'recycle', rotationAcknowledged: true })
     ).toBeNull()
-    for (const h of [0, 73, 1.5]) {
+    expect(connectorSettingsError({ ...ok, rotation: 'purge' })?.key).toBe(
+      'tenableSc.error.rotationNeedsAck'
+    )
+    for (const h of [0, 1, 12, 23, 73, 24.5]) {
       expect(connectorSettingsError({ ...ok, rotationWaitHours: h })?.key).toBe(
         'tenableSc.error.rotationWaitHours'
       )
     }
-    expect(connectorSettingsError({ ...ok, rotationWaitHours: 1 })).toBeNull()
+    expect(connectorSettingsError({ ...ok, rotationWaitHours: 24 })).toBeNull()
     expect(connectorSettingsError({ ...ok, rotationWaitHours: 72 })).toBeNull()
   })
 
