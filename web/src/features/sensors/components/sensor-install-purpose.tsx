@@ -147,28 +147,54 @@ export function InstallPurposeStep({
             </p>
           </div>
           {value.purpose === 'internal' && (
-            <div className="flex items-start gap-2">
-              <Checkbox
-                id={ids.pin}
-                checked={value.pin}
-                disabled={parseRangeList(value.ranges).length === 0}
-                onCheckedChange={(c) => onChange({ ...value, pin: c === true })}
-              />
-              <span className="space-y-0.5">
-                <Label htmlFor={ids.pin} className="font-normal">
-                  {t('sensors.onboard.purpose.pin')}
-                </Label>
-                <span className="block text-xs text-muted-foreground">
-                  {t('sensors.onboard.purpose.pinHint')}
-                </span>
-              </span>
-            </div>
+            <HintedCheckbox
+              id={ids.pin}
+              checked={value.pin}
+              disabled={parseRangeList(value.ranges).length === 0}
+              onChange={(pin) => onChange({ ...value, pin })}
+              label={t('sensors.onboard.purpose.pin')}
+              hint={t('sensors.onboard.purpose.pinHint')}
+            />
           )}
           <p className="text-xs text-muted-foreground" data-testid="install-purpose-switch-note">
             {t('sensors.onboard.purpose.switchNote')}
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+/** A checkbox with its label and a one-line hint under it. */
+export function HintedCheckbox({
+  id,
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+}: {
+  id: string
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: string
+  hint: string
+  disabled?: boolean
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <Checkbox
+        id={id}
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(c) => onChange(c === true)}
+      />
+      <span className="space-y-0.5">
+        <Label htmlFor={id} className="font-normal">
+          {label}
+        </Label>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
+      </span>
     </div>
   )
 }
