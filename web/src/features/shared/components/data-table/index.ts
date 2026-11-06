@@ -6,6 +6,7 @@ export {
   type MobileRowSelection,
 } from './data-table'
 export { DataTableColumnHeader } from './data-table-column-header'
+export { TableRefreshBar } from './table-refresh-bar'
 export {
   useTableDensity,
   TABLE_DENSITIES,
