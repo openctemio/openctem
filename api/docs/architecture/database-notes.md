@@ -51,6 +51,23 @@ expecting it to stick: the next rescore replaces it. See
 - `pkg/domain/asset/entity.go` - `CalculateRiskScore()` uses findingCount for risk calculation
 - `internal/infra/postgres/asset_repository.go` - `selectQuery()` calculates it dynamically
 
+### parse_asset_ip and idx_assets_ip_addr
+
+`parse_asset_ip(name text) RETURNS inet` (IMMUTABLE) is the name of an
+`ip_address` asset as one full-mask address, or NULL when the name is not a
+bare address (a range, a host name, an address with a zone). The partial
+index `idx_assets_ip_addr ON assets (tenant_id, parse_asset_ip(name)) WHERE
+asset_type = 'ip_address'` serves the address filters (`asset_ip` on
+findings, `ip` in the query language): a range compiles to
+
+```sql
+a.asset_type = 'ip_address'
+  AND parse_asset_ip(a.name) BETWEEN host(network($1::inet))::inet AND host(broadcast($1::inet))::inet
+```
+
+one btree range scan per value, exact because every indexed address has a
+full mask (`pkg/domain/vulnerability.AssetIPRangeSQL`).
+
 ### Repository Identifier Normalization
 
 When assets are created from sensors (e.g., semgrep), the identifier format may differ from SCM imports:

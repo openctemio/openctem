@@ -530,6 +530,15 @@ func (c *compiler) template(f *Field, l *Leaf, tpl string) string {
 		// A constant-value field ("related_to=me"): nothing to bind.
 		return "(" + c.render(tpl, "") + ")"
 	}
+	if f.Type == TypeInet {
+		// One index range scan per value (an array would hide the range
+		// from the planner): an OR of the template, each value bound once.
+		parts := make([]string, 0, len(l.Values))
+		for _, v := range l.Values {
+			parts = append(parts, "("+c.render(tpl, c.bindValue(f, v))+")")
+		}
+		return "(" + strings.Join(parts, " OR ") + ")"
+	}
 	var ph string
 	switch l.Op {
 	case OpIn, OpNotIn:
@@ -570,6 +579,8 @@ func (c *compiler) bindValue(f *Field, v any) string {
 		return p
 	case TypeBool:
 		return p + "::boolean"
+	case TypeInet:
+		return p + "::inet"
 	}
 	return p
 }

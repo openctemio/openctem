@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_assets_ip_addr;
