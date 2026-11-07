@@ -79,7 +79,8 @@ import { VerificationPanel } from './detail/verification-panel'
 import { FindingRetestCheckSection } from './detail/finding-retest-check'
 import { FindingTenableRescanSection } from './detail/finding-tenable-rescan'
 import { FindingActivity } from './finding-activity'
-import { AdvisoryText } from './detail/advisory-text'
+import { ScannerText } from '@/features/shared/components/scanner-text'
+import { complianceCheckOf, complianceDescriptionText } from '../lib/compliance-check'
 import type { EntityActivityHandle } from '@/features/activity/components/entity-activity'
 import { AIProposalBadge } from './ai-proposal-badge'
 import { toDisplayText } from '@/lib/untrusted-text'
@@ -238,6 +239,12 @@ export function FindingDetailDrawer({
   // The row has no description yet (it may carry the code snippet): wait
   // for the full record rather than flash the wrong text.
   const description = api ? findingDescription(detail) : { text: '', fromAdvisory: false }
+  // A configuration check's values are in its own band: not again here.
+  const check = complianceCheckOf(detail)
+  const descriptionText =
+    check && description.text
+      ? complianceDescriptionText(description.text, check)
+      : description.text
   const c = detail.component
   const where = c
     ? `${c.name} ${c.version}`
@@ -364,12 +371,12 @@ export function FindingDetailDrawer({
               <FindingTenableRescanSection finding={detail} />
               <FindingIssueGroupSection findingId={detail.id} />
 
-              {description.text && (
+              {descriptionText && (
                 <DetailSection
                   title={t('findings.drawer.description', 'Description')}
                   icon={FileText}
                 >
-                  <AdvisoryText text={description.text} />
+                  <ScannerText text={descriptionText} preview />
                 </DetailSection>
               )}
 
