@@ -60,7 +60,6 @@
   "dashboards.coverage.cause.platform_failure": "Lỗi sensor hoặc proxy",
   "dashboards.coverage.cause.target_unreachable": "Mục tiêu không phản hồi",
   "dashboards.coverage.causesTitle": "Vì sao tài sản chưa được bao phủ",
-  "dashboards.description": "Mức độ phơi nhiễm hiện tại, xu hướng cải thiện và việc cần làm tiếp theo.",
   "dashboards.dimension.age_band.inTitle": "tuổi",
   "dashboards.dimension.age_band.name": "Tuổi",
   "dashboards.dimension.age_band.values.0_30": "0-30 ngày",
