@@ -229,7 +229,7 @@ func lexMinus(src string, i int) (token, int, error) {
 			i++
 		}
 		if _, ok := relativeUnits[src[us:i]]; !ok {
-			return token{}, 0, newError(Span{start, i}, "a relative time ends in h, d, w, mo or y")
+			return token{}, 0, newError(Span{start, i}, "a relative time ends in m, h, d, w, mo or y")
 		}
 		if us-ds > maxRelativeDigits {
 			return token{}, 0, newError(Span{start, i}, "relative time too long")
@@ -250,6 +250,7 @@ var relativeUnits = map[string]struct {
 	des  string
 	mul  int
 }{
+	"m":  {true, "M", 1},
 	"h":  {true, "H", 1},
 	"d":  {false, "D", 1},
 	"w":  {false, "W", 1},

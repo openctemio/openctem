@@ -42,6 +42,9 @@ type Entity struct {
 	times    map[string]string
 	// text is the internal contains-field behind `text ~ "..."`.
 	text string
+	// bareIP and bareCVE are the paths a bare address or CVE id of the
+	// short form types to ("" = stays text).
+	bareIP, bareCVE string
 	// mandatory are leaves ANDed to every query (exclusions the language
 	// cannot override), with a plain description each.
 	mandatory []Mandatory
@@ -68,6 +71,10 @@ type EntityDef struct {
 	Measures   []string
 	Times      []string
 	Mandatory  []Mandatory
+	// BareAddress and BareCVE are the paths a bare IP address or range and
+	// a bare CVE id of the short form become conditions on; empty leaves
+	// them text.
+	BareAddress, BareCVE string
 	// TextField is the internal registry field (a contains template over
 	// the entity's search columns) that `text ~ "..."` compiles to; empty
 	// when the entity has no text search.
@@ -84,7 +91,7 @@ func NewEntity(d EntityDef) (*Entity, error) {
 	e := &Entity{Name: d.Name, Noun: d.Noun, Permission: d.Permission, Registry: d.Registry,
 		paths: map[string]string{}, aliases: map[string]string{}, internal: map[string]bool{},
 		dims: map[string]string{}, measures: map[string]string{}, times: map[string]string{},
-		mandatory: d.Mandatory, text: d.TextField}
+		mandatory: d.Mandatory, text: d.TextField, bareIP: d.BareAddress, bareCVE: d.BareCVE}
 	if err := e.declareFields(d); err != nil {
 		return nil, err
 	}
@@ -153,6 +160,17 @@ func (e *Entity) declareFields(d EntityDef) error {
 			return fmt.Errorf("querylang: %s: path %q must be relation.field over a registry field", d.Name, p)
 		}
 		e.paths[p] = f
+	}
+	for _, b := range []struct {
+		path string
+		typ  filterspec.Type
+	}{{d.BareAddress, filterspec.TypeInet}, {d.BareCVE, filterspec.TypeString}} {
+		if b.path == "" {
+			continue
+		}
+		if f, ok := d.Registry.Field(e.fieldName(b.path)); !ok || f.Type != b.typ || e.pathOf(f.Name) != b.path {
+			return fmt.Errorf("querylang: %s: bare path %q is not a canonical %s path", d.Name, b.path, b.typ)
+		}
 	}
 	for a, p := range d.Aliases {
 		if _, isPath := e.paths[a]; isPath {
