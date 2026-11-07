@@ -30,6 +30,10 @@ func TestLivenessKind(t *testing.T) {
 		{"nxdomain", "resolve.dns", covdom.Verdict{Kind: covdom.VerdictUnresolved, Outcome: covdom.OutcomeNoAnswer}, liveness.KindNXDomain, true},
 		{"refused unresolvable", "vuln.templates", covdom.Verdict{Kind: covdom.VerdictUnresolved, Outcome: covdom.OutcomeNoAnswer}, liveness.KindNXDomain, true},
 		{"servfail", "vuln.templates", covdom.Verdict{Kind: covdom.VerdictUnresolved, Outcome: covdom.ReasonResolverFailed}, liveness.KindResolverFailed, true},
+		// A sensor that does not say why the name did not resolve: no
+		// evidence, never NXDOMAIN.
+		{"unknown dns kind", "vuln.templates", covdom.Verdict{Kind: covdom.VerdictUnresolved, Outcome: covdom.OutcomeDNSUnknown}, "", false},
+		{"unknown dns kind on resolve.dns", "resolve.dns", covdom.Verdict{Kind: covdom.VerdictUnresolved, Outcome: covdom.OutcomeDNSUnknown}, "", false},
 		// Passive lookups say nothing about whether the asset answers.
 		{"rdap", "lookup.rdap", covdom.Verdict{Kind: covdom.VerdictCovered}, "", false},
 		{"enumerate", "enumerate.subdomains", covdom.Verdict{Kind: covdom.VerdictFailed, Outcome: "timeout"}, "", false},
