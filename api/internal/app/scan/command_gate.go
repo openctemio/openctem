@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // ErrCommandTargetRefused is wrapped by every refusal of GateCommandPayload
@@ -64,7 +65,7 @@ func (s *Service) GateCommandPayload(ctx context.Context, tenantID shared.ID, se
 		return nil, err
 	}
 
-	validated, err := s.validateScanTargets(ctx, CreateScanInput{TenantID: tenantID.String(), Targets: targets})
+	validated, err := s.validateScanTargets(ctx, CreateScanInput{TenantID: tenantID.String(), Targets: targets}, validator.DefaultCIDRHostBits)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCommandTargetRefused, err)
 	}
