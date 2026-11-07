@@ -16,6 +16,11 @@ timeline from the scope entry, through the assets the subject was discovered
 under, to the scans and sources that reported it. Each step links to its
 record. A step the viewer may not see shows as "1 step you cannot see".
 
+Web: `web/src/features/exploration` (`StoryTimeline`, the one component for
+every story; `FindingHowWeFoundThis` in the finding page's rail); the asset
+page and sheet show it inside their discovery section
+(`features/assets/components/asset-lineage-section.tsx`).
+
 ## API
 
 | Route | Gate | Answers |
