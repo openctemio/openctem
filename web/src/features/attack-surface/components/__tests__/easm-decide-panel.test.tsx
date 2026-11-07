@@ -1,11 +1,12 @@
 /**
  * research/117 + research/425: the Decide panel shows each scope decision as
  * one card. The addresses behind in-scope names are grouped by network: one
- * decision per group, a selection or all waiting addresses, each after a
- * dialog listing exactly what changes; shared and CDN addresses are never in
- * a bulk add (only "Add anyway" on one address); "Is this network yours?" is
- * asked once per network; nothing is added without the person's click, and
- * nothing at all without scope write.
+ * decision per group, a selection, "Select all" or every waiting address
+ * past the list, each after a dialog listing the network owners and what
+ * changes; third-party (shared, CDN) addresses are left out of an add unless
+ * the person ticks them in; "Is this network yours?" is asked once per
+ * network; a failed network lookup says so and can be retried; nothing is
+ * added without the person's click, and nothing at all without scope write.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -60,11 +61,20 @@ const cards = (canAdd: boolean) => ({
           asset_id: 'a2',
           address: '203.0.113.12',
           resolved_from: ['api.acme.example'],
-          network: { known: true, asn: 'AS64500', org: 'Acme' },
+          network: { known: false },
+          lookup: { state: 'failed', reason: 'tool_error' },
           ownership: { band: 'low', score: 20, signals: [] },
         },
       ],
       prefix_rules: [{ prefix: '203.0.113.0/24', addresses: 1 }],
+      summary: {
+        auto_added: 41,
+        third_party: 12,
+        checked: 0,
+        need_you: 2,
+        looking_up: 0,
+        lookup_failed: 1,
+      },
       groups: [
         {
           key: 'own_prefix:203.0.113.0/24',
@@ -141,6 +151,7 @@ const checkedCards = (canAdd: boolean) => {
         ...addr,
         count: 1,
         checked_count: 1,
+        summary: { ...addr.summary, checked: 1, need_you: 1 },
         checked_addresses: known,
         prefix_rules: [],
         groups: addr.groups!.filter((g) => g.kind !== 'block'),
@@ -174,7 +185,12 @@ describe('EASMDecidePanel', () => {
     expect(groups[0]).toHaveTextContent('From www.acme.example')
     expect(groups[0]).toHaveTextContent('In your own prefix')
     expect(groups[1]).toHaveTextContent('198.51.100.0/24, network not known yet')
-    expect(groups[1]).toHaveTextContent('No network data yet')
+    // The lookup failed: said so, with a retry (not a bare "unknown").
+    expect(groups[1]).toHaveTextContent('Network unknown: the lookup failed')
+    expect(groups[1]).not.toHaveTextContent('No network data yet')
+    expect(screen.getByTestId('decide-summary')).toHaveTextContent(
+      '41 added automatically (yours), 12 third-party (never scanned), 2 need you'
+    )
     expect(groups[1]).toHaveTextContent('New, first seen less than a day ago')
     // Another organization's network: asked once, never in a bulk add.
     const asked = screen.getByTestId('decide-asked-groups')
@@ -182,7 +198,8 @@ describe('EASMDecidePanel', () => {
     // Shared: no decision needed, no group add button.
     const shared = screen.getByTestId('decide-shared-groups')
     expect(shared).toHaveTextContent('Cloudflare')
-    expect(within(shared).queryByRole('button', { name: /^Add \d/ })).not.toBeInTheDocument()
+    expect(within(shared).queryByRole('button', { name: /^Add (all|\d)/ })).not.toBeInTheDocument()
+    expect(shared).toHaveTextContent('third party: never scanned as yours')
     expect(screen.getByText('1 asset you confirmed is not in scope')).toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
@@ -200,29 +217,120 @@ describe('EASMDecidePanel', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add to scope' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
     expect(api.post).toHaveBeenCalledWith('/api/v1/easm/suggestions/addresses/add', {
-      addresses: ['203.0.113.10'],
+      addresses: [],
+      groups: ['own_prefix:203.0.113.0/24'],
+      all_waiting: false,
       ranges: ['203.0.113.0/24'],
       include_shared: false,
     })
   })
 
-  it('Add all adds every waiting address in one decision and says names prove nothing', async () => {
+  it('a failed network lookup can be retried; the sensors look it up again', async () => {
+    api.get.mockImplementation(byUrl(cards(true)))
+    api.post.mockResolvedValue({ queued: 1, addresses: ['203.0.113.12'] })
+    const user = userEvent.setup()
+    wrap(<EASMDecidePanel />)
+    await screen.findByText(TITLE)
+    await user.click(screen.getByRole('button', { name: 'Retry lookup' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/easm/suggestions/addresses/lookup', {
+        addresses: ['203.0.113.12'],
+        groups: [],
+        all_waiting: false,
+      })
+    )
+  })
+
+  it('Select all and Add selected add every listed address in one decision, owners shown', async () => {
     api.get.mockImplementation(byUrl(cards(true)))
     api.post.mockResolvedValue({ created: 2, pending: 0, existing: 0, refused: 0, items: [] })
     const user = userEvent.setup()
     wrap(<EASMDecidePanel />)
     await screen.findByText(TITLE)
-    await user.click(screen.getByRole('button', { name: 'Add all (2)' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add selected (as ranges)' }))
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Add all 2 waiting addresses?')
     expect(dialog).toHaveTextContent('does not prove the address is yours')
+    expect(dialog).toHaveTextContent('a range holds only the addresses you chose')
+    const owners = within(dialog).getByTestId('decide-confirm-owners')
+    expect(owners).toHaveTextContent('Your prefix 203.0.113.0/24: 1')
+    expect(owners).toHaveTextContent('198.51.100.0/24, network not known yet: 1')
     const items = within(dialog).getByTestId('decide-confirm-items')
     expect(items).toHaveTextContent('203.0.113.10')
     expect(items).toHaveTextContent('203.0.113.12')
     expect(items).not.toHaveTextContent('104.16.5.5')
     await user.click(within(dialog).getByRole('button', { name: 'Add to scope' }))
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
-    expect(api.post.mock.calls[0][1].addresses).toEqual(['203.0.113.10', '203.0.113.12'])
+    expect(api.post.mock.calls[0][1]).toEqual({
+      addresses: ['203.0.113.10', '203.0.113.12'],
+      groups: [],
+      all_waiting: false,
+      ranges: [],
+      include_shared: false,
+    })
+  })
+
+  it('past the card list, "select all N waiting" sends every waiting address', async () => {
+    const c = cards(true)
+    const first = {
+      ...c.cards[0],
+      truncated: true,
+      summary: { ...c.cards[0].summary!, need_you: 250 },
+    }
+    api.get.mockImplementation(byUrl({ ...c, cards: [first, c.cards[1]] }))
+    api.post.mockResolvedValue({ asset_ids: [], addresses: [] })
+    const user = userEvent.setup()
+    wrap(<EASMDecidePanel />)
+    await screen.findByText('250 addresses your in-scope names resolve to')
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }))
+    const banner = screen.getByTestId('decide-select-all-matching')
+    expect(banner).toHaveTextContent('The 2 addresses listed here are selected.')
+    await user.click(
+      within(banner).getByRole('button', { name: 'Select all 250 waiting addresses' })
+    )
+    expect(screen.getByText('250 selected')).toBeInTheDocument()
+    await user.click(
+      within(screen.getByTestId('decide-groups-toolbar')).getByRole('button', { name: 'Not ours' })
+    )
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Mark 250 addresses as not yours?')
+    await user.click(within(dialog).getByRole('button', { name: 'Not ours' }))
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith('/api/v1/easm/suggestions/addresses/reject', {
+        addresses: ['203.0.113.10', '203.0.113.12'],
+        groups: [],
+        all_waiting: true,
+      })
+    )
+  })
+
+  it('third-party addresses in a selection are flagged and left out unless ticked in', async () => {
+    api.get.mockImplementation(byUrl(cards(true)))
+    api.post.mockResolvedValue({ created: 1, pending: 0, existing: 0, refused: 0, items: [] })
+    const user = userEvent.setup()
+    wrap(<EASMDecidePanel />)
+    await screen.findByText(TITLE)
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Select the addresses of Your prefix 203.0.113.0/24' })
+    )
+    await user.click(screen.getByRole('checkbox', { name: 'Select the addresses of Cloudflare' }))
+    await user.click(screen.getByRole('button', { name: 'Add selected (as ranges)' }))
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByTestId('decide-confirm-owners')).toHaveTextContent(
+      'Cloudflare: 1, third party'
+    )
+    const optIn = within(within(dialog).getByTestId('decide-include-shared')).getByRole('checkbox')
+    expect(optIn).not.toBeChecked()
+    await user.click(within(dialog).getByRole('button', { name: 'Add to scope' }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1))
+    expect(api.post.mock.calls[0][1]).toEqual({
+      addresses: ['203.0.113.10'],
+      groups: [],
+      all_waiting: false,
+      ranges: [],
+      include_shared: false,
+    })
   })
 
   it('selects across groups: Add selected and Not ours act on the selection', async () => {
@@ -232,11 +340,11 @@ describe('EASMDecidePanel', () => {
     wrap(<EASMDecidePanel />)
     await screen.findByText(TITLE)
     const boxes = screen.getAllByRole('checkbox', { name: /Select the addresses of/ })
-    expect(boxes).toHaveLength(2) // shared groups are never selectable
+    expect(boxes).toHaveLength(4) // every group is selectable, shared ones too
     await user.click(boxes[0])
     await user.click(boxes[1])
     expect(screen.getByText('2 selected')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add selected' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add selected (as ranges)' })).toBeInTheDocument()
     await user.click(
       within(screen.getByTestId('decide-groups-toolbar')).getByRole('button', { name: 'Not ours' })
     )
@@ -245,29 +353,47 @@ describe('EASMDecidePanel', () => {
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/easm/suggestions/addresses/reject', {
         addresses: ['203.0.113.10', '203.0.113.12'],
+        groups: [],
+        all_waiting: false,
       })
     )
   })
 
-  it('a shared address is only added on its own, with Add anyway', async () => {
+  it('a shared group is added only after ticking the third-party opt-in', async () => {
     api.get.mockImplementation(byUrl(cards(true)))
     api.post.mockResolvedValue({ created: 1, pending: 0, existing: 0, refused: 0, items: [] })
     const user = userEvent.setup()
     wrap(<EASMDecidePanel />)
     await screen.findByText(TITLE)
     const shared = screen.getByTestId('decide-shared-groups')
-    await user.click(within(shared).getByRole('button', { name: 'Show the address' }))
-    await user.click(within(shared).getByRole('button', { name: 'Add 104.16.5.5 to scope' }))
+    await user.click(within(shared).getByRole('button', { name: 'Add anyway' }))
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('other organizations use it too')
-    await user.click(within(dialog).getByRole('button', { name: 'Add to scope' }))
+    expect(dialog).toHaveTextContent('Other organizations use it too')
+    const confirm = within(dialog).getByRole('button', { name: 'Add to scope' })
+    expect(confirm).toBeDisabled()
+    await user.click(
+      within(within(dialog).getByTestId('decide-include-shared')).getByRole('checkbox')
+    )
+    await user.click(confirm)
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/easm/suggestions/addresses/add', {
-        addresses: ['104.16.5.5'],
+        addresses: [],
+        groups: ['provider:cloudflare|edge'],
+        all_waiting: false,
         ranges: [],
         include_shared: true,
       })
     )
+  })
+
+  it('is keyboard operable: Select all with the space key', async () => {
+    api.get.mockImplementation(byUrl(cards(true)))
+    const user = userEvent.setup()
+    wrap(<EASMDecidePanel />)
+    await screen.findByText(TITLE)
+    screen.getByRole('checkbox', { name: 'Select all' }).focus()
+    await user.keyboard(' ')
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
   })
 
   it('is this network yours: Yes records it, No marks it not ours', async () => {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -174,7 +173,7 @@ func TestAddressGroups_KindsCountsAndTotal(t *testing.T) {
 func TestAddressDecisions_AddRangeAndAddress(t *testing.T) {
 	f := newDecisionFixture(t)
 	res, err := f.d.Add(context.Background(), f.tenant, person, AddressAddInput{
-		Addresses: []string{"203.0.113.7", "198.51.100.20"}, Ranges: []string{"198.51.100.0/24"}})
+		AddressSelection: AddressSelection{Addresses: []string{"203.0.113.7", "198.51.100.20"}}, Ranges: []string{"198.51.100.0/24"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,15 +200,16 @@ func TestAddressDecisions_AddRefusesWhatIsNotPending(t *testing.T) {
 		in   AddressAddInput
 		want error
 	}{
-		{"unknown address", AddressAddInput{Addresses: []string{"203.0.113.99"}}, ErrDecisionNotPending},
-		{"one bad among good", AddressAddInput{Addresses: []string{"203.0.113.7", "203.0.113.99"}}, ErrDecisionNotPending},
-		{"not an address", AddressAddInput{Addresses: []string{"203.0.113.7", "evil.example"}}, ErrDecisionNotPending},
+		{"unknown address", AddressAddInput{AddressSelection: AddressSelection{Addresses: []string{"203.0.113.99"}}}, ErrDecisionNotPending},
+		{"one bad among good", AddressAddInput{AddressSelection: AddressSelection{Addresses: []string{"203.0.113.7", "203.0.113.99"}}}, ErrDecisionNotPending},
+		{"not an address", AddressAddInput{AddressSelection: AddressSelection{Addresses: []string{"203.0.113.7", "evil.example"}}}, ErrDecisionNotPending},
 		{"computed block range", AddressAddInput{Ranges: []string{"203.0.113.0/24"}}, ErrDecisionNotPending},
 		{"supernet of own prefix", AddressAddInput{Ranges: []string{"198.51.0.0/16"}}, ErrDecisionNotPending},
 		{"guardrail breach", AddressAddInput{Ranges: []string{"0.0.0.0/0"}}, ErrDecisionNotPending},
-		{"CDN address in a bulk", AddressAddInput{Addresses: []string{"203.0.113.7", "104.16.2.2"}}, ErrDecisionShared},
-		{"CDN address with a range", AddressAddInput{Addresses: []string{"104.16.2.2"}, Ranges: []string{"198.51.100.0/24"}, IncludeShared: true}, ErrDecisionShared},
-		{"CDN address without include_shared", AddressAddInput{Addresses: []string{"104.16.2.2"}}, ErrDecisionShared},
+		{"CDN address in a bulk", AddressAddInput{AddressSelection: AddressSelection{Addresses: []string{"203.0.113.7", "104.16.2.2"}}}, ErrDecisionShared},
+		{"unknown group", AddressAddInput{AddressSelection: AddressSelection{Groups: []string{"block:192.0.2.0/24"}}}, ErrDecisionNotPending},
+		{"shared group without include_shared", AddressAddInput{AddressSelection: AddressSelection{Groups: []string{"provider:cloudflare|edge"}}}, ErrDecisionShared},
+		{"CDN address without include_shared", AddressAddInput{AddressSelection: AddressSelection{Addresses: []string{"104.16.2.2"}}}, ErrDecisionShared},
 		{"empty", AddressAddInput{}, ErrDecisionEmpty},
 	}
 	for _, tc := range cases {
@@ -226,11 +226,11 @@ func TestAddressDecisions_AddRefusesWhatIsNotPending(t *testing.T) {
 
 func TestAddressDecisions_AddTooMany(t *testing.T) {
 	f := newDecisionFixture(t)
-	many := make([]string, scope.MaxBulkTargets+1)
+	many := make([]string, maxSuggestionScan+1)
 	for i := range many {
 		many[i] = fmt.Sprintf("10.%d.%d.1", i/250, i%250)
 	}
-	if _, err := f.d.Add(context.Background(), f.tenant, person, AddressAddInput{Addresses: many}); !errors.Is(err, ErrDecisionTooMany) {
+	if _, err := f.d.Add(context.Background(), f.tenant, person, AddressAddInput{AddressSelection: AddressSelection{Addresses: many}}); !errors.Is(err, ErrDecisionTooMany) {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -238,7 +238,7 @@ func TestAddressDecisions_AddTooMany(t *testing.T) {
 // A shared address may be added on its own, explicitly.
 func TestAddressDecisions_AddSharedAloneAnyway(t *testing.T) {
 	f := newDecisionFixture(t)
-	if _, err := f.d.Add(context.Background(), f.tenant, person, AddressAddInput{Addresses: []string{"104.16.2.2"}, IncludeShared: true}); err != nil {
+	if _, err := f.d.Add(context.Background(), f.tenant, person, AddressAddInput{AddressSelection: AddressSelection{Addresses: []string{"104.16.2.2"}}, IncludeShared: true}); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.targets.calls) != 1 || len(f.targets.calls[0].Items) != 1 {
@@ -250,10 +250,10 @@ func TestAddressDecisions_AddSharedAloneAnyway(t *testing.T) {
 func TestAddressDecisions_CrossTenant(t *testing.T) {
 	f := newDecisionFixture(t)
 	other := shared.NewID()
-	if _, err := f.d.Add(context.Background(), other, person, AddressAddInput{Addresses: []string{"203.0.113.7"}}); !errors.Is(err, ErrDecisionNotPending) {
+	if _, err := f.d.Add(context.Background(), other, person, AddressAddInput{AddressSelection: AddressSelection{Addresses: []string{"203.0.113.7"}}}); !errors.Is(err, ErrDecisionNotPending) {
 		t.Fatalf("add: %v", err)
 	}
-	if _, err := f.d.Reject(context.Background(), other, person, []string{"203.0.113.7"}); !errors.Is(err, ErrDecisionNotPending) {
+	if _, err := f.d.Reject(context.Background(), other, person, AddressSelection{Addresses: []string{"203.0.113.7"}}); !errors.Is(err, ErrDecisionNotPending) {
 		t.Fatalf("reject: %v", err)
 	}
 	if _, err := f.d.NetworkNotOurs(context.Background(), other, person, "other_network:AS7552"); !errors.Is(err, ErrNetworkNotAsked) {
@@ -266,14 +266,14 @@ func TestAddressDecisions_CrossTenant(t *testing.T) {
 
 func TestAddressDecisions_Reject(t *testing.T) {
 	f := newDecisionFixture(t)
-	res, err := f.d.Reject(context.Background(), f.tenant, person, []string{"203.0.113.7", "104.16.2.2"})
+	res, err := f.d.Reject(context.Background(), f.tenant, person, AddressSelection{Addresses: []string{"203.0.113.7", "104.16.2.2"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if f.review.state != attribution.StateRejected || len(f.review.calls) != 1 || len(res.AssetIDs) != 2 {
 		t.Fatalf("review %+v res %+v", f.review, res)
 	}
-	if _, err := f.d.Reject(context.Background(), f.tenant, person, []string{"203.0.113.99"}); !errors.Is(err, ErrDecisionNotPending) {
+	if _, err := f.d.Reject(context.Background(), f.tenant, person, AddressSelection{Addresses: []string{"203.0.113.99"}}); !errors.Is(err, ErrDecisionNotPending) {
 		t.Fatalf("out of set: %v", err)
 	}
 }

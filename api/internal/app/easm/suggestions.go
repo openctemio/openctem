@@ -34,6 +34,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/api/internal/app/scopeauth"
 	"github.com/openctemio/openctem/api/pkg/domain/addrowner"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
@@ -99,6 +100,72 @@ type SuggestionAddress struct {
 	// nothing. Set on offered and already-checked addresses, never on
 	// shared ones.
 	Ownership *addrowner.Assessment `json:"ownership,omitempty"`
+	// Lookup: where the address's network lookup stands, set only while
+	// its network is unknown (pending: queued or not run yet; failed: it
+	// could not run or failed, retry; not_found: it ran and no routing
+	// data holds the address).
+	Lookup *NetworkLookup `json:"lookup,omitempty"`
+}
+
+// Network lookup states of an address whose network is unknown.
+const (
+	LookupPending  = "pending"
+	LookupFailed   = "failed"
+	LookupNotFound = "not_found"
+)
+
+// NetworkLookup is where an address's network lookup (lookup.asn, run by a
+// sensor) stands, from the coverage ledger.
+type NetworkLookup struct {
+	State string `json:"state" enums:"pending,failed,not_found"`
+	// Reason: the ledger's reason or outcome code of a failed lookup.
+	Reason string `json:"reason,omitempty"`
+	// At: the last attempt, when there was one.
+	At *time.Time `json:"at,omitempty"`
+}
+
+// LedgerLookup is the coverage ledger row of an address's network lookup
+// ("" state: no row yet).
+type LedgerLookup struct {
+	State         string
+	Reason        string
+	LastAttemptAt *time.Time
+}
+
+// networkLookup reads a ledger row as a lookup state.
+func networkLookup(l LedgerLookup) *NetworkLookup {
+	out := &NetworkLookup{At: l.LastAttemptAt}
+	switch l.State {
+	case "", "due", "queued":
+		out.State = LookupPending
+	case "covered":
+		out.State = LookupNotFound
+	default: // failed, blocked, paused, not_applicable
+		out.State, out.Reason = LookupFailed, l.Reason
+		if out.Reason == "" {
+			out.Reason = l.State
+		}
+	}
+	return out
+}
+
+// AddressSummary is the one-line account of the card: what joined scope on
+// its own, what is a third party's, what waits for a person.
+type AddressSummary struct {
+	// AutoAdded: addresses behind in-scope names that an automatic entry
+	// (the organization's own network) already covers.
+	AutoAdded int `json:"auto_added"`
+	// ThirdParty: shared, provider and declined addresses: never scanned
+	// as the organization's, passive checks only.
+	ThirdParty int `json:"third_party"`
+	// Checked: addresses that already get low-impact checks.
+	Checked int `json:"checked"`
+	// NeedYou: addresses waiting for a person.
+	NeedYou int `json:"need_you"`
+	// LookingUp: waiting addresses whose network lookup has not run yet.
+	LookingUp int `json:"looking_up"`
+	// LookupFailed: waiting addresses whose network lookup failed.
+	LookupFailed int `json:"lookup_failed"`
 }
 
 // SuggestionPrefix is a network prefix of the organization's own (an
@@ -174,6 +241,8 @@ type SuggestionCard struct {
 	// organization's own prefix, by network, else by /24 (IPv4) or /48
 	// (IPv6), and shared ones by provider. Each address is in one group.
 	Groups []SuggestionGroup `json:"groups,omitempty"`
+	// Summary: the card in one line (addresses card only).
+	Summary *AddressSummary `json:"summary,omitempty"`
 	// confirmed_out_of_scope only.
 	Assets []SuggestionAsset `json:"assets,omitempty"`
 }
@@ -213,6 +282,8 @@ type AddressBehindNames struct {
 	Ports []int
 	// FirstSeen: when the address asset was first seen.
 	FirstSeen time.Time
+	// Lookup: the coverage ledger row of its network lookup (lookup.asn).
+	Lookup LedgerLookup
 }
 
 // SuggestionStore reads the cards' rows (*postgres.AttributionRepository).
@@ -247,7 +318,20 @@ type SuggestionService struct {
 	declined DeclinedNetworks
 	// now is the clock (tests set it); nil means time.Now.
 	now func() time.Time
+	// autoAdded tells which covering entries were added automatically
+	// (the summary's "added automatically"); nil counts none.
+	autoAdded AutoAddedPatterns
 }
+
+// AutoAddedPatterns tells which scope patterns the automatic address add
+// created (*postgres.EASMAddressAutoAddRepository).
+type AutoAddedPatterns interface {
+	Seen(ctx context.Context, tenantID shared.ID, patterns []string) (map[string]bool, error)
+}
+
+// SetAutoAdded lets the card's summary count the addresses that joined
+// scope automatically.
+func (s *SuggestionService) SetAutoAdded(a AutoAddedPatterns) { s.autoAdded = a }
 
 // DeclinedNetworks lists the networks a tenant declined
 // (*postgres.EASMDeclinedNetworkRepository).
@@ -349,7 +433,7 @@ func (s *SuggestionService) Cards(ctx context.Context, tenantID shared.ID, canAd
 	}
 	out.AddressMode = s.addressModeOf(ctx, tenantID)
 	if out.AddressMode != tenant.AddressNever {
-		addrCard, err := s.addressCard(ctx, tenantID, view)
+		addrCard, err := s.addressCard(ctx, tenantID, view, MaxSuggestionItems)
 		if err != nil {
 			return nil, err
 		}
@@ -367,7 +451,10 @@ func (s *SuggestionService) Cards(ctx context.Context, tenantID shared.ID, canAd
 	return out, nil
 }
 
-func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID, view *shared.DataScope) (*SuggestionCard, error) {
+// addressCard builds the addresses card; itemLimit bounds the addresses it
+// lists (the card shows MaxSuggestionItems; a bulk decision on "every
+// waiting address" reads them all, up to maxSuggestionScan).
+func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID, view *shared.DataScope, itemLimit int) (*SuggestionCard, error) {
 	rows, err := s.store.AddressesBehindNames(ctx, tenantID, view, maxSuggestionScan)
 	if err != nil {
 		return nil, fmt.Errorf("addresses behind names: %w", err)
@@ -412,8 +499,13 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		SharedAddresses: []SuggestionAddress{}, CheckedAddresses: []SuggestionAddress{}}
 	names := map[string]bool{}
 	providers := map[string]int{}
+	summary := &AddressSummary{}
+	var coveredBy []string // the entries covering addresses (auto-added count)
 	for _, r := range rows {
-		if _, covered := cover[r.Address]; covered {
+		if via, covered := cover[r.Address]; covered {
+			if via.Pattern != "" && s.inScopeName(cover, r.VisibleNames) {
+				coveredBy = append(coveredBy, via.Pattern)
+			}
 			continue
 		}
 		var from []string
@@ -432,6 +524,9 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		item := SuggestionAddress{AssetID: r.AssetID, Address: r.Address, ResolvedFrom: from}
 		item.Network, item.Shared = classifyAddress(r, org, seeds)
+		if !item.Network.Known {
+			item.Lookup = networkLookup(r.Lookup)
+		}
 		if item.Shared == "" || item.Shared == SharedOtherNetwork {
 			if declinedNetwork(declined, item.Network) != "" {
 				item.Shared = SharedDeclined
@@ -455,20 +550,22 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 			item.Ownership = &a
 		}
 		if item.Shared != "" {
+			summary.ThirdParty++
 			card.SharedCount++
 			if item.Network.Class != "" && item.Network.Class != string(edgeaddr.Dedicated) {
 				card.ProviderCount++
 				providers[item.Network.Provider+"|"+item.Network.Class]++
 			}
-			if len(card.SharedAddresses) < MaxSuggestionItems {
+			if len(card.SharedAddresses) < itemLimit {
 				card.SharedAddresses = append(card.SharedAddresses, item)
 			}
 			continue
 		}
 		if checks && item.Network.Known {
 			// Already gets low-impact checks: no decision waits.
+			summary.Checked++
 			card.CheckedCount++
-			if len(card.CheckedAddresses) < MaxSuggestionItems {
+			if len(card.CheckedAddresses) < itemLimit {
 				card.CheckedAddresses = append(card.CheckedAddresses, item)
 			}
 			continue
@@ -478,7 +575,14 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		if !item.Network.Known {
 			card.UnknownNetworkCount++
+			switch item.Lookup.State {
+			case LookupPending:
+				summary.LookingUp++
+			case LookupFailed:
+				summary.LookupFailed++
+			}
 		}
+		summary.NeedYou++
 		offered = append(offered, item)
 	}
 	// Strongest evidence first, so the card's item limit keeps the
@@ -489,7 +593,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 			card.Bands = map[string]int{}
 		}
 		card.Bands[string(item.Ownership.Band)]++
-		if len(card.Addresses) < MaxSuggestionItems {
+		if len(card.Addresses) < itemLimit {
 			card.Addresses = append(card.Addresses, item)
 		} else {
 			card.Truncated = true
@@ -500,11 +604,34 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 	card.PrefixRules = prefixRules(card.Addresses)
 	card.Providers = providerList(providers)
 	card.Groups = groupAddresses(card, seeds, declined)
+	if s.autoAdded != nil && len(coveredBy) > 0 {
+		seen, err := s.autoAdded.Seen(ctx, tenantID, dedupe(coveredBy, strings.TrimSpace))
+		if err != nil {
+			return nil, fmt.Errorf("automatic address entries: %w", err)
+		}
+		for _, p := range coveredBy {
+			if seen[p] {
+				summary.AutoAdded++
+			}
+		}
+	}
+	card.Summary = summary
 
 	if card.Count == 0 && card.SharedCount == 0 && card.CheckedCount == 0 {
 		return nil, nil
 	}
 	return card, nil
+}
+
+// inScopeName reports whether one of names is covered (the address is
+// behind an in-scope name of the caller).
+func (s *SuggestionService) inScopeName(cover map[string]scopeauth.Via, names []string) bool {
+	for _, n := range names {
+		if _, ok := cover[n]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // classifyAddress tells what we know about the address's network and why it
