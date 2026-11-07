@@ -78,6 +78,45 @@ finding-practice -tenant <id>    # dry run, one tenant
 finding-practice -apply          # write (owner's go on production)
 ```
 
+## Compliance SLA (shipped)
+
+Compliance findings have their own SLA policy, so their windows never reach
+vulnerability SLA figures and vulnerability windows never reach them.
+
+- `sla_policies.practice`: NULL (the policy governs every finding except
+  compliance, as every policy before) or `compliance` (it governs only
+  compliance findings). Fixed at create (`POST /api/v1/sla-policies` with
+  `"practice": "compliance"`); one default per tenant and practice (unique
+  index `uq_sla_policies_tenant_default` on `(tenant_id, COALESCE(practice, ''))`).
+- Resolution for a compliance finding: the asset's compliance policy, else the
+  tenant's default compliance policy, else the platform compliance windows
+  (`sladom.DefaultCompliancePriorityDays`: P0 30, P1 30, P2 90, P3 180 days;
+  per severity critical 30, high 30, medium 90, low 180, info none). A policy
+  without a practice never governs it; the known exploited cap never applies
+  (a check has no CVE). Every other finding keeps the existing choice (asset,
+  tenant default, platform), and a compliance policy never governs it.
+- The choice is made in one place (`sla.Service.policyResolver`, keyed by
+  practice) and used by ingest (`Applier.ApplyBatch`), the severity-downgrade
+  relaxation, the deadline explanation on the finding page, the acceptance
+  expiry, the material-change reopen and the regression restart.
+- Deadlines stay tighten-only: a compliance finding stored with a shorter
+  vulnerability deadline keeps it until the explicit re-baseline below.
+- **Re-baseline** (`finding-practice -sla`): for every open compliance finding
+  with a deadline, the compliance deadline counted from first detection. A dry
+  run (the default) reports per tenant the findings considered, those whose
+  deadline would move later and by how many days in all, those unchanged, and
+  the overdue count before and after. `-sla -apply -undo <file>` first writes
+  the undo file (tenant, finding, previous deadline and status, new deadline;
+  never overwritten), then moves only deadlines still as read to the later
+  date (never earlier), in a transaction marked as an explicit SLA change so
+  the tighten-only guard lets it through, with an `sla_rebaselined` timeline
+  entry per finding carrying both deadlines. A rerun changes nothing.
+- Dashboard figures are vulnerability figures: every dashboard query over
+  findings (`findingExcl`) and the dashboard facts (`dash_recompute_asset`)
+  leave compliance findings out, and a practice change marks the asset for a
+  fact refresh. The findings list's own counts follow its filters (the
+  practice switch).
+
 ## Key files
 
 - `api/pkg/domain/vulnerability/practice.go`, `practice_test.go`
@@ -85,3 +124,5 @@ finding-practice -apply          # write (owner's go on production)
 - `api/migrations/*_finding_practice*.sql`
 - `api/internal/infra/http/routes/findings_practice_filter_db_test.go`
 - `api/internal/tools/findingpractice` (the backfill command)
+- `api/pkg/domain/sla/entity.go`, `api/internal/app/sla/service.go` (compliance policy)
+- `api/migrations/*_sla_policy_practice.sql`, `*_dashboard_facts_without_compliance.sql`

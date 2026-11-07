@@ -61,10 +61,13 @@ type SLAPolicyResponse struct {
 	// KEVCapDays is the known exploited deadline cap: a finding whose CVE is
 	// in CISA KEV is due at most this many days after it is first seen as
 	// known exploited. 0 = off.
-	KEVCapDays          int  `json:"kev_cap_days"`
-	WarningThresholdPct int  `json:"warning_threshold_pct"`
-	EscalationEnabled   bool `json:"escalation_enabled"`
-	IsActive            bool `json:"is_active"`
+	KEVCapDays int `json:"kev_cap_days"`
+	// Practice is empty (the policy governs every finding except
+	// compliance) or "compliance" (only compliance findings).
+	Practice            string `json:"practice,omitempty"`
+	WarningThresholdPct int    `json:"warning_threshold_pct"`
+	EscalationEnabled   bool   `json:"escalation_enabled"`
+	IsActive            bool   `json:"is_active"`
 	// IsPlatformDefault is true when the tenant has configured no policy
 	// and the windows are the platform defaults (ID is then empty).
 	IsPlatformDefault bool      `json:"is_platform_default"`
@@ -90,6 +93,7 @@ func toSLAPolicyResponse(p *sladom.Policy) SLAPolicyResponse {
 		P2Days:              p.P2Days(),
 		P3Days:              p.P3Days(),
 		KEVCapDays:          p.KEVCapDays(),
+		Practice:            p.Practice(),
 		WarningThresholdPct: p.WarningThresholdPct(),
 		EscalationEnabled:   p.EscalationEnabled(),
 		IsActive:            p.IsActive(),
@@ -122,6 +126,9 @@ type CreateSLAPolicyRequest struct {
 	KEVCapDays          *int  `json:"kev_cap_days" validate:"omitempty,min=0,max=365"`
 	WarningThresholdPct int   `json:"warning_threshold_pct" validate:"min=0,max=100"`
 	EscalationEnabled   *bool `json:"escalation_enabled"`
+	// Practice: empty (vulnerabilities: every finding except compliance) or
+	// "compliance" (benchmark check results only). Fixed once created.
+	Practice string `json:"practice" validate:"omitempty,oneof=compliance"`
 }
 
 // UpdateSLAPolicyRequest represents the request to update an SLA policy.
@@ -260,6 +267,7 @@ func (h *SLAHandler) Create(w http.ResponseWriter, r *http.Request) {
 		P2Days:              req.P2Days,
 		P3Days:              req.P3Days,
 		KEVCapDays:          req.KEVCapDays,
+		Practice:            req.Practice,
 	}
 
 	p, err := h.service.CreateSLAPolicy(r.Context(), input)

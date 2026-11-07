@@ -14,11 +14,14 @@ type Repository interface {
 	// GetByTenantAndID retrieves a policy by tenant and ID.
 	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*Policy, error)
 
-	// GetByAsset retrieves the policy for a specific asset.
+	// GetByAsset retrieves the vulnerability (practice-less) policy for a
+	// specific asset.
 	// Returns the asset-specific policy if exists, otherwise the tenant default.
 	GetByAsset(ctx context.Context, tenantID, assetID shared.ID) (*Policy, error)
 
-	// GetTenantDefault retrieves the default policy for a tenant.
+	// GetTenantDefault retrieves the tenant's default vulnerability
+	// (practice-less) policy. Compliance policies are resolved from
+	// ListByTenant (Policy.Governs).
 	GetTenantDefault(ctx context.Context, tenantID shared.ID) (*Policy, error)
 
 	// UpdateMakingDefault writes the policy (already marked default) and
