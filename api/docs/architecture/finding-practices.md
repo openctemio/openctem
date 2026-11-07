@@ -49,6 +49,28 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
 - The finding response and the export carry `practice` (the reason code is in
   the response only).
 
+## The findings list's practice switch (shipped)
+
+- A tab strip above the list: **Vulnerabilities** (the default: every
+  practice except compliance, `practice_not=compliance`), **Compliance**, each
+  other practice that holds findings, and **All**, each with the caller's
+  count. One click shows compliance.
+- The choice is the page's `practice` URL param (absent = Vulnerabilities,
+  `all` = no condition, else the practice), so it is linkable and a saved view
+  keeps it (`all` is saved as no condition). Like the state lens, the default
+  is not laid on top of an open saved view; a practice picked explicitly is.
+- Counts: `GET /api/v1/findings/practice-counts` takes every filter param of
+  `GET /findings` (and `view`), leaves any practice condition out, and returns
+  `total`, `vulnerabilities` and a count per practice. One facet statement
+  over the caller's scoped WHERE (`findings:read`, heavy-read limit, 5 s), so
+  each count equals that list's total for the same caller
+  (`findings_practice_counts_db_test.go`).
+- `compliance_result` is an ordinary filter in the filter picker (pass, fail,
+  manual, not_applicable, error, unknown).
+- Settings > SLA policies: a new policy is created for Vulnerabilities or
+  Compliance (Compliance starts from the compliance windows); the list marks
+  compliance policies.
+
 ## Existing rows: the `finding-practice` command (shipped)
 
 Rows written before the column read as `other` with a NULL reason until the
@@ -124,5 +146,6 @@ vulnerability SLA figures and vulnerability windows never reach them.
 - `api/migrations/*_finding_practice*.sql`
 - `api/internal/infra/http/routes/findings_practice_filter_db_test.go`
 - `api/internal/tools/findingpractice` (the backfill command)
+- `api/internal/infra/http/handler/finding_practice_counts_handler.go`, `web/src/features/findings/components/practice-switch.tsx`, `web/src/features/findings/lib/practice.ts`
 - `api/pkg/domain/sla/entity.go`, `api/internal/app/sla/service.go` (compliance policy)
 - `api/migrations/*_sla_policy_practice.sql`, `*_dashboard_facts_without_compliance.sql`

@@ -282,6 +282,8 @@ const GROUP_OF: Record<string, FieldGroup> = {
 const NOT_PICKABLE: ReadonlySet<string> = new Set([
   'id',
   'state',
+  // The practice switch above the list owns it.
+  'practice',
   'asset_id',
   'branch_id',
   'open_on_branch_id',

@@ -37,7 +37,8 @@ import { cn } from '@/lib/utils'
 
 import { PRIORITY_WINDOWS, SEVERITY_WINDOWS } from './sla-windows'
 import { buildSlaPolicyPayload } from '../lib/sla-policy-payload'
-import { DEFAULT_KEV_CAP_DAYS, NO_SLA } from '../schemas/sla-policy-schema'
+import { COMPLIANCE_WINDOWS, DEFAULT_KEV_CAP_DAYS, NO_SLA } from '../schemas/sla-policy-schema'
+import { ChoiceGroup } from '@/components/ui/choice-group'
 
 import {
   slaPolicySchema,
@@ -77,6 +78,7 @@ function toFormData(policy: SlaPolicy): SlaPolicyFormData {
     kev_cap_days: policy.kev_cap_days ?? DEFAULT_KEV_CAP_DAYS,
     warning_threshold_pct: policy.warning_threshold_pct,
     escalation_enabled: policy.escalation_enabled,
+    practice: policy.practice ?? '',
   }
 }
 
@@ -203,6 +205,61 @@ export function SlaPolicyDialog({ open, onOpenChange, policy, onSuccess }: SlaPo
                   </FormItem>
                 )}
               />
+
+              {!isEdit && (
+                <FormField
+                  control={form.control}
+                  name="practice"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {t('settings.slaPolicies.dialog.appliesTo', 'Applies to')}
+                      </FormLabel>
+                      <ChoiceGroup
+                        label={t('settings.slaPolicies.dialog.appliesTo', 'Applies to')}
+                        value={field.value || 'vulnerabilities'}
+                        options={[
+                          {
+                            value: 'vulnerabilities',
+                            label: t(
+                              'settings.slaPolicies.practice.vulnerabilities',
+                              'Vulnerabilities'
+                            ),
+                            hint: t(
+                              'settings.slaPolicies.practice.vulnerabilitiesHint',
+                              'Every finding except compliance checks.'
+                            ),
+                          },
+                          {
+                            value: 'compliance',
+                            label: t('settings.slaPolicies.practice.compliance', 'Compliance'),
+                            hint: t(
+                              'settings.slaPolicies.practice.complianceHint',
+                              'Benchmark check results only. Starts from the compliance windows (P1 30, P2 90, P3 180 days); the known exploited cap does not apply.'
+                            ),
+                          },
+                        ]}
+                        onValueChange={(v) => {
+                          const next = v === 'compliance' ? 'compliance' : ''
+                          field.onChange(next)
+                          if (next === 'compliance') {
+                            for (const [k, days] of Object.entries(COMPLIANCE_WINDOWS)) {
+                              form.setValue(k as keyof typeof COMPLIANCE_WINDOWS, days)
+                            }
+                          } else if (effective) {
+                            const base = newSlaPolicyForm(effective)
+                            for (const k of Object.keys(COMPLIANCE_WINDOWS)) {
+                              const key = k as keyof typeof COMPLIANCE_WINDOWS
+                              form.setValue(key, base[key])
+                            }
+                          }
+                        }}
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <Separator />
 
