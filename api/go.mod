@@ -145,7 +145,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/lib/pq v1.12.3
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/contract v1.5.1
+	github.com/openctemio/contract v1.5.2-0.20261107145518-b3262bc09569
 	github.com/openctemio/contract/transfer v1.0.1
 	github.com/openctemio/ctis/v2 v2.0.2
 	github.com/openctemio/ctis/v2/interop/csaf v0.1.0
