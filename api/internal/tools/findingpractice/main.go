@@ -206,22 +206,9 @@ type change struct {
 
 func runTenant(ctx context.Context, db *sql.DB, tid string, opts Options) (*TenantReport, error) {
 	tr := &TenantReport{TenantID: tid, Before: map[string]int{}, After: map[string]int{}, Moves: map[string]Move{}, Reasons: map[string]int{}}
-	rows, err := db.QueryContext(ctx, `SELECT practice, count(*) FROM findings WHERE tenant_id = $1 GROUP BY practice`, tid)
-	if err != nil {
-		return nil, fmt.Errorf("count practices: %w", err)
+	if err := countPractices(ctx, db, tid, tr); err != nil {
+		return nil, err
 	}
-	for rows.Next() {
-		var p string
-		var n int
-		if err := rows.Scan(&p, &n); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		tr.Before[p] = n
-		tr.After[p] = n
-		tr.Findings += n
-	}
-	_ = rows.Close()
 
 	after := "00000000-0000-0000-0000-000000000000"
 	for {
@@ -247,6 +234,26 @@ func runTenant(ctx context.Context, db *sql.DB, tid string, opts Options) (*Tena
 		}
 	}
 	return tr, nil
+}
+
+// countPractices fills the tenant's findings per practice (before the run).
+func countPractices(ctx context.Context, db *sql.DB, tid string, tr *TenantReport) error {
+	rows, err := db.QueryContext(ctx, `SELECT practice, count(*) FROM findings WHERE tenant_id = $1 GROUP BY practice`, tid)
+	if err != nil {
+		return fmt.Errorf("count practices: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var p string
+		var n int
+		if err := rows.Scan(&p, &n); err != nil {
+			return err
+		}
+		tr.Before[p] = n
+		tr.After[p] = n
+		tr.Findings += n
+	}
+	return rows.Err()
 }
 
 func scanPage(ctx context.Context, db *sql.DB, tid, after string, limit int, tr *TenantReport) ([]change, string, int, error) {
