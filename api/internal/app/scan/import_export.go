@@ -215,7 +215,8 @@ func (s *Service) ImportConfigConfirmed(ctx context.Context, tenantID shared.ID,
 
 	export, err := decodeScanConfigExport(data)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid scan config JSON: %s", shared.ErrValidation, err.Error())
+		s.logger.Info("scan config import refused: invalid JSON", "tenant_id", tenantID.String(), "error", err)
+		return nil, fmt.Errorf("%w: the file is not a valid scan configuration (JSON)", shared.ErrValidation)
 	}
 
 	// Validate required fields
