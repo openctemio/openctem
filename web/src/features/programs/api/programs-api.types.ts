@@ -26,6 +26,10 @@ export interface ProgramRules {
   rate_limit_rps?: number
   required_headers?: ProgramHeader[]
   user_agent?: string
+  /** A User-Agent rotation list (instead of user_agent). */
+  user_agents?: string[]
+  /** Jobs on the program's targets must carry identification on every request. */
+  identification_required?: boolean
   forbidden?: ForbiddenTechnique[]
   notes?: string
   testing_windows?: TestingWindow[]

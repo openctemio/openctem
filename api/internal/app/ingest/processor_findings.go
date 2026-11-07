@@ -239,7 +239,8 @@ func (p *FindingProcessor) ProcessBatch(
 	output *Output,
 	cveMap map[string]shared.ID,
 ) error {
-	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false, fullScope())
+	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false, fullScope(),
+		vulnerability.SourceIdentity{})
 }
 
 // processBatch is ProcessBatch; strictAssets (protocol v2,
@@ -258,6 +259,7 @@ func (p *FindingProcessor) processBatch(
 	cveMap map[string]shared.ID,
 	strictAssets bool,
 	scope *alterScope,
+	src vulnerability.SourceIdentity,
 ) error {
 	if len(report.Findings) == 0 {
 		return nil
@@ -898,16 +900,36 @@ func (p *FindingProcessor) processBatch(
 	// VEX not_affected statements. Best-effort.
 	interop := make([]vulnerability.InteropUpdate, 0, len(validFindings))
 	vexSightings := make([]vexSighting, 0)
+	// Step 7d, written with 7b in one statement: what this ingest's source
+	// reported for each finding, kept per source so another source never
+	// overwrites it (finding-source-records.md).
+	records := make([]vulnerability.SourceRecordValues, 0, len(validFindings))
+	built := make(map[string]*vulnerability.Finding, len(newFindings)+len(existingNewData))
+	for _, f := range newFindings {
+		built[f.Fingerprint()] = f
+	}
+	for _, f := range existingNewData {
+		built[f.Fingerprint()] = f
+	}
+	reportTool := ""
+	if report.Tool != nil {
+		reportTool = report.Tool.Name
+	}
 	for i := range validFindings {
 		fm := &validFindings[i]
-		if u := interopUpdate(fm.fingerprint, &fm.finding); !u.Data.IsEmpty() {
+		u := interopUpdate(fm.fingerprint, &fm.finding)
+		u.Tool = reportTool
+		if !u.Data.IsEmpty() {
 			interop = append(interop, u)
+		}
+		if f, ok := built[fm.fingerprint]; ok {
+			records = append(records, vulnerability.SourceRecordValuesFrom(f, u.Data, observed[fm.fingerprint]))
 		}
 		if fm.finding.VEX != nil {
 			vexSightings = append(vexSightings, vexSighting{fingerprint: fm.fingerprint, assetID: fm.assetID, finding: &fm.finding})
 		}
 	}
-	p.storeInterop(ctx, tenantID, interop)
+	p.storeSightingData(ctx, tenantID, interop, src, records)
 	p.applyVEX(ctx, tenantID, report, vexNotAffectedItems(vexSightings), scope, output)
 
 	// Step 7c: the organization's VEX statements cover findings reported

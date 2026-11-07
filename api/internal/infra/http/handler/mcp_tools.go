@@ -216,8 +216,10 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		},
 		{
 			Name: "get_exposure_chains",
-			Description: "Shortest attack-path hop-chains from public entry points to assets " +
-				"carrying open KEV/critical findings (crown jewels), for this tenant. length 0 is an asset " +
+			Description: "Shortest possible attack-path hop-chains from public entry points to assets " +
+				"carrying open KEV/critical findings (crown jewels), for this tenant. Each chain is built from " +
+				"asset relationships and findings and is NOT proven (proof: possible): call it a possible path, " +
+				"never a confirmed one. length 0 is an asset " +
 				"exposed directly (it is its own entry point); summary.multi_hop_chains counts the others, " +
 				"and relationship_note says when no asset relationships exist to build longer paths." + mcpUntrustedHint,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
@@ -689,6 +691,8 @@ func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ 
 		},
 		"length_note": "length is the number of hops from the entry point to the target; 0 means the target " +
 			"is itself exposed to the internet (it is its own entry point).",
+		"proof_note": "Every chain is a possible path, not a proven one (proof: possible): it is built from " +
+			"asset relationships and open findings, and no check has shown an attacker can follow it.",
 	}
 	if !chains.Summary.HasRelationshipData {
 		meta["relationship_note"] = "No relationships between assets are recorded, so no multi-hop path can be " +
