@@ -67,7 +67,7 @@ export function ComplianceOutcomeChip({ outcome }: { outcome: ComplianceOutcome 
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
-  return <span className="font-mono text-[13px] [overflow-wrap:anywhere]">{children}</span>
+  return <span className="font-mono text-sm [overflow-wrap:anywhere]">{children}</span>
 }
 
 function SubCheckRow({ sc }: { sc: ComplianceSubCheck }) {
