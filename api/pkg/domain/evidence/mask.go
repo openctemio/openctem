@@ -221,32 +221,21 @@ func Mask(it Item) (Item, []Secret) {
 		}
 		remapMatches(&it, matched, r.Replace)
 	}
-	MaskItemEmails(&it)
+	maskEmails(&it)
 	return it, m.secrets
 }
 
-// MaskItemEmails masks the e-mail addresses in an item (safetext.MaskEmails:
-// the local part, the domain kept) and reports whether anything changed. They
-// are personal data and never stored, not even in the encrypted secret
-// store: every free string (text, command, label, extracted values, file
-// snippet, URL, text bodies) and every header value. Body match ranges are
-// moved to their masked text. Mask runs it last, on every item it stores;
-// the scrub of items stored before that (refingerprint -mask-emails) runs it
-// alone. Idempotent: a masked address is not an address.
-//
-// A base64 body that is UTF-8 text with an address in it is decoded first, as
-// Mask decodes every text body before it masks: the stored item then has the
-// shape Mask gives it today. Its body match ranges counted bytes of the
-// encoded text, which no longer exists, so they lose their offsets (the
-// match itself is kept). Inside Mask the bodies are already decoded, so this
-// step changes nothing there. A binary body is left alone.
-func MaskItemEmails(it *Item) bool {
-	changed := decodeEmailBodies(it)
+// maskEmails masks the e-mail addresses left in an item (safetext.MaskEmails:
+// the local part, the domain kept). They are personal data and never stored,
+// not even in the encrypted secret store: every free string (text, command,
+// label, extracted values, file snippet, URL, text bodies) and every header
+// value. Body match ranges are moved to their masked text.
+func maskEmails(it *Item) {
 	matched := matchedTexts(*it)
-	masked := false
+	changed := false
 	for _, s := range textFields(it) {
 		if m := safetext.MaskEmails(*s); m != *s {
-			*s, masked = m, true
+			*s, changed = m, true
 		}
 	}
 	if it.HTTP != nil {
@@ -256,57 +245,14 @@ func MaskItemEmails(it *Item) bool {
 			}
 			for i := range *hs {
 				if m := safetext.MaskEmails((*hs)[i].Value); m != (*hs)[i].Value {
-					(*hs)[i].Value, masked = m, true
+					(*hs)[i].Value, changed = m, true
 				}
 			}
 		}
 	}
-	if masked {
+	if changed {
 		remapMatches(it, matched, safetext.MaskEmails)
 	}
-	return changed || masked
-}
-
-// decodeEmailBodies decodes the base64 bodies that are UTF-8 text holding an
-// e-mail address (see MaskItemEmails) and clears the offsets of their body
-// matches. It reports whether it decoded one.
-func decodeEmailBodies(it *Item) bool {
-	if it.HTTP == nil {
-		return false
-	}
-	decoded := false
-	dec := func(loc string, body, enc *string) {
-		if *enc != encBase64 {
-			return
-		}
-		text, ok := decodeTextBody(*body)
-		if !ok || !safetext.ContainsEmail(text) {
-			return
-		}
-		*body, *enc, decoded = text, "", true
-		for i := range it.Match {
-			if m := &it.Match[i]; m.Location == loc && m.Part == partBody {
-				m.Start, m.End = nil, nil
-			}
-		}
-	}
-	if q := it.HTTP.Request; q != nil {
-		dec(locRequest, &q.Body, &q.BodyEncoding)
-	}
-	if s := it.HTTP.Response; s != nil {
-		dec(locResponse, &s.Body, &s.BodyEncoding)
-	}
-	return decoded
-}
-
-// decodeTextBody decodes a base64 body when it is valid UTF-8 text without
-// NUL bytes (anything else is binary).
-func decodeTextBody(body string) (string, bool) {
-	b, err := base64.StdEncoding.DecodeString(body)
-	if err != nil || !utf8.Valid(b) || strings.ContainsRune(string(b), 0) {
-		return "", false
-	}
-	return string(b), true
 }
 
 // decodeTextBodies turns a base64 body that is valid UTF-8 text into text,
@@ -319,9 +265,11 @@ func decodeTextBodies(it *Item) {
 		if *enc != encBase64 {
 			return
 		}
-		if text, ok := decodeTextBody(*body); ok {
-			*body, *enc = text, ""
+		b, err := base64.StdEncoding.DecodeString(*body)
+		if err != nil || !utf8.Valid(b) || strings.ContainsRune(string(b), 0) {
+			return
 		}
+		*body, *enc = string(b), ""
 	}
 	if q := it.HTTP.Request; q != nil {
 		dec(&q.Body, &q.BodyEncoding)

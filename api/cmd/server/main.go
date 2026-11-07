@@ -294,6 +294,11 @@ func run() int {
 	// Console setting changes are told to every administrator (e-mail and
 	// the alert webhook).
 	services.SettingRecorder.SetNotifier(newAdminNotifier(cfg, repos, services, log))
+	// A first-party tool reporting a type its descriptor does not declare is
+	// told to the platform administrators, once per tool, type and version a day.
+	if n := newAdminNotifier(cfg, repos, services, log); n != nil && services.Ingest != nil {
+		services.Ingest.SetMismatchNotifier(n)
+	}
 
 	// Account security e-mails (2FA turned off, recovery code used, password
 	// changed) go to the user through the system SMTP server.

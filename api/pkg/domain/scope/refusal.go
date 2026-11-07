@@ -42,6 +42,10 @@ const (
 	RefusalUnresolved         = "unresolved"
 	RefusalZoneNoSensor       = "zone_no_sensor"
 	RefusalZoneSensorMismatch = "zone_sensor_mismatch"
+	// RefusalAmbiguousZone: zones with different sensors hold the target at
+	// the same width (sites that reuse a range); the scan must pick its
+	// zone (research 466 D9).
+	RefusalAmbiguousZone = "ambiguous_zone"
 	// RefusalConstrained: only port- or path-limited entries cover the
 	// target and the job could reach other ports or paths (RFC-065 §16.8).
 	RefusalConstrained = "constrained"
@@ -76,6 +80,8 @@ const (
 	FixAddZone          = "add_zone"
 	FixContactSupport   = "contact_support"
 	FixRaiseTier        = "raise_tier"
+	// FixPickZone: choose the scan's zone (site) in the scan form.
+	FixPickZone = "pick_zone"
 )
 
 // Permissions fixes need (strings, so the domain does not import RBAC).
@@ -143,6 +149,7 @@ var RefusalMessages = map[string]string{
 	RefusalUnresolved:         "This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.",
 	RefusalZoneNoSensor:       "The scan zone of this target has no sensors.",
 	RefusalZoneSensorMismatch: "The chosen sensor is not in this target's scan zone.",
+	RefusalAmbiguousZone:      "More than one scan zone holds this target with different sensors (different sites using the same range). Pick the zone for this scan.",
 	RefusalConstrained:        "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
 	RefusalGuardrailed:        "No scope entry covers this asset and a platform guardrail keeps it passive (shared or unknown network, shared hosting, or a name outside your domains). Add its exact scope entry to scan it.",
 	RefusalLowImpact:          "No scope entry covers this asset, so it gets low-impact checks only, and this job goes beyond them. Add it to scope for the full scan.",
@@ -244,6 +251,9 @@ func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
 		return []Fix{{Action: FixUseTenantSensor}}
 	case RefusalZoneNone, RefusalZoneNoSensor, RefusalZoneSensorMismatch:
 		return []Fix{{Action: FixAddZone, Requires: permScanZonesWrite}}
+	case RefusalAmbiguousZone:
+		// The scan's own setting: whoever edits the scan may pick it.
+		return []Fix{{Action: FixPickZone}}
 	case RefusalDenyList:
 		return []Fix{{Action: FixContactSupport}}
 	}

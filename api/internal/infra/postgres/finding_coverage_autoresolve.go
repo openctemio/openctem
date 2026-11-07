@@ -198,6 +198,7 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 				AND f.status IN `+autoResolveFromSQL+`
 				AND f.source NOT IN `+coverageProtectedSources+`
 				AND `+secretFindingSQL("f")+` = $6
+				AND NOT ($8 AND f.severity IN ('info', 'none'))
 		)
 		SELECT o.id::text, COUNT(*) OVER () AS open_total,
 			(
@@ -219,7 +220,7 @@ func (r *FindingRepository) coverageStale(ctx context.Context, tenantID shared.I
 				)
 			) AS stale
 		FROM open_findings o`,
-		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen), q.ProfileID, secrets, receipt.String())
+		tenantID.String(), pq.Array(assets), q.ToolName, pq.Array(seen), q.ProfileID, secrets, receipt.String(), q.KeepInformational)
 	if err != nil {
 		return nil, 0, fmt.Errorf("coverage stale findings: %w", err)
 	}

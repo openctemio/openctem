@@ -227,6 +227,30 @@ func TestCallsBecomeV2Requests(t *testing.T) {
 		t.Fatalf("v2 request %s %s %v %s", r.Method, r.URL.Path, r.Header, r.RemoteAddr)
 	}
 
+	// The lease epoch of a result call reaches the v2 handler with the
+	// feature that makes it required on the report's later calls.
+	resEpoch := int64(7)
+	if _, err := c.PutResult(ctx, connect.NewRequest(&sensorv3.PutResultRequest{ReportId: report, CommandId: cmd,
+		Content: []byte("x"), ContentType: protov2.MediaTypeCTIS, LeaseEpoch: &resEpoch})); err != nil {
+		t.Fatal(err)
+	}
+	if f.got.Header.Get(protov2.HeaderLeaseEpoch) != "7" || f.got.Header.Get(protov2.HeaderSensorFeatures) != protov2.FeatureResultsLeaseEpoch {
+		t.Fatalf("put epoch %v", f.got.Header)
+	}
+	if _, err := c.CommitResult(ctx, connect.NewRequest(&sensorv3.CommitResultRequest{ReportId: report, CommandId: cmd,
+		BodyJson: []byte(`{}`), LeaseEpoch: &resEpoch})); err != nil {
+		t.Fatal(err)
+	}
+	if f.got.URL.Path != "/api/v2/sensor/commands/"+cmd+"/results/"+report+"/commit" || f.got.Header.Get(protov2.HeaderLeaseEpoch) != "7" ||
+		f.got.Header.Get(protov2.HeaderSensorFeatures) != protov2.FeatureResultsLeaseEpoch {
+		t.Fatalf("commit epoch %s %v", f.got.URL.Path, f.got.Header)
+	}
+	neg := int64(-1)
+	if _, err := c.CommitResult(ctx, connect.NewRequest(&sensorv3.CommitResultRequest{ReportId: report, CommandId: cmd,
+		LeaseEpoch: &neg})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("negative epoch: %v", err)
+	}
+
 	epoch := int64(4)
 	f.status, f.body = 200, `{}`
 	if _, err := c.TransitionCommand(ctx, connect.NewRequest(&sensorv3.TransitionCommandRequest{CommandId: cmd,

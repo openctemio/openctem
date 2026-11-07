@@ -242,7 +242,7 @@ export default function ScopePage() {
           title={t('scope.title', 'Scope')}
           description={t(
             'scope.description',
-            'What scans may touch. Anything not listed is out of scope, and an exclusion always wins.'
+            'What scans may touch at full intensity. Assets no entry covers get what Scan unclassified assets allows, and an exclusion always wins.'
           )}
         >
           <Button asChild variant="outline" size="sm">
