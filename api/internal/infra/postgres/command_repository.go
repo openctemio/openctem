@@ -1805,6 +1805,31 @@ func (r *CommandRepository) CancelByScanRunID(ctx context.Context, tenantID, run
 
 var _ command.StepBatchGate = (*CommandRepository)(nil)
 
+var _ command.StepCommandCanceler = (*CommandRepository)(nil)
+
+// CancelOpenByStepRun cancels the open (pending, acknowledged, running)
+// commands of one step run of the tenant; a sensor holding one is told to
+// stop through the tenant's streams. Finished commands keep their results.
+func (r *CommandRepository) CancelOpenByStepRun(ctx context.Context, tenantID, stepRunID shared.ID) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'canceled', completed_at = NOW(), lease_expires_at = NULL
+		WHERE tenant_id = $1 AND scan_run_step_id = $2
+		  AND status IN ('pending', 'acknowledged', 'running')`,
+		tenantID.String(), stepRunID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to cancel the step's commands: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	if n > 0 {
+		r.changedTenant(tenantID)
+	}
+	return n, nil
+}
+
 // The expiration checker asserts this; without it, it refuses to expire.
 var _ command.ConditionalExpirer = (*CommandRepository)(nil)
 

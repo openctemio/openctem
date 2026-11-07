@@ -771,8 +771,11 @@ Live data showed one 72-target httpx task holding the template stage for about
 task costs well under a second: the cost was the barrier, not the hops.
 
 - **When a step streams.** A pending step whose dependencies all finished
-  except one, that one queued or running with at least one completed task,
-  and whose stage feeds the step's. Never: an intrusive (T2) stage, a web
+  except one, that one queued or running with at least one completed task
+  that can feed it, and whose stage feeds the step's. A completed task whose
+  reach summary says it reached none of its targets (a host discovery chunk
+  whose probes never left the sensor) does not count: streaming from it would
+  start the step on its seeds alone, the whole range of a swept scan. Never: an intrusive (T2) stage, a web
   stage that selects endpoints since the run started (`endpoint_selector`
   other than `all`), a step with two or more unfinished dependencies, a step
   its condition, the scan's intensity or the run's depth skips.
@@ -796,6 +799,15 @@ task costs well under a second: the cost was the barrier, not the hops.
   is retried on the next event or by the stall repair; a wave whose dispatch
   fails, or comes too close to the run's deadline, records its targets as
   the run's unfinished targets.
+- **Source fails after the step started.** A streamed step whose source then
+  ends without results (failed, skipped, timed out, canceled) stops, unless the
+  workflow continues on a failed dependency: its stream closes, its open
+  commands are canceled (`CancelOpenByStepRun`, tenant-scoped; the holding
+  sensor is told to stop), and it settles `DEPENDENCY_FAILED`, skipped when
+  none of its tasks finished and `partial` when some did (they keep their
+  results). It is the barrier rule (a step whose dependency did not succeed
+  is skipped) applied to a step that started early. Metric outcome
+  `stop/dependency_failed`.
 - **Smaller source tasks.** A step a successor streams from is cut into about
   four tasks (at least 10 targets each, never above the capability's chunk
   size), so the successor starts on the first quarter of the hosts.
