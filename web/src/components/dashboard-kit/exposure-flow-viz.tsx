@@ -68,6 +68,7 @@ import {
 import { StackedBar } from './stacked-bar'
 import { ActHere, StageStateIcon, useStageStateText } from './stage-state'
 import { ChartOrTable } from './viz-parts'
+import { receivedBreakdown } from '@/features/shared/lib/receipt-outcomes'
 import type { FlowFigure, FlowResult, IntakeInstance, Stage } from './types'
 
 /** Source rows with a value before "Show all": wide and mid cards, a phone. */
@@ -323,7 +324,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         ],
         definition: t(
           'dashboardKit.flow.tip.newDef',
-          'Findings this source reported in the period that were new or reopened (the rest were seen again or not stored). An organization figure.'
+          'Findings this source reported in the period that were new or reopened. Where the rest went is on the Findings received figure. An organization figure.'
         ),
         link: { label: viewReceipts(s.receipts), href: s.drill },
       }
@@ -398,10 +399,12 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
     }
     if (active.startsWith('f:') && intake) {
       const which = active.slice(2) === 'new' ? 'new' : 'received'
-      const v = which === 'new' ? intake.noise.new : intake.totals.received
+      // Both funnel steps show the full reconciliation of what was received.
       return {
         title: t(`dashboardKit.flow.funnel.${which}`, which),
-        rows: [[t('dashboardKit.flow.tip.findings', 'Findings'), n(v)]],
+        rows: receivedBreakdown(t, { ...intake.noise, received: intake.totals.received }).map(
+          ([label, v]): [string, string] => [label, n(v)]
+        ),
         definition: t(`dashboardKit.flow.funnelDef.${which}`, ''),
         link: { label: viewReceipts(intake.totals.receipts), href: intake.drill },
       }

@@ -204,3 +204,37 @@ func TestReceipt_ReleasedItemKeepsItsSender(t *testing.T) {
 		t.Fatalf("delta = %+v", rec.deltas)
 	}
 }
+
+// A report held in the results quarantine reconciles on its receipt: each
+// finding is an item and the quarantined outcome, so none is left unexplained.
+func TestRecordQuarantined_Reconciles(t *testing.T) {
+	rec := &fakeReceipts{}
+	svc := &Service{logger: logger.NewNop(), receipts: rec}
+	report := &ctis.Report{Tool: &ctis.Tool{Name: "nuclei"}, Findings: []ctis.Finding{
+		{RuleID: "a", AssetRef: "h"}, {RuleID: "b", AssetRef: "h"}, {RuleID: "a", AssetRef: "h"}}}
+	svc.recordQuarantined(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), report)
+	if len(rec.deltas) != 1 {
+		t.Fatalf("deltas %d", len(rec.deltas))
+	}
+	d := rec.deltas[0]
+	if d.Received != 3 || d.Outcomes[ingestreceipt.OutcomeQuarantined] != 3 {
+		t.Fatalf("received %d, outcomes %v", d.Received, d.Outcomes)
+	}
+	if n := ingestreceipt.Unaccounted(d.Received, ingestreceipt.Counts{}, d.Outcomes); n != 0 {
+		t.Fatalf("%d unaccounted", n)
+	}
+}
+
+// A finding that failed to store is counted once, as failed, even when a
+// row with its key exists (it is not also still detected).
+func TestRecordReceipt_FailedIsNotStillDetected(t *testing.T) {
+	rec := &fakeReceipts{}
+	svc := &Service{logger: logger.NewNop(), receipts: rec}
+	out := &Output{SightedFingerprints: []string{"a", "b"}, FailedFindings: []FailedFinding{{Fingerprint: "b"}}, FindingsSkipped: 1}
+	svc.recordReceipt(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), TrustedBinding(), Options{},
+		&ctis.Report{Findings: make([]ctis.Finding, 2)}, out)
+	d := rec.deltas[0]
+	if len(d.StillDetected) != 1 || d.StillDetected[0] != "a" || d.Failed != 1 || d.Skipped != 0 {
+		t.Fatalf("still %v, failed %d, skipped %d", d.StillDetected, d.Failed, d.Skipped)
+	}
+}
