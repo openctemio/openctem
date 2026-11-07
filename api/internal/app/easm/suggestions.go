@@ -129,7 +129,24 @@ type NetworkLookup struct {
 type LedgerLookup struct {
 	State         string
 	Reason        string
+	LastError     string
 	LastAttemptAt *time.Time
+}
+
+// LookupSourceUnavailable is the reason of a failed lookup whose data
+// source (the routing dataset and every fallback the sensor tried) did not
+// answer: the source's outage, not the tool's fault, and retried later.
+const LookupSourceUnavailable = "source_unavailable"
+
+// sourceUnavailable reports a lookup failure caused by its data source: the
+// sensor's source_unavailable outcome, or (sensors before it) the asn tool's
+// "routing dataset" fetch error.
+func sourceUnavailable(reason, lastError string) bool {
+	if reason == LookupSourceUnavailable {
+		return true
+	}
+	e := strings.ToLower(lastError)
+	return strings.Contains(e, LookupSourceUnavailable) || strings.Contains(e, "routing dataset")
 }
 
 // networkLookup reads a ledger row as a lookup state.
@@ -142,6 +159,9 @@ func networkLookup(l LedgerLookup) *NetworkLookup {
 		out.State = LookupNotFound
 	default: // failed, blocked, paused, not_applicable
 		out.State, out.Reason = LookupFailed, l.Reason
+		if sourceUnavailable(l.Reason, l.LastError) {
+			out.Reason = LookupSourceUnavailable
+		}
 		if out.Reason == "" {
 			out.Reason = l.State
 		}
@@ -493,7 +513,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 	}
 	checks := s.checksUnclassified(ctx, tenantID)
-	now := s.clock()
+	cctx := cardContext{org: org, seeds: seeds, declined: declined, now: s.clock()}
 	offered := make([]SuggestionAddress, 0, len(rows))
 	card := &SuggestionCard{Kind: CardAddressesBehindNames, Addresses: []SuggestionAddress{},
 		SharedAddresses: []SuggestionAddress{}, CheckedAddresses: []SuggestionAddress{}}
@@ -508,46 +528,9 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 			}
 			continue
 		}
-		var from []string
-		for _, n := range r.VisibleNames {
-			if _, ok := cover[n]; ok {
-				from = append(from, n)
-			}
-		}
-		if len(from) == 0 {
+		item, all := buildAddressItem(r, cover, cctx, s)
+		if item == nil {
 			continue // no in-scope name of the caller points at it
-		}
-		sort.Strings(from)
-		all := from
-		if len(from) > maxResolvedFrom {
-			from = from[:maxResolvedFrom]
-		}
-		item := SuggestionAddress{AssetID: r.AssetID, Address: r.Address, ResolvedFrom: from}
-		item.Network, item.Shared = classifyAddress(r, org, seeds)
-		if !item.Network.Known {
-			item.Lookup = networkLookup(r.Lookup)
-		}
-		if item.Shared == "" || item.Shared == SharedOtherNetwork {
-			if declinedNetwork(declined, item.Network) != "" {
-				item.Shared = SharedDeclined
-			}
-		}
-		if item.Shared == "" {
-			// A shared address's open ports are its provider's: never shown.
-			item.Ports = addressPorts(r)
-		}
-		for _, n := range r.VisibleNames {
-			if _, ok := cover[n]; !ok && len(item.OtherNames) < maxResolvedFrom {
-				item.OtherNames = append(item.OtherNames, n)
-			}
-		}
-		sort.Strings(item.OtherNames)
-		if item.Shared == "" && seeds != nil {
-			item.Prefix = s.ownPrefix(*seeds, r.Address)
-		}
-		if item.Shared == "" {
-			a := assessAddress(r, item, all, org, seeds, now)
-			item.Ownership = &a
 		}
 		if item.Shared != "" {
 			summary.ThirdParty++
@@ -557,7 +540,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 				providers[item.Network.Provider+"|"+item.Network.Class]++
 			}
 			if len(card.SharedAddresses) < itemLimit {
-				card.SharedAddresses = append(card.SharedAddresses, item)
+				card.SharedAddresses = append(card.SharedAddresses, *item)
 			}
 			continue
 		}
@@ -566,7 +549,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 			summary.Checked++
 			card.CheckedCount++
 			if len(card.CheckedAddresses) < itemLimit {
-				card.CheckedAddresses = append(card.CheckedAddresses, item)
+				card.CheckedAddresses = append(card.CheckedAddresses, *item)
 			}
 			continue
 		}
@@ -583,7 +566,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 			}
 		}
 		summary.NeedYou++
-		offered = append(offered, item)
+		offered = append(offered, *item)
 	}
 	// Strongest evidence first, so the card's item limit keeps the
 	// addresses most likely to be the organization's.
@@ -604,16 +587,8 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 	card.PrefixRules = prefixRules(card.Addresses)
 	card.Providers = providerList(providers)
 	card.Groups = groupAddresses(card, seeds, declined)
-	if s.autoAdded != nil && len(coveredBy) > 0 {
-		seen, err := s.autoAdded.Seen(ctx, tenantID, dedupe(coveredBy, strings.TrimSpace))
-		if err != nil {
-			return nil, fmt.Errorf("automatic address entries: %w", err)
-		}
-		for _, p := range coveredBy {
-			if seen[p] {
-				summary.AutoAdded++
-			}
-		}
+	if summary.AutoAdded, err = s.countAutoAdded(ctx, tenantID, coveredBy); err != nil {
+		return nil, err
 	}
 	card.Summary = summary
 
@@ -621,6 +596,75 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		return nil, nil
 	}
 	return card, nil
+}
+
+// countAutoAdded counts the covering patterns the automatic add wrote.
+func (s *SuggestionService) countAutoAdded(ctx context.Context, tenantID shared.ID, coveredBy []string) (int, error) {
+	if s.autoAdded == nil || len(coveredBy) == 0 {
+		return 0, nil
+	}
+	seen, err := s.autoAdded.Seen(ctx, tenantID, dedupe(coveredBy, strings.TrimSpace))
+	if err != nil {
+		return 0, fmt.Errorf("automatic address entries: %w", err)
+	}
+	n := 0
+	for _, p := range coveredBy {
+		if seen[p] {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// cardContext is what every address of one card is read against.
+type cardContext struct {
+	org      string
+	seeds    *easmseed.Networks
+	declined []easmseed.Declined
+	now      time.Time
+}
+
+// buildAddressItem reads one stored address for the card: nil when no
+// in-scope name of the caller points at it; all is every such name.
+func buildAddressItem(r AddressBehindNames, cover map[string]scopeauth.Via, c cardContext, s *SuggestionService) (*SuggestionAddress, []string) {
+	var from []string
+	for _, n := range r.VisibleNames {
+		if _, ok := cover[n]; ok {
+			from = append(from, n)
+		}
+	}
+	if len(from) == 0 {
+		return nil, nil
+	}
+	sort.Strings(from)
+	all := from
+	if len(from) > maxResolvedFrom {
+		from = from[:maxResolvedFrom]
+	}
+	item := SuggestionAddress{AssetID: r.AssetID, Address: r.Address, ResolvedFrom: from}
+	item.Network, item.Shared = classifyAddress(r, c.org, c.seeds)
+	if !item.Network.Known {
+		item.Lookup = networkLookup(r.Lookup)
+	}
+	if (item.Shared == "" || item.Shared == SharedOtherNetwork) && declinedNetwork(c.declined, item.Network) != "" {
+		item.Shared = SharedDeclined
+	}
+	for _, n := range r.VisibleNames {
+		if _, ok := cover[n]; !ok && len(item.OtherNames) < maxResolvedFrom {
+			item.OtherNames = append(item.OtherNames, n)
+		}
+	}
+	sort.Strings(item.OtherNames)
+	if item.Shared == "" {
+		// A shared address's open ports are its provider's: never shown.
+		item.Ports = addressPorts(r)
+		if c.seeds != nil {
+			item.Prefix = s.ownPrefix(*c.seeds, r.Address)
+		}
+		a := assessAddress(r, item, all, c.org, c.seeds, c.now)
+		item.Ownership = &a
+	}
+	return &item, all
 }
 
 // inScopeName reports whether one of names is covered (the address is

@@ -11,4 +11,4 @@
 
 ### Added: where the network lookup of an address stands, with a retry
 
-- An address with no network data says whether its sensor lookup (`lookup.asn`) is still running, found no routing data, or failed. "Network unknown" is shown only when the lookup failed, with "Retry lookup" (`POST /api/v1/easm/suggestions/addresses/lookup`, `assets:write`), which makes the lookup due again for a sensor. The platform itself looks nothing up.
+- An address with no network data says whether its sensor lookup (`lookup.asn`) is still running, found no routing data, or failed. A failed lookup reads "Network lookup failed", or "Network lookup failed (source unavailable)" when the routing data source did not answer, with "Retry lookup" (`POST /api/v1/easm/suggestions/addresses/lookup`, `assets:write`), which makes the lookup due again for a sensor. The platform itself looks nothing up.

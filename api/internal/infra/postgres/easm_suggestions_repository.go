@@ -103,7 +103,7 @@ func (r *AttributionRepository) fillNetworkLookup(ctx context.Context, tenantID 
 		ids = append(ids, a.AssetID)
 	}
 	q, err := r.db.QueryContext(ctx, `
-		SELECT asset_id::text, state, COALESCE(NULLIF(reason, ''), last_outcome), last_attempt_at
+		SELECT asset_id::text, state, COALESCE(NULLIF(reason, ''), last_outcome), last_error, last_attempt_at
 		FROM asset_coverage
 		WHERE tenant_id = $1 AND capability = $2 AND vantage = '' AND asset_id::text = ANY($3)`,
 		tenantID.String(), networkLookupCapability, pq.Array(ids))
@@ -118,7 +118,7 @@ func (r *AttributionRepository) fillNetworkLookup(ctx context.Context, tenantID 
 			l  easm.LedgerLookup
 			at sql.NullTime
 		)
-		if err := q.Scan(&id, &l.State, &l.Reason, &at); err != nil {
+		if err := q.Scan(&id, &l.State, &l.Reason, &l.LastError, &at); err != nil {
 			return err
 		}
 		if at.Valid {

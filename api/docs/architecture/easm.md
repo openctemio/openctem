@@ -427,7 +427,11 @@ carries `lookup` on the card, read from the coverage ledger pair
 (`asset_coverage`, capability `lookup.asn`): `pending` (no pair yet, due or
 queued: a sensor will look it up), `failed` (failed, blocked, paused or not
 applicable, with the ledger's `reason`) or `not_found` (the lookup ran and no
-routing data holds the address). The console says "Network unknown" only for
+routing data holds the address). A failure whose data source did not answer
+(the sensor's `source_unavailable` outcome, or the `asn` tool's "routing
+dataset" fetch error of older sensors) has reason `source_unavailable`: the
+source's outage, retried later, not a tool fault. The console says "Network
+lookup failed" (with "(source unavailable)" for that reason) only for
 `failed`, with a retry (`POST /easm/suggestions/addresses/lookup`). The card's
 `summary` counts the addresses behind in-scope names that an automatic entry
 already covers (`auto_added`, from `easm_address_auto_adds`), the third-party

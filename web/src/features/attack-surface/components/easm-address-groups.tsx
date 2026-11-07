@@ -926,13 +926,14 @@ function toBits(ip: string): string | null {
 
 /** How many of the addresses are in each network lookup state. */
 function lookupCounts(addrs: string[], byAddress: Map<string, EASMSuggestionAddress>) {
-  const out = { pending: 0, failed: 0, not_found: 0, failedAddrs: [] as string[] }
+  const out = { pending: 0, failed: 0, not_found: 0, source: 0, failedAddrs: [] as string[] }
   for (const a of addrs) {
     const s = byAddress.get(a)?.lookup?.state
     if (s === 'pending') out.pending++
     else if (s === 'not_found') out.not_found++
     else if (s === 'failed') {
       out.failed++
+      if (byAddress.get(a)?.lookup?.reason === 'source_unavailable') out.source++
       out.failedAddrs.push(a)
     }
   }
@@ -1048,13 +1049,21 @@ function GroupRow({
                     variant="outline"
                     className="h-auto whitespace-normal text-start text-warning"
                   >
-                    {plural(
-                      t,
-                      `${K}.lookup.failed`,
-                      lookups.failed,
-                      'Network unknown: the lookup failed',
-                      'Network unknown: the lookup failed for {count}'
-                    )}
+                    {lookups.source === lookups.failed
+                      ? plural(
+                          t,
+                          `${K}.lookup.sourceUnavailable`,
+                          lookups.failed,
+                          'Network lookup failed (source unavailable)',
+                          'Network lookup failed for {count} (source unavailable)'
+                        )
+                      : plural(
+                          t,
+                          `${K}.lookup.failed`,
+                          lookups.failed,
+                          'Network lookup failed',
+                          'Network lookup failed for {count}'
+                        )}
                   </Badge>
                   {canDecide && (
                     <Button
