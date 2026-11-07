@@ -227,6 +227,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return nil
 	},
+	"asset_domain_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_domain_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear asset_domain_queue: %v", err)
+		}
+		return nil
+	},
 	"finding_priority_queue": func(s *schemaSeeder) map[string]any {
 		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM finding_priority_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
 			s.t.Fatalf("clear finding_priority_queue: %v", err)

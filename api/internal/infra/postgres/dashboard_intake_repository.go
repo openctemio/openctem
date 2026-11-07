@@ -50,7 +50,7 @@ func (r *DashboardWidgetRepository) Outcomes(ctx context.Context, scope dashboar
 const intakeBaseSQL = `SELECT ` + receiptOriginSQL + ` AS origin, t.tool, t.instance_kind AS ikind, t.instance_id AS iid,
 		t.instance_name AS iname, r.id, r.status, r.created_at, r.updated_at,
 		t.received, t.created, t.still_detected, t.reopened, t.closed, t.skipped, t.failed, t.suppressed,
-		t.assets_created + t.assets_updated AS assets
+		t.assets_created + t.assets_updated AS assets, t.released_reports AS released
 	FROM ingest_receipt_tools t
 	JOIN ingest_receipts r ON r.tenant_id = t.tenant_id AND r.id = t.receipt_id
 	WHERE r.tenant_id = $1 AND t.tenant_id = $1 AND r.updated_at >= $2`
@@ -73,7 +73,7 @@ func (r *DashboardWidgetRepository) OrgIntake(ctx context.Context, tenantID shar
 			COALESCE(SUM(skipped), 0), COALESCE(SUM(failed), 0), COALESCE(SUM(suppressed), 0),
 			MAX(updated_at), (array_agg(status ORDER BY updated_at DESC, rc.id DESC))[1],
 			(array_agg(rc.id::text ORDER BY updated_at DESC, rc.id DESC))[1],
-			CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END, COALESCE(SUM(assets), 0)
+			CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END, COALESCE(SUM(assets), 0), COALESCE(SUM(released), 0)
 		FROM rc LEFT JOIN med ON med.origin = rc.origin AND med.tool = rc.tool
 		GROUP BY rc.origin, rc.tool
 		ORDER BY SUM(received) DESC, SUM(assets) DESC, rc.origin, rc.tool
@@ -92,7 +92,7 @@ func (r *DashboardWidgetRepository) OrgIntake(ctx context.Context, tenantID shar
 		var gap sql.NullFloat64
 		if err := rows.Scan(&row.Origin, &row.Tool, &row.Receipts, &row.Received, &row.Created, &row.StillDetected,
 			&row.Reopened, &row.Closed, &row.Skipped, &row.Failed, &row.Suppressed, &row.LastAt, &row.LastStatus, &id, &gap,
-			&row.Assets); err != nil {
+			&row.Assets, &row.Released); err != nil {
 			return nil, fmt.Errorf("scan intake: %w", err)
 		}
 		if sid, perr := shared.IDFromString(id); perr == nil {
@@ -133,14 +133,14 @@ func (r *DashboardWidgetRepository) intakeInstances(ctx context.Context, tenantI
 			FROM gaps WHERE gap IS NOT NULL GROUP BY origin, tool, ikind, iid
 		), agg AS (
 			SELECT rc.origin, rc.tool, rc.ikind, rc.iid, MAX(rc.iname) AS iname, COUNT(DISTINCT rc.id) AS receipts,
-				COALESCE(SUM(received), 0) AS received, COALESCE(SUM(assets), 0) AS assets, MAX(updated_at) AS last_at,
+				COALESCE(SUM(received), 0) AS received, COALESCE(SUM(assets), 0) AS assets, COALESCE(SUM(released), 0) AS released, MAX(updated_at) AS last_at,
 				(array_agg(status ORDER BY updated_at DESC, rc.id DESC))[1] AS last_status,
 				CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END AS gap
 			FROM rc LEFT JOIN med ON med.origin = rc.origin AND med.tool = rc.tool AND med.ikind = rc.ikind AND med.iid = rc.iid
 			GROUP BY rc.origin, rc.tool, rc.ikind, rc.iid
 		)
 		SELECT agg.origin, agg.tool, agg.ikind, agg.iid, COALESCE(s.name, agg.iname, ''), s.id IS NOT NULL,
-			agg.receipts, agg.received, agg.assets, agg.last_at, agg.last_status, agg.gap
+			agg.receipts, agg.received, agg.assets, agg.released, agg.last_at, agg.last_status, agg.gap
 		FROM agg
 		LEFT JOIN sensors s ON agg.ikind = '` + ingestreceipt.InstanceSensor + `' AND s.tenant_id = $1 AND s.id::text = agg.iid
 		ORDER BY agg.received DESC, agg.assets DESC, agg.ikind, agg.iid
@@ -159,7 +159,7 @@ func (r *DashboardWidgetRepository) intakeInstances(ctx context.Context, tenantI
 		var in dashboard.IntakeInstanceRow
 		var gap sql.NullFloat64
 		if err := rows.Scan(&origin, &tool, &in.Kind, &in.ID, &in.Name, &in.Owned, &in.Receipts, &in.Received,
-			&in.Assets, &in.LastAt, &in.LastStatus, &gap); err != nil {
+			&in.Assets, &in.Released, &in.LastAt, &in.LastStatus, &gap); err != nil {
 			return fmt.Errorf("scan intake instance: %w", err)
 		}
 		in.MedianGap = gapDuration(gap)

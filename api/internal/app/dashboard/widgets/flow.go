@@ -72,6 +72,15 @@ type IntakeSource struct {
 	LastStatus    string `json:"last_status"`
 	LastReceiptID string `json:"last_receipt_id"`
 	Health        string `json:"health" enums:"ok,stale,failed"`
+	// HealthLastAt is the last receipt of whatever Health speaks about: the
+	// source's own, or the sender (a stale sensor among healthy ones) that
+	// made the source stale. A note such as "stale, last receipt 3 days ago"
+	// reads this, never the source's last_at, which belongs to the freshest
+	// sender.
+	HealthLastAt time.Time `json:"health_last_at"`
+	// Released is the reports of the source applied from the results
+	// quarantine (the sender stays the original sensor).
+	Released int64 `json:"released"`
 	// ExpectedEverySeconds is the source's usual interval (the median time
 	// between its receipts); absent with fewer than three receipts.
 	ExpectedEverySeconds *int64 `json:"expected_every_seconds,omitempty"`
@@ -99,6 +108,9 @@ type IntakeInstance struct {
 	Assets   int64     `json:"assets"`
 	Health   string    `json:"health" enums:"ok,stale,failed"`
 	LastAt   time.Time `json:"last_at"`
+	// Released is the reports of this sender that were held in the results
+	// quarantine and applied later.
+	Released int64 `json:"released"`
 	// SensorHref is the sensor's page (sensors of the organization only).
 	SensorHref string `json:"sensor_href,omitempty"`
 }
@@ -136,25 +148,28 @@ func healthRank(h string) int {
 
 // intakeInstances maps a source's senders and returns the worst health of
 // them.
-func intakeInstances(rows []dashboard.IntakeInstanceRow, now time.Time) ([]IntakeInstance, string) {
+func intakeInstances(rows []dashboard.IntakeInstanceRow, now time.Time) ([]IntakeInstance, string, time.Time) {
 	worst := HealthOK
+	var worstAt time.Time
 	if len(rows) == 0 {
-		return nil, worst
+		return nil, worst, worstAt
 	}
 	out := make([]IntakeInstance, 0, len(rows))
 	for _, r := range rows {
 		h := sourceHealth(dashboard.IntakeRow{LastAt: r.LastAt, LastStatus: r.LastStatus, MedianGap: r.MedianGap}, now)
-		if healthRank(h) > healthRank(worst) {
-			worst = h
+		// The worst sender decides; of equally bad ones, the one quiet the
+		// shortest time (the most recent receipt).
+		if healthRank(h) > healthRank(worst) || (h != HealthOK && h == worst && r.LastAt.After(worstAt)) {
+			worst, worstAt = h, r.LastAt.UTC()
 		}
 		in := IntakeInstance{ID: r.ID, Kind: r.Kind, Name: r.Name, Received: r.Received, Assets: r.Assets,
-			Health: h, LastAt: r.LastAt.UTC()}
+			Health: h, LastAt: r.LastAt.UTC(), Released: r.Released}
 		if r.Kind == "sensor" && r.Owned {
 			in.SensorHref = "/sensors/" + url.PathEscape(r.ID)
 		}
 		out = append(out, in)
 	}
-	return out, worst
+	return out, worst, worstAt
 }
 
 // IntakeNoise splits what was received in the window into new or reopened
@@ -353,10 +368,13 @@ func (s *Service) intake(ctx context.Context, scope dashboard.ReadScope, since t
 			src.ExpectedEverySeconds = &secs
 		}
 		src.Health = sourceHealth(r, now)
+		src.HealthLastAt = src.LastAt
+		src.Released = r.Released
 		var worst string
-		src.Instances, worst = intakeInstances(r.Instances, now)
+		var worstAt time.Time
+		src.Instances, worst, worstAt = intakeInstances(r.Instances, now)
 		if healthRank(worst) > healthRank(src.Health) {
-			src.Health = worst
+			src.Health, src.HealthLastAt = worst, worstAt
 		}
 		switch src.Health {
 		case HealthFailed:

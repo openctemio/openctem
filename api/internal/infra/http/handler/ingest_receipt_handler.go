@@ -105,26 +105,29 @@ type ReceiptError struct {
 
 // ReceiptResponse is one receipt.
 type ReceiptResponse struct {
-	ID          string          `json:"id"`
-	Status      string          `json:"status"`
-	Source      ReceiptSource   `json:"source"`
-	Tool        string          `json:"tool,omitempty"`
-	Format      string          `json:"format,omitempty"`
-	Coverage    ReceiptCoverage `json:"coverage"`
-	Counts      ReceiptCounts   `json:"counts"`
-	Reports     int             `json:"reports"`
-	Received    int             `json:"received"`
-	Assets      ReceiptAssets   `json:"assets"`
-	CreatedBy   string          `json:"created_by,omitempty"`
-	Errors      []ReceiptError  `json:"errors"`
-	Truncated   bool            `json:"actions_truncated"`
-	StartedAt   time.Time       `json:"started_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
-	FinishedAt  *time.Time      `json:"finished_at,omitempty"`
-	Components  int             `json:"components,omitempty"`
-	Statements  int             `json:"statements,omitempty"`
-	VEXStored   int             `json:"vex_stored,omitempty"`
-	VEXRequests int             `json:"vex_requested,omitempty"`
+	ID       string          `json:"id"`
+	Status   string          `json:"status"`
+	Source   ReceiptSource   `json:"source"`
+	Tool     string          `json:"tool,omitempty"`
+	Format   string          `json:"format,omitempty"`
+	Coverage ReceiptCoverage `json:"coverage"`
+	Counts   ReceiptCounts   `json:"counts"`
+	Reports  int             `json:"reports"`
+	Received int             `json:"received"`
+	// ReleasedFromQuarantine: part of this receipt was held in the results
+	// quarantine and applied later; the sender is still the original sensor.
+	ReleasedFromQuarantine bool           `json:"released_from_quarantine"`
+	Assets                 ReceiptAssets  `json:"assets"`
+	CreatedBy              string         `json:"created_by,omitempty"`
+	Errors                 []ReceiptError `json:"errors"`
+	Truncated              bool           `json:"actions_truncated"`
+	StartedAt              time.Time      `json:"started_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
+	FinishedAt             *time.Time     `json:"finished_at,omitempty"`
+	Components             int            `json:"components,omitempty"`
+	Statements             int            `json:"statements,omitempty"`
+	VEXStored              int            `json:"vex_stored,omitempty"`
+	VEXRequests            int            `json:"vex_requested,omitempty"`
 	// BySeverity (detail only) counts the actions per action and finding
 	// severity, over the findings the caller may see.
 	BySeverity map[string]map[string]int `json:"by_severity,omitempty"`
@@ -198,7 +201,7 @@ func toReceiptResponse(rec *ingestreceipt.Receipt) ReceiptResponse {
 		Counts: ReceiptCounts{Created: rec.Counts.Created, Updated: rec.Counts.StillDetected, Reactivated: rec.Counts.Reopened,
 			Closed: rec.Counts.Closed, Untouched: rec.Counts.Untouched, Skipped: rec.Counts.Skipped, Failed: rec.Counts.Failed,
 			Suppressed: rec.Counts.Suppressed},
-		Reports: rec.Reports, Received: rec.Received, Assets: ReceiptAssets{Created: rec.AssetsCreated, Updated: rec.AssetsUpdated},
+		Reports: rec.Reports, Received: rec.Received, ReleasedFromQuarantine: rec.ReleasedFromQuarantine, Assets: ReceiptAssets{Created: rec.AssetsCreated, Updated: rec.AssetsUpdated},
 		Errors: make([]ReceiptError, 0, len(rec.Errors)), Truncated: rec.ActionsTruncated, StartedAt: rec.CreatedAt,
 		UpdatedAt: rec.UpdatedAt, FinishedAt: rec.FinishedAt, Components: rec.Components, Statements: rec.Statements,
 		VEXStored: rec.VEXStored, VEXRequests: rec.VEXRequested, Outcomes: rec.Outcomes,
