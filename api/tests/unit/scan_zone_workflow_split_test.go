@@ -1,7 +1,9 @@
 package unit
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
@@ -160,6 +162,36 @@ func TestScanZones_WorkflowSplitZoneWithoutSensors(t *testing.T) {
 	for _, c := range deps.commandRepo.commands {
 		if slices.Contains(payloadTargets(t, c), "10.2.0.1") {
 			t.Error("a target of a zone without sensors was dispatched")
+		}
+	}
+}
+
+// A zone run that cannot start (a database or internal failure) shows a
+// fixed reason on the parent, never the error's own text: the reason is
+// returned by the API and shown in the console.
+func TestScanZones_WorkflowSplitStartFailureHidesTheError(t *testing.T) {
+	tenant := shared.NewID()
+	internal := zone(t, tenant, "Internal", false, []shared.ID{shared.NewID()}, "10.20.0.0/16")
+	svc, deps := newZonedScanService(&fakeZoneDir{zones: []*scanzone.Zone{internal}}, nil, nil)
+	deps.runRepo.createChildErr = errors.New(`pq: duplicate key value violates unique constraint "scan_runs_pkey" (host db-internal.example.com)`)
+	sc := splitWorkflow(deps, tenant, "10.20.1.0/24", "203.0.113.9")
+
+	parent, err := trigger(t, svc, sc)
+	if err != nil {
+		t.Fatalf("trigger: %v", err)
+	}
+	split, _ := parent.Context[scanrun.RunContextKeyZoneSplit].(map[string]any)
+	groups, _ := split["groups"].([]map[string]any)
+	if len(groups) != 2 {
+		t.Fatalf("parent groups = %v", split)
+	}
+	for _, g := range groups {
+		reason, _ := g["reason"].(string)
+		if g["status"] != "refused" || reason != "the zone run could not start" {
+			t.Errorf("group %v: want refused with the fixed reason", g)
+		}
+		if strings.Contains(reason, "pq:") || strings.Contains(reason, "example.com") {
+			t.Errorf("group reason leaks the internal error: %q", reason)
 		}
 	}
 }
