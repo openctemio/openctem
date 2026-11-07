@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 )
 
 // Refusal layers: which layer decided that a job may not run on a sensor.
@@ -229,11 +231,25 @@ type ToolHTTPPolicy struct {
 	// not change: enforced platform headers and a program's.
 	LockedHeaders   []string `json:"locked_headers,omitempty"`
 	UserAgentLocked bool     `json:"user_agent_locked,omitempty"`
+	// UserAgents is the rotation list in force, only when it holds more
+	// than one value; UserAgent is then its first value (what a sensor
+	// without rotation sends). UserAgentLocked locks the whole list.
+	UserAgents []string `json:"user_agents,omitempty"`
+	// UserAgentKey selects a list value per target host (contract
+	// identity.SelectUserAgent): the job's scan run id, else the command id,
+	// so every task of one run sends one value to one host.
+	UserAgentKey string `json:"user_agent_key,omitempty"`
+	// Query is the identification query parameter added to every request.
+	Query *scanident.Query `json:"query,omitempty"`
+	// IdentificationRequired: every request to a target must carry the
+	// headers and the query parameter; a task that cannot is refused.
+	IdentificationRequired bool `json:"identification_required,omitempty"`
 }
 
 // IsZero reports whether the policy sets nothing.
 func (p ToolHTTPPolicy) IsZero() bool {
-	return p.UserAgent == "" && p.AllowInsecureTLS == nil && len(p.Headers) == 0
+	return p.UserAgent == "" && p.AllowInsecureTLS == nil && len(p.Headers) == 0 && len(p.UserAgents) == 0 &&
+		p.Query == nil && !p.IdentificationRequired
 }
 
 type OptIns struct {

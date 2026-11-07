@@ -11,6 +11,12 @@ package command
 //     the smallest program rate. The stored command is never changed.
 //
 // A lookup that cannot decide withholds the job (fail closed).
+//
+// Required identification is decided at the same point, for every scan,
+// retest and validate job, with or without programs: when the platform, the
+// organization or a program requires it, a job whose identity has no header
+// and no query parameter is failed (IDENTIFICATION_REQUIRED_MISSING), and a
+// sensor that does not report http.identity.required@1 never gets it.
 
 import (
 	"context"
@@ -62,23 +68,46 @@ const jsonNull = "null"
 var ErrSensorCannotHonorProgram = shared.NewDomainError("PROGRAM_RULES_UNSUPPORTED",
 	"this sensor cannot send the program's identification headers (update the sensor)", shared.ErrValidation)
 
+// FailureIdentificationRequiredMissing is the failure code of a job that
+// requires identification but carries no identification header and no query
+// parameter: it could never run, since the sensor would refuse every task.
+const FailureIdentificationRequiredMissing = "IDENTIFICATION_REQUIRED_MISSING"
+
+// ErrIdentificationRequiredMissing: see FailureIdentificationRequiredMissing.
+var ErrIdentificationRequiredMissing = shared.NewDomainError(FailureIdentificationRequiredMissing,
+	"identification is required but no identification header or query parameter is set; add a header or query parameter "+
+		"in the platform's, the organization's or the program's scan identification", shared.ErrValidation)
+
+// ErrSensorCannotRequireIdentification: the job requires identification and
+// the sensor does not report sensor.CapabilityHTTPIdentityRequired (it would
+// drop the requirement); it waits for one that does.
+var ErrSensorCannotRequireIdentification = shared.NewDomainError("IDENTIFICATION_REQUIRED_UNSUPPORTED",
+	"this sensor cannot enforce required identification (update the sensor)", shared.ErrValidation)
+
+// identityWired reports whether a layer of scan identification is read at
+// delivery (the platform's or the organization's).
+func (s *Service) identityWired() bool {
+	return s.httpPolicy != nil || s.platformIdentity != nil
+}
+
 // programHold decides each command before it is claimed: kept (with the
 // rules it carries, if any), withheld (a sensor that cannot honor the
 // rules, or rules that could not be read) or failed (conflicting rules).
 func (s *Service) programHold(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, cmds []*commanddom.Command) ([]*commanddom.Command, map[shared.ID]*bp.JobRules) {
-	if s.programRules == nil || len(cmds) == 0 {
+	if (s.programRules == nil && !s.identityWired()) || len(cmds) == 0 {
 		return cmds, nil
 	}
 	rules := map[shared.ID]*bp.JobRules{}
 	out := cmds[:0:0]
 	now := s.clock()
-	honors := s.honorsHTTPRules(ctx, tenantID, sensorID)
+	honors := s.sensorReports(ctx, tenantID, sensorID)
+	ident := s.identityOnce(ctx, tenantID)
 	for _, c := range cmds {
 		if !c.TenantID.Equals(tenantID) {
 			out = append(out, c) // never decided across tenants; the poll is tenant-scoped
 			continue
 		}
-		r, err := s.programDecide(ctx, c, now, honors)
+		r, err := s.programDecide(ctx, c, now, honors, ident)
 		if err != nil {
 			continue
 		}
@@ -92,9 +121,27 @@ func (s *Service) programHold(ctx context.Context, tenantID shared.ID, sensorID 
 
 // programDecide answers the rules one command carries (nil: none), or why it
 // does not leave now: bp.ErrRulesConflict (the command is failed),
-// ErrSensorCannotHonorProgram, or ErrScopeRecheckUnavailable when the rules
-// could not be read (fail closed).
-func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now time.Time, honors func() bool) (*bp.JobRules, error) {
+// ErrSensorCannotHonorProgram, ErrScopeRecheckUnavailable when the rules
+// could not be read (fail closed), or a required identification error
+// (identityDecide).
+func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now time.Time, reports func(string) bool,
+	ident func() (scanident.Effective, error),
+) (*bp.JobRules, error) {
+	r, err := s.programRulesFor(ctx, c, now, reports)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.identityDecide(ctx, c, r, reports, ident); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// programRulesFor answers the program rules of one command (nil: none).
+func (s *Service) programRulesFor(ctx context.Context, c *commanddom.Command, now time.Time, reports func(string) bool) (*bp.JobRules, error) {
+	if s.programRules == nil {
+		return nil, nil
+	}
 	targets := payloadTargets(c.Payload)
 	if len(targets) == 0 {
 		return nil, nil
@@ -115,7 +162,7 @@ func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now 
 		s.failAtClaim(ctx, c, FailureProgramForbids+": "+why, FailureProgramForbids)
 		return nil, ErrProgramForbidsEnumeration
 	}
-	if r != nil && (len(r.Headers) > 0 || r.UserAgent != "") && !honors() {
+	if r.SetsIdentity() && !reports(sensordom.CapabilityHTTPIdentity) {
 		s.logger.Warn("the sensor does not report "+sensordom.CapabilityHTTPIdentity+" (it cannot send the program's headers); withholding the job",
 			"command_id", c.ID.String(), "programs", r.Programs)
 		return nil, ErrSensorCannotHonorProgram
@@ -138,7 +185,7 @@ func (s *Service) programFits(ctx context.Context, c *commanddom.Command, r *bp.
 		s.logger.Warn("scan identification could not be read; withholding the job", "command_id", c.ID.String(), "error", err)
 		return ErrScopeRecheckUnavailable
 	}
-	if _, err := eff.Overlay(r.Headers, r.UserAgent, scanident.SourceProgram); err != nil {
+	if _, err := eff.Overlay(programLayer(r), scanident.SourceProgram); err != nil {
 		s.failAtClaim(ctx, c, fmt.Sprintf("%s: the program's identification headers with the platform's and the organization's exceed %d",
 			FailureProgramRules, scanident.MaxHeaders), FailureProgramRules)
 		return err
@@ -146,35 +193,94 @@ func (s *Service) programFits(ctx context.Context, c *commanddom.Command, r *bp.
 	return nil
 }
 
+// programLayer is a program's rules as a scan identification layer.
+func programLayer(r *bp.JobRules) scanident.OverlayLayer {
+	if r == nil {
+		return scanident.OverlayLayer{}
+	}
+	return scanident.OverlayLayer{Headers: r.Headers, UserAgents: r.UserAgentConfig(), IdentificationRequired: r.IdentificationRequired}
+}
+
+// identityDecide applies required identification to a scan, retest or
+// validate job (the jobs that carry http_policy): when any layer (platform,
+// organization, the job's programs) requires it, a job without an
+// identification header or query parameter is failed with
+// IDENTIFICATION_REQUIRED_MISSING, and a sensor that does not report
+// sensor.CapabilityHTTPIdentityRequired does not get it (withheld). A layer
+// that cannot be read withholds the job.
+func (s *Service) identityDecide(ctx context.Context, c *commanddom.Command, r *bp.JobRules, reports func(string) bool,
+	ident func() (scanident.Effective, error),
+) error {
+	if !egressBound(c.Type) || (!s.identityWired() && (r == nil || !r.IdentificationRequired)) {
+		return nil
+	}
+	eff, err := ident()
+	if err != nil {
+		s.logger.Warn("scan identification could not be read; withholding the job", "command_id", c.ID.String(), "error", err)
+		return ErrScopeRecheckUnavailable
+	}
+	if eff, err = eff.Overlay(programLayer(r), scanident.SourceProgram); err != nil {
+		return ErrScopeRecheckUnavailable // programFits already failed it
+	}
+	if !eff.IdentificationRequired {
+		return nil
+	}
+	if !eff.HasIdentification() {
+		s.failAtClaim(ctx, c, ErrIdentificationRequiredMissing.Error(), FailureIdentificationRequiredMissing)
+		return ErrIdentificationRequiredMissing
+	}
+	if !reports(sensordom.CapabilityHTTPIdentityRequired) {
+		s.logger.Warn("the sensor does not report "+sensordom.CapabilityHTTPIdentityRequired+
+			" (it cannot enforce required identification); withholding the job",
+			"command_id", c.ID.String(), "required_by", strings.Join(eff.RequiredBy, ","))
+		return ErrSensorCannotRequireIdentification
+	}
+	return nil
+}
+
 // programHoldOne decides one command a sensor acknowledges by id: the rules
 // it carries (nil: none), or the error the claim answers.
 func (s *Service) programHoldOne(ctx context.Context, sensorID shared.ID, cmd *commanddom.Command) (*bp.JobRules, error) {
-	if s.programRules == nil {
+	if s.programRules == nil && !s.identityWired() {
 		return nil, nil
 	}
-	return s.programDecide(ctx, cmd, s.clock(), s.honorsHTTPRules(ctx, cmd.TenantID, &sensorID))
+	return s.programDecide(ctx, cmd, s.clock(), s.sensorReports(ctx, cmd.TenantID, &sensorID), s.identityOnce(ctx, cmd.TenantID))
 }
 
-// honorsHTTPRules answers (once, when first asked) whether the sensor reports
-// that its tools send the job's http_policy headers and User-Agent
-// (sensor.CapabilityHTTPIdentity). It is decided by what the sensor reports,
-// never by its SDK name or version. Unknown sensor or no lookup: no.
-func (s *Service) honorsHTTPRules(ctx context.Context, tenantID shared.ID, sensorID *shared.ID) func() bool {
-	var done, ok bool
-	return func() bool {
-		if done {
-			return ok
+// identityOnce reads tenantID's merged scan identification once, when first
+// asked (one decision pass reads the layers once, not per job).
+func (s *Service) identityOnce(ctx context.Context, tenantID shared.ID) func() (scanident.Effective, error) {
+	var done bool
+	var eff scanident.Effective
+	var err error
+	return func() (scanident.Effective, error) {
+		if !done {
+			done = true
+			eff, _, err = s.jobIdentity(ctx, tenantID)
 		}
-		done = true
-		if s.sensors == nil || sensorID == nil {
-			return false
+		return eff, err
+	}
+}
+
+// sensorReports answers whether the sensor reports a capability
+// (sensor.CapabilityHTTPIdentity: its tools send the job's http_policy
+// headers and User-Agent; sensor.CapabilityHTTPIdentityRequired: it enforces
+// required identification). The sensor is read once, when first asked,
+// tenant-scoped. It is decided by what the sensor reports, never by its SDK
+// name or version. Unknown sensor or no lookup: no.
+func (s *Service) sensorReports(ctx context.Context, tenantID shared.ID, sensorID *shared.ID) func(string) bool {
+	var done bool
+	var caps []string
+	return func(capability string) bool {
+		if !done {
+			done = true
+			if s.sensors != nil && sensorID != nil {
+				if sen, err := s.sensors.GetByTenantAndID(ctx, tenantID, *sensorID); err == nil && sen != nil {
+					caps = sen.Reported.Capabilities
+				}
+			}
 		}
-		sen, err := s.sensors.GetByTenantAndID(ctx, tenantID, *sensorID)
-		if err != nil || sen == nil {
-			return false
-		}
-		ok = slices.Contains(sen.Reported.Capabilities, sensordom.CapabilityHTTPIdentity)
-		return ok
+		return slices.Contains(caps, capability)
 	}
 }
 
@@ -199,7 +305,7 @@ func (s *Service) withProgramRules(cmds []*commanddom.Command, rules map[shared.
 			out = append(out, c)
 			continue
 		}
-		payload, err := applyJobRules(c.Payload, r)
+		payload, err := applyJobRules(c.Payload, r, userAgentKey(c))
 		if err != nil {
 			s.logger.Warn("program rules could not be applied; withholding the job", "command_id", c.ID.String(), "error", err)
 			continue
@@ -211,25 +317,27 @@ func (s *Service) withProgramRules(cmds []*commanddom.Command, rules map[shared.
 	return out
 }
 
-// applyJobRules writes the rules into a payload: http_policy headers and
-// User-Agent (merged with what is there: the program's win, except over an
-// enforced platform header or User-Agent, and the program's names become
-// locked), and the rate cap in config and scanner_config.
-func applyJobRules(payload json.RawMessage, r *bp.JobRules) (json.RawMessage, error) {
+// applyJobRules writes the rules into a payload: http_policy headers,
+// User-Agent setting and requirement (merged with what is there: the
+// program's win, except over an enforced platform header or User-Agent, and
+// the program's names and list become locked; the requirement only adds),
+// and the rate cap in config and scanner_config. key is the job's rotation
+// key (userAgentKey).
+func applyJobRules(payload json.RawMessage, r *bp.JobRules, key string) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if len(payload) == 0 || string(payload) == jsonNull {
 		fields = map[string]json.RawMessage{}
 	} else if err := json.Unmarshal(payload, &fields); err != nil {
 		return nil, fmt.Errorf("command payload: %w", err)
 	}
-	if len(r.Headers) > 0 || r.UserAgent != "" {
+	if r.SetsIdentity() || r.IdentificationRequired {
 		pol := map[string]any{}
 		if raw, ok := fields["http_policy"]; ok && string(raw) != jsonNull {
 			if err := json.Unmarshal(raw, &pol); err != nil {
 				return nil, fmt.Errorf("http_policy: %w", err)
 			}
 		}
-		eff, err := policyIdentity(pol).Overlay(r.Headers, r.UserAgent, scanident.SourceProgram)
+		eff, err := policyIdentity(pol).Overlay(programLayer(r), scanident.SourceProgram)
 		if err != nil {
 			return nil, err
 		}
@@ -242,8 +350,19 @@ func applyJobRules(payload json.RawMessage, r *bp.JobRules) (json.RawMessage, er
 		if eff.UserAgent != "" {
 			pol["user_agent"] = eff.UserAgent
 		}
+		// The list in force travels only when it rotates; a program's single
+		// value removes the organization's list.
+		delete(pol, "user_agents")
+		delete(pol, "user_agent_key")
+		if len(eff.UserAgents) > 1 {
+			pol["user_agents"] = eff.UserAgents
+			pol["user_agent_key"] = key
+		}
 		if eff.UserAgentLocked {
 			pol["user_agent_locked"] = true
+		}
+		if eff.IdentificationRequired {
+			pol["identification_required"] = true
 		}
 		b, err := json.Marshal(pol)
 		if err != nil {
@@ -302,6 +421,19 @@ func policyIdentity(pol map[string]any) scanident.Effective {
 		}
 	}
 	e.UserAgent, _ = pol["user_agent"].(string)
+	if uas, ok := pol["user_agents"].([]any); ok {
+		for _, v := range uas {
+			if ua, ok := v.(string); ok {
+				e.UserAgents = append(e.UserAgents, ua)
+			}
+		}
+	}
+	if len(e.UserAgents) == 0 && e.UserAgent != "" {
+		e.UserAgents = []string{e.UserAgent}
+	}
 	e.UserAgentLocked, _ = pol["user_agent_locked"].(bool)
+	if req, _ := pol["identification_required"].(bool); req {
+		e.IdentificationRequired = true
+	}
 	return e
 }

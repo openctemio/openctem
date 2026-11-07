@@ -46,6 +46,7 @@ import {
   runSubjectFindingId,
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
+import { RunSentWith, stepsWithSentWith } from './run-sent-with'
 import { RunTasksTable } from './run-tasks-table'
 import { RunZoneSplitPanel } from './run-zone-split'
 import { WindowWaits } from '@/features/scan-windows'
@@ -314,6 +315,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                     settled={!isRunInProgress(run)}
                     steps={run.scan_run_steps}
                   />
+                </DetailSection>
+              )}
+              {stepsWithSentWith(run.scan_run_steps).length > 0 && (
+                <DetailSection title={t('scans.runDetail.sentWith', 'Sent with')}>
+                  <RunSentWith steps={stepsWithSentWith(run.scan_run_steps)} />
                 </DetailSection>
               )}
               {(run.window_waits?.waiting_count ?? 0) > 0 && (
