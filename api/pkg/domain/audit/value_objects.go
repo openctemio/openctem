@@ -60,6 +60,10 @@ const (
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
+
+	// ActionCTEMCycleCloseOverridden records a person closing a CTEM cycle
+	// although its validation coverage check could not run, with the reason.
+	ActionCTEMCycleCloseOverridden Action = "ctem_cycle.close_overridden"
 	// ActionTenantSharedSensorsUpdated records the owner's shared sensor
 	// opt-out changing.
 	ActionTenantSharedSensorsUpdated Action = "tenant.shared_sensors_updated"
@@ -609,11 +613,14 @@ const (
 	// Scope actions: what may be scanned (targets) and what must not be
 	// (exclusions). Every change is audited with before/after (RFC-040
 	// §5.11); a change that widens what is scanned is high severity.
-	ActionScopeTargetCreated        Action = "scope_target.created"
-	ActionScopeTargetUpdated        Action = "scope_target.updated"
-	ActionScopeTargetDeleted        Action = "scope_target.deleted"
-	ActionScopeTargetActivated      Action = "scope_target.activated"
-	ActionScopeTargetDeactivated    Action = "scope_target.deactivated"
+	ActionScopeTargetCreated     Action = "scope_target.created"
+	ActionScopeTargetUpdated     Action = "scope_target.updated"
+	ActionScopeTargetDeleted     Action = "scope_target.deleted"
+	ActionScopeTargetActivated   Action = "scope_target.activated"
+	ActionScopeTargetDeactivated Action = "scope_target.deactivated"
+	// ActionScopeTargetReplaced: an entry's pattern was replaced by a new
+	// entry (both patterns and the reason in the metadata).
+	ActionScopeTargetReplaced       Action = "scope_target.replaced"
 	ActionScopeExclusionCreated     Action = "scope_exclusion.created"
 	ActionScopeExclusionUpdated     Action = "scope_exclusion.updated"
 	ActionScopeExclusionDeleted     Action = "scope_exclusion.deleted"
@@ -885,6 +892,7 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantCredentialSettingsUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionCTEMCycleCloseOverridden,
 		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
@@ -975,7 +983,7 @@ func (a Action) IsValid() bool {
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
 		ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -1125,7 +1133,7 @@ func (a Action) Category() string {
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted:
 		return "tool"
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
@@ -1208,6 +1216,7 @@ const (
 	ResourceTypeSavedView      ResourceType = "saved_view"
 	ResourceTypeScan           ResourceType = "scan"
 	ResourceTypeAsset          ResourceType = "asset"
+	ResourceTypeCTEMCycle      ResourceType = "ctem_cycle"
 	ResourceTypeAssetGroup     ResourceType = "asset_group"
 	ResourceTypeSettings       ResourceType = "settings"
 	ResourceTypeToken          ResourceType = "token"
@@ -1281,7 +1290,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
+		ResourceTypeAsset, ResourceTypeCTEMCycle, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
@@ -1381,7 +1390,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTemplateSourceCredentialAttached,
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
-		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionScopeTargetReplaced, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved, ActionScopeTargetT2Downgraded,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
@@ -1394,6 +1403,8 @@ func SeverityForAction(a Action) Severity {
 		// Findings closed because their assets went out of scope (an insider
 		// could use it to hide findings: it is reviewed like a deletion).
 		ActionScopeEffectsApplied,
+		// A cycle closed past a coverage check that could not run.
+		ActionCTEMCycleCloseOverridden,
 		// Whether leaked secret values are kept.
 		ActionTenantCredentialSettingsUpdated:
 		return SeverityHigh

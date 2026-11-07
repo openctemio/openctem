@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -332,6 +333,9 @@ type rejectedTarget struct {
 	// ActScope: refused by the act-scope check (the caller may not scan
 	// it), not by target validation.
 	ActScope bool
+	// Code is the refusal code when it is more specific than invalid_target
+	// (a private target no scan zone covers is zone_none).
+	Code string
 }
 
 // previewValidateTargets applies scan creation's target validation, including
@@ -394,7 +398,11 @@ func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targ
 	}
 	rejected := make([]rejectedTarget, 0, len(result.Invalid))
 	for _, inv := range result.Invalid {
-		rejected = append(rejected, rejectedTarget{Target: inv.Original, Reason: inv.Error})
+		rt := rejectedTarget{Target: inv.Original, Reason: inv.Error}
+		if isPrivateOutsideZones(inv) {
+			rt.Code = scopedom.RefusalZoneNone
+		}
+		rejected = append(rejected, rt)
 	}
 	return append(result.GetValidTargetStrings(), admitted...), rejected, nil
 }

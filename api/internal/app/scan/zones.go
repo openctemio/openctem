@@ -614,7 +614,10 @@ func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr stri
 		if isInternalIPRejection(v.Error) && lenient.ValidateSingleTarget(v.Original).IsValid {
 			pt := scanzone.ParseTarget(v.Original)
 			if pt.IsAddr {
-				if rt := router.Route(ctx, v.Original); rt.Zone != nil && scanzone.IsPrivate(pt.Prefix.Addr()) {
+				// A target several sites' zones hold is inside zones: it is
+				// admitted, and the run asks which zone (ambiguous_zone)
+				// unless the scan picks one.
+				if rt := router.Route(ctx, v.Original); (rt.Zone != nil || rt.Kind == scanzone.KindAmbiguousZone) && scanzone.IsPrivate(pt.Prefix.Addr()) {
 					admitted = append(admitted, v.Original)
 					continue
 				}
@@ -635,6 +638,18 @@ func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr stri
 		}
 	}
 	return admitted, nil
+}
+
+// isPrivateOutsideZones reports whether the validator refused a private
+// (RFC 1918 / ULA) address or range, which only a covering scan zone can
+// admit: the refusal is zone_none (add a zone), not an invalid target.
+// Loopback, link-local and metadata addresses stay invalid.
+func isPrivateOutsideZones(v validator.ValidatedTarget) bool {
+	if !isInternalIPRejection(v.Error) {
+		return false
+	}
+	pt := scanzone.ParseTarget(v.Original)
+	return pt.IsAddr && scanzone.IsPrivate(pt.Prefix.Addr()) && !scanzone.IsDenied(pt.Prefix.Addr())
 }
 
 func isInternalIPRejection(msg string) bool {

@@ -52,6 +52,8 @@
   "dashboardKit.flow.health.failed": "Lỗi {when}",
   "dashboardKit.flow.health.stale": "Không cập nhật, lần nhận cuối {when}",
   "dashboardKit.flow.measure.assets": "Tài sản",
+  "dashboardKit.flow.measure.assetsNote": "Xếp theo số tài sản tìm thấy. Tài sản không phải phát hiện và không được tính vào các số liệu phát hiện.",
+  "dashboardKit.flow.measure.assetsNoteWired": "Xếp theo số tài sản tìm thấy. Đường nối chỉ mang phát hiện: nguồn không gửi phát hiện nào có đường nối nét đứt mảnh.",
   "dashboardKit.flow.measure.findings": "Phát hiện",
   "dashboardKit.flow.noSources": "Không có nguồn nào gửi phát hiện trong kỳ này.",
   "dashboardKit.flow.origin.ci": "CI",

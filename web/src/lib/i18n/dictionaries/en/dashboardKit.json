@@ -52,6 +52,8 @@
   "dashboardKit.flow.health.failed": "Failed {when}",
   "dashboardKit.flow.health.stale": "Stale, last receipt {when}",
   "dashboardKit.flow.measure.assets": "Assets",
+  "dashboardKit.flow.measure.assetsNote": "Ranked by assets found. Assets are not findings and are not counted in the findings figures.",
+  "dashboardKit.flow.measure.assetsNoteWired": "Ranked by assets found. Lines carry findings only: a source that sent no findings has a thin dashed line.",
   "dashboardKit.flow.measure.findings": "Findings",
   "dashboardKit.flow.noSources": "No source sent findings in this period.",
   "dashboardKit.flow.origin.ci": "CI",
