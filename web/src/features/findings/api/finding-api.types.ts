@@ -755,6 +755,9 @@ export interface FindingApiFilters {
   families?: string[]
   /** Filters the page URL carries that the typed fields above do not: param name to value, sent as they are. */
   extra?: Record<string, string>
+  /** The practice switch (lib/practice.ts): practices to show, or to leave out. */
+  practice?: string
+  practice_not?: string
   /** An approval request for the finding is pending (or, with false, is not). Sent as `pending_approval`. */
   pending_approval?: boolean
   /** Informational findings (info and none) only, or (false) none of them. Sent as `informational`. */

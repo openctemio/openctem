@@ -18,6 +18,7 @@ const form: SlaPolicyFormData = {
   kev_cap_days: 14,
   warning_threshold_pct: 80,
   escalation_enabled: true,
+  practice: '',
 }
 
 describe('buildSlaPolicyPayload', () => {
@@ -30,5 +31,12 @@ describe('buildSlaPolicyPayload', () => {
   it('sends the known exploited cap, 0 (off) included', () => {
     expect(buildSlaPolicyPayload(form, true).kev_cap_days).toBe(14)
     expect(buildSlaPolicyPayload({ ...form, kev_cap_days: 0 }, false).kev_cap_days).toBe(0)
+  })
+
+  it("create sends a compliance policy's practice; edit never sends it", () => {
+    const compliance = { ...form, practice: 'compliance' as const }
+    expect(buildSlaPolicyPayload(compliance, false).practice).toBe('compliance')
+    expect('practice' in buildSlaPolicyPayload(compliance, true)).toBe(false)
+    expect('practice' in buildSlaPolicyPayload(form, false)).toBe(false)
   })
 })
