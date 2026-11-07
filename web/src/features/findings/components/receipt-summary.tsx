@@ -15,6 +15,11 @@ import { DetailSection } from '@/features/shared/components/detail-sheet'
 import { KeyValueList } from '@/features/shared/components/text-layout'
 import { cn } from '@/lib/utils'
 import {
+  RECEIPT_OUTCOME_CODES,
+  receiptOutcomeLabel,
+  unaccountedFindings,
+} from '@/features/shared/lib/receipt-outcomes'
+import {
   useFindingReceipts,
   useReceipts,
   type FindingReceipt,
@@ -77,6 +82,18 @@ export function ReceiptSummary({
   const received = receipt.received ?? 0
   const assetsCreated = receipt.assets?.created ?? 0
   const assetsUpdated = receipt.assets?.updated ?? 0
+  const unaccounted = unaccountedFindings(
+    received,
+    {
+      created: c?.created ?? 0,
+      stillDetected: c?.updated ?? 0,
+      reopened: c?.reactivated ?? 0,
+      suppressed: c?.suppressed ?? 0,
+      failed: c?.failed ?? 0,
+      skipped: c?.skipped ?? 0,
+    },
+    receipt.outcomes
+  )
   const hasActivity = reports > 0 || received > 0 || assetsCreated > 0 || assetsUpdated > 0
   return (
     <div className="space-y-2" data-testid="receipt-summary">
@@ -113,6 +130,10 @@ export function ReceiptSummary({
           />
           <Cell label={t('findings.receipts.skipped', 'Skipped')} value={c?.skipped ?? 0} />
           <Cell
+            label={t('findings.receipts.suppressed', 'Closed on arrival by a rule')}
+            value={c?.suppressed ?? 0}
+          />
+          <Cell
             label={t('findings.receipts.failed', 'Failed')}
             value={c?.failed ?? 0}
             tone="danger"
@@ -120,6 +141,15 @@ export function ReceiptSummary({
         </div>
       )}
       <ReceiptOutcomes outcomes={receipt.outcomes} />
+      {!running && unaccounted > 0 ? (
+        <p className="text-muted-foreground text-xs tabular-nums" data-testid="receipt-unaccounted">
+          {t(
+            'findings.receipts.unaccounted',
+            '{count} received findings are not explained by the counts above: this receipt was written before every outcome was counted.',
+            { count: unaccounted }
+          )}
+        </p>
+      ) : null}
       <ReceiptClosing closing={receipt.closing} />
       <p className="text-muted-foreground text-xs">
         {running
@@ -179,43 +209,6 @@ export function ReceiptSummary({
       </p>
     </div>
   )
-}
-
-/** The latest uploads of the organization (or, without the organization view, yours). */
-/** Outcome codes the API sends (ingestreceipt.AllOutcomes), in display order. */
-const OUTCOME_CODES = [
-  'merged',
-  'exposure',
-  'source_mitigated',
-  'unresolved_ref',
-  'out_of_contract',
-  'reserved_tool',
-  'compliance_passed',
-  'split',
-] as const
-
-function outcomeLabel(t: T, code: (typeof OUTCOME_CODES)[number]): string {
-  switch (code) {
-    case 'merged':
-      return t('findings.receipts.outcome.merged', 'Repeats merged')
-    case 'exposure':
-      return t('findings.receipts.outcome.exposure', 'Filed as exposures')
-    case 'source_mitigated':
-      return t('findings.receipts.outcome.source_mitigated', 'Mitigated at the source')
-    case 'unresolved_ref':
-      return t('findings.receipts.outcome.unresolved_ref', 'Named no asset, refused')
-    case 'out_of_contract':
-      return t(
-        'findings.receipts.outcome.out_of_contract',
-        "Held for review, outside the tool's contract"
-      )
-    case 'reserved_tool':
-      return t('findings.receipts.outcome.reserved_tool', 'Refused, reserved tool name')
-    case 'compliance_passed':
-      return t('findings.receipts.outcome.compliance_passed', 'Compliance checks that passed')
-    case 'split':
-      return t('findings.receipts.outcome.split', 'Added by splitting findings with several CVEs')
-  }
 }
 
 /** What a scan file's own coverage closed (ingestreceipt.Closing). */
@@ -362,7 +355,7 @@ export function ReceiptClosing({ closing }: { closing?: Closing | null }) {
  */
 export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number> }) {
   const { t } = useTranslation()
-  const rows = OUTCOME_CODES.filter((code) => (outcomes?.[code] ?? 0) > 0)
+  const rows = RECEIPT_OUTCOME_CODES.filter((code) => (outcomes?.[code] ?? 0) > 0)
   if (rows.length === 0) return null
   return (
     <div className="space-y-1" data-testid="receipt-outcomes">
@@ -373,7 +366,7 @@ export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number
         size="meta"
         items={rows.map((code) => ({
           key: code,
-          label: outcomeLabel(t, code),
+          label: receiptOutcomeLabel(t, code),
           value: (
             <span className="tabular-nums" data-testid={`receipt-outcome-${code}`}>
               {outcomes?.[code] ?? 0}
@@ -385,6 +378,7 @@ export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number
   )
 }
 
+/** The latest uploads of the organization (or, without the organization view, yours). */
 export function RecentImports() {
   const { t } = useTranslation()
   const { data, isLoading, error } = useReceipts({ sourceKind: 'upload', perPage: 5 })

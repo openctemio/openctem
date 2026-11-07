@@ -107,11 +107,32 @@ where a received finding went when it is none of the action counts:
 | `unresolved_ref` | it named no asset of its segment (refused before ingest) |
 | `out_of_contract` | held for review with its asset by the tool's output contract |
 | `reserved_tool` | refused: the report claimed the platform matcher's tool name |
+| `compliance_passed` | a compliance check that passed: no finding, it may resolve the failure of the same check |
+| `quarantined` | the report came without a command and waits in the results quarantine (a release is a later receipt of its own) |
 | `split` | the extra findings a finding naming several CVEs became (adds to received) |
+
+Every other path a received finding takes lands in a count:
+
+| Path | Count |
+|---|---|
+| new finding | `findings_created` |
+| finding that existed, reported again (unchanged or enriched) | `findings_updated` ("still detected", "seen again") |
+| closed finding seen again | `findings_reopened` |
+| new finding an approved rule closed on arrival | `findings_suppressed` |
+| scope exclusion, outside the uploader's scope, over the binding cap, no target asset | `skipped` (with a receipt item) |
+| the store or the fingerprint check failed | `findings_failed` (error `store_failed`); never also still detected |
+| an upload's records the parser skipped (below the minimum severity) and bundle files it did not read | `skipped`, and added to `findings_received` by `FinishUpload` |
+
+`ingestreceipt.Unaccounted` computes what no count and no outcome explains
+(0 on a reconciled receipt). The receipt view shows it for receipts written
+before every outcome was counted, and the dashboard intake returns it per
+window (`noise.unaccounted`).
 
 A receipt and each of its tool rows reconcile:
 `received + split = created + still detected + reopened + suppressed + failed + skipped + the other outcomes`
-(test `TestReceiptOutcomes_EveryFindingReconciles`). The repository adds
+(tests `TestReceiptOutcomes_EveryFindingReconciles` for a scan run, and
+`TestReceiptReconcile_*` for an upload, a connector sync seen again, and a
+failed store). The repository adds
 `merged` for the findings an earlier delta already recorded, inside the
 writing transaction; an unknown outcome code is refused. The receipts API
 returns `outcomes` on every receipt; the run page lists them under "Where the

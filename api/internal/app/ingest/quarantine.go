@@ -628,7 +628,8 @@ func (s *Service) recordQuarantined(ctx context.Context, agt *sensor.Sensor, ten
 	}
 	d := &ingestreceipt.Delta{TenantID: tenantID, Source: receiptSource(agt, Binding{Kind: BindingUnsolicited}, Options{}, reportIDOf(ctx)),
 		Instance: receiptInstance(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
-		Received: len(report.Findings), Items: out.Items, At: time.Now()}
+		Received: len(report.Findings), Items: out.Items, At: time.Now(),
+		Outcomes: map[string]int{ingestreceipt.OutcomeQuarantined: len(report.Findings)}}
 	if report.Tool != nil {
 		d.Tool = report.Tool.Name
 	}
