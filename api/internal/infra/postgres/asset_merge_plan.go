@@ -199,6 +199,11 @@ var assetMergeRefs = []mergeRef{
 	// moves.
 	{table: "asset_coverage", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"capability", "vantage"}}}},
+	// Asset liveness (docs/architecture/asset-liveness.md): one row per
+	// asset; the kept asset's evidence wins, a merged asset's row moves only
+	// when the kept one has none.
+	{table: "asset_liveness", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	// Scan stage chaining (research/27 P0-3): what a step produced follows
 	// the asset (one row per step run and asset), and a run's target
 	// provenance names the kept asset.

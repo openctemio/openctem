@@ -19,6 +19,7 @@
     - AssetTechnologyBackfillController
     - AssetChangeTimelineController
     - AssetLifecycleController
+    - AssetLivenessController
     - AssetPurgeController
     - AssetRiskScoreController
     - AssetRiskReconcileController
