@@ -15,4 +15,5 @@
 
 SET LOCAL lock_timeout = '5s';
 
+-- expand-contract-ok: widening varchar(100) to varchar(255) only; old pods read and write the column unchanged, and Postgres changes only the catalog
 ALTER TABLE findings ALTER COLUMN cvss_vector TYPE character varying(255);
