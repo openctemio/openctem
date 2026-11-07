@@ -64,6 +64,7 @@
   "scanDetail.runs.emptyTitle": "No runs yet",
   "scanDetail.runs.message": "Run message",
   "scanDetail.runs.noun": "runs",
+  "scanDetail.runs.reportedFindings": "Findings this scan reported",
   "scanDetail.runs.steps": "{done}/{total} steps",
   "scanDetail.runs.viewAll": "View all runs",
   "scanDetail.tab.configuration": "Configuration",

@@ -87,6 +87,9 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 		if err != nil {
 			return err
 		}
+		if err := recordSightings(ctx, tx, d, kind, ref, id, at); err != nil {
+			return err
+		}
 		errs, err := json.Marshal(clipErrors(d.Errors))
 		if err != nil {
 			return fmt.Errorf("receipt errors: %w", err)

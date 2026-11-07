@@ -105,3 +105,35 @@ export function useFindingReceipts(findingId: string | undefined) {
     swrConfig
   )
 }
+
+export type FindingSighting = S['internal_infra_http_handler.FindingSightingResponse']
+export type FindingSightingsResponse = S['internal_infra_http_handler.FindingSightingsResponse']
+
+export function findingSightingsUrl(findingId: string): string {
+  return `/api/v1/findings/${encodeURIComponent(findingId)}/sightings`
+}
+
+/**
+ * Who reported one finding (GET /findings/{id}/sightings): one entry per
+ * source with first and last seen. The sensor comes only with sensors:read;
+ * the API decides.
+ */
+export function useFindingSightings(findingId: string | undefined) {
+  const tenantId = useCurrentTenantId()
+  const key = tenantId && findingId ? findingSightingsUrl(findingId) : null
+  return useSWR<FindingSightingsResponse>(
+    key,
+    (url: string) => get<FindingSightingsResponse>(url),
+    swrConfig
+  )
+}
+
+/** The findings list of what one source reported (the "seen by" filters). */
+export function seenByFindingsHref(
+  param:
+    'seen_by_sensor_id' | 'seen_by_scan_id' | 'seen_in_run_id' | 'seen_by_tool' | 'seen_by_channel',
+  value: string
+): string {
+  const q = new URLSearchParams({ [param]: value, state: 'all' })
+  return `/findings?${q.toString()}`
+}

@@ -60,6 +60,10 @@ const (
 	// ActionTenantCyclePolicyUpdated records a change to the organization's
 	// CTEM cycle policy (whether the coverage SLO blocks closing a cycle).
 	ActionTenantCyclePolicyUpdated Action = "tenant.cycle_policy_updated"
+
+	// ActionCTEMCycleCloseOverridden records a person closing a CTEM cycle
+	// although its validation coverage check could not run, with the reason.
+	ActionCTEMCycleCloseOverridden Action = "ctem_cycle.close_overridden"
 	// ActionTenantSharedSensorsUpdated records the owner's shared sensor
 	// opt-out changing.
 	ActionTenantSharedSensorsUpdated Action = "tenant.shared_sensors_updated"
@@ -888,6 +892,7 @@ func (a Action) IsValid() bool {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantCredentialSettingsUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
+		ActionCTEMCycleCloseOverridden,
 		ActionTenantSharedSensorsUpdated,
 		ActionTenantIdleReminded, ActionTenantIdleReadOnly, ActionTenantIdleFinalWarning,
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
@@ -1211,6 +1216,7 @@ const (
 	ResourceTypeSavedView      ResourceType = "saved_view"
 	ResourceTypeScan           ResourceType = "scan"
 	ResourceTypeAsset          ResourceType = "asset"
+	ResourceTypeCTEMCycle      ResourceType = "ctem_cycle"
 	ResourceTypeAssetGroup     ResourceType = "asset_group"
 	ResourceTypeSettings       ResourceType = "settings"
 	ResourceTypeToken          ResourceType = "token"
@@ -1284,7 +1290,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeInvitation, ResourceTypeRepository, ResourceTypeBranch,
 		ResourceTypeComponent, ResourceTypeVulnerability, ResourceTypeFinding,
 		ResourceTypeFindingComment, ResourceTypeSLAPolicy, ResourceTypeSavedView, ResourceTypeScan,
-		ResourceTypeAsset, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
+		ResourceTypeAsset, ResourceTypeCTEMCycle, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
 		ResourceTypeScanProfile, ResourceTypeCommand,
@@ -1397,6 +1403,8 @@ func SeverityForAction(a Action) Severity {
 		// Findings closed because their assets went out of scope (an insider
 		// could use it to hide findings: it is reviewed like a deletion).
 		ActionScopeEffectsApplied,
+		// A cycle closed past a coverage check that could not run.
+		ActionCTEMCycleCloseOverridden,
 		// Whether leaked secret values are kept.
 		ActionTenantCredentialSettingsUpdated:
 		return SeverityHigh

@@ -740,6 +740,18 @@ func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr stri
 	return admitted, nil
 }
 
+// isPrivateOutsideZones reports whether the validator refused a private
+// (RFC 1918 / ULA) address or range, which only a covering scan zone can
+// admit: the refusal is zone_none (add a zone), not an invalid target.
+// Loopback, link-local and metadata addresses stay invalid.
+func isPrivateOutsideZones(v validator.ValidatedTarget) bool {
+	if !isInternalIPRejection(v.Error) {
+		return false
+	}
+	pt := scanzone.ParseTarget(v.Original)
+	return pt.IsAddr && scanzone.IsPrivate(pt.Prefix.Addr()) && !scanzone.IsDenied(pt.Prefix.Addr())
+}
+
 func isInternalIPRejection(msg string) bool {
 	return strings.Contains(msg, "internal IP")
 }

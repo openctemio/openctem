@@ -288,6 +288,10 @@ const NOT_PICKABLE: ReadonlySet<string> = new Set([
   'fixed_on_branch_id',
   'vulnerability_id',
   'component_id',
+  // Who reported it, by id: reached from a sensor, scan or run page.
+  'seen_by_sensor_id',
+  'seen_by_scan_id',
+  'seen_in_run_id',
 ])
 
 /** Fields derived from the asset: reading them needs permission to read assets. */
@@ -336,6 +340,8 @@ const KNOWN_FINDING_FIELDS: Record<string, true> = Object.fromEntries(
     'network_transport',
     'network_service',
     'acceptance_expires_at',
+    'seen_by_tool',
+    'seen_by_channel',
   ].map((k) => [k, true as const])
 )
 
