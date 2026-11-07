@@ -202,6 +202,10 @@ func TestMCP_ExposureChainsExplainLength(t *testing.T) {
 			if (c.note == "") != (note == "") || !strings.Contains(note, c.note) {
 				t.Errorf("relationship_note %q, want %q", note, c.note)
 			}
+			// Chains are presented as possible paths, never as proven ones.
+			if pn, _ := out["proof_note"].(string); !strings.Contains(pn, "possible path, not a proven one") {
+				t.Errorf("proof_note %q", pn)
+			}
 			sum := out["summary"].(map[string]any)
 			if sum["multi_hop_chains_shown"] != c.multi {
 				t.Errorf("summary %v", sum)
@@ -211,4 +215,20 @@ func TestMCP_ExposureChainsExplainLength(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The exposure chain tool describes its chains as possible paths, never as
+// confirmed ones, so an AI agent reading it keeps the wording honest.
+func TestMCPExposureChains_DescribedAsPossible(t *testing.T) {
+	h := NewMCPHandler(&fakeFindingReader{}, nil, fakeSurface{}, nil, nil, nil, nil, logger.NewNop())
+	for _, tool := range h.buildTools() {
+		if tool.Name != "get_exposure_chains" {
+			continue
+		}
+		if !strings.Contains(tool.Description, "possible") || !strings.Contains(tool.Description, "NOT proven") {
+			t.Fatalf("description does not say the chains are possible, not proven: %s", tool.Description)
+		}
+		return
+	}
+	t.Fatal("get_exposure_chains not registered")
 }

@@ -6,7 +6,9 @@ upload and a connector is one finding
 ([ADR-004](decisions/004-finding-provenance.md)). Who reported it is therefore
 a property of each **sighting**, not of the finding. `findings.source` stays
 the technique (sast, dast, va, ...); `findings.ingest_channel` stays the coarse
-channel of the first writer.
+channel of the first writer. What each source reported (its title, text,
+severity, native identity, scores) is kept per source in
+[finding source records](finding-source-records.md).
 
 ## Model
 

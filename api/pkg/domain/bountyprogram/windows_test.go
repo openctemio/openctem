@@ -137,3 +137,52 @@ func TestRules_ValidateASCII(t *testing.T) {
 		t.Fatalf("plain ASCII refused: %v", err)
 	}
 }
+
+// A program's rotation list and requirement: the list is validated like
+// every layer's (no single User-Agent with it, at most 200, no CR/LF); two
+// programs with different User-Agent settings conflict; the requirement is
+// the OR of the programs.
+func TestRules_UserAgentsAndRequired(t *testing.T) {
+	ok := Rules{UserAgents: []string{" a/1 ", "b/2", ""}, IdentificationRequired: true}.Normalize()
+	if len(ok.UserAgents) != 2 || ok.UserAgents[0] != "a/1" || !ok.IdentificationRequired {
+		t.Fatalf("normalized %+v", ok)
+	}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	many := make([]string, 201)
+	for i := range many {
+		many[i] = fmt.Sprintf("ua/%d", i)
+	}
+	for name, bad := range map[string]Rules{
+		"both":  {UserAgent: "x", UserAgents: []string{"a", "b"}},
+		"201":   {UserAgents: many},
+		"CR/LF": {UserAgents: []string{"a\r\nX-Injected: 1"}},
+		"dup":   {UserAgents: []string{"a", "a"}},
+	} {
+		if err := bad.Validate(); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%s accepted: %v", name, err)
+		}
+	}
+
+	a := prog("A", Rules{UserAgents: []string{"a/1", "b/2"}})
+	same := prog("S", Rules{UserAgents: []string{"a/1", "b/2"}, IdentificationRequired: true})
+	r, err := MergeJobRules([]*Program{a, same, prog("N", Rules{})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.UserAgentConfig(); len(got) != 2 || got[1] != "b/2" || !r.IdentificationRequired {
+		t.Fatalf("merged %+v", r)
+	}
+	for i, ps := range [][]*Program{
+		{a, prog("B", Rules{UserAgents: []string{"b/2", "a/1"}})},
+		{a, prog("C", Rules{UserAgent: "a/1"})},
+	} {
+		if _, err := MergeJobRules(ps); !errors.Is(err, ErrRulesConflict) {
+			t.Errorf("case %d: %v, want ErrRulesConflict", i, err)
+		}
+	}
+	if r, _ := MergeJobRules([]*Program{prog("Q", Rules{UserAgent: "one"})}); len(r.UserAgentConfig()) != 1 || r.UserAgentConfig()[0] != "one" {
+		t.Fatalf("single %+v", r)
+	}
+}

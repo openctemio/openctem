@@ -736,7 +736,8 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {
-		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, opts.RequireAssetForFindings, scope); err != nil {
+		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap,
+			opts.RequireAssetForFindings, scope, sourceIdentity(agt, binding, opts, report)); err != nil {
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
 		}

@@ -50,3 +50,33 @@ func TestSecuritySettings_ToolHTTPHeaders(t *testing.T) {
 		}
 	}
 }
+
+// The organization's rotation list, query parameter and requirement travel
+// with the tool HTTP layer; a list and a single User-Agent together, more
+// than 200 values, CR/LF and a bad query parameter are refused.
+func TestSecuritySettings_ToolHTTPRotationQueryRequired(t *testing.T) {
+	ok := SecuritySettings{ToolHTTPUserAgents: []string{"a/1", "b/2"}, ToolHTTPQuery: &scanident.Query{Name: "scan", Value: "corp-1"},
+		ToolHTTPIdentificationRequired: true}
+	if err := ok.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	p := ok.ToolHTTPPolicy()
+	if len(p.UserAgents) != 2 || p.Query == nil || p.Query.Value != "corp-1" || !p.IdentificationRequired {
+		t.Fatalf("policy %+v", p)
+	}
+	many := make([]string, 201)
+	for i := range many {
+		many[i] = "ua/" + strings.Repeat("x", i%5) + string(rune('A'+i%26)) + strings.Repeat("y", i/26)
+	}
+	for name, bad := range map[string]SecuritySettings{
+		"both":      {ToolHTTPUserAgent: "one", ToolHTTPUserAgents: []string{"a", "b"}},
+		"201":       {ToolHTTPUserAgents: many},
+		"CR/LF":     {ToolHTTPUserAgents: []string{"a\r\nX: 1"}},
+		"duplicate": {ToolHTTPUserAgents: []string{"a", "a"}},
+		"query":     {ToolHTTPQuery: &scanident.Query{Name: "a&b", Value: "v"}},
+	} {
+		if err := bad.Validate(); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}

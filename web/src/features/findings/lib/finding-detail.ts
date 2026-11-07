@@ -487,6 +487,17 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
       networkService: api.network_service || undefined,
     },
     sourceData: mapFindingSourceData(api.source_data),
+    locations: api.locations?.length
+      ? api.locations.map((l) => ({
+          assetId: l.asset_id,
+          assetName: l.asset_name,
+          label: l.label,
+          state: l.state,
+          stateAt: l.state_at,
+          version: l.version || undefined,
+          lastSeenAt: l.last_seen_at,
+        }))
+      : undefined,
     scannerOutput: api.scanner_output?.text
       ? {
           text: api.scanner_output.text,
