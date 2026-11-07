@@ -26,6 +26,7 @@ package assetdiscovery
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	"github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -74,8 +76,19 @@ func changesURL(count, exposed int) string {
 	}
 }
 
-// runURL deep-links the Runs page with one run open.
-func runURL(runID shared.ID) string { return "/scans/runs?run=" + runID.String() }
+// assetsURL deep-links the inventory filtered to the internet-facing
+// assets added in [since, until]: the assets of the notification, never the
+// scan run that found them, and never an id list (it can be long).
+func assetsURL(since, until time.Time) string {
+	q := url.Values{}
+	q.Set("internet_facing", "true")
+	q.Set("first_seen_after", since.UTC().Truncate(time.Second).Format(time.RFC3339))
+	q.Set("first_seen_before", until.UTC().Add(time.Second).Truncate(time.Second).Format(time.RFC3339))
+	return AssetsPath + "?" + q.Encode()
+}
+
+// AssetsPath is the asset inventory.
+const AssetsPath = "/assets"
 
 type stepRunKey struct{}
 
@@ -127,6 +140,10 @@ type assetRef struct {
 	becameExposed bool
 	// runID is the scan run that found the asset (zero when unknown).
 	runID shared.ID
+	// edgeProvider names the provider when the address is in a range a
+	// provider publishes for a front end many customers share
+	// (edgeaddr.SharedFrontEnd): not the organization's asset.
+	edgeProvider string
 }
 
 type tenantState struct {
@@ -137,6 +154,9 @@ type tenantState struct {
 	exposed int                    // of count: existing assets that became internet-facing
 	runs    map[shared.ID]struct{} // distinct runs that found the buffered assets (capped at 2)
 	noRun   bool                   // some buffered asset has no known run
+	shared  int                    // of count: addresses on a shared provider edge
+	edge    string                 // the provider of the first of them
+	since   time.Time              // when the first buffered asset arrived
 	t       timer
 }
 
@@ -150,6 +170,8 @@ type Notifier struct {
 
 	// afterFunc schedules the end of a window (time.AfterFunc in production).
 	afterFunc func(d time.Duration, f func()) timer
+	// now is the clock (a test seam).
+	now func() time.Time
 
 	mu      sync.Mutex
 	tenants map[shared.ID]*tenantState
@@ -174,6 +196,7 @@ func NewNotifier(o Enqueuer, inApp InAppNotifier, window time.Duration, log *log
 		afterFunc: func(d time.Duration, f func()) timer {
 			return time.AfterFunc(d, f)
 		},
+		now: time.Now,
 	}
 }
 
@@ -218,7 +241,7 @@ func (n *Notifier) publish(ctx context.Context, tenantID shared.ID, assets []*as
 		}
 		refs = append(refs, assetRef{
 			id: a.ID(), name: a.Name(), typ: string(a.Type()), exposure: string(a.Exposure()),
-			becameExposed: becameExposed, runID: runID,
+			becameExposed: becameExposed, runID: runID, edgeProvider: sharedEdge(a),
 		})
 	}
 	if len(refs) == 0 {
@@ -236,6 +259,9 @@ func (n *Notifier) publish(ctx context.Context, tenantID shared.ID, assets []*as
 		n.tenants[tenantID] = st
 	}
 	if st.cooling {
+		if st.count == 0 {
+			st.since = n.now()
+		}
 		st.add(refs)
 		n.mu.Unlock()
 		return
@@ -245,19 +271,41 @@ func (n *Notifier) publish(ctx context.Context, tenantID shared.ID, assets []*as
 	st.t = n.afterFunc(n.window, func() { n.windowClosed(tenantID) })
 	n.mu.Unlock()
 
-	unique := dedupe(refs)
-	exposed := 0
-	for _, r := range unique {
-		if r.becameExposed {
-			exposed++
-		}
+	var st1 tenantState
+	st1.add(refs)
+	now := n.now()
+	n.send(tenantID, st1.batch(now, now))
+}
+
+// batch is one notification: the buffered assets of a window.
+type batch struct {
+	listed         []assetRef
+	count, exposed int
+	shared         int
+	edge           string
+	run            *shared.ID
+	since, until   time.Time
+}
+
+func (st *tenantState) batch(since, until time.Time) batch {
+	return batch{listed: st.pending, count: st.count, exposed: st.exposed, shared: st.shared, edge: st.edge,
+		run: singleRun(st.runs, st.noRun), since: since, until: until}
+}
+
+// sharedEdge names the provider when a is an address inside a range a
+// provider publishes for a shared front end or edge.
+func sharedEdge(a *asset.Asset) string {
+	if a.Type() != asset.AssetTypeIPAddress {
+		return ""
 	}
-	var runs map[shared.ID]struct{}
-	noRun := false
-	for _, r := range unique {
-		runs, noRun = noteRun(runs, noRun, r.runID)
+	c := edgeaddr.Default()
+	if c == nil {
+		return ""
 	}
-	n.send(tenantID, unique, len(unique), exposed, singleRun(runs, noRun))
+	if r, ok := c.SharedFrontEnd(a.Name()); ok {
+		return r.Provider
+	}
+	return ""
 }
 
 // noteRun adds one asset's run to the window's set, keeping at most two ids
@@ -303,23 +351,16 @@ func (st *tenantState) add(refs []assetRef) {
 			st.exposed++
 		}
 		st.runs, st.noRun = noteRun(st.runs, st.noRun, r.runID)
+		if r.edgeProvider != "" {
+			st.shared++
+			if st.edge == "" {
+				st.edge = r.edgeProvider
+			}
+		}
 		if len(st.pending) < maxListed {
 			st.pending = append(st.pending, r)
 		}
 	}
-}
-
-func dedupe(refs []assetRef) []assetRef {
-	seen := make(map[shared.ID]struct{}, len(refs))
-	out := refs[:0:0]
-	for _, r := range refs {
-		if _, dup := seen[r.id]; dup {
-			continue
-		}
-		seen[r.id] = struct{}{}
-		out = append(out, r)
-	}
-	return out
 }
 
 // windowClosed sends the buffered summary (if any) and opens the next window,
@@ -336,24 +377,20 @@ func (n *Notifier) windowClosed(tenantID shared.ID) {
 		n.mu.Unlock()
 		return
 	}
-	listed, count, exposed := st.pending, st.count, st.exposed
-	run := singleRun(st.runs, st.noRun)
-	st.pending, st.seen, st.count, st.exposed, st.runs, st.noRun = nil, nil, 0, 0, nil, false
+	b := st.batch(st.since, n.now())
+	*st = tenantState{cooling: true}
 	st.t = n.afterFunc(n.window, func() { n.windowClosed(tenantID) })
 	n.mu.Unlock()
 
-	n.send(tenantID, listed, count, exposed, run)
+	n.send(tenantID, b)
 }
 
 // Stop cancels open windows and flushes every buffered summary. Call it on
 // graceful shutdown so a pending summary is not dropped.
 func (n *Notifier) Stop() {
 	type flush struct {
-		tenant  shared.ID
-		listed  []assetRef
-		count   int
-		exposed int
-		run     *shared.ID
+		tenant shared.ID
+		b      batch
 	}
 	n.mu.Lock()
 	n.stopped = true
@@ -363,22 +400,25 @@ func (n *Notifier) Stop() {
 			st.t.Stop()
 		}
 		if st.count > 0 {
-			flushes = append(flushes, flush{id, st.pending, st.count, st.exposed, singleRun(st.runs, st.noRun)})
+			flushes = append(flushes, flush{id, st.batch(st.since, n.now())})
 		}
 	}
 	n.tenants = make(map[shared.ID]*tenantState)
 	n.mu.Unlock()
 
 	for _, f := range flushes {
-		n.send(f.tenant, f.listed, f.count, f.exposed, f.run)
+		n.send(f.tenant, f.b)
 	}
 }
 
-// send delivers one notification describing `count` assets (`exposed` of them
-// existing assets that became internet-facing), naming `listed`. runID is the
-// one scan run that found them all, when known: a summary of several assets
-// then links to that run instead of the changes view.
-func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed int, runID *shared.ID) {
+// send delivers one notification describing b.count assets (b.exposed of
+// them existing assets that became internet-facing, b.shared addresses on a
+// shared provider edge), naming b.listed. The link opens the assets
+// themselves: one asset, or the inventory filtered to the internet-facing
+// assets added in the window; existing assets that became exposed are listed
+// by the changes view.
+func (n *Notifier) send(tenantID shared.ID, b batch) {
+	listed, count, exposed := b.listed, b.count, b.exposed
 	if count == 0 || len(listed) == 0 {
 		return
 	}
@@ -388,10 +428,13 @@ func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed in
 	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 	defer cancel()
 
-	title, body := describe(listed, count, exposed)
+	title, body := describe(listed, count, exposed, b.shared, b.edge)
 	link := changesURL(count, exposed)
-	if runID != nil && count > 1 {
-		link = runURL(*runID)
+	switch {
+	case count == 1:
+		link = AssetsPath + "/" + listed[0].id.String()
+	case exposed == 0 && !b.since.IsZero():
+		link = assetsURL(b.since, b.until)
 	}
 
 	if n.outbox != nil {
@@ -407,7 +450,7 @@ func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed in
 			// the event-type switch alone decides delivery.
 			Severity: "medium",
 			URL:      link,
-			Metadata: metadata(listed, count, exposed, runID),
+			Metadata: metadata(listed, b),
 		}
 		if count == 1 {
 			if id, err := uuid.Parse(listed[0].id.String()); err == nil {
@@ -434,7 +477,6 @@ func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed in
 		if count == 1 {
 			id := listed[0].id
 			params.ResourceID = &id
-			params.URL = "/assets/" + id.String()
 		}
 		if err := n.inApp.Notify(ctx, params); err != nil {
 			n.logger.Warn("failed to create in-app new-asset notification",
@@ -446,7 +488,14 @@ func (n *Notifier) send(tenantID shared.ID, listed []assetRef, count, exposed in
 		"tenant_id", tenantID.String(), "count", count)
 }
 
-func describe(listed []assetRef, count, exposed int) (title, body string) {
+func describe(listed []assetRef, count, exposed, sharedCount int, edge string) (title, body string) {
+	if sharedCount > 0 && sharedCount >= count {
+		// Not the organization's assets: the addresses of a provider's
+		// shared edge that the organization's names resolve to.
+		names := assetNames(listed, count)
+		return fmt.Sprintf("%d new addresses on a shared provider edge (%s)", count, edge),
+			fmt.Sprintf("These addresses belong to %s and are shared by many customers; they are not your assets: %s.", edge, names)
+	}
 	if count == 1 {
 		a := listed[0]
 		if a.becameExposed {
@@ -456,14 +505,9 @@ func describe(listed []assetRef, count, exposed int) (title, body string) {
 		return fmt.Sprintf("New internet-facing asset: %s", a.name),
 			fmt.Sprintf("A %s was discovered and is reachable from the internet (exposure: %s).", humanType(a.typ), a.exposure)
 	}
-	names := make([]string, 0, len(listed))
-	for _, a := range listed {
-		names = append(names, a.name)
-	}
-	sort.Strings(names)
-	list := strings.Join(names, ", ")
-	if more := count - len(listed); more > 0 {
-		list += fmt.Sprintf(" and %d more", more)
+	list := assetNames(listed, count)
+	if sharedCount > 0 {
+		list += fmt.Sprintf(" (%d of them on a shared provider edge, %s)", sharedCount, edge)
 	}
 	switch {
 	case exposed == 0:
@@ -478,6 +522,20 @@ func describe(listed []assetRef, count, exposed int) (title, body string) {
 	}
 }
 
+// assetNames lists the names, sorted, with "and N more".
+func assetNames(listed []assetRef, count int) string {
+	names := make([]string, 0, len(listed))
+	for _, a := range listed {
+		names = append(names, a.name)
+	}
+	sort.Strings(names)
+	list := strings.Join(names, ", ")
+	if more := count - len(listed); more > 0 {
+		list += fmt.Sprintf(" and %d more", more)
+	}
+	return list
+}
+
 func humanType(t string) string {
 	if t == "" {
 		return "asset"
@@ -485,16 +543,21 @@ func humanType(t string) string {
 	return strings.ReplaceAll(t, "_", " ")
 }
 
-func metadata(listed []assetRef, count, exposed int, runID *shared.ID) map[string]any {
+func metadata(listed []assetRef, b batch) map[string]any {
+	count, exposed, runID := b.count, b.exposed, b.run
 	items := make([]map[string]any, 0, len(listed))
 	for _, a := range listed {
-		items = append(items, map[string]any{
+		item := map[string]any{
 			"id":             a.id.String(),
 			"name":           a.name,
 			"type":           a.typ,
 			"exposure":       a.exposure,
 			"became_exposed": a.becameExposed,
-		})
+		}
+		if a.edgeProvider != "" {
+			item["edge_provider"] = a.edgeProvider
+		}
+		items = append(items, item)
 	}
 	md := map[string]any{
 		"asset_count":         count,
@@ -506,6 +569,10 @@ func metadata(listed []assetRef, count, exposed int, runID *shared.ID) map[strin
 	}
 	if runID != nil {
 		md["run_id"] = runID.String()
+	}
+	if b.shared > 0 {
+		md["shared_count"] = b.shared
+		md["shared_provider"] = b.edge
 	}
 	return md
 }
