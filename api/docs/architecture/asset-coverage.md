@@ -413,6 +413,42 @@ failed pairs back by the batch wait; the next pass plans them as any due pair
 runs through the run cancel and the next pass settles them. Details and gates:
 [EASM, section 4o](easm.md#4o-discovery-management-built).
 
+## Info pass
+
+Continuous coverage runs `vuln.templates` in two passes so no template runs
+twice and the cost of info templates (many, and slow) can be tuned on its own:
+
+- the **regular pass**, ledger key `vuln.templates`, severity low to critical
+  (explicit in the scan's config), on the registry cadence (7 days);
+- the **info pass**, ledger key `vuln.templates_info`, the same stage at
+  severity `info` only. The key has its own row per web service, so its
+  state, last success, failures and coverage gaps never mix with the regular
+  pass; the asset page lists it as its own capability.
+
+The info pass is due on the asset's first coverage (a new row is due at
+once), after the organization's interval from its last success (default 30
+days, 7 to 90), and early when the asset's technologies changed
+(`asset_change_events`, attribute `technologies`) or a web endpoint of the
+asset appeared or returned (`web_endpoint_events`) since the last success.
+The change signals are the ones the change timeline already records; there
+is no new detector. A change brings the pass forward at most once per 7 days.
+
+Setting (scope settings, console Scoping > Settings, "Info checks"):
+`info_coverage` (default on) and `info_coverage_days` (7 to 90, default 30).
+Off parks the organization's info rows as `not_applicable` with reason
+`info_pass_off` (never a gap, never planned); on revives them on their
+cadence. A shorter interval pulls covered rows forward; a longer one applies
+from the next settlement. No migration: the ledger key is a capability like
+any other and the setting lives in the tenant's scope settings.
+
+Everything else is unchanged: the info pass goes through the same dispatch
+gate (scope entries, exclusions, tier, politeness, approvals), the same
+batch and daily budget, the same readiness checks and the same claim path
+as any coverage run. It has its own managed scan (one active run per
+capability), so it never blocks the regular pass or discovery. Info matches
+are filed as info exposures, not findings (exposure-taxonomy.md). Isolation:
+the setting, the rows and both change queries are read per tenant.
+
 ## Screenshots
 
 `http_service` carries the rule `capture.screenshot` every 30 days, only when

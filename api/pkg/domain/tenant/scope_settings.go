@@ -89,6 +89,12 @@ type ScopeSettings struct {
 	// the default: on, except while the Strict scan approval mode is in force
 	// (owner decision D1).
 	AutoCoverage *bool `json:"auto_coverage,omitempty"`
+	// InfoCoverage turns the info pass of continuous coverage on or off: the
+	// vuln.templates stage at severity info only, on its own slower cadence
+	// (InfoCoverageDays). Nil is the default: on.
+	InfoCoverage *bool `json:"info_coverage,omitempty"`
+	// InfoCoverageDays is the interval of the info pass, 7..90 (0: 30).
+	InfoCoverageDays int `json:"info_coverage_days,omitempty"`
 	// PathDiscovery turns the platform's path discovery of web services on
 	// or off: candidate paths derived from the organization's own
 	// inventory, at most one run per origin per 30 days, GET and HEAD only
@@ -224,6 +230,9 @@ func (s ScopeSettings) Validate() error {
 	default:
 		return fmt.Errorf("%w: unclassified_scans must be off, low_impact or full", shared.ErrValidation)
 	}
+	if s.InfoCoverageDays != 0 && (s.InfoCoverageDays < MinInfoCoverageDays || s.InfoCoverageDays > MaxInfoCoverageDays) {
+		return fmt.Errorf("%w: info_coverage_days must be between %d and %d", shared.ErrValidation, MinInfoCoverageDays, MaxInfoCoverageDays)
+	}
 	switch s.AddressAutoAdd {
 	case "", AddressAutoStrong, AddressAsk, AddressNever:
 	default:
@@ -305,6 +314,26 @@ func (s ScopeSettings) AutoCoverageOn(strict bool) bool {
 		return *s.AutoCoverage
 	}
 	return !strict
+}
+
+// Bounds and default of the info pass interval, in days.
+const (
+	MinInfoCoverageDays     = 7
+	MaxInfoCoverageDays     = 90
+	DefaultInfoCoverageDays = 30
+)
+
+// InfoCoverageOn reports whether the info pass runs (default on).
+func (s ScopeSettings) InfoCoverageOn() bool {
+	return s.InfoCoverage == nil || *s.InfoCoverage
+}
+
+// InfoCoverageEvery returns the info pass interval in days with its default.
+func (s ScopeSettings) InfoCoverageEvery() int {
+	if s.InfoCoverageDays == 0 {
+		return DefaultInfoCoverageDays
+	}
+	return s.InfoCoverageDays
 }
 
 // PathDiscoveryOn reports whether path discovery runs (default on).
