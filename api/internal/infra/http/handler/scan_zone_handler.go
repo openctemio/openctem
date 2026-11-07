@@ -503,6 +503,10 @@ var scanZoneErrorCodes = map[string]bool{
 	"NO_RESOLVING_TARGETS":          true,
 	"INTENSITY_EXCEEDED":            true,
 	"LIVENESS_NEEDS_HOST_DISCOVERY": true,
+	// Large range targets (docs/rfcs/RFC-151-large-range-targets.md): the
+	// console and API callers need the code to confirm or switch mode.
+	"LARGE_RANGE_NEEDS_LIVENESS": true,
+	"LARGE_RANGE_UNCONFIRMED":    true,
 	// Scan approval (docs/architecture/scan-approval.md): a
 	// governed scan's run is refused until it is approved.
 	"SCAN_APPROVAL_REQUIRED": true,
