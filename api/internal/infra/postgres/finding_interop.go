@@ -38,68 +38,14 @@ func (r *FindingRepository) UpdateInteropBatch(ctx context.Context, tenantID sha
 	sortByFingerprint(updates, func(u vulnerability.InteropUpdate) string { return u.Fingerprint })
 	var total int64
 	for start := 0; start < len(updates); start += maxInteropBatch {
-		end := min(start+maxInteropBatch, len(updates))
-		n := end - start
-		fps := make([]string, 0, n)
-		tools := make([]string, 0, n)
-		nativeIDs := make([]sql.NullString, 0, n)
-		schemes := make([]sql.NullString, 0, n)
-		metas := make([]sql.NullString, 0, n)
-		scores := make([]sql.NullString, 0, n)
-		vids := make([]sql.NullString, 0, n)
-		extras := make([]sql.NullString, 0, n)
-		locs := make([]sql.NullString, 0, n)
-		vexStatus := make([]sql.NullString, 0, n)
-		vexJust := make([]sql.NullString, 0, n)
-		vexStmt := make([]sql.NullString, 0, n)
-		vexSrc := make([]sql.NullString, 0, n)
-		vexAt := make([]sql.NullString, 0, n) // RFC 3339, cast to timestamptz
-		for _, u := range updates[start:end] {
-			d := vulnerability.SanitizeInteropData(u.Data)
-			if u.Fingerprint == "" || d.IsEmpty() {
-				continue
-			}
-			fps = append(fps, u.Fingerprint)
-			tools = append(tools, u.Tool)
-			var nid, scheme string
-			if d.Native != nil {
-				nid, scheme = d.Native.VulnID, d.Native.Scheme
-			}
-			nativeIDs = append(nativeIDs, nullString(nid))
-			schemes = append(schemes, nullString(scheme))
-			metas = append(metas, jsonOrNull(d.SourceMeta()))
-			scores = append(scores, jsonOrNull(d.Scores))
-			vids = append(vids, jsonOrNull(d.VulnerabilityIDs))
-			extras = append(extras, jsonOrNull(d.SourceExtra))
-			locs = append(locs, nullString(d.LocationKey))
-			if v := d.VEX; v != nil {
-				vexStatus = append(vexStatus, nullString(v.Status))
-				vexJust = append(vexJust, nullString(v.Justification))
-				vexStmt = append(vexStmt, nullString(v.Statement))
-				vexSrc = append(vexSrc, nullString(v.Source))
-				at := time.Now().UTC()
-				if v.AsOf != nil {
-					at = *v.AsOf
-				}
-				vexAt = append(vexAt, sql.NullString{String: at.UTC().Format(time.RFC3339Nano), Valid: true})
-			} else {
-				vexStatus = append(vexStatus, sql.NullString{})
-				vexJust = append(vexJust, sql.NullString{})
-				vexStmt = append(vexStmt, sql.NullString{})
-				vexSrc = append(vexSrc, sql.NullString{})
-				vexAt = append(vexAt, sql.NullString{})
-			}
-		}
-		if len(fps) == 0 {
+		args := interopArgs(updates[start:min(start+maxInteropBatch, len(updates))])
+		if args == nil {
 			continue
 		}
-		args := []any{tenantID.String(), pq.Array(fps), pq.Array(nativeIDs), pq.Array(schemes), pq.Array(metas),
-			pq.Array(scores), pq.Array(vids), pq.Array(extras), pq.Array(locs),
-			pq.Array(vexStatus), pq.Array(vexJust), pq.Array(vexStmt), pq.Array(vexSrc), pq.Array(vexAt), pq.Array(tools)}
 		var res sql.Result
 		err := retryWriteConflict(ctx, func() error {
 			var execErr error
-			res, execErr = r.db.ExecContext(ctx, interopUpdateSQL, args...)
+			res, execErr = r.db.ExecContext(ctx, interopUpdateSQL, append([]any{tenantID.String()}, args...)...)
 			return execErr
 		})
 		if err != nil {
@@ -110,6 +56,71 @@ func (r *FindingRepository) UpdateInteropBatch(ctx context.Context, tenantID sha
 	}
 	return total, nil
 }
+
+// interopArgs are the parameters of interopUpdateSQL after $1 (the tenant)
+// for one chunk of updates, sanitized; nil when no update carries data.
+func interopArgs(updates []vulnerability.InteropUpdate) []any {
+	n := len(updates)
+	fps := make([]string, 0, n)
+	tools := make([]string, 0, n)
+	nativeIDs := make([]sql.NullString, 0, n)
+	schemes := make([]sql.NullString, 0, n)
+	metas := make([]sql.NullString, 0, n)
+	scores := make([]sql.NullString, 0, n)
+	vids := make([]sql.NullString, 0, n)
+	extras := make([]sql.NullString, 0, n)
+	locs := make([]sql.NullString, 0, n)
+	vexStatus := make([]sql.NullString, 0, n)
+	vexJust := make([]sql.NullString, 0, n)
+	vexStmt := make([]sql.NullString, 0, n)
+	vexSrc := make([]sql.NullString, 0, n)
+	vexAt := make([]sql.NullString, 0, n) // RFC 3339, cast to timestamptz
+	for _, u := range updates {
+		d := vulnerability.SanitizeInteropData(u.Data)
+		if u.Fingerprint == "" || d.IsEmpty() {
+			continue
+		}
+		fps = append(fps, u.Fingerprint)
+		tools = append(tools, u.Tool)
+		var nid, scheme string
+		if d.Native != nil {
+			nid, scheme = d.Native.VulnID, d.Native.Scheme
+		}
+		nativeIDs = append(nativeIDs, nullString(nid))
+		schemes = append(schemes, nullString(scheme))
+		metas = append(metas, jsonOrNull(d.SourceMeta()))
+		scores = append(scores, jsonOrNull(d.Scores))
+		vids = append(vids, jsonOrNull(d.VulnerabilityIDs))
+		extras = append(extras, jsonOrNull(d.SourceExtra))
+		locs = append(locs, nullString(d.LocationKey))
+		if v := d.VEX; v != nil {
+			vexStatus = append(vexStatus, nullString(v.Status))
+			vexJust = append(vexJust, nullString(v.Justification))
+			vexStmt = append(vexStmt, nullString(v.Statement))
+			vexSrc = append(vexSrc, nullString(v.Source))
+			at := time.Now().UTC()
+			if v.AsOf != nil {
+				at = *v.AsOf
+			}
+			vexAt = append(vexAt, sql.NullString{String: at.UTC().Format(time.RFC3339Nano), Valid: true})
+		} else {
+			vexStatus = append(vexStatus, sql.NullString{})
+			vexJust = append(vexJust, sql.NullString{})
+			vexStmt = append(vexStmt, sql.NullString{})
+			vexSrc = append(vexSrc, sql.NullString{})
+			vexAt = append(vexAt, sql.NullString{})
+		}
+	}
+	if len(fps) == 0 {
+		return nil
+	}
+	return []any{pq.Array(fps), pq.Array(nativeIDs), pq.Array(schemes), pq.Array(metas),
+		pq.Array(scores), pq.Array(vids), pq.Array(extras), pq.Array(locs),
+		pq.Array(vexStatus), pq.Array(vexJust), pq.Array(vexStmt), pq.Array(vexSrc), pq.Array(vexAt), pq.Array(tools)}
+}
+
+// interopArgCount is the number of interopArgs (the arrays $2..$15).
+const interopArgCount = 14
 
 // interopInput is the sightings of UpdateInteropBatch, one row per
 // fingerprint.
@@ -158,14 +169,18 @@ var interopChanges = func() string {
 // the update rechecks the same condition. A VEX statement replaces the
 // previous one as a whole (status, justification, statement, source, time),
 // so a new statement never keeps an old justification.
-var interopUpdateSQL = func() string {
+var interopUpdateSQL = "\n\t\tWITH " + interopLocked + "\n\t\t" + interopUpdate
+
+// interopLocked is the CTE that locks the rows interopUpdate changes.
+var interopLocked = findingLockCTE("findings f, "+interopInput, interopChanges)
+
+// interopUpdate is the UPDATE of interopUpdateSQL, after its CTEs.
+var interopUpdate = func() string {
 	sets := make([]string, 0, len(interopColumns))
 	for _, c := range interopColumns {
 		sets = append(sets, c[0]+" = "+interopMerge(c[0], c[1]))
 	}
-	return `
-		WITH ` + findingLockCTE("findings f, "+interopInput, interopChanges) + `
-		UPDATE findings AS f SET
+	return `UPDATE findings AS f SET
 			` + strings.Join(sets, ",\n\t\t\t") + `,
 			vex_status        = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_status ELSE f.vex_status END,
 			vex_justification = CASE WHEN d.vex_status IS NOT NULL THEN d.vex_justification ELSE f.vex_justification END,

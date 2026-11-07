@@ -15,6 +15,7 @@ import type {
   TestingWindow,
   WeekDay,
 } from '../api/programs-api.types'
+import { parseUserAgentList } from '@/features/sensors/lib/scan-identification'
 
 export const FORBIDDEN_TECHNIQUES: { value: ForbiddenTechnique; label: string }[] = [
   { value: 'automated_scanning', label: 'Automated scanning' },
@@ -117,6 +118,10 @@ export interface RulesForm {
   rateLimit: string
   headers: string
   userAgent: string
+  /** A User-Agent rotation list, one value per line (instead of userAgent). */
+  userAgents?: string
+  /** Jobs on the program's targets must carry identification on every request. */
+  identificationRequired?: boolean
   forbidden: ForbiddenTechnique[]
   notes: string
   windows?: string
@@ -129,10 +134,21 @@ export function rulesFromForm(f: RulesForm): ProgramRules {
     rate_limit_rps: Number.isFinite(rps) && rps > 0 ? rps : 0,
     required_headers: parseHeaderLines(f.headers).headers,
     user_agent: f.userAgent.trim(),
+    user_agents: parseUserAgentList(f.userAgents ?? ''),
+    identification_required: !!f.identificationRequired,
     forbidden: [...f.forbidden].sort(),
     notes: f.notes.trim(),
     testing_windows: parseWindowLines(f.windows ?? '').windows,
   }
+}
+
+/**
+ * Required identification on a program that sets no header of its own: the
+ * jobs fail unless the organization or the platform sets a header or query
+ * parameter (the program page cannot see those layers, so it only warns).
+ */
+export function programRequiresWithoutHeader(f: RulesForm): boolean {
+  return !!f.identificationRequired && parseHeaderLines(f.headers).headers.length === 0
 }
 
 export interface PreviewSummary {

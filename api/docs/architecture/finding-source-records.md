@@ -94,9 +94,12 @@ took. The order of sightings of two tools never flips the row back and forth.
 
 `FindingProcessor.processBatch` collects, for every finding it stored or
 re-sighted, the values it built from the report (after secret redaction, the
-same values the finding row would get) and the interop data. The ingest
-service then writes them with the source of the ingest
-(`FindingRepository.UpsertSourceRecords`):
+same values the finding row would get) and the interop data, and writes them
+with the source of the ingest in the same statement as the batch's interop
+data (`FindingRepository.StoreSightingData`: the record upsert is a
+data-modifying CTE of the interop update, one statement per chunk of 500), so
+the records add no statement to an ingest (`TestIngestQueryBudget`).
+`FindingRepository.UpsertSourceRecords` writes records alone (the backfill):
 
 - the channel is the receipt channel of the ingest (`ingestreceipt.ChannelOf`
   of the receipt source), and the sender and sensor come from the receipt
@@ -105,7 +108,9 @@ service then writes them with the source of the ingest
   sensor is kept only when it is one of the tenant's own sensors (otherwise
   sender `platform` without an id);
 - rows are written in finding id order, in chunks, best effort: a failure is
-  logged and never fails the ingest (the finding itself is stored).
+  logged and never fails the ingest (the finding itself is stored). When the
+  combined statement fails, the interop update and the record upsert are
+  retried apart, so one half's failure never loses the other's data.
 
 Paths that create findings without a report (a person, a pentest, the
 platform's version matcher) write no records yet.

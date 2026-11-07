@@ -42,6 +42,9 @@ var synonymKeyAllowed = map[string][]string{
 	"internal/app/ingest/mappers.go": {"auth_required", "self_signed"},
 	// A log redaction key, not an asset property.
 	"pkg/logger/logger.go": {"encrypted"},
+	// A search-box short name for the asset.ip query field: a query alias,
+	// never read from or written to asset properties.
+	"pkg/querylang/entities.go": {"ip"},
 }
 
 func TestPropertySynonyms_NeverIndexedOrWritten(t *testing.T) {

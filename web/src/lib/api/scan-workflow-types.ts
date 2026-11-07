@@ -244,6 +244,37 @@ export interface StepRun {
   findings_count: number
   attempt: number
   max_attempts: number
+  /** What the sensor reported it ran the step with (sensor supplied, display only). */
+  sensor_settings?: StepSensorSettings
+}
+
+/** One header the step's requests carried, or why one was not. */
+export interface AppliedHeader {
+  name: string
+  value: string
+  /** job, job_locked or sensor */
+  source?: string
+  applied: boolean
+  reason?: string
+}
+
+/** What one task's requests were sent with (result metadata http_identity). */
+export interface AppliedIdentity {
+  tool?: string
+  user_agent?: string
+  user_agent_source?: string
+  /** The rotation list size (0 or absent: one User-Agent). */
+  user_agent_pool?: number
+  user_agent_reason?: string
+  headers?: AppliedHeader[]
+  query?: { name: string; value: string; applied: boolean; reason?: string }
+  required?: boolean
+  /** tool or forwarder */
+  carrier?: string
+}
+
+export interface StepSensorSettings {
+  sent_with?: AppliedIdentity[]
 }
 
 // ============================================
