@@ -2,6 +2,7 @@ package querylang
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
@@ -75,6 +76,8 @@ var findingQueryFields = func() *filterspec.Registry {
 		withPermission(vulnerability.FindingFields, "asset_criticality", permission.AssetsRead.String()),
 		withPermission(vulnerability.FindingFields, "asset_tag", permission.AssetsRead.String()),
 		withPermission(vulnerability.FindingFields, "asset_owner_id", permission.AssetsRead.String()),
+		withPermission(vulnerability.FindingFields, "asset_domain", permission.AssetsRead.String()),
+		withPermission(vulnerability.FindingFields, "asset_name", permission.AssetsRead.String()),
 		textSearchField(vulnerability.FindingFields),
 		filterspec.Field{Name: "program_asset", Type: filterspec.TypeBool, Ops: []filterspec.Op{filterspec.OpEq}, SQL: "findings.asset_id",
 			BoolTemplate: findingAssetSubquery("a.program_only")},
@@ -93,7 +96,11 @@ var Findings = MustEntity(EntityDef{
 		"asset.type": "asset_type", "asset.environment": "asset_environment", "asset.exposure": "asset_exposure",
 		"asset.internet_facing": "asset_internet_facing", "asset.crown_jewel": "asset_crown_jewel",
 		"asset.criticality": "asset_criticality", "asset.tag": "asset_tag", "asset.owner_id": "asset_owner_id",
+		"asset.domain": "asset_domain", "asset.name": "asset_name", "asset.ip": "asset_ip",
 	},
+	// asset_domain and asset_name were their own paths before the asset.
+	// relation named them; stored queries keep working.
+	Aliases:   map[string]string{"asset_domain": "asset.domain", "asset_name": "asset.name"},
 	Internal:  []string{"program_asset", "text_search"},
 	TextField: "text_search",
 	Dimensions: []string{
@@ -113,9 +120,14 @@ var Findings = MustEntity(EntityDef{
 	},
 })
 
-// assetQueryFields is the assets registry plus the text search field.
+// assetQueryFields is the assets registry plus the text search field and
+// the address of ip_address assets (idx_assets_ip_addr).
 var assetQueryFields = func() *filterspec.Registry {
-	reg, err := asset.AssetFields.Extend(textSearchField(asset.AssetFields))
+	reg, err := asset.AssetFields.Extend(textSearchField(asset.AssetFields),
+		filterspec.Field{Name: "ip", Type: filterspec.TypeInet, Ops: []filterspec.Op{filterspec.OpIn}, SQL: "assets.name", MaxValues: 20,
+			Templates: map[filterspec.Op]string{
+				filterspec.OpIn: "assets.tenant_id = {tenant} AND " + strings.ReplaceAll(vulnerability.AssetIPRangeSQL, "a.", "assets."),
+			}})
 	if err != nil {
 		panic(err)
 	}
