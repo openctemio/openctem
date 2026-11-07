@@ -818,8 +818,11 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 				reason = "no scan zone covers this target"
 			}
 			code := scopedom.RefusalZoneNone
-			if r.Unresolved {
+			switch {
+			case r.Unresolved:
 				code = scopedom.RefusalUnresolved
+			case r.Kind == scanzone.KindAmbiguousZone:
+				code = scopedom.RefusalAmbiguousZone
 			}
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason, Code: code, Resolved: s.revealedAddrs(r)})
 		case r.Zone != nil && len(r.Zone.SensorIDs) == 0:
