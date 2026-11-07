@@ -112,7 +112,7 @@ platform's version matcher) write no records yet.
 
 ## Read path
 
-`GET /api/v1/findings/{id}/sources` (`findings:read`): the finding's source
+`GET /api/v1/findings/{id}/source-records` (`findings:read`): the finding's source
 records, primary source first, then by first seen. The finding is authorized
 like the finding detail (`GetFindingWithScope`: tenant, data scope, pentest
 membership); another tenant's id or one outside the caller's scope is 404. The

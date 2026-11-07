@@ -1,6 +1,6 @@
 package handler
 
-// GET /api/v1/findings/{id}/sources: what each source reported for a finding
+// GET /api/v1/findings/{id}/source-records: what each source reported for a finding
 // (docs/architecture/finding-source-records.md).
 
 import (
@@ -68,7 +68,7 @@ type FindingSourcesResponse struct {
 	Differences []FindingSourceDifference     `json:"differences"`
 }
 
-// GetFindingSources handles GET /api/v1/findings/{id}/sources.
+// GetFindingSources handles GET /api/v1/findings/{id}/source-records.
 //
 // @Summary      List what each source reported for a finding
 // @Description  One entry per source (channel, the organization's sensor, CI repository or connector, tool) with that source's latest title, text, severity, native identity, scores, vulnerability ids and unmapped fields, the primary source first; and the fields the sources disagree on, side by side. The sensor is shown with sensors:read only. Out of the caller's data scope or another organization's: 404.
@@ -78,7 +78,7 @@ type FindingSourcesResponse struct {
 // @Success      200  {object}  FindingSourcesResponse
 // @Failure      404  {object}  apierror.Error
 // @Security     BearerAuth
-// @Router       /findings/{id}/sources [get]
+// @Router       /findings/{id}/source-records [get]
 func (h *VulnerabilityHandler) GetFindingSources(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID := middleware.MustGetTenantID(ctx)
