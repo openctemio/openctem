@@ -27,7 +27,9 @@ var _ webverify.Store = (*WebVerifyRepository)(nil)
 // verifiable is the shared WHERE of a verification candidate: an active,
 // in-scope GET endpoint of a catalog entry that answered 2xx, whose origin
 // is a live asset, and that was not verified for its current response
-// signature. A row planned but never run (refused by the gate, say) is
+// signature. A guessed backup, archive or dump file (source guess, ext
+// label) is a candidate too: it is checked with the sensor's own backup
+// signature template. A row planned but never run (refused by the gate, say) is
 // retried after a day.
 const verifiableSQL = `
 	FROM web_endpoints e
@@ -35,7 +37,8 @@ const verifiableSQL = `
 	LEFT JOIN web_endpoint_verifications v ON v.tenant_id = e.tenant_id AND v.endpoint_id = e.id
 	WHERE e.state = 'active' AND e.in_scope AND e.exclusion_id IS NULL
 	  AND e.method IN ('GET', 'ANY')
-	  AND e.catalog_key = ANY($1::text[])
+	  AND (e.catalog_key = ANY($1::text[])
+	       OR (e.sources @> '{guess}' AND e.labels && ARRAY['ext:backup', 'ext:archive', 'ext:dbdump']::text[]))
 	  AND e.last_status BETWEEN 200 AND 299
 	  AND (v.endpoint_id IS NULL
 	       OR v.response_sig <> COALESCE(e.response_sig, '')
@@ -68,7 +71,7 @@ func (r *WebVerifyRepository) TenantsWithCandidates(ctx context.Context, keys []
 func (r *WebVerifyRepository) Candidates(ctx context.Context, tenantID shared.ID, keys []string, limit int) ([]webverify.Candidate, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT e.id, e.origin_asset_id, a.name, e.method, e.path_template, COALESCE(e.example_path, ''),
-		       e.catalog_key, COALESCE(e.response_sig, '')`+verifiableSQL+` AND e.tenant_id = $3
+		       COALESCE(e.catalog_key, ''), COALESCE(e.response_sig, ''), e.sources @> '{guess}'`+verifiableSQL+` AND e.tenant_id = $3
 		ORDER BY e.first_seen_at DESC, e.id LIMIT $2`, pq.Array(keys), limit, tenantID.String())
 	if err != nil {
 		return nil, fmt.Errorf("web verification candidates: %w", err)
@@ -78,7 +81,7 @@ func (r *WebVerifyRepository) Candidates(ctx context.Context, tenantID shared.ID
 	for rows.Next() {
 		var c webverify.Candidate
 		var ep, origin string
-		if err := rows.Scan(&ep, &origin, &c.OriginName, &c.Method, &c.PathTemplate, &c.ExamplePath, &c.CatalogKey, &c.ResponseSig); err != nil {
+		if err := rows.Scan(&ep, &origin, &c.OriginName, &c.Method, &c.PathTemplate, &c.ExamplePath, &c.CatalogKey, &c.ResponseSig, &c.Guessed); err != nil {
 			return nil, err
 		}
 		if c.EndpointID, err = shared.IDFromString(ep); err != nil {

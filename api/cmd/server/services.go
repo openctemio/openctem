@@ -687,6 +687,9 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
+	// PathDiscovery is the one gate of path discovery (workflow steps, the
+	// coverage planner, the web job guard).
+	PathDiscovery coverageapp.PathDiscoveryPolicy
 	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
 	ScopeSnapshots *postgres.ScopeSnapshotRepository
 	// ScopeEffects closes and reopens findings as assets go out of scope
@@ -1288,7 +1291,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every web job carries the path exclusions of its hosts, whatever path
 	// creates it (RFC-056 §5): the command repository's create guard. A
 	// web-scoped nuclei job needs a confined sensor (NO_CONFINED_SENSOR).
-	repos.Command.SetCreateGuard(scope.NewWebJobGuard(s.Scope, repos.Sensor))
+	webJobGuard := scope.NewWebJobGuard(s.Scope, repos.Sensor)
+	repos.Command.SetCreateGuard(webJobGuard)
 	// The platform's scope guardrails (RFC-054 §8): public suffixes, the deny
 	// list and CIDR caps on every new entry; the deny list and the proof mode
 	// at dispatch (the ownership gate below).
@@ -2453,6 +2457,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	wordlistRepo := postgres.NewTenantWordlistRepository(&postgres.DB{DB: deps.DB})
 	s.ContentPlanner = contentPlanner
 	s.ContentPlanner.SetOrganizationLists(wordlistRepo)
+	// Path discovery jobs carry a candidate list derived from the
+	// organization's own web inventory, filtered by its path exclusions
+	// (docs/architecture/web-discovery.md).
+	s.ContentPlanner.SetWebPaths(postgres.NewWebDiscoveryRepository(&postgres.DB{DB: deps.DB}), s.Scope)
+	// A wordlist pack runs only on origins an active scope entry names.
+	s.ContentPlanner.SetPackOrigins(postgres.NewWebPathLedgerRepository(&postgres.DB{DB: deps.DB}))
 	s.Wordlists = wordlistapp.NewService(wordlistRepo, s.Audit, log)
 	if contentSigner != nil {
 		// The curated wordlist packs embedded in this build become the
@@ -3421,6 +3431,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Copies of system templates keep their lineage and are offered the
 	// template's later changes (applied only by a person).
 	s.ScanRun.SetTemplateLineage(repos.ScanWorkflow)
+	// Path discovery has one gate for every caller: the organization's
+	// switch, the daily request budget, the origin and target refusals and
+	// the ledger of the last run per origin. The coverage planner, the
+	// workflow steps and the web job guard (every job's dispatch claim) read
+	// the same policy (docs/architecture/web-discovery.md).
+	s.PathDiscovery = coverageapp.PathDiscoveryPolicy{Settings: s.Tenant,
+		Ledger: postgres.NewWebPathLedgerRepository(&postgres.DB{DB: deps.DB}), Log: log,
+		Budget: coverageapp.PathBudget{PerOrigin: cfg.Worker.PathDiscoveryRequestsPerOrigin, Daily: cfg.Worker.PathDiscoveryDailyRequests}}
+	if s.BountyProgram != nil {
+		s.PathDiscovery.Programs = s.BountyProgram
+	}
+	s.ScanRun.SetPathDiscoveryGate(s.PathDiscovery)
+	webJobGuard.SetDiscoveryGate(s.PathDiscovery)
+	s.Command.SetPathClaimReleaser(s.PathDiscovery)
+	s.Scan.SetPathDiscoveryGate(s.PathDiscovery)
 	// A role assigned, removed or redefined, or a membership removed or
 	// suspended, closes the user's live sockets in that tenant; the client
 	// reconnects through every upgrade gate again (RFC-045).

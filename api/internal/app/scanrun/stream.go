@@ -254,7 +254,8 @@ func (s *Service) advanceStreams(ctx context.Context, run *scanrun.Run, template
 		}
 		// A step its condition, the scan's intensity or the run's depth
 		// (or an organization switch) skips is left to the barrier pass, which records the skip.
-		if !s.evaluateCondition(ctx, step, run, template) || scanapp.IntensitySkipReason(run, step) != "" || depthSkipReason(run, step) != "" || s.stepGateReason(ctx, run, step) != "" {
+		if !s.evaluateCondition(ctx, step, run, template) || scanapp.IntensitySkipReason(run, step) != "" || depthSkipReason(run, step) != "" ||
+			s.pathDiscoverySkipReason(ctx, run, step) != "" || s.stepGateReason(ctx, run, step) != "" {
 			continue
 		}
 		pass.handled[step.StepKey] = true
@@ -484,6 +485,13 @@ func (s *Service) planAndDispatchWave(ctx context.Context, run *scanrun.Run, tem
 	}
 	err = s.dispatchStep(ctx, run, step, resolved, sr, &scanapp.StepTargets{Targets: added}, wantsPlatform, feedsStream(template, step))
 	var tooClose *deadlineTooCloseError
+	var noInputs *noInputsError
+	if errors.As(err, &noInputs) {
+		// The path discovery gate left no origin of the wave: nothing to
+		// dispatch, and nothing unfinished (the gate refused them on purpose).
+		metrics.ScanStageStreamWaves.WithLabelValues(waveKind(closing), "empty").Inc()
+		return true, nil
+	}
 	if err != nil {
 		// Never lost silently: the targets are recorded as unfinished, so
 		// the next run plans them first and coverage never counts them.
