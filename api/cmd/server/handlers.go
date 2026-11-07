@@ -303,6 +303,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
 	})
 	sensorHandler.SetGrantService(svc.SensorGrant)
+	sensorHandler.SetReadiness(sensor.NewReadinessService(svc.Sensor, repos.SensorGrant, repos.ScanZone,
+		sensor.ScopeByStatus{Repo: repos.ScopeTarget}))
 	if svc.JobSigner != nil {
 		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
 	}

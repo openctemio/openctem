@@ -609,11 +609,14 @@ const (
 	// Scope actions: what may be scanned (targets) and what must not be
 	// (exclusions). Every change is audited with before/after (RFC-040
 	// §5.11); a change that widens what is scanned is high severity.
-	ActionScopeTargetCreated        Action = "scope_target.created"
-	ActionScopeTargetUpdated        Action = "scope_target.updated"
-	ActionScopeTargetDeleted        Action = "scope_target.deleted"
-	ActionScopeTargetActivated      Action = "scope_target.activated"
-	ActionScopeTargetDeactivated    Action = "scope_target.deactivated"
+	ActionScopeTargetCreated     Action = "scope_target.created"
+	ActionScopeTargetUpdated     Action = "scope_target.updated"
+	ActionScopeTargetDeleted     Action = "scope_target.deleted"
+	ActionScopeTargetActivated   Action = "scope_target.activated"
+	ActionScopeTargetDeactivated Action = "scope_target.deactivated"
+	// ActionScopeTargetReplaced: an entry's pattern was replaced by a new
+	// entry (both patterns and the reason in the metadata).
+	ActionScopeTargetReplaced       Action = "scope_target.replaced"
 	ActionScopeExclusionCreated     Action = "scope_exclusion.created"
 	ActionScopeExclusionUpdated     Action = "scope_exclusion.updated"
 	ActionScopeExclusionDeleted     Action = "scope_exclusion.deleted"
@@ -975,7 +978,7 @@ func (a Action) IsValid() bool {
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
 		ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -1125,7 +1128,7 @@ func (a Action) Category() string {
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted:
 		return "tool"
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
@@ -1381,7 +1384,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTemplateSourceCredentialAttached,
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
-		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionScopeTargetReplaced, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved, ActionScopeTargetT2Downgraded,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,

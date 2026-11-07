@@ -113,6 +113,23 @@ export function grantProfileValue(profile: string, integration: string): string 
   return name ? `${profile}:${name}` : profile
 }
 
+/**
+ * Profiles a sensor may be trusted for at its approval: no credentials, no
+ * push ingest (api sensordom.TrustableAtApproval). Every other profile
+ * starts New and is promoted afterwards.
+ */
+export const TRUSTABLE_AT_APPROVAL = ['internal-network-scanner', 'easm-external', 'scan-connector']
+
+/** Profiles whose grant scans zone networks (the approval may set them up). */
+export const ZONE_PROFILES = ['internal-network-scanner', 'authenticated-scanner', 'scan-connector']
+
+/** The scope entry type of one network the approver stated. */
+export function scopeTargetTypeOf(range: string): 'cidr' | 'ip_range' | 'ip_address' {
+  if (range.includes('-')) return 'ip_range'
+  if (range.includes('/')) return 'cidr'
+  return 'ip_address'
+}
+
 export function validIntegrationName(name: string): boolean {
   return name.trim() === '' || /^[a-z0-9._-]{1,64}$/.test(name.trim().toLowerCase())
 }
