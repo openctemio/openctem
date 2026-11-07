@@ -47,13 +47,16 @@ func newMatchEnv(t *testing.T) *matchEnv {
 }
 
 // feed (re)publishes the test CVE with one range of the test product.
-func (e *matchEnv) feed(r vm.Range) {
+func (e *matchEnv) feed(r vm.Range) { e.feedVector(r, "") }
+
+// feedVector is feed with the CVE's CVSS vector.
+func (e *matchEnv) feedVector(r vm.Range, vector string) {
 	e.t.Helper()
 	score := 8.1
 	c, err := vm.ParseCPE("cpe:2.3:a:" + e.vendor + ":" + e.product + ":*")
 	require.NoError(e.t, err)
 	_, err = e.corpus.ApplyPage(context.Background(), []cvecorpus.CVE{{
-		ID: e.cveID, Status: "Analyzed", Description: "Widget overflow.", CVSSScore: &score, Severity: "high",
+		ID: e.cveID, Status: "Analyzed", Description: "Widget overflow.", CVSSScore: &score, CVSSVector: vector, Severity: "high",
 		Ranges: []cvecorpus.Range{{Product: c, Range: r}},
 	}})
 	require.NoError(e.t, err)
@@ -241,4 +244,34 @@ func TestVulnMatching_OneEvaluationPerVersion(t *testing.T) {
 		SELECT count(*) FROM software_version_vulns m JOIN software_versions v ON v.id = m.software_version_id
 		JOIN software_products p ON p.id = v.product_id WHERE p.cpe_vendor = $1`, e.vendor).Scan(&rows))
 	assert.Equal(t, 1, rows)
+}
+
+// A CVE scored with a full CVSS 4.0 vector (base, threat, environmental and
+// supplemental metrics: up to 178 characters, longer than the 100 the
+// findings column used to hold) becomes a finding with its whole vector, and
+// the platform's receipt books it as created, not failed.
+func TestVulnMatching_CVSS4VectorIsStored(t *testing.T) {
+	e := newMatchEnv(t)
+	const vector = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:H/SI:H/SA:H/E:U/CR:H/IR:H/AR:H" +
+		"/MAV:N/MAC:L/MAT:N/MPR:N/MUI:N/MVC:H/MVI:H/MVA:H/MSC:H/MSI:S/MSA:S/S:P/AU:Y/R:U/V:C/RE:H/U:Amber"
+	require.Greater(t, len(vector), 100)
+	e.feedVector(vm.Range{End: "2.0"}, vector)
+	e.svc.SetReceiptRecorder(postgres.NewIngestReceiptRepository(e.pdb))
+	tn := e.tenant("vm-cvss4", true)
+	other := e.tenant("vm-cvss4-other", true)
+	e.observe(tn, shared.ID{}, "1.4.2")
+	e.run()
+
+	require.Len(t, e.findings(tn), 1, "the matched finding is stored")
+	assert.Empty(t, e.findings(other), "nothing reaches an organization without the software")
+	var stored string
+	require.NoError(t, e.pdb.QueryRowContext(context.Background(), `SELECT cvss_vector FROM findings WHERE tenant_id = $1 AND tool_name = 'version-match' AND cve_id = $2`,
+		tn.String(), e.cveID).Scan(&stored))
+	assert.Equal(t, vector, stored, "the vector is kept whole")
+
+	var created, failed int
+	require.NoError(t, e.pdb.QueryRowContext(context.Background(), `SELECT findings_created, findings_failed FROM ingest_receipts
+		WHERE tenant_id = $1 AND tool_name = 'version-match'`, tn.String()).Scan(&created, &failed))
+	assert.Equal(t, 1, created)
+	assert.Equal(t, 0, failed)
 }
