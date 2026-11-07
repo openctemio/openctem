@@ -17,6 +17,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appfinding "github.com/openctemio/openctem/api/internal/app/finding"
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/taggov"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -48,6 +49,7 @@ type AssetHandler struct {
 	triageRecords      AssetTriageRecords
 	triageExclusions   AssetTriageExclusions
 	riskGov            *appfinding.AssetRiskGovernance
+	tagGovernor        TagGovernor
 }
 
 // NewAssetHandler creates a new asset handler.
@@ -924,6 +926,12 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ActorID:     middleware.GetUserID(r.Context()),
 	}
 
+	governed, refusal := checkTagChange(r.Context(), h.tagGovernor, tenantID, nil, req.Tags)
+	if refusal != nil {
+		h.refuseTagChange(w, r, "", req.Name, refusal)
+		return
+	}
+
 	a, err := h.service.CreateAsset(r.Context(), input)
 	if err != nil {
 		var dup *assetapp.DuplicateAssetError
@@ -936,6 +944,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
 		map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
+	h.auditGovernedTags(r, a.ID().String(), a.Name(), governed)
 
 	// A member without full data access sees what they created through a
 	// creator access grant; otherwise the asset would answer 404 to them.
@@ -1063,6 +1072,15 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var governed []taggov.Change
+	if req.Tags != nil {
+		var refusal *tagRefusal
+		if governed, refusal = checkTagChange(r.Context(), h.tagGovernor, tenantID, before.Tags(), req.Tags); refusal != nil {
+			h.refuseTagChange(w, r, before.ID().String(), before.Name(), refusal)
+			return
+		}
+	}
+
 	a, held, err := h.service.UpdateAssetGoverned(r.Context(), id, tenantID, input, h.riskContext(r, req.RiskChangeReason))
 	if err != nil {
 		h.writeRiskError(w, err)
@@ -1070,6 +1088,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditAsset(r, auditdom.ActionAssetUpdated, a.ID().String(), a.Name(), "Asset updated",
 		map[string]any{"changed_fields": assetChangedFields(before, a)})
+	h.auditGovernedTags(r, a.ID().String(), a.Name(), governed)
 	if held != nil {
 		h.writeAssetHeld(w, a, held)
 		return
@@ -1339,6 +1358,11 @@ func (h *AssetHandler) CreateRepository(w http.ResponseWriter, r *http.Request) 
 		RepoCreatedAt:   req.RepoCreatedAt,
 		RepoUpdatedAt:   req.RepoUpdatedAt,
 		RepoPushedAt:    req.RepoPushedAt,
+	}
+
+	if _, refusal := checkTagChange(r.Context(), h.tagGovernor, tenantID, nil, req.Tags); refusal != nil {
+		h.refuseTagChange(w, r, "", req.Name, refusal)
+		return
 	}
 
 	a, ext, outcome, err := h.service.CreateRepositoryAssetWithOutcome(r.Context(), input)
