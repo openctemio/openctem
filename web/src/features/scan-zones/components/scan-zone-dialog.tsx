@@ -41,6 +41,8 @@ interface ScanZoneDialogProps {
   zone?: ScanZone | null
   /** Another zone is already the default (the API allows one). */
   otherDefaultZone?: ScanZone | null
+  /** Ranges to start a new zone with (ignored when editing). */
+  initialRanges?: string[]
   onSaved?: (zone: ScanZone) => void
 }
 
@@ -54,6 +56,7 @@ export function ScanZoneDialog({
   onOpenChange,
   zone,
   otherDefaultZone,
+  initialRanges,
   onSaved,
 }: ScanZoneDialogProps) {
   const { t } = useTranslation()
@@ -71,9 +74,12 @@ export function ScanZoneDialog({
     setName(zone?.name ?? '')
     setDescription(zone?.description ?? '')
     setIsDefault(zone?.is_default ?? false)
-    setRangesText((zone?.ranges ?? []).join('\n'))
+    setRangesText((zone?.ranges ?? initialRanges ?? []).join('\n'))
     setTouched(false)
     setServerError(null)
+    // initialRanges is read when the dialog opens only: editing the text
+    // must not be reset by a parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, zone])
 
   const entries = useMemo(() => splitRangeInput(rangesText), [rangesText])

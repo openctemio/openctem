@@ -23,6 +23,11 @@ type StepUpWideningApprover struct {
 var _ sensorgrant.WideningApprover = StepUpWideningApprover{}
 
 // ApproveWidening implements sensorgrant.WideningApprover.
-func (a StepUpWideningApprover) ApproveWidening(ctx context.Context, _ sensorgrant.Actor, _, _ sensordom.Grant, _ []string) error {
+// A proof the server verified in this same request (a pairing approval)
+// is at least as recent as the window asks.
+func (a StepUpWideningApprover) ApproveWidening(ctx context.Context, actor sensorgrant.Actor, _, _ sensordom.Grant, _ []string) error {
+	if actor.StepUpVerified {
+		return nil
+	}
 	return middleware.CheckRecentAuth(ctx, a.Checker, a.Window)
 }

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiScopeCheckResult } from '@/features/scope'
-import { groupRefusals, groupRemedy, internalAddressOf } from '../refusal-groups'
+import { afterEach, vi } from 'vitest'
+import {
+  groupRefusals,
+  groupRemedy,
+  internalAddressOf,
+  isKnownRefusalCode,
+  refusalKind,
+  zoneRangesOf,
+} from '../refusal-groups'
 
 const proof = (target: string, root: string): ApiScopeCheckResult => ({
   target,
@@ -134,5 +142,41 @@ describe('internalAddressOf', () => {
       zone('intra.example.com', ['10.0.0.1']),
     ])
     expect(groups.map((g) => g.kind)).toEqual(['zone', 'unresolved'])
+  })
+})
+
+describe('zone refusals', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('maps every zone code to the zone group, not invalid', () => {
+    for (const code of ['zone_none', 'zone_no_sensor', 'zone_sensor_mismatch']) {
+      expect(refusalKind(code)).toBe('zone')
+      expect(isKnownRefusalCode(code)).toBe(true)
+    }
+    const g = groupRefusals([
+      { target: '10.0.0.0/16', allowed: false, code: 'zone_none', fixes: [{ action: 'add_zone' }] },
+    ])
+    expect(g.map((x) => x.kind)).toEqual(['zone'])
+  })
+
+  it('prefills the zone with the ranges and addresses of the group, distinct', () => {
+    const [g] = groupRefusals([
+      zone('10.0.0.0/16'),
+      zone('10.0.0.0/16'),
+      zone('192.0.2.7'),
+      zone('host.example.com', ['10.1.2.3']),
+      zone('other.example.com'),
+    ])
+    expect(zoneRangesOf(g)).toEqual(['10.0.0.0/16', '192.0.2.7', '10.1.2.3'])
+  })
+
+  it('keeps an unknown code as invalid and warns about it once in development', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(isKnownRefusalCode('brand_new_code')).toBe(false)
+    expect(refusalKind('brand_new_code')).toBe('invalid')
+    expect(refusalKind('brand_new_code')).toBe('invalid')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(refusalKind('invalid_target')).toBe('invalid')
+    expect(warn).toHaveBeenCalledTimes(1)
   })
 })
