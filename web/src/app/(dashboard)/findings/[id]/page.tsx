@@ -57,6 +57,7 @@ import {
   FindingRetestCheckSection,
   FindingTenableRescanSection,
   FindingImportHistory,
+  FindingSeenBy,
   FindingWhyItMatters,
   OverviewTab,
   RelatedTab,
@@ -290,6 +291,10 @@ export default function FindingDetailPage() {
             />
             <FindingTenableRescanSection
               finding={finding}
+              className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+            />
+            <FindingSeenBy
+              findingId={finding.id}
               className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
             />
             <FindingImportHistory

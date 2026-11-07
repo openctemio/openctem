@@ -313,6 +313,8 @@ type Delta struct {
 	TenantID shared.ID
 	Source   Source
 	Tool     string
+	// ToolVersion is the reporting tool's version, kept on the sightings.
+	ToolVersion string
 	// Instance is what sent the report (a sensor, a CI repository, a
 	// connector, the platform); empty for a coverage decision, which adds to
 	// the receipt's own counts only.
