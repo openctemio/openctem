@@ -229,8 +229,21 @@ func PackagesChanged(res software.PackageWriteResult) bool {
 //  3. Unresolved → a deterministic fallback asset (preserving the previous
 //     "link it somewhere" behavior rather than dropping the component), logged
 //     so the ambiguity is visible.
+//
+// A dependency that names its asset (asset_ref) goes to that asset only; when
+// that asset was not persisted (left out, out of scope) the dependency is
+// skipped, never moved to another asset: a multi-host scan export (a
+// .nessus file) carries each host's installed packages this way.
 func (p *ComponentProcessor) resolveDepAssetIDs(report *ctis.Report, assetMap map[string]shared.ID) []shared.ID {
 	out := make([]shared.ID, len(report.Dependencies))
+	byRef := func(i int) bool {
+		ref := report.Dependencies[i].AssetRef
+		if ref == "" {
+			return false
+		}
+		out[i] = assetMap[ref] // zero when not persisted: skipped
+		return true
+	}
 
 	// Single-asset fast path.
 	if len(assetMap) == 1 {
@@ -239,7 +252,9 @@ func (p *ComponentProcessor) resolveDepAssetIDs(report *ctis.Report, assetMap ma
 			only = id
 		}
 		for i := range out {
-			out[i] = only
+			if !byRef(i) {
+				out[i] = only
+			}
 		}
 		return out
 	}
@@ -250,6 +265,9 @@ func (p *ComponentProcessor) resolveDepAssetIDs(report *ctis.Report, assetMap ma
 	matchers, fallback := p.buildAssetMatchers(report, assetMap)
 
 	for i := range report.Dependencies {
+		if byRef(i) {
+			continue
+		}
 		dep := &report.Dependencies[i]
 		if id, ok := matchDepToAsset(dep, matchers); ok {
 			out[i] = id
