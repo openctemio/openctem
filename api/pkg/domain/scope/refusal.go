@@ -36,7 +36,8 @@ const (
 	RefusalOutOfDataScope  = "out_of_data_scope"
 	RefusalNotAnAsset      = "not_an_asset"
 	RefusalZoneNone        = "zone_none"
-	// RefusalUnresolved: a hostname with no DNS answer from the platform. It
+	// RefusalUnresolved: a hostname with no DNS answer from the platform nor
+	// from any of the tenant's sensors (vantage answers). It
 	// cannot be routed to a scan zone, so it is refused on its own, apart
 	// from a private address no zone covers.
 	RefusalUnresolved         = "unresolved"
@@ -52,6 +53,9 @@ const (
 	// the same width (sites that reuse a range); the scan must pick its
 	// zone (research 466 D9).
 	RefusalAmbiguousZone = "ambiguous_zone"
+	// RefusalVantageOutOfScope: a sensor resolves the name to a private
+	// address the organization excluded or rejected.
+	RefusalVantageOutOfScope = "vantage_out_of_scope"
 	// RefusalConstrained: only port- or path-limited entries cover the
 	// target and the job could reach other ports or paths (RFC-065 §16.8).
 	RefusalConstrained = "constrained"
@@ -158,7 +162,8 @@ var RefusalMessages = map[string]string{
 	RefusalOutOfDataScope:      "This asset is outside your data scope.",
 	RefusalNotAnAsset:          "You may scan only assets in your data scope.",
 	RefusalZoneNone:            "No scan zone covers this private target.",
-	RefusalUnresolved:          "This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.",
+	RefusalUnresolved:          "This name does not resolve in DNS from the platform or from any of your sensors. Fix its DNS record, run a resolve step on a sensor that can resolve it, or scan its address.",
+	RefusalVantageOutOfScope:   "A sensor resolves this name to a private address your organization excluded or rejected; it is not scanned.",
 	RefusalZoneNoSensor:        "The scan zone of this target has no sensors.",
 	RefusalZoneSensorMismatch:  "The chosen sensor is not in this target's scan zone.",
 	RefusalAmbiguousZone:       "More than one scan zone holds this target with different sensors (different sites using the same range). Pick the zone for this scan.",
