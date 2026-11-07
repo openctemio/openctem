@@ -47,7 +47,10 @@ vi.mock('@/features/assets/components/resolved-ports-section', () => ({
   hasResolvedPorts: (type: string) => type === 'domain' || type === 'subdomain',
   ResolvedPortsSection: () => <section>resolved-ports</section>,
 }))
-vi.mock('@/features/asset-lifecycle', () => ({ AssetStatusBadge: () => null }))
+vi.mock('@/features/asset-lifecycle', () => ({
+  AssetStatusBadge: () => null,
+  AssetLivenessBadge: () => null,
+}))
 vi.mock('@/features/scan-windows', () => ({ AssetScanWindowCard: () => null }))
 vi.mock('@/features/attack-surface', () => ({ AssetWebEvidenceCard: () => null }))
 vi.mock('@/features/repositories/components/repository-workspace', () => ({

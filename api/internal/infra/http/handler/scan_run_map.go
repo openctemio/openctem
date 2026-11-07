@@ -109,6 +109,47 @@ type RunMapNode struct {
 	// Result is what a completed retest step concluded (inconclusive,
 	// still_exposed_elsewhere) with its reason code; the step succeeded.
 	Result *RunResult `json:"result,omitempty"`
+	// RanWith is what the step ran with: the severities and tags its
+	// command carried (each with the layer that set it) and the config keys
+	// the sensor ignored. Absent for a step not dispatched yet.
+	RanWith *RunMapRanWith `json:"ran_with,omitempty"`
+}
+
+// RunMapRanWith summarizes a step's effective config for the run map.
+// Severity, Tags and ExcludeTags are standard params of the capability
+// (platform record at dispatch); SensorIgnoredKeys is sensor-reported text.
+type RunMapRanWith struct {
+	Depth             string                 `json:"depth,omitempty"`
+	Severity          *scanrundom.ParamValue `json:"severity,omitempty"`
+	Tags              *scanrundom.ParamValue `json:"tags,omitempty"`
+	ExcludeTags       *scanrundom.ParamValue `json:"exclude_tags,omitempty"`
+	SensorIgnoredKeys []string               `json:"sensor_ignored_keys,omitempty"`
+}
+
+// ranWithOf is the node's summary (nil when the step recorded nothing
+// worth showing).
+func ranWithOf(sr *scanrundom.StepRun) *RunMapRanWith {
+	if sr == nil {
+		return nil
+	}
+	out := &RunMapRanWith{}
+	if c := sr.EffectiveConfig; c != nil {
+		out.Depth = c.Depth
+		pick := func(name string) *scanrundom.ParamValue {
+			if v, ok := c.Params[name]; ok {
+				return &v
+			}
+			return nil
+		}
+		out.Severity, out.Tags, out.ExcludeTags = pick("severity"), pick("tags"), pick("exclude_tags")
+	}
+	if ss := sr.SensorSettings; ss != nil {
+		out.SensorIgnoredKeys = ss.IgnoredConfigKeys
+	}
+	if out.Severity == nil && out.Tags == nil && out.ExcludeTags == nil && len(out.SensorIgnoredKeys) == 0 {
+		return nil
+	}
+	return out
 }
 
 // RunMapOutcome is a step's structured outcome.
@@ -288,6 +329,7 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		}
 		if sr := stepRuns[st.StepKey]; sr != nil {
 			fillNodeFromStepRun(&n, sr, platform[st.StepKey])
+			n.RanWith = ranWithOf(sr)
 		} else {
 			n.State = mapStatePending
 		}

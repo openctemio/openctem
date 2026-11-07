@@ -110,10 +110,14 @@ test(
     )
     test.skip(list.status !== 200, 'emerging threats are not available for this organization')
     await page.goto('/emerging-threats?level=digest&state=all')
-    await expect(page.locator('#et-level')).toContainText('Digest', { timeout: 45_000 })
-    await expect(page.locator('#et-state')).toContainText('All states')
-    // A filter change is written back to the address.
-    await page.getByRole('switch', { name: 'Internet-facing only' }).click()
+    // The level reads as a priority ("This week"), shown as an active filter chip.
+    await expect(page.getByText('Priority is This week')).toBeVisible({ timeout: 45_000 })
+    await expect(page.getByRole('button', { name: 'State: All states' })).toBeVisible()
+    // A filter change (the Internet-facing tile) is written back to the address.
+    await page
+      .locator('[data-slot="metric-strip"]')
+      .getByRole('button', { name: /Internet-facing/ })
+      .click()
     await expect(page).toHaveURL(/exposure=internet/)
     await expect(page).toHaveURL(/level=digest/)
   }

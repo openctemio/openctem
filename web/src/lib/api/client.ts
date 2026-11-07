@@ -14,7 +14,7 @@ import {
   organizationSuspendedMessage,
 } from './organization-suspended'
 import { IP_NOT_ALLOWED_MESSAGE, isIpNotAllowed, notifyIpNotAllowed } from './ip-not-allowed'
-import { isStepUpRequired, requestStepUp } from './step-up'
+import { isStepUpRequired, requestStepUp, stepUpPromptOf } from './step-up'
 import { isTenantRequired, routeToWelcomeOnce } from './tenant-required'
 import { dispatchPermissionStaleEvent } from '@/context/permission-provider'
 import { env } from '@/lib/env'
@@ -391,7 +391,7 @@ export async function apiClient<T = unknown>(
       // ask the user to re-authenticate (one shared dialog), then retry the
       // original request once. Cancelling throws the original error.
       if (isStepUpRequired(error) && !_skipStepUpRetry && !skipAuth && !isServer()) {
-        if (await requestStepUp()) {
+        if (await requestStepUp(stepUpPromptOf(error.details))) {
           return apiClient<T>(endpoint, { ...options, _skipStepUpRetry: true })
         }
       }

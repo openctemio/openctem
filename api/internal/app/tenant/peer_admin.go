@@ -6,6 +6,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
@@ -93,6 +94,15 @@ func (s *TenantService) requireStepUp(ctx context.Context, actorID string) error
 		return nil
 	}
 	return s.stepUp.RequireRecentAuth(ctx, actorID)
+}
+
+// requireStepUpSensitive is requireStepUp for a governance loosening (a
+// sensitive action under the organization's re-verification policy).
+func (s *TenantService) requireStepUpSensitive(ctx context.Context, actorID string) error {
+	if s.stepUp == nil {
+		return nil
+	}
+	return stepup.Require(ctx, s.stepUp, actorID, stepup.TierSensitive)
 }
 
 // SetStepUpGate wires step-up re-authentication for making someone an

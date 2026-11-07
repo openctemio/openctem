@@ -23,6 +23,13 @@ export {
   classLabel,
   lensLabel,
   classAndLensLabel,
+  isScannableAssetType,
   type AssetTypeRegistry,
 } from './lib/asset-registry'
 export type { AssetClass, AssetLens, LegacyAssetCategory } from './registry.generated'
+export {
+  attributeValueLabel,
+  hasValueLabels,
+  kindSourceConfidence,
+  KIND_SOURCE_GUESS,
+} from './lib/attribute-values'

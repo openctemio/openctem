@@ -1235,7 +1235,8 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 		if outcome == "" {
 			return retestdom.CheckResult{Missing: true}, true
 		}
-		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests}, true
+		stopped, _ := commanddom.RunStopped(cmd.Result)
+		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests, Stopped: stopped}, true
 	case commanddom.CommandStatusFailed, commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
 		return retestdom.CheckResult{Missing: true, Summary: cmd.ErrorMessage}, true
 	default:

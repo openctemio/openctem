@@ -75,10 +75,7 @@ func resolutionOver(c *ingestreport.CommandCoverage) bool {
 	if c == nil || c.CommandStatus != string(command.CommandStatusCompleted) || len(c.Reports) == 0 {
 		return false
 	}
-	var result struct {
-		ExitCode *int `json:"exit_code"`
-	}
-	if len(c.Result) > 0 && json.Unmarshal(c.Result, &result) == nil && result.ExitCode != nil && *result.ExitCode != 0 {
+	if stopped, _ := command.RunStopped(c.Result); stopped {
 		return false
 	}
 	for _, r := range c.Reports {

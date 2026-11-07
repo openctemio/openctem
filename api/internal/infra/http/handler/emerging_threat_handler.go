@@ -39,25 +39,32 @@ func NewEmergingThreatHandler(svc *threatalertapp.Service, scope DataScopeEnforc
 
 // EmergingThreatSummary is one alert in the list.
 type EmergingThreatSummary struct {
-	ID                   string     `json:"id"`
-	VulnID               string     `json:"vuln_id"`
-	Title                string     `json:"title"`
-	Severity             string     `json:"severity"`
-	Level                string     `json:"level" enums:"immediate,digest,listed"`
-	Tier                 string     `json:"tier" enums:"confirmed,possible"`
-	State                string     `json:"state" enums:"new,acknowledged,remediating,not_affected,resolved"`
-	ETS                  int        `json:"ets"`
-	InKEV                bool       `json:"in_kev"`
-	KEVRansomware        bool       `json:"kev_ransomware"`
-	EPSS                 *float64   `json:"epss"`
-	ConfirmedAssets      int        `json:"confirmed_assets"`
-	PossibleAssets       int        `json:"possible_assets"`
-	InternetFacingAssets int        `json:"internet_facing_assets"`
-	LastEventKind        string     `json:"last_event_kind"`
-	EventAt              *time.Time `json:"event_at"`
-	SourceAt             *time.Time `json:"source_at"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	ID                   string   `json:"id"`
+	VulnID               string   `json:"vuln_id"`
+	Title                string   `json:"title"`
+	Severity             string   `json:"severity"`
+	Level                string   `json:"level" enums:"immediate,digest,listed"`
+	Tier                 string   `json:"tier" enums:"confirmed,possible"`
+	State                string   `json:"state" enums:"new,acknowledged,remediating,not_affected,resolved"`
+	ETS                  int      `json:"ets"`
+	InKEV                bool     `json:"in_kev"`
+	KEVRansomware        bool     `json:"kev_ransomware"`
+	EPSS                 *float64 `json:"epss"`
+	ConfirmedAssets      int      `json:"confirmed_assets"`
+	PossibleAssets       int      `json:"possible_assets"`
+	InternetFacingAssets int      `json:"internet_facing_assets"`
+	// CriticalAssets counts the affected assets of criticality "critical";
+	// Product names the best match and ProductCount the distinct matching
+	// products, all over the caller's scope.
+	CriticalAssets int                   `json:"critical_assets"`
+	Product        string                `json:"product"`
+	ProductCount   int                   `json:"product_count"`
+	ETSBreakdown   threatalert.Breakdown `json:"ets_breakdown"`
+	LastEventKind  string                `json:"last_event_kind"`
+	EventAt        *time.Time            `json:"event_at"`
+	SourceAt       *time.Time            `json:"source_at"`
+	CreatedAt      time.Time             `json:"created_at"`
+	UpdatedAt      time.Time             `json:"updated_at"`
 }
 
 // EmergingThreatListResponse is a page of alerts and the viewer's counts.
@@ -93,7 +100,6 @@ type EmergingThreatEvent struct {
 // EmergingThreatDetail is one alert as the viewer sees it.
 type EmergingThreatDetail struct {
 	EmergingThreatSummary
-	ETSBreakdown      threatalert.Breakdown `json:"ets_breakdown"`
 	RecommendedAction string                `json:"recommended_action" enums:"patch_now,confirm,patch_within_sla"`
 	Description       string                `json:"description"`
 	CVSSScore         *float64              `json:"cvss_score"`
@@ -119,12 +125,13 @@ func toEmergingSummary(a *threatalert.Alert) EmergingThreatSummary {
 	return EmergingThreatSummary{ID: a.ID.String(), VulnID: a.VulnID, Title: a.Title, Severity: a.Severity,
 		Level: string(a.Level), Tier: string(a.Tier), State: string(a.State), ETS: a.ETS, InKEV: a.InKEV,
 		KEVRansomware: a.KEVRansomware, EPSS: a.EPSS, ConfirmedAssets: a.Confirmed, PossibleAssets: a.Possible,
-		InternetFacingAssets: a.InternetFacing, LastEventKind: a.LastEventKind, EventAt: a.EventAt, SourceAt: a.SourceAt,
+		InternetFacingAssets: a.InternetFacing, CriticalAssets: a.Critical, Product: a.Product, ProductCount: a.ProductCount,
+		ETSBreakdown: a.Breakdown, LastEventKind: a.LastEventKind, EventAt: a.EventAt, SourceAt: a.SourceAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}
 }
 
 func toEmergingDetail(d *threatalert.Detail) EmergingThreatDetail {
-	out := EmergingThreatDetail{EmergingThreatSummary: toEmergingSummary(&d.Alert), ETSBreakdown: d.Alert.Breakdown,
+	out := EmergingThreatDetail{EmergingThreatSummary: toEmergingSummary(&d.Alert),
 		RecommendedAction: threatalert.RecommendedAction(d.Alert.Tier, d.Alert.Breakdown),
 		Description:       threatalert.PlainText(d.Vuln.Description, 1000), CVSSScore: d.Vuln.CVSSScore,
 		PublishedAt: d.Vuln.Published, StateReason: d.Alert.StateReason, StateNote: d.Alert.StateNote,
@@ -198,6 +205,7 @@ func (h *EmergingThreatHandler) writeErr(w http.ResponseWriter, err error) {
 // @Param        state     query string false "open (default), all, new, acknowledged, remediating, not_affected or resolved"
 // @Param        tier      query string false "confirmed or possible"
 // @Param        exposure  query string false "internet: only alerts with an internet-facing asset"
+// @Param        kev       query bool false "true: only alerts whose vulnerability is known exploited (KEV)"
 // @Param        search    query string false "Vulnerability id or title"
 // @Param        page      query int false "Page (default 1)"
 // @Param        per_page  query int false "Per page (default 25, max 100)"
@@ -211,7 +219,7 @@ func (h *EmergingThreatHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	f := threatalert.ListFilter{Level: threatalert.Level(q.Get("level")), Tier: threatalert.Tier(q.Get("tier")),
-		InternetOnly: q.Get("exposure") == "internet", Search: truncateQuery(q.Get("search"), 100)}
+		InternetOnly: q.Get("exposure") == "internet", KEVOnly: q.Get("kev") == queryParamTrue, Search: truncateQuery(q.Get("search"), 100)}
 	if f.Level != "" && !f.Level.IsValid() {
 		apierror.BadRequest("level must be immediate, digest or listed").WriteJSON(w)
 		return

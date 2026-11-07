@@ -28,6 +28,9 @@ const tenantHasPathRuleSQL = `
 // when its tenant has a path exclusion that may apply, or when that cannot
 // be read: its web scope cannot be built here (fail closed).
 func (r *CommandRepository) guardCreate(ctx context.Context, cmd *command.Command) error {
+	if err := r.requireIsolation(cmd); err != nil {
+		return err
+	}
 	if r.guard != nil {
 		return r.guard.GuardCreate(ctx, cmd)
 	}
@@ -42,4 +45,12 @@ func (r *CommandRepository) guardCreate(ctx context.Context, cmd *command.Comman
 		return command.ErrWebScopeUnwired
 	}
 	return nil
+}
+
+// releaseGuard gives back what the create guard recorded for a command the
+// repository then failed to store.
+func (r *CommandRepository) releaseGuard(ctx context.Context, cmd *command.Command) {
+	if rel, ok := r.guard.(command.CreateReleaser); ok {
+		rel.ReleaseCreate(ctx, cmd)
+	}
 }

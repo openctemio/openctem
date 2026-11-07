@@ -25,12 +25,12 @@ import (
 func TestCoverageScannerConfig_EnumerateIsBruteForce(t *testing.T) {
 	enum, ok := stage.Lookup(stage.EnumerateSubdomains)
 	require.True(t, ok, "enumerate.subdomains is a catalog stage")
-	cfg := coverageScannerConfig(enum, []string{"example.com"})
+	cfg := coverageScannerConfig(enum, []string{"example.com"}, 0)
 	assert.Equal(t, "bruteforce", cfg["method"])
 	assert.Equal(t, []string{"example.com"}, cfg["targets"])
 
 	passive, _ := stage.Lookup(stage.DiscoverSubdomains)
-	_, has := coverageScannerConfig(passive, []string{"example.com"})["method"]
+	_, has := coverageScannerConfig(passive, []string{"example.com"}, 0)["method"]
 	assert.False(t, has, "a passive discovery run names no method")
 }
 

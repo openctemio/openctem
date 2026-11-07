@@ -10,6 +10,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -49,6 +50,47 @@ func (r *ScanZoneRepository) Create(ctx context.Context, z *scanzone.Zone) error
 		z.ID.String(), z.TenantID.String(), z.Name, z.Description, z.IsDefault,
 		pq.Array(z.RangeStrings()), nullIDString(z.CreatedBy), z.CreatedAt, z.UpdatedAt)
 	return mapZoneWriteError(err)
+}
+
+// CreateWithSensorTx inserts a zone and assigns one sensor of the same
+// tenant to it inside tx (a pairing approval that states the sensor's
+// networks: the zone, the sensor and its grant commit together or not at
+// all). Only a non-platform sensor of the zone's tenant qualifies.
+func (r *ScanZoneRepository) CreateWithSensorTx(ctx context.Context, tx *sql.Tx, z *scanzone.Zone, sensorID shared.ID, assignedBy *shared.ID) error {
+	// The planning step counted the zones before the transaction; count
+	// again inside it, under a per-tenant lock so two approvals racing at
+	// the limit cannot both create a zone.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('scan_zones:' || $1::text, 0))`, z.TenantID.String()); err != nil {
+		return fmt.Errorf("lock scan zones: %w", err)
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM scan_zones WHERE tenant_id = $1`, z.TenantID.String()).Scan(&n); err != nil {
+		return fmt.Errorf("count scan zones: %w", err)
+	}
+	if n >= scanzone.MaxZonesPerTenant {
+		return scanzone.ErrTooManyZones
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_zones (id, tenant_id, name, description, is_default, ranges, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6::cidr[], $7, $8, $9)`,
+		z.ID.String(), z.TenantID.String(), z.Name, z.Description, z.IsDefault,
+		pq.Array(z.RangeStrings()), nullIDString(z.CreatedBy), z.CreatedAt, z.UpdatedAt); err != nil {
+		return mapZoneWriteError(err)
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_zone_sensors (tenant_id, zone_id, sensor_id, created_by)
+		SELECT $1, $2, s.id, $4
+		FROM sensors s
+		WHERE s.id = $3 AND s.tenant_id = $1 AND s.scope = 'organization'
+		ON CONFLICT (zone_id, sensor_id) DO NOTHING`,
+		z.TenantID.String(), z.ID.String(), sensorID.String(), nullIDString(assignedBy))
+	if err != nil {
+		return fmt.Errorf("assign sensor to scan zone: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return scanzone.ErrSensorNotFound
+	}
+	return nil
 }
 
 // Update writes a zone's mutable fields.
@@ -351,6 +393,57 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		}
 		c.LocalPolicy, _ = scanLocalPolicy(c.ID, localPolicy, sql.NullTime{})
 		out[zid] = append(out[zid], c)
+	}
+	return out, rows.Err()
+}
+
+var _ scanzone.ZoneSensorStateReader = (*ScanZoneRepository)(nil)
+
+// ZoneSensorStates returns, per zone, the tenant's active sensors assigned
+// to it (online or not) with their trust level and last local policy
+// report, for plan-time routing (scanzone.JudgeZoneSensors). Zone and
+// sensor must both belong to tenantID.
+func (r *ScanZoneRepository) ZoneSensorStates(ctx context.Context, tenantID shared.ID, zoneIDs []shared.ID) (map[shared.ID][]scanzone.ZoneSensorState, error) {
+	out := make(map[shared.ID][]scanzone.ZoneSensorState, len(zoneIDs))
+	if len(zoneIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(zoneIDs))
+	for i, id := range zoneIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT zs.zone_id, s.id, s.name, s.trust_level, s.reported_local_policy
+		FROM scan_zone_sensors zs
+		JOIN sensors s ON s.id = zs.sensor_id AND s.tenant_id = zs.tenant_id
+		WHERE zs.tenant_id = $1
+		  AND zs.zone_id = ANY($2::uuid[])
+		  AND s.status = 'active'
+		ORDER BY zs.zone_id, s.name, s.id`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("zone sensor states: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			zoneID, sensorID, trust string
+			st                      scanzone.ZoneSensorState
+			localPolicy             []byte
+		)
+		if err := rows.Scan(&zoneID, &sensorID, &st.Name, &trust, &localPolicy); err != nil {
+			return nil, fmt.Errorf("scan zone sensor state: %w", err)
+		}
+		zid, err := shared.IDFromString(zoneID)
+		if err != nil {
+			return nil, err
+		}
+		if st.ID, err = shared.IDFromString(sensorID); err != nil {
+			return nil, err
+		}
+		st.Trusted = sensor.TrustLevel(trust) == sensor.TrustTrusted
+		st.LocalPolicy, _ = scanLocalPolicy(st.ID, localPolicy, sql.NullTime{})
+		out[zid] = append(out[zid], st)
 	}
 	return out, rows.Err()
 }

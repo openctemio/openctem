@@ -23,7 +23,11 @@ import {
   type DetailMenuItem,
   type DetailTab,
 } from '@/features/shared'
-import { AssetStatusBadge, LifecycleSnoozeMenu } from '@/features/asset-lifecycle'
+import {
+  AssetLivenessBadge,
+  AssetStatusBadge,
+  LifecycleSnoozeMenu,
+} from '@/features/asset-lifecycle'
 import { AssetFindings } from './asset-findings'
 import { AssetSoftwareTab } from '@/features/vuln-matching'
 import { TimelineSection, TechnicalDetailsSection, TagsSection } from './sheet-sections'
@@ -118,6 +122,16 @@ interface AssetDetailSheetProps<T extends Asset> {
   /** Asset type label (e.g. "Domain"). Defaults to the asset type's label. */
   assetTypeName?: string
 
+  /**
+   * False when the subject is not an inventory asset but a row shaped like one
+   * (a credential leak): its id is not an asset id, so every per-asset request
+   * (owners, timeline, relations, technologies, software, details, scope and
+   * scanning, lifecycle, risk explanation) would answer 404. The sheet then
+   * frames the row from its own fields and asks the API for nothing about it.
+   * Default true.
+   */
+  assetBacked?: boolean
+
   /** Show the Owners tab (default: true). */
   showOwnersTab?: boolean
 
@@ -207,9 +221,10 @@ export function AssetDetailSheet<T extends Asset>({
   overviewContent,
   subtitle,
   assetTypeName: assetTypeNameProp,
-  showOwnersTab = true,
+  assetBacked = true,
+  showOwnersTab: showOwnersTabProp = true,
   showProperties,
-  showDetailsTab = true,
+  showDetailsTab: showDetailsTabProp = true,
   showFindingsTab = true,
   extraTabs,
   // Relationship props
@@ -228,12 +243,16 @@ export function AssetDetailSheet<T extends Asset>({
   // AssetRelationshipsTab — that copy is the source of truth for the CRUD
   // dialogs. Both calls share the same SWR cache key so there is only one
   // network request in practice.
-  const { relationships } = useAssetRelationships(asset?.id ?? null)
+  const { relationships } = useAssetRelationships(assetBacked ? (asset?.id ?? null) : null)
+  const showOwnersTab = assetBacked && showOwnersTabProp
+  const showDetailsTab = assetBacked && showDetailsTabProp
   // Grouped related assets: the overview summary, the tab and its count share
   // one request.
-  const related = useRelatedAssets(asset?.id ?? null, { limit: RELATED_PREVIEW_ROWS })
+  const related = useRelatedAssets(assetBacked ? (asset?.id ?? null) : null, {
+    limit: RELATED_PREVIEW_ROWS,
+  })
   // Relations follow the relationships module, as the API does.
-  const relationshipsOn = useModuleEnabled('relationships')
+  const relationshipsOn = useModuleEnabled('relationships') && assetBacked
 
   // Walking a chain of related assets keeps a trail, so "back" returns to the
   // asset the walk came from. The trail ends when the sheet closes.
@@ -289,7 +308,7 @@ export function AssetDetailSheet<T extends Asset>({
   const tabs: DetailTab[] = [
     { value: 'overview', label: t('assets.sheet.tab.overview', 'Overview') },
     ...(showOwnersTab ? [{ value: 'owners', label: t('assets.sheet.tab.owners', 'Owners') }] : []),
-    { value: 'timeline', label: t('assetTimeline.tab', 'Timeline') },
+    ...(assetBacked ? [{ value: 'timeline', label: t('assetTimeline.tab', 'Timeline') }] : []),
     ...(extraTabs ?? []).map((t) => ({ value: t.value, label: t.label })),
     ...(relationshipsOn
       ? [
@@ -305,7 +324,7 @@ export function AssetDetailSheet<T extends Asset>({
         ]
       : []),
     // What probes fingerprinted on the asset (RFC-112), when anything.
-    ...((asset.technologies?.length ?? 0) > 0
+    ...(assetBacked && (asset.technologies?.length ?? 0) > 0
       ? [
           {
             value: 'technologies',
@@ -319,7 +338,9 @@ export function AssetDetailSheet<T extends Asset>({
         ]
       : []),
     // What the asset runs and the CVEs its versions fall in (RFC-066).
-    { value: 'software', label: t('assets.sheet.tab.software', 'Software') },
+    ...(assetBacked
+      ? [{ value: 'software', label: t('assets.sheet.tab.software', 'Software') }]
+      : []),
     ...(showFindingsTab
       ? [
           {
@@ -375,8 +396,9 @@ export function AssetDetailSheet<T extends Asset>({
                   status={asset.status}
                   daysSinceLastSeen={daysSinceLastSeen(asset.lastSeen)}
                 />
+                <AssetLivenessBadge liveness={asset.liveness} />
                 {/* May scans reach it now: the scope gate's own answer. */}
-                <AssetScopeChip asset={asset} />
+                {assetBacked && <AssetScopeChip asset={asset} />}
                 {/* Named values, so "Internal" (network zone) never reads
                     as the opposite of "Public" (exposure). */}
                 <ClassificationBadges
@@ -410,14 +432,16 @@ export function AssetDetailSheet<T extends Asset>({
                 {quickActions}
                 {/* Lifecycle snooze shows on every asset so operators can pause
                     the worker during known offline windows. */}
-                <LifecycleSnoozeMenu
-                  assetID={asset.id}
-                  isStaleOrInactive={asset.status === 'stale' || asset.status === 'inactive'}
-                />
+                {assetBacked && (
+                  <LifecycleSnoozeMenu
+                    assetID={asset.id}
+                    isStaleOrInactive={asset.status === 'stale' || asset.status === 'inactive'}
+                  />
+                )}
               </>
             }
             menu={menu}
-            fullPageHref={assetDetailHref(asset.id)}
+            fullPageHref={assetBacked ? assetDetailHref(asset.id) : undefined}
             onClose={() => onOpenChange(false)}
           />
         }
@@ -469,28 +493,35 @@ export function AssetDetailSheet<T extends Asset>({
             {overviewContent === undefined && <KeyFactsSection asset={asset} />}
 
             {/* What runs on it, by category (RFC-112). */}
-            <AssetTechnologiesSection
-              asset={asset}
-              onViewAll={() => setActiveTab('technologies')}
-            />
+            {assetBacked && (
+              <AssetTechnologiesSection
+                asset={asset}
+                onViewAll={() => setActiveTab('technologies')}
+              />
+            )}
 
             <RiskSummarySection
               asset={asset}
               onViewFindings={showFindingsTab ? () => setActiveTab('findings') : undefined}
+              assetBacked={assetBacked}
             />
 
             {/* May scans reach it, why, and what changes that. */}
-            <AssetScanningSection
-              asset={asset}
-              onShowDetails={showDetailsTab ? () => setActiveTab('details') : undefined}
-            />
+            {assetBacked && (
+              <AssetScanningSection
+                asset={asset}
+                onShowDetails={showDetailsTab ? () => setActiveTab('details') : undefined}
+              />
+            )}
 
             {statsContent}
 
-            <OwnershipSection
-              asset={asset}
-              onManageOwners={showOwnersTab ? () => setActiveTab('owners') : undefined}
-            />
+            {assetBacked && (
+              <OwnershipSection
+                asset={asset}
+                onManageOwners={showOwnersTab ? () => setActiveTab('owners') : undefined}
+              />
+            )}
 
             {asset.description && (
               <DetailSection title={t('assets.sheet.description', 'Description')} icon={FileText}>

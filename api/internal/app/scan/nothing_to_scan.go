@@ -45,10 +45,16 @@ var uncoveredGroups = []uncoveredGroup{
 		fix: "fix the DNS record, or scan the address instead", code: scopedom.RefusalUnresolved},
 	{kinds: []string{scanzone.KindOutsideZones, scanzone.KindPartlyCovered}, one: "is a private address outside every scan zone", many: "are private addresses outside every scan zone",
 		fix: "add the range to a scan zone", code: scopedom.RefusalZoneNone},
+	{kinds: []string{scanzone.KindAmbiguousZone}, one: "is in more than one scan zone with different sensors", many: "are in more than one scan zone with different sensors",
+		fix: "pick the scan zone (site) for this scan", code: scopedom.RefusalAmbiguousZone},
 	{kinds: []string{scanzone.KindOutsideSelected}, one: "is outside the selected scan zone", many: "are outside the selected scan zone",
 		fix: "pick Automatic routing or another zone", code: scopedom.RefusalZoneNone},
 	{kinds: []string{scanzone.KindZoneNoSensor}, one: "is in a scan zone with no sensor", many: "are in a scan zone with no sensor",
 		fix: "assign a sensor to the zone", code: scopedom.RefusalZoneNoSensor},
+	{kinds: []string{scanzone.KindZoneSensorNew}, one: "is in a scan zone whose sensors are all New (passive checks only)", many: "are in a scan zone whose sensors are all New (passive checks only)",
+		fix: "trust a sensor of the zone", code: scopedom.RefusalZoneSensorNew},
+	{kinds: []string{scanzone.KindZoneSensorNoPrivate}, one: "is a private address and no sensor of its zone allows private targets on its host", many: "are private addresses and no sensor of their zone allows private targets on its host",
+		fix: "set SENSOR_ALLOW_PRIVATE_TARGETS=1 on the sensor's host and restart it", code: scopedom.RefusalZoneSensorNoPrivate},
 	{kinds: []string{scanzone.KindSensorPolicy}, one: "is refused by every sensor of its zone", many: "are refused by every sensor of their zone",
 		fix: "see the run warnings for the sensor policy", code: "sensor_policy"},
 	{kinds: []string{scanzone.KindDenyList}, one: "is in the built-in deny list", many: "are in the built-in deny list",
@@ -94,7 +100,7 @@ func NothingToScanError(uncovered []scanzone.Uncovered) error {
 				names = append(names, u.Target)
 			}
 			if len(refused) < maxListedUncovered {
-				r := scopedom.NewRefusal(u.Target, g.code, nil, 0)
+				r := scopedom.NewRefusal(u.Target, g.code, nil, 0).WithSensor(u.SensorID)
 				if r.Message == "" {
 					r.Message = u.Reason
 				}

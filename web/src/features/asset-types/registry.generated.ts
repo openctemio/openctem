@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '98a73e498b7d7ad0'
+export const ASSET_REGISTRY_VERSION = '3c5f4b4255d0b2fc'
 
 export type AssetLens =
   | 'external_surface'
@@ -449,6 +449,7 @@ export type AssetPropertyKey =
   | 'geolocation'
   | 'groups'
   | 'handler'
+  | 'has_anonymous_access'
   | 'has_cors'
   | 'has_dhcp'
   | 'has_edr'
@@ -497,6 +498,7 @@ export type AssetPropertyKey =
   | 'kernel_version'
   | 'key_algorithm'
   | 'key_size'
+  | 'kind_source'
   | 'language'
   | 'last_commit_at'
   | 'last_login_at'
@@ -563,7 +565,9 @@ export type AssetPropertyKey =
   | 'serial_number'
   | 'server'
   | 'service'
+  | 'service_category'
   | 'service_count'
+  | 'service_kind'
   | 'signature_algorithm'
   | 'source'
   | 'ssl_policy'
@@ -688,6 +692,11 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   geolocation: { label: 'Geolocation', labelVi: 'Vị trí địa lý' },
   groups: { label: 'Groups', labelVi: 'Nhóm', list: true },
   handler: { label: 'Handler', labelVi: 'Handler', format: 'code' },
+  has_anonymous_access: {
+    label: 'Anonymous access',
+    labelVi: 'Truy cập ẩn danh',
+    classes: ['service'],
+  },
   has_cors: { label: 'CORS', labelVi: 'CORS', synonyms: ['cors_enabled'] },
   has_dhcp: { label: 'DHCP', labelVi: 'DHCP', synonyms: ['dhcp_enabled'] },
   has_edr: { label: 'EDR installed', labelVi: 'Đã cài EDR', synonyms: ['edr_installed'] },
@@ -786,6 +795,11 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   kernel_version: { label: 'Kernel version', labelVi: 'Phiên bản kernel' },
   key_algorithm: { label: 'Key algorithm', labelVi: 'Thuật toán khóa' },
   key_size: { label: 'Key size', labelVi: 'Độ dài khóa' },
+  kind_source: {
+    label: 'Kind identified by',
+    labelVi: 'Nhận diện loại bằng',
+    classes: ['service'],
+  },
   language: { label: 'Language', labelVi: 'Ngôn ngữ' },
   last_commit_at: { label: 'Last commit', labelVi: 'Commit gần nhất' },
   last_login_at: {
@@ -891,7 +905,13 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
     synonyms: ['web_server'],
   },
   service: { label: 'Service', labelVi: 'Dịch vụ' },
+  service_category: {
+    label: 'Service category',
+    labelVi: 'Nhóm dịch vụ',
+    classes: ['service'],
+  },
   service_count: { label: 'Services', labelVi: 'Số dịch vụ' },
+  service_kind: { label: 'Service kind', labelVi: 'Loại dịch vụ', classes: ['service'] },
   signature_algorithm: { label: 'Signature algorithm', labelVi: 'Thuật toán chữ ký' },
   source: { label: 'Source', labelVi: 'Nguồn' },
   ssl_policy: { label: 'SSL policy', labelVi: 'Chính sách SSL' },
@@ -1011,6 +1031,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'is_wildcard',
   ],
   service: [
+    'service_kind',
+    'service_category',
+    'kind_source',
     'ip_addresses',
     'port',
     'protocol',
@@ -1023,9 +1046,13 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'has_tls',
     'tls_version',
     'is_auth_required',
+    'has_anonymous_access',
     'response_time_ms',
   ],
   http_service: [
+    'service_kind',
+    'service_category',
+    'kind_source',
     'ip_addresses',
     'url',
     'host',
@@ -1048,15 +1075,22 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'http_posture',
   ],
   open_port: [
+    'service_kind',
+    'service_category',
+    'kind_source',
     'ip_addresses',
     'host',
     'port',
+    'transport',
     'protocol',
     'state',
     'service',
+    'product',
     'version',
     'banner',
     'cpe',
+    'has_tls',
+    'has_anonymous_access',
     'discovery_tool',
   ],
   discovered_url: [
@@ -1304,3 +1338,164 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
   ],
   unclassified: [],
 }
+export interface RegistryValueLabel {
+  label: string
+  labelVi: string
+}
+
+/** Service categories (attribute service_category), in display order. */
+export const SERVICE_CATEGORY_LABELS: Readonly<Record<string, RegistryValueLabel>> = {
+  web: { label: 'Web', labelVi: 'Web' },
+  remote_access: { label: 'Remote access', labelVi: 'Truy cập từ xa' },
+  file_share: { label: 'File sharing', labelVi: 'Chia sẻ tệp' },
+  database: { label: 'Database', labelVi: 'Cơ sở dữ liệu' },
+  cache: { label: 'Cache', labelVi: 'Bộ nhớ đệm' },
+  search: { label: 'Search', labelVi: 'Tìm kiếm' },
+  mail: { label: 'Mail', labelVi: 'Thư điện tử' },
+  directory_auth: { label: 'Directory and authentication', labelVi: 'Thư mục và xác thực' },
+  network_mgmt: { label: 'Network management', labelVi: 'Quản trị mạng' },
+  messaging: { label: 'Messaging', labelVi: 'Nhắn tin và hàng đợi' },
+  container_orchestration: { label: 'Containers and orchestration', labelVi: 'Container và điều phối' },
+  vpn: { label: 'VPN', labelVi: 'VPN' },
+  voip_media: { label: 'VoIP, media and telecom', labelVi: 'VoIP, đa phương tiện và viễn thông' },
+  industrial_ot: { label: 'Industrial control (OT)', labelVi: 'Điều khiển công nghiệp (OT)' },
+  other: { label: 'Other', labelVi: 'Khác' },
+}
+
+/** Kind sources (attribute kind_source), highest confidence first. */
+export const KIND_SOURCES: ReadonlyArray<RegistryValueLabel & { id: string; confidence: number }> = [
+  { id: 'fingerprint', label: 'Protocol fingerprint', labelVi: 'Nhận dạng giao thức', confidence: 95 },
+  { id: 'tls_alpn', label: 'TLS negotiation', labelVi: 'Thương lượng TLS', confidence: 85 },
+  { id: 'http_probe', label: 'HTTP probe', labelVi: 'Thăm dò HTTP', confidence: 80 },
+  { id: 'reported', label: 'Reported by a scanner or import', labelVi: 'Theo báo cáo của trình quét hoặc dữ liệu nhập', confidence: 60 },
+  { id: 'port_guess', label: 'Guessed from the port', labelVi: 'Đoán theo số cổng', confidence: 30 },
+]
+
+/** Service kinds (attribute service_kind) with their category. */
+export const SERVICE_KIND_LABELS: Readonly<Record<string, RegistryValueLabel & { category: string }>> = {
+  http: { label: 'HTTP', labelVi: 'HTTP', category: 'web' },
+  grpc: { label: 'gRPC', labelVi: 'gRPC', category: 'web' },
+  ssh: { label: 'SSH', labelVi: 'SSH', category: 'remote_access' },
+  rdp: { label: 'RDP', labelVi: 'RDP', category: 'remote_access' },
+  vnc: { label: 'VNC', labelVi: 'VNC', category: 'remote_access' },
+  telnet: { label: 'Telnet', labelVi: 'Telnet', category: 'remote_access' },
+  x11: { label: 'X11', labelVi: 'X11', category: 'remote_access' },
+  winrm: { label: 'WinRM', labelVi: 'WinRM', category: 'remote_access' },
+  ipmi: { label: 'IPMI', labelVi: 'IPMI', category: 'remote_access' },
+  teamviewer: { label: 'TeamViewer', labelVi: 'TeamViewer', category: 'remote_access' },
+  anydesk: { label: 'AnyDesk', labelVi: 'AnyDesk', category: 'remote_access' },
+  pcanywhere: { label: 'pcAnywhere', labelVi: 'pcAnywhere', category: 'remote_access' },
+  'citrix-ica': { label: 'Citrix ICA', labelVi: 'Citrix ICA', category: 'remote_access' },
+  rlogin: { label: 'rlogin', labelVi: 'rlogin', category: 'remote_access' },
+  rsh: { label: 'rsh', labelVi: 'rsh', category: 'remote_access' },
+  smb: { label: 'SMB', labelVi: 'SMB', category: 'file_share' },
+  netbios: { label: 'NetBIOS', labelVi: 'NetBIOS', category: 'file_share' },
+  ftp: { label: 'FTP', labelVi: 'FTP', category: 'file_share' },
+  tftp: { label: 'TFTP', labelVi: 'TFTP', category: 'file_share' },
+  nfs: { label: 'NFS', labelVi: 'NFS', category: 'file_share' },
+  rsync: { label: 'rsync', labelVi: 'rsync', category: 'file_share' },
+  afp: { label: 'AFP', labelVi: 'AFP', category: 'file_share' },
+  mysql: { label: 'MySQL', labelVi: 'MySQL', category: 'database' },
+  postgresql: { label: 'PostgreSQL', labelVi: 'PostgreSQL', category: 'database' },
+  mssql: { label: 'Microsoft SQL Server', labelVi: 'Microsoft SQL Server', category: 'database' },
+  oracle: { label: 'Oracle Database', labelVi: 'Oracle Database', category: 'database' },
+  mongodb: { label: 'MongoDB', labelVi: 'MongoDB', category: 'database' },
+  cassandra: { label: 'Cassandra', labelVi: 'Cassandra', category: 'database' },
+  couchdb: { label: 'CouchDB', labelVi: 'CouchDB', category: 'database' },
+  db2: { label: 'IBM Db2', labelVi: 'IBM Db2', category: 'database' },
+  clickhouse: { label: 'ClickHouse', labelVi: 'ClickHouse', category: 'database' },
+  influxdb: { label: 'InfluxDB', labelVi: 'InfluxDB', category: 'database' },
+  neo4j: { label: 'Neo4j', labelVi: 'Neo4j', category: 'database' },
+  sybase: { label: 'SAP ASE (Sybase)', labelVi: 'SAP ASE (Sybase)', category: 'database' },
+  firebird: { label: 'Firebird', labelVi: 'Firebird', category: 'database' },
+  milvus: { label: 'Milvus', labelVi: 'Milvus', category: 'database' },
+  qdrant: { label: 'Qdrant', labelVi: 'Qdrant', category: 'database' },
+  redis: { label: 'Redis', labelVi: 'Redis', category: 'cache' },
+  memcached: { label: 'Memcached', labelVi: 'Memcached', category: 'cache' },
+  elasticsearch: { label: 'Elasticsearch', labelVi: 'Elasticsearch', category: 'search' },
+  solr: { label: 'Solr', labelVi: 'Solr', category: 'search' },
+  smtp: { label: 'SMTP', labelVi: 'SMTP', category: 'mail' },
+  imap: { label: 'IMAP', labelVi: 'IMAP', category: 'mail' },
+  pop3: { label: 'POP3', labelVi: 'POP3', category: 'mail' },
+  managesieve: { label: 'ManageSieve', labelVi: 'ManageSieve', category: 'mail' },
+  ldap: { label: 'LDAP', labelVi: 'LDAP', category: 'directory_auth' },
+  kerberos: { label: 'Kerberos', labelVi: 'Kerberos', category: 'directory_auth' },
+  radius: { label: 'RADIUS', labelVi: 'RADIUS', category: 'directory_auth' },
+  dns: { label: 'DNS', labelVi: 'DNS', category: 'network_mgmt' },
+  snmp: { label: 'SNMP', labelVi: 'SNMP', category: 'network_mgmt' },
+  ntp: { label: 'NTP', labelVi: 'NTP', category: 'network_mgmt' },
+  dhcp: { label: 'DHCP', labelVi: 'DHCP', category: 'network_mgmt' },
+  bgp: { label: 'BGP', labelVi: 'BGP', category: 'network_mgmt' },
+  syslog: { label: 'Syslog', labelVi: 'Syslog', category: 'network_mgmt' },
+  winbox: { label: 'MikroTik Winbox', labelVi: 'MikroTik Winbox', category: 'network_mgmt' },
+  'cisco-smart-install': { label: 'Cisco Smart Install', labelVi: 'Cisco Smart Install', category: 'network_mgmt' },
+  zabbix: { label: 'Zabbix', labelVi: 'Zabbix', category: 'network_mgmt' },
+  nrpe: { label: 'NRPE', labelVi: 'NRPE', category: 'network_mgmt' },
+  rpcbind: { label: 'RPC portmapper', labelVi: 'RPC portmapper', category: 'network_mgmt' },
+  mqtt: { label: 'MQTT', labelVi: 'MQTT', category: 'messaging' },
+  amqp: { label: 'AMQP', labelVi: 'AMQP', category: 'messaging' },
+  kafka: { label: 'Kafka', labelVi: 'Kafka', category: 'messaging' },
+  nats: { label: 'NATS', labelVi: 'NATS', category: 'messaging' },
+  pulsar: { label: 'Pulsar', labelVi: 'Pulsar', category: 'messaging' },
+  openwire: { label: 'ActiveMQ OpenWire', labelVi: 'ActiveMQ OpenWire', category: 'messaging' },
+  zookeeper: { label: 'ZooKeeper', labelVi: 'ZooKeeper', category: 'messaging' },
+  xmpp: { label: 'XMPP', labelVi: 'XMPP', category: 'messaging' },
+  irc: { label: 'IRC', labelVi: 'IRC', category: 'messaging' },
+  smpp: { label: 'SMPP', labelVi: 'SMPP', category: 'messaging' },
+  'docker-api': { label: 'Docker API', labelVi: 'Docker API', category: 'container_orchestration' },
+  'kubernetes-api': { label: 'Kubernetes API', labelVi: 'Kubernetes API', category: 'container_orchestration' },
+  kubelet: { label: 'Kubelet', labelVi: 'Kubelet', category: 'container_orchestration' },
+  etcd: { label: 'etcd', labelVi: 'etcd', category: 'container_orchestration' },
+  consul: { label: 'Consul', labelVi: 'Consul', category: 'container_orchestration' },
+  ipsec: { label: 'IPsec (IKE)', labelVi: 'IPsec (IKE)', category: 'vpn' },
+  openvpn: { label: 'OpenVPN', labelVi: 'OpenVPN', category: 'vpn' },
+  wireguard: { label: 'WireGuard', labelVi: 'WireGuard', category: 'vpn' },
+  l2tp: { label: 'L2TP', labelVi: 'L2TP', category: 'vpn' },
+  sslvpn: { label: 'SSL VPN', labelVi: 'SSL VPN', category: 'vpn' },
+  pptp: { label: 'PPTP', labelVi: 'PPTP', category: 'vpn' },
+  sip: { label: 'SIP', labelVi: 'SIP', category: 'voip_media' },
+  rtsp: { label: 'RTSP', labelVi: 'RTSP', category: 'voip_media' },
+  rtmp: { label: 'RTMP', labelVi: 'RTMP', category: 'voip_media' },
+  h323: { label: 'H.323', labelVi: 'H.323', category: 'voip_media' },
+  iax2: { label: 'IAX2', labelVi: 'IAX2', category: 'voip_media' },
+  mgcp: { label: 'MGCP', labelVi: 'MGCP', category: 'voip_media' },
+  stun: { label: 'STUN/TURN', labelVi: 'STUN/TURN', category: 'voip_media' },
+  sccp: { label: 'Skinny (SCCP)', labelVi: 'Skinny (SCCP)', category: 'voip_media' },
+  diameter: { label: 'Diameter', labelVi: 'Diameter', category: 'voip_media' },
+  gtp: { label: 'GTP', labelVi: 'GTP', category: 'voip_media' },
+  sigtran: { label: 'SIGTRAN', labelVi: 'SIGTRAN', category: 'voip_media' },
+  pfcp: { label: 'PFCP', labelVi: 'PFCP', category: 'voip_media' },
+  modbus: { label: 'Modbus', labelVi: 'Modbus', category: 'industrial_ot' },
+  s7: { label: 'Siemens S7', labelVi: 'Siemens S7', category: 'industrial_ot' },
+  bacnet: { label: 'BACnet', labelVi: 'BACnet', category: 'industrial_ot' },
+  dnp3: { label: 'DNP3', labelVi: 'DNP3', category: 'industrial_ot' },
+  'ethernet-ip': { label: 'EtherNet/IP', labelVi: 'EtherNet/IP', category: 'industrial_ot' },
+  iec104: { label: 'IEC 60870-5-104', labelVi: 'IEC 60870-5-104', category: 'industrial_ot' },
+  opcua: { label: 'OPC UA', labelVi: 'OPC UA', category: 'industrial_ot' },
+  fox: { label: 'Niagara Fox', labelVi: 'Niagara Fox', category: 'industrial_ot' },
+  profinet: { label: 'PROFINET', labelVi: 'PROFINET', category: 'industrial_ot' },
+  codesys: { label: 'CODESYS', labelVi: 'CODESYS', category: 'industrial_ot' },
+  melsec: { label: 'MELSEC', labelVi: 'MELSEC', category: 'industrial_ot' },
+  'omron-fins': { label: 'Omron FINS', labelVi: 'Omron FINS', category: 'industrial_ot' },
+  knxip: { label: 'KNXnet/IP', labelVi: 'KNXnet/IP', category: 'industrial_ot' },
+  'hart-ip': { label: 'HART-IP', labelVi: 'HART-IP', category: 'industrial_ot' },
+  'ge-srtp': { label: 'GE SRTP', labelVi: 'GE SRTP', category: 'industrial_ot' },
+  pcworx: { label: 'PCWorx', labelVi: 'PCWorx', category: 'industrial_ot' },
+  proconos: { label: 'ProConOS', labelVi: 'ProConOS', category: 'industrial_ot' },
+  atg: { label: 'Tank gauge (ATG)', labelVi: 'Tank gauge (ATG)', category: 'industrial_ot' },
+  'crimson-v3': { label: 'Red Lion Crimson V3', labelVi: 'Red Lion Crimson V3', category: 'industrial_ot' },
+  unitronics: { label: 'Unitronics PCOM', labelVi: 'Unitronics PCOM', category: 'industrial_ot' },
+  ethercat: { label: 'EtherCAT', labelVi: 'EtherCAT', category: 'industrial_ot' },
+  'java-rmi': { label: 'Java RMI', labelVi: 'Java RMI', category: 'other' },
+  jdwp: { label: 'Java debug wire (JDWP)', labelVi: 'Java debug wire (JDWP)', category: 'other' },
+  ajp: { label: 'AJP', labelVi: 'AJP', category: 'other' },
+  socks: { label: 'SOCKS proxy', labelVi: 'SOCKS proxy', category: 'other' },
+  msrpc: { label: 'Microsoft RPC', labelVi: 'Microsoft RPC', category: 'other' },
+  ipp: { label: 'IPP (printing)', labelVi: 'IPP (printing)', category: 'other' },
+  jetdirect: { label: 'Printer raw (JetDirect)', labelVi: 'Printer raw (JetDirect)', category: 'other' },
+  svn: { label: 'Subversion', labelVi: 'Subversion', category: 'other' },
+  git: { label: 'Git daemon', labelVi: 'Git daemon', category: 'other' },
+  coap: { label: 'CoAP', labelVi: 'CoAP', category: 'other' },
+  echo: { label: 'Echo', labelVi: 'Echo', category: 'other' },
+}
+
