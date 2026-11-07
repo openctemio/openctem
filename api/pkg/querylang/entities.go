@@ -88,6 +88,13 @@ var findingQueryFields = func() *filterspec.Registry {
 	return reg
 }()
 
+// Paths and fields named more than once below.
+const (
+	pathAssetDomain = "asset.domain"
+	pathAssetIP     = "asset.ip"
+	fieldCVEID      = "cve_id"
+)
+
 // Findings is the findings entity.
 var Findings = MustEntity(EntityDef{
 	Name: "findings", Noun: "findings", Permission: permission.FindingsRead.String(),
@@ -96,16 +103,23 @@ var Findings = MustEntity(EntityDef{
 		"asset.type": "asset_type", "asset.environment": "asset_environment", "asset.exposure": "asset_exposure",
 		"asset.internet_facing": "asset_internet_facing", "asset.crown_jewel": "asset_crown_jewel",
 		"asset.criticality": "asset_criticality", "asset.tag": "asset_tag", "asset.owner_id": "asset_owner_id",
-		"asset.domain": "asset_domain", "asset.name": "asset_name", "asset.ip": "asset_ip",
+		pathAssetDomain: "asset_domain", "asset.name": "asset_name", pathAssetIP: "asset_ip",
 	},
 	// asset_domain and asset_name were their own paths before the asset.
 	// relation named them; stored queries keep working.
-	Aliases:   map[string]string{"asset_domain": "asset.domain", "asset_name": "asset.name"},
+	// Short names people type (the printer prints the path).
+	Aliases: map[string]string{"asset_domain": pathAssetDomain, "asset_name": "asset.name",
+		"cve": fieldCVEID, "kev": "is_in_kev", "epss": "epss_score", "cvss": "cvss_score", "tool": "tool_name", "rule": "rule_id",
+		"priority": "priority_class", "sla": "sla_status", "assignee": "assigned_to", "port": "network_port",
+		"service": "network_service", "transport": "network_transport", "last_seen": "last_seen_at", "age": "first_detected_at",
+		"domain": pathAssetDomain, "ip": pathAssetIP, "criticality": "asset.criticality", "environment": "asset.environment",
+		"exposure": "asset.exposure", "internet_facing": "asset.internet_facing", "crown_jewel": "asset.crown_jewel"},
+	BareAddress: pathAssetIP, BareCVE: fieldCVEID,
 	Internal:  []string{"program_asset", "text_search"},
 	TextField: "text_search",
 	Dimensions: []string{
 		"severity", "status", "source", "sla_status", "priority_class", "finding_type", "observation", "validation",
-		"tool_name", "family", "cve_id", "rule_id", "is_in_kev", "is_reachable", "network_transport", "network_service",
+		"tool_name", "family", fieldCVEID, "rule_id", "is_in_kev", "is_reachable", "network_transport", "network_service",
 		"asset.type", "asset.criticality", "asset.environment", "asset.exposure", "asset.internet_facing", "asset.crown_jewel",
 	},
 	Measures: []string{"cvss_score", "epss_score"},
@@ -137,9 +151,10 @@ var assetQueryFields = func() *filterspec.Registry {
 // Assets is the assets entity.
 var Assets = MustEntity(EntityDef{
 	Name: "assets", Noun: "assets", Permission: permission.AssetsRead.String(),
-	Registry:  assetQueryFields,
-	Internal:  []string{"deleted", "program_only", "text_search"},
-	TextField: "text_search",
+	Registry:    assetQueryFields,
+	Internal:    []string{"deleted", "program_only", "text_search"},
+	TextField:   "text_search",
+	BareAddress: "ip",
 	Dimensions: []string{
 		"type", "sub_type", "criticality", "status", "scope", "exposure", "environment", "data_classification",
 		"internet_facing", "crown_jewel", "discovery_source", "provider",
