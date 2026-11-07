@@ -121,6 +121,10 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
+// @Param  practice  query  []string  false  "practice: any of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
@@ -308,6 +312,10 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
+// @Param  practice  query  []string  false  "practice: any of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
