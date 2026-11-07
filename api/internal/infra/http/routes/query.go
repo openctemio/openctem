@@ -15,6 +15,9 @@ import (
 const (
 	queryBurst = 30
 	queryRPS   = 1
+	// Parsing reads no data: a burst of 30, 5 per second.
+	parseBurst = 30
+	parseRPS   = 5
 )
 
 // registerQueryRoutes mounts /api/v1/query (custom queries,
@@ -28,10 +31,16 @@ func registerQueryRoutes(router Router, h *handler.QueryHandler, authMiddleware,
 	limiter := middleware.NewRateLimiter(&config.RateLimitConfig{
 		Enabled: true, RequestsPerSec: queryRPS, Burst: queryBurst, CleanupInterval: time.Minute,
 	}, log)
+	parseLimiter := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled: true, RequestsPerSec: parseRPS, Burst: parseBurst, CleanupInterval: time.Minute,
+	}, log)
 	read := middleware.RequireAny(permission.FindingsRead, permission.AssetsRead)
 	router.Group("/api/v1/query", func(r Router) {
 		r.GET("/schema", h.Schema, read)
 		r.POST("/explain", h.Explain, read, limiter.UserMiddleware())
+		// Search box filters: text, document or params to a checked document
+		// (nothing runs; the entity's own permission is checked inside).
+		r.POST("/parse", h.Parse, read, parseLimiter.UserMiddleware())
 		r.POST("/run", h.Run, read, limiter.UserMiddleware())
 		// Pure text conversion of a findings list filter (nothing runs).
 		r.POST("/from-filters", h.FromFilters, middleware.Require(permission.FindingsRead), limiter.UserMiddleware())

@@ -109,3 +109,30 @@ func TestQueryFromFilters(t *testing.T) {
 		t.Fatalf("bad value = %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestQueryHandler_Parse(t *testing.T) {
+	h := NewQueryHandler(queryapp.NewService(fakeQueryExec{}, nil, logger.NewNop()), logger.NewNop())
+
+	rec := queryRequest(t, h.Parse, `{"entity":"findings","text":"severity>=high 10.0.0.0/8 log4j"}`, true)
+	var res queryapp.ParseResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil || rec.Code != http.StatusOK || !res.Valid ||
+		res.Text != "severity>=high asset.ip=10.0.0.0/8 log4j" || res.Params["asset_ip"] != "10.0.0.0/8" {
+		t.Fatalf("parse = %d %s", rec.Code, rec.Body)
+	}
+	// A problem is 200 with valid false and a code.
+	rec = queryRequest(t, h.Parse, `{"entity":"findings","text":"severty=high"}`, true)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"code":"unknown_field"`) ||
+		!strings.Contains(rec.Body.String(), `"suggestions":["severity"]`) {
+		t.Fatalf("problem = %d %s", rec.Code, rec.Body)
+	}
+	// A member without findings:read is refused; bad bodies are 400.
+	rec = queryRequest(t, h.Parse, `{"entity":"findings","text":"x"}`, false)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("no permission = %d %s", rec.Code, rec.Body)
+	}
+	for _, body := range []string{`{"entity":"findings","text":"x","params":"q=x"}`, `{"entity":"findings","sql":"x"}`, `[`} {
+		if rec := queryRequest(t, h.Parse, body, true); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d %s", body, rec.Code, rec.Body)
+		}
+	}
+}

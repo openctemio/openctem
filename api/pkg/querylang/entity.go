@@ -220,6 +220,9 @@ func (e *Entity) fieldName(path string) string {
 	return path
 }
 
+// PathOf returns the canonical language path of a registry field.
+func (e *Entity) PathOf(field string) string { return e.pathOf(field) }
+
 // pathOf maps a registry field name back to its language path.
 func (e *Entity) pathOf(field string) string {
 	for p, f := range e.paths {
