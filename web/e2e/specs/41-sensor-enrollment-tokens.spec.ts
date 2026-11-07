@@ -12,6 +12,10 @@ import { test, expect } from '../fixtures/authenticated-page'
 const AXE = path.resolve(__dirname, '../../node_modules/axe-core/axe.min.js')
 
 async function seriousAxeIn(page: Page, selector: string) {
+  // A dialog fades and slides in over 200ms; axe reads the blended colour of
+  // text mid-animation (partly transparent over the overlay), which fails
+  // color-contrast though the settled tokens pass. Measure the settled page.
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)))
   await page.addScriptTag({ path: AXE })
   const result = await page.evaluate(async (sel) => {
     const w = window as unknown as {
