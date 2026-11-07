@@ -771,8 +771,11 @@ Live data showed one 72-target httpx task holding the template stage for about
 task costs well under a second: the cost was the barrier, not the hops.
 
 - **When a step streams.** A pending step whose dependencies all finished
-  except one, that one queued or running with at least one completed task,
-  and whose stage feeds the step's. Never: an intrusive (T2) stage, a web
+  except one, that one queued or running with at least one completed task
+  that can feed it, and whose stage feeds the step's. A completed task whose
+  reach summary says it reached none of its targets (a host discovery chunk
+  whose probes never left the sensor) does not count: streaming from it would
+  start the step on its seeds alone, the whole range of a swept scan. Never: an intrusive (T2) stage, a web
   stage that selects endpoints since the run started (`endpoint_selector`
   other than `all`), a step with two or more unfinished dependencies, a step
   its condition, the scan's intensity or the run's depth skips.
@@ -796,6 +799,15 @@ task costs well under a second: the cost was the barrier, not the hops.
   is retried on the next event or by the stall repair; a wave whose dispatch
   fails, or comes too close to the run's deadline, records its targets as
   the run's unfinished targets.
+- **Source fails after the step started.** A streamed step whose source then
+  ends without results (failed, skipped, timed out, canceled) stops, unless the
+  workflow continues on a failed dependency: its stream closes, its open
+  commands are canceled (`CancelOpenByStepRun`, tenant-scoped; the holding
+  sensor is told to stop), and it settles `DEPENDENCY_FAILED`, skipped when
+  none of its tasks finished and `partial` when some did (they keep their
+  results). It is the barrier rule (a step whose dependency did not succeed
+  is skipped) applied to a step that started early. Metric outcome
+  `stop/dependency_failed`.
 - **Smaller source tasks.** A step a successor streams from is cut into about
   four tasks (at least 10 targets each, never above the capability's chunk
   size), so the successor starts on the first quarter of the hosts.
@@ -808,3 +820,35 @@ task costs well under a second: the cost was the barrier, not the hops.
   `scan_stage_stream_waves_total{kind,outcome}`,
   `scan_stage_time_to_first_successor_seconds{mode}`,
   `scan_stage_barrier_wait_saved_seconds`.
+
+## 5. Effective config of a step run
+
+A run with no findings has to say what it looked for. Every step run records what it ran with, in two columns of
+`scan_run_steps` (both nullable jsonb; old rows stay empty):
+
+- `effective_config`: written when the step's first command is created (`scanrun.recordEffectiveConfig`, used by the
+  first dispatch and by every streamed wave through `dispatchStep`). It lists the standard params of the step's
+  capability that the command carries, each as `{value, source}`, plus the tool, capability and depth:
+  `{"params": {"severity": {"value": ["low","high"], "source": "depth_overlay"}}, "tool": "nuclei", "depth": "standard"}`.
+  The source is the highest layer that sets that value, in this order: `stage_fixed` (a setting the tool always runs the
+  capability with, such as the nuclei takeover tags), `scan_override` (the run context's `step_params`, keyed by step key),
+  `depth_overlay` (`run_policy.depths[depth].params`), `template_step` (the step's config) and `default_port_set` (the
+  platform's top ports for a port scan that names none). A value no layer explains is left out, never guessed. The
+  capability default layer is not recorded yet. Only standard params are read, so a header or credential set on a
+  pinned tool never reaches the record; at most 32 params, 2 KiB per value.
+- `sensor_settings`: written when the sensor's result arrives (`OnStepCompletedPartial`). It holds what the sensor says it
+  ran with (`effective_settings` in the result metadata) and the config keys it ignored (`ignored_config_keys`). The
+  sensor is not trusted: the document is parsed defensively, bounded (32 settings, 32 ignored keys, 256 characters per
+  string, 16 KiB in), cleaned of control characters, limited to strings, numbers, booleans and short string lists, and a
+  setting whose name looks like a credential (header, token, key, secret, auth, cookie) is dropped. It is shown only; no
+  platform code reads it to widen anything.
+
+Both writes go through `scanrun.StepRunConfigRecorder` and are scoped to the tenant through the step run's scan run, so a
+step run of another tenant is never written. The API returns both on a step run (`effective_config`, `sensor_settings`)
+and a compact `ran_with` (severity, tags, excluded tags with their source, and the sensor's ignored keys) on each node of
+the run map. The console shows it on the run map card and the step panel.
+
+In the workflow editor the inspector shows the depth overlay values of the step (standard and deep) under the step's own
+settings and lets the author edit them per depth; a step setting that a depth replaces is marked. System templates show
+the values read-only. The save request carries `run_policy`, so editing a workflow no longer resets its depth overlays.
+

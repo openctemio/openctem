@@ -35,7 +35,23 @@ const (
 	// with a default page, so template checks run on the named service and
 	// the address twin would only repeat them on the wrong page.
 	RequiresNoNamedTwin = "no_named_twin"
+	// RequiresOriginScopeEntry: an active scope entry names the web
+	// service's host itself (inherited standing is not enough): a domain or
+	// subdomain entry covering a host name, or an address entry naming an
+	// address host exactly.
+	RequiresOriginScopeEntry = "origin_scope_entry"
+	// RequiresInventoryChanged: the web service has endpoints first seen
+	// since the capability last succeeded on it (never succeeded: any
+	// endpoint). Path discovery's change token: it runs again only when the
+	// inventory gives its derived list something new.
+	RequiresInventoryChanged = "inventory_changed"
+	// RequiresEdgeClear: the last HTTP probe or template run of the web
+	// service was not challenged or blocked by an edge protection.
+	RequiresEdgeClear = "edge_clear"
 )
+
+// CapabilityEnumerateWebPaths is path discovery's ledger capability.
+const CapabilityEnumerateWebPaths = "enumerate.web_paths"
 
 // WebPorts are the ports an HTTP probe takes from an open port. A web
 // service on another port is found by the probe of its name.

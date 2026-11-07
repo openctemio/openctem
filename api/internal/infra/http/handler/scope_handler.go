@@ -366,7 +366,8 @@ type ScopeTargetResponse struct {
 	Description string     `json:"description,omitempty"`
 	Reason      string     `json:"reason,omitempty"`
 	Priority    int        `json:"priority"`
-	// Status: active, pending, inactive, rejected or expired.
+	// Status: active, pending, inactive, rejected, expired or superseded
+	// (its pattern was replaced, see SupersededByID).
 	Status string `json:"status"`
 	// InEffect: the entry authorizes probes now (active, not expired).
 	InEffect          bool                    `json:"in_effect"`
@@ -400,6 +401,10 @@ type ScopeTargetResponse struct {
 	Discovery bool      `json:"discovery"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// SupersedesID is the entry this one replaces (a pattern replacement);
+	// SupersededByID the entry that replaced this one.
+	SupersedesID   *string `json:"supersedes_id,omitempty"`
+	SupersededByID *string `json:"superseded_by_id,omitempty"`
 	// Join is set on a change that came into effect or changed an entry in
 	// effect: the names waiting for review the entry confirmed.
 	Join *ScopeJoinResponse `json:"join,omitempty"`
@@ -632,7 +637,17 @@ func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 		Discovery:           t.Discovery(),
 		CreatedAt:           t.CreatedAt(),
 		UpdatedAt:           t.UpdatedAt(),
+		SupersedesID:        idStringPtr(t.Supersedes()),
+		SupersededByID:      idStringPtr(t.SupersededBy()),
 	}
+}
+
+func idStringPtr(id *shared.ID) *string {
+	if id == nil {
+		return nil
+	}
+	v := id.String()
+	return &v
 }
 
 func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
@@ -1796,7 +1811,7 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		case scopedom.RefusalTierExceeds:
 			rule = explain.Ceiling(res.Target)
 		}
-		ref := scopedom.NewRefusal(res.Target, code, rule, explain.OneOffDays())
+		ref := scopedom.NewRefusal(res.Target, code, rule, explain.OneOffDays()).WithSensor(res.SensorID)
 		if code == scopedom.RefusalTierExceeds {
 			ref = scopedom.NewTierRefusal(res.Target, rule, scopedom.Tier(min(max(tier, 0), int(scopedom.TierIntrusive))), explain.OneOffDays())
 		}

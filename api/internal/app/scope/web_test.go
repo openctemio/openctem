@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/contract/webpath"
+
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -236,5 +238,34 @@ func TestBuildWebScope_EscapedAndWildcardPrefixes(t *testing.T) {
 	want := []string{"/files/My Docs", "/files/My%20Docs", "/tenants/"}
 	if err != nil || ws == nil || !slices.Equal(ws.DenyPaths, want) {
 		t.Fatalf("scope = %+v, %v; want deny paths %q", ws, err, want)
+	}
+}
+
+// SECURITY: a web job's scope keeps the deny paths as written beside the cut
+// form, for a sensor that reads "*" segments; without a wildcard rule there is
+// no second list. The cut form still denies everything the written form does.
+func TestBuildWebScope_WildcardForm(t *testing.T) {
+	tenantID := shared.NewID()
+	svc := newFilterService(&fakeExclusionRepo{active: []*scopedom.Exclusion{
+		pathExclusion(t, tenantID, "*", "/tenants/*/admin", nil, scopedom.TestingBlocked, nil),
+		pathExclusion(t, tenantID, "*", "/logout", nil, scopedom.TestingBlocked, nil),
+	}})
+	ws, err := svc.BuildWebScope(context.Background(), tenantID, []string{"https://app.example.com"})
+	if err != nil || ws == nil {
+		t.Fatalf("%+v %v", ws, err)
+	}
+	if !slices.Equal(ws.DenyPaths, []string{"/logout", "/tenants/"}) || !slices.Equal(ws.DenyPathsWildcard, []string{"/logout", "/tenants/*/admin"}) {
+		t.Fatalf("cut %v, written %v", ws.DenyPaths, ws.DenyPathsWildcard)
+	}
+	for _, p := range []string{"/tenants/7/admin", "/logout"} {
+		if _, denied := webpath.Denied(p, ws.DenyPaths); !denied {
+			t.Errorf("the cut form lets %s through", p)
+		}
+	}
+	plain := newFilterService(&fakeExclusionRepo{active: []*scopedom.Exclusion{
+		pathExclusion(t, tenantID, "*", "/logout", nil, scopedom.TestingBlocked, nil)}})
+	ws, _ = plain.BuildWebScope(context.Background(), tenantID, []string{"https://app.example.com"})
+	if ws == nil || ws.DenyPathsWildcard != nil {
+		t.Fatalf("no wildcard rule, yet a second list: %+v", ws)
 	}
 }

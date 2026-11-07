@@ -199,6 +199,9 @@ func buildLeaf(f *Field, op Op, raw []string, maxValues int, now time.Time, fail
 			}
 		default:
 			v, err = parseScalar(f, r, now, op == OpLte)
+			if s, isStr := v.(string); err == nil && isStr && f.Normalize != nil {
+				v, err = f.Normalize(s)
+			}
 		}
 		if err != nil {
 			fail(err.Error(), r)

@@ -29,6 +29,7 @@ import type {
   SensorActivityResponse,
   SensorManifestListResponse,
   SensorConfigReport,
+  SensorCoreAddressesResponse,
   SensorHeartbeatHistoryResponse,
   SensorProduct,
   SensorSdkStatus,
@@ -350,6 +351,21 @@ export function useSensorConfigReport(sensorId: string | null, enabled = true) {
     onError: silentOnError,
     refreshInterval: SENSOR_REFRESH_MS * 2,
   })
+}
+
+/**
+ * The core infrastructure addresses the tenant's sensors reported (GET
+ * /sensors/core-addresses), for the scan form's warning. Errors stay silent:
+ * no answer means no warning, never a blocked form.
+ */
+export function useSensorCoreAddresses(enabled = true) {
+  const { currentTenant } = useTenant()
+  const key = currentTenant && enabled ? sensorEndpoints.coreAddresses() : null
+  return useSWR<SensorCoreAddressesResponse>(
+    key,
+    (url: string) => get<SensorCoreAddressesResponse>(url),
+    { ...defaultConfig, onError: silentOnError, revalidateOnFocus: false }
+  )
 }
 
 /**

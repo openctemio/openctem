@@ -356,3 +356,33 @@ func TestService_PreviewAndEvaluateRespectDataScope(t *testing.T) {
 		t.Fatalf("full-access preview = %+v", p)
 	}
 }
+
+type tagInvalidations struct{ tenants []shared.ID }
+
+func (i *tagInvalidations) Invalidate(t shared.ID) { i.tenants = append(i.tenants, t) }
+
+// A saved window changes which tags are governing at once: the governing-tag
+// set of that tenant is dropped after every create, update and delete.
+func TestService_PolicyChangesInvalidateTheGoverningTagSet(t *testing.T) {
+	f := newSvcFixture()
+	inv := &tagInvalidations{}
+	f.svc.SetTagRulesInvalidator(inv)
+	v, err := f.svc.Create(context.Background(), f.tenant, bizSpec(), f.actx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.Update(context.Background(), f.tenant, v.ID.String(), func(s *swdom.Spec) { s.Enabled = false }, f.actx()); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Delete(context.Background(), f.tenant, v.ID.String(), f.actx()); err != nil {
+		t.Fatal(err)
+	}
+	if len(inv.tenants) != 3 {
+		t.Fatalf("invalidated %d times, want after every change", len(inv.tenants))
+	}
+	for _, id := range inv.tenants {
+		if id != f.tenant {
+			t.Fatalf("invalidated tenant %s, want %s", id, f.tenant)
+		}
+	}
+}

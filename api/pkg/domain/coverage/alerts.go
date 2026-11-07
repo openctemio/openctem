@@ -202,6 +202,10 @@ func ActionFor(c AlertCondition) AlertAction {
 		return AlertAction{"It resumes at 00:00 UTC; add your own sensor to scan more.", "/sensors"}
 	case ReadyContentMissing:
 		return AlertAction{"Ask the instance administrator to import the platform wordlist pack; coverage resumes on its own.", "/settings/scanning/tools"}
+	case ReadySwitchedOff:
+		return AlertAction{"Turn path discovery on in the scope settings to run it.", "/scope"}
+	case ReadyBudgetSpent:
+		return AlertAction{"The deferred origins run when the daily request budget allows; nothing to do.", "/scope"}
 	case ReadyFeatureOff:
 		return AlertAction{"Turn screenshots on in the attack surface monitoring settings if your organization wants them; the pairs become due at once.", "/attack-surface"}
 	case ReadyNotClaimed:
@@ -224,6 +228,8 @@ var readinessText = map[string]string{
 	ReadyQuotaExhausted:     "today's shared scanning quota is used up",
 	ReadyNotClaimed:         "no sensor took its last runs",
 	ReadyContentMissing:     "the platform has no wordlist pack for its tool yet",
+	ReadySwitchedOff:        "the organization turned it off",
+	ReadyBudgetSpent:        "today's request budget is spent; the rest is deferred",
 	ReadyFeatureOff:         "screenshots are off for this organization",
 }
 

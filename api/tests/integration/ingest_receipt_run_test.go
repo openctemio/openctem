@@ -49,4 +49,18 @@ func TestIngestReceipt_SensorRunWithCoverage(t *testing.T) {
 	if gone != "closed" || kept != "still_detected" {
 		t.Fatalf("actions: gone %q, kept %q", gone, kept)
 	}
+	// The sensor's report is a sighting of the finding it saw again (a
+	// task: a command outside a scan run), from its own sensor; the closed
+	// one gets none from this receipt.
+	var rule, channel, tool string
+	var withSensor bool
+	if err := rr.r.db.QueryRowContext(context.Background(), `
+		SELECT f.rule_id, s.channel, s.tool, s.sensor_id IS NOT NULL
+		FROM finding_sightings s JOIN findings f ON f.id = s.finding_id
+		WHERE s.tenant_id = $1 AND s.last_receipt_id = $2`, rr.tn.tenant.String(), id).Scan(&rule, &channel, &tool, &withSensor); err != nil {
+		t.Fatalf("one sighting on the run's receipt: %v", err)
+	}
+	if rule != "a" || channel != string(ingestreceipt.ChannelTask) || tool != "semgrep" || !withSensor {
+		t.Fatalf("sighting: rule %q channel %q tool %q sensor %v", rule, channel, tool, withSensor)
+	}
 }

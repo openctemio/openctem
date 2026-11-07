@@ -18,6 +18,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
@@ -136,7 +137,7 @@ func (s *Service) approveUnderPolicy(ctx context.Context, rule *Rule, input Appr
 		if s.stepUp == nil {
 			return nil, ErrStepUpNotWired
 		}
-		if err := s.stepUp.RequireRecentAuth(ctx, input.ApprovedBy.String()); err != nil {
+		if err := stepup.Require(ctx, s.stepUp, input.ApprovedBy.String(), stepup.TierSensitive); err != nil {
 			return nil, err
 		}
 	}

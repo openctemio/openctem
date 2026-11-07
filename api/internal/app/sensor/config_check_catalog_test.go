@@ -32,7 +32,9 @@ var contractChecks = map[string][]string{
 	"policy.template_keys":       {"ok", "not_needed", "missing"},
 	"runtime.command_poller":     {"running", "stopped"},
 	"runtime.task_root_memory":   {"in_memory", "on_disk"},
-	"runtime.sandbox_network":    {"confined", "userns_blocked", "userns_restricted", "off", "sandbox_off", "unavailable"},
+	"runtime.control_dns":        {"resolving", "address_literal", "via_proxy", "plain_http", "cached_address", "lookup_failed", "recovered"},
+	"network.core_addresses":     {"listed", "not_reported", "none_known"},
+	"runtime.sandbox_network":    {"confined", "userns_disabled_host", "userns_blocked", "userns_restricted", "off", "sandbox_off", "unavailable"},
 	// openctemio/sensor
 	"config.file_unknown_key":  {"unknown_key"},
 	"config.file_unset_var":    {"unset_var"},
@@ -75,6 +77,7 @@ func fullParams() map[string]sensordom.ConfigParam {
 		"tool": {Name: "semgrep"}, "path": {Path: "/var/lib/openctem/state"}, "name": {Name: "SSL_CERT_FILE"},
 		"replacement": {Name: "SENSOR_TOOLS"}, "suggestion": {Name: "SENSOR_MAX_JOBS"}, "key": {Name: "max_job"},
 		"vars": {Names: []string{"HTTPS_PROXY", "NO_PROXY"}}, "count": {Int: &n}, "exit_code": {Int: &n},
+		"host": {Host: "platform.example.com"}, "cause": {Enum: "server_misbehaving"},
 	}
 }
 

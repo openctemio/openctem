@@ -94,8 +94,22 @@ export interface RefusalGroup {
   remedies: GroupRemedy[]
 }
 
+const warnedCodes = new Set<string>()
+
+/** Whether the group of this code is known (not the fallback). */
+export function isKnownRefusalCode(code: string | undefined): boolean {
+  return Object.hasOwn(KIND_OF_CODE, code ?? '')
+}
+
 export function refusalKind(code: string | undefined): RefusalGroupKind {
-  return KIND_OF_CODE[code ?? ''] ?? 'invalid'
+  if (isKnownRefusalCode(code)) return KIND_OF_CODE[code as string]
+  // An unmapped code lands in "invalid" with the server's own reason; say so
+  // in development so the missing mapping is added, not hidden.
+  if (code && process.env.NODE_ENV !== 'production' && !warnedCodes.has(code)) {
+    warnedCodes.add(code)
+    console.warn(`refusal-groups: unknown refusal code "${code}", grouped as invalid`)
+  }
+  return 'invalid'
 }
 
 /** Fix actions that change one shared thing (an entry), safe to offer once. */
@@ -182,4 +196,21 @@ export function internalAddressOf(r: ApiScopeCheckResult): string | undefined {
   const t = (r.target ?? '').trim()
   if (IPV4.test(t) || (t.includes(':') && /^[0-9a-f:]+$/i.test(t))) return t
   return undefined
+}
+
+const RANGE = /^(\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?|[0-9a-f]*:[0-9a-f:]+(\/\d{1,3})?)$/i
+
+/**
+ * The addresses and ranges to start a scan zone with for a zone group: the
+ * target when it is an address or CIDR range, else the address it resolved to.
+ * Distinct, in the group's order.
+ */
+export function zoneRangesOf(g: RefusalGroup): string[] {
+  const out: string[] = []
+  for (const r of g.results) {
+    const t = (r.target ?? '').trim()
+    const v = RANGE.test(t) ? t : internalAddressOf(r)
+    if (v && !out.includes(v)) out.push(v)
+  }
+  return out
 }

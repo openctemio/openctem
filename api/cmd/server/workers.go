@@ -1086,6 +1086,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
 	}
 
+	// Domain membership of assets: drain the queue that database triggers
+	// fill on every asset and edge change (docs/architecture/asset-domain-membership.md).
+	w.ControllerManager.Register(controller.NewAssetDomainMembershipController(postgres.NewAssetDomainMembershipRepository(&postgres.DB{DB: deps.DB}), 0))
+
 	// Durable jobs: ticket status sync and invitation e-mails, queued in the
 	// transaction of the change that needs them.
 	if svc != nil {
@@ -1136,6 +1140,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc != nil && svc.ScopeEffects != nil {
 		w.ControllerManager.Register(controller.NewScopeEffectsController(
 			svc.ScopeEffects, 5*time.Minute, log.With("controller", "scope-effects"),
+		))
+	}
+	// Asset liveness: liveness states with their guards, findings of gone
+	// assets closed as obsolete (where the organization turned it on) and
+	// reopened when the asset is seen again.
+	if svc != nil && svc.AssetLiveness != nil {
+		svc.AssetLiveness.EnableNotifications(repos.MemberLifecycle, svc.Notification)
+		w.ControllerManager.Register(controller.NewAssetLivenessController(
+			svc.AssetLiveness, 15*time.Minute, log.With("controller", "asset-liveness"),
 		))
 	}
 	// Tasks from a query in auto mode: add new matches as each task's owner
@@ -1387,6 +1400,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AssetCoverage.EnableReadiness(svc.Scan)
 			// A port scan that carried a name's addresses settles the name.
 			svc.AssetCoverage.WithAddressReader(repos.Attribution)
+			// Path discovery (enumerate.web_paths): the organization's
+			// switch, the daily request budget and the per-target program
+			// and shared-edge refusals (docs/architecture/web-discovery.md).
+			svc.AssetCoverage.SetPathDiscovery(svc.PathDiscovery)
 			// No scope entry pauses coverage only when unclassified assets
 			// are not scanned (RFC-054 §16): otherwise the gate decides per
 			// target, low-impact for what no entry covers.
@@ -1418,6 +1435,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	lifecycleWorker := assetapp.NewAssetLifecycleWorker(deps.DB, repos.Tenant, log)
 	lifecycleWorker.SetAuditService(svc.Audit)
 	lifecycleWorker.SetStateHistoryRepository(repos.AssetStateHistory)
+	if svc.AssetLiveness != nil {
+		lifecycleWorker.SetLivenessPreview(svc.AssetLiveness)
+	}
 	w.ControllerManager.Register(controller.NewAssetLifecycleController(
 		lifecycleWorker,
 		repos.Tenant,

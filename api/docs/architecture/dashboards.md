@@ -455,6 +455,10 @@ receipt or on the discovery tool whose report named the software.
 - Health: `failed` when the latest receipt failed; `stale` when nothing
   came for more than twice the usual interval and at least a day; `ok`
   otherwise. A source with fewer than three receipts is never stale.
+- A source whose senders include a stale one is stale, and its note names
+  that sender's own last receipt (`health_last_at`), not the freshest
+  sender's. A sender's `released` is its reports applied from the results
+  quarantine; the card says "Includes N released from quarantine".
 - Noise: received splits into new or reopened (created plus reopened:
   the receipt list's New and Reopened totals added), merged into findings
   that exist (the rest after new, reopened and not stored: still detected
@@ -1425,9 +1429,24 @@ Rules every visualization follows:
   `aria-describedby` while open) gives the title, two or three figures, the
   definition and a link to the same list as the figure; Escape, moving the
   pointer out or moving focus out closes it; the second tap on touch follows
-  the link. A healthy source's wire carries a moving dash (static under
-  reduced motion); stale is a dotted amber line and failed a dotted red line,
-  and the row says so in words.
+  the link. A healthy source's wire carries a travelling light (a short
+  bright dash, a CSS animation of `stroke-dashoffset` only, so no layout per
+  frame); its speed follows the findings received on a log scale
+  (`flowDuration`, 3.2 s per cycle for the smallest to 1.1 s for the
+  largest), and a wire with nothing received is a thin dashed still line.
+  The lights stop off screen and in a hidden tab (`FlowWireLayer`, an
+  `IntersectionObserver` and `visibilitychange` set `data-flow-paused`) and
+  are not drawn at all under reduced motion or `data-motion="off"`; width,
+  line style and the row's figure carry everything the motion repeats.
+  Stale is a dotted amber line and failed a dotted red line, still, and the
+  row says so in words.
+- **Source wires.** Every shown source row has a wire, by tool and by
+  instance (`sourceWires` in `source-view.tsx`, shared by both widgets). A
+  wire always carries the findings the row sent, the only thing that enters
+  the findings funnel: ranked by assets, a discovery source's bar shows its
+  assets while its wire stays thin and dashed, and a line under the
+  switchers says that the lines carry findings only. Rows behind "Show all"
+  have no wire.
 - **Receipt list.** `/findings/imports` lists the receipts with the filters
   of the figure that opened it (`origin`, `tool`, `since`, removable chips)
   and the API's totals of the filter above the list, so the totals equal

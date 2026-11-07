@@ -166,6 +166,17 @@ func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, repo
 	}
 }
 
+// infoMatchesRouted reports whether this ingest files the tool's info
+// matches as exposures instead of findings (a template scanner, the
+// projection wired, the organization's setting off). A covered run of such
+// a tool then never reports an informational match as a finding, so its
+// absence from the run proves nothing: coverage auto-resolve leaves the
+// informational findings of the tool alone (they move to exposures with
+// their own closure reason, never as fixed).
+func (s *Service) infoMatchesRouted(ctx context.Context, tenantID shared.ID, tool string) bool {
+	return s.templateMatches != nil && templateScanner(tool) && !s.infoMatchesAsFindings(ctx, tenantID)
+}
+
 // infoMatchesAsFindings reads the organization's choice (false when the
 // tenant cannot be read: the default).
 func (s *Service) infoMatchesAsFindings(ctx context.Context, tenantID shared.ID) bool {
