@@ -253,11 +253,14 @@ func TestRangeHostBits(t *testing.T) {
 // and inventory are refused, an unnamed mode becomes liveness, and a
 // workflow without host discovery is refused.
 func TestApplyCIDRMode_LargeRange(t *testing.T) {
-	plain := shared.NewID()
-	s := &Service{stepRepo: workflowSteps{by: map[shared.ID][]*scanworkflow.Step{plain: {{StepKey: "ports", Tool: "naabu"}}}}}
+	plain, network := shared.NewID(), shared.NewID()
+	s := &Service{stepRepo: workflowSteps{by: map[shared.ID][]*scanworkflow.Step{
+		plain:   {{StepKey: "ports", Tool: "naabu"}},
+		network: {{StepKey: "hosts", Capabilities: []string{"discover.hosts"}}, {StepKey: "ports", Capabilities: []string{"scan.ports"}}},
+	}}}
 	ctx := context.Background()
 	for _, mode := range []scan.CIDRMode{scan.CIDRModeSweep, scan.CIDRModeInventory} {
-		sc := rangeScan(t, "10.0.0.0/8")
+		sc := workflowScan(t, network, "10.0.0.0/8")
 		if err := sc.SetTargetOptions(scan.TargetOptions{CIDRMode: mode}); err != nil {
 			t.Fatal(err)
 		}
@@ -266,7 +269,8 @@ func TestApplyCIDRMode_LargeRange(t *testing.T) {
 			t.Fatalf("%s: err = %v", mode, err)
 		}
 	}
-	sc := rangeScan(t, "10.0.0.0/8")
+	// A workflow that finds hosts first takes a /8, live hosts first.
+	sc := workflowScan(t, network, "10.0.0.0/8")
 	if err := s.applyCIDRMode(ctx, sc, false); err != nil || sc.TargetOptions.CIDRMode != scan.CIDRModeLiveness {
 		t.Fatalf("mode = %q, err = %v", sc.TargetOptions.CIDRMode, err)
 	}
@@ -278,6 +282,31 @@ func TestApplyCIDRMode_LargeRange(t *testing.T) {
 	small := workflowScan(t, plain, "10.0.0.0/16")
 	if err := s.applyCIDRMode(ctx, small, false); err != nil || small.TargetOptions.CIDRMode != "" {
 		t.Fatalf("/16: mode = %q, err = %v", small.TargetOptions.CIDRMode, err)
+	}
+}
+
+// A single-scanner scan never takes a range wider than a /16: its scanner
+// (a port scanner here) would probe every address of the range, so live
+// hosts first cannot hold. Explicit liveness, an unnamed mode and an edit
+// are all refused; a /16 is still accepted.
+func TestApplyCIDRMode_SingleScannerRefusesLargeRange(t *testing.T) {
+	ctx := context.Background()
+	s := &Service{}
+	for _, explicit := range []bool{false, true} {
+		for _, mode := range []scan.CIDRMode{"", scan.CIDRModeLiveness} {
+			sc := rangeScan(t, "10.0.0.0/8")
+			sc.ScannerName = "naabu"
+			sc.TargetOptions.CIDRMode = mode
+			var de *shared.DomainError
+			if err := s.applyCIDRMode(ctx, sc, explicit); !errors.As(err, &de) || de.Code != CodeLivenessNeedsHostDiscovery {
+				t.Fatalf("explicit=%v mode=%q: a single port scanner took a /8: %v", explicit, mode, err)
+			}
+		}
+	}
+	small := rangeScan(t, "10.0.0.0/16")
+	small.ScannerName = "naabu"
+	if err := s.applyCIDRMode(ctx, small, false); err != nil {
+		t.Fatalf("/16: %v", err)
 	}
 }
 
@@ -312,4 +341,52 @@ func BenchmarkLargeRangeSplit(b *testing.B) {
 		pieces = len(got.Allowed)
 	}
 	b.ReportMetric(float64(pieces), "chunks")
+}
+
+// A group member network asset 10.0.0.0/8 that also matches by its name
+// (AlsoMatch) is never dispatched whole: at the default bound it is refused,
+// with large ranges allowed it is cut to the tenant's scope in /16 chunks,
+// and a name exclusion of the asset still removes every chunk.
+func TestLargeRange_GroupMemberWithOtherNames(t *testing.T) {
+	ctx := context.Background()
+	tenant := shared.NewID()
+	member := func(in DispatchTargetsInput) DispatchTargetsInput {
+		in.Assets = map[string]DispatchAsset{"10.0.0.0/8": {IDs: []string{shared.NewID().String()}, AlsoMatch: []string{"core.example.com"}}}
+		return in
+	}
+	scopeOf := map[shared.ID][]*scopedom.Target{tenant: {scopeEntry(t, tenant, scopedom.TargetTypeCIDR, "10.0.0.0/9")}}
+
+	// The default bound: refused, never sent as typed.
+	svc := largeGate(scopeOf, nil)
+	got, err := svc.ResolveDispatchTargets(ctx, member(triggerInput(tenant, "10.0.0.0/8")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Allowed) != 0 || len(got.Refused) != 1 || got.Refused[0].Reason != ReasonRangeTooLarge {
+		t.Fatalf("default bound: allowed = %v, refused = %+v", got.Allowed, got.Refused)
+	}
+
+	// Large ranges allowed: cut to the in-scope /9, 128 /16 chunks.
+	got, err = svc.ResolveDispatchTargets(ctx, member(largeInput(tenant, "10.0.0.0/8")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Allowed) != 128 || len(got.Refused) != 0 {
+		t.Fatalf("allowed %d chunks, refused = %+v", len(got.Allowed), got.Refused)
+	}
+	for _, a := range got.Allowed {
+		if p, err := netip.ParsePrefix(a); err != nil || p.Bits() != 16 || !netip.MustParsePrefix("10.0.0.0/9").Contains(p.Addr()) {
+			t.Fatalf("chunk %q is not a /16 inside the scope entry", a)
+		}
+	}
+
+	// A name exclusion of the asset applies to every chunk (inherited).
+	excl := map[shared.ID][]*scopedom.Exclusion{tenant: {approvedExclusion(t, tenant, scopedom.ExclusionTypeDomain, "core.example.com")}}
+	got, err = largeGate(scopeOf, excl).ResolveDispatchTargets(ctx, member(largeInput(tenant, "10.0.0.0/8")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Allowed) != 0 || len(got.Excluded) != 128 {
+		t.Fatalf("name exclusion: allowed = %d, excluded = %d", len(got.Allowed), len(got.Excluded))
+	}
 }

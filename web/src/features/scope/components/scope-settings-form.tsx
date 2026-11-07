@@ -129,7 +129,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     ...addressAutoAddOf(s),
     ...autoCoverageOf(s),
     ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
-    max_range_prefix: s.max_range_prefix || 8,
+    max_range_prefix: s.max_range_prefix || 16,
   }
 }
 
@@ -425,11 +425,11 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               htmlFor={`${id}-range`}
               hint={t(
                 'scope.settings.maxRangeHint',
-                'A range wider than a /16 is scanned live hosts first, in /16 chunks, and only where scope entries cover it. Lower this to forbid wide sweeps; IPv6 gets the same address count (/8 is /104).'
+                'A /16 by default. Choose a wider range only when you scan whole internal networks: a range wider than a /16 is scanned live hosts first, in /16 chunks, only where scope entries cover it, and each such scan asks for a confirmation. Raising it needs a recent sign-in, is audited and every administrator is told. IPv6 gets the same address count (/8 is /104).'
               )}
             >
               <Select
-                value={String(form.max_range_prefix ?? 8)}
+                value={String(form.max_range_prefix ?? 16)}
                 onValueChange={(v) => setForm({ ...form, max_range_prefix: Number(v) })}
                 disabled={disabled}
               >

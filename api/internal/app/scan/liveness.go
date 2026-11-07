@@ -70,6 +70,22 @@ func (s *Service) workflowFindsHosts(ctx context.Context, workflowID shared.ID) 
 	return false, nil
 }
 
+// scanFindsHostsFirst reports whether a scan finds the live hosts of its
+// ranges before any other probe: a workflow with a host discovery step, or a
+// single-scanner scan whose scanner is the host discovery tool. A port or
+// vulnerability scanner run on its own probes every address it is handed,
+// so it never does.
+func (s *Service) scanFindsHostsFirst(ctx context.Context, sc *scan.Scan) (bool, error) {
+	if sc.ScanType == scan.ScanTypeWorkflow {
+		if sc.ScanWorkflowID == nil {
+			return false, nil
+		}
+		return s.workflowFindsHosts(ctx, *sc.ScanWorkflowID)
+	}
+	sg, ok := stage.ForStep(sc.ScannerName, nil)
+	return ok && sg.Key == stage.DiscoverHosts, nil
+}
+
 // applyCIDRMode settles the CIDR mode of a scan being saved. A scan with a
 // range that names no mode gets liveness when its scan runs it (a
 // single-scanner scan, or a workflow with a host discovery step) and sweep
@@ -79,18 +95,31 @@ func (s *Service) workflowFindsHosts(ctx context.Context, workflowID shared.ID) 
 //
 // A range wider than a /16 is scanned live hosts first only (RFC-151): the
 // host discovery pass sweeps its /16 chunks and only the hosts it finds
-// reach the port and vulnerability stages. Sweep, or a workflow without a
-// host discovery step, is refused for such a scan.
+// reach the port and vulnerability stages. Sweep or inventory is refused,
+// and so is a scan that does not find hosts first (scanFindsHostsFirst): a
+// single port scanner would probe every address of the range.
 func (s *Service) applyCIDRMode(ctx context.Context, sc *scan.Scan, explicit bool) error {
 	if !hasRangeTarget(sc.Targets) {
 		return nil
 	}
 	mode := sc.TargetOptions.CIDRMode
-	large := hasLargeRangeTarget(sc.Targets)
-	if large && mode != "" && mode != scan.CIDRModeLiveness {
-		return shared.NewDomainError(CodeLargeRangeNeedsLiveness,
-			"A range wider than a /16 is scanned live hosts first: a host discovery pass finds the live hosts, and only those are scanned further. Choose Live hosts first, or split the range into /16 ranges or smaller.",
-			shared.ErrValidation)
+	if hasLargeRangeTarget(sc.Targets) {
+		if mode != "" && mode != scan.CIDRModeLiveness {
+			return shared.NewDomainError(CodeLargeRangeNeedsLiveness,
+				"A range wider than a /16 is scanned live hosts first: a host discovery pass finds the live hosts, and only those are scanned further. Choose Live hosts first, or split the range into /16 ranges or smaller.",
+				shared.ErrValidation)
+		}
+		finds, err := s.scanFindsHostsFirst(ctx, sc)
+		if err != nil {
+			return err
+		}
+		if !finds {
+			return shared.NewDomainError(CodeLivenessNeedsHostDiscovery,
+				"A range wider than a /16 is scanned only by a workflow whose Host discovery step runs before the steps that scan the hosts. Use the Network workflow or add a Host discovery step, or split the range into /16 ranges or smaller.",
+				shared.ErrValidation)
+		}
+		sc.TargetOptions.CIDRMode = scan.CIDRModeLiveness
+		return nil
 	}
 	if explicit && mode != scan.CIDRModeLiveness {
 		return nil
@@ -108,7 +137,7 @@ func (s *Service) applyCIDRMode(ctx context.Context, sc *scan.Scan, explicit boo
 	switch {
 	case finds:
 		sc.TargetOptions.CIDRMode = scan.CIDRModeLiveness
-	case explicit, large:
+	case explicit:
 		return shared.NewDomainError(CodeLivenessNeedsHostDiscovery,
 			"Live hosts first needs a Host discovery step in the scan workflow, before the steps that scan the hosts. Add one, use the Network workflow, or scan every address of the ranges.",
 			shared.ErrValidation)

@@ -3143,7 +3143,7 @@ func (s *TenantService) GetScopeSettings(ctx context.Context, tenantID string) (
 }
 
 // MaxRangeHostBits is the widest range one scan target of the tenant may
-// name, in host bits (RFC-151): its scope setting max_range_prefix, 24 (/8)
+// name, in host bits (RFC-151): its scope setting max_range_prefix, 16 (/16)
 // by default. A lookup error is returned: the caller refuses the wide range.
 func (s *TenantService) MaxRangeHostBits(ctx context.Context, tenantID shared.ID) (int, error) {
 	t, err := s.repo.GetByID(ctx, tenantID)
@@ -3172,12 +3172,18 @@ func (s *TenantService) UpdateScopeSettings(
 		return nil, err
 	}
 	actx.TenantID = tenantID
+	out := t.TypedSettings().Scope
 	event := auditapp.NewSuccessEvent(audit.ActionScopeSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Scope)).
+		WithChanges(auditapp.DiffChanges(before, out)).
 		WithMessage("Scope settings updated").
 		WithSeverity(audit.SeverityHigh)
+	// A wider range per scan target widens what one scan may sweep: named
+	// in the audit message so a reviewer sees it at a glance.
+	if tenantdom.RangeWidened(before, out) {
+		event = event.WithMessage(fmt.Sprintf("Scope settings updated: the widest scan target range was raised from /%d to /%d", before.RangePrefix(), out.RangePrefix())).
+			WithMetadata("range_widened", true)
+	}
 	s.logAudit(ctx, actx, event)
-	out := t.TypedSettings().Scope
 	return &out, nil
 }
 

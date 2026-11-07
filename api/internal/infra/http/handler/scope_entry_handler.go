@@ -6,6 +6,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -144,8 +145,8 @@ type ScopeSettingsResponse struct {
 	WideningApprovals *int   `json:"widening_approvals"`
 	DefaultMaxTier    string `json:"default_max_tier"`
 	// MaxRangePrefix is the widest address range one scan target may name,
-	// as an IPv4 prefix length (8 = a /8, the default; IPv6 gets the same
-	// address count).
+	// as an IPv4 prefix length (16 = a /16, the default; down to 8 = a /8 when
+	// the organization opts in; IPv6 gets the same address count).
 	MaxRangePrefix int `json:"max_range_prefix"`
 	// Read-only: the approvals a widening needs now, and the administrators
 	// that count.
@@ -207,7 +208,9 @@ type ScopeSettingsRequest struct {
 	OneOffMaxDays        int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
 	WideningApprovals    *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
 	DefaultMaxTier       string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
-	// MaxRangePrefix: 8 to 24; omitted (0) keeps the stored value.
+	// MaxRangePrefix: 8 to 24; omitted (0) keeps the stored value. A value
+	// below 16 (wider than a /16) is an opt-in widening: step-up (route),
+	// a high-severity audit and a notice to every administrator.
 	MaxRangePrefix int `json:"max_range_prefix" validate:"omitempty,min=8,max=24"`
 }
 
@@ -373,13 +376,25 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
 		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
+	prior, err := h.settings.GetScopeSettings(ctx, tenantID)
+	if err != nil {
+		h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+		return
+	}
 	out, err := h.settings.UpdateScopeSettings(ctx, tenantID, ss, actx)
 	if err != nil {
 		h.handleServiceError(w, "Scope settings", err)
 		return
 	}
 	if id, err := shared.IDFromString(tenantID); err == nil {
-		h.service.NotifyAdmins(ctx, id, "Scope settings changed", "The organization's scope settings were changed; review them in Scoping.")
+		if tenant.RangeWidened(*prior, *out) {
+			// Opting in to wider ranges widens what one scan may sweep.
+			h.service.NotifyAdmins(ctx, id, "Widest scan range raised",
+				fmt.Sprintf("The widest range one scan target may name was raised from /%d to /%d. Scans of a range wider than a /16 find live hosts first and need a confirmation; review it in Scoping settings.", prior.RangePrefix(), out.RangePrefix()))
+		} else {
+			h.service.NotifyAdmins(ctx, id, "Scope settings changed", "The organization's scope settings were changed; review them in Scoping.")
+		}
 	}
 	resp, err := h.settingsResponse(ctx, tenantID, *out)
 	if err != nil {

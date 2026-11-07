@@ -327,6 +327,11 @@ export interface CreateScanConfigRequest {
    * (RFC-054 §6.4).
    */
   skip_refused_targets?: boolean
+  /**
+   * Confirms targets that name a range wider than a /16. Required for such
+   * a scan: the API refuses it without (LARGE_RANGE_UNCONFIRMED).
+   */
+  confirm_large_range?: boolean
 }
 
 /**
@@ -377,6 +382,8 @@ export interface UpdateScanConfigRequest {
   max_retries?: number
   /** Initial backoff seconds between retries (10-86400) */
   retry_backoff_seconds?: number
+  /** Confirms new targets that name a range wider than a /16 (LARGE_RANGE_UNCONFIRMED without). */
+  confirm_large_range?: boolean
 }
 
 /**

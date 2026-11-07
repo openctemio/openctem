@@ -226,6 +226,16 @@ export function targetsError(form: NewScanFormData, t: Translate = enTranslate):
   return null
 }
 
+/**
+ * Whether the person confirmed the large ranges the typed targets hold now
+ * (LargeRangeConfirm): the API refuses a range wider than a /16 unless the
+ * request says so (confirm_large_range).
+ */
+function largeRangeConfirmed(targets: NewScanFormData['targets']): boolean {
+  const large = largeRangeSummary(parsePastedTargets(targets.customTargets).targets)
+  return large !== null && targets.largeRangeConfirmed === largeRangeKey(large)
+}
+
 /** New scan: form -> POST /scans. Combines asset groups, assets and custom targets. */
 export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfigRequest {
   const { targets, schedule } = form
@@ -259,6 +269,7 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   if (targets.assetIds.length > 0) request.asset_ids = [...targets.assetIds]
   const typed = typedAndExpanded(form)
   if (typed.length > 0) request.targets = typed
+  if (largeRangeConfirmed(targets)) request.confirm_large_range = true
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
   if (form.mode === 'workflow' && Object.keys(form.stepParams).length > 0) {
@@ -416,6 +427,7 @@ export function formDataToUpdateRequest(
   if (form.targets.assetIds.length > 0 || !sameTargets(typed, config.targets ?? [])) {
     request.targets = typed
     if (form.targets.assetIds.length > 0) request.asset_ids = [...form.targets.assetIds]
+    if (largeRangeConfirmed(form.targets)) request.confirm_large_range = true
   }
   const storedGroups =
     config.asset_group_ids ?? (config.asset_group_id ? [config.asset_group_id] : [])

@@ -24,20 +24,32 @@ the validator, not of the dispatch.
    IPv6 network wider than a /104 (a /64 holds 2^64 addresses) cannot be
    swept at all; its hosts come from the inventory and passive sources, so
    the bound stays at the same count instead of following prefix habits.
-2. **Per-organization limit.** Scope policy setting `max_range_prefix`
-   (IPv4 prefix length 8 to 24, default 8; IPv6 gets the same address count).
+2. **Per-organization limit, opt-in.** Scope policy setting
+   `max_range_prefix` (IPv4 prefix length 8 to 24; IPv6 gets the same address
+   count). The default for every organization, existing ones included, is
+   16: a range wider than a /16 is refused until the organization opts in.
    It is changed through `PUT /scope/settings` (scope approval permission and
-   step-up, audited at high severity) and read at scan create, at the scope
-   check of New scan, at edit and at every run. Lowering it refuses wider
-   ranges in saved scans at their next run.
+   step-up). Raising it (a lower prefix) widens what one scan may sweep: the
+   change is audited at high severity with the widening named in the audit
+   message (`range_widened`), and every administrator gets a notice that
+   names the old and new limit. Lowering it needs nothing more. The limit is
+   read at scan create, at the scope check of New scan, at edit and at every
+   run, and New scan reads the organization's limit to explain a refusal
+   before create. Lowering it refuses wider ranges in saved scans at their
+   next run.
 3. **Large range = live hosts first.** A range wider than a /16 is scanned
    only with `cidr_mode: liveness`: the host discovery step sweeps it and
    only the hosts it finds reach the port and vulnerability stages. Saving
    such a scan with `sweep` or `inventory` is refused
-   (`LARGE_RANGE_NEEDS_LIVENESS`); a workflow without a host discovery step
-   is refused (`LIVENESS_NEEDS_HOST_DISCOVERY`); an unnamed mode becomes
-   liveness. The run refuses a large range when the scan's mode is not
-   liveness (a scan saved before the limit changed).
+   (`LARGE_RANGE_NEEDS_LIVENESS`). Only a scan that finds hosts first may
+   hold one: a workflow with a host discovery step, or a single-scanner scan
+   whose scanner is the host discovery tool. A workflow without that step,
+   and a single port or vulnerability scanner (it would probe every address
+   it is handed), are refused (`LIVENESS_NEEDS_HOST_DISCOVERY`); an unnamed
+   mode becomes liveness. The mode is settled again on every edit of the
+   targets, target options, workflow or scanner. The run holds a scan to a
+   /16 unless it is in liveness mode and still finds hosts first (its
+   workflow steps are read again at the run).
 4. **Expansion at dispatch only.** A scan stores the range as typed. When a
    run resolves its targets, the dispatch gate cuts each large range into
    prefixes no wider than a /16 (IPv6 /112), after removing:
@@ -46,6 +58,10 @@ the validator, not of the dispatch.
    - the active exclusions of an address kind and the built-in deny list
      (as for every range, RFC-088).
    Nothing is listed per address: a /8 is 256 prefixes, one run target each.
+   Every range gets this bound and cut, asset group members included: a
+   network asset wider than a /16 that also matches by its name is refused
+   or cut like a typed range, and its pieces keep its names, so an exclusion
+   of the asset's name still removes every piece.
    Each prefix then passes every check of the gate on its own (ownership,
    act scope, tier, zones). The cut only removes addresses; it never
    authorizes one.
@@ -63,14 +79,24 @@ the validator, not of the dispatch.
    sensor as typed (a direct command, a run started with context targets, a
    claim-time re-check) never take a range wider than a /16, so a large range
    can reach a sensor only as /16 prefixes.
-9. **Confirmation in New scan.** Before a scan with a large range is created,
-   the Targets step shows the address count, the number of /16 chunks and a
-   rough host discovery duration on one sensor (at a planning rate of 1,000
-   addresses a second, shown with the estimate), and asks the person to
-   confirm. A change of ranges asks again.
+9. **Confirmation, enforced by the API.** Creating a scan, editing its
+   targets or importing a configuration whose direct targets name a range
+   wider than a /16 needs `confirm_large_range: true` in the request
+   (`?confirm_large_range=true` on import); without it the API refuses with
+   `LARGE_RANGE_UNCONFIRMED`, whose message and details name the ranges, their
+   address count and the most /16 chunks they become. New scan sends it only
+   after its Targets step showed the address count, the number of /16 chunks
+   and a rough host discovery duration on one sensor (at a planning rate of
+   1,000 addresses a second, shown with the estimate) and the person
+   confirmed; a change of ranges asks again. Other API callers must send it
+   explicitly; no MCP tool creates scans.
 10. **One validator contract.** The bound and its refusal text are shared by
     the API validator and the web format check through
     `api/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
+    The file also states which ranges are internal (scanned only inside a
+    scan zone): a range is internal when it overlaps a private, link-local or
+    loopback block at all, so `172.0.0.0/8` (holding `172.16.0.0/12`) needs a
+    zone like `10.0.0.0/8` does.
     A range too wide says how many addresses it has and the most one target
     holds, and offers a one-click split when it fits in at most 256 ranges of
     the widest accepted size.
@@ -88,9 +114,16 @@ is refused with `TOO_MANY_JOBS`. About 300 scattered exclusions inside one
 ## 4. Threat model
 
 - **Abuse of a wide sweep** (a member sweeps a /8 the organization does not
-  want swept): bounded by the organization's `max_range_prefix`, the scope
-  entries (only covered addresses are sent), the confirmation in New scan,
-  scan approval governance where it is on, and the sensor's rate limits.
+  want swept): bounded by the organization's `max_range_prefix` (a /16
+  unless an approver opted in, with step-up, audit and notice), the scope
+  entries (only covered addresses are sent), the confirmation the API
+  requires, live hosts first (only a scan that finds hosts first may hold a
+  large range, so no port or vulnerability scanner is handed the whole
+  range), scan approval governance where it is on, and the sensor's rate
+  limits.
+- **Bypass through other target sources**: asset group members are bounded
+  and cut like typed ranges; a range that only looks public by its first
+  address (`172.0.0.0/8`) is internal and needs a scan zone.
 - **Cross-tenant authorization**: the in-scope address set and the
   exclusions are loaded for the scan's tenant only; another tenant's entries
   never authorize or cut a range (test `TestLargeRange_CrossTenantScope`).

@@ -83,6 +83,17 @@ export const MAX_HOST_BITS = 24
  * cut into /16 chunks at dispatch and scanned live hosts first.
  */
 export const LARGE_RANGE_HOST_BITS = 16
+/**
+ * The organization's widest range when it set none (scope setting
+ * max_range_prefix 16): a /16. Anything wider is opt-in.
+ */
+export const DEFAULT_RANGE_PREFIX = 16
+
+/** The widest range in host bits for a max_range_prefix (unset: the /16 default). */
+export function rangeHostBitsOf(maxRangePrefix: number | null | undefined): number {
+  const p = maxRangePrefix && maxRangePrefix > 0 ? maxRangePrefix : DEFAULT_RANGE_PREFIX
+  return Math.min(Math.max(32 - p, 0), MAX_HOST_BITS)
+}
 /** The most ranges a too-large range is offered to be split into in one click. */
 export const MAX_SPLIT_PIECES = 256
 
@@ -378,7 +389,10 @@ export function splitEntries(lines: readonly string[]): string[] {
 }
 
 /** Classify, normalize and de-duplicate typed lines. */
-export function parsePastedTargets(lines: readonly string[]): PastedTargets {
+export function parsePastedTargets(
+  lines: readonly string[],
+  opts: ClassifyOptions = {}
+): PastedTargets {
   const out: PastedTargets = {
     lines: [],
     targets: [],
@@ -389,7 +403,7 @@ export function parsePastedTargets(lines: readonly string[]): PastedTargets {
   }
   const seen = new Set<string>()
   for (const raw of splitEntries(lines)) {
-    const c = classifyTarget(raw)
+    const c = classifyTarget(raw, opts)
     out.lines.push(c)
     if (isRefusedKind(c.kind)) {
       out.byKind[c.kind] = (out.byKind[c.kind] ?? 0) + 1

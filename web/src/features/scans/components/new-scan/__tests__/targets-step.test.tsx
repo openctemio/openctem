@@ -70,6 +70,11 @@ vi.mock('../../../hooks/use-coverage-expansion', () => ({
 vi.mock('../../../hooks/use-selector-preview', () => ({
   useSelectorPreview: () => ({ previews: [], isLoading: false, enabled: true }),
 }))
+// The organization's widest range, in host bits (16 = the /16 default).
+const rangeBits = vi.hoisted(() => ({ value: 16 }))
+vi.mock('../../../hooks/use-range-host-bits', () => ({
+  useRangeHostBits: () => rangeBits.value,
+}))
 vi.mock('../../target-picker/asset-source', () => ({ AssetSource: () => null }))
 vi.mock('../../target-picker/group-source', () => ({ GroupSource: () => null }))
 vi.mock('../../target-picker/scope-source', () => ({
@@ -108,6 +113,18 @@ describe('TargetsStep', () => {
     workflow.value = undefined
     coreAddrs.value = undefined
     excluded.calls = []
+    rangeBits.value = 16
+  })
+
+  it("holds a range to the organization's widest range: a /16 unless it opted in", () => {
+    const { unmount } = render(<Harness initial={withTargets(['10.0.0.0/8'])} />)
+    expect(screen.getByTestId('invalid-targets')).toHaveTextContent(
+      '10.0.0.0/8 has 16,777,216 addresses; the most one target can hold is 65,536 (/16)'
+    )
+    unmount()
+    rangeBits.value = 24
+    render(<Harness initial={withTargets(['10.0.0.0/8'])} />)
+    expect(screen.queryByTestId('invalid-targets')).toBeNull()
   })
 
   it('warns when range targets cover a sensor resolver, and excludes it on request', async () => {
