@@ -306,6 +306,9 @@ export type EASMAddressAddResult =
 /** POST /api/v1/easm/suggestions/addresses/reject */
 export type EASMAddressRejectResult =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.AddressRejectResult']
+/** POST /api/v1/easm/suggestions/addresses/lookup */
+export type EASMLookupRetryResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.LookupRetryResult']
 /** POST /api/v1/easm/suggestions/networks/{ours,not-ours} */
 export type EASMNetworkAnswerResult =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.NetworkAnswerResult']

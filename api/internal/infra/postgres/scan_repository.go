@@ -672,6 +672,33 @@ func (r *ScanRepository) DeferScheduledRun(ctx context.Context, tenantID, id sha
 	return n == 1, nil
 }
 
+// RecordScheduleMisfire stores that the scheduled occurrence missedAt was
+// skipped, and why (a short reason code). Tenant-scoped. It writes only the
+// two misfire columns, so a full Update of a stale in-memory scan cannot undo it.
+func (r *ScanRepository) RecordScheduleMisfire(ctx context.Context, tenantID, id shared.ID, missedAt time.Time, reason string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE scans SET last_missed_at = $3, last_missed_reason = $4
+		WHERE id = $1 AND tenant_id = $2`,
+		id.String(), tenantID.String(), missedAt, reason)
+	if err != nil {
+		return fmt.Errorf("failed to record schedule misfire for scan %s: %w", id.String(), err)
+	}
+	return nil
+}
+
+// ClearScheduleMisfire removes the misfire note once a later scheduled run has
+// started. Tenant-scoped; a no-op when none is recorded.
+func (r *ScanRepository) ClearScheduleMisfire(ctx context.Context, tenantID, id shared.ID) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE scans SET last_missed_at = NULL, last_missed_reason = NULL
+		WHERE id = $1 AND tenant_id = $2 AND last_missed_at IS NOT NULL`,
+		id.String(), tenantID.String())
+	if err != nil {
+		return fmt.Errorf("failed to clear schedule misfire for scan %s: %w", id.String(), err)
+	}
+	return nil
+}
+
 // selectQuery returns the base SELECT query.
 // ListOptInScans lists the tenant's scans whose scanner_config asks for
 // out-of-band callbacks (allow_interactsh true, as boolean or string) or
@@ -713,7 +740,8 @@ func (r *ScanRepository) selectQuery() string {
 		       total_runs, successful_runs, failed_runs,
 		       created_by, created_at, updated_at, scan_zone_id, ad_hoc, partial_runs,
 		       COALESCE(schedule_rrule, ''), blocked_runs, schedule_run_at, target_options, intensity, skipped_targets,
-		       COALESCE(rule_sources, ''), COALESCE(managed_by, ''), COALESCE(managed_key, ''), depth, step_params
+		       COALESCE(rule_sources, ''), COALESCE(managed_by, ''), COALESCE(managed_key, ''), depth, step_params,
+		       last_missed_at, COALESCE(last_missed_reason, '')
 		FROM scans
 	`
 }
@@ -808,6 +836,8 @@ func (r *ScanRepository) readScan(reader scanRowReader) (*scan.Scan, error) {
 		&s.ManagedKey,
 		&s.Depth,
 		&stepParams,
+		&s.LastMissedAt,
+		&s.LastMissedReason,
 	)
 	if err != nil {
 		return nil, err

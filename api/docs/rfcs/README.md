@@ -159,6 +159,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-148](RFC-148-asset-neighborhood.md) | Asset neighborhood and lineage graph read | Implemented (2026-11-04) |
 | [RFC-149](RFC-149-task-secrets.md) | Task secrets | Implemented (2026-11-05): the platform side; the sensor SDK side ships in the same release |
 | [RFC-150](RFC-150-web-path-discovery.md) | Web path discovery | Partially implemented (2026-11-05): platform planning, derived list, strict job scope, budgets, program rules, coverage reasons and the workflow step |
+| [RFC-151](RFC-151-large-range-targets.md) | Large range targets | Implemented (2026-11-06) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
