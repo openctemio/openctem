@@ -335,7 +335,7 @@ func (h *MCPHandler) initializeResult() map[string]any {
 			"version": "1.0.0",
 		},
 		"instructions": "Access to this organization's " + brand.Name() + " data for the signed-in person: " +
-			"findings, KEV/EPSS-prioritized CVEs, attack-path exposure chains, " +
+			"findings, KEV/EPSS-prioritized CVEs, possible attack paths (exposure chains, not proven), " +
 			"remediation groups (solution families), compliance posture, assets, and " +
 			"the pentest campaigns the person is a member of (start with list_campaigns or my_work). " +
 			"Prompts draft pentest report sections from the same findings the delivered report uses. " +
