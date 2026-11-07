@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayBlock } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
-import { TOKEN_COLORS, tokenize } from '@/lib/code-tokens'
+import { TOKEN_CLASSES, tokenize } from '@/lib/code-tokens'
 
 // Language detection based on file extension
 function detectLanguage(filePath?: string): string {
@@ -89,7 +89,7 @@ function CodeBlock({
   const highlighted = useMemo(() => {
     const tokens = tokenize(code, language)
     return tokens.map((token, i) => (
-      <span key={i} className={TOKEN_COLORS[token.type]}>
+      <span key={i} className={TOKEN_CLASSES[token.type]}>
         {token.value}
       </span>
     ))
@@ -112,7 +112,7 @@ function CodeBlock({
                 </span>
                 <span className="flex-1">
                   {lineTokens.map((token, j) => (
-                    <span key={j} className={TOKEN_COLORS[token.type]}>
+                    <span key={j} className={TOKEN_CLASSES[token.type]}>
                       {token.value}
                     </span>
                   ))}

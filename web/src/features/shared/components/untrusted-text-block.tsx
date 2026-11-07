@@ -5,7 +5,7 @@ import { Check, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
-import { TOKEN_COLORS, tokenize } from '@/lib/code-tokens'
+import { TOKEN_CLASSES, tokenize } from '@/lib/code-tokens'
 import { hasHiddenCharacters, toDisplayBlock } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 
@@ -68,7 +68,7 @@ export function UntrustedTextBlock({
   const body = React.useMemo(() => {
     if (language !== 'shell') return visible
     return tokenize(visible, 'shell').map((tok, i) => (
-      <span key={i} className={TOKEN_COLORS[tok.type]}>
+      <span key={i} className={TOKEN_CLASSES[tok.type]}>
         {tok.value}
       </span>
     ))
