@@ -529,6 +529,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	// findings.definition_id must name one of the finding's own links, which
 	// do not exist yet when the finding is seeded.
 	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
+	// A per-sensor DNS answer: a lower-case name and 1-16 addresses (CHECKs).
+	"name_resolutions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "host.example.com", "addrs": "{192.0.2.7}"}
+	},
 	// A record never follows itself (chk_asset_attributions_follows_other).
 	"asset_attributions": func(*schemaSeeder) map[string]any { return map[string]any{"follows_host_id": nil} },
 	// An organization wordlist: a short name (CHECK), a closed purpose, a

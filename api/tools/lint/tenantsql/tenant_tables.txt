@@ -195,6 +195,7 @@ mcp_action_confirmations
 mcp_oauth_clients
 mcp_oauth_grants
 mcp_oauth_requests
+name_resolutions
 nav_pins
 notification_events
 notification_outbox
