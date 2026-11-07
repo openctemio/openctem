@@ -126,6 +126,8 @@
   "components.pager.perPage": "Số dòng mỗi trang",
   "components.pager.previous": "Trước",
   "components.pager.summary": "Trang {page}/{pages} ({total} dòng)",
+  "components.possiblePath.hint": "Được dựng từ quan hệ giữa các tài sản và các phát hiện đang mở. Chưa có kiểm tra nào chứng minh kẻ tấn công đi theo được đường này.",
+  "components.possiblePath.label": "Đường đi khả dĩ, chưa được chứng minh",
   "components.preset.all": "Tất cả",
   "components.preset.direct": "Phụ thuộc trực tiếp",
   "components.preset.fixable": "Sửa được",

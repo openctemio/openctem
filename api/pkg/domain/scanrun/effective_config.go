@@ -93,6 +93,9 @@ type SensorSetting struct {
 type SensorSettings struct {
 	Effective         map[string]SensorSetting `json:"effective,omitempty"`
 	IgnoredConfigKeys []string                 `json:"ignored_config_keys,omitempty"`
+	// SentWith is what the step's requests carried (result metadata
+	// http_identity, ParseAppliedIdentity): display only.
+	SentWith []AppliedIdentity `json:"sent_with,omitempty"`
 }
 
 // MaskedSensorValue replaces a reported setting that looks like a credential.
@@ -100,7 +103,7 @@ const MaskedSensorValue = "[masked]"
 
 // IsZero reports whether nothing was reported.
 func (s SensorSettings) IsZero() bool {
-	return len(s.Effective) == 0 && len(s.IgnoredConfigKeys) == 0
+	return len(s.Effective) == 0 && len(s.IgnoredConfigKeys) == 0 && len(s.SentWith) == 0
 }
 
 // secretKeyParts mark a setting that may hold a credential: never stored.
