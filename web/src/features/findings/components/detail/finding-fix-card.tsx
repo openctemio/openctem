@@ -7,22 +7,13 @@
  * Nothing renders when the finding has no concrete fix.
  */
 
-import {
-  ArrowRight,
-  Check,
-  ChevronRight,
-  Copy,
-  ExternalLink,
-  Layers,
-  TriangleAlert,
-  Wrench,
-} from 'lucide-react'
-import { useState } from 'react'
+import { ArrowRight, ChevronRight, ExternalLink, Layers, TriangleAlert, Wrench } from 'lucide-react'
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { copyToClipboard } from '@/lib/clipboard'
+import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
+import { SCANNER_CODE_LINES, ScannerText } from '@/features/shared/components/scanner-text'
 import { cn } from '@/lib/utils'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
@@ -33,32 +24,15 @@ import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 
 function CodeBlock({ cmd }: { cmd: FixCommand }) {
   const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
   return (
     <div className="min-w-0">
-      <div className="mb-1 text-xs text-muted-foreground">{cmd.label}</div>
-      <div className="relative">
-        <pre className="overflow-x-auto rounded-md border bg-muted/60 py-2 ps-3 pe-10 font-mono text-xs leading-relaxed">
-          {cmd.code}
-        </pre>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="absolute end-1 top-1 size-7"
-          aria-label={t('findings.fixCard.copySnippet', 'Copy {label} snippet', {
-            label: cmd.label,
-          })}
-          onClick={async () => {
-            if (await copyToClipboard(cmd.code)) {
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
-            }
-          }}
-        >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </Button>
-      </div>
+      <UntrustedTextBlock
+        text={cmd.code}
+        language="shell"
+        caption={cmd.label}
+        label={t('findings.fixCard.snippetLabel', '{label} snippet', { label: cmd.label })}
+        collapseLines={SCANNER_CODE_LINES}
+      />
       {cmd.note && <p className="mt-1 text-xs text-muted-foreground">{cmd.note}</p>}
     </div>
   )
@@ -413,16 +387,7 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
     case 'text':
       body = (
         <>
-          {g.text && (
-            <p
-              className={cn(
-                'text-sm leading-relaxed whitespace-pre-wrap',
-                compact && 'line-clamp-3'
-              )}
-            >
-              {g.text}
-            </p>
-          )}
+          {g.text && <ScannerText text={g.text} preview={compact} />}
           {!compact && g.fixCode && (
             <div className="mt-3">
               <CodeBlock
