@@ -16,7 +16,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
 
-import { ACTIVATE_PATH, SensorOnboardingPanel } from './sensor-onboarding-panel'
+import { SensorOnboardingPanel } from './sensor-onboarding-panel'
 
 /** The page-header entry point; hidden without sensors:pair. */
 export function AddSensorButton({ onClick }: { onClick: () => void }) {
@@ -38,7 +38,7 @@ export function ApproveSensorButton() {
   if (!canPair) return null
   return (
     <Button asChild variant="outline" size="sm">
-      <Link href={ACTIVATE_PATH}>
+      <Link href="/activate">
         <ShieldCheck className="h-4 w-4" />
         {t('sensors.list.approve')}
       </Link>
