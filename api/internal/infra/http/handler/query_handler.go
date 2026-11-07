@@ -218,3 +218,35 @@ func (h *QueryHandler) Parse(w http.ResponseWriter, r *http.Request) {
 
 // filterspecMaxBody is the largest filter document a parse request carries.
 const filterspecMaxBody = filterspec.MaxBodyBytes
+
+// Values handles GET /api/v1/query/values
+// @Summary      Value completion for a search box
+// @Description  The most frequent values (up to 20) of one field, with how many rows have each, under the caller's
+// @Description  search box filter (fq, short or long form) minus the field's own conditions. Counted in the caller's
+// @Description  data scope with the list's server-side rules; fields the caller may not use, or that cannot be
+// @Description  grouped, are unknown (400). Past a 1 second budget the answer has no counts (enum and boolean values
+// @Description  are still listed). Answers are cached per caller for 60 seconds. Rate limited per user.
+// @Tags         Query
+// @Produce      json
+// @Security     BearerAuth
+// @Param        entity  query  string  true   "Entity (findings)"
+// @Param        field   query  string  true   "Field path or short name (severity, tool, asset.type)"
+// @Param        prefix  query  string  false  "Value prefix (case-insensitive)"
+// @Param        fq      query  string  false  "The search box filter the counts are computed under"
+// @Success      200  {object}  queryapp.ValuesResult
+// @Failure      400  {object}  map[string]interface{}
+// @Failure      403  {object}  map[string]interface{}
+// @Failure      404  {object}  map[string]interface{}
+// @Failure      429  {object}  map[string]interface{}
+// @Router       /query/values [get]
+func (h *QueryHandler) Values(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	res, err := h.service.Values(r.Context(), queryCaller(r), queryapp.ValuesInput{
+		Entity: q.Get("entity"), Field: q.Get("field"), Prefix: q.Get("prefix"), Filter: q.Get("fq"),
+	})
+	if err != nil {
+		h.writeErr(w, err)
+		return
+	}
+	h.write(w, res)
+}
