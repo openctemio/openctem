@@ -27,6 +27,10 @@ type Entity struct {
 	// paths maps a language path to a registry field ("asset.type" ->
 	// "asset_type"); a registry field without an entry is its own path.
 	paths map[string]string
+	// aliases maps a short or former name to its canonical path ("cve" ->
+	// "cve_id", "domain" -> "asset.domain"). The printer always prints the
+	// canonical path.
+	aliases map[string]string
 	// internal are registry fields only the server's mandatory filters may
 	// use; to a query they are unknown.
 	internal map[string]bool
@@ -55,11 +59,15 @@ type EntityDef struct {
 	Name, Noun, Permission string
 	Registry               *filterspec.Registry
 	Paths                  map[string]string
-	Internal               []string
-	Dimensions             []string
-	Measures               []string
-	Times                  []string
-	Mandatory              []Mandatory
+	// Aliases are other names of paths: short names people type and the
+	// former names of fields that gained a relation path. An alias must
+	// not be a path itself.
+	Aliases    map[string]string
+	Internal   []string
+	Dimensions []string
+	Measures   []string
+	Times      []string
+	Mandatory  []Mandatory
 	// TextField is the internal registry field (a contains template over
 	// the entity's search columns) that `text ~ "..."` compiles to; empty
 	// when the entity has no text search.
@@ -74,7 +82,7 @@ func NewEntity(d EntityDef) (*Entity, error) {
 		return nil, fmt.Errorf("querylang: entity needs Name, Permission and Registry")
 	}
 	e := &Entity{Name: d.Name, Noun: d.Noun, Permission: d.Permission, Registry: d.Registry,
-		paths: map[string]string{}, internal: map[string]bool{},
+		paths: map[string]string{}, aliases: map[string]string{}, internal: map[string]bool{},
 		dims: map[string]string{}, measures: map[string]string{}, times: map[string]string{},
 		mandatory: d.Mandatory, text: d.TextField}
 	if err := e.declareFields(d); err != nil {
@@ -146,7 +154,29 @@ func (e *Entity) declareFields(d EntityDef) error {
 		}
 		e.paths[p] = f
 	}
+	for a, p := range d.Aliases {
+		if _, isPath := e.paths[a]; isPath {
+			return fmt.Errorf("querylang: %s: alias %q shadows a path", d.Name, a)
+		}
+		if _, isField := d.Registry.Field(a); isField && e.pathOf(a) == a {
+			return fmt.Errorf("querylang: %s: alias %q shadows a field", d.Name, a)
+		}
+		f := e.fieldName(p)
+		if _, ok := d.Registry.Field(f); !ok || e.internal[f] || e.pathOf(f) != p {
+			return fmt.Errorf("querylang: %s: alias %q must name a canonical path, not %q", d.Name, a, p)
+		}
+		e.aliases[a] = p
+	}
 	return nil
+}
+
+// Canonical returns the canonical path of a path or alias as written
+// (lower case); an unknown name is returned unchanged.
+func (e *Entity) Canonical(path string) string {
+	if p, ok := e.aliases[path]; ok {
+		return p
+	}
+	return path
 }
 
 // checkTenant is a placeholder tenant for compiling the declaration once.
@@ -188,6 +218,7 @@ func (e *Entity) pathOf(field string) string {
 // permission the caller lacks. The three cases are indistinguishable to
 // the caller.
 func (e *Entity) field(path string, may func(string) bool) (*filterspec.Field, bool) {
+	path = e.Canonical(path)
 	name := e.fieldName(path)
 	if name == "" || e.internal[name] {
 		return nil, false
