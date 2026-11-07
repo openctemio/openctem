@@ -92,7 +92,7 @@ describe('ReceiptSummary', () => {
     const box = screen.getByTestId('receipt-outcomes')
     expect(box).toHaveTextContent('Where the other findings went')
     expect(screen.getByTestId('receipt-outcome-merged')).toHaveTextContent('2')
-    expect(box).toHaveTextContent('Repeats merged')
+    expect(box).toHaveTextContent('Repeated in the same scan')
     expect(screen.getByTestId('receipt-outcome-exposure')).toHaveTextContent('12')
     expect(box).toHaveTextContent('Filed as exposures')
     expect(screen.getByTestId('receipt-outcome-unresolved_ref')).toHaveTextContent('1')
@@ -101,6 +101,54 @@ describe('ReceiptSummary', () => {
     unmount()
     render(<ReceiptSummary receipt={receipt({ outcomes: {} } as Partial<ReceiptResponse>)} />)
     expect(screen.queryByTestId('receipt-outcomes')).toBeNull()
+  })
+
+  it('names the quarantined outcome and the suppressed count', () => {
+    render(
+      <ReceiptSummary
+        receipt={receipt({
+          received: 6,
+          counts: {
+            created: 1,
+            updated: 0,
+            reactivated: 0,
+            closed: 0,
+            skipped: 0,
+            failed: 0,
+            suppressed: 1,
+          },
+          outcomes: { quarantined: 4 },
+        } as Partial<ReceiptResponse>)}
+      />
+    )
+    expect(screen.getByTestId('receipt-outcome-quarantined')).toHaveTextContent('4')
+    expect(screen.getByTestId('receipt-outcomes')).toHaveTextContent(
+      'Held in the results quarantine'
+    )
+    expect(screen.getByText('Closed on arrival by a rule')).toBeInTheDocument()
+    // 6 received = 1 new + 1 suppressed + 4 quarantined: nothing unexplained.
+    expect(screen.queryByTestId('receipt-unaccounted')).toBeNull()
+  })
+
+  it('says how many received findings an older receipt does not explain', () => {
+    render(
+      <ReceiptSummary
+        receipt={receipt({
+          received: 30,
+          counts: {
+            created: 3,
+            updated: 5,
+            reactivated: 1,
+            closed: 2,
+            skipped: 0,
+            failed: 1,
+            suppressed: 0,
+          },
+          outcomes: {},
+        } as Partial<ReceiptResponse>)}
+      />
+    )
+    expect(screen.getByTestId('receipt-unaccounted')).toHaveTextContent('20 received findings')
   })
 
   it('shows every count and that full coverage could close', () => {

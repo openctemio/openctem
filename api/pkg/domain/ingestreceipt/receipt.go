@@ -390,12 +390,32 @@ const (
 	// finding and no sighting of the failed result of the same check; an
 	// upload resolves that open failure with it.
 	OutcomeCompliancePassed = "compliance_passed"
+	// OutcomeQuarantined: the report came without a command and waits in
+	// the results quarantine; a person releases or discards it.
+	OutcomeQuarantined = "quarantined"
 )
 
 // AllOutcomes lists the outcome codes, in display order.
 func AllOutcomes() []string {
 	return []string{OutcomeMerged, OutcomeExposure, OutcomeSourceMitigated, OutcomeUnresolvedRef,
-		OutcomeOutOfContract, OutcomeReservedTool, OutcomeCompliancePassed, OutcomeSplit}
+		OutcomeOutOfContract, OutcomeReservedTool, OutcomeCompliancePassed, OutcomeQuarantined, OutcomeSplit}
+}
+
+// Unaccounted is how many received findings no count and no outcome
+// explains: received + split - (created + still detected + reopened +
+// suppressed + failed + skipped + the other outcomes). A reconciled receipt
+// has 0; closed and untouched findings are decisions about findings the
+// source did not report, so they are not part of the sum.
+func Unaccounted(received int, c Counts, outcomes map[string]int) int {
+	n := received - c.Created - c.StillDetected - c.Reopened - c.Suppressed - c.Failed - c.Skipped
+	for code, v := range outcomes {
+		if code == OutcomeSplit {
+			n += v
+			continue
+		}
+		n -= v
+	}
+	return n
 }
 
 // IsOutcome reports whether c is an outcome code.
@@ -460,8 +480,11 @@ type Upload struct {
 // UploadResult is what an upload adds when it finishes, beyond what its
 // ingests recorded.
 type UploadResult struct {
-	Status       string
-	Format       string
+	Status string
+	Format string
+	// Skipped is the records the parser skipped and the files of a bundle
+	// it did not read: received with the upload and not imported, so they
+	// count as received and skipped.
 	Skipped      int
 	Components   int
 	Statements   int

@@ -202,6 +202,24 @@ func TestNoiseOf_ClampsAndSums(t *testing.T) {
 	}
 }
 
+// The tooltip's full reconciliation: seen again, repeated in a report and
+// every other outcome, beside new and not stored, explain all received.
+func TestNoiseOf_Reconciliation(t *testing.T) {
+	n := noiseOf(IntakeSource{Received: 100, Created: 10, Reopened: 5, StillDetected: 40, Suppressed: 3, NotStored: 2,
+		Outcomes: map[string]int64{"merged": 30, "exposure": 9, "split": 1, "quarantined": 2}})
+	if n.SeenAgain != 40 || n.Repeated != 30 || n.Outcomes["exposure"] != 9 || n.Outcomes["split"] != 1 || n.Outcomes["merged"] != 0 {
+		t.Fatalf("noise %+v", n)
+	}
+	// 100 + 1 split = 15 new + 40 seen again + 30 repeated + 3 suppressed + 2 not stored + 9 exposure + 2 quarantined.
+	if n.Unaccounted != 0 {
+		t.Fatalf("unaccounted %d", n.Unaccounted)
+	}
+	n = noiseOf(IntakeSource{Received: 50, Created: 10, StillDetected: 20})
+	if n.Unaccounted != 20 {
+		t.Fatalf("receipts before outcomes were counted: unaccounted %d, want 20", n.Unaccounted)
+	}
+}
+
 func TestSourceHealth(t *testing.T) {
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	day := 24 * time.Hour
