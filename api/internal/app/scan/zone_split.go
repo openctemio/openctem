@@ -17,11 +17,13 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -71,7 +73,7 @@ func (s *Service) triggerZoneSplit(ctx context.Context, base workflowRunInput, r
 			if firstErr == nil {
 				firstErr = err
 			}
-			entry[splitKeyStatus], entry[splitKeyReason] = splitGroupRefused, oneLine(err.Error())
+			entry[splitKeyStatus], entry[splitKeyReason] = splitGroupRefused, s.splitAdmissionReason(ctx, g, err)
 			listed = append(listed, entry)
 			continue
 		}
@@ -95,7 +97,7 @@ func (s *Service) triggerZoneSplit(ctx context.Context, base workflowRunInput, r
 		if err != nil {
 			s.logger.Warn("failed to start a zone run of a split workflow run", "run_id", parent.ID.String(),
 				"zone", logger.SanitizeValue(zoneLabel(c.group)), "error", logger.SanitizeError(err))
-			entry[splitKeyStatus], entry[splitKeyReason] = splitGroupRefused, oneLine(err.Error())
+			entry[splitKeyStatus], entry[splitKeyReason] = splitGroupRefused, splitStartFailedReason
 			continue
 		}
 		started++
@@ -211,4 +213,24 @@ func zoneLabel(g workflowZoneGroup) string {
 		return "(no zone)"
 	}
 	return g.Zone.Name
+}
+
+// splitStartFailedReason is the reason a zone group shows when its zone run
+// could not start, or its admission failed for a reason that is not a
+// refusal: the error itself (a database or internal failure) is logged,
+// never stored on the run, which the API and the console show.
+const splitStartFailedReason = "the zone run could not start"
+
+// splitAdmissionReason is the reason a zone group shows when its admission
+// refused it: a refusal's own message (scope, zone, scan window), which is
+// written for the reader; any other error gets splitStartFailedReason and is
+// logged.
+func (s *Service) splitAdmissionReason(ctx context.Context, g workflowZoneGroup, err error) string {
+	var de *shared.DomainError
+	if errors.As(err, &de) && de.Message != "" {
+		return oneLine(de.Message)
+	}
+	s.logger.Warn("failed to admit a zone run of a split workflow run",
+		"zone", logger.SanitizeValue(zoneLabel(g)), "error", logger.SanitizeError(err))
+	return splitStartFailedReason
 }

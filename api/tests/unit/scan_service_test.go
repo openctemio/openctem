@@ -372,6 +372,7 @@ func (m *mockAssetGroupRepo) CountAssetsByType(_ context.Context, _ shared.ID) (
 type mockRunRepo struct {
 	runs                map[string]*scanrundom.Run
 	createLimitErr      error
+	createChildErr      error // fails the creation of a zone run (a run with a parent)
 	activeByScanCount   int
 	activeByTenantCount int
 }
@@ -436,6 +437,9 @@ func (m *mockRunRepo) CountActiveByScanID(_ context.Context, _ shared.ID) (int, 
 func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *scanrundom.Run, _, _ int) error {
 	if m.createLimitErr != nil {
 		return m.createLimitErr
+	}
+	if m.createChildErr != nil && r.ParentRunID != nil {
+		return m.createChildErr
 	}
 	m.runs[r.ID.String()] = r
 	return nil
