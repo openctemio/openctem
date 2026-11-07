@@ -13,9 +13,17 @@ package ingest
 // served from (the expected expansion of resolution, port scans and probes).
 // Discovery stages find names under the target root by design, and a
 // subdomain of a target is "covered" for the other binding rules too, so
-// they keep working; a name outside every target root is never something the
-// job could have been asked to look at. Such an asset is dropped with its
-// findings, counted, and audited; it never creates an asset.
+// they keep working. A name outside every target root is not something the
+// job was asked to look at, but it is what the scan saw (a redirect, a
+// resolved address, a name in a response): it is recorded, never dropped
+// (research 436, owner decision "ingest never drops information"). Such an
+// asset is created as a scan discovery and is never an authority: the
+// active-scan gate decides what may be probed, so a third-party or shared
+// host stays passive until a person puts it in scope. An existing asset
+// outside the targets is only marked seen (the binding's mayAlter), findings
+// on these assets run no new-finding automations, and a report may record
+// at most maxOutsideTargetAssets of them: the rest are refused with their
+// findings, counted and audited.
 //
 // Address-chunk commands (every target an address or range) keep their own
 // rule (outsideAddressChunk). Assets that name no host (certificates,
@@ -26,7 +34,7 @@ import (
 	"net/netip"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
@@ -208,54 +216,99 @@ func (s *alterScope) outsideJobTargets(normalizedName string, t asset.AssetType)
 		return false
 	}
 	host, _ := parseLocator(normalizedName)
+	// A stored service name is host:port:transport, which the locator
+	// parser does not split: without this every service on a target host
+	// read as outside the targets.
+	if t == asset.AssetTypeService {
+		if h, _, _, ok := asset.SplitServiceName(normalizedName); ok {
+			host = h
+		}
+	}
 	return !s.jobCoversHost(host)
 }
 
-// skipOutsideJob counts a report asset dropped because it lies outside its
-// command's targets; its findings are dropped with it.
-func skipOutsideJob(output *Output, ref string) {
-	output.AssetsOutsideJob++
+// maxOutsideTargetAssets bounds the assets one report may record outside
+// its command's targets or addresses (both rules together). A sensor that
+// sends more is misbehaving: the rest are refused with their findings.
+const maxOutsideTargetAssets = 1000
+
+// recordOutsideTargets counts a report asset that lies outside its
+// command's targets (chunk: outside its addresses) and reports whether it is
+// still recorded. Over maxOutsideTargetAssets it is refused: its ref joins
+// OverCapAssetRefs and its findings are refused with it.
+func recordOutsideTargets(output *Output, ref string, chunk bool) bool {
+	if output.AssetsOutsideJob+output.AssetsOutsideChunk >= maxOutsideTargetAssets {
+		output.AssetsOverCap++
+		if ref != "" {
+			if output.OverCapAssetRefs == nil {
+				output.OverCapAssetRefs = map[string]bool{}
+			}
+			output.OverCapAssetRefs[ref] = true
+		}
+		return false
+	}
+	if chunk {
+		output.AssetsOutsideChunk++
+	} else {
+		output.AssetsOutsideJob++
+	}
 	if ref != "" {
 		if output.OutsideJobAssetRefs == nil {
 			output.OutsideJobAssetRefs = map[string]bool{}
 		}
 		output.OutsideJobAssetRefs[ref] = true
 	}
+	return true
 }
 
-// reportOutsideJob counts, logs and audits what a command-bound report lost
-// because it lay outside the command's targets. Nothing of it was applied.
+// reportOutsideJob counts, logs and audits what a command-bound report
+// recorded outside its command's targets, and what the cap refused.
 func (s *Service) reportOutsideJob(agt *sensor.Sensor, tenantID shared.ID, binding Binding, report *ctis.Report, output *Output) {
-	if output == nil || output.AssetsOutsideJob == 0 || agt == nil {
+	if output == nil || agt == nil {
 		return
 	}
-	metrics.SensorResultsOutsideJobTotal.WithLabelValues("asset").Add(float64(output.AssetsOutsideJob))
+	recorded := output.AssetsOutsideJob + output.AssetsOutsideChunk
+	if recorded == 0 && output.AssetsOverCap == 0 {
+		return
+	}
+	metrics.SensorResultsOutsideJobTotal.WithLabelValues("asset").Add(float64(recorded))
 	if output.FindingsOutsideJob > 0 {
 		metrics.SensorResultsOutsideJobTotal.WithLabelValues("finding").Add(float64(output.FindingsOutsideJob))
+	}
+	if output.AssetsOverCap > 0 {
+		metrics.SensorResultsOutsideJobTotal.WithLabelValues("asset_refused").Add(float64(output.AssetsOverCap))
+	}
+	if output.FindingsOverCap > 0 {
+		metrics.SensorResultsOutsideJobTotal.WithLabelValues("finding_refused").Add(float64(output.FindingsOverCap))
 	}
 	tool := ""
 	if report != nil && report.Tool != nil {
 		tool = report.Tool.Name
 	}
-	reportID := ""
-	if report != nil {
-		reportID = report.Metadata.ID
-	}
-	s.logger.Warn("sensor report named hosts outside its command's targets; dropped",
+	reportID := output.ReportID // the receiver's id, never metadata.id
+	s.logger.Warn("sensor report named hosts outside its command's targets; recorded as discoveries",
 		"sensor_id", agt.ID.String(), "tenant_id", tenantID.String(), "tool", sanitizeIngestLogField(tool),
-		"assets", output.AssetsOutsideJob, "findings", output.FindingsOutsideJob,
+		"assets", recorded, "findings", output.FindingsOutsideJob,
+		"assets_refused", output.AssetsOverCap, "findings_refused", output.FindingsOverCap,
 		"report_id", sanitizeIngestLogField(reportID))
-	event := auditapp.NewDeniedEvent(audit.ActionSensorResultsOutsideJob, audit.ResourceTypeSensor, agt.ID.String(),
-		ingestreceipt.ReasonOutsideJob).
+	// Recording is the expected expansion of a scan (redirects, resolved
+	// addresses); a report that hit the cap is a misbehaving sensor.
+	severity := audit.SeverityMedium
+	if output.AssetsOverCap > 0 {
+		severity = audit.SeverityHigh
+	}
+	event := auditapp.NewSuccessEvent(audit.ActionSensorResultsOutsideJob, audit.ResourceTypeSensor, agt.ID.String()).
 		WithResourceName(agt.Name).
-		WithSeverity(audit.SeverityHigh).
+		WithSeverity(severity).
 		WithMetadata("reason", ingestreceipt.ReasonOutsideJob).
 		WithMetadata("tool_name", truncateString(sanitizeIngestLogField(tool), 128)).
 		WithMetadata("report_id", truncateString(sanitizeIngestLogField(reportID), 256)).
-		WithMetadata("assets_dropped", output.AssetsOutsideJob).
-		WithMetadata("findings_dropped", output.FindingsOutsideJob).
-		WithMessage(fmt.Sprintf("%d asset(s) and %d finding(s) outside the command's targets were dropped, not applied",
-			output.AssetsOutsideJob, output.FindingsOutsideJob))
+		WithMetadata("assets_recorded", recorded).
+		WithMetadata("findings_recorded", output.FindingsOutsideJob).
+		WithMetadata("assets_refused", output.AssetsOverCap).
+		WithMetadata("findings_refused", output.FindingsOverCap).
+		WithMessage(fmt.Sprintf("%d asset(s) and %d finding(s) outside the command's targets were recorded as discoveries; %d asset(s) and %d finding(s) over the cap were refused",
+			recorded, output.FindingsOutsideJob, output.AssetsOverCap, output.FindingsOverCap))
 	if binding.CommandID != nil {
 		event = event.WithMetadata("command_id", binding.CommandID.String())
 	}

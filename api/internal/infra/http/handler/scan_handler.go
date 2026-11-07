@@ -39,6 +39,8 @@ type ScanHandler struct {
 	approvals *ScanApprovalHandler
 	// dataScope narrows the coverage figures to the caller's data scope.
 	dataScope *datascope.Enforcer
+	// capabilities answers GET /scans/capabilities; nil reads the service.
+	capabilities scanCapabilityReader
 }
 
 // SetDataScope wires the enforcer that narrows the rolling coverage figures
@@ -104,14 +106,18 @@ type CreateScanRequest struct {
 	// Depth is how much of the workflow each run executes: passive (only
 	// steps that send nothing to the targets), standard (default) or deep.
 	// A depth at which no first step can run is refused (DEPTH_RUNS_NOTHING).
-	Depth          string         `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any `json:"scanner_config"`
-	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams override capability standard params per workflow step:
+	// {"<step_key>" or "*:<capability>": {"<param>": value}}. Standard
+	// params only (INVALID_STEP_PARAMS otherwise).
+	StepParams     scan.StepParams `json:"step_params"`
+	ScanType       string          `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string          `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string          `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any  `json:"scanner_config"`
+	TargetsPerJob  int             `json:"targets_per_job"`
+	ScheduleType   string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -143,6 +149,12 @@ type CreateScanRequest struct {
 	// codes in skipped_targets and on every run. Nothing the gate refuses is
 	// saved or scanned.
 	SkipRefusedTargets bool `json:"skip_refused_targets"`
+	// ConfirmLargeRange confirms direct targets that name a range wider than
+	// a /16 (scanned live hosts first in /16 chunks). Required for such a
+	// scan: without it the request is refused with LARGE_RANGE_UNCONFIRMED,
+	// whose message and details carry the ranges and their address and
+	// chunk counts.
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
@@ -158,9 +170,11 @@ type UpdateScanRequest struct {
 	// Intensity: omitted = unchanged.
 	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
 	// Depth: omitted = unchanged.
-	Depth        string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams: omitted = unchanged, {} clears.
+	StepParams   scan.StepParams `json:"step_params"`
+	ScheduleType string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -194,6 +208,9 @@ type UpdateScanRequest struct {
 	// AssetGroupIDs: omitted = unchanged; given = the scan's asset groups
 	// ([] = none; the scan must keep a target or a group).
 	AssetGroupIDs *[]string `json:"asset_group_ids" validate:"omitempty,max=100,dive,uuid"`
+	// ConfirmLargeRange confirms new targets that name a range wider than a
+	// /16; required for such an edit (LARGE_RANGE_UNCONFIRMED without it).
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // TriggerScanRequest represents the request body for triggering a scan.
@@ -294,16 +311,18 @@ type ScanDetailResponse struct {
 	// intrusive.
 	Intensity string `json:"intensity" enums:"passive,active,intrusive"`
 	// Depth is how much of the workflow each run executes.
-	Depth          string         `json:"depth" enums:"passive,standard,deep"`
-	ScanType       string         `json:"scan_type"`
-	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
-	ScannerName    string         `json:"scanner_name,omitempty"`
-	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
+	Depth string `json:"depth" enums:"passive,standard,deep"`
+	// StepParams are the scan's per-step overrides of standard params.
+	StepParams     scan.StepParams `json:"step_params,omitempty"`
+	ScanType       string          `json:"scan_type"`
+	ScanWorkflowID *string         `json:"scan_workflow_id,omitempty"`
+	ScannerName    string          `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any  `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
-	// secrets (a token, a password, an Authorization header). The config is
-	// sent to the sensor in clear inside every command, so a secret there
-	// travels and rests unprotected. A warning, never a refusal; the value
-	// itself is never echoed.
+	// secrets. A certain credential is refused on save and blocks a run
+	// (SCANNER_CONFIG_SECRET); what is listed here is what only looks like
+	// one (a random-looking value), or a scan stored before the refusal.
+	// The value itself is never echoed.
 	ScannerConfigWarnings []scan.ConfigSecretWarning `json:"scanner_config_warnings,omitempty"`
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`
@@ -326,13 +345,18 @@ type ScanDetailResponse struct {
 	RetryBackoffSeconds int     `json:"retry_backoff_seconds"`
 	Status              string  `json:"status"`
 	// AdHoc: an unsaved quick scan (not listed as a configuration until saved).
-	AdHoc          bool    `json:"ad_hoc"`
-	LastRunID      *string `json:"last_run_id,omitempty"`
-	LastRunAt      *string `json:"last_run_at,omitempty"`
-	LastRunStatus  string  `json:"last_run_status,omitempty"`
-	TotalRuns      int     `json:"total_runs"`
-	SuccessfulRuns int     `json:"successful_runs"`
-	FailedRuns     int     `json:"failed_runs"`
+	AdHoc         bool    `json:"ad_hoc"`
+	LastRunID     *string `json:"last_run_id,omitempty"`
+	LastRunAt     *string `json:"last_run_at,omitempty"`
+	LastRunStatus string  `json:"last_run_status,omitempty"`
+	// LastMissedAt/LastMissedReason: the last scheduled occurrence that was
+	// skipped because it was missed (reason is a code the UI translates).
+	// Cleared when a later scheduled run starts.
+	LastMissedAt     *string `json:"last_missed_at,omitempty"`
+	LastMissedReason string  `json:"last_missed_reason,omitempty"`
+	TotalRuns        int     `json:"total_runs"`
+	SuccessfulRuns   int     `json:"successful_runs"`
+	FailedRuns       int     `json:"failed_runs"`
 	// PartialRuns: runs that kept results but lost some work.
 	PartialRuns int `json:"partial_runs"`
 	// BlockedRuns: triggers refused before anything was dispatched; each
@@ -378,7 +402,7 @@ type ScanStatsResponse struct {
 
 // CreateScan handles POST /api/v1/scans
 // @Summary      Create scan
-// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response).
+// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response). Direct targets that name a range wider than a /16 need confirm_large_range: true and an organization limit that allows them (Scoping settings, max_range_prefix; a /16 by default); without the confirmation the request is refused (400 LARGE_RANGE_UNCONFIRMED, with the address and chunk counts).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -457,6 +481,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
 		Depth:               req.Depth,
+		StepParams:          req.StepParams,
 		ScanType:            req.ScanType,
 		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
@@ -482,6 +507,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 
 		StartWhenScopeApproved: req.StartWhenScopeApproved,
 		SkipRefusedTargets:     req.SkipRefusedTargets,
+		ConfirmLargeRange:      req.ConfirmLargeRange,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -637,7 +663,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 
 // UpdateScan handles PUT /api/v1/scans/{id}
 // @Summary      Update scan
-// @Description  Update an existing scan configuration
+// @Description  Update an existing scan configuration. New targets that name a range wider than a /16 need confirm_large_range: true (400 LARGE_RANGE_UNCONFIRMED without it).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -687,6 +713,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
 		Depth:               req.Depth,
+		StepParams:          req.StepParams,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
 		ScheduleRRule:       req.ScheduleRRule,
@@ -707,6 +734,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		AssetIDs:            req.AssetIDs,
 		AssetGroupIDs:       req.AssetGroupIDs,
 		ActorID:             middleware.GetUserID(r.Context()),
+		ConfirmLargeRange:   req.ConfirmLargeRange,
 	}
 
 	s, err := h.service.UpdateScan(h.auditCtx(r), input)
@@ -962,9 +990,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                  true   "Scan ID"
-// @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
+// @Param        request  body      TriggerScanExecRequest  false  "Trigger context: only the key reason (text, at most 500 characters); any other key is refused with TRIGGER_CONTEXT_REFUSED"
 // @Success      201  {object}  RunResponse
-// @Failure      400  {object}  apierror.Error
+// @Failure      400  {object}  apierror.Error  "TRIGGER_CONTEXT_REFUSED: the context sets a key a caller may not set"
 // @Failure      403  {object}  apierror.Error  "caller may not start this scan"
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error  "SCAN_WINDOW_NEVER_OPENS: a target's scan window never opens"
@@ -979,6 +1007,12 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	var req TriggerScanExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	// The run context reaches the run's sensor jobs and decides its outcome:
+	// a caller may only set the allow-listed keys.
+	if err := scansvc.ValidateCallerTriggerContext(req.Context); err != nil {
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -1538,6 +1572,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		SkippedTargets:        s.SkippedTargets,
 		Intensity:             string(s.EffectiveIntensity()),
 		Depth:                 string(s.EffectiveDepth()),
+		StepParams:            s.StepParams,
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
 		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),
@@ -1589,6 +1624,10 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 	if s.ScheduleRunAt != nil {
 		ra := s.ScheduleRunAt.UTC().Format(time.RFC3339)
 		resp.ScheduleRunAt = &ra
+	}
+	if s.LastMissedAt != nil {
+		lma := s.LastMissedAt.Format(time.RFC3339)
+		resp.LastMissedAt = &lma
 	}
 	if s.NextRunAt != nil {
 		nra := s.NextRunAt.Format(time.RFC3339)
@@ -1662,6 +1701,12 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// The scan's workflow, not the scan, is missing (or another
 		// organization's): say so.
 		apierror.New(http.StatusNotFound, apierror.Code(scanworkflow.ErrScanWorkflowNotFound.Code), "Scan workflow not found").WriteJSON(w)
+	case scanReferenceNotFoundCode(err) != "":
+		// The scan was found; something it uses was not (its workflow, a
+		// step's tool): say which, never "Scan not found".
+		code := scanReferenceNotFoundCode(err)
+		spec, _ := apierror.Lookup(code)
+		apierror.New(spec.Status, code, cleanErrorMessage(err, spec.Message)).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
 		apierror.NotFound("Scan").WriteJSON(w)
 	case errors.Is(err, shared.ErrAlreadyExists):
@@ -1702,6 +1747,25 @@ func (h *ScanHandler) handleServiceError(w http.ResponseWriter, err error) {
 		h.logger.Error("service error", "error", err)
 		apierror.InternalError(err).WriteJSON(w)
 	}
+}
+
+// scanReferenceNotFoundCode is the registered code of a not-found error that
+// is about a reference of a loaded scan (scan trigger), or "".
+func scanReferenceNotFoundCode(err error) apierror.Code {
+	if !errors.Is(err, shared.ErrNotFound) {
+		return ""
+	}
+	var de *shared.DomainError
+	if !errors.As(err, &de) {
+		return ""
+	}
+	switch de.Code {
+	case scansvc.CodePipelineNotFound:
+		return apierror.CodePipelineNotFound
+	case scansvc.CodeScanDependencyMissing:
+		return apierror.CodeScanDependencyMissing
+	}
+	return ""
 }
 
 // cleanErrorMessage extracts a user-friendly message from an error.
@@ -1906,10 +1970,11 @@ func (h *ScanHandler) ExportConfig(w http.ResponseWriter, r *http.Request) {
 
 // ImportConfig handles POST /api/v1/scans/import
 // @Summary      Import scan configuration
-// @Description  Create a new scan from an imported JSON configuration
+// @Description  Create a new scan from an imported JSON configuration. A configuration whose targets name a range wider than a /16 needs ?confirm_large_range=true (400 LARGE_RANGE_UNCONFIRMED without it).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
+// @Param        confirm_large_range  query  bool  false  "Confirm targets wider than a /16"
 // @Param        request  body      object  true  "Scan configuration JSON (exported format)"
 // @Success      201  {object}  ScanDetailResponse
 // @Failure      400  {object}  apierror.Error
@@ -1932,7 +1997,8 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()))
+	sc, err := h.service.ImportConfigConfirmed(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()),
+		r.URL.Query().Get("confirm_large_range") == "true")
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -34,19 +34,22 @@ func netPortIngest(t *testing.T) (r *v2Rig, tn v2Tenant, scan func(ports ...int)
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	scan = func(ports ...int) {
 		t.Helper()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nessus"},
-			Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nessus"},
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets:   []ctis.Asset{{ID: "h", Type: ctis.AssetTypeHost, Value: "tls-" + tn.tenant.String()[:8] + ".example.com"}}}
 		for _, p := range ports {
 			f := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "SSL Certificate Cannot Be Trusted",
 				Severity: ctis.SeverityMedium, RuleID: "51192", AssetRef: "h"}
 			if p > 0 {
-				f.Network = &ctis.NetworkLocation{Port: p, Protocol: "tcp"}
+				f.Network = &ctis.NetworkLocation{Port: p, Transport: ctis.TransportTCP}
 			}
 			rep.Findings = append(rep.Findings, f)
 		}
 		out, err := svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("ingest: %v %v", err, out.Errors)
 		}
 	}
@@ -71,9 +74,27 @@ func TestNetworkFindingWithoutCVE_PortIsPartOfTheKey(t *testing.T) {
 // row over, the other port becomes a new finding.
 func TestNetworkFindingWithoutCVE_LegacyRowKeepsItsTriage(t *testing.T) {
 	r, tn, scan := netPortIngest(t)
-	scan(0) // stored under the legacy generic key
-	if _, err := r.db.Exec(`UPDATE findings SET status = 'false_positive', resolution = 'false_positive'
-		WHERE tenant_id = $1 AND rule_id = '51192'`, tn.tenant.String()); err != nil {
+	// A release before the port joined the key stored the finding under the
+	// port-less version-1 key with no identity tuple; the re-key leaves such
+	// a row there (the port is not on the row). A host-level report today is
+	// a finding of its own (the network key's "host" port), so the row is
+	// written as that release wrote it.
+	scan(0)
+	var assetID string
+	if err := r.db.QueryRowContext(context.Background(), `SELECT asset_id FROM findings WHERE tenant_id = $1 AND rule_id = '51192'`,
+		tn.tenant.String()).Scan(&assetID); err != nil {
+		t.Fatal(err)
+	}
+	legacy := ingest.VersionOneFingerprint(shared.MustIDFromString(assetID), &ctis.Finding{Type: ctis.FindingTypeVulnerability,
+		Title: "SSL Certificate Cannot Be Trusted", Severity: ctis.SeverityMedium, RuleID: "51192", AssetRef: "h"}, nil)
+	if _, err := r.db.ExecContext(context.Background(), `UPDATE findings SET fingerprint = $2, fingerprint_version = 1, identity_key = NULL,
+		identity_algo = NULL, identity_fields = NULL, status = 'false_positive', resolution = 'false_positive'
+		WHERE tenant_id = $1 AND rule_id = '51192'`, tn.tenant.String(), legacy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.ExecContext(context.Background(), `DELETE FROM finding_fingerprints a USING findings f
+		WHERE a.finding_id = f.id AND f.tenant_id = $1 AND f.rule_id = '51192' AND a.fingerprint <> $2`,
+		tn.tenant.String(), legacy); err != nil {
 		t.Fatal(err)
 	}
 	var legacyID string

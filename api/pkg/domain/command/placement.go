@@ -78,6 +78,11 @@ const (
 	// PlacementNotConfined: the command needs network confinement
 	// (PayloadKeyRequiredFeatures) and the sensor did not report it.
 	PlacementNotConfined = "not_confined"
+	// PlacementStrongIsolationMissing: the command's tool needs strong
+	// isolation (PayloadKeyRequiredFeatures) and the sensor did not report
+	// a proven strong isolation backend; the job waits for one and is never
+	// run on the process sandbox.
+	PlacementStrongIsolationMissing = "strong_isolation_missing"
 	// PlacementRuleSourcesUnsupported: the command runs only the
 	// organization's templates and the sensor did not report that its
 	// scanners honor rule sources (an older sensor would also run the
@@ -104,6 +109,10 @@ const (
 	// PlacementIntensity: on this sensor the job's tier is above the
 	// scan's intensity.
 	PlacementIntensity = "intensity"
+	// PlacementActiveScanning: the organization's entitlements deny active
+	// scanning (passive only) and the job probes above passive on this
+	// sensor (or the entitlement could not be read).
+	PlacementActiveScanning = "active_scanning_not_entitled"
 	// PlacementPolicyUnavailable: the sensor's grant or policy could not be
 	// read; nothing is dispatched to it until it can (fail closed).
 	PlacementPolicyUnavailable = "policy_unavailable"
@@ -220,6 +229,7 @@ type PlacementReader interface {
 // dimension).
 var withheldText = map[string]string{
 	PlacementIntensity:          "the job's tier is above the scan's intensity",
+	PlacementActiveScanning:     "active scanning is not available for this organization",
 	PlacementPolicyUnavailable:  "the sensor's policy could not be read",
 	PlacementPrivateNeedsPolicy: "private targets need a sensor with a local policy",
 	PlacementOptInDisabled:      "the organization has not enabled this sensor opt-in",

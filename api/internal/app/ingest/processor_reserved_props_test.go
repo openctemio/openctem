@@ -1,12 +1,15 @@
 package ingest
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/tag"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -58,5 +61,38 @@ func TestMergeCTISIntoAsset_KeepsReservedValues(t *testing.T) {
 	}
 	if got["os_name"] != "linux" {
 		t.Error("ordinary sensor properties must be merged")
+	}
+}
+
+// A sensor report's asset tags pass the shared tag validator: no oversized,
+// hidden-character, markup or reserved-namespace tags reach an asset, a
+// report sets at most MaxPerImport tags, and what an analyst already put on
+// the asset stays.
+func TestMergeCTISIntoAsset_DropsHostileTags(t *testing.T) {
+	p := &AssetProcessor{logger: logger.NewNop(), propsValidator: validator.NewPropertiesValidator()}
+	a, err := asset.NewAsset("h.example.com", asset.AssetTypeHost, asset.CriticalityMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.AddTag("team:payments") // set by a person
+
+	hostile := []string{
+		strings.Repeat("x", 200), "bug-bounty", "sys:admin", "a\u202eb", "<img src=x>", "=HYPERLINK(1)", "env:prod",
+	}
+	p.mergeCTISIntoAsset(a, &ctis.Asset{Value: "h.example.com", Type: "host", Tags: hostile}, nil, time.Time{}, nil)
+	for _, tg := range a.Tags() {
+		if tg != "team:payments" && tg != "env:prod" {
+			t.Errorf("hostile tag stored: %q", tg)
+		}
+	}
+
+	var many []string
+	for i := 0; i < 40; i++ {
+		many = append(many, fmt.Sprintf("lbl-%d", i))
+	}
+	b, _ := asset.NewAsset("b.example.com", asset.AssetTypeHost, asset.CriticalityMedium)
+	p.mergeCTISIntoAsset(b, &ctis.Asset{Value: "b.example.com", Type: "host", Tags: many}, nil, time.Time{}, nil)
+	if len(b.Tags()) != tag.MaxPerImport {
+		t.Errorf("an import sets at most %d tags, got %d", tag.MaxPerImport, len(b.Tags()))
 	}
 }

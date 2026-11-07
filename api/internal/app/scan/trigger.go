@@ -146,6 +146,7 @@ func (s *Service) triggerAndRecord(ctx context.Context, sc *scan.Scan, input Tri
 
 	run, err := s.triggerLoadedScan(ctx, sc, input)
 	if err != nil {
+		err = s.explainMissingReference(sc, err)
 		// A refusal becomes a blocked run with its reason; either way the
 		// scan's summary is recomputed from its runs (a run that failed
 		// while starting is one of them).
@@ -169,6 +170,39 @@ func (s *Service) triggerAndRecord(ctx context.Context, sc *scan.Scan, input Tri
 	return run, nil
 }
 
+// CodeScanDependencyMissing refuses a trigger when something the scan uses
+// (a workflow step's tool, a profile, ...) was not found. The scan itself
+// was loaded, so "not found" must not read as the scan being missing.
+const CodeScanDependencyMissing = "SCAN_DEPENDENCY_MISSING"
+
+// explainMissingReference turns a not-found error from the trigger gates
+// into SCAN_DEPENDENCY_MISSING, unless it already carries its own code (the
+// scan's workflow: PIPELINE_NOT_FOUND, SCAN_WORKFLOW_NOT_FOUND). The scan
+// was loaded for the caller's tenant before any gate ran, so a bare
+// not-found below it is always about a reference. The original error is
+// logged (it may name internals); the refusal names none, and as a domain
+// error it is recorded as a blocked run, so a scheduled trigger that fails
+// this way shows on the scan instead of failing silently.
+func (s *Service) explainMissingReference(sc *scan.Scan, err error) error {
+	if !errors.Is(err, shared.ErrNotFound) {
+		return err
+	}
+	var de *shared.DomainError
+	if errors.As(err, &de) && (de.Code == CodePipelineNotFound || de.Code == scanworkflow.ErrScanWorkflowNotFound.Code || de.Code == CodeScanDependencyMissing) {
+		return err
+	}
+	s.logger.Warn("scan trigger refused: a reference of the scan was not found",
+		"scan_id", sc.ID.String(), "error", logger.SanitizeError(err))
+	refusal := shared.NewDomainError(CodeScanDependencyMissing,
+		"Something this scan uses was not found, for example the tool of a workflow step. Check the scan and its workflow, then run it again.",
+		shared.ErrNotFound)
+	var started *runStartError
+	if errors.As(err, &started) {
+		return afterRunCreated(refusal)
+	}
+	return refusal
+}
+
 // triggerLoadedScan runs every trigger gate and dispatches the scan's run.
 // An error before the run exists is a refusal (TriggerScan records it as a
 // blocked run); one after is wrapped with afterRunCreated.
@@ -185,6 +219,24 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 			msg = fmt.Sprintf("This scan cannot run while it is %s. Only active scans can run.", sc.Status)
 		}
 		return nil, shared.NewDomainError("SCAN_NOT_TRIGGERABLE", msg, shared.ErrValidation)
+	}
+	// A scanner_config stored with a credential (before the platform refused
+	// them) never reaches a command: the run is blocked with
+	// SCANNER_CONFIG_SECRET until the setting is removed.
+	if err := scan.RefuseConfigSecrets(sc.ScannerConfig); err != nil {
+		return nil, err
+	}
+
+	// The workflow a workflow scan runs, before any gate reads its steps:
+	// the organization's own or a shared system template, never another
+	// organization's private workflow.
+	var workflow *scanworkflow.Workflow
+	if sc.ScanType == scan.ScanTypeWorkflow {
+		wf, werr := s.runnableWorkflow(ctx, sc)
+		if werr != nil {
+			return nil, werr
+		}
+		workflow = wf
 	}
 
 	// NOTE: Concurrent run limits are now checked atomically in CreateRunIfUnderLimit
@@ -208,6 +260,11 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		if err := s.refuseOwnerlessSchedule(ctx, sc); err != nil {
 			return nil, err
 		}
+	}
+
+	// Passive only: no run above passive without active scanning.
+	if err := s.requireActiveScanning(ctx, sc); err != nil {
+		return nil, err
 	}
 
 	// Scan approval (RFC-073): a scan the organization's rules hold runs only
@@ -251,15 +308,27 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 		return nil, err
 	}
 
-	// Validate tools are still available and active before triggering
-	// (Tools may have been disabled or removed since scan was created)
-	if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
-		return nil, err
-	}
-	// A tool no online sensor may run refuses the trigger with the reason,
-	// rather than queueing jobs nobody claims.
-	if err := s.checkScanToolsDispatchable(ctx, sc); err != nil {
-		return nil, err
+	// A workflow runs as far as the organization's tools and sensors
+	// support (step_support.go): a step nothing here runs is skipped with
+	// its reason, and only a trigger in which no step can run is refused
+	// (NO_RUNNABLE_STEPS). A single scanner is the scan's one step: a tool
+	// that is gone or off, or that no online sensor may run, refuses it.
+	var stepSkips map[string]StepSkip
+	if sc.ScanType == scan.ScanTypeWorkflow {
+		steps, serr := s.stepRepo.GetByScanWorkflowID(ctx, workflow.ID)
+		if serr != nil {
+			return nil, fmt.Errorf("failed to get scan workflow steps: %w", serr)
+		}
+		if stepSkips, err = s.workflowStepSkips(ctx, sc, workflow, steps); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.validateToolsAtTriggerTime(ctx, sc); err != nil {
+			return nil, err
+		}
+		if err := s.checkScanToolsDispatchable(ctx, sc); err != nil {
+			return nil, err
+		}
 	}
 
 	// A wildcard pattern: its root domain for a discovery tool, refused for
@@ -285,51 +354,67 @@ func (s *Service) triggerLoadedScan(ctx context.Context, sc *scan.Scan, input Tr
 
 	// Execute based on scan type
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		return s.triggerWorkflow(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
+		return s.triggerWorkflow(ctx, sc, workflow, stepSkips, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 	}
 	return s.triggerSingleScan(ctx, sc, triggerType, input.TriggeredBy, input.Context, input.RetryAttempt, input.ScheduledFor)
 }
 
-// triggerWorkflow triggers a workflow scan workflow execution.
-func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*scanrun.Run, error) {
+// CodePipelineNotFound refuses a workflow scan whose workflow is gone, or is
+// not one the scan's organization may run.
+const CodePipelineNotFound = "PIPELINE_NOT_FOUND"
+
+// errPipelineNotFound is the refusal for a workflow the scan cannot use. It
+// names no id and reads the same for a deleted workflow and another
+// organization's private one (no IDOR).
+var errPipelineNotFound = shared.NewDomainError(CodePipelineNotFound,
+	"This scan's workflow was not found: it may have been deleted. Edit the scan and choose another workflow.",
+	shared.ErrNotFound)
+
+// runnableWorkflow returns the workflow a workflow scan runs: the scan
+// organization's own workflow, or a shared system template, which every
+// organization runs whatever organization its row is stored under (the
+// platform's system tenant). Another organization's private workflow is
+// errPipelineNotFound, like a missing one. A retired workflow is
+// ErrScanWorkflowRetired and an inactive one PIPELINE_DISABLED.
+func (s *Service) runnableWorkflow(ctx context.Context, sc *scan.Scan) (*scanworkflow.Workflow, error) {
 	if sc.ScanWorkflowID == nil {
 		return nil, fmt.Errorf("%w: scan_workflow_id is required for workflow", shared.ErrValidation)
 	}
-
-	// Get scan workflow
-	template, err := s.templateRepo.GetByID(ctx, *sc.ScanWorkflowID)
-	if err != nil {
-		return nil, shared.NewDomainError(
-			"PIPELINE_NOT_FOUND",
-			fmt.Sprintf("Scan workflow '%s' not found. It may have been deleted.", sc.ScanWorkflowID.String()),
-			shared.ErrNotFound,
-		)
+	wf, err := s.templateRepo.GetByTenantAndID(ctx, sc.TenantID, *sc.ScanWorkflowID)
+	if errors.Is(err, shared.ErrNotFound) {
+		wf, err = s.templateRepo.GetSystemTemplateByID(ctx, *sc.ScanWorkflowID)
 	}
-
-	if template.RetiredAt != nil {
+	if errors.Is(err, shared.ErrNotFound) || (err == nil && wf == nil) {
+		return nil, errPipelineNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load the scan workflow: %w", err)
+	}
+	if wf.RetiredAt != nil {
 		return nil, scanworkflow.ErrScanWorkflowRetired
 	}
-
-	// Verify template is active
-	if !template.IsActive {
+	if !wf.IsActive {
 		return nil, shared.NewDomainError(
 			"PIPELINE_DISABLED",
-			fmt.Sprintf("Scan workflow '%s' is disabled. Enable it or choose another scan workflow.", template.Name),
+			fmt.Sprintf("Scan workflow '%s' is disabled. Enable it or choose another scan workflow.", wf.Name),
 			shared.ErrValidation,
 		)
+	}
+	return wf, nil
+}
+
+// triggerWorkflow starts a run of a workflow scan; template is the scan's
+// workflow from runnableWorkflow; skips are the steps nothing here runs
+// (workflowStepSkips), recorded as skipped with their reasons.
+func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *scanworkflow.Workflow, skips map[string]StepSkip, triggerType scanworkflow.TriggerType, triggeredBy string, runContext map[string]any, retryAttempt int, scheduledFor *time.Time) (*scanrun.Run, error) {
+	if template == nil {
+		return nil, errPipelineNotFound
 	}
 
 	// Get workflow steps
 	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, template.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get scan workflow steps: %w", err)
-	}
-
-	// Re-evaluated at run start: sensors can go away after the scan was
-	// created.
-	template.Steps = steps
-	if err := s.requireWorkflowRunnable(ctx, sc.TenantID, template); err != nil {
-		return nil, err
 	}
 
 	// Validate scan workflow has steps
@@ -352,6 +437,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	// the trigger's context.
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
+	setRunStepParams(runContext, sc)
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
 	} else {
@@ -381,7 +467,7 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	// Program rules (RFC-065 §12): conflicting programs, or outside a
 	// program's testing windows, refuse the run.
-	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
+	if err := s.refuseProgramRulesFor(ctx, sc.TenantID, resolved.Targets, scanEnumerates(sc)); err != nil {
 		return nil, err
 	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
@@ -395,24 +481,73 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	}
 	var wfPlan *zonePlan
 	if len(zones) > 0 {
-		// A workflow stays inside one zone; see routeWorkflowTargets.
-		if targets, wfPlan, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
+		routing, err := s.routeForScan(ctx, sc, zones, targets)
+		if err != nil {
+			return nil, err
+		}
+		if groups, uncovered := workflowZoneGroups(routing); len(groups) > 1 {
+			// Targets in several zone groups: one child run per zone
+			// (zone_split.go), never a refusal.
+			return s.triggerZoneSplit(ctx, workflowRunInput{
+				sc: sc, template: template, steps: steps, skips: skips, triggerType: triggerType,
+				triggeredBy: triggeredBy, runContext: runContext, resolved: resolved,
+				retryAttempt: retryAttempt, scheduledFor: scheduledFor,
+			}, routing, groups, uncovered)
+		}
+		// One zone group: the run stays inside it; see routeWorkflowTargets.
+		if targets, wfPlan, err = s.routeWorkflowTargets(sc, routing, runContext); err != nil {
 			return nil, err
 		}
 	}
-	recordSkipGroups(runContext, skipGroups(maxRunSkipSamples, nil, resolved, nil, wfPlan))
-	runZone, err := s.workflowRunZone(ctx, sc, targets, runContext)
-	if err != nil {
+	in := workflowRunInput{
+		sc: sc, template: template, steps: steps, skips: skips, triggerType: triggerType,
+		triggeredBy: triggeredBy, runContext: runContext, resolved: resolved, targets: targets, plan: wfPlan,
+		retryAttempt: retryAttempt, scheduledFor: scheduledFor,
+	}
+	if err := s.admitWorkflowRun(ctx, &in); err != nil {
 		return nil, err
+	}
+	return s.startWorkflowRun(ctx, &in)
+}
+
+// workflowRunInput is one workflow run to start: a whole scan's, or one zone
+// child of a split (parent set).
+type workflowRunInput struct {
+	sc           *scan.Scan
+	template     *scanworkflow.Workflow
+	steps        []*scanworkflow.Step
+	skips        map[string]StepSkip
+	triggerType  scanworkflow.TriggerType
+	triggeredBy  string
+	runContext   map[string]any
+	resolved     *resolvedTargets
+	targets      []string
+	plan         *zonePlan
+	retryAttempt int
+	scheduledFor *time.Time
+	// parent is the split run this run is a zone child of (nil: none).
+	parent *scanrun.Run
+}
+
+// admitWorkflowRun runs the checks of one run before anything is created:
+// it records the run's targets and routing (workflowRunZone) and applies
+// the scan windows of the run's zone.
+func (s *Service) admitWorkflowRun(ctx context.Context, in *workflowRunInput) error {
+	recordSkipGroups(in.runContext, skipGroups(maxRunSkipSamples, nil, in.resolved, nil, in.plan))
+	runZone, err := s.workflowRunZone(ctx, in.sc, in.targets, in.runContext)
+	if err != nil {
+		return err
 	}
 	// Scan windows (windows.go): never-opening targets refuse the run, a
 	// scheduled run with nothing open is deferred.
-	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, targets, oneZone(runZone), workflowTier(steps), runContext); err != nil {
-		return nil, err
-	}
+	return s.checkWindows(ctx, in.sc, in.triggerType, in.triggeredBy, in.targets, oneZone(runZone), workflowTier(in.steps), in.runContext)
+}
 
-	// Create scan run
-	run, err := scanrun.NewRun(template.ID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
+// startWorkflowRun creates an admitted workflow run, its step runs, and
+// schedules its first steps.
+func (s *Service) startWorkflowRun(ctx context.Context, in *workflowRunInput) (*scanrun.Run, error) {
+	sc, template, steps := in.sc, in.template, in.steps
+	run, err := scanrun.NewRun(template.ID, sc.TenantID, nil, in.triggerType, in.triggeredBy, in.runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scan run: %w", err)
 	}
@@ -422,9 +557,15 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := scanrun.PinWorkflow(ctx, s.workflowVersions, run, &pinned); err != nil {
 		return nil, err
 	}
-	run.RetryAttempt = retryAttempt
-	run.ScheduledFor = scheduledFor
+	run.RetryAttempt = in.retryAttempt
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
+	if in.parent != nil {
+		// A zone child: the parent holds the schedule occurrence and counts
+		// against the concurrency limits.
+		run.ParentRunID = &in.parent.ID
+	} else {
+		run.ScheduledFor = in.scheduledFor
+	}
 	if sc.ProfileID != nil {
 		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
 	}
@@ -433,11 +574,15 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, triggerTyp
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
 		return nil, err // Error already includes proper domain error for limit exceeded
 	}
-	s.recordScopeSnapshot(ctx, run, targets)
+	s.recordScopeSnapshot(ctx, run, in.targets)
 
 	// Create step runs
 	for _, step := range steps {
 		stepRun := scanrun.NewStepRunForStep(run.ID, step)
+		if skip, ok := in.skips[step.StepKey]; ok {
+			// Nothing here runs it: skipped with the reason, never queued.
+			stepRun.SkipWithCode(skip.Reason, skip.Code)
+		}
 		if err := s.stepRunRepo.Create(ctx, stepRun); err != nil {
 			s.logger.Warn("failed to create step run", "error", err)
 		}
@@ -498,6 +643,7 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	runContext["scanner_name"] = sc.ScannerName
 	runContext[RunContextKeyIntensity] = string(sc.EffectiveIntensity())
 	runContext[scanrun.RunContextKeyDepth] = string(sc.EffectiveDepth())
+	setRunStepParams(runContext, sc)
 	runContext["scanner_config"] = sc.ScannerConfig
 	if sc.TargetOptions.EffectiveCIDRMode() == scan.CIDRModeLiveness {
 		runContext[RunContextKeyCIDRMode] = string(scan.CIDRModeLiveness)
@@ -543,7 +689,11 @@ func (s *Service) triggerSingleScan(ctx context.Context, sc *scan.Scan, triggerT
 	}
 	// Program rules (RFC-065 §12): conflicting programs, or outside a
 	// program's testing windows, refuse the run.
-	if err := s.refuseProgramRules(ctx, sc.TenantID, resolved.Targets); err != nil {
+	if err := s.refuseProgramRulesFor(ctx, sc.TenantID, resolved.Targets, scanEnumerates(sc)); err != nil {
+		return nil, err
+	}
+	// Path discovery: the organization's switch and the shared gate.
+	if err := s.refusePathDiscovery(ctx, sc, resolved.Targets); err != nil {
 		return nil, err
 	}
 	s.planRolloverFirst(ctx, sc, triggerType, resolved, runContext)
@@ -710,6 +860,12 @@ func (s *Service) scheduleWorkflowSteps(ctx context.Context, run *scanrun.Run, s
 			continue
 		}
 		roots++
+		if sr := run.GetStepRun(step.StepKey); sr != nil && !sr.IsPending() {
+			// Skipped at trigger (no tool or sensor runs it): the run is
+			// advanced so the steps after it settle or start.
+			settled = true
+			continue
+		}
 		if !step.ConditionMet(run) {
 			s.skipWorkflowStep(ctx, run, step, step.ConditionSkipReason())
 			continue
@@ -908,6 +1064,12 @@ func (s *Service) scannerPayload(
 	}
 	if c := withWildcardFilter(sc.ScannerName, scannerConfig); c != nil {
 		payloadMap["config"] = c
+	}
+	// A path discovery job names its capability: ingest stores its
+	// endpoints as guessed from it, and the web job guard gives it the
+	// strict web scope.
+	if stg, ok := stage.ForStep(sc.ScannerName, nil); ok && stg.Key == stage.EnumerateWebPaths {
+		payloadMap[PayloadKeyCapability] = stg.ID()
 	}
 	// The command handler reads `scan_run_id` + `step_key` to route a
 	// finished command back into the scan workflow; a payload carrying only `run_id`
@@ -1301,16 +1463,15 @@ func (s *Service) calculateInitialPriority(priority command.CommandPriority) int
 	}
 }
 
-// validateToolsAtTriggerTime validates that all tools required by the scan are still available.
-// This catches cases where tools have been disabled or removed between scan creation and trigger.
+// validateToolsAtTriggerTime checks that a single scan's scanner is still
+// available and active (it may have been disabled or removed since the scan
+// was saved). A workflow's step tools are checked by workflowStepSkips,
+// which skips a step instead of refusing the run.
 func (s *Service) validateToolsAtTriggerTime(ctx context.Context, sc *scan.Scan) error {
-	switch sc.ScanType {
-	case scan.ScanTypeSingle:
-		return s.validateSingleScanTool(ctx, sc.TenantID, sc.ScannerName)
-	case scan.ScanTypeWorkflow:
-		return s.validateWorkflowStepTools(ctx, sc)
+	if sc.ScanType != scan.ScanTypeSingle {
+		return nil
 	}
-	return nil
+	return s.validateSingleScanTool(ctx, sc.TenantID, sc.ScannerName)
 }
 
 // validateSingleScanTool checks that the scanner tool is available and active.
@@ -1346,36 +1507,6 @@ func (s *Service) validateSingleScanTool(ctx context.Context, tenantID shared.ID
 	}
 
 	return s.checkTenantToolEnabled(ctx, tenantID, tool)
-}
-
-// validateWorkflowStepTools validates all tools required by workflow workflow steps.
-func (s *Service) validateWorkflowStepTools(ctx context.Context, sc *scan.Scan) error {
-	if sc.ScanWorkflowID == nil {
-		return shared.NewDomainError(
-			"PIPELINE_NOT_SET",
-			"Workflow scan has no scan workflow configured",
-			shared.ErrValidation,
-		)
-	}
-
-	steps, err := s.stepRepo.GetByScanWorkflowID(ctx, *sc.ScanWorkflowID)
-	if err != nil {
-		return fmt.Errorf("failed to get scan workflow steps: %w", err)
-	}
-
-	for _, step := range steps {
-		if stepNotRunBy(sc, step) {
-			continue
-		}
-		if err := s.validateStepTool(ctx, sc.TenantID, step); err != nil {
-			if optionalWithoutTool(step, err) {
-				continue
-			}
-			return err
-		}
-	}
-
-	return nil
 }
 
 // validateStepTool validates a single workflow step's tool configuration.

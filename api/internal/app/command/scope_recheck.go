@@ -176,7 +176,7 @@ func jobShapeOf(c *commanddom.Command) scopedom.JobShape {
 // order: unchanged, or with a narrowed payload. Commands it failed or
 // withheld are left out.
 func (s *Service) recheckScope(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, cmds []*commanddom.Command) []*commanddom.Command {
-	if s.scopeGate == nil || len(cmds) == 0 {
+	if (s.scopeGate == nil && s.activeScan == nil) || len(cmds) == 0 {
 		return cmds
 	}
 	out, _ := s.recheck(ctx, tenantID, sensorID, cmds)
@@ -187,7 +187,7 @@ func (s *Service) recheckScope(ctx context.Context, tenantID shared.ID, sensorID
 // command to hand out (maybe narrowed) or ErrScopeChanged /
 // ErrScopeRecheckUnavailable.
 func (s *Service) recheckOne(ctx context.Context, sensorID shared.ID, cmd *commanddom.Command) (*commanddom.Command, error) {
-	if s.scopeGate == nil {
+	if s.scopeGate == nil && s.activeScan == nil {
 		return cmd, nil
 	}
 	out, outcomes := s.recheck(ctx, cmd.TenantID, &sensorID, []*commanddom.Command{cmd})
@@ -208,11 +208,28 @@ func (s *Service) recheck(ctx context.Context, tenantID shared.ID, sensorID *sha
 	replaced := map[shared.ID]*commanddom.Command{}
 	jobs := make([]recheckJob, 0, len(cmds))
 	enforced := s.enforcesLimits(ctx, tenantID, sensorID)
+	var active *activeScanState // read once, for the tenant, at the first probe
 	for _, c := range cmds {
 		if !c.TenantID.Equals(tenantID) {
 			// Never another tenant's command (the poll is tenant-scoped;
 			// this keeps the re-check from ever acting across tenants).
 			outcomes[c.ID] = recheckWithheld
+			continue
+		}
+		// Passive only: a probe of an organization without active scanning
+		// is never handed out (active_scanning.go). Before the scope gate,
+		// which may be unwired; the tier is the server's own.
+		if s.activeScan != nil && probeTier(c, nil) > 0 {
+			if active == nil {
+				st := s.activeScanning(ctx, tenantID)
+				active = &st
+			}
+			if o := s.activeScanningRecheck(ctx, c, *active); o != recheckKeep {
+				outcomes[c.ID] = o
+				continue
+			}
+		}
+		if s.scopeGate == nil {
 			continue
 		}
 		gate, ok := recheckGateOf(c)

@@ -55,8 +55,9 @@ import {
   RiskScoreBadge,
   riskScoreState,
   type DataTableSearch,
+  type FilterPanelToggleProps,
 } from '@/features/shared'
-import { AssetStatusBadge } from '@/features/asset-lifecycle'
+import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
@@ -142,8 +143,8 @@ interface InventoryTableProps {
   errorState?: ReactNode
   /** The list's search box (the toolbar draws it). */
   search?: DataTableSearch
-  /** The phone filter-sheet trigger, joined to the search. */
-  filter?: ReactNode
+  /** The facet panel's trigger (side panel from lg, sheet below), joined to the search. */
+  filterToggle?: FilterPanelToggleProps
   toolbarStart?: ReactNode
   toolbarEnd?: ReactNode
   /** A full-width row under the toolbar: the filter chips. */
@@ -179,7 +180,7 @@ export function InventoryTable({
   emptyState,
   errorState,
   search,
-  filter,
+  filterToggle,
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
@@ -517,6 +518,7 @@ export function InventoryTable({
                 snoozedUntil={row.original.lifecyclePausedUntil}
               />
             )}
+            <AssetLivenessBadge liveness={row.original.liveness} />
           </span>
         ),
       },
@@ -663,7 +665,7 @@ export function InventoryTable({
         data={assets}
         showSearch={false}
         search={search}
-        filter={filter}
+        filterToggle={filterToggle}
         emptyState={emptyState}
         errorState={errorState}
         toolbarStart={toolbarStart}
@@ -758,6 +760,7 @@ export function InventoryTable({
                     snoozedUntil={a.lifecyclePausedUntil}
                   />
                 )}
+                <AssetLivenessBadge liveness={a.liveness} />
               </div>
               {hasSurfaceFacts(a) && (
                 <div className="pointer-events-none relative z-10 mt-1.5 min-w-0 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto">

@@ -41,12 +41,7 @@ export function findingsHref(query: FindingsQuery): string {
  * Modules whose work shows on the overview, in display order. Owners can
  * switch each one off; its section then leaves the page.
  */
-export const VALIDATION_MODULES = [
-  'pentest',
-  'attack_simulation',
-  'control_testing',
-  'mitre_coverage',
-] as const
+export const VALIDATION_MODULES = ['pentest', 'attack_simulation', 'control_testing'] as const
 
 export type ValidationModule = (typeof VALIDATION_MODULES)[number]
 

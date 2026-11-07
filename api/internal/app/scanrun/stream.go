@@ -162,7 +162,7 @@ func feedsStream(template *scanworkflow.Workflow, step *scanworkflow.Step) bool 
 }
 
 // sourceFinishedATask reports whether the step run has a completed command
-// (only a finished task has results to stream).
+// with something to stream (sourceHasResults).
 func (s *Service) sourceFinishedATask(ctx context.Context, run *scanrun.Run, sr *scanrun.StepRun) bool {
 	gate, ok := s.commandRepo.(command.StepBatchGate)
 	if !ok || sr == nil {
@@ -174,7 +174,83 @@ func (s *Service) sourceFinishedATask(ctx context.Context, run *scanrun.Run, sr 
 			"step_key", logger.SanitizeValue(sr.StepKey), "error", err)
 		return false
 	}
-	return b.Total-b.Active-b.Failed > 0
+	return sourceHasResults(b)
+}
+
+// sourceHasResults reports whether a source step finished a task that can
+// feed a successor: a command completed, and the completed commands did not
+// all report that they reached none of their targets. A host discovery
+// chunk that could not probe its range completes with every target
+// unreached and no host: starting the successor on it would hand the
+// successor only its seeds (the whole range of a swept scan), before the
+// source is known to have failed.
+func sourceHasResults(b command.StepBatch) bool {
+	done := b.Total - b.Active - b.Failed
+	if done <= 0 {
+		return false
+	}
+	nothingReached := b.ReachBatches == done && b.ReachTargets > 0 && b.Reached == 0 && b.Unreached > 0
+	return !nothingReached || b.Findings > 0
+}
+
+// stopStreamOfFailedSource stops a streamed step whose source did not
+// succeed (dep): its stream is closed, its tasks that have not finished are
+// canceled, and the step settles skipped (nothing of it finished) or
+// partial (the finished tasks keep their results), with DEPENDENCY_FAILED.
+// The barrier path skips such a step before it starts (skipBlockedSteps);
+// this is the same rule for a step that started early. It reports whether
+// it settled the step.
+func (s *Service) stopStreamOfFailedSource(ctx context.Context, run *scanrun.Run, sr *scanrun.StepRun, dep string) bool {
+	if sr == nil || (!sr.IsQueued() && !sr.IsRunning()) {
+		return false
+	}
+	streamed, _ := s.streamStepOpen(ctx, run, sr)
+	if !streamed {
+		return false
+	}
+	store, _ := s.hops.(scanrun.StageStreamStore)
+	if _, err := store.CloseStageStream(ctx, run.TenantID, run.ID, sr.StepKey); err != nil {
+		s.logger.Warn("stage streaming: close the stream of a failed source", "run_id", run.ID.String(),
+			"step_key", logger.SanitizeValue(sr.StepKey), "error", err)
+	}
+	var canceled int64
+	if c, ok := s.commandRepo.(command.StepCommandCanceler); ok {
+		n, err := c.CancelOpenByStepRun(ctx, run.TenantID, sr.ID)
+		if err != nil {
+			s.logger.Error("failed to cancel the tasks of a step whose source failed", "run_id", run.ID.String(),
+				"step_key", logger.SanitizeValue(sr.StepKey), "error", err)
+			return false
+		}
+		canceled = n
+	}
+	gate, ok := s.commandRepo.(command.StepBatchGate)
+	if !ok {
+		return false
+	}
+	st, err := gate.StepBatchState(ctx, run.TenantID, sr.ID)
+	if err != nil || st.Active > 0 {
+		// A task still open (the cancel failed for it): its completion
+		// settles the step.
+		return false
+	}
+	if claimed, err := gate.ClaimStepFinalization(ctx, sr.ID); err != nil || !claimed {
+		return false
+	}
+	done := st.Total - st.Failed
+	msg := fmt.Sprintf("stopped: it started on the first results of step %q, which then did not succeed; %d task(s) canceled", dep, canceled)
+	if done > 0 {
+		msg = fmt.Sprintf("%s, %d finished task(s) kept", msg, done)
+		sr.Partial(st.Findings, msg, scanrun.FailureDependencyFailed)
+	} else {
+		sr.SkipWithCode(msg, scanrun.FailureDependencyFailed)
+	}
+	if err := s.stepRunRepo.Update(ctx, sr); err != nil {
+		s.logger.Error("failed to record a stopped streamed step", "step_key", logger.SanitizeValue(sr.StepKey), "error", err)
+	}
+	metrics.ScanStageStreamWaves.WithLabelValues("stop", "dependency_failed").Inc()
+	s.logger.Info("streamed step stopped: its source did not succeed", "run_id", run.ID.String(),
+		"step_key", logger.SanitizeValue(sr.StepKey), "source", logger.SanitizeValue(dep), "canceled", canceled)
+	return true
 }
 
 // streamStepOpen reports whether the step run's stage streamed and whether
@@ -253,8 +329,9 @@ func (s *Service) advanceStreams(ctx context.Context, run *scanrun.Run, template
 			continue
 		}
 		// A step its condition, the scan's intensity or the run's depth
-		// skips is left to the barrier pass, which records the skip.
-		if !s.evaluateCondition(ctx, step, run, template) || scanapp.IntensitySkipReason(run, step) != "" || depthSkipReason(run, step) != "" {
+		// (or an organization switch) skips is left to the barrier pass, which records the skip.
+		if !s.evaluateCondition(ctx, step, run, template) || scanapp.IntensitySkipReason(run, step) != "" || depthSkipReason(run, step) != "" ||
+			s.pathDiscoverySkipReason(ctx, run, step) != "" || s.stepGateReason(ctx, run, step) != "" {
 			continue
 		}
 		pass.handled[step.StepKey] = true
@@ -411,7 +488,7 @@ func (s *Service) planAndDispatchWave(ctx context.Context, run *scanrun.Run, tem
 	if err != nil {
 		return false, fmt.Errorf("resolve the step's tool: %w", err)
 	}
-	step = resolved.WithTool(step)
+	step = resolved.WithTool(resolved.WithDepthDefaults(step, RunDepth(run)))
 	if !resolved.HasStage {
 		return true, nil // nothing to stream into; the close settles the step
 	}
@@ -484,6 +561,13 @@ func (s *Service) planAndDispatchWave(ctx context.Context, run *scanrun.Run, tem
 	}
 	err = s.dispatchStep(ctx, run, step, resolved, sr, &scanapp.StepTargets{Targets: added}, wantsPlatform, feedsStream(template, step))
 	var tooClose *deadlineTooCloseError
+	var noInputs *noInputsError
+	if errors.As(err, &noInputs) {
+		// The path discovery gate left no origin of the wave: nothing to
+		// dispatch, and nothing unfinished (the gate refused them on purpose).
+		metrics.ScanStageStreamWaves.WithLabelValues(waveKind(closing), "empty").Inc()
+		return true, nil
+	}
 	if err != nil {
 		// Never lost silently: the targets are recorded as unfinished, so
 		// the next run plans them first and coverage never counts them.

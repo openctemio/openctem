@@ -232,6 +232,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
 - `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
 - `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
+- `PUT`/`DELETE /api/v1/tool-sources/{source}/key`, `PATCH /api/v1/tool-sources/{source}`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
@@ -568,8 +569,10 @@ create's target validator, exclusions, zone routing) in one call.
 > keys `(tenant_id, pool_id)` and `(tenant_id, sensor_id)`, so a pool or
 > sensor of another tenant, or a shared sensor, cannot be linked. No response
 > carries a credential. The sensor side
-> (`POST /api/v2/sensor/commands/{id}/egress-credentials` and `/egress-report`)
-> answers only the sensor holding the command's lease. See
+> (`POST /api/v2/sensor/commands/{id}/egress-report`) answers only the sensor
+> holding the command's lease under the epoch in its body; the pool's
+> credentials are a task secret (`POST /api/v2/sensor/commands/{id}/secrets`:
+> trusted, key-bound lease holder only, sealed; [task-secrets.md](task-secrets.md)). See
 > [sensor-proxies.md](sensor-proxies.md).
 
 #### Content catalog (`/api/v1/content`, RFC-099)
@@ -612,6 +615,7 @@ authenticator code, and is audited.
 |----------|---------------------|
 | `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read`; host name and addresses (`hostname`, `ip_address`, `key_last_used_ip`) are returned to owners and administrators only |
 | `GET /api/v1/sensors/{id}/config-report` (setup checklist, research/26) · `GET /quarantined-results` · `/quarantined-results/{qid}` (the preview carries asset values and finding titles from the raw report) | `sensors:write` (owner/admin) |
+| `GET /api/v1/sensors/{id}/readiness` (what still stops the sensor from scanning, research/466) | `sensors:read`, own organization's sensors only (a shared sensor and another organization's are 404). Each fix says whether the caller holds the permission it needs; the add-to-scope fix lists the zones' private ranges only with `sensors:zones:read` (otherwise the count); the host-confinement item is `unknown` without `sensors:write` |
 | `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
@@ -641,7 +645,7 @@ authenticator code, and is audited.
 |----------|---------------------|
 | `POST /api/v2/sensor/pairing` · `POST /pairing/{id}/reveal` · `GET /pairing/{id}` · `POST /pairing/{id}/confirm` | none by bearer key: every request is RFC 9421-signed by the key being paired; per-address and global caps; no tenant until claimed (RFC-052 §4.4) |
 | `POST /api/v1/sensor-pairings/lookup` · `POST /expectations` · `GET /expectations/{id}` · `POST /{id}/deny` | `sensors:pair` |
-| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + the fingerprint the host shows, picked out of three (a wrong pick closes the request) |
+| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + the fingerprint the host shows, picked out of three (a wrong pick closes the request); stating `ranges` also needs `sensors:zones:write`, and `trusted: true` also needs `sensors:grant:widen` (a new sensor of the organization's own console expectation only; both are checked before anything is written, and the zone, the sensor and its trusted grant commit in one transaction) |
 | `GET /api/v1/sensors/{id}/grant` · `GET /api/v1/sensors/grant-profiles` · `GET /api/v1/sensors/grant-summaries` · `GET /api/v1/sensors/identity-policy` | `sensors:read` |
 | `PUT /api/v1/sensors/{id}/grant` | `sensors:grant:narrow` when every dimension narrows or stays (demoting the trust level included); `sensors:grant:widen` otherwise, promoting to trusted included (checked in the service against the stored grant) |
 | `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` + **step-up** |
@@ -783,6 +787,7 @@ the billing page in the UI.
 | `POST /{id}/snapshots/{snapshot_id}/reject` | `scans:sources:approve` |
 | `POST /hooks/content-sources/{id}` | public: the source's own webhook secret (constant-time compare); only queues a sync |
 | Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
+| Tool source keys `GET /api/v1/tool-sources` / `PUT /{source}/key`,`PATCH /{source}` / `DELETE /{source}/key` ([task-secrets.md](task-secrets.md)) | `scans:secret_store:read` / `:write` and owner/admin / `:delete` and owner/admin; every write also needs **step-up**. A key is never returned |
 
 > **Rule sources** ([content-sources.md](content-sources.md)). Owners and
 > administrators hold every `scans:sources:*` permission (migration

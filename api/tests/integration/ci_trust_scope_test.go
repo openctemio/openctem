@@ -77,7 +77,7 @@ type ciScopeRig struct {
 func (r *ciScopeRig) scopeTrust(tenantID shared.ID, rules cirun.Rules) *cirun.TrustConfig {
 	r.t.Helper()
 	c, err := r.svc.CreateTrustConfig(context.Background(), tenantID, cirunapp.TrustConfigInput{
-		Name: "gitlab-" + shared.NewID().String()[28:], Provider: "gitlab", Issuer: r.idp.srv.URL, Rules: rules,
+		Name: "gitlab-" + shared.NewID().String()[28:], Provider: "gitlab", Issuer: r.idp.url, Rules: rules,
 	}, r.admin)
 	if err != nil {
 		r.t.Fatalf("create trust config: %v", err)
@@ -100,7 +100,7 @@ func newCIScopeRig(t *testing.T) *ciScopeRig {
 	admin := cirunapp.Actor{UserID: seedActUser(t, r.db.DB).String(), Email: "admin@acme.test", ScopeWrite: true, ScopeApprove: true}
 	ciOnly := cirunapp.Actor{UserID: seedActUser(t, r.db.DB).String(), Email: "ci@acme.test"}
 	return &ciScopeRig{ciRig: r, scope: scope, settings: settings, gov: gov, admin: admin, ciOnly: ciOnly,
-		host: strings.ToLower(strings.TrimPrefix(r.idp.srv.URL, "https://"))}
+		host: strings.ToLower(strings.TrimPrefix(r.idp.url, "https://"))}
 }
 
 // entry is the tenant's repository entry with this pattern (nil: none).
@@ -397,7 +397,7 @@ func TestCITrustScope_NeedsScopeWrite(t *testing.T) {
 	r := newCIScopeRig(t)
 	ctx := context.Background()
 	on := true
-	in := cirunapp.TrustConfigInput{Name: "ci-only", Provider: "gitlab", Issuer: r.idp.srv.URL,
+	in := cirunapp.TrustConfigInput{Name: "ci-only", Provider: "gitlab", Issuer: r.idp.url,
 		Rules: cirun.Rules{Owners: []string{"acme"}}, ManageScope: &on}
 	if _, err := r.svc.CreateTrustConfig(ctx, r.tenant, in, r.ciOnly); !errors.Is(err, cirunapp.ErrManageScopeForbidden) {
 		t.Fatalf("manage_scope=true without scope write: %v", err)
@@ -454,7 +454,7 @@ func TestCITrustScope_FollowsGovernance(t *testing.T) {
 	noApprove := r.admin
 	noApprove.ScopeApprove = false
 	if _, err := r.svc.CreateTrustConfig(context.Background(), r.tenant, cirunapp.TrustConfigInput{
-		Name: "writer", Provider: "gitlab", Issuer: r.idp.srv.URL, Rules: cirun.Rules{Owners: []string{"beta"}},
+		Name: "writer", Provider: "gitlab", Issuer: r.idp.url, Rules: cirun.Rules{Owners: []string{"beta"}},
 	}, noApprove); err != nil {
 		t.Fatal(err)
 	}
@@ -475,7 +475,7 @@ func TestCITrustScope_RunsNeverCreate(t *testing.T) {
 	// links: a run links an existing equal entry and creates nothing.
 	now := time.Now().UTC()
 	legacy := &cirun.TrustConfig{ID: shared.NewID(), TenantID: r.tenant, Name: "legacy", Provider: cirun.ProviderGitLab,
-		Issuer: r.idp.srv.URL, Rules: cirun.Rules{Owners: []string{"acme", "beta"}}, Enabled: true, ManageScope: true,
+		Issuer: r.idp.url, Rules: cirun.Rules{Owners: []string{"acme", "beta"}}, Enabled: true, ManageScope: true,
 		CreatedAt: now, UpdatedAt: now}
 	legacy.Normalize()
 	if err := r.repo.CreateTrustConfig(ctx, legacy); err != nil {

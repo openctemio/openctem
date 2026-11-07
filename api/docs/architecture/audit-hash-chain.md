@@ -1,15 +1,47 @@
 # Audit Hash Chain
 
 Every `audit_logs` row is pinned into a per-tenant SHA-256 chain in
-`audit_log_chain` (migration 000154). Editing or deleting an audit row after the
+`audit_log_chain`. The database writes the chain row in the transaction that
+inserts the audit row, so no write path can leave a row unchained, and it
+refuses to update audit rows at all. Editing or deleting an audit row after the
 fact breaks the chain from that point on, and the break is detectable.
+
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as Service (audit.Service, any writer)
+    box Postgres
+    participant AL as audit_logs
+    participant TR as trigger audit_log_chain_append (AFTER INSERT)
+    participant CH as audit_log_chain, audit_chain_anchors
+    end
+    participant V as AuditChainVerifyController (hourly) and GET /api/v1/audit-logs/verify
+    participant RT as data-expiration controller (retention)
+    S->>AL: INSERT audit row
+    AL->>TR: same transaction
+    TR->>TR: pg_advisory_xact_lock(chain), chain = tenant_id or the system chain
+    TR->>CH: prev = last chain hash, else newest anchor, else empty
+    TR->>CH: hash = sha256(prev | audit_log_row_payload(row)), hash_version 2
+    Note over AL,CH: UPDATE and TRUNCATE refused by audit_log_refuse_change, UNIQUE (tenant_id, prev_hash) deferred
+    V->>CH: walk from the newest anchor, recompute with the same SQL payload
+    alt mismatch, link broken, position missing
+        V->>V: 409 with breaks (API), metric and log (controller)
+    end
+    RT->>CH: oldest contiguous prefix past AUDIT_RETENTION_DAYS (at least 365)
+    RT->>RT: archive gz JSONL to audit-archive storage
+    RT->>CH: one tx under the same lock - insert anchor = last pruned hash, delete the prefix
+```
 
 ## How it works
 
 | Piece | Where |
 |---|---|
-| Hash primitive: `SHA-256(prev_hash \| audit_log_id \| payload \| timestamp)` | `pkg/crypto/audit_chain.go` |
-| Append on every `LogEvent` (serialised by `chainMu`) | `internal/app/audit/service.go` (`appendChainEntry`) |
+| Version 2 hash (every row since migration `audit_log_db_chain`): `SHA-256(prev_hash \| "\|" \| audit_log_row_payload(row))` | SQL `audit_log_row_hash`; Go `crypto.ComputeAuditRowHash` |
+| Version 1 hash (older rows): `SHA-256(prev_hash \| audit_log_id \| payload \| timestamp)` | `pkg/crypto/audit_chain.go` (`ComputeAuditChainHash`) |
+| Append: `AFTER INSERT` trigger `audit_log_chain_append` on `audit_logs`, under the per-chain advisory lock | migration `audit_log_db_chain` |
+| Append-only: `UPDATE`/`TRUNCATE` of `audit_logs`, `audit_log_chain` and the anchor/rebaseline tables raise `insufficient_privilege` | trigger `audit_log_refuse_change` |
 | Tenant-less events (logins, failed logins) go to the system chain `ffffffff-…` | `auditdom.SystemChainTenantID` |
 | Verify: `GET /api/v1/audit-logs/verify` (admin), 409 + `breaks[]` on a break | `AuditService.VerifyChain` |
 | Hourly verification of every tenant | `internal/infra/controller/audit_chain_verify.go` |
@@ -19,8 +51,48 @@ fact breaks the chain from that point on, and the break is detectable.
 | There is no tenant rebaseline route: the organization's owner is the insider the chain guards against, so a rebaseline is a platform-operator action (admin console, above) | |
 | Retention: archive and prune the oldest prefix past `AUDIT_RETENTION_DAYS` | `AuditService.PruneExpiredChains`, `internal/infra/controller/data_expiration.go`, migration 001010 |
 
-`payload` is `action|resource_type|resource_id|result`. The timestamp is
-rounded to microseconds, as PostgreSQL stores it.
+`audit_log_chain.hash_version` says which hash a row carries.
+
+**Version 2** (written by the database). `audit_log_row_payload(row)` is the
+JSON array text of a version tag `2`, `id`, `tenant_id`, `actor_id`, `action`,
+`resource_type`, `resource_id`, `resource_name`, `changes`, `result`,
+`severity`, `message`, `metadata`, `request_id`, `session_id` and `logged_at`
+in whole microseconds since the epoch. The serialization has one definition, in
+SQL; verify, classify and rebaseline read the payload text with the chain row
+(`ListChainEntries`, joined within the chain's own tenant) and hash it in Go.
+The actor's e-mail, IP address and user agent are not covered: they are
+personal data an erasure may have to remove, and `actor_id` identifies the
+actor. Changing any covered column is refused by the database and, past that,
+detected.
+
+**Version 1** (rows chained by the application before that migration):
+`payload` is `action|resource_type|resource_id|result`, and the timestamp is
+rounded to microseconds, as PostgreSQL stores it. These rows stay version 1;
+a rebaseline re-signs each row in its own version.
+
+### Append-only
+
+- `UPDATE` and `TRUNCATE` of `audit_logs` are refused. So are updates of
+  `audit_chain_anchors`, `audit_chain_rebaselines` and
+  `audit_chain_rebaseline_entries`, and `TRUNCATE` of the chain.
+- A chain row's `prev_hash` and `hash` change only in a transaction that sets
+  `openctem.audit_rebaseline = 'on'` (`ApplyChainRebaseline`); its id, tenant,
+  position and version never change.
+- `UNIQUE (tenant_id, prev_hash)`, checked at commit, refuses a fork: two rows
+  of one chain linking to the same predecessor.
+- `audit_logs` has no foreign key to `users` or `tenants`: deleting an account
+  or an organization leaves the audit rows (and their ids) as recorded, in
+  their organization's chain. Retention removes them.
+- Deleting stays possible for the retention prune (oldest prefix, archived
+  first). The chain row's foreign key (`ON DELETE RESTRICT`) means an audit row
+  cannot go without its chain row going first, which verification reports.
+- The least-privilege bootstrap (`deploy/postgres/least-privilege-roles.sql`)
+  also revokes `UPDATE` and `TRUNCATE` on these tables from the application
+  role. The triggers protect against the application and anything speaking
+  with its credentials; an operator with the table owner role can still
+  rewrite history, which only an off-database copy of the chain head detects.
+  For the organization chains no such copy is exported today (the head export
+  and the forwarding sink exist for the administrators' log only, below).
 
 ## Retention
 
@@ -56,6 +128,9 @@ rebaseline expect the first remaining entry to link to it, and an append to a
 chain with no entries left links to it too. To check a pruned prefix, recompute
 its hashes from the archive lines (oldest first, `prev_hash` of the first line
 = the previous anchor or `""`); the last line's hash must equal the anchor.
+A version 2 line carries `hash_version: 2` and `row_payload`, the exact text
+that was hashed: `hash = hex(SHA-256(prev_hash + "|" + row_payload))`, and
+`row_payload` must match the archived `row`.
 
 The old rule "keep high and critical rows forever" no longer applies online:
 it deleted rows from the middle of the chain (which the foreign key refused, so
@@ -202,7 +277,7 @@ change, with `postgres.CreateAdminAuditLogTx`).
 | Append: a `BEFORE INSERT` trigger takes a transaction-scoped advisory lock, reads the tail and overwrites whatever chain values the writer sent | `admin_audit_chain_append` |
 | Append-only: `UPDATE`, `DELETE` and `TRUNCATE` are refused by triggers, and the API role holds no `UPDATE`/`DELETE`/`TRUNCATE` grant on the table (the migration and `deploy/postgres/least-privilege-roles.sql` revoke them) | `admin_audit_refuse_change` |
 | Retention: `admin_audit_prune(cutoff, max_rows)` (`SECURITY DEFINER`, runs as the table owner) deletes only the oldest prefix older than `max(cutoff, now - 365 days)` and records an anchor | `admin_audit_chain_anchors`; the admin audit retention controller calls it |
-| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break) |
+| Verify: recompute each online row with the same SQL function, check links from the newest anchor and that no position is missing | `AuditLogRepository.VerifyChain`; `GET /api/v1/admin/audit-logs/chain` (any admin, Security > Activity); `bootstrap-admin verify-audit [-json]` (exit 1 on a break). The report carries the chain `head` (position and hash of the newest row, or of the newest anchor when no row is online) in every edition, so a copy of the rows can be verified offline and compared with the head of an earlier copy, with or without a forwarding sink |
 
 Off-box copy (`ADMIN_AUDIT_SINK`). The chain cannot stop the table owner from
 re-signing it, so the API ships the administrators' audit log to a destination

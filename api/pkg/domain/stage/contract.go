@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 )
@@ -177,7 +177,7 @@ type contract struct {
 
 // requiredFields are the display names of the fields a report of each
 // routed capability must carry. The checked rules are the capability's
-// required output in ctis/capability (RequiredOutput).
+// required output in contract/capability (RequiredOutput).
 var requiredFields = map[Key][]string{
 	DiscoverSubdomains:  []string{"name", "root_domain", "discovery_method"},
 	EnumerateSubdomains: []string{"name"},
@@ -188,9 +188,11 @@ var requiredFields = map[Key][]string{
 	ScanPorts:           []string{"host", "port", "protocol"},
 	ProbeHTTP:           []string{"url", "status_code", "title"},
 	CrawlWeb:            []string{"url", "parent_url"},
+	EnumerateWebPaths:   []string{"origin", "path", "status_code"},
 	VulnTemplates:       []string{"rule_id", "severity", "location", "evidence"},
 	CheckTakeover:       []string{"host", "provider", "evidence"},
 	MonitorWebContent:   []string{"url", "sha256"},
+	CaptureScreenshot:   []string{"web_evidence"},
 	DASTWeb:             []string{"rule_id", "severity", "url", "evidence"},
 	SecretsCode:         []string{"rule_id", "file", "line", "masked_value"},
 	SASTCode:            []string{"rule_id", "file", "line", "severity"},
@@ -213,10 +215,15 @@ var chunkSizes = map[Key]int{
 	ScanPorts:           50,
 	ProbeHTTP:           200,
 	CrawlWeb:            10,
-	VulnTemplates:       25,
-	CheckTakeover:       100,
+	// One origin per task: the per-origin request cap is the job's.
+	EnumerateWebPaths: 1,
+	VulnTemplates:     25,
+	CheckTakeover:     100,
 	// Each capture carries a body of up to 512 KiB.
 	MonitorWebContent: 25,
+	// Each capture is an image of up to about 1 MiB and the platform keeps
+	// at most 20 screenshots per report.
+	CaptureScreenshot: 10,
 	DASTWeb:           10,
 }
 
@@ -313,13 +320,18 @@ var toolParams = map[string]map[string]string{
 	"rdap":      {"follow_registrar": "follow_registrar"},
 	"asn":       {"include_announced": "include_announced", "max_ranges": "max_ranges"},
 	"dnsx-enum": {"method": "method", "max_queries": "max_queries"},
+	toolWebguess: {"lists": "lists", "extensions": "extensions", "max_requests_per_origin": "max_requests",
+		"rate": "rate", "exclude_paths": "exclude_paths"},
 }
+
+// toolWebshot is the sensor tool that implements capture.screenshot.
+const toolWebshot = "webshot"
 
 // batchTools take a list of targets in one task (the sensor executor reads
 // the payload's `targets`); every other tool takes one target per task.
 var batchTools = map[string]bool{
 	"nuclei": true, "subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
-	"rdap": true, "asn": true,
+	"rdap": true, "asn": true, toolWebshot: true,
 }
 
 // capabilityJobTools run capability jobs on the sensor (their embedded
@@ -331,7 +343,7 @@ var batchTools = map[string]bool{
 var capabilityJobTools = map[string]bool{
 	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
 	"nuclei": true, "trivy": true, "semgrep": true, "opengrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
-	"rdap": true, "asn": true,
+	"rdap": true, "asn": true, toolWebguess: true, toolWebshot: true,
 }
 
 // WordlistRequest is one wordlist a tool's job asks the platform for: the
@@ -346,7 +358,8 @@ type WordlistRequest struct {
 // descriptor (its content slots). A tool that reads a list has none of its
 // own: a job that does not ask carries none, and the sensor refuses it.
 var toolWordlists = map[string][]WordlistRequest{
-	"dnsx-enum": {{Slot: "labels", Purpose: "dns-labels"}},
+	"dnsx-enum":  {{Slot: "labels", Purpose: "dns-labels"}},
+	toolWebguess: {{Slot: "paths", Purpose: "web-paths"}},
 }
 
 // ToolWordlists are the wordlists a job of tool asks for (nil: none). The
@@ -497,7 +510,6 @@ var plannedFields = []struct {
 	{"detect.services", []string{"port", "protocol", "service_name"}},
 	{"fingerprint.tech", []string{"technologies"}},
 	{"check.tls", []string{"fingerprint", "not_after", "issuer"}},
-	{"capture.screenshot", []string{"artifact_sha256", "media_type"}},
 	{"host.credentialed", []string{"host", "plugin_id"}},
 	{"cloud.posture", []string{"rule_id", "resource_id", "severity"}},
 	{"verify.finding", []string{"finding_id", "status"}},

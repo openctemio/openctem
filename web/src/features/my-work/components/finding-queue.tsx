@@ -8,7 +8,6 @@ import { DataTable, DataTableColumnHeader } from '@/features/shared'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import { RelativeTime } from '@/features/shared/components/relative-time'
-import { dateFnsLocaleFor } from '@/features/shared/components/activity-timeline'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 import type { FindingStatus } from '@/features/findings/types'
@@ -50,9 +49,8 @@ export function FindingQueue({
   toolbarEnd?: ReactNode
   empty: ReactNode
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const router = useRouter()
-  const dateLocale = dateFnsLocaleFor(locale)
 
   const columns = useMemo<ColumnDef<ApiFinding>[]>(() => {
     const cols: ColumnDef<ApiFinding>[] = [
@@ -111,7 +109,7 @@ export function FindingQueue({
         ),
         cell: ({ row }) => (
           <span className="text-sm whitespace-nowrap text-muted-foreground">
-            <RelativeTime date={row.original.acceptance_expires_at} locale={dateLocale} />
+            <RelativeTime date={row.original.acceptance_expires_at} />
           </span>
         ),
       })
@@ -142,7 +140,7 @@ export function FindingQueue({
       )
     }
     return cols
-  }, [t, tab, dateLocale])
+  }, [t, tab])
 
   if (error) {
     return <ErrorState title={t('myWork.loadError')} onRetry={onRetry} />

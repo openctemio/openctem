@@ -28,6 +28,38 @@ Code: `internal/app/auth/identity_link.go` (service),
 `features/account/components/sign-in-methods-card.tsx` and
 `app/auth/callback/[provider]/route.ts`.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web /auth/callback/{provider}
+    box API
+    participant O as OAuthService
+    participant L as identity link service
+    participant DB as Postgres users, user_identities, sessions
+    end
+    participant G as Google, GitHub or Microsoft
+    W->>O: GET /api/v1/auth/oauth/{provider}/authorize - signed state 10 min, PKCE verifier stored as hash(binding):verifier
+    W->>G: sign in
+    G-->>W: code, state
+    W->>O: POST /api/v1/auth/oauth/{provider}/callback (crossSite, loginRL)
+    O->>O: validateState, GetDel verifier, binding check (400 OAUTH_INVALID_STATE)
+    O->>G: code exchange, id_token (Google, Microsoft) or API (GitHub), verified email
+    O->>DB: user_identities by (issuer, subject)
+    alt identity source sso
+        O-->>W: 409 OAUTH_USE_ORG_SSO, audit auth.failed
+    else email of an account with a password or another provider
+        O->>DB: pending link sha256(secret), 10 min
+        O-->>W: 409 OAUTH_ACCOUNT_EXISTS, cookie __Host-oauth_pending_link
+        W->>L: sign in the old way, then POST /api/v1/me/pending-sign-in-link/complete with TOTP or password (CSRF, linkRL)
+        L->>L: proof (no recovery code), session newer than the pending link, email unchanged
+        L->>DB: revoke every other session first, then bind, audit auth.identity_linked, mail notice
+    else known identity, or new account under the sign-up policy
+        O->>DB: session (an account with TOTP gets the MFA challenge first)
+    end
+```
+
 ## When the address already has an account
 
 A social sign-in whose provider-verified address belongs to an account that
@@ -128,10 +160,12 @@ the right field.
 
 ## Explicit linking (Account > Security)
 
-"Connected sign-in methods" lists the password (when the account has one), the
-linked providers and the organization SSO identities (read only, shown as
-managed by the organization: any identity whose source is `sso`, including an
-Entra ID or Google Workspace sign-on identity).
+"Connected sign-in methods" lists the password (when the account has one) and
+the linked providers. Organization SSO identities (any identity whose source
+is `sso`, including an Entra ID or Google Workspace sign-on identity) are
+listed by "Organization sign-in", where a password account links and unlinks
+its organization's sign-in with the same proof rule
+([sso-authentication.md](sso-authentication.md), "Linking an existing account").
 
 | Route | Gate |
 |---|---|
@@ -182,7 +216,9 @@ sign-in method is never removed (`409 LAST_SIGN_IN_METHOD`): an account without
 a password keeps at least one identity, and the check runs with the account row
 locked so two concurrent unlinks cannot remove the last two. Organization SSO
 identities, SAML or OIDC, Entra ID and Google Workspace included (source
-`sso`), are managed by the organization (`409 IDENTITY_MANAGED_BY_ORGANIZATION`).
+`sso`), are not unlinked here (`409 IDENTITY_MANAGED_BY_ORGANIZATION`); a
+password account unlinks an organization OIDC identity under "Organization
+sign-in".
 After the proof, and before the identity is removed, every other session of
 the account is revoked (keeping the one that proved the unlink), so a session
 opened through the provider does not outlive the unlink. When the revoke fails
@@ -194,8 +230,15 @@ Each link and unlink writes `auth.identity_linked` / `auth.identity_unlinked`
 
 ## No automatic linking
 
-A social sign-in never links itself to an existing account, whichever provider
-vouches for the address. The sign-up policy has no value for it (a
+A social sign-in never links itself to an existing account **that has a
+password or another provider**, whichever provider vouches for the address:
+it gets the pending link above. Two narrower cases bind on the email without a
+typed proof (`OAuthService.findOrCreateUser`): a passwordless account that an
+invitation or SCIM created, when the provider is authoritative for the mailbox
+and every organization of the account DNS-verified the domain
+(`claimVouched`); and an older account of the same provider with no identity
+bound yet, when the provider is authoritative or is GitHub
+(`email_authority.go`). The sign-up policy has no value for it (a
 `social_auto_link` stored by an earlier build is dropped by the migration
 `signup_policy_drop_social_auto_link`), and the audit value `how=automatic`
 is no longer written; older `auth.identity_linked` rows that carry it stay

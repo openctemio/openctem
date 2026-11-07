@@ -20,14 +20,20 @@ type Service struct {
 	repo         covdom.Repository
 	rules        []covdom.Rule
 	planner      covdom.Planner
+	addresses    AddressReader
 	starter      RunStarter
 	readiness    ReadinessChecker
+	unclassified UnclassifiedMode
 	tenantSwitch TenantSwitch
-	cfg          Config
-	alerts       *alerting
-	operator     *operatorAlerts
-	now          func() time.Time
-	logger       *logger.Logger
+	// pathGate decides path discovery (path_discovery.go); nil: it is never
+	// planned.
+	pathGate PathDiscoveryGate
+	cfg      Config
+	alerts   *alerting
+	operator *operatorAlerts
+	liveness LivenessRecorder
+	now      func() time.Time
+	logger   *logger.Logger
 }
 
 // NewService creates the service with the registry's policy.

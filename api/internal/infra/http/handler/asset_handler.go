@@ -17,6 +17,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appfinding "github.com/openctemio/openctem/api/internal/app/finding"
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
+	"github.com/openctemio/openctem/api/internal/app/taggov"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
@@ -24,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/liveness"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -40,12 +42,14 @@ type AssetHandler struct {
 	validator          *validator.Validator
 	logger             *logger.Logger
 	programFlags       ProgramAssetFlagReader
+	liveness           AssetLivenessReader
 	triageGate         AssetTriageGate
 	unclassifiedPolicy AssetUnclassifiedPolicy
 	monitoringReader   AssetMonitoringReader
 	triageRecords      AssetTriageRecords
 	triageExclusions   AssetTriageExclusions
 	riskGov            *appfinding.AssetRiskGovernance
+	tagGovernor        TagGovernor
 }
 
 // NewAssetHandler creates a new asset handler.
@@ -308,6 +312,10 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
+	// Liveness is what the coverage loop observed about whether the asset
+	// is still there (alive, unreachable, unresolvable, gone), absent when
+	// no active check has looked at it.
+	Liveness *liveness.View `json:"liveness,omitempty"`
 	// SystemTags are derived by the platform from program links (bug-bounty, source:…, platform:…, program:…:…,
 	// program-unattested); no request can change them.
 	SystemTags []string `json:"system_tags,omitempty"`
@@ -630,6 +638,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        criticalities query     string  false  "Filter by criticalities (comma-separated)"
 // @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
+// @Param        liveness      query     string  false  "Filter by liveness state (comma-separated: unknown, alive, unreachable, unresolvable, gone)"
 // @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
 // @Param        exposures     query     string  false  "Filter by exposures (comma-separated)"
 // @Param        tags          query     string  false  "Filter by tags, system tags included (comma-separated, at most 20)"
@@ -670,6 +679,7 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param        min_confidence        query int    false "Lowest attribution confidence (0-100; no record counts as 100)"
 // @Param        max_confidence        query int    false "Highest attribution confidence (0-100)"
 // @Param        first_seen_after      query string false "First seen (added to the inventory) at/after this time (RFC3339 or YYYY-MM-DD)"
+// @Param        first_seen_before     query string false "First seen (added to the inventory) at/before this time (RFC3339 or YYYY-MM-DD)"
 // @Param        with_triage           query bool   false "Add each row's attribution, what an active scan would do with it now (triage) and its monitoring state"
 // @Param        monitoring_state      query string false "Monitoring state (comma-separated): monitored, not_monitored, pending_decision, unvalidated, irrelevant, inactive, out_of_scope"
 // @Param        primary               query bool   false "Only primary assets: the organization's root domains (a domain named like a permanent domain scope entry's root or a verified domain)"
@@ -731,12 +741,14 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		CoveredBy:            query.Get("covered_by"),
 		ScopeStatus:          parseQueryArray(query.Get("scope_status")),
 		MonitoringState:      parseQueryArray(query.Get("monitoring_state")),
+		Liveness:             parseQueryArray(query.Get("liveness")),
 		Primary:              query.Get("primary") == "true",
 		DiscoveredBy:         parseQueryArray(query.Get("discovered_by")),
 		DiscoveryTechnique:   parseQueryArray(query.Get("discovery_technique")),
 		MinConfidence:        parseQueryIntPtr(query.Get("min_confidence")),
 		MaxConfidence:        parseQueryIntPtr(query.Get("max_confidence")),
 		FirstSeenAfter:       parseQueryTimePtr(query.Get("first_seen_after")),
+		FirstSeenBefore:      parseQueryTimePtr(query.Get("first_seen_before")),
 		ProgramAssets:        query.Get("program_assets"),
 		Freshness:            query.Get("freshness"),
 		Resolution:           query.Get("resolution"),
@@ -832,6 +844,7 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 		ptrs[i] = &data[i]
 	}
 	h.addProgramFlags(r, input.TenantID, ptrs)
+	h.addLiveness(r, input.TenantID, ptrs)
 	h.addTriage(r, input.TenantID, ptrs, result.Data)
 	h.addMonitoringStates(r, input.TenantID, ptrs)
 	h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, ptrs)
@@ -915,6 +928,12 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ActorID:     middleware.GetUserID(r.Context()),
 	}
 
+	governed, refusal := checkTagChange(r.Context(), h.tagGovernor, tenantID, nil, req.Tags)
+	if refusal != nil {
+		h.refuseTagChange(w, r, "", req.Name, refusal)
+		return
+	}
+
 	a, err := h.service.CreateAsset(r.Context(), input)
 	if err != nil {
 		var dup *assetapp.DuplicateAssetError
@@ -927,6 +946,7 @@ func (h *AssetHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditAsset(r, auditdom.ActionAssetCreated, a.ID().String(), a.Name(), "Asset created",
 		map[string]any{"type": a.Type().String(), "criticality": a.Criticality().String()})
+	h.auditGovernedTags(r, a.ID().String(), a.Name(), governed)
 
 	// A member without full data access sees what they created through a
 	// creator access grant; otherwise the asset would answer 404 to them.
@@ -977,6 +997,7 @@ func (h *AssetHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	resp := toAssetResponse(a)
 	h.addProgramFlags(r, tenantID, []*AssetResponse{&resp})
+	h.addLiveness(r, tenantID, []*AssetResponse{&resp})
 	h.addTechnologies(r, tenantID, getTechnologiesPerAsset, []*AssetResponse{&resp})
 	h.addPendingRiskRequest(r, tenantID, &resp)
 
@@ -1053,6 +1074,15 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var governed []taggov.Change
+	if req.Tags != nil {
+		var refusal *tagRefusal
+		if governed, refusal = checkTagChange(r.Context(), h.tagGovernor, tenantID, before.Tags(), req.Tags); refusal != nil {
+			h.refuseTagChange(w, r, before.ID().String(), before.Name(), refusal)
+			return
+		}
+	}
+
 	a, held, err := h.service.UpdateAssetGoverned(r.Context(), id, tenantID, input, h.riskContext(r, req.RiskChangeReason))
 	if err != nil {
 		h.writeRiskError(w, err)
@@ -1060,6 +1090,7 @@ func (h *AssetHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditAsset(r, auditdom.ActionAssetUpdated, a.ID().String(), a.Name(), "Asset updated",
 		map[string]any{"changed_fields": assetChangedFields(before, a)})
+	h.auditGovernedTags(r, a.ID().String(), a.Name(), governed)
 	if held != nil {
 		h.writeAssetHeld(w, a, held)
 		return
@@ -1329,6 +1360,11 @@ func (h *AssetHandler) CreateRepository(w http.ResponseWriter, r *http.Request) 
 		RepoCreatedAt:   req.RepoCreatedAt,
 		RepoUpdatedAt:   req.RepoUpdatedAt,
 		RepoPushedAt:    req.RepoPushedAt,
+	}
+
+	if _, refusal := checkTagChange(r.Context(), h.tagGovernor, tenantID, nil, req.Tags); refusal != nil {
+		h.refuseTagChange(w, r, "", req.Name, refusal)
+		return
 	}
 
 	a, ext, outcome, err := h.service.CreateRepositoryAssetWithOutcome(r.Context(), input)
@@ -2392,14 +2428,16 @@ func (h *AssetHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateCrownJewel marks/unmarks an asset as a crown jewel with business impact scoring.
+// An omitted business impact score or notes keeps the stored value. When the
+// removal waits for approval (202), nothing on the asset changes.
 func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	assetID := r.PathValue("id")
 
 	var req struct {
-		IsCrownJewel        bool    `json:"is_crown_jewel"`
-		BusinessImpactScore float64 `json:"business_impact_score"`
-		BusinessImpactNotes string  `json:"business_impact_notes"`
+		IsCrownJewel        bool     `json:"is_crown_jewel"`
+		BusinessImpactScore *float64 `json:"business_impact_score"`
+		BusinessImpactNotes *string  `json:"business_impact_notes"`
 		// Reason is required when unmarking a crown jewel would drop an open
 		// P0/P1 finding on the asset (the unmarking may then wait for approval).
 		Reason string `json:"reason"`
@@ -2411,11 +2449,11 @@ func (h *AssetHandler) UpdateCrownJewel(w http.ResponseWriter, r *http.Request) 
 
 	// Bound the business impact score to 0–100 (same range as risk_score);
 	// the inline struct isn't run through the validator, so check explicitly.
-	if req.BusinessImpactScore < 0 || req.BusinessImpactScore > 100 {
+	if req.BusinessImpactScore != nil && (*req.BusinessImpactScore < 0 || *req.BusinessImpactScore > 100) {
 		apierror.BadRequest("business_impact_score must be between 0 and 100").WriteJSON(w)
 		return
 	}
-	if len(req.BusinessImpactNotes) > 2000 {
+	if req.BusinessImpactNotes != nil && len(*req.BusinessImpactNotes) > 2000 {
 		apierror.BadRequest("business_impact_notes must be at most 2000 characters").WriteJSON(w)
 		return
 	}

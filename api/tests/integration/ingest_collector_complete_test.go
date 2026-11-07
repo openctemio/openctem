@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -34,8 +34,8 @@ func vcVM(name, power string) ctis.Asset {
 
 // vcReport is a vCenter collector report of one instance.
 func vcReport(coverage string, at time.Time, assets ...ctis.Asset) *ctis.Report {
-	return &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "vcenter"},
-		Metadata: ctis.ReportMetadata{Timestamp: at.UTC(), SourceType: "collector", SourceRef: "vc01", CoverageType: coverage},
+	return &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "vcenter"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: at.UTC(), Channel: ctis.ChannelCollector, SourceRefs: []ctis.SourceRef{{System: "vcenter", ID: "vc01"}}, CoverageType: ctis.CoverageType(coverage)},
 		Assets:   assets}
 }
 
@@ -236,8 +236,8 @@ func (r *v2Rig) trustedImport(tn v2Tenant, assets ...ctis.Asset) {
 	r.t.Helper()
 	tid := tn.tenant
 	agt := &sensor.Sensor{TenantID: &tid, Status: sensor.SensorStatusActive}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "import"},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().Add(-3 * time.Hour).UTC()}, Assets: assets}
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "import"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().Add(-3 * time.Hour).UTC()}, Assets: assets}
 	out, err := r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep})
 	if err != nil {
 		r.t.Fatal(err)

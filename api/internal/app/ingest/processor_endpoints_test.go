@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )
@@ -20,47 +21,30 @@ func countType(r *ctis.Report, t ctis.AssetType) int {
 	return n
 }
 
-func TestPlanEndpoints_FoldsDiscoveredURLsIntoEndpointsUnderOneOrigin(t *testing.T) {
+// Endpoints of one origin are planned under one origin asset the plan adds
+// when the report has none; the input report is not touched. (The folding of
+// discovered_url assets is gone with the asset type: producers send endpoints.)
+func TestPlanEndpoints_EndpointsUnderOneOrigin(t *testing.T) {
 	s := &Service{}
 	in := &ctis.Report{
-		Assets: []ctis.Asset{
-			{ID: "u1", Type: ctis.AssetTypeDiscoveredURL, Value: "https://shop.example.com/orders/42?token=SECRET-TOKEN&sig=abc",
-				Properties: map[string]any{"method": "GET", "status_code": float64(200)}},
-			{ID: "u2", Type: ctis.AssetTypeDiscoveredURL, Value: "https://shop.example.com/orders/43"},
-			{ID: "d", Type: ctis.AssetTypeDomain, Value: "shop.example.com"},
+		Assets: []ctis.Asset{{ID: "d", Type: ctis.AssetTypeDomainName, Value: "shop.example.com"}},
+		Endpoints: []ctis.Endpoint{
+			{Origin: "https://shop.example.com", Method: "GET", Path: "/orders/42"},
+			{Origin: "https://shop.example.com", Method: "GET", Path: "/orders/43"},
 		},
-		Findings: []ctis.Finding{{Title: "x", AssetRef: "u1"}},
+		Findings: []ctis.Finding{{Title: "x", AssetRef: "d"}},
 	}
-	out := &Output{}
-	r, plan := s.planEndpoints(in, TrustedBinding(), out)
+	r, plan := s.planEndpoints(in, TrustedBinding(), &Output{})
 
-	if countType(r, ctis.AssetTypeDiscoveredURL) != 0 {
-		t.Fatal("a discovered_url asset is still created")
-	}
-	if countType(r, ctis.AssetTypeHTTPService) != 1 || countType(in, ctis.AssetTypeDiscoveredURL) != 2 {
+	if countType(r, ctis.AssetTypeWebOrigin) != 1 || countType(in, ctis.AssetTypeWebOrigin) != 0 {
 		t.Fatalf("want one origin asset added (and the input report untouched): %+v", r.Assets)
 	}
-	if out.LegacyURLAssetsFolded != 2 || len(plan.byOrigin) != 1 {
-		t.Fatalf("folded %d, origins %d", out.LegacyURLAssetsFolded, len(plan.byOrigin))
+	if len(plan.byOrigin) != 1 {
+		t.Fatalf("origins %d", len(plan.byOrigin))
 	}
-	for ref, obs := range plan.byOrigin {
+	for _, obs := range plan.byOrigin {
 		if len(obs) != 2 || obs[0].PathTemplate != "/orders/{int}" {
 			t.Fatalf("observations %+v", obs)
-		}
-		if r.Findings[0].AssetRef != ref {
-			t.Fatalf("finding on the folded URL points at %q, want the origin %q", r.Findings[0].AssetRef, ref)
-		}
-		names := []string{}
-		for _, p := range obs[0].Params {
-			names = append(names, p.Name)
-		}
-		if strings.Join(names, ",") != "sig,token" {
-			t.Fatalf("query names = %v", names)
-		}
-		for _, o := range obs {
-			if strings.Contains(o.ExamplePath+o.PathTemplate, "SECRET") {
-				t.Fatal("a query value reached an observation")
-			}
 		}
 	}
 	if len(r.Endpoints) != 0 {
@@ -71,11 +55,11 @@ func TestPlanEndpoints_FoldsDiscoveredURLsIntoEndpointsUnderOneOrigin(t *testing
 func TestPlanEndpoints_ReusesTheReportOriginAsset(t *testing.T) {
 	s := &Service{}
 	in := &ctis.Report{
-		Assets:    []ctis.Asset{{Type: ctis.AssetTypeHTTPService, Value: "https://API.example.com:443"}},
+		Assets:    []ctis.Asset{{Type: ctis.AssetTypeWebOrigin, Value: "https://API.example.com:443"}},
 		Endpoints: []ctis.Endpoint{{Origin: "https://api.example.com", Method: "GET", Path: "/v1/users/7"}},
 	}
 	r, plan := s.planEndpoints(in, TrustedBinding(), &Output{})
-	if countType(r, ctis.AssetTypeHTTPService) != 1 {
+	if countType(r, ctis.AssetTypeWebOrigin) != 1 {
 		t.Fatalf("origin asset duplicated: %+v", r.Assets)
 	}
 	ref := r.Assets[0].ID
@@ -155,12 +139,65 @@ func TestSplitByContract_EndpointsOnlyFromToolsThatReportThem(t *testing.T) {
 
 	// A declared contract narrows: a crawler that does not declare
 	// endpoints may not report them.
-	declared := outputRules{stages: stage.ForTool("katana"), declared: &sensor.ToolContract{Produces: []string{"asset:http_service"}}}
+	declared := outputRules{stages: stage.ForTool("katana"), declared: &sensor.ToolContract{Produces: []string{"asset:web_origin"}}}
 	if declared.endpointsAllowed() {
 		t.Fatal("an undeclared endpoint output was allowed")
 	}
 	declared.declared.Produces = append(declared.declared.Produces, sensor.ProduceEndpoint)
 	if !declared.endpointsAllowed() {
 		t.Fatal("a declared endpoint output was refused")
+	}
+}
+
+// The source of a report's endpoints comes from the bound command's
+// capability: a path discovery job's endpoints are guess and are refused
+// without evidence; a crawl job claiming guess is stored as crawl.
+func TestPlanEndpoints_SourceFromTheBoundCapability(t *testing.T) {
+	s := &Service{}
+	ev := ctis.Extensions{}
+	ev.Set("io.openctem", "response", map[string]any{"size": float64(512), "hash": "00ff00ff00ff00ff"})
+	in := &ctis.Report{Endpoints: []ctis.Endpoint{
+		{Origin: "https://app.example.com", Method: "GET", Path: "/backup.zip", Source: "probe", Extensions: ev},
+		{Origin: "https://app.example.com", Method: "GET", Path: "/db.sql", Source: "probe"},
+	}}
+	cmd := &command.Command{Type: command.CommandTypeScan,
+		Payload: []byte(`{"capability":"enumerate.web_paths@1","targets":["https://app.example.com"]}`)}
+	b := CommandBinding(cmd)
+	if b.Capability != "enumerate.web_paths@1" {
+		t.Fatalf("binding capability %q", b.Capability)
+	}
+	out := &Output{}
+	_, plan := s.planEndpoints(in, b, out)
+	if out.EndpointsRefused != 1 || out.EndpointsNoEvidence != 1 {
+		t.Fatalf("refused %d (no evidence %d), want the endpoint without evidence refused", out.EndpointsRefused, out.EndpointsNoEvidence)
+	}
+	var got []string
+	for _, obs := range plan.byOrigin {
+		for _, o := range obs {
+			got = append(got, o.PathTemplate+"="+strings.Join(o.Sources, ","))
+			if o.Evidence == nil || o.Evidence.Size != 512 {
+				t.Fatalf("evidence not kept: %+v", o.Evidence)
+			}
+		}
+	}
+	if len(got) != 1 || got[0] != "/backup.zip=guess" {
+		t.Fatalf("planned %v, want [/backup.zip=guess]", got)
+	}
+
+	// A crawl job's report claiming guess, with evidence, is a crawl.
+	in.Endpoints[1].Source = "guess"
+	in.Endpoints[1].Extensions = ev
+	crawl := Binding{Kind: BindingCommand, Targets: []string{"https://app.example.com"}, Tool: "katana", Capability: "crawl.web@1"}
+	out = &Output{}
+	_, plan = s.planEndpoints(in, crawl, out)
+	for _, obs := range plan.byOrigin {
+		for _, o := range obs {
+			if strings.Join(o.Sources, ",") == "guess" || o.Evidence != nil {
+				t.Fatalf("a crawl produced %v with evidence %v", o.Sources, o.Evidence)
+			}
+		}
+	}
+	if out.EndpointsRefused != 0 {
+		t.Fatalf("crawl endpoints refused: %d", out.EndpointsRefused)
 	}
 }

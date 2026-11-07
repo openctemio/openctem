@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -17,16 +17,18 @@ import (
 // same placement as a typed relationship.
 func vcenterReport(vm string) *ctis.Report {
 	return &ctis.Report{
-		Version:  "1.0",
+		Version:  ctis.SchemaVersion,
 		Tool:     &ctis.Tool{Name: "vcenter"},
-		Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC(), SourceType: "collector", CoverageType: "full"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelCollector, CoverageType: ctis.CoverageFull},
 		Assets: []ctis.Asset{
-			{ID: "esx", Type: ctis.AssetTypeHost, Value: "esx01.example.com", Name: "esx01.example.com",
-				Properties: ctis.Properties{"cluster": "prod", "is_virtual": false}},
-			{ID: "vm", Type: ctis.AssetTypeHost, Value: vm, Name: vm,
-				Properties: ctis.Properties{"esxi_host": "ESX01.example.com", "cluster": "prod", "ip_addresses": []any{"192.0.2.10"}}},
+			{ID: "esx", Type: ctis.AssetTypeHost, Value: "esx01.example.com"},
+			{ID: "vm", Type: ctis.AssetTypeHost, Value: vm},
+			{ID: "vm-ip", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10"},
 		},
-		Relationships: []ctis.Relationship{{Type: ctis.RelHostedBy, FromRef: "vm", ToRef: "esx"}},
+		Relationships: []ctis.Relationship{
+			{Type: ctis.RelHostedBy, FromRef: "vm", ToRef: "esx"},
+			{Type: ctis.RelHostedBy, FromRef: "vm-ip", ToRef: "vm"},
+		},
 	}
 }
 
@@ -67,7 +69,7 @@ func TestIngest_CollectorRelationships(t *testing.T) {
 	}
 	address := func(tn v2Tenant) {
 		t.Helper()
-		trusted(tn, &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "import"}, Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()},
+		trusted(tn, &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "import"}, Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 			Assets: []ctis.Asset{{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10", Name: "192.0.2.10"}}})
 	}
 	type edge struct{ src, rel, dst string }
@@ -114,7 +116,7 @@ func TestIngest_CollectorRelationships(t *testing.T) {
 	address(a)
 	address(b)
 	// Tenant B holds an identically named hypervisor host.
-	trusted(b, &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "import"}, Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()},
+	trusted(b, &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "import"}, Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets: []ctis.Asset{{ID: "esx", Type: ctis.AssetTypeHost, Value: "esx01.example.com", Name: "esx01.example.com"}}})
 
 	collect(a, vcenterReport("vm01.example.com"))
@@ -145,7 +147,7 @@ func TestIngest_CollectorRelationships(t *testing.T) {
 	// no edge from that report.
 	c := r.newTenant("vcenter")
 	address(c)
-	trusted(c, &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "import"}, Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()},
+	trusted(c, &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "import"}, Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
 		Assets: []ctis.Asset{{ID: "vm", Type: ctis.AssetTypeHost, Value: "vm02.example.com", Name: "vm02.example.com"}}})
 	collect(c, vcenterReport("vm02.example.com"))
 	for _, e := range edges(c) {

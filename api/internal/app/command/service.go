@@ -41,6 +41,9 @@ type Service struct {
 	// (duration_learning.go); nil: nothing is learned.
 	durations toolbudget.StatsStore
 	logger    *logger.Logger
+	// pathClaims gives back the ledger claim of a path discovery job that
+	// sent no request (path_claim_release.go); nil: the claim stands.
+	pathClaims PathClaimReleaser
 	// refusals hears about failed commands (local_policy.go); nil: none.
 	refusals RefusalObserver
 	// privatePolicy keeps private targets from sensors without a local
@@ -67,6 +70,9 @@ type Service struct {
 	// sharedLimits reads each organization's limit of shared jobs in flight
 	// (shared_claim.go); nil: the shared claim hands out nothing.
 	sharedLimits SharedLimitSource
+	// activeScan reads the organization's active scanning entitlement
+	// (active_scanning.go); nil allows.
+	activeScan FeatureAllower
 	// sharedAccess is the shared sensor access policy applied at claim
 	// time (shared_claim.go); nil: the shared claim hands out nothing.
 	sharedAccess SharedAccessPolicy
@@ -89,6 +95,8 @@ type Service struct {
 	proxyRequired ProxyRequirement
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
+	// secrets lists a claimed job's secret refs (WithTaskSecrets).
+	secrets SecretsGranter
 	// balanceWindow is how long a fresh job is left to less-loaded sensors
 	// (claim_balance.go); balanceSet: WithClaimBalanceWindow was given.
 	balanceWindow time.Duration
@@ -494,6 +502,11 @@ func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Co
 		return handBack(err)
 	}
 	s.recordEgress(ctx, out)
+	// The job's secret refs (task_secrets.go) go in last, so the signature
+	// covers them.
+	if delivered, err = s.stampSecrets(ctx, input.SensorID, delivered); err != nil {
+		return handBack(err)
+	}
 	return s.signClaimed(ctx, tenantID, input.SensorID, delivered, pinned), nil
 }
 
@@ -815,6 +828,7 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 	}
 	s.learnDuration(ctx, cmd)
 	s.observeEgressVerdict(ctx, cmd, proxypool.CompletedVerdict(cmd.Result))
+	s.releaseEmptyPathDiscovery(ctx, cmd)
 
 	return cmd, nil
 }

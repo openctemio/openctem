@@ -33,14 +33,25 @@ const (
 // Pre79OffsetNS is the sub-microsecond remainder Pre79 rows are signed with.
 const Pre79OffsetNS = 123
 
-// Resign rewrites the tenant's chain rows, in chain_position order, so row i is
-// signed as kinds[i] and linked to row i-1's stored hash, as the live writer
-// linked them. Rows beyond len(kinds) are signed Current. It returns how many
-// rows it rewrote.
+// Resign replaces the tenant's chain rows, in chain_position order, with
+// version 1 (application-hashed) rows: row i is signed as kinds[i] and linked
+// to row i-1's stored hash, as the old application writer linked them. Rows
+// beyond len(kinds) are signed Current. The database now writes version 2
+// rows and refuses to change a row's version, so the rows are deleted and
+// inserted again (new positions, same order). It returns how many rows it
+// wrote.
 func Resign(ctx context.Context, db *sql.DB, tenantID string, kinds ...Kind) (int, error) {
 	srcs, err := readChain(ctx, db, tenantID)
 	if err != nil {
 		return 0, err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin resign: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM audit_log_chain WHERE tenant_id = $1`, tenantID); err != nil {
+		return 0, fmt.Errorf("clear chain: %w", err)
 	}
 
 	prev := ""
@@ -62,11 +73,15 @@ func Resign(ctx context.Context, db *sql.DB, tenantID string, kinds ...Kind) (in
 		default:
 			h = cryptopkg.ComputeAuditChainHash(prev, s.id, s.payload, s.ts)
 		}
-		if _, err := db.ExecContext(ctx,
-			`UPDATE audit_log_chain SET prev_hash = $2, hash = $3 WHERE audit_log_id = $1`, s.id, prev, h); err != nil {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO audit_log_chain (audit_log_id, tenant_id, prev_hash, hash, hash_version)
+			 VALUES ($1, $2, $3, $4, 1)`, s.id, tenantID, prev, h); err != nil {
 			return i, fmt.Errorf("resign row %d: %w", i, err)
 		}
 		prev = h
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit resign: %w", err)
 	}
 	return len(srcs), nil
 }

@@ -9,6 +9,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/domain/pentest"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -45,12 +47,32 @@ func (s steppedUpAt) RecentAuthAt(context.Context, string, string) (time.Time, e
 }
 
 // withStepUpChecker sets the package checker for routes registered by this
-// test (registration captures it) and restores it afterwards.
+// test (registration captures it) and restores it afterwards. It also clears
+// the own-sign-in checker: a test that wired the whole router leaves a checker
+// backed by its (by now closed) database in that package variable, and the
+// account routes would answer 500 instead of the step-up refusal under test.
 func withStepUpChecker(t *testing.T, c middleware.RecentAuthChecker) {
 	t.Helper()
-	saved := stepUpChecker
-	stepUpChecker = c
-	t.Cleanup(func() { stepUpChecker = saved })
+	saved, savedOwn, savedPolicies := stepUpChecker, ownSignInChecker, stepUpPolicies
+	// No organization policy: the legacy one (a policy reader left by an
+	// earlier Register in this process may point at a closed database).
+	stepUpChecker, ownSignInChecker, stepUpPolicies = c, nil, nil
+	t.Cleanup(func() { stepUpChecker, ownSignInChecker, stepUpPolicies = saved, savedOwn, savedPolicies })
+}
+
+type failingOwnSignIn struct{}
+
+func (failingOwnSignIn) OwnSignInRequired(context.Context, string, string) (bool, error) {
+	return false, errors.New("sql: database is closed")
+}
+
+// A checker left in the package variable by an earlier test must not change
+// what the step-up route test sees (it flaked on shards where such a test ran first).
+func TestStepUpRoutes_IgnoreLeakedOwnSignInChecker(t *testing.T) {
+	saved := ownSignInChecker
+	t.Cleanup(func() { ownSignInChecker = saved })
+	ownSignInChecker = failingOwnSignIn{}
+	TestStepUpRoutes_RequireRecentAuth(t)
 }
 
 // stubCISettings answers the CI settings routes so that reaching the handler
@@ -459,6 +481,16 @@ func TestFindingDecisionStepUp_BulkAndRejectCancel(t *testing.T) {
 			t.Errorf("bulk to %q with a fresh session must reach the handler", st)
 		}
 	}
+	// One finding is a routine close; two or more are a bulk close.
+	if _, reached := call(t, stale, `{"status":"resolved","finding_ids":["f1"]}`); !reached {
+		t.Error("closing one finding is routine and must not need step-up when routine is off")
+	}
+	for _, body := range []string{`{"status":"resolved","finding_ids":["f1","f2"]}`, `{"status":"false_positive","finding_ids":["f1","f2"]}`,
+		`{"status":"resolved","finding_ids":[]}`, `{"status":"bogus","finding_ids":["f1"]}`} {
+		if code, reached := call(t, stale, body); reached || code != http.StatusForbidden {
+			t.Errorf("%s with a stale session: got %d reached=%v, want 403", body, code, reached)
+		}
+	}
 	for _, route := range stepUpRoutes {
 		if strings.HasSuffix(route, "/reject") || strings.HasSuffix(route, "/cancel") {
 			if strings.Contains(route, "/approvals") || strings.Contains(route, "severity-requests") {
@@ -468,8 +500,9 @@ func TestFindingDecisionStepUp_BulkAndRejectCancel(t *testing.T) {
 	}
 }
 
-// Ready to close: every confirm, single or bulk, needs step-up; a dismissal
-// does not. A body the gate cannot read is gated.
+// Ready to close: confirming several proposals needs step-up (sensitive);
+// one confirm is routine; a dismissal never asks. A body the gate cannot read
+// is gated.
 func TestClosureDecisionStepUp_EveryConfirm(t *testing.T) {
 	stale := steppedUpAt(time.Now().Add(-11 * time.Minute))
 	call := func(t *testing.T, checker middleware.RecentAuthChecker, body string) (code int, reached bool) {
@@ -495,7 +528,13 @@ func TestClosureDecisionStepUp_EveryConfirm(t *testing.T) {
 			t.Errorf("%s must not need step-up", body)
 		}
 	}
-	for _, body := range []string{`{"decision":"confirm","proposal_ids":["a"]}`, `{"decision":"confirm","proposal_ids":["a","b"]}`, `{"decision":"CONFIRM","proposal_ids":["a"]}`,
+	// One confirm closes one finding: a routine action, off unless the
+	// organization turned routine on (no organization here: the legacy
+	// policy, routine off).
+	if _, reached := call(t, stale, `{"decision":"confirm","proposal_ids":["a"]}`); !reached {
+		t.Error("a single confirm is routine and must not need step-up when routine is off")
+	}
+	for _, body := range []string{`{"decision":"confirm","proposal_ids":["a","b"]}`, `{"decision":"CONFIRM","proposal_ids":["a"]}`,
 		`{"decision":"confirm","proposal_ids":["a"]`, `{"decision":5}`, `{"proposal_ids":["a"],"proposal_ids":["a","b"],"decision":"confirm"}`} {
 		if code, reached := call(t, stale, body); reached || code != http.StatusForbidden {
 			t.Errorf("%s with a stale session: got %d reached=%v, want 403", body, code, reached)
@@ -503,5 +542,44 @@ func TestClosureDecisionStepUp_EveryConfirm(t *testing.T) {
 	}
 	if _, reached := call(t, alwaysSteppedUp{}, `{"decision":"confirm","proposal_ids":["a"]}`); !reached {
 		t.Error("a bulk confirm with a fresh session must reach the handler")
+	}
+}
+
+// routePolicies is a fixed re-verification policy for every organization.
+type routePolicies struct{ p stepup.Policy }
+
+func (r routePolicies) StepUpPolicy(context.Context, string) (stepup.Policy, error) { return r.p, nil }
+
+// One finding's status change follows the organization's routine rule: no
+// proof when routine is off (the default), a recent proof when it is on.
+// Moves between open states never ask.
+func TestFindingStatusRoutineStepUp(t *testing.T) {
+	stale := steppedUpAt(time.Now().Add(-2 * time.Hour))
+	call := func(t *testing.T, routine stepup.Rule, body string) (code int, reached bool) {
+		t.Helper()
+		withStepUpChecker(t, stale)
+		p := stepup.DefaultPolicy()
+		p.Routine = routine
+		stepUpPolicies = routePolicies{p: p} // restored by withStepUpChecker
+		h := requireStepUpWhenClosingOne()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reached = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		rec := httptest.NewRecorder()
+		ctx := context.WithValue(context.WithValue(context.Background(), middleware.UserIDKey, "u1"), middleware.SessionIDKey, "s1")
+		ctx = context.WithValue(ctx, middleware.TenantIDKey, shared.NewID().String())
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodPatch, "/", strings.NewReader(body)))
+		return rec.Code, reached
+	}
+	off := stepup.Rule{Mode: stepup.ModeOff}
+	on := stepup.Rule{Mode: stepup.ModeWindow, Window: stepup.Window1h}
+	if _, reached := call(t, off, `{"status":"resolved"}`); !reached {
+		t.Error("routine off: closing one finding needs no proof")
+	}
+	if code, reached := call(t, on, `{"status":"resolved"}`); reached || code != http.StatusForbidden {
+		t.Errorf("routine on with a stale proof: got %d reached=%v, want 403", code, reached)
+	}
+	if _, reached := call(t, on, `{"status":"in_progress"}`); !reached {
+		t.Error("an open-state move never asks")
 	}
 }

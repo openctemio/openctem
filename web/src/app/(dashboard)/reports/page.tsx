@@ -5,6 +5,7 @@ import { Main } from '@/components/layout'
 import { PageHeader, PageStack } from '@/features/shared'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ReportSchedulesSection, ExecutiveSummarySection } from '@/features/reports'
+import { ExtensionSlot } from '@/lib/extension/slot'
 import { PentestReportsSection } from '@/features/pentest/components/pentest-reports-section'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { useHasPermission, Permission } from '@/lib/permissions'
@@ -65,6 +66,7 @@ export default function ReportsPage() {
           {header(null)}
           <ExecutiveSummarySection />
           <ReportSchedulesSection />
+          <ExtensionSlot id="reports.sections" />
         </PageStack>
       )}
     </Main>

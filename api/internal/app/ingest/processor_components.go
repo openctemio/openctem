@@ -11,7 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/licensepolicy"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/software"
@@ -70,7 +70,7 @@ func DependencyNodes(deps []ctis.Dependency) (nodes []software.PackageNode, ok [
 	ok = make([]bool, len(deps))
 	direct := map[string]bool{}
 	for i := range deps {
-		if strings.EqualFold(deps[i].Relationship, "root") {
+		if deps[i].Relationship == ctis.DependencyRoot {
 			for _, ref := range deps[i].DependsOn {
 				direct[ref] = true
 			}
@@ -78,7 +78,7 @@ func DependencyNodes(deps []ctis.Dependency) (nodes []software.PackageNode, ok [
 	}
 	for i := range deps {
 		d := &deps[i]
-		if strings.EqualFold(d.Relationship, "root") {
+		if d.Relationship == ctis.DependencyRoot {
 			continue
 		}
 		n, valid := dependencyNode(d)
@@ -97,7 +97,9 @@ func dependencyNode(d *ctis.Dependency) (software.PackageNode, bool) {
 	var n software.PackageNode
 	p, err := software.ParsePURL(d.PURL)
 	if err != nil {
-		p, err = software.SyntheticPURL(d.Ecosystem, d.Name, d.Version)
+		// No purl: the ecosystem is unknown in CTIS 2.0 (it is the purl
+		// type), so the package gets a generic synthetic identity.
+		p, err = software.SyntheticPURL("", d.Name, d.Version)
 		if err != nil {
 			return n, false
 		}
@@ -113,15 +115,15 @@ func dependencyNode(d *ctis.Dependency) (software.PackageNode, bool) {
 	if ref == "" {
 		ref = d.Name + "@" + d.Version
 	}
-	location := d.Path
-	if location == "" && len(d.Locations) > 0 {
+	location := ""
+	if len(d.Locations) > 0 {
 		location = d.Locations[0].Path
 	}
 	n.Ref = ref
 	n.PURL = p
 	n.DisplayName = d.Name
 	n.Location = software.CleanLocation(location)
-	n.Relationship = software.NormalizeRelationship(d.Relationship)
+	n.Relationship = software.NormalizeRelationship(string(d.Relationship))
 	n.Scope = dependencyScope(d)
 	n.Licenses = software.NormalizeLicenses(d.Licenses)
 	n.DependsOn = d.DependsOn
@@ -227,8 +229,21 @@ func PackagesChanged(res software.PackageWriteResult) bool {
 //  3. Unresolved → a deterministic fallback asset (preserving the previous
 //     "link it somewhere" behavior rather than dropping the component), logged
 //     so the ambiguity is visible.
+//
+// A dependency that names its asset (asset_ref) goes to that asset only; when
+// that asset was not persisted (left out, out of scope) the dependency is
+// skipped, never moved to another asset: a multi-host scan export (a
+// .nessus file) carries each host's installed packages this way.
 func (p *ComponentProcessor) resolveDepAssetIDs(report *ctis.Report, assetMap map[string]shared.ID) []shared.ID {
 	out := make([]shared.ID, len(report.Dependencies))
+	byRef := func(i int) bool {
+		ref := report.Dependencies[i].AssetRef
+		if ref == "" {
+			return false
+		}
+		out[i] = assetMap[ref] // zero when not persisted: skipped
+		return true
+	}
 
 	// Single-asset fast path.
 	if len(assetMap) == 1 {
@@ -237,7 +252,9 @@ func (p *ComponentProcessor) resolveDepAssetIDs(report *ctis.Report, assetMap ma
 			only = id
 		}
 		for i := range out {
-			out[i] = only
+			if !byRef(i) {
+				out[i] = only
+			}
 		}
 		return out
 	}
@@ -248,6 +265,9 @@ func (p *ComponentProcessor) resolveDepAssetIDs(report *ctis.Report, assetMap ma
 	matchers, fallback := p.buildAssetMatchers(report, assetMap)
 
 	for i := range report.Dependencies {
+		if byRef(i) {
+			continue
+		}
 		dep := &report.Dependencies[i]
 		if id, ok := matchDepToAsset(dep, matchers); ok {
 			out[i] = id
@@ -323,10 +343,7 @@ func matchDepToAsset(dep *ctis.Dependency, matchers []assetMatcher) (shared.ID, 
 	if len(matchers) == 0 {
 		return shared.ID{}, false
 	}
-	paths := make([]string, 0, len(dep.Locations)+1)
-	if dep.Path != "" {
-		paths = append(paths, strings.ToLower(dep.Path))
-	}
+	paths := make([]string, 0, len(dep.Locations))
 	for _, loc := range dep.Locations {
 		if loc.Path != "" {
 			paths = append(paths, strings.ToLower(loc.Path))

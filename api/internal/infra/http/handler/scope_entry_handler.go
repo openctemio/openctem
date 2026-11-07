@@ -6,6 +6,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -122,11 +123,22 @@ type ScopeSettingsResponse struct {
 	// UnclassifiedScansEffective is the mode in force: off under the
 	// Strict scan approval mode, else the setting (read-only).
 	UnclassifiedScansEffective string `json:"unclassified_scans_effective" enums:"off,low_impact,full"`
+	// AddressAutoAdd is the setting for addresses in-scope names resolve
+	// to: auto_strong (default: added automatically when the organization's
+	// own network holds them, through the approval policy), ask or never.
+	AddressAutoAdd string `json:"address_auto_add" enums:"auto_strong,ask,never"`
+	// AddressAutoAddEffective is the mode in force: ask instead of
+	// auto_strong under the Strict scan approval mode (read-only).
+	AddressAutoAddEffective string `json:"address_auto_add_effective" enums:"auto_strong,ask,never"`
 	// AutoCoverage is the organization's choice for automatic coverage:
 	// true, false, or null for the default (on unless Strict).
 	AutoCoverage *bool `json:"auto_coverage"`
 	// AutoCoverageEffective: automatic coverage runs now (read-only).
 	AutoCoverageEffective bool `json:"auto_coverage_effective"`
+	// PathDiscovery: path discovery of web services runs (default true):
+	// candidate paths derived from the organization's own inventory, GET
+	// and HEAD only, at most one run per origin per 30 days.
+	PathDiscovery bool `json:"path_discovery"`
 	// CIScopeRequiresProof: a CI trust's new repository entries wait
 	// inactive for a verified pipeline run under them (opt-in, default off).
 	CIScopeRequiresProof bool `json:"ci_scope_requires_proof"`
@@ -136,6 +148,10 @@ type ScopeSettingsResponse struct {
 	// WideningApprovals: null is the default min(1, admins-1).
 	WideningApprovals *int   `json:"widening_approvals"`
 	DefaultMaxTier    string `json:"default_max_tier"`
+	// MaxRangePrefix is the widest address range one scan target may name,
+	// as an IPv4 prefix length (16 = a /16, the default; down to 8 = a /8 when
+	// the organization opts in; IPv6 gets the same address count).
+	MaxRangePrefix int `json:"max_range_prefix"`
 	// Read-only: the approvals a widening needs now, and the administrators
 	// that count.
 	EffectiveWideningApprovals int `json:"effective_widening_approvals"`
@@ -185,14 +201,23 @@ type ScopeSettingsRequest struct {
 	// UnclassifiedScans: off, low_impact or full; omitted keeps the stored
 	// value.
 	UnclassifiedScans string `json:"unclassified_scans" validate:"omitempty,oneof=off low_impact full"`
+	// AddressAutoAdd: auto_strong, ask or never; omitted keeps the stored
+	// value.
+	AddressAutoAdd string `json:"address_auto_add" validate:"omitempty,oneof=auto_strong ask never"`
 	// AutoCoverage: true or false; omitted keeps the stored choice.
 	AutoCoverage *bool `json:"auto_coverage"`
+	// PathDiscovery: true or false; omitted keeps the stored choice.
+	PathDiscovery *bool `json:"path_discovery"`
 	// CIScopeRequiresProof: true or false; omitted keeps the stored value.
 	CIScopeRequiresProof *bool  `json:"ci_scope_requires_proof"`
 	OneOffTargets        string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
 	OneOffMaxDays        int    `json:"one_off_max_days" validate:"omitempty,min=1,max=30"`
 	WideningApprovals    *int   `json:"widening_approvals" validate:"omitempty,min=0,max=2"`
 	DefaultMaxTier       string `json:"default_max_tier" validate:"omitempty,oneof=t0 t1"`
+	// MaxRangePrefix: 8 to 24; omitted (0) keeps the stored value. A value
+	// below 16 (wider than a /16) is an opt-in widening: step-up (route),
+	// a high-severity audit and a notice to every administrator.
+	MaxRangePrefix int `json:"max_range_prefix" validate:"omitempty,min=8,max=24"`
 }
 
 func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss tenant.ScopeSettings) (ScopeSettingsResponse, error) {
@@ -206,10 +231,13 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
 		ReviewBeforeInventory: ss.ReviewBeforeInventory,
 		AutoCoverage:          ss.AutoCoverage, AutoCoverageEffective: ss.AutoCoverageOn(mode == scangov.ModeStrict),
+		PathDiscovery:        ss.PathDiscoveryOn(),
 		CIScopeRequiresProof: ss.CIScopeRequiresProof,
 		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
+		AddressAutoAdd: ss.AddressMode(), AddressAutoAddEffective: ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict),
 		OneOffTargets: ss.OneOffPolicy(), OneOffMaxDays: ss.MaxDays(),
 		WideningApprovals: ss.WideningApprovals, DefaultMaxTier: ss.Tier(),
+		MaxRangePrefix:             ss.RangePrefix(),
 		EffectiveWideningApprovals: approvals, AdminCount: admins,
 		ActiveProof:   h.activeProofMode(ctx),
 		T2MaxDuration: ss.T2Duration(), T2MaxDays: t2Days, T2PermanentAllowed: t2Permanent,
@@ -293,6 +321,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
 		UnclassifiedScans: req.UnclassifiedScans, AutoCoverage: req.AutoCoverage,
+		AddressAutoAdd: req.AddressAutoAdd, MaxRangePrefix: req.MaxRangePrefix, PathDiscovery: req.PathDiscovery,
 	}
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
@@ -304,7 +333,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
 	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
-		req.CIScopeRequiresProof == nil {
+		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -325,6 +354,15 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.CIScopeRequiresProof == nil {
 			ss.CIScopeRequiresProof = before.CIScopeRequiresProof
+		}
+		if req.AddressAutoAdd == "" {
+			ss.AddressAutoAdd = before.AddressAutoAdd
+		}
+		if req.MaxRangePrefix == 0 {
+			ss.MaxRangePrefix = before.MaxRangePrefix
+		}
+		if req.PathDiscovery == nil {
+			ss.PathDiscovery = before.PathDiscovery
 		}
 
 	}
@@ -348,13 +386,25 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		TenantID: tenantID, ActorID: middleware.GetUserID(ctx), ActorEmail: auditActorEmail(ctx),
 		ActorIP: getClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	}
+	prior, err := h.settings.GetScopeSettings(ctx, tenantID)
+	if err != nil {
+		h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("failed to read the settings").WriteJSON(w)
+		return
+	}
 	out, err := h.settings.UpdateScopeSettings(ctx, tenantID, ss, actx)
 	if err != nil {
 		h.handleServiceError(w, "Scope settings", err)
 		return
 	}
 	if id, err := shared.IDFromString(tenantID); err == nil {
-		h.service.NotifyAdmins(ctx, id, "Scope settings changed", "The organization's scope settings were changed; review them in Scoping.")
+		if tenant.RangeWidened(*prior, *out) {
+			// Opting in to wider ranges widens what one scan may sweep.
+			h.service.NotifyAdmins(ctx, id, "Widest scan range raised",
+				fmt.Sprintf("The widest range one scan target may name was raised from /%d to /%d. Scans of a range wider than a /16 find live hosts first and need a confirmation; review it in Scoping settings.", prior.RangePrefix(), out.RangePrefix()))
+		} else {
+			h.service.NotifyAdmins(ctx, id, "Scope settings changed", "The organization's scope settings were changed; review them in Scoping.")
+		}
 	}
 	resp, err := h.settingsResponse(ctx, tenantID, *out)
 	if err != nil {

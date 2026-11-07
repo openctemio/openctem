@@ -17,10 +17,12 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/mfa"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // StepUpFreshSession is how recent a sign-in must be for an SSO-only account
@@ -48,7 +50,56 @@ const (
 var (
 	ErrStepUpRequired = errors.New("step-up re-authentication required")
 	ErrStepUpFailed   = errors.New("step-up re-authentication failed")
+	// ErrStepUpCodeReused is an authenticator code from a time step that was
+	// already used (it signed the person in, or confirmed an earlier action).
+	// It is an ErrStepUpFailed, so every caller that refuses a wrong code
+	// refuses it the same way; the step-up endpoint tells the person to wait
+	// for the next code instead of calling it wrong.
+	ErrStepUpCodeReused = fmt.Errorf("%w: code already used", ErrStepUpFailed)
+	// ErrStepUpNoFactor: the account was asked for a code but its
+	// authenticator was removed meanwhile. Ask again (ErrStepUpRequired).
+	ErrStepUpNoFactor = fmt.Errorf("%w: no authenticator", ErrStepUpRequired)
+	// ErrStepUpSecretUnreadable: the stored authenticator secret could not be
+	// decrypted. A server fault, never reported as a wrong code and not
+	// counted towards the lockout.
+	ErrStepUpSecretUnreadable = errors.New("step-up re-authentication unavailable: authenticator secret unreadable")
 )
+
+// Reasons recorded in the metadata of a failed step-up audit event
+// (auth.step_up_failed, key "reason"). The code itself is never recorded.
+const (
+	StepUpReasonInvalidCode     = "invalid_code"
+	StepUpReasonReplayedCode    = "replayed_code"
+	StepUpReasonInvalidPassword = "invalid_password"
+	StepUpReasonAccountLocked   = "account_locked"
+	StepUpReasonNoTOTPFactor    = "no_totp_factor"
+	StepUpReasonDecryptError    = "decrypt_error"
+	StepUpReasonRateLimited     = "rate_limited"
+)
+
+// StepUpFailureReason names a VerifyStepUp error for the audit trail, or ""
+// for an error that is not a refused proof (nothing given, an SSO session,
+// an infrastructure error).
+func StepUpFailureReason(err error, method StepUpMethod) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrStepUpCodeReused):
+		return StepUpReasonReplayedCode
+	case errors.Is(err, ErrStepUpFailed):
+		if method == StepUpPassword {
+			return StepUpReasonInvalidPassword
+		}
+		return StepUpReasonInvalidCode
+	case errors.Is(err, ErrAccountLocked):
+		return StepUpReasonAccountLocked
+	case errors.Is(err, ErrStepUpNoFactor):
+		return StepUpReasonNoTOTPFactor
+	case errors.Is(err, ErrStepUpSecretUnreadable):
+		return StepUpReasonDecryptError
+	}
+	return ""
+}
 
 // StepUpMethodFor returns what userID must present.
 func (s *AuthService) StepUpMethodFor(ctx context.Context, userID string) (StepUpMethod, error) {
@@ -72,7 +123,9 @@ func (s *AuthService) StepUpMethodFor(ctx context.Context, userID string) (StepU
 // VerifyStepUp checks proof for userID signed in with sessionID. It returns
 // nil on success, ErrStepUpRequired when nothing usable was given (or the
 // SSO session is too old) and ErrStepUpFailed for a wrong code or password,
-// which also counts towards the lockout.
+// which also counts towards the lockout (ErrStepUpCodeReused, an
+// ErrStepUpFailed, for a code from a step already used).
+// ErrStepUpSecretUnreadable is a server fault and counts for nothing.
 func (s *AuthService) VerifyStepUp(ctx context.Context, userID, sessionID string, proof StepUpProof) error {
 	method, err := s.StepUpMethodFor(ctx, userID)
 	if err != nil {
@@ -92,10 +145,25 @@ func (s *AuthService) VerifyStepUp(ctx context.Context, userID, sessionID string
 		}
 		f, err := s.mfaRepo.GetFactor(ctx, u.ID())
 		if err != nil {
-			return ErrStepUpRequired
+			if errors.Is(err, mfa.ErrFactorNotFound) {
+				return ErrStepUpNoFactor
+			}
+			return err
 		}
-		ok, err := s.checkTOTP(ctx, f, proof.TOTP)
-		if err != nil || !ok {
+		if !f.Enabled || f.SecretEncrypted == "" {
+			return ErrStepUpNoFactor
+		}
+		out, err := s.verifyTOTP(ctx, f, proof.TOTP)
+		switch {
+		case errors.Is(err, errTOTPDecrypt):
+			s.logger.Error("step-up: authenticator secret could not be decrypted", "error", logger.SanitizeError(err))
+			return ErrStepUpSecretUnreadable
+		case err != nil:
+			return err
+		case out == totpReplayed:
+			s.recordPasswordFailure(ctx, u)
+			return ErrStepUpCodeReused
+		case out != totpAccepted:
 			s.recordPasswordFailure(ctx, u)
 			return ErrStepUpFailed
 		}

@@ -130,7 +130,7 @@ func TestSegmentSealerMissing(t *testing.T) {
 func TestSealedV1JobRoundTripAndBinding(t *testing.T) {
 	s := segSealer(t, 1)
 	tenant := shared.NewID()
-	plain := []byte(`{"version":"1.0","findings":[{"title":"token ghp_EXAMPLESECRET"}]}`)
+	plain := []byte(`{"version":"2.0","findings":[{"title":"token ghp_EXAMPLESECRET"}]}`)
 	job := ingestjob.NewJob(tenant, nil, "v1-report", "scanner", plain)
 	if err := sealSegment(s, job); err != nil {
 		t.Fatal(err)

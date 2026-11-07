@@ -5,6 +5,7 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
+  Position,
   type Edge,
   type EdgeProps,
 } from '@xyflow/react'
@@ -82,12 +83,14 @@ export function FlowEdge({
   data,
 }: EdgeProps<FlowEdgeType>) {
   const state = data?.state ?? 'flow'
+  // Stop just short of the target handle so the arrow head shows.
+  const fromTop = targetPosition === Position.Top
   const [path, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
-    targetX: targetX - 4,
-    targetY,
+    targetX: fromTop ? targetX : targetX - 4,
+    targetY: fromTop ? targetY - 4 : targetY,
     targetPosition,
   })
   const hot = state === 'hot'

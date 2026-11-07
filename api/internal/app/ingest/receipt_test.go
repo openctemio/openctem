@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -26,7 +26,7 @@ func (f *fakeReceipts) Record(_ context.Context, d *ingestreceipt.Delta) (shared
 // sent).
 func TestReceiptSource(t *testing.T) {
 	cmd, ci, sensorID := shared.NewID(), shared.NewID(), shared.NewID()
-	report := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "r-1"}}
+	report := "r-1" // the receiver's report id
 	agt := &sensor.Sensor{ID: sensorID}
 	upload := ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: "u"}
 
@@ -174,5 +174,67 @@ func TestReceiptInstance(t *testing.T) {
 		if tc.got != tc.want {
 			t.Errorf("%s: %+v, want %+v", tc.name, tc.got, tc.want)
 		}
+	}
+}
+
+// A report released from the quarantine counts under the sensor that sent
+// it, whatever binding the platform applied it with: the receipt source is a
+// sensor report, the sender is that sensor (id and name), and the delta
+// carries the release marker.
+func TestReceipt_ReleasedItemKeepsItsSender(t *testing.T) {
+	sensorID := shared.NewID()
+	agt := &sensor.Sensor{ID: sensorID}
+	opts := Options{ReleasedFromQuarantine: true, SenderName: "edge-1"}
+	src := receiptSource(agt, TrustedBinding(), opts, "rep-9")
+	if src.Kind != ingestreceipt.SourceSensor || src.Ref != ingestreceipt.ReportRef(sensorID, "rep-9") {
+		t.Fatalf("source = %+v, want the sensor's report", src)
+	}
+	report := &ctis.Report{Tool: &ctis.Tool{Name: "nuclei"}}
+	inst := receiptInstance(agt, TrustedBinding(), opts, report)
+	if inst.Kind != ingestreceipt.InstanceSensor || inst.ID != sensorID.String() || inst.Name != "edge-1" {
+		t.Fatalf("instance = %+v, want sensor %s edge-1", inst, sensorID)
+	}
+	if src := receiptSource(agt, TrustedBinding(), Options{}, "rep-9"); src.Kind != ingestreceipt.SourceConnector {
+		t.Fatalf("a server-side ingest changed: %+v", src)
+	}
+	rec := &fakeReceipts{}
+	svc := &Service{logger: logger.NewNop(), receipts: rec}
+	svc.recordReceipt(context.Background(), agt, shared.NewID(), TrustedBinding(), opts, report, &Output{})
+	if len(rec.deltas) != 1 || !rec.deltas[0].Released || rec.deltas[0].Source.Kind != ingestreceipt.SourceSensor {
+		t.Fatalf("delta = %+v", rec.deltas)
+	}
+}
+
+// A report held in the results quarantine reconciles on its receipt: each
+// finding is an item and the quarantined outcome, so none is left unexplained.
+func TestRecordQuarantined_Reconciles(t *testing.T) {
+	rec := &fakeReceipts{}
+	svc := &Service{logger: logger.NewNop(), receipts: rec}
+	report := &ctis.Report{Tool: &ctis.Tool{Name: "nuclei"}, Findings: []ctis.Finding{
+		{RuleID: "a", AssetRef: "h"}, {RuleID: "b", AssetRef: "h"}, {RuleID: "a", AssetRef: "h"}}}
+	svc.recordQuarantined(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), report)
+	if len(rec.deltas) != 1 {
+		t.Fatalf("deltas %d", len(rec.deltas))
+	}
+	d := rec.deltas[0]
+	if d.Received != 3 || d.Outcomes[ingestreceipt.OutcomeQuarantined] != 3 {
+		t.Fatalf("received %d, outcomes %v", d.Received, d.Outcomes)
+	}
+	if n := ingestreceipt.Unaccounted(d.Received, ingestreceipt.Counts{}, d.Outcomes); n != 0 {
+		t.Fatalf("%d unaccounted", n)
+	}
+}
+
+// A finding that failed to store is counted once, as failed, even when a
+// row with its key exists (it is not also still detected).
+func TestRecordReceipt_FailedIsNotStillDetected(t *testing.T) {
+	rec := &fakeReceipts{}
+	svc := &Service{logger: logger.NewNop(), receipts: rec}
+	out := &Output{SightedFingerprints: []string{"a", "b"}, FailedFindings: []FailedFinding{{Fingerprint: "b"}}, FindingsSkipped: 1}
+	svc.recordReceipt(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), TrustedBinding(), Options{},
+		&ctis.Report{Findings: make([]ctis.Finding, 2)}, out)
+	d := rec.deltas[0]
+	if len(d.StillDetected) != 1 || d.StillDetected[0] != "a" || d.Failed != 1 || d.Skipped != 0 {
+		t.Fatalf("still %v, failed %d, skipped %d", d.StillDetected, d.Failed, d.Skipped)
 	}
 }

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/exposurebridge"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -59,16 +59,16 @@ func TestIngest_PortsSurfaced(t *testing.T) {
 	bound := ingest.Binding{Kind: ingest.BindingCommand, CommandID: &cmd, Targets: []string{ip}, Tool: "naabu"}
 	scanAs := func(a *sensor.Sensor, bind ingest.Binding, ports ...int) {
 		t.Helper()
-		var list []ctis.PortInfo
-		for _, p := range ports {
-			list = append(list, ctis.PortInfo{Port: p, Protocol: "tcp", State: "open"})
-		}
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "naabu"},
-			Assets: []ctis.Asset{{ID: "ip-1", Type: ctis.AssetTypeIPAddress, Value: ip,
-				Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Hostname: "www.ports.example.com", Ports: list}}}},
-			Metadata: ctis.ReportMetadata{ID: "rep-" + shared.NewID().String(), Timestamp: time.Now().UTC()}}
+		assets, rels := withOpenPorts(ctis.Asset{ID: "ip-1", Type: ctis.AssetTypeIPAddress, Value: ip,
+			Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Hostname: "www.ports.example.com"}}}, ports...)
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "naabu"},
+			Assets: assets, Relationships: rels,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}}
 		out, err := svc.Ingest(ctx, a, ingest.Input{Report: rep, Options: ingest.Options{Binding: bind}})
-		if err != nil || len(out.Errors) > 0 {
+		if err != nil {
+			t.Fatalf("ingest: %v", err)
+		}
+		if len(out.Errors) > 0 {
 			t.Fatalf("Ingest: %v %v", err, out.Errors)
 		}
 	}
@@ -153,5 +153,34 @@ func TestIngest_PortsSurfaced(t *testing.T) {
 	scan(agt, 80, 8080)
 	if activePorts(tid) != 2 || openExposures(tid) != 2 || history(tid, "recovered") != 1 {
 		t.Fatalf("reopen: ports=%d exposures=%d recovered=%d", activePorts(tid), openExposures(tid), history(tid, "recovered"))
+	}
+
+	// An unsolicited report may not link a stored name to an address of its
+	// choosing either: one naming www.ports.example.com as the host name of
+	// another address adds that address and its port (new assets), but no
+	// resolves_to edge from the stored name (RFC-040 §5.3).
+	const otherIP = "203.0.113.99"
+	{
+		assets, rels := withOpenPorts(ctis.Asset{ID: "ip-2", Type: ctis.AssetTypeIPAddress, Value: otherIP,
+			Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Hostname: "www.ports.example.com"}}}, 443)
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "naabu"},
+			Assets: assets, Relationships: rels,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}}
+		if out, err := svc.Ingest(ctx, agt, ingest.Input{Report: rep, Options: ingest.Options{Binding: ingest.Binding{}}}); err != nil || len(out.Errors) > 0 {
+			t.Fatalf("unsolicited ingest: %v %v", err, out)
+		}
+	}
+	if n := count(`SELECT count(*) FROM asset_relationships rel JOIN assets a ON a.id = rel.source_asset_id
+		WHERE rel.tenant_id = $1 AND rel.relationship_type = 'resolves_to' AND a.name = 'www.ports.example.com'`, tid.String()); n != 1 {
+		t.Fatalf("an unsolicited report linked a stored name: resolves_to edges = %d, want 1", n)
+	}
+	if n := count(`SELECT count(*) FROM asset_relationships rel JOIN assets a ON a.id = rel.source_asset_id
+		WHERE rel.tenant_id = $1 AND rel.relationship_type = 'exposes' AND a.name = $2`, tid.String(), otherIP); n != 1 {
+		t.Fatalf("exposes edges of the new address = %d, want 1", n)
+	}
+	// A port edge records when it was last seen, so a rescan can refresh it.
+	if n := count(`SELECT count(*) FROM asset_relationships WHERE tenant_id = $1 AND relationship_type = 'exposes'
+		AND last_verified IS NULL`, tid.String()); n != 0 {
+		t.Fatalf("exposes edges without last_verified = %d", n)
 	}
 }

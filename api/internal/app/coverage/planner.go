@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/contract/outcome"
+
 	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
@@ -62,6 +64,63 @@ func (s *Service) EnablePlanning(planner covdom.Planner, starter RunStarter, sw 
 		cfg.DailyBudget = DefaultDailyBudget
 	}
 	s.planner, s.starter, s.tenantSwitch, s.cfg = planner, starter, sw, cfg
+}
+
+// AddressReader maps names (lower-case) to the addresses the tenant's asset
+// of that name resolves to.
+type AddressReader interface {
+	AddressesOf(ctx context.Context, tenantID shared.ID, names []string) (map[string][]string, error)
+}
+
+// WithAddressReader lets a run's result for a resolved address count for the
+// name that resolves to it (a port scan may carry the addresses of a name).
+func (s *Service) WithAddressReader(r AddressReader) { s.addresses = r }
+
+// attributeAddresses gives a queued name without a verdict the best verdict
+// of the addresses it resolves to.
+func (s *Service) attributeAddresses(ctx context.Context, tenantID shared.ID, queued []covdom.DueTarget, verdicts map[string]covdom.Verdict) {
+	if s.addresses == nil || len(verdicts) == 0 {
+		return
+	}
+	var names []string
+	for _, d := range queued {
+		if _, ok := verdicts[covdom.TargetKey(d.Target())]; !ok {
+			names = append(names, covdom.TargetKey(d.Target()))
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	addrs, err := s.addresses.AddressesOf(ctx, tenantID, names)
+	if err != nil {
+		s.logger.Warn("coverage: addresses of names not read", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+		return
+	}
+	for _, n := range names {
+		best, found := covdom.Verdict{}, false
+		for _, a := range addrs[n] {
+			if v, ok := verdicts[covdom.TargetKey(a)]; ok && (!found || covdom.VerdictBetter(v, best)) {
+				best, found = v, true
+			}
+		}
+		if found {
+			verdicts[n] = best
+		}
+	}
+}
+
+// unmatchedOutcome is the outcome of a pair no task carried: the sensor
+// reached none of the run's targets (the target's side), the run's tasks ran
+// without it (a gap of the organization's), or no task was planned at all
+// (the platform's).
+func unmatchedOutcome(rs covdom.RunState, tasks int) string {
+	switch {
+	case rs.Unreachable:
+		return string(outcome.Unreachable)
+	case tasks > 0 && (rs.Status == "completed" || rs.Status == "partial"):
+		return covdom.OutcomeNotScanned
+	}
+	return covdom.OutcomeNotDispatched
 }
 
 // plannedCapabilities are the capabilities of the policy the planner
@@ -132,12 +191,15 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 		return 0, 0, err
 	}
 	var verdicts map[string]covdom.Verdict
+	tasksRan := 0
 	if !stalled {
 		tasks, err := s.planner.RunTasks(ctx, tenantID, rs.RunID)
 		if err != nil {
 			return 0, 0, err
 		}
+		tasksRan = len(tasks)
 		verdicts = covdom.Verdicts(tasks, rs.Unfinished)
+		s.attributeAddresses(ctx, tenantID, queued, verdicts)
 	}
 	var covered, noAnswer []shared.ID
 	var failed, targetSide, unresolved []covdom.FailedPair
@@ -153,7 +215,12 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 			if msg == "" {
 				msg = "no task of the run carried this target"
 			}
-			failed = append(failed, covdom.FailedPair{AssetID: d.AssetID, Outcome: covdom.OutcomeNotDispatched, Error: msg})
+			fp := covdom.FailedPair{AssetID: d.AssetID, Outcome: unmatchedOutcome(rs, tasksRan), Error: msg}
+			if covdom.IsTargetSide(fp.Outcome) {
+				targetSide = append(targetSide, fp)
+				continue
+			}
+			failed = append(failed, fp)
 		case v.Kind == covdom.VerdictCovered:
 			covered = append(covered, d.AssetID)
 		case v.Kind == covdom.VerdictBlocked:
@@ -168,7 +235,9 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 				continue
 			}
 			reason := covdom.ReasonUnresolvable
-			if v.Outcome == covdom.ReasonResolverFailed {
+			if v.Outcome == covdom.ReasonResolverFailed || v.Outcome == covdom.OutcomeDNSUnknown {
+				// A failed lookup, or one the sensor did not explain: never
+				// "the name has no address".
 				reason = covdom.ReasonResolverFailed
 			}
 			unresolved = append(unresolved, covdom.FailedPair{AssetID: d.AssetID, Outcome: reason, Error: v.Error})
@@ -216,6 +285,11 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 	}
 	if err := s.planner.MarkBlocked(ctx, tenantID, rs.Capability, blocked, BlockedRecheck); err != nil {
 		return n, parked, err
+	}
+	if s.liveness != nil && !stalled {
+		// Liveness is a reading of the settled verdicts: recorded after the
+		// ledger, and never failing the settlement.
+		s.liveness.Record(ctx, tenantID, livenessObservations(rs.Capability, queued, verdicts))
 	}
 	if !stalled {
 		if err := s.countRunClaim(ctx, tenantID, rs); err != nil {
@@ -359,7 +433,19 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			break
 		}
 		lookahead := covdom.Lookahead(s.ruleOf(capability).Every)
-		due, err := s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead)
+		limit := min(s.cfg.Batch, left)
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			// The organization's switch and request budget.
+			n, stop, err := s.pathDiscoveryLimit(ctx, tenantID, limit)
+			if err != nil {
+				return total, err
+			}
+			if stop {
+				continue
+			}
+			limit = n
+		}
+		due, err := s.dueBatch(ctx, tenantID, capability, limit, lookahead)
 		if err != nil {
 			return total, err
 		}
@@ -390,7 +476,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			if !run {
 				continue
 			}
-			if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
+			if due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead); err != nil {
 				return total, err
 			}
 		} else if paused != "" {
@@ -401,13 +487,23 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			if n > 0 {
 				s.logger.Info("coverage resumed", "tenant_id", tenantID.String(), "capability", capability,
 					"pairs", n, "was", paused)
-				if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
+				if due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead); err != nil {
 					return total, err
 				}
 			}
 		}
-		if len(due) == 0 || !s.batchReady(capability, due, min(s.cfg.Batch, left)) {
+		if len(due) == 0 || !s.batchReady(capability, due, limit) {
 			continue
+		}
+		budgetBound := false
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			budgetBound = len(due) >= limit && limit < min(s.cfg.Batch, left)
+			if due, err = s.pathDiscoveryRefuse(ctx, tenantID, due); err != nil {
+				return total, err
+			}
+			if len(due) == 0 {
+				continue
+			}
 		}
 		batch, depth := onboardingBatch(capability, due)
 		n, err := s.startBatch(ctx, tenantID, capability, batch, depth)
@@ -415,6 +511,13 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		left -= n
 		if err != nil {
 			return total, err
+		}
+		if budgetBound {
+			// What the daily request budget left out waits as deferred,
+			// never as covered.
+			if err := s.pauseCapability(ctx, tenantID, capability, covdom.ReadyBudgetSpent, pathBudgetRetry); err != nil {
+				return total, err
+			}
 		}
 	}
 	return total, nil
@@ -507,7 +610,15 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 		}
 		byTarget[key] = append(byTarget[key], d.AssetID)
 	}
-	res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)})
+	in := scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)}
+	if capability == covdom.CapabilityEnumerateWebPaths && s.pathGate != nil {
+		b, err := s.pathGate.PathDiscoveryBudget(ctx, tenantID)
+		if err != nil {
+			return 0, err
+		}
+		in.MaxRequestsPerOrigin = b.PerOrigin
+	}
+	res, err := s.starter.StartCoverage(ctx, in)
 	if errors.Is(err, scanapp.ErrCoverageBusy) {
 		return 0, nil // the previous batch is still running: back-pressure
 	}

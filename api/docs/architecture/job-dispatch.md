@@ -5,8 +5,8 @@ Part of the [sensor and platform workflow](sensor-platform-workflow.md).
 > One page for the whole path of a job, from the trigger that queues it to the
 > result that settles it. Details live in the linked documents; this page
 > says how they fit together, which table, log line or metric shows each
-> step, and what each step guarantees. Describes develop as of 2026-10-20
-> (signed jobs on by default).
+> step, and what each step guarantees. Diagrams checked against the code of
+> v0.19.1 and develop on 2026-11-05 (signed jobs on by default).
 >
 > Designs: [RFC-030](../rfcs/RFC-030-scan-work-distribution.md) (chunks,
 > leases, fair pull), [RFC-035](../rfcs/RFC-035-sensor-control-plane-under-load.md)
@@ -53,9 +53,12 @@ Part of the [sensor and platform workflow](sensor-platform-workflow.md).
    lease with an epoch. Every change a sensor makes to a job is fenced by
    (sensor, state, epoch), so a holder that lost the job can never finish it.
 5. **Nothing leaves unsigned.** Each job handed to a sensor carries a
-   statement signed by a separate signer whose ledger the API cannot widen; the
-   sensor checks it against a root it pinned. The signer down means claims
-   wait, never that jobs leave unsigned.
+   statement signed by a separate signer that holds its own key and scope
+   ledger; the sensor checks it against a root it pinned. The API sends scope
+   widenings to the ledger with the approvals it recorded, and the signer
+   checks them against the operator's approval floors
+   (`internal/signer/ledger.go`); its periodic sync can only narrow the
+   ledger. The signer down means claims wait, never that jobs leave unsigned.
 
 ## The pieces
 
@@ -71,7 +74,7 @@ flowchart LR
     EC[Expiration checker<br/>every 60 s] --> DB
   end
   subgraph Sensor["Sensor (sdk-go runtime)"]
-    P[Command poller<br/>slots, politeness, journal] --> V[Job guard<br/>verify signature, seq, nonce]
+    P[Command poller<br/>slots, politeness, journal] -->|claim by id: re-signed answer| V[Job guard<br/>verify signature, seq, nonce]
     V --> X[Executor + local policy]
     X --> O[Outbox: results]
   end
@@ -116,7 +119,7 @@ Jobs are created when work is triggered, not when a sensor asks:
 Each command records at creation: `tenant_id`, `type`, `priority`
 (`low`/`normal`/`high`/`critical`), `payload`, the routing decision
 (`is_platform_job`, `sensor_id` when pinned, `scan_zone_id`), `host_keys` (the
-per-host politeness keys from `github.com/openctemio/ctis/politeness`; an empty
+per-host politeness keys from `github.com/openctemio/contract/politeness`; an empty
 list for a passive tool that reaches no target host, such as DNS resolution,
 subdomain discovery, RDAP and ASN lookups, whether it runs as a workflow
 stage or as a single-scanner or coverage command, so it never waits behind
@@ -143,16 +146,18 @@ stateDiagram-v2
   pending --> acknowledged: claim (lease starts, lease_epoch + 1)
   acknowledged --> running: start (fenced)
   running --> completed: complete (fenced, may queue a follow-up)
-  acknowledged --> failed: fail / refusal with no other sensor
-  running --> failed: fail (fenced)
+  acknowledged --> failed: fail / scope refusal / third refusal / poison sweep
+  running --> failed: fail (fenced) / run deadline / sensor revoked (addressed work)
+  pending --> failed: scope re-check at claim / run deadline / no sensor took the run
   pending --> canceled: cancel
   acknowledged --> canceled: cancel (holder told to stop)
   running --> canceled: cancel (holder told to stop)
   pending --> expired: expires_at passed (or shared job too long in queue)
   acknowledged --> expired: expires_at passed
-  acknowledged --> pending: lease expired / release / signer did not sign / refusal re-route
-  running --> pending: lease expired / release / stalled / stopped with nothing finished
-  pending --> failed: dispatch_attempts reached the limit (poison) / signer refused for good
+  acknowledged --> pending: lease expired / release / signer did not sign / refusal re-route / infra move / window closed / sensor revoked
+  running --> pending: lease expired / release / stalled or overrun / nothing finished / refusal / infra move / window closed / sensor revoked
+  pending --> failed: dispatch_attempts 3 or requeue_count 50 (sweep) / signer refused for good
+  pending --> expired: refused by every sensor for 6 h (POLICY_REFUSED)
   completed --> [*]
   failed --> [*]
   canceled --> [*]
@@ -168,7 +173,7 @@ Columns that drive dispatch:
 | `is_platform_job` | Queued for shared sensors; the routing decision is final |
 | `scan_zone_id` | Only sensors assigned to this zone may take it |
 | `lease_epoch`, `lease_expires_at` | The current claim's number and its lease |
-| `dispatch_attempts` | Lease losses and recoveries; 3 makes it poison |
+| `dispatch_attempts` | Lease losses, refusals, infrastructure moves, stalls and overruns, stops with nothing finished, and the two older recovery functions; 3 makes it poison (the sweep fails pending and acknowledged commands). Release, unclaim, window deferral and revocation do not count |
 | `requeue_count` | Every return to `pending` (unclaim while the signer is down, voluntary release, refusal re-route, lease expiry, stall, sensor withdrawn, scan window deferral); each return after the first delays the next offer (`scheduled_at`, 5 s doubling to 5 min, none for a refusal re-route); `command.MaxRequeues` (50) fails the command with "max re-queues exceeded" |
 | `refused_by`, `refusals` | Sensors whose local policy refused it (never offered to them again) |
 | `host_keys`, `settled_host_keys` | Politeness keys held while acknowledged or running; keys released as targets settle |
@@ -186,17 +191,22 @@ job.
 Routing is decided once, when the job is created, and then enforced by the
 claim predicates.
 
+Zones are decided first (`decideSensorRouting`, `internal/app/scan/trigger.go`):
+zoned batches always stay on the organization's sensors, and only the unzoned
+batches can go to shared sensors, so one run can be mixed (`zones.go`).
+
 ```mermaid
 flowchart TD
-  A[Scan triggered] --> B{Run on the organization's<br/>own sensors only, or<br/>preference = tenant?}
+  A[Scan triggered] --> ZP[Zone plan:<br/>zoned batches stay on<br/>organization sensors]
+  ZP --> B{Run on the organization's<br/>own sensors only, or<br/>preference = tenant?}
   B -- yes --> T[is_platform_job = false]
   B -- no --> C{preference = platform?}
-  C -- yes --> D{Targets allowed on shared sensors<br/>public, proven where required,<br/>no asset group, no program target<br/>and the organization may use them?}
+  C -- yes --> D{"Targets allowed on shared sensors:<br/>public, no name resolving inside,<br/>proven where required, no asset group,<br/>no program target, organization allowed<br/>and under its daily shared limit?"}
   D -- no --> E[Refused with the reason]
   D -- yes --> P[is_platform_job = true]
   C -- auto --> F{Same shared checks pass?}
   F -- no --> T
-  F -- yes --> G{An organization sensor<br/>has the tool?}
+  F -- yes --> G{"An organization sensor has the tool,<br/>organization sensors busy,<br/>or daily shared limit reached?"}
   G -- yes --> T
   G -- no --> P
   T --> Z{Zone selected or<br/>targets in a zone?}
@@ -205,6 +215,15 @@ flowchart TD
   P --> SP[Shared claim path only]
 ```
 
+- **Internal targets on shared sensors**: targets inside one instance scan
+  zone assigned to the organization pass the shared check
+  (`sharedTargetRefusal`); a platform preference with a target inside an
+  organization zone is refused.
+- **Workflows** route per step (`internal/app/scanrun/run.go`,
+  `routeToPlatform`, `stepTargetsMayGoShared`): a zoned run never goes shared.
+  A workflow run with preference platform that cannot use shared sensors
+  falls back to organization sensors with a log warning instead of being
+  refused.
 - **Organization sensors** claim only `is_platform_job = false` commands of
   their own organization; **shared sensors** claim only `is_platform_job =
   true` commands, of every organization, through the
@@ -234,11 +253,16 @@ it there is claimable work:
   Wakes are published on Redis (`sensor:v3:wake`) so every API replica's
   streams hear them, coalesced to one per 500 ms per key.
 - **Protocol v2 heartbeat answer** ([heartbeat doorbell](sensors.md#heartbeat-doorbell)):
-  `pending_jobs` and `next_heartbeat_seconds` (5 seconds while work waits and
-  the sensor has free slots, 30 seconds idle).
+  `pending_jobs` and `next_heartbeat_seconds`: 5 seconds while work waits, the
+  sensor has free slots and holds no v3 stream; otherwise the idle interval,
+  which grows with the fleet size; a slow doorbell query (250 ms or more)
+  advises the maximum, capped at `MaxIntervalBound` (`doorbell.go`). Values
+  are jittered.
 
 The pending count comes from `PendingWorkForSensor`, the same predicates as the
-claim, capped. The SDK polls when the doorbell rings or a slot frees; while the
+claim (without the suspended-organization check), capped at 100. From v0.20.0:
+when the count is 0, it adds the commands a claim would split around busy
+hosts (`doorbell.go`). The SDK polls when the doorbell rings or a slot frees; while the
 server sends hints, the fixed poll interval is replaced by a 5-minute safety
 poll.
 
@@ -246,16 +270,19 @@ poll.
 sequenceDiagram
   participant TX as Any writer (trigger, requeue, release)
   participant DB as commands
+  participant L as Local stream hub
   participant R as Redis sensor:v3:wake
   participant H as Stream hub (each API replica)
   participant S as Sensor
   TX->>DB: row becomes pending
-  TX->>R: wake(tenant[, sensor])
-  R-->>H: fan out to replicas
-  H->>H: coalesce 500 ms, jitter 250 ms
-  H->>DB: doorbell query (PendingWorkForSensor)
-  H-->>S: SubscribeResponse{pending_jobs}
-  S->>S: free slot? then claim now
+  TX->>L: wake(tenant or pinned sensor), coalesced 500 ms
+  TX->>R: publish wake (ids only, per-tenant quota)
+  R-->>H: fan out to the other replicas
+  H->>H: re-authenticate the stream's sensor, jitter 0-250 ms
+  H->>DB: doorbell query (PendingWorkForSensor, cap 100)
+  H-->>S: SubscribeResponse with pending_jobs
+  S->>S: free slot and no claim backoff? then claim now
+  Note over H,S: Also on stream open, every 30 s if changed,<br/>keepalive 25 s, stream closed after 24-30 min
 ```
 
 ## The claim
@@ -271,13 +298,18 @@ sequenceDiagram
   participant API as API (Claim)
   participant DB as Postgres
   participant SG as Signer
-  S->>API: claim-N (identity, free slots)
+  S->>S: take a local slot, admit per-host politeness
+  S->>API: claim-N (identity, free slots, limit default 10, max 100)
   API->>DB: count held scans → free slots = min(max_jobs − held, reported free)
-  API->>DB: candidates in fair order (up to 3 pages)
-  API->>API: holds after the query: local policy and grant,<br/>scope re-check, scan windows, program rules, tool settings
-  API->>DB: ClaimManyForSensor: lock host keys, drop shared hosts,<br/>UPDATE … WHERE id IN (… FOR UPDATE SKIP LOCKED)<br/>→ acknowledged, sensor_id, lease_epoch + 1, lease
+  loop up to 3 pages of candidates in fair order
+    API->>DB: read a page (min(max(2n, n+10), 100) rows)
+    API->>API: holds: local policy and grant, scope re-check,<br/>scan windows, program rules, tool settings
+  end
+  API->>API: proxy-pool filter, balance the claim across steps
+  API->>DB: ClaimManyForSensor: lock host keys, drop shared hosts,<br/>capToFreeSlots (per-sensor lock, recount),<br/>UPDATE … WHERE id IN (… FOR UPDATE SKIP LOCKED)<br/>→ acknowledged, sensor_id, lease_epoch + 1, lease
   DB-->>API: ids won (others were taken by another sensor)
-  API->>API: deliver: organization HTTP policy, program rules, tool settings, template signatures
+  API->>DB: extend run deadlines
+  API->>API: proxy stamp, then deliver: organization HTTP policy,<br/>program rules, tool settings, template signatures
   opt re-read, proxy stamp or delivery fails
     API->>DB: unclaim every claimed command (pending again, pin kept if it was pinned)
   end
@@ -285,13 +317,19 @@ sequenceDiagram
     API->>SG: sign statement
     alt signed
       SG-->>API: envelope
-    else signer down
-      API->>DB: unclaim (pending again, pin kept if it was pinned)
-    else refused for good
-      API->>DB: fail with SIGNER_REFUSED
+    else signer down (no answer, 5xx, bad envelope)
+      API->>DB: unclaim this and every later command
+    else refused with 403
+      API->>DB: unclaim, then fail with SIGNER_REFUSED
+    else other refusal (rate limit, clock skew)
+      API->>DB: unclaim this command, continue
     end
   end
   API-->>S: commands with payload, lease_epoch, signed_job
+  S->>API: claim by id for each command (sensors that verify jobs)
+  API->>SG: re-deliver and sign again (new seq)
+  API-->>S: payload, lease_epoch, signed_job
+  S->>S: verify the signed job, then run or refuse
 ```
 
 **Predicates in the claim statement** (also in the candidate read, the
@@ -308,17 +346,57 @@ doorbell and the claim by id):
 | Capabilities | every `required_capabilities` is one the sensor has |
 | Features | every `required_features` is one the sensor reported (never only declared) |
 | Refusals | the sensor is not in `refused_by` |
+| Failed on | the sensor is not in `failed_on` (it already failed the job for an infrastructure reason) |
+| Cloned identity | a sensor whose identity is held as cloned gets nothing |
 | Hosts | no other acknowledged or running command of the organization holds a conflicting host key (re-checked under advisory locks); a shared job also needs fewer than its limit (2, intrusive 1) of shared jobs of any organization holding one ([sensors.md](sensors.md#the-shared-claim-path)) |
 
-**Fair order** (`fairPendingQuery`): priority class (critical 1 … low 4,
-raised one class per 30 minutes waited, never into critical), then
-round-robin across runs (the first pending command of every run before the
-second of any), then age. The ranking is computed over the oldest 1000
-candidates of each class.
+**Fair order** (`fairPendingQuery`, `command_claim_lanes.go`):
+
+1. Priority class: critical 1 … low 4, raised one class per 30 minutes
+   waited, never into critical.
+2. Short work before long work on the claiming sensor, while short work used
+   no more than half of that sensor's time. A job is *short* when its targets
+   at the sensor's measured speed for its tool (the fresh load report's
+   `per_tool.throughput_targets_per_min`) take at most 5 minutes; otherwise,
+   or with no fresh speed, it is *long*. The two lanes' time is the time their
+   scan jobs held the sensor in the last hour (claim to end, or to now while
+   held). While short work used no more than long work, a short job takes the
+   highest class aging gives (2, never critical) and goes first in its class;
+   once it used more, long jobs go first in each class. A discovery run's
+   lookups therefore start at the sensor's next free slot however long the
+   queue of long scans is, and long scans keep at least half of the sensor's
+   time however much short work arrives. A sensor without a fresh load report
+   sees one lane, the order below.
+3. Round-robin across runs: the first pending command of every run before the
+   second of any, where a run's commands already held by the organization's
+   sensors count as served. A run with nothing running goes before one that
+   has jobs running, also when a claim takes one command at a time (ranking
+   pending commands alone made that first-come-first-served).
+4. Age.
+
+The ranking is computed over the first 1000 candidates in (class, lane, age)
+order, across all classes (`fairCandidateWindow`). The order only ranks what
+the sensor may claim: every predicate above, the holds after the query, the
+slot cap and host politeness are unchanged. All reads are scoped to the
+claiming sensor's organization and to that sensor: another organization's
+jobs, runs or sensors never move the order. Measured case (2026-11-04): a
+four-step discovery run queued behind 22 vulnerability-scan jobs of earlier
+runs on a sensor with two slots waited 4 h 41 min for its first lookup; with
+this order it waits for the next free slot.
+
+**The claim-by-id replay.** A sensor that verifies signed jobs claims every
+command of a claim-N answer again by id (sdk-go `CommandPoller.claim`). The
+API re-delivers and signs that command again with a new sequence number
+(`internal/app/command/transition.go`), and the sensor verifies the second
+envelope. Each job is therefore signed twice, and the signer's per-sensor
+rate limit (20 per second, burst 200) is spent twice. A permanent refusal
+on the replay does not fail the command; it returns when its lease expires.
 
 **Shared claim order** (`GetSharedPendingForSensor`): rounds of 5 jobs per
-organization; within a round the organization with the fewest shared jobs in
-flight first, then class and age; each organization's
+organization; organizations with a pending critical job first, then within a
+round the organization with the fewest shared jobs in flight first (an
+organization's first critical job jumps ahead), then class,
+`queue_priority` and queue time; each organization's
 `platform_scans_concurrent` is enforced inside the claim under a
 per-organization lock. The read is bounded by the organizations with pending
 shared work (at most 200 ranked, five jobs each per round, through
@@ -327,14 +405,96 @@ the depth of their queues or by finished jobs
 ([sensors.md](sensors.md#the-shared-claim-path)).
 
 **Claim by id** (`POST /commands/{id}/claim`, `TransitionCommand`): the same
-predicates and holds for one command; a replay by the holder answers the
-command as it is. Used for commands handed over before claim-N and by older
-clients.
+predicates and holds for one command (expiry is checked in Go); a replay by
+the holder answers the command as it is, delivered and signed again. Used by
+verifying sensors after every claim-N, for commands handed over before
+claim-N, and by older clients. It does not apply the slot cap.
 
 **Slots** are counted by the platform from the commands themselves, not from
 the last heartbeat; the SDK also takes a local slot before it claims and
 admits per-host politeness with the same key function, so it does not hold
 more than it can run.
+
+### Slots and host keys at a claim
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant P as Sensor: CommandPoller (sdk-go)
+  participant Q as Sensor: commandQueue (host holdings)
+  participant API as Platform: command.Service
+  participant DB as Platform: commands, sensors
+  Note over P,DB: Trust boundary between the sensor and the platform. Every call is authenticated with the sensor key and scoped to its organization.
+  P->>P: free = slotLimit - running (MaxConcurrent, default 5)
+  P->>API: claim-N, X-Sensor-Features: capacity
+  API->>DB: effective_max_jobs - held scans, capped by a fresh slots_free (3 min)
+  API->>DB: candidates where no held command of the org has a conflicting host key
+  API->>DB: pg_advisory_xact_lock per host key (host, tenant, key)
+  API->>DB: dropSharedHosts, capToFreeSlots under sensor-claim lock
+  DB-->>API: claimed rows, host_keys in the payload
+  API-->>P: commands
+  loop each command
+    P->>P: take a local slot, else release "no free slot"
+    P->>Q: admit host_keys (per_host_concurrency, default 1)
+    alt hosts busy on this sensor
+      P->>API: release (hosts busy), slot returned
+    else admitted
+      P->>P: verify the signed job, run
+      P->>API: heartbeat progress with released_keys as targets settle
+      API->>DB: RecordProgress: settled_host_keys (own keys only)
+    end
+  end
+```
+
+- **Host keys** come from one function shared by both sides
+  (`github.com/openctemio/contract/politeness`): a name is its lower-case host,
+  an address is the address plus its /24 (IPv6 /120) bucket, a range is one key
+  per bucket; at most 500 keys per job; private names and addresses carry the
+  network id. An address conflicts with a range scan of its bucket. The API
+  assigns them at creation (`AssignHostKeys`): keys the caller set, else the
+  payload's `host_keys`, else computed from the targets. Passive stages get an
+  empty list.
+- **Settling**: as targets finish, the sensor reports the keys it no longer
+  needs (`released_keys`); `RecordProgress` keeps only keys of the command
+  itself and only for the sensor that holds it. A claim or re-queue clears
+  `settled_host_keys`.
+- **Shared fleet**: across organizations a host is held by at most 2 shared
+  jobs, 1 when intrusive (`fleet_politeness.go`), under global `shost|` locks
+  that never say which organization holds a host.
+- **Effective job limit**: the lowest positive value of the sensor's reported
+  limit, the administrator's limit (1 to 100) and the reported `slots_total`;
+  an `overloaded` pressure report allows 0 (1 when idle), `elevated` allows 1.
+
+### Per-host rate on the sensor (HostRate)
+
+The platform decides which hosts a job may touch at the same time; the sensor
+decides how fast. When the tool's network is confined, the egress forwarder of
+each task paces every host with an adaptive controller and a per-host breaker
+(sdk-go `pkg/adapt/hostrate.go`, bounds in `pkg/adapt/bounds.go`).
+
+```mermaid
+stateDiagram-v2
+  [*] --> closed: start at 25% of the ceiling
+  closed --> closed: answers, rate + 10% per 2 s window
+  closed --> closed: 429 or 503, rate halves, Retry-After honoured (max 5 min)
+  closed --> open: 5 failures in a row, or blocked (20 resets or 403s, edge page)
+  open --> halfOpen: open time over (15 s, doubling to 2 min, jitter 20%)
+  halfOpen --> closed: probe answered
+  halfOpen --> open: probe failed
+  open --> down: 3 trips
+  down --> [*]: host recorded as a coverage gap
+```
+
+- The ceiling is the lowest of the scan's rate limit, the scan window, program
+  rules, the sensor's local `rate.max_rps` and the sensor setting (default
+  100, floor 1).
+- A host the breaker refuses gets HTTP 503 from the forwarder; the task still
+  completes, and the host is reported as a coverage gap (`breaker_open`,
+  `rate_floor`, `blocked`, `proxy_unavailable`) in the result's
+  `coverage_gaps`. The API treats those hosts as not covered, so no finding
+  closes because of them (`internal/app/ingest/coverage_targets.go`).
+- A reset from a host that already answered only halves the rate; 20 in a row
+  count as blocked (sdk-go v0.46.3, sensor v0.37.0).
 
 ## Signed jobs end to end
 
@@ -347,8 +507,8 @@ flowchart TD
   R -.->|root id pinned at pairing<br/>SENSOR_JOB_SIGNING_ROOT| S
   SK[Signer private key<br/>signer process only] --> SG[Signer]
   L[Scope ledger<br/>approved scope per organization] --> SG
-  API[API claim] -->|statement: tenant, sensor, command, tool,<br/>payload_sha256, targets, templates, limits,<br/>lease_epoch, iat, exp ≤ 1 h| SG
-  SG -->|checks ledger, adds seq, nonce, key id,<br/>writes signing log| ENV[DSSE envelope]
+  API[API claim] -->|statement: tenant, sensor, command, command type, tool,<br/>payload_sha256, targets, templates, content, limits,<br/>sensor scope, zone, lease_epoch, iat, exp ≤ 1 h| SG
+  SG -->|rate limits, zone check, ledger,<br/>adds seq, nonce, key id,<br/>writes signing log, fsync| ENV[DSSE envelope]
   ENV --> API --> S
   S -->|verify key set against root,<br/>signature, binding to own org/id/command/epoch,<br/>payload digest, expiry, seq above last, nonce new| OK{valid?}
   OK -- yes --> RUN[Run within the signed targets,<br/>templates and limits]
@@ -356,12 +516,18 @@ flowchart TD
 ```
 
 - The API never holds the signer's key; the signer refuses statements outside
-  its ledger (`out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`) and the
-  command then fails with `SIGNER_REFUSED`.
-- Production API refuses to start without `SIGNER_SOCKET` unless explicitly
-  allowed; newly paired sensors require signed jobs.
-- The sequence number is per sensor and per signer key; the sensor refuses a
-  number not above the last it accepted from that key, and a reused nonce.
+  its ledger (`out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`,
+  `template_not_in_ledger`) and the zone, shared and feed checks; any 403 makes
+  the command fail with `SIGNER_REFUSED`.
+- Production API refuses to start without `SIGNER_SOCKET` set unless
+  `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS` is set; the check is on the variable,
+  not on a live socket. Newly paired sensors require signed jobs.
+- The signer numbers statements per sensor; the sensor keeps the last
+  sequence per signer key id and refuses a number not above it, and a reused
+  nonce.
+- A sensor refuses an invalid job through the fail call as a `builtin`
+  refusal (rule `job_signature` or `job_keyset`); the platform does not
+  re-route it, the command fails closed.
 - A shared job's statement names the organization and, for an instance scan
   zone, its ranges; the shared sensor binds results to that organization.
 
@@ -390,17 +556,20 @@ Reference: [command leases](sensors.md#command-leases-rfc-035-d6).
 flowchart TD
   T[Every 60 s: job recovery controller] --> L{Lease expired?}
   L -- yes --> RQ[Back to pending, zone kept, unpinned<br/>unless addressed to one sensor,<br/>attempt + 1, event requeued<br/>'lease expired']
-  T --> ST{Running, no target finished<br/>within its stall window,<br/>or far past its budget?}
+  T --> ST{"Running with a budget, no liveness<br/>signal moved within its stall window<br/>(300-3600 s)?"}
   ST -- yes --> STOP[Ask the holder to stop and hand back<br/>what it finished: stop_command_ids]
-  STOP -->|no answer in time| RQ2[Re-queue, attempt + 1]
+  STOP -->|no answer in 300 s| RQ2[Re-queue, attempt + 1]
+  T --> OV{"Running past started_at + timeout<br/>(or 2x budget) + 300 s?"}
+  OV -- yes --> RQ2
   T --> PIN{Pending, pinned to a stale,<br/>offline or disabled sensor,<br/>routed scan work?}
   PIN -- yes --> UNPIN[Unpin, zone kept]
-  T --> PO{dispatch_attempts ≥ 3?}
-  PO -- yes --> FAIL[Failed with every cause named,<br/>the run step fails with the reason]
+  T --> PO{"dispatch_attempts ≥ 3 or<br/>requeue_count ≥ 50?"}
+  PO -- yes --> FAIL["Failed (pending or acknowledged),<br/>causes named when recorded,<br/>the run step fails with the reason"]
   E[Every 60 s: expiration checker] --> EX{expires_at passed, or<br/>shared job queued > 60 min?}
   EX -- yes --> EXP[Expired, only if the row is unchanged,<br/>the run step is told]
-  RV[Sensor revoked or disabled] --> REL[Held routed work back to pending<br/>without an attempt, other work failed]
-  RL[Sensor releases<br/>drain, no slot, hosts busy] --> RLS[Pending at once]
+  RV[Sensor revoked or disabled] --> REL["Held organization work back to pending<br/>without an attempt (requeue_count + 1),<br/>work addressed to it failed"]
+  RL[Sensor releases<br/>drain, no slot, hosts busy] --> RLS["Pending, unpinned,<br/>requeue backoff applies"]
+  WC[Scan window closed, grace over] --> RLW[Pending until the window opens]
 ```
 
 - **Lease loss** is the main recovery path: a dead or partitioned sensor's work
@@ -408,7 +577,20 @@ flowchart TD
 - **Expiry** has one owner (the expiration checker), which also notifies the
   run; it never overwrites a row that moved since it was read.
 - **Release** (`POST /commands/{id}/release`) hands work back at once (draining
-  sensor, no free slot, hosts busy on the sensor).
+  sensor, no free slot, hosts busy on the sensor). It counts in
+  `requeue_count`, so the backoff applies from the second return, and it
+  unpins every command, including one addressed to that sensor
+  (`ReleaseForSensor`).
+- **Lease expiry keeps the pin** of a command addressed to one sensor on
+  purpose (`pinned_sensor_id`, recorded at the claim); other commands are
+  unpinned with their zone kept (`RequeueExpiredLeases`). The requeue message
+  is "re-queued: the sensor holding it stopped renewing its lease", event code
+  `moved.sensor_offline` for routed work.
+- **Refusal with no other sensor** does not fail at once: the command waits
+  up to 6 hours (`RefusalWait`) for an eligible sensor, then expires with
+  `POLICY_REFUSED`. It fails at once for a refusal of the signed scope, a
+  built-in refusal, or the third refusal (`MaxRefusals`). A refusal is
+  recorded as a `refused` event, not `requeued`.
 - **A failure after the claim that is the platform's** (the claimed rows
   cannot be read back, the proxy stamp fails, or the delivery cannot read the
   organization's HTTP policy, program rules or tool settings) hands every
@@ -438,16 +620,34 @@ flowchart TD
   job's own limits, a proxy pool without an endpoint) are in
   `pkg/domain/command/infra_failure.go`; the decision is
   `internal/app/command/infra_failure.go`. A command pinned to a sensor by a
-  person and a shared job fail as before.
+  person and a shared job fail as before. The move waits out the re-queue
+  back-off (`command_requeue_backoff_secs`: 5 s doubling to 5 min), so an
+  outage that hits the next sensor too does not spend the remaining attempts
+  in seconds.
+- **Offline holder waits:** a routed command whose lease is lost while its
+  holder is offline (the health ladder convicted the sensor and ended its
+  leases: a network or DNS outage, a host down) goes back to pending without
+  using a dispatch attempt. The attempt is recorded with `counted: false`, the
+  task reads "waiting for sensor <name> to come back …", and it runs again
+  when an eligible sensor (that one, or another of its zone) is online. Up to
+  `command.MaxOfflineWaits` (8) such waits per command; past them each lost
+  lease counts again, so a task that takes its sensor offline every time
+  still fails after 3 more. The re-queue back-off, `command.MaxRequeues` and
+  the run's deadline bound the waits. A lost lease of a sensor that is still
+  online (it crashed on the task and came back) counts as before.
 - **One budget:** 3 attempts per command for any cause (a lost lease, a
   refusal, an infrastructure failure; `command.MaxDispatchAttempts`). When it
   is spent, or no other sensor can take the work, the command fails with every
   cause named (`commands.attempts`, `failure_class`), and the step carries the
   matching code (`TOOL_UNAVAILABLE`, `TOOL_CRASHED_ON_INPUT`,
-  `RESOURCE_EXHAUSTED`, `CONTENT_UNAVAILABLE`, `SENSOR_LOST`), never only
-  "max dispatch attempts exceeded".
-- **Fleet stop rule:** when the same tool and content version fails with an
-  infrastructure class on 2 different sensors within 30 minutes
+  `RESOURCE_EXHAUSTED`, `CONTENT_UNAVAILABLE`, `SENSOR_LOST`). The causes are
+  named only when `commands.attempts` has entries (infrastructure failures,
+  lost leases of routed work; waits for an offline holder are not listed); a command whose attempts were spent by
+  refusals, stalls or lost leases of shared or addressed work fails with the
+  plain "Max dispatch attempts exceeded".
+- **Fleet stop rule:** when the same tool and content version fails with a
+  tool-scoped infrastructure class (`tool_unavailable`, `tool_crashed`,
+  `content_unavailable`; not memory, disk or network) on 2 different sensors within 30 minutes
   (`failure_breakers`, per organization), the command is not moved again and
   fails with `FLEET_TOOL_FAILURE`; commands with that key fail at their first
   failure for the next 30 minutes. This caps the load of a bad tool or content
@@ -468,7 +668,9 @@ flowchart TD
 - **Poison:** a command that keeps losing its holder fails after 3 attempts.
 - Two older recovery functions still run on the same tick
   (`recover_stuck_platform_jobs`: shared jobs acknowledged for 30 minutes;
-  `recover_stuck_tenant_commands`: acknowledged commands without a lease). See
+  `recover_stuck_tenant_commands`: acknowledged commands without a lease for
+  10 minutes). Both add an attempt but no `requeue_count` or backoff, and the
+  tenant one unpins addressed commands. See
   [planned changes](#known-limits-and-planned-changes).
 
 ## Results and completion
@@ -512,10 +714,10 @@ leave room for it.
 | Task waits only on shared sensors | Shared fleet page; `platform_scans_concurrent`; expiration after 60 min in queue | Organization at its shared limit, no shared sensor with the tool or region |
 | Claims return nothing while work waits | `sensor_job_signing_total{outcome="unavailable"}`; log `command not signed; not handed to the sensor` | Signer down or slow; claims wait (fail closed) |
 | Commands fail with `SIGNER_REFUSED` | `openctem_signer_refusals_total{reason}`; signing log | Target or tier outside the scope ledger |
-| Jobs bounce between sensors | `command_events` (`requeued` with `lease expired`); `command_leases_expired_total`; log `re-queued command: its lease ran out` | Sensor heartbeats failing or late, network, relay delay |
+| Jobs bounce between sensors | `command_events` (`requeued`, code `moved.sensor_offline`, message "stopped renewing its lease"); `command_leases_expired_total`; log `re-queued command: its lease ran out` | Sensor heartbeats failing or late, network, relay delay |
 | Running task stuck | `commands_stalled_total`; log `stalled command: asked its sensor to stop it`; `last_progress_at` | Tool hung; target unreachable |
 | `failed: the command returned to the queue too many times` | `requeue_count` | A command handed back, unclaimed or re-queued 50 times (a loop no sensor can finish) |
-| `Max dispatch attempts exceeded` | `command_events` attempts; `dispatch_attempts` | Three lease losses or stalls |
+| `Max dispatch attempts exceeded` | `command_events` attempts; `dispatch_attempts` | Three attempts spent by any mix of lease losses, stalls, overruns, refusals or stops with nothing finished (infrastructure failures name their causes instead) |
 | Sensor refuses jobs with a signature reason | Sensor log `Refusing command`; `refusals` | Key set not trusted, wrong root pinned, expired statement |
 | Slow claims | `command_claim_duration_seconds`, `command_claim_pages_total` | Deep pending queue for the organization (cost grows with pending rows) |
 
@@ -554,15 +756,19 @@ ORDER BY lease_expires_at LIMIT 50;
 Measured or found in review (2026-10-20); each will be addressed in its own
 change and this page updated when it lands:
 
-- **Ordering on the sensor.** The sensor reorders a claimed batch by priority
-  before checking signatures; after aging has moved an older lower-priority
-  job ahead of a newer higher-priority one, the sequence check refuses the
-  older job. Planned: verify in the order received; the platform owns the
-  order.
-- **Lease expiry and pinned commands.** A lease expiry unpins every command,
+- **Release and pinned commands.** A voluntary release unpins every command,
   including ones addressed to one sensor on purpose (configuration, connector
-  scans). Planned: keep the pin for non-routed commands, as release already
-  does.
+  scans); lease expiry and unclaim keep the pin. (The sensor-side ordering
+  limit listed here before is fixed: sdk-go verifies in the order received
+  since v0.38.0. Lease expiry keeps the pin since `pinned_sensor_id`.)
+- **Double signing.** A verifying sensor claims each job of a claim-N answer
+  again by id, so each job is delivered and signed twice. Planned: verify the
+  claim-N envelope.
+- **Poison sweep timing.** The claim does not read `dispatch_attempts`; the
+  sweep runs once a minute, so a command that reached 3 attempts between
+  ticks can be claimed once more.
+- **Claim by id and slots.** The claim by id does not apply the slot cap
+  (`capToFreeSlots`); today's SDK keeps its own local limit.
 - **Platform outages.** After an outage longer than the lease, the controller
   re-queues running work whose sensors could not renew, and charges an
   attempt. Planned: extend leases after a platform-side gap instead of

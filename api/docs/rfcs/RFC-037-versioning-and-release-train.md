@@ -159,9 +159,7 @@ Who bumps what:
 | Field | Bumped by |
 |---|---|
 | `api/deploy/VERSION` | the platform release workflow: one commit on the release branch (`cut-release.sh`); it never reaches `develop` (§14) |
-| `sensor.latest` | the sensor release workflow, in a PR to `openctemio/openctem` after it tags |
-| `<product>.latest` of another product | its release workflow the same way, or a person (YAML only) |
-| `sdk.latest` | the sdk-go release workflow, same way |
+| `<product>.latest`, `sdk.latest`, `ci.latest` | nobody by hand: `cut-release.sh` refreshes them from the published releases in a train's version commit (§12.6); running instances learn newer releases from the release feed |
 | `sdk.advisories` | a person, when an SDK security advisory is published |
 | `*.min` | a person, deliberately: raising a minimum degrades fleets |
 | chart version | the helm-charts PR the platform release workflow opens (§14: not in `versions.yaml`) |
@@ -472,8 +470,11 @@ Compatibility and availability are separate:
     release that is neither a draft nor a pre-release and whose image tag is
     published, reading its digest from the registry. A component that cannot
     be resolved fails the run, so a published feed never drops one. The
-    sensor and sdk-go repositories do nothing and need no secret.
-  - The instance verifies the feed as before (pinned key, rollback, expiry),
+    sensor and sdk-go repositories do nothing and need no secret, and the feed
+    itself needs no signing key or secret either: the workflow signs keyless.
+  - The instance verifies the feed (keyless Sigstore signature of the
+    release-feed workflow, checked offline against the embedded trusted root;
+    rollback; expiry; see the release feed architecture doc),
     stores it in `version_check_state`, and hands its components to
     `internal/versions` at start-up, after each online check or import, and on
     every hourly controller tick on every replica. The effective latest
@@ -486,8 +487,9 @@ Compatibility and availability are separate:
     snippets pin `image:tag@sha256:...` when the feed gave a digest and the
     image is the published one; a mirror (`SENSOR_IMAGE`) is pinned by tag.
 - `latest` in `versions.yaml` now means the release this platform release was
-  built with: the fallback and the floor. Moving it forward at a platform
-  release is optional hygiene; a sensor or SDK release never needs it.
+  built with: the fallback and the floor. The release train moves it forward
+  when it cuts a release (§12.6); a sensor, SDK or CI runner release never
+  needs it.
   `api/deploy/docker-compose.sensor.yml` (the bundled sensor) follows it
   through `sync-versions.sh`.
 - The console says where the latest version comes from
@@ -497,7 +499,7 @@ Compatibility and availability are separate:
 
 ### 12.3 Offline and air-gapped instances
 
-Without the feed (no pinned key, `VERSION_CHECK_ENABLED=false`, no outbound
+Without the feed (no trusted root, `VERSION_CHECK_ENABLED=false`, no outbound
 access) the built-in versions apply, marked as such. The override is the
 existing import of the signed feed file in the console (System > Software
 updates > Import): one file updates the platform and component releases
@@ -520,10 +522,38 @@ gates and gain only the `latest_source` field.
 
 ### 12.5 Maintainer setup
 
-The runtime path is inert until a release feed key is pinned
-(`releasefeed.PinnedKeys`) and the `RELEASE_FEED_SIGNING_KEY` secret exists
-([version check](../architecture/version-check.md#setup-maintainers)).
-`RELEASE_TOKEN` is not needed for any of this.
+No setup (2026-11-03): the release feed is signed keyless by the release-feed
+workflow, so there is no key to pin and no secret to create
+([version check](../architecture/version-check.md#setup-maintainers)). Before
+each release the embedded Sigstore trusted root is refreshed
+(`make -C api sigstore-root-refresh`). `RELEASE_TOKEN` is not needed for any
+of this.
+
+### 12.6 CI runner and baseline refresh (2026-11-05)
+
+- The feed's components include the CI runner (`ci`, openctemio/ci, image
+  `ghcr.io/openctemio/ci`). `versions.CIRunnerLatest` is the effective value
+  (built-in `ci.latest`, raised by the feed, never lowered). The token
+  exchange, pipeline health, the CI alerts job and `GET /api/v1/ci/settings`
+  (`runner_release`, read by the console's pipeline snippets) resolve it per
+  use. `CI_RUNNER_LATEST_VERSION`, when set, wins.
+- `ci.min` is v0.4.0: CTIS 2.0 is a protocol floor (CTIS 1.x runners are
+  refused). Like every `min`, it changes only with a protocol change.
+- `cut-release.sh` runs `refresh-latest.sh` in a train's version commit: every
+  component's `latest` moves to its newest published release (same rule as
+  `feed-components.sh`), then `sync-versions.sh` copies it to the consumers.
+  `release-provenance.sh` accepts those changes only in `latest:` lines and
+  release versions of the consumers. A hotfix keeps its tag's values.
+- The release preflight never blocks on a stale `latest`; it blocks on a
+  `latest` or `min` that is not a published release and lists a `min` change
+  for review.
+- Threat model: no new egress from the platform (the feed is fetched by the
+  existing version check); the feed stays signature-verified, and learned
+  versions are validated as `vX.Y.Z`; the console accepts only a `vX.Y.Z`
+  release from the API before writing it into a pipeline snippet. The
+  release-time refresh reads public release lists and public image manifests
+  only. `runner_release` is instance-level and read-only; the settings route
+  keeps its `ci:read` gate.
 
 ## 13. Product-agnostic compatibility and organizations' own products (2026-10-18)
 

@@ -6,6 +6,7 @@
  * ../src through the `@/` alias; the tenant app never imports anything from
  * here. It serves only the console, at the root of its own site.
  */
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -14,6 +15,29 @@ import type { NextConfig } from 'next'
 /** web/: the root that holds node_modules and the shared source. */
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
+const EXTENSION_ROOT = '../src/extensions'
+const DEFAULT_ROOT = '../src/extension-default'
+const EXTENSION_DIR = path.join(webRoot, 'src', 'extensions')
+
+/**
+ * Extension switch (api/docs/development/editions.md, "Web"). The `@extension/*`
+ * modules resolve to the empty default in src/extension-default, or with
+ * EXTENSIONS=on to the extension mounted at src/extensions. Any other value
+ * than unset or "on" is refused. A production build without the switch
+ * refuses to run while an extension is mounted, so a default image can never
+ * carry extension pages; an EXTENSIONS=on build without one fails to resolve.
+ */
+const EXTENSIONS = (process.env.EXTENSIONS || '').trim()
+if (EXTENSIONS !== '' && EXTENSIONS !== 'on') {
+  throw new Error(`EXTENSIONS must be unset or "on", got "${EXTENSIONS}"`)
+}
+if (EXTENSIONS !== 'on' && process.env.NODE_ENV === 'production' && existsSync(EXTENSION_DIR)) {
+  throw new Error(`${EXTENSION_DIR} is mounted: build with EXTENSIONS=on, or remove it`)
+}
+const EXTENSION_ALIASES = {
+  '@extension/*': EXTENSIONS === 'on' ? `${EXTENSION_ROOT}/*` : `${DEFAULT_ROOT}/*`,
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -21,7 +45,7 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   // Trace and bundle from web/, so the shared source and packages resolve.
   outputFileTracingRoot: webRoot,
-  turbopack: { root: webRoot },
+  turbopack: { root: webRoot, resolveAlias: EXTENSION_ALIASES },
 
   /**
    * Response headers of every console response. The per-request nonce CSP is

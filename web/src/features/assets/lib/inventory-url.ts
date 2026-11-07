@@ -58,8 +58,10 @@ export type InventoryFilters = Pick<
   | 'attribution'
   | 'scopeStatus'
   | 'monitoringState'
+  | 'liveness'
   | 'discoveredBy'
   | 'firstSeenAfter'
+  | 'firstSeenBefore'
   | 'sort'
   | 'page'
   | 'pageSize'
@@ -101,6 +103,7 @@ const ARRAY_PARAMS = {
   attribution: 'attribution',
   scopeStatus: 'scope_status',
   monitoringState: 'monitoring_state',
+  liveness: 'liveness',
   discoveredBy: 'discovered_by',
   technologies: 'technology',
   technologyCategories: 'technology_category',
@@ -129,6 +132,7 @@ const STRING_PARAMS = {
   freshness: 'freshness',
   resolution: 'resolution',
   firstSeenAfter: 'first_seen_after',
+  firstSeenBefore: 'first_seen_before',
 } as const
 
 type ArrayKey = keyof typeof ARRAY_PARAMS

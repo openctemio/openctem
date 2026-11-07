@@ -670,6 +670,20 @@ func (g *ActiveGate) UncoveredTargets(ctx context.Context, tenantID shared.ID, t
 			out = append(out, t)
 		}
 	}
+	// An address one of the organization's in-scope names resolves to may
+	// get passive steps (its network lookup): passive_address.go.
+	if len(out) > 0 {
+		behind := g.addressesBehindScope(ctx, tenantID, auth, out)
+		if len(behind) > 0 {
+			rest := out[:0:0]
+			for _, t := range out {
+				if !behind[t] {
+					rest = append(rest, t)
+				}
+			}
+			out = rest
+		}
+	}
 	if len(out) == 0 || g.unclassifiedMode(ctx, tenantID) == unclassifiedOff {
 		return out, nil
 	}

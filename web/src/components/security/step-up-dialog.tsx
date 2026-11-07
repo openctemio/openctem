@@ -11,9 +11,16 @@
  * shown in the dialog, the code is cleared (a used code cannot be replayed)
  * and the field is focused for the next one. The server decides; nothing here
  * is trusted by it.
+ *
+ * Each code is sent once: completing the code (auto-submit), the Confirm
+ * button and Enter share one synchronous lock, so a code that autofill or a
+ * paste completes while the person taps Confirm is not sent twice (the second
+ * request would be refused as a reused code and count towards the lockout).
+ * The same code is not sent again in one opening; the person is asked for the
+ * next one instead.
  */
 
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { KeyRound, Loader2, ShieldCheck } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -98,14 +105,23 @@ export interface StepUpDialogProps {
   notice?: { body: ReactNode; actions: ReactNode }
 }
 
+/** The HTTP status of a refused request, 0 when there is none. */
+function errorStatus(err: unknown): number {
+  const e = (err ?? {}) as { statusCode?: unknown; status?: unknown }
+  return typeof e.statusCode === 'number'
+    ? e.statusCode
+    : typeof e.status === 'number'
+      ? e.status
+      : 0
+}
+
 /**
  * Default message for a refused proof: too many attempts and a locked account
  * get their own message; otherwise the server's message, else a generic one.
  */
 export function stepUpProofErrorMessage(t: Translate, err: unknown): string {
-  const e = (err ?? {}) as { statusCode?: unknown; status?: unknown; message?: unknown }
-  const status =
-    typeof e.statusCode === 'number' ? e.statusCode : typeof e.status === 'number' ? e.status : 0
+  const e = (err ?? {}) as { message?: unknown }
+  const status = errorStatus(err)
   const message = typeof e.message === 'string' ? e.message : ''
   if (status === 429) {
     return t('components.stepUp.tooMany', 'Too many attempts. Wait a minute and try again.')
@@ -149,6 +165,10 @@ export function StepUpDialog({
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Synchronous guards: React state lags a render behind, so two submits in
+  // the same tick (auto-submit and the button) would both see busy=false.
+  const inFlight = useRef(false)
+  const sentCodes = useRef(new Set<string>())
 
   // Each opening starts clean.
   useEffect(() => {
@@ -158,6 +178,8 @@ export function StepUpDialog({
       setPassword('')
       setError(null)
       setBusy(false)
+      inFlight.current = false
+      sentCodes.current = new Set()
     }
   }, [open])
 
@@ -178,22 +200,45 @@ export function StepUpDialog({
   }
 
   const send = async (proof: StepUpProofInput | null) => {
-    if (!proof || busy || !ready) return
+    if (!proof || inFlight.current || !ready) return
+    if (proof.kind !== 'password') {
+      if (sentCodes.current.has(proof.code)) {
+        setError(
+          proof.kind === 'totp'
+            ? t(
+                'components.stepUp.codeAlreadySent',
+                'This code was already sent. Wait for the next code in your authenticator app.'
+              )
+            : t('components.stepUp.recoveryAlreadySent', 'This recovery code was already sent.')
+        )
+        setCode('')
+        return
+      }
+      sentCodes.current.add(proof.code)
+    }
+    inFlight.current = true
     setBusy(true)
     setError(null)
     try {
       await onSubmit(proof)
     } catch (err) {
+      // Only a code the server judged (refused: 403) is spent; after a
+      // network error or a server fault the same code may be tried again.
+      if (proof.kind !== 'password' && errorStatus(err) !== 403) {
+        sentCodes.current.delete(proof.code)
+      }
       setError(errorMessage ? errorMessage(err, proof) : stepUpProofErrorMessage(t, err))
       setCode('')
       setPassword('')
     } finally {
+      inFlight.current = false
       setBusy(false)
     }
   }
 
   const confirmWithKey = async () => {
-    if (!passkey || busy) return
+    if (!passkey || inFlight.current) return
+    inFlight.current = true
     setBusy(true)
     setError(null)
     try {
@@ -201,6 +246,7 @@ export function StepUpDialog({
     } catch (err) {
       setError(passkey.errorMessage ? passkey.errorMessage(err) : stepUpProofErrorMessage(t, err))
     } finally {
+      inFlight.current = false
       setBusy(false)
     }
   }

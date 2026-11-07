@@ -34,13 +34,50 @@ export function mapStateLabel(state: string, t: Translate = enTranslate): string
   return MAP_STATES.has(state) ? t(`scans.map.state.${state}`) : state
 }
 
+/** The state label of a waiting node whose queued chunks one gate holds. */
+const WAIT_LABELS: Record<string, string> = {
+  waiting_for_hosts: 'scans.map.state.waitingForHosts',
+  waiting_after_refusal: 'scans.map.state.waitingAfterRefusal',
+}
+
+/**
+ * A node's state as a person reads it: a waiting node whose queued chunks
+ * one gate holds says which ("Waiting for its hosts: another task is
+ * scanning them") instead of "Waiting for a sensor".
+ */
+export function nodeStateLabel(n: RunMapNode, t: Translate = enTranslate): string {
+  const waitAll = n.state === 'waiting' ? WAIT_LABELS[n.reason ?? ''] : undefined
+  return waitAll ? t(waitAll) : mapStateLabel(n.state ?? 'pending', t)
+}
+
+/**
+ * Why some of a node's queued chunks wait, when the state label does not
+ * already say it for all of them: hosts another task is scanning (one task
+ * per host at a time) and refusals by a sensor's local policy.
+ */
+export function queuedWaitLines(n: RunMapNode, t: Translate = enTranslate): string[] {
+  const queued = n.chunks?.queued ?? 0
+  const hosts = n.chunks?.hosts_busy ?? 0
+  const refused = n.chunks?.refused ?? 0
+  const all = n.state === 'waiting' ? n.reason : undefined
+  const lines: string[] = []
+  if (queued <= 0) return lines
+  if (hosts > 0 && all !== 'waiting_for_hosts') {
+    lines.push(t('scans.map.waitHosts', undefined, { count: hosts }))
+  }
+  if (refused > 0 && all !== 'waiting_after_refusal') {
+    lines.push(t('scans.map.waitRefused', undefined, { count: refused }))
+  }
+  return lines
+}
+
 /**
  * The badge lines of a node: its state (with why it waits or failed), its
  * chunks while it has any, and what it produced and found.
  */
 export function nodeBadgeLines(n: RunMapNode, t: Translate = enTranslate): string[] {
   const lines: string[] = []
-  let state = mapStateLabel(n.state ?? 'pending', t)
+  let state = nodeStateLabel(n, t)
   if ((n.state === 'failed' || n.state === 'partial' || n.state === 'skipped') && n.reason) {
     state += ` (${n.reason.toLowerCase().replace(/_/g, ' ')})`
   }
@@ -54,6 +91,7 @@ export function nodeBadgeLines(n: RunMapNode, t: Translate = enTranslate): strin
         (failed ? t('scans.map.chunksFailed', undefined, { count: failed }) : '')
     )
   }
+  lines.push(...queuedWaitLines(n, t))
   const produced = n.outputs?.total ?? 0
   const parts: string[] = []
   if (produced > 0) parts.push(t('scans.map.outputs', undefined, { count: compactCount(produced) }))
@@ -161,6 +199,45 @@ export function guardRefusedText(
     : t('scans.map.guardRefused', undefined, { name, count: compactCount(count) })
 }
 
+/** The step outcome counts the map carries (RunMapNode.outcome). */
+type OutcomeCounts = {
+  outcome?: {
+    skipped_target_count?: number
+    no_longer_resolve_count?: number
+  }
+}
+
+function count(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0
+}
+
+/**
+ * Why a finished step that produced nothing has nothing, when its sensor
+ * skipped targets: "N names refused as unresolvable" or "N targets skipped by
+ * the sensor". Null when it skipped none (the plain warning stays).
+ */
+export function producedNothingWhy(
+  n: RunMapNode,
+  name: string,
+  t: Translate = enTranslate
+): string | null {
+  const o = (n as RunMapNode & OutcomeCounts).outcome
+  const skipped = count(o?.skipped_target_count)
+  if (skipped === 0) return null
+  const gone = Math.min(count(o?.no_longer_resolve_count), skipped)
+  const params = { name, count: compactCount(gone > 0 ? gone : skipped) }
+  if (gone > 0) {
+    return t(
+      gone === skipped
+        ? 'scans.map.producedNothingUnresolvable'
+        : 'scans.map.producedNothingUnresolvableSome',
+      undefined,
+      { ...params, total: compactCount(skipped) }
+    )
+  }
+  return t('scans.map.producedNothingSkipped', undefined, params)
+}
+
 /**
  * The warnings over the map: a finished step whose targets the sensor's
  * target guard refused says how many; one whose targets the sensor's
@@ -186,6 +263,13 @@ export function zeroOutputWarnings(
     }
     if (!producedNothing(n)) continue
     const name = n.name || n.step_key || ''
+    // Targets the sensor skipped say why the step has nothing: said instead
+    // of the bare "produced nothing".
+    const why = producedNothingWhy(n, name, t)
+    if (why) {
+      out.push({ key, text: why })
+      continue
+    }
     const before = n.outputs?.previous ?? 0
     out.push({
       key,

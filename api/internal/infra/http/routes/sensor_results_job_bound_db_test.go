@@ -70,9 +70,9 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 	}
 
 	cmd := h.heldReconCommand(h.tenantID, s.id, root)
-	body := []byte(fmt.Sprintf(`{"version":"1.4","metadata":{"timestamp":%q,"source_type":"manual"},`+
-		`"tool":{"name":"subfinder"},"assets":[`+
-		`{"id":"root","type":"domain","value":%q},{"id":"sub","type":"subdomain","value":%q},{"id":"evil","type":"domain","value":%q}],`+
+	body := []byte(fmt.Sprintf(`{"version":"2.0","metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":%q,"channel":"scanner"},`+
+		`"tool":{"name":"subfinder","techniques":["easm"]},"assets":[`+
+		`{"id":"root","type":"domain_name","value":%q},{"id":"sub","type":"domain_name","value":%q},{"id":"evil","type":"domain_name","value":%q}],`+
 		`"findings":[{"type":"misconfiguration","title":"planted on a host outside the job","severity":"high","rule_id":"jb-evil-%s","asset_ref":"evil"},`+
 		`{"type":"misconfiguration","title":"on the target","severity":"low","rule_id":"jb-sub-%s","asset_ref":"sub"}]}`,
 		time.Now().UTC().Format(time.RFC3339), root, sub, evil, label, label))
@@ -84,11 +84,21 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 	if h.assetCount(h.tenantID, root) != 1 || h.assetCount(h.tenantID, sub) != 1 {
 		t.Fatalf("assets inside the job's targets were not created")
 	}
-	if n := h.assetCount(h.tenantID, evil); n != 0 {
-		t.Fatalf("a host outside the job's targets was created (%d)", n)
+	// A host outside the job's targets is recorded in tenant A, never
+	// dropped (research 436), and never confirmed by the report.
+	if n := h.assetCount(h.tenantID, evil); n != 1 {
+		t.Fatalf("a host outside the job's targets was not recorded (%d)", n)
 	}
-	if n := h.findingsAnywhere("jb-evil-" + label); n != 0 {
-		t.Fatalf("%d findings on a host outside the job's targets were stored", n)
+	if n := h.findingsAnywhere("jb-evil-" + label); n != 1 {
+		t.Fatalf("%d findings on the host outside the job's targets, want 1 (in tenant A only)", n)
+	}
+	var confirmed int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM asset_attributions aa JOIN assets a ON a.id = aa.asset_id
+		WHERE a.tenant_id = $1 AND a.name = $2 AND aa.state = 'confirmed'`, h.tenantID, evil).Scan(&confirmed); err != nil {
+		t.Fatal(err)
+	}
+	if confirmed != 0 {
+		t.Fatal("a host outside the job's targets was confirmed by the report")
 	}
 	var channel string
 	if err := h.db.QueryRowContext(context.Background(),
@@ -110,7 +120,7 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 		t.Fatalf("tenant B's asset changed: count %d, last_seen %v -> %v", nB, seenB, seenAfter)
 	}
 
-	// The drop is in tenant A's audit log (written asynchronously).
+	// The recording is in tenant A's audit log (written asynchronously).
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var n int
@@ -123,7 +133,7 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("audit rows for the drop: %d, want 1", n)
+			t.Fatalf("audit rows for the report: %d, want 1", n)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

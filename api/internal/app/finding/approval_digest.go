@@ -26,6 +26,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // ApprovalDigestInterval is the shortest time between two digests of one
@@ -249,7 +250,7 @@ func (s *VulnerabilityService) deliverDigest(ctx context.Context, tid, uid share
 	if s.approvalMail == nil || email == "" {
 		return
 	}
-	link := s.webBaseURL + approvalInboxURL
+	link := weblink.Console(s.webBaseURL, approvalInboxURL, tid.String())
 	var items strings.Builder
 	for _, n := range names {
 		items.WriteString("<li>" + html.EscapeString(n) + "</li>")

@@ -6,6 +6,8 @@
 > [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md) (everything else; protocol v1 retired 2026-10-05).
 > Routing of scanners by network: [scan-zones.md](scan-zones.md).
 > How scan traffic identifies itself to targets (User-Agent and headers, merged platform and organization layers): [scan-identification.md](scan-identification.md).
+> Secrets a sensor's tools use (provider keys, proxy pool credentials; refs in
+> the signed job, values from a sealed per-task fetch): [task-secrets.md](task-secrets.md).
 > Proxies for scan traffic (proxy pools, built): [sensor-proxies.md](sensor-proxies.md);
 > the wider egress design: [RFC-034](../rfcs/RFC-034-sensor-network-egress.md),
 > section [Network egress and proxies](#network-egress-and-proxies-rfc-034-proposed).
@@ -24,7 +26,7 @@ reference for each part.
 | **Sensor** | Software on the customer side that authenticates *to* the platform with its own key and heartbeat. The umbrella term; every row of the `sensors` table. |
 | **Scanner** (role) | A sensor that assesses other hosts; routed by scan zone. What every existing sensor is today. |
 | **Endpoint** (role, planned) | A sensor installed on an endpoint that reports only about its own host. RFC-023 called this role *agent*; the word is retired for sensors (see the [glossary](../glossary.md)). |
-| **AI worker** (role) | A sensor that runs AI agents (`openctemio/ai-worker`, sdk-go `pkg/harness`). |
+| **AI worker** (role) | A sensor that runs AI agents. The worker is distributed separately from the core; the open parts are sdk-go `pkg/harness`, the role, and the job, grant and result contract. |
 | **Collector** (role) | A sensor that pushes data from systems inside the customer network. |
 | **Integration** | An external system the *platform* calls (Jira, Slack, Splunk out, …); no software of ours runs for it. |
 | `type` | The legacy v1 classification (`worker`, `scanner`, `sensor`, `collector`, `runner`). Kept as input and storage until role + deployment replace it (RFC-023 §9.1). |
@@ -119,6 +121,45 @@ assets' names and addresses.
 
 ## Heartbeat doorbell
 
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as sdk-go BaseSensor + Doorbell
+    end
+    box Platform
+    participant MW as V2Throttle + Authenticate
+    participant HD as SensorControlV2Handler.Heartbeat
+    participant DB as doorbell.Ring
+    participant SV as SensorService.UpdateHeartbeat
+    end
+    S->>MW: POST /api/v2/sensor/heartbeat (signed), running ids, load, manifest_digest, local_policy, outbox, instance_id
+    alt over budget (10/s per sensor, 500/s per tenant)
+        MW-->>S: 429 rate-limited, jittered Retry-After
+    else signature, key or sensor refused
+        MW-->>S: 401 unauthenticated (AuthGate backs off 30 s to 10 min)
+    end
+    MW->>HD: sensor and tenant from the key
+    HD->>DB: pending_jobs, next_heartbeat_seconds, actions, config_version, content_version
+    alt sensor disabled (paused)
+        HD-->>S: status paused, actions pause (no write)
+    else active
+        HD->>SV: guarded write WHERE status active - last seen, deadline, instance id, renew held leases below the threshold
+        SV->>SV: ObserveInstance - three alternations in 15 min set identity_cloned_at
+        HD->>HD: cancel_command_ids, stop_command_ids, send_manifest when the digest is unknown or a recheck is due
+        HD-->>S: 200 answer
+    end
+    S->>S: clamp interval to 5 s to 5 min, act on actions, ring the poller when pending_jobs > 0, sync content on a new content_version
+```
+
+Code: `internal/infra/http/routes/sensor_v2.go` (budgets),
+`handler/sensor_results_v2_handler.go:Authenticate`,
+`handler/sensor_control_v2_handler.go` (heartbeat), `internal/app/sensor/doorbell.go:Ring`,
+`internal/app/sensor/service.go:UpdateHeartbeat`, sdk-go `core/doorbell.go:Handle`,
+`core/auth_gate.go`. A network error or 5xx makes the sensor send the next
+heartbeat after about 10 s (sdk-go `core/base_sensor.go`); the stale report is
+not retried.
+
 `POST /api/v2/sensor/heartbeat` is also a doorbell (RFC-023 §9.2a): it tells
 the sensor *that* something is waiting for it and when to ring again. It never
 carries a job, a command text or any other payload. Jobs are still fetched and
@@ -130,7 +171,7 @@ claim predicate and claim semantics stay in one place.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `pending_jobs` | int | Commands this sensor could claim right now, capped at 100. Exactly what the poll would offer: pinned to the sensor or unpinned, pending, not expired, not scheduled for later, zone claim predicate (`zoneClaimPredicate`, incl. the tool match), capability gate. `> 0` ⇒ poll now. Not computed for platform sensors (no tenant poll). |
+| `pending_jobs` | int | Commands this sensor could claim right now, capped at 100. Exactly what the poll would offer: pinned to the sensor or unpinned, pending, not expired, not scheduled for later, zone claim predicate (`zoneClaimPredicate`, incl. the tool match), capability gate. When none of those is ready and the sensor reported a free slot, it also counts the run-step tasks its next claim would split because only a few of their hosts are busy (`HostSplitReady`: the first two host-split candidates, the same plan the claim applies, nothing written), so an idle sensor starts their free targets within a heartbeat instead of on its safety poll. `> 0` ⇒ poll now. Not computed for platform sensors (no tenant poll). |
 | `next_heartbeat_seconds` | int | Advised interval. 5 s while work is waiting or while a command the sensor claimed was canceled within the last lease period (so it hears `cancel_command_ids` within seconds), 30 s idle, the maximum interval when the doorbell query itself took ≥ 250 ms (platform under load). Clamped to `[SENSOR_HEARTBEAT_MIN_INTERVAL, SENSOR_HEARTBEAT_MAX_INTERVAL]` and never more than the derived maximum `min(offline distance / 2, SENSOR_COMMAND_LEASE / 3)` (45 s with the defaults: half the ladder's 90 s floor, or of `WORKER_HEARTBEAT_TIMEOUT` when shorter, RFC-035 D2; and a third of the lease, so a sensor holding a command renews its lease at least twice before it runs out, RFC-074). The heartbeat stores the advice as the sensor's deadline ("Fleet health"), so a sensor that follows it is never marked offline. |
 | `actions` | []string | Typed directives from a closed set: `pause`, `resume`, `drain`, `rotate_key`, `update`. Rung today: `pause` (sensor disabled by an admin), `rotate_key` (the presented key expires within `SENSOR_KEY_RENEW_BEFORE`, default half of `SENSOR_KEY_TTL`). `resume`, `drain`, `update` are reserved. There is no free-form or shell verb (RFC-023 §10.4 R-4); a sensor ignores a value it does not know. |
 | `config_version` | string | 16 hex chars, opaque. A digest of what the platform governs about the sensor: capabilities, tools, max concurrent jobs, execution mode, operator config, the presented key's expiry and the assigned scan zones with each zone's last change. Heartbeat metrics and `last_seen_at` are not part of it (both rewrite `sensors.updated_at` on every heartbeat, which is why `updated_at` cannot be the source). |
@@ -787,7 +828,7 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   `platform_settings['shared_sensors_egress']`): IP addresses or CIDR ranges
   for every region and per region label (sensor region tokens, at most 32
   regions and 64 entries per list). Only public addresses: any entry that is,
-  or overlaps, an internal range of ctis `addrscope` (private, loopback,
+  or overlaps, an internal range of contract `addrscope` (private, loopback,
   link-local, metadata, CGNAT, multicast, IPv6 forms that carry such an IPv4
   address) is refused with 400, so the list never discloses the operator's
   internal network. Any administrator reads; a super admin replaces the list
@@ -1172,8 +1213,8 @@ profile refuses the namespaces this needs.
 - The default AppArmor profile stays: on hosts that restrict unprivileged
   user namespaces, `apparmor=unconfined` stops confinement working.
 - **Setup checklist:** the sensor reports `runtime.sandbox_network`
-  (`confined`, or the detected cause: `userns_blocked`, `userns_restricted`,
-  `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
+  (`confined`, or the detected cause: `userns_disabled_host`, `userns_restricted`,
+  `userns_blocked`, `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
   its fix ([fix the setup checklist](../how-to/fix-sensor-setup-checklist.md)).
 
 ## Pairing, key-bound identity and grants (RFC-052)
@@ -1260,8 +1301,10 @@ replaces bearer keys.
 
 [RFC-026](../rfcs/RFC-026-sensor-results-ingest.md) (decisions in its §10.1).
 Sensors push results as CTIS only, declared by
-`Content-Type: application/vnd.openctem.ctis.v1+json`, to a resource they
-name. It is the only results path (protocol v1 ingest is retired). The wire vocabulary
+`Content-Type: application/vnd.ctis+json; version=2.0` (CTIS 2.x only; a 1.x
+document or the old media type is refused), to a resource they
+name. The command a result answers is bound by the URL path, never by the
+document. It is the only results path (protocol v1 ingest is retired). The wire vocabulary
 lives in `pkg/sensorproto/v2` (golden files pin it); the contract is
 `api/openapi/sensor-protocol-v2.yaml`.
 
@@ -1304,7 +1347,7 @@ verified, bounded body. Then the strict decoder
 (`internal/app/ingest/strictjson.go`): I-JSON (no duplicate member names,
 valid UTF-8, no lone surrogates, depth ≤ 64, nothing after the value) and no
 unknown fields (`422`), and the v2 report rules: body major version equals
-the media type's, `tool.name` present, `metadata.id` empty or the report id,
+the media type's, `tool.name` present, `metadata.id` a producer UUIDv7 (an idempotency key, never the report id; the report id comes from the URL path),
 ≤ 10,000 findings and assets per segment.
 
 The digest without a signature detects corruption and buggy proxies; it is
@@ -1342,7 +1385,7 @@ with the server-stamped provenance (tenant from the key, sensor, command,
 zone from the command, protocol, media type, user agent, receive time), and
 one RFC-005 `ingest_jobs` row per segment plus one for the commit.
 
-**Text caps on every ingest path** (v1 CTIS, v2 segments, SARIF and the
+**Text caps on every ingest path** (CTIS 2.x, v2 segments, SARIF and the
 other converted formats; `internal/app/ingest/text_caps.go`, RFC-040 §5.4).
 Before anything is stored or fingerprinted, `Service.Ingest` cuts oversized
 finding text to a cap, ending it with `…[truncated]`, and makes it valid
@@ -1513,6 +1556,46 @@ it: [sensor-transport-v3.md](sensor-transport-v3.md). One proto
 (`openctem.sensor.v3.SensorService`) whose RPCs map one to one onto the v2
 resources below and are served through the same v2 handler chain; v2 stays.
 
+## Tenant isolation of jobs
+
+A job (command) carries targets, scope, a signed statement, task-secret
+references and templates, so a sensor, member or token of one organization
+must never claim, read, change or learn of another organization's jobs.
+
+- **Who the caller is.** A sensor's tenant comes from its key: the signed
+  request's key row, the bearer key's hash, or (protocol v3) the client
+  certificate's key, which must match the certificate's tenant and sensor.
+  No sensor route reads a tenant or sensor id from the request. A relayed
+  request must carry the credential of the sensor its relay route names
+  (`X-Relay-Sensor`), for a signed request and a bearer key alike.
+- **Claim.** The poll, claim-N and claim by id select `tenant_id = <the
+  sensor's tenant>`, exclude shared jobs (`is_platform_job`), and apply the
+  zone, tool, refusal and clone predicates bound to the claiming sensor. A
+  shared sensor (scope `instance`, no tenant; the database enforces
+  `(scope = 'instance') = (tenant_id IS NULL)`) claims only shared jobs,
+  only through the shared claim, and only for organizations allowed to use
+  shared sensors.
+- **Command routes** (start, complete, fail and refusal, release, logs,
+  egress report, task secrets, bound results and commit). An organization
+  sensor's command is read by `(tenant, id)` and must be held by that
+  sensor; a shared sensor's command must be a shared job it holds, under
+  the lease epoch it states, and its tenant is read from the command row.
+  Another organization's command, another sensor's command and an unknown
+  id all get the same `404 command-not-found`, so a known (time-ordered)
+  command id gives an attacker nothing.
+- **Reports.** Report ids are keyed `(tenant, sensor, report_id)`: another
+  sensor's report id reads as `report-not-found`, and reusing it makes the
+  caller's own report.
+- **Hints.** The heartbeat's pending count, cancel and stop lists, the
+  suppression rules and the fingerprint lookups are scoped to the sensor's
+  tenant (and its reach); naming another organization's command in the
+  running list is answered like naming an unknown id.
+
+The DB-backed tests that prove each of these run as a required CI gate,
+by name (`.github/scripts/cross-tenant-gate.sh`, API CI "Security Gates
+(cross-tenant job isolation)"); a renamed, removed or skipped test fails the
+build.
+
 ## Protocol v2 control plane
 
 [RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md). Every
@@ -1556,6 +1639,16 @@ Any other state is `409 invalid-transition` with `"state"` (a pending
 command past its expiry reads `expired`); a lost claim race is `409
 command-claimed`; another sensor's or tenant's command is `404
 command-not-found`. The state rules and the atomic claim live in the command service.
+
+**Task secrets** ([task-secrets.md](task-secrets.md)). A claimed scan,
+retest, validate or proxy test job carries the payload member `secrets`
+(names only, covered by the job signature). The values come from
+`POST /api/v2/sensor/commands/{id}/secrets`: a body signed by the sensor's
+key-bound identity with the lease epoch and a single-use reply key, answered
+`application/vnd.openctem.secrets+sealed` (HPKE-sealed to that key,
+`Cache-Control: no-store`) only to the trusted lease holder for refs
+recorded at claim, at most `max_fetches` times; every refusal is `404
+command-not-found`. v2 HTTPS only.
 
 **Hello** lists `results` plus the control features (`heartbeat`,
 `commands`, `suppressions`, `fingerprints`, `keys`). `deprecations` is
@@ -1652,6 +1745,41 @@ limit.
 
 ## Sensor manifest
 
+```mermaid
+sequenceDiagram
+    autonumber
+    box Sensor host
+    participant S as sdk-go BaseSensor
+    end
+    box Platform
+    participant H as SensorControlV2Handler
+    participant M as SensorService.RegisterManifest
+    participant C as tool catalog
+    end
+    S->>S: ToolRegistry probes (LookPath, --version, cache 10 min), local policy tools.allow filter
+    S->>S: manifest schema 1, digest sha256 of canonical JSON
+    S->>H: PUT /api/v2/sensor/manifest (signed, at most 256 KiB)
+    H->>M: RegisterManifest(tenant from the key)
+    M->>C: add declared tools to the organization's catalog, keep only known tools and capabilities
+    alt digest unchanged and nothing newly known
+        M->>M: touch only
+    else changed
+        M->>M: store, effective_tools and effective_capabilities regenerate, timeline events
+    end
+    H-->>S: policy - allowed tools, capabilities, max jobs
+    loop every heartbeat
+        S->>H: manifest_digest only
+        H-->>S: send_manifest when the platform needs it again
+    end
+```
+
+Code: `internal/app/sensor/manifest.go` (`RegisterManifest`,
+`LoadManifestRechecks`), `internal/app/sensor/declared_tools.go`,
+`internal/app/sensor/service.go` (catalog filter), sdk-go `core/manifest.go`,
+`core/tool_registry.go`, `core/base_sensor.go`. A failed `PUT` is retried
+after a minute. The sensor runs no digest check of the tool binaries; image
+builds pin tool versions and checksums.
+
 [RFC-033](../rfcs/RFC-033-sensor-manifest.md). A manifest is what a sensor
 *is*, as opposed to its load. It contains:
 
@@ -1735,10 +1863,10 @@ the fields the platform plans and binds output with.
   `GET /api/v1/sensors/{id}/manifest[s]`.
 - **Tool options.** The stored descriptor carries the tool's configuration
   schema (`config`, the closed JSON Schema subset of the CTIS settings
-  contract, `github.com/openctemio/ctis/settings`). The Manifest tab lists
+  contract, `github.com/openctemio/contract/settings`). The Manifest tab lists
   each tool's options read-only under "Options (N)": common options first
   (`x-octm-common`: `timeout`, `rate`, `concurrency`, `retries`, defined
-  once in `ctis/tooloption`), then the tool's own, each with its default,
+  once in `contract/tooloption`), then the tool's own, each with its default,
   range or values, who may set it (`x-octm-scope`: the sensor's
   configuration only, or a scan too), its safety class (`x-octm-tier`: T0
   safe, T1 impact, T2 dangerous) and the native flag it maps to
@@ -1865,8 +1993,8 @@ image `ghcr.io/openctemio/asset-collector`, formerly `asset-inventory`).
   heartbeat with control block, manifest, results ingest, durable outbox,
   key renewal), with commands off. Reports go to
   `PUT /api/v2/sensor/results/{report_id}` (unbound to a command) with
-  `metadata.source_type = "collector"` and the collector type as
-  `tool.name`.
+  the collector type as `tool.name`; the channel (`collector`) comes from the
+  authenticated sensor, not from the document.
 - **Tools.** It reports one tool per configured collector type, of kind
   `collector` (`sensor.ToolKindCollector`): `gcp-dns`, `vcenter`, `ldap`,
   `splunk` and `prtg`. The platform keeps only tool names in its catalog, so
@@ -1888,7 +2016,7 @@ inside the reporting organization.
 
 | Report data | Stored as | Rule |
 |---|---|---|
-| `relationships` (CTIS) | Asset relationships | `hosted_by` becomes `runs_on` (a virtual machine on its hypervisor host) or, for an address, the host `contains` it; `subdomain_of` is stored parent first; the other types keep their name. Only pairs the relationship registry allows; only when the report may change the edge's source asset (`report_relationships.go`). |
+| `relationships` (CTIS 2.0; was `related_assets`) | Asset relationships | `hosted_by` becomes `runs_on` (a virtual machine on its hypervisor host) or, for an address, the host `contains` it; `subdomain_of` is stored parent first; the other types keep their name. Only pairs the relationship registry allows; only when the report may change the edge's source asset (`report_relationships.go`). |
 | `esxi_host` on a virtual machine | `runs_on` edge to the hypervisor host | The host must be in the report or already in the organization. The vSphere cluster and datacenter stay properties: there is no asset type for them. |
 | `ip_addresses` on a host | `contains` edges to address assets | Only to address assets that already exist, at most 32 per host; addresses are never created from a host's properties. |
 | `ad_object_guid` | Identifier `directory_object_id` | Strong and single-valued: a computer renamed or moved in the directory stays the same asset ([asset-identity-resolution.md](asset-identity-resolution.md)). The vCenter instance UUID is the `cloud_id` identifier. |
@@ -1897,6 +2025,8 @@ inside the reporting organization.
 | `zone_visibility: private` on a DNS name | Exposure `private`, not internet-accessible | Also a root domain that only private-zone names name (`private_zone.go`). |
 | A network device's address (PRTG, Splunk) | Matched to the existing device | Network devices only (not segments, hosts or address assets), in the IP trust window, one candidate only ([asset-identity-resolution.md](asset-identity-resolution.md)). |
 | An asset that matches a scope exclusion | Not added | Item error `asset_excluded`, counted neither as accepted nor as rejected, so it does not stop the not-seen sweep of a complete report. |
+| An asset or finding of a type the command's tool does not produce | Held for review in the results quarantine | Item error `held_for_review`, counted as quarantined (a finding held for its own type too, even when its asset was applied); `quarantine_full` and rejected when the quarantine could not keep it. |
+| An asset beyond the cap on assets recorded outside the command's targets (see above), or outside the upload actor's data scope | Not applied | Item error `too_many` or `out_of_scope` on the asset and on its findings, counted as rejected. `asset_invalid` is left for an asset ingest could not store for any other reason. |
 | `coverage_type: full` from a trusted collector | Refresh of its own assets, unlisted ones marked not seen | RFC-040 §12, [sensor-result-binding.md](sensor-result-binding.md). Partial and incremental reports keep the unsolicited limits and never mark anything. |
 
 ## Result binding and the results quarantine (RFC-040)
@@ -1983,8 +2113,7 @@ an online sensor becomes `degraded`:
   mismatch. Scans use v10.4.8."
 
 **Per-scan provenance.** The sensor stamps the content a scan used on the
-report's `tool.properties.content` (CTIS `properties` is free-form, no schema
-change). For protocol v2 the tool is part of the report header, stored
+report's `tool.content[]` (CTIS 2.0 typed member; `properties` carries no meaning). For protocol v2 the tool is part of the report header, stored
 verbatim in `ingest_reports.header`; findings carry the report id as
 `scan_id`. Protocol v1 ingest keeps no report header.
 
@@ -2267,6 +2396,40 @@ anywhere. Each scan command carries a layered budget in its payload
 
 ## Sensor-local policy (RFC-040 §5.7)
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as Host owner
+    box Sensor host
+    participant S as sdk-go core.LocalPolicy
+    end
+    box Platform
+    participant HB as heartbeat and manifest
+    participant G as command dispatch gate
+    participant RF as command refusal handling
+    end
+    O->>S: policy file, SIGHUP or restart (strict load, exit 2 at start on error)
+    S->>HB: local_policy - state, required, source, digest, kill_switch, summary (never the ranges)
+    HB->>HB: sanitize and store, a changed policy lifts the sensor's refusal exclusions
+    G->>G: grant, active scanning, intensity, sensordom.Accepts(report) - else local_policy_refuses
+    G-->>S: signed job within the organization's scope
+    S->>S: AdmitCommandTargets - remove refused targets, or refuse the whole job
+    alt whole job refused
+        S->>RF: POST .../fail with refusal layer, rule, detail
+        RF->>RF: routed work re-queued without this sensor, fails after 3 refusals or 6 h
+    else partial
+        S->>HB: complete with refused_targets (at most 100) and refused_targets_total
+    end
+```
+
+Code: sdk-go `core/local_policy.go`, `core/local_policy_enforce.go`,
+`core/refusal.go`; `internal/app/sensor/local_policy.go`,
+`internal/app/command/local_policy.go`, `internal/app/command/refusal.go`.
+From v0.20.0: the refusal records `PolicyKey(digest, state)`;
+`ForgetRefusalsOf` keeps the exclusion of a sensor that already refused under
+the same policy, and a refusal whose targets all fail to resolve completes the
+task with per-target skips (`handler/sensor_control_v2_handler.go`).
+
 > **Version requirement.** Enforcement is in sdk-go#140 and sensor#119, merged
 > after sensor v0.8.0. Sensor v0.8.0 and older ignore `SENSOR_LOCAL_POLICY`,
 > the policy file and the kill-switch file, and report no `local_policy`
@@ -2388,8 +2551,11 @@ and narrows dispatch:
   the summary: kill switch (withholds everything), `checks.allow`,
   `tools.allow`, `allow_custom_templates`, `allow_interactsh`, `ports.allow`
   (exact lists only; named lists such as `top-100` are left to the sensor),
-  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), and the
-  tenant switch above (layer `managed`). Allow and deny ranges are reported as
+  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), the
+  report's top-level `allow_private` (the host's `SENSOR_ALLOW_PRIVATE_TARGETS`
+  switch, narrowed by an enforced policy; reported with or without a policy
+  file by an SDK that sends it, absent from older SDKs, which leaves the
+  decision to the sensor), and the tenant switch above (layer `managed`). Allow and deny ranges are reported as
   counts, so they are left to the sensor. A sensor without a report or
   without a policy accepts what the policy would decide (the absent policy
   allows both opt-ins, decision Q4 (a)). The same check runs in three
@@ -2504,6 +2670,13 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   - `policy_none`: `absent_legacy`, or `unknown` for a sensor that has
     connected (an SDK that ignores local policies);
   - `pin_none`: `platform_pin` is `none`;
+  - `tools_unconfined`: the sensor runs its tools without the sandbox
+    (`tools_unconfined` is `refused`: the sandbox is not available on its
+    host, it is Linux only, so tools of tier T1 and above are refused there
+    and passive lookups still run; or `acknowledged`: its operator set
+    `SENSOR_SANDBOX=off` and every tool runs unconfined). The sensor reports
+    it in the manifest posture (`sandbox.unconfined`) and in its config
+    report (`runtime.sandbox_unconfined`);
   - `network_unenforced`: `network_enforced` is `false`;
   - `bearer_key`: the sensor authenticates with a bearer key instead of a
     key-bound identity (and has connected).
@@ -2514,10 +2687,13 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   cards and the detail header (the title lists the fixes), and a Security
   posture block in the detail sheet with one fix per reason: install a local
   policy (the Local policy tab of the install commands), pin the platform CA
-  with `SENSOR_CA_FINGERPRINT`, run with `SENSOR_SANDBOX_NETWORK=required` and
-  the seccomp profile, pair again for a key-bound identity.
+  with `SENSOR_CA_FINGERPRINT`, run the sensor on Linux with the sandbox (or
+  acknowledge running tools unconfined with `SENSOR_SANDBOX=off`), run with
+  `SENSOR_SANDBOX_NETWORK=required` and the seccomp profile, pair again for a
+  key-bound identity. The Tool sandbox check of the install review says when
+  tools that contact their targets are refused for want of a sandbox.
 - **Alert.** Gauge `openctem_sensors_unhardened{kind}` (`policy_none`,
-  `pin_none`, `network_unenforced`, `bearer_key`): active tenant sensors by
+  `pin_none`, `tools_unconfined`, `network_unenforced`, `bearer_key`): active tenant sensors by
   reason, platform-wide, no tenant or sensor label. Alert `SensorsUnhardened`
   (warning, `for: 24h`); runbook in
   [operations/monitoring.md](../operations/monitoring.md#sensorsunhardened).
@@ -2709,7 +2885,7 @@ and its source (tool default, organization or this sensor).
   descriptor (Tool Contract v1), which the sensor already reports in its
   manifest and the platform stores in the sensor's current manifest version
   (tenant-scoped). It is parsed with the CTIS settings contract
-  (`github.com/openctemio/ctis/settings`, `ParseSchema`): a closed JSON Schema
+  (`github.com/openctemio/contract/settings`, `ParseSchema`): a closed JSON Schema
   subset with `x-octm-*` annotations (scope, tier, common option, native
   flag, sensitive, group). A descriptor without `config` means the tool has
   no settings; a schema the contract refuses is ignored (logged). There is

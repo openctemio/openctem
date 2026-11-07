@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -478,6 +478,11 @@ func (h *FindingImportHandler) parseCoverage(r *http.Request, req *findingimport
 	default:
 		return apierror.BadRequest("coverage must be partial or full")
 	}
+	// Closing as fixed is a verification: without findings:verify the
+	// upload is imported and closes nothing (coverage note needs_verify),
+	// whether the scope is declared or comes from a scan file's own
+	// coverage.
+	req.Coverage.CanVerify = middleware.HasPermission(r.Context(), permission.FindingsVerify.String())
 	raw := q["asset_id"]
 	if len(raw) > findingimport.MaxCoverageAssets {
 		return apierror.BadRequest(findingimport.ErrCoverageScope.Error())
@@ -499,9 +504,6 @@ func (h *FindingImportHandler) parseCoverage(r *http.Request, req *findingimport
 					" and " + permission.FindingsBulkUpdate.String())
 			}
 		}
-		// Closing as fixed is a verification: without findings:verify the
-		// upload is imported and closes nothing (coverage note needs_verify).
-		req.Coverage.CanVerify = middleware.HasPermission(r.Context(), permission.FindingsVerify.String())
 		if req.MinSeverity != "" {
 			// Findings below min_severity are dropped, so their absence
 			// proves nothing.
@@ -548,11 +550,10 @@ func (h *FindingImportHandler) importPart(ctx context.Context, req findingimport
 	name := findingimport.SafeName(part.FileName())
 	tr := &readErrTracker{r: body}
 	up := findingimport.Upload{
-		Name:           name,
-		Body:           tr,
-		KnowledgeBase:  kb,
-		ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, index),
-		TempDir:        h.tempDir,
+		Name:          name,
+		Body:          tr,
+		KnowledgeBase: kb,
+		TempDir:       h.tempDir,
 	}
 	results, archive, refused := h.svc.ImportUpload(ctx, req, up)
 	var mbe *http.MaxBytesError

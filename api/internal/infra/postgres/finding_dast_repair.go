@@ -132,6 +132,8 @@ func (r *FindingRekeyRepository) repairDASTGroup(ctx context.Context, tenant str
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	type dastAudit struct{ loserID, msg, meta string }
+	var audits []dastAudit
 	for _, l := range losers {
 		// Still live and unchanged since it was listed.
 		var n int
@@ -147,11 +149,7 @@ func (r *FindingRekeyRepository) repairDASTGroup(ctx context.Context, tenant str
 		}
 		meta, _ := json.Marshal(map[string]string{"survivor_id": survivor.id, "loser_id": l.id,
 			"loser_fingerprint": l.fingerprint, "reason": causeDASTRepair.Reason})
-		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, metadata, logged_at)
-			VALUES (gen_random_uuid(), $1, 'finding.duplicate_marked', 'finding', $2, 'success', 'medium', $3, $4::jsonb, NOW())`,
-			tenant, l.id, "Finding merged into "+survivor.id+" by the DAST identity repair", string(meta)); err != nil {
-			return fmt.Errorf("audit dast repair: %w", err)
-		}
+		audits = append(audits, dastAudit{loserID: l.id, msg: "Finding merged into " + survivor.id + " by the DAST identity repair", meta: string(meta)})
 	}
 	if survivor.fingerprint != fp {
 		if _, err := tx.ExecContext(ctx, `UPDATE findings SET fingerprint = $1, identity_key = $2::jsonb, updated_at = NOW(),
@@ -160,6 +158,16 @@ func (r *FindingRekeyRepository) repairDASTGroup(ctx context.Context, tenant str
 			  AND NOT EXISTS (SELECT 1 FROM findings c WHERE c.tenant_id = $3 AND c.fingerprint = $1 AND c.id <> $4)`,
 			append([]any{fp, string(raw), tenant, survivor.id}, identityKeyRecipeArgs(raw)...)...); err != nil {
 			return fmt.Errorf("re-key repaired dast finding: %w", err)
+		}
+	}
+	// The audit rows go last: the audit chain takes a per-tenant lock, and
+	// every other writer locks its business rows first, so this keeps one
+	// lock order (findings, then audit) across transactions.
+	for _, a := range audits {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs (id, tenant_id, action, resource_type, resource_id, result, severity, message, metadata, logged_at)
+			VALUES (gen_random_uuid(), $1, 'finding.duplicate_marked', 'finding', $2, 'success', 'medium', $3, $4::jsonb, NOW())`,
+			tenant, a.loserID, a.msg, a.meta); err != nil {
+			return fmt.Errorf("audit dast repair: %w", err)
 		}
 	}
 	return tx.Commit()

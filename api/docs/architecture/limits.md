@@ -77,6 +77,7 @@ The limit is 5 seats; 7 are in use. Remove some, or ask your administrator for m
 | `sensors` | the organization's own sensors that are not revoked (platform sensors never count) |
 | `api_keys` | active API keys |
 | `ci_trusts` | CI trust configurations |
+| `sso_connections` | the organization's single sign-on connections: its SAML configuration (at most one) plus its OIDC identity providers. Only creating another one is refused (console create, a pending change's submission and its approval). Changing or deleting a connection, signing in through one and requiring SSO are never limited, so lowering the limit below the count locks nobody out; without a limit source (self-managed Community) it is unlimited |
 | `invites_per_day` | invitations created in the last 24 hours |
 | `platform_scans_per_day` | scans started on shared sensors since 00:00 UTC (one per run, however many chunks); enforced when a scan is triggered: an explicit shared-sensor scan over it is refused, `auto` stays on the organization's own sensors, an unreadable limit refuses (RFC-100 §10) |
 | `platform_scans_concurrent` | shared-sensor jobs queued or running at once; enforced by the shared claim path (RFC-100 S5, not built yet) |
@@ -99,19 +100,19 @@ Deniable features are the non-core top-level modules (by module id) plus
 the named features below module level, each checked with `Allowed` at its
 own seam. Core modules can never be denied.
 
-The named features are the sign-in features of research/232 D16. Security
-controls (MFA, passkeys, session policy, audit, break-glass) are never
-features: they are free everywhere. Like every feature, these are allowed
+The named features are the deniable features below module level. Security
+controls (MFA, passkeys, session policy, audit, break-glass, SSO sign-in and
+its enforcement) are never features: they are free everywhere, and a plan may
+only cap how many SSO connections exist (`sso_connections`). Like every feature, these are allowed
 unless the operator or a source (the hosted control plane) denies them, so a
 self-managed instance keeps all of them; the hosted service's control plane
 decides which organizations get them.
 
 | Feature | Seam (refused when denied) | After a downgrade |
 |---|---|---|
-| `sso.connections` | creating or changing a SAML or OIDC connection: console PUT/POST, a pending change's submission and its approval (`SSOService.requireConnections`) | sign-in through a connection already configured keeps working (never a lock-out); deleting one always works |
-| `sso.enforcement` | turning SSO enforcement on (`TenantService.UpdateSecuritySettings`) | enforcement stays during the grace, then the `sso-enforcement-entitlement` controller (hourly) turns it off and tells the owners and administrators: members sign in with a password (and 2FA where required) again |
-| `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token |
+| `scim` | minting a SCIM token (`TokenService.Mint`) and the SCIM API (`middleware.SCIMFeatureGate`, after the token is authenticated) | existing tokens keep working during the grace (`Usable`), then 403; no new token. Deprovisioning is never gated: a user DELETE, and a PUT or PATCH that sets `active:false`, still work when the feature is off or the limits cannot be read (the handler refuses `active:true` then), so a disabled feature never keeps a leaver's access |
 | `sso.group_links` | changing SCIM group to role mappings (`GroupService.SetRoleMappings`) | existing mappings keep applying |
+| `active_scanning` | sending active or intrusive probes (tier above passive) from any sensor, the platform's shared ones or the organization's own: refused at scan create, run and update (`ACTIVE_SCANNING_NOT_ENTITLED`) and at every dispatch (re-check at claim, grant gate); see "Passive only" below | queued active jobs fail with `ACTIVE_SCANNING_NOT_ENTITLED` or wait with a withheld reason; passive work (certificate logs, passive DNS, registration data, intel matching, imports) keeps running |
 | `ldap` | reserved: there is no LDAP sign-in yet | — |
 | `content_sources.webhook` | setting a rule source's webhook secret (`contentsource.Service.RotateWebhookSecret`); webhook calls check `Usable` | calls keep queuing syncs during the grace, then they are refused; scheduled syncs go on |
 | `content_sources.review_policy` | switching a rule source to the review promotion policy (create, update) | sources already on review keep it |
@@ -123,6 +124,34 @@ less than the grace period ago. The grace of a named feature is a row in
 feature). A refused change answers
 `403 FEATURE_NOT_INCLUDED`, or `503` when the limits could not be read; every
 seam fails closed.
+
+### Passive only (active scanning)
+
+An organization whose entitlements deny `active_scanning` runs passive work
+only (tier 0). The server enforces it, a hidden control is not enough:
+
+- **Dispatch.** Every path that hands a command to a sensor (the poll, the
+  claim by id, the claim-N poll and the shared sensors' claim) re-checks the
+  command (`command.Service.recheck`). The tier is computed on the server
+  from the stored dispatch record and the command type and tool
+  (`sensor.CommandTierFor`), never read from a request or a payload field.
+  Above tier 0 the job fails with `ACTIVE_SCANNING_NOT_ENTITLED`. The
+  sensor-side gate adds the tier the sensor's own tool contract gives the
+  job (a contract only raises it) and withholds the command with the rule
+  `active_scanning`. The lookup is by the command's own organization id.
+- **Create and run.** Scan create, update and trigger refuse a scan whose
+  tier (its intensity, or the tier of its tools when higher) is above
+  passive with `ACTIVE_SCANNING_NOT_ENTITLED`, in addition to the dispatch
+  check.
+- **Failure mode.** A lookup that cannot be read refuses tier above 0 (the job
+  stays queued and is retried at the next poll); tier 0 is never affected.
+- **Console.** `GET /api/v1/scans/capabilities` (`scans:read`, the
+  organization from the credential) answers `{"active_scanning": bool}`, so
+  the scan wizard offers a passive-only organization Passive intensity only
+  (and with it only passive tools and workflows), with one line saying the
+  organization runs passive scans only and no plan or upgrade text. It is
+  advice: the checks above still decide. A failed lookup answers 500 and
+  the console then hides nothing.
 
 ### Counting usage
 
@@ -180,6 +209,7 @@ so every path that adds a row passes it, whatever the caller:
 | `SensorPairingRepository.Approve` (new sensor, not a re-pair) | `sensors` | sensor pairing |
 | `APIKeyRepository.Create` | `api_keys` | API key create |
 | `CIRunRepository.CreateTrustConfig` | `ci_trusts` | CI trust create |
+| `SSOService.CreateProvider`, `SAMLService.BuildConfig` (only when the organization has no SAML configuration yet), `SSOChangeService` submit and approval of a create | `sso_connections` | OIDC provider create, first SAML configuration |
 | `findinglifecycle.Service.CreateSubStatus`, `CreateScheme` | `lifecycle_sub_statuses`, `lifecycle_schemes` | finding lifecycle catalog |
 | `contentsource.Service.Create` | `content_sources` | rule source create (platform sources never count) |
 | `contentsource.Service` sync (new snapshot) | `content_storage_mb`, `content_snapshot_max_mb` | scheduled, requested and webhook syncs; Test checks the per-item cap |
@@ -268,25 +298,35 @@ The control plane can only set limits, set denies and turn on the idle
 policy. Every one of these blocks additions or makes data read-only: nothing
 it can call deletes an organization or its data.
 
-## Future: signed licence for self-managed installs (design only, not built)
+## Grants: off unless granted (seam only in the open core)
 
 A self-hosted install gets every Community feature, and nothing here changes
-that. A signed licence file is a third source, with no change to any check of
-the sections above:
+that. Things that are off unless granted are a separate answer, with no change
+to any check of the sections above:
 
-- A **signed offline licence file** for self-managed installations. It does
-  not yield limits or denies: it only **adds** entitlement keys from a fixed
-  registry, and its meters are soft. The design is
-  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md); it is
-  not implemented yet. A control plane keeps writing limits and denies for a
-  hosted service.
+- The core defines the answer's shape (`pkg/domain/limits/grants.go`:
+  `GrantKey`, `GrantStatus`, `Grant`, `Notice`, `GrantProvider`) and asks it
+  only through `entitlement.Service.Addon` / `RequireAddon` (403
+  `ADDON_NOT_LICENSED` or `ADDON_LICENSE_EXPIRED`) and `Notices` (banners for
+  platform administrators). A grant never yields a limit or a deny.
+- The Community build registers no provider: every grant is `none`, there are
+  no notices, and no Community feature, limit or security control depends on
+  a grant. A provider error fails closed for grants only.
+- A build's extension may register one provider through the public extension
+  API; the provider, its grant keys and its source (a signed licence file, or
+  a hosted service's control plane) live in that extension
+  ([editions](../development/editions.md),
+  [RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md), which
+  lists the guarantees every provider keeps). A control plane keeps writing
+  limits and denies for a hosted service; a grant never replaces them.
 
 ## Code map
 
 - `pkg/domain/limits`: keys, `Limits`, `Limit`, `FeatureDeny`, origins,
   `Source`, `NoneSource`, `AllowAddition`, `ErrLimitReached`, `GracePeriod`.
 - `internal/app/entitlement`: the service (`service.go`), feature denies and
-  grace (`features.go`), the control-plane source and write (`sources.go`).
+  grace (`features.go`), the control-plane source and write (`sources.go`),
+  the grant seam (`grants.go`).
 - `internal/infra/postgres/limits_repository.go`: storage and usage counts,
   every query scoped by `tenant_id`; `limits_check.go`: the insert seam.
 - `internal/infra/http/handler/limits_handler.go`: console and organization

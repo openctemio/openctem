@@ -1,14 +1,14 @@
 # Editions: where paid-feature code goes
 
 This repository is the open core and the only place product code is written.
-A private overlay repository holds the paid (Enterprise) features only; a
-release builds the Community images from this tree and the Enterprise images
-from the same tree plus the overlay. The Community build must never contain
-Enterprise code.
+Paid features live in a separate extension repository; the Enterprise build
+is one custom build of OpenCTEM: its own Go module that imports this core's
+public packages and its extension, and calls `server.Main()`. The Community
+build never contains extension code.
 
-**Rule: paid-feature code is written only in the private overlay repository.
-The core gets extension points and entitlement keys only.** Never push overlay
-code here, not even to a branch.
+**Rule: paid-feature code is written only in its extension repository. The
+core gets generic extension points and the grant seam only.** Never push
+extension code here, not even to a branch.
 
 ## What lands here for a paid feature
 
@@ -25,14 +25,17 @@ code here, not even to a branch.
 
 | Path | Role |
 |---|---|
-| `api/internal/extension/` | registry the overlay registers routes, controllers, permissions and settings into |
-| `api/cmd/server/edition_*.go` | the build switch: `edition_ee.go` carries the `ee` build tag and is the only file that may |
-| `api/pkg/domain/limits/` | entitlement keys and their descriptions |
-| `api/ee/`, `web/src/ee/`, `web/src/app/(ee)/`, `web/console/src/ee/`, `web/console/src/app/(ee)/` | overlay mount points: git-ignored, empty in this repository |
-| `web/src/ee-stub/` | what the `@ee` alias resolves to in the default build |
+| `api/pkg/extension/` | the public back-end extension API (created with its first point) |
+| `api/pkg/server/` | `Main()`, the entry point a custom build calls from its own Go module |
+| `api/pkg/domain/limits/` | limit keys and their descriptions, and the grant seam |
+| `web/src/lib/extension/`, `web/src/extension-default/` | the public web extension API and the empty modules the `@extension/*` alias resolves to in the default build |
+| `web/src/extensions/`, `web/src/app/**/(extensions)/`, `web/console/src/app/**/(extensions)/` | web mount points: git-ignored, empty in this repository; an extension's build copies its web code there |
 
-The `extension` registry and `ee-stub` directories are created with the first
-extension-point change; the CODEOWNERS entries exist already.
+A build with extensions is its own Go module: it requires
+`github.com/openctemio/openctem/api`, imports its extensions and calls
+`server.Main()`. Go then lets it use only the public `api/pkg/...` packages,
+and its dependencies stay in its own `go.mod`. Nothing of an extension's Go
+code is ever placed in a checkout of this repository.
 
 ## The edition fence
 
@@ -40,20 +43,42 @@ extension-point change; the CODEOWNERS entries exist already.
 workflow `edition-fence.yml`) and in `.githooks/pre-commit`. It reads the git
 index and fails when:
 
-- a file under an overlay path is tracked (only `api/ee/README.md` may be), or
-  `.gitignore` lacks an overlay line;
-- a Go file imports the overlay (an `api/ee` package or a private module)
-  without the `ee` build tag;
-- the `ee` build tag appears outside `api/cmd/server/edition_ee.go`;
-- web code imports the overlay directory directly (the default build reaches it
-  only through the `@ee` alias), or names `src/ee` outside `web/next.config.*`;
-- the commercial brand name appears in a tracked file or path (the word list
-  lives in the script).
+- a file under a web mount point is tracked, or `.gitignore` lacks a mount
+  line;
+- `api/go.mod` has a `replace` directive (the core builds from public sources
+  and works as a dependency of a custom build);
+- web code imports a mount point directly (the default build reaches it only
+  through the `@extension/*` alias), or names `src/extensions` outside the web
+  build configs (`web/next.config.*`, `web/console/next.config.*`);
+- a restricted word appears in a tracked file or path. The list is not in this
+  repository: CI reads it from the `FENCE_RESTRICTED_WORDS` secret, and a
+  local clone may keep it in `.git/info/restricted-words` (one word per line).
+  Without a list this rule is skipped and the script says so; pull requests
+  from forks have no secrets, and the merge-queue run applies the rule.
 
-Run it by hand: `bash .github/scripts/check-edition-fence.sh`; its tests:
+The script prints the file and line of a hit, never the matched word. Run it by
+hand: `bash .github/scripts/check-edition-fence.sh`; its tests:
 `bash .github/scripts/check-edition-fence.test.sh`.
 
-## Paid-feature checklist
+## Extension data in the database
 
-The pull request template carries the same list: key registered, gated through
-the entitlement service, Community behaviour unchanged, docs badge.
+An extension keeps its tables in its own schema. The core is written so that a
+Community build runs unchanged on a database that also holds such a schema (a
+rollback, or a restored backup): every core probe of the catalog is limited to
+the core schema, and nothing in the core reads another schema
+(`internal/migrate/extension_schema_db_test.go` proves migrate up and down, the
+start-up schema check and the administrator bootstrap with clashing table
+names).
+
+Key rotation (`cmd/rekey`) re-encrypts only the locations it lists, all in
+the core schema. Until a rekey seam lets an extension list its own encrypted
+columns, **an extension stores no value encrypted with `APP_ENCRYPTION_KEY`**.
+The rotation's sweep covers every schema, so a value that breaks this rule
+stops the rotation (named, nothing committed) instead of being left unreadable
+under the new key (`TestRekey_SweepCoversExtensionSchemas`).
+
+## Extension-point checklist
+
+The pull request template carries the list: named by function with a
+Community default and a first user, covered by the example extension and a
+contract test, never gated by plan, tier, edition or brand name.

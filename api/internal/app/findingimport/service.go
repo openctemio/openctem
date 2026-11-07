@@ -19,8 +19,8 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
@@ -172,9 +172,12 @@ type FileResult struct {
 	SkippedByPolicyTotal int                    `json:"skipped_by_policy_total,omitempty"`
 	// Candidates are the imported hosts the organization's scope does not
 	// cover: they wait for review and are never scanned.
-	Candidates int            `json:"candidates,omitempty"`
-	VEX        *VEXSummary    `json:"vex,omitempty"`
-	Ingest     *ingest.Output `json:"ingest,omitempty"`
+	Candidates int `json:"candidates,omitempty"`
+	// Coverage is what the file proves about the findings it does not hold
+	// (filecoverage.go); nil for a format that says nothing.
+	Coverage *importer.ImportCoverage `json:"-"`
+	VEX      *VEXSummary              `json:"vex,omitempty"`
+	Ingest   *ingest.Output           `json:"ingest,omitempty"`
 }
 
 // Service imports uploaded files.
@@ -253,7 +256,21 @@ func (s *Service) FinishUpload(ctx context.Context, req Request, results []FileR
 		return
 	}
 	res := &ingestreceipt.UploadResult{Status: ingestreceipt.StatusCompleted}
-	if req.Coverage.Full {
+	// A file that carries its own coverage decides what it closes; the
+	// uploader declares nothing (filecoverage.go).
+	if closing, note := s.closeByFileCoverage(ctx, req, results, complete); closing != nil {
+		res.Closing = closing
+		res.Coverage = ingestreceipt.CoveragePartial
+		// The coverage notes speak of a declared coverage; a file's own
+		// coverage that proved nothing is explained by Closing alone.
+		if note != noteIncomplete && note != noteError {
+			res.CoverageNote = note
+			res.Coverage = ingestreceipt.CoverageFull
+			untouched := closing.Considered - closing.ClosedTotal()
+			res.Untouched = &untouched
+		}
+	}
+	if req.Coverage.Full && declaredTools(results) {
 		note := noteIncomplete
 		var untouched *int
 		if complete {
@@ -321,9 +338,6 @@ func (s *Service) ImportUpload(ctx context.Context, req Request, up Upload) (res
 	// A bundle is partial coverage by nature; a request that declares full
 	// coverage is refused for it rather than closing findings.
 	up.NoBundle = req.Coverage.Full
-	if up.ReportIDPrefix == "" {
-		up.ReportIDPrefix = req.SessionID
-	}
 	archive, refused = Convert(ctx, up, func(c Converted) {
 		results = append(results, s.store(ctx, req, c))
 	})
@@ -345,7 +359,7 @@ func (s *Service) ImportFile(ctx context.Context, req Request, index int, name s
 		req.ReceiptID = id
 		defer func() { s.FinishUpload(context.WithoutCancel(ctx), req, []FileResult{fr}, true) }()
 	}
-	up := Upload{Name: name, Body: r, ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, index)}
+	up := Upload{Name: name, Body: r}
 	if kb != nil {
 		b, err := io.ReadAll(io.LimitReader(kb, MaxKnowledgeBase+1))
 		if err != nil || len(b) > MaxKnowledgeBase {
@@ -377,6 +391,7 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 	}
 	fr.Stats = res.Stats
 	fr.Issues = res.Issues
+	fr.Coverage = res.Coverage
 	fr.Unmapped = res.Unmapped
 	if len(fr.Unmapped) > MaxUnmappedListed {
 		fr.UnmappedTotal = len(fr.Unmapped)
@@ -398,9 +413,6 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 			return fr
 		}
 		fr.ImportID = req.ReceiptID.String()
-		// The report id becomes the findings' scan_id: the upload is their
-		// producer, as a scan is.
-		res.Report.Metadata.ID = req.ReceiptID.String()
 	}
 
 	if !req.DryRun && hasContent(res.Report) {
@@ -473,9 +485,14 @@ func hasContent(r *ctis.Report) bool {
 // An upload never auto-resolves: its coverage is partial whatever the file
 // says.
 func (s *Service) ingestReport(ctx context.Context, req Request, report *ctis.Report, format importer.Format) (*ingest.Output, error) {
-	report.Metadata.CoverageType = string(ingest.CoverageTypePartial)
+	report.Metadata.CoverageType = ctis.CoveragePartial
 	report.Metadata.Branch = nil
+	// The receipt id is the findings' scan_id (the upload is their
+	// producer, as a scan is); it never goes into the document.
 	in := ingest.Input{Report: report, CoverageType: ingest.CoverageTypePartial}
+	if !req.ReceiptID.IsZero() {
+		in.ReportID = req.ReceiptID.String()
+	}
 	in.Options.Actor = req.Actor
 	in.Options.Receipt = &ingestreceipt.Source{Kind: ingestreceipt.SourceUpload, Ref: req.ReceiptID.String()}
 	// A person's file: an import for attribute reconciliation (RFC-069).

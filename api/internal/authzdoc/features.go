@@ -109,7 +109,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
 			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes", "registerWordlistRoutes", "registerContentRuleRoutes",
-			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
+			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes", "registerToolSourceRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
 	},
@@ -181,7 +181,7 @@ var Features = []Feature{
 		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits, support access grants and the audit log.",
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSecurityOverviewRoutes", "registerOrganizationSupportAccessRoutes",
-			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerClosureSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerEmergingThreatSettingsRoutes", "registerAISettingsRoutes", "registerLicensePolicySettingsRoutes",
+			"registerEvidenceSettingsRoutes", "registerCredentialSettingsRoutes", "registerRetestSettingsRoutes", "registerClosureSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerEmergingThreatSettingsRoutes", "registerAISettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
 			"registerFindingViewSettingsRoutes",
 			"registerSharedSensorsSettingsRoutes",
@@ -199,7 +199,7 @@ var Features = []Feature{
 		ID: "account", Title: "Sign-in and own account",
 		Description: "Authentication, the caller's own account, notifications, platform announcements, bootstrap data and the real-time socket.",
 		Registers: []string{
-			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
+			"registerAuthRoutes", "registerUserRoutes", "registerIdentityLinkRoutes", "registerSSOLinkRoutes", "registerNotificationRoutes", "registerBootstrapRoutes",
 			"registerWebSocketRoutes", "registerAnnouncementRoute",
 		},
 	},
@@ -212,7 +212,7 @@ var Features = []Feature{
 		ID: "system", Title: "System endpoints",
 		Description: "Health, metrics, version, API documentation and client error reports.",
 		Registers: []string{
-			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerClientErrorRoute", "registerLegalRoute", "registerBrandRoutes",
+			"registerHealthRoutes", "registerDocsRoutes", "registerVersionRoute", "registerLicensesRoute", "registerClientErrorRoute", "registerLegalRoute", "registerBrandRoutes",
 		},
 	},
 }

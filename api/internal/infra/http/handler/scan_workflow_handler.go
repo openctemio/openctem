@@ -301,7 +301,11 @@ type RunResponse struct {
 	// versions.
 	ScanWorkflowVersion int    `json:"scan_workflow_version,omitempty"`
 	SpecDigest          string `json:"spec_digest,omitempty"`
-	CreatedAt           string `json:"created_at"`
+	// ParentRunID is the split run this run is a zone run of; ZoneSplit
+	// describes the split (on the parent: one group per scan zone).
+	ParentRunID *string               `json:"parent_run_id,omitempty"`
+	ZoneSplit   *RunZoneSplitResponse `json:"zone_split,omitempty"`
+	CreatedAt   string                `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open.
@@ -639,6 +643,10 @@ type SkipReasonResponse struct {
 // StepRunResponse represents a step run in the response.
 type StepRunResponse struct {
 	ID string `json:"id"`
+	// EffectiveConfig is the standard params the step's command carried with
+	// their source; SensorSettings what the sensor reported it ran with.
+	EffectiveConfig *scanrundom.EffectiveConfig `json:"effective_config,omitempty"`
+	SensorSettings  *scanrundom.SensorSettings  `json:"sensor_settings,omitempty"`
 	// StepID is empty once the step was removed from the scan workflow; the step
 	// run keeps its key, name and tool.
 	StepID   string `json:"step_id,omitempty"`
@@ -654,10 +662,23 @@ type StepRunResponse struct {
 	ErrorCode    string  `json:"error_code,omitempty"`
 	// ErrorClass groups the code by what can fix it: config, scope,
 	// placement, policy, transient, tool, timeout or canceled.
-	ErrorClass    string `json:"error_class,omitempty"`
+	ErrorClass string `json:"error_class,omitempty"`
+	// SkipReason says why a skipped step did not run (no tool or sensor
+	// here runs it, a step it needs was skipped, its condition, depth or
+	// intensity); ErrorCode is the reason's code when it has one
+	// (NO_MATCHING_TOOL, TOOL_NOT_INSTALLED, TOOL_DISABLED,
+	// NO_SENSOR_FOR_TOOL, DEPENDENCY_SKIPPED).
+	SkipReason    string `json:"skip_reason,omitempty"`
 	Attempt       int    `json:"attempt"`
 	MaxAttempts   int    `json:"max_attempts"`
 	FindingsCount int    `json:"findings_count"`
+	// InfoObservations: template scanner info matches filed as exposures
+	// instead of findings.
+	InfoObservations int `json:"info_observations"`
+	// FindingsHeld / FindingsRefused: reported findings held for review and
+	// findings not stored (FindingsCount is what the sensor reported).
+	FindingsHeld    int `json:"findings_held"`
+	FindingsRefused int `json:"findings_refused"`
 }
 
 // --- Template Handlers ---
@@ -1280,6 +1301,14 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := withRunTriggerLabel(toRunResponse(run), runTriggerNames(r.Context(), h.users, h.logger, run))
+	if resp.ZoneSplit != nil && len(resp.ZoneSplit.Groups) > 0 {
+		// The zone runs, read in the run's tenant.
+		children, err := h.service.ZoneRuns(r.Context(), run)
+		if err != nil {
+			h.logger.Warn("failed to read the zone runs of a split run", "run_id", run.ID.String(), "error", err)
+		}
+		withZoneRunStatuses(resp.ZoneSplit, children)
+	}
 	tasks, err := h.service.GetRunTasks(r.Context(), run)
 	if err != nil {
 		h.logger.Error("failed to read run tasks", "run_id", run.ID.String(), "error", err)
@@ -1622,6 +1651,11 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		sid := r.ScanID.String()
 		resp.ScanID = &sid
 	}
+	if r.ParentRunID != nil {
+		pid := r.ParentRunID.String()
+		resp.ParentRunID = &pid
+	}
+	resp.ZoneSplit = toRunZoneSplit(r.Context)
 
 	if r.ScanProfileID != nil {
 		spid := r.ScanProfileID.String()
@@ -1831,18 +1865,25 @@ func toFilteringResultFromStruct(v any) *FilteringResultResponse {
 
 func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 	resp := StepRunResponse{
-		ID:            sr.ID.String(),
-		StepKey:       sr.StepKey,
-		StepName:      sr.StepName,
-		Tool:          sr.Tool,
-		Capability:    sr.Capability,
-		Status:        string(sr.Status),
-		ErrorMessage:  sr.ErrorMessage,
-		ErrorCode:     sr.ErrorCode,
-		ErrorClass:    stepErrorClass(sr.ErrorCode),
-		Attempt:       sr.Attempt,
-		MaxAttempts:   sr.MaxAttempts,
-		FindingsCount: sr.FindingsCount,
+		ID:               sr.ID.String(),
+		StepKey:          sr.StepKey,
+		StepName:         sr.StepName,
+		Tool:             sr.Tool,
+		Capability:       sr.Capability,
+		Status:           string(sr.Status),
+		ErrorMessage:     sr.ErrorMessage,
+		ErrorCode:        sr.ErrorCode,
+		ErrorClass:       stepErrorClass(sr.ErrorCode),
+		SkipReason:       sr.SkipReason,
+		Attempt:          sr.Attempt,
+		MaxAttempts:      sr.MaxAttempts,
+		FindingsCount:    sr.FindingsCount,
+		InfoObservations: sr.InfoObservations,
+		FindingsHeld:     sr.FindingsHeld,
+		FindingsRefused:  sr.FindingsRefused,
+
+		EffectiveConfig: sr.EffectiveConfig,
+		SensorSettings:  sr.SensorSettings,
 	}
 	if !sr.StepID.IsZero() {
 		resp.StepID = sr.StepID.String()

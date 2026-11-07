@@ -4,7 +4,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 )
 
 // Labels the platform sets on an endpoint when it stores it (research: web
@@ -88,3 +88,24 @@ func platformLabels(template string, params []ParamObservation) []string {
 	}
 	return out
 }
+
+// BackupSignatureTemplate is the sensor's compiled-in check that a guessed
+// backup, archive or dump URL serves the bytes of such a file (GET of the
+// exact URL, a match only on zip, gzip, tar or SQL dump bytes in a non-HTML
+// 200). The platform requests it by id; the sensor carries it, so no
+// template delivery is needed.
+const BackupSignatureTemplate = "openctem-backup-file-signature"
+
+// BackupSignatureTag is the tag of that template that no community template
+// carries. The platform sends it next to the id (scanner_config tags) as a
+// safeguard: a sensor that predates the template_ids setting ignores the id
+// and would run its default templates, but with this tag it loads none.
+const BackupSignatureTag = "openctem"
+
+// GuessedVerifyKey is the ledger key of a guessed file verified with
+// BackupSignatureTemplate (the verification ledger names a catalog key).
+const GuessedVerifyKey = "guess:backup"
+
+// GuessedVerifyLabels are the extension labels (ExtLabel) of a guessed
+// endpoint the backup signature check verifies.
+var GuessedVerifyLabels = []string{labelExtPrefix + ExtBackup, labelExtPrefix + ExtArchive, labelExtPrefix + ExtDBDump}

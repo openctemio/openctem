@@ -64,19 +64,32 @@ const SEVERITIES = [
   { value: 4, key: 'tenableSc.dialog.severity.critical', label: 'Critical only' },
 ]
 
-/** Each license rotation mode, with what it does (translated at render). */
-const ROTATION_TEXT: Record<CoverageRotation, { label: string; hint: string }> = {
+/**
+ * Each license rotation mode, with what it does and what it needs
+ * (translated at render).
+ */
+const ROTATION_TEXT: Record<CoverageRotation, { label: string; hint: string; needs?: string }> = {
   off: {
     label: 'Off',
     hint: 'Covers what the license holds. Assets Tenable.sc already counts are rescanned; new ones only while the license has room.',
   },
   aging: {
-    label: 'Aging',
-    hint: "Tenable.sc's nightly cleanup frees the license from the rotation repository's data; the next batch is tried after the wait below.",
+    label: 'Aging (recommended)',
+    hint: "Tenable.sc's nightly cleanup removes the rotation repository's aged data and frees the license. About one batch a day; the connector deletes nothing.",
+    needs:
+      'Needs a dedicated universal rotation repository, picked as the coverage repository, with every vulnerability lifetime set to 1 day. The cleanup runs nightly, so the wait is at least 24 hours.',
+  },
+  purge: {
+    label: 'Purge (Beta, unverified)',
+    hint: "Before each batch the connector removes the previous batch's addresses from its rotation repository by importing an empty result, once those results are ingested. Faster than aging; removed data cannot be recovered.",
+    needs:
+      'Needs operation purge and a dedicated purge rotation repository in the connector configuration. No administrator key. If the connector cannot confirm the license dropped, rotation stalls.',
   },
   recycle: {
-    label: 'Recycle',
-    hint: 'The connector deletes and recreates its rotation repository before each batch, once the previous results are ingested.',
+    label: 'Recycle (Beta, unverified)',
+    hint: 'Before each batch the connector creates a verified copy of its rotation repository and only then deletes the old one, once the previous results are ingested.',
+    needs:
+      'Needs a Tenable.sc Administrator API key configured on the connector (recycle block with two rotation repository names). The administrator key is used only for the rotation repositories.',
   },
 }
 
@@ -470,6 +483,11 @@ export function RotationFields({
         <p className="text-muted-foreground text-xs" data-testid="tsc-rotation-hint">
           {t(`tenableSc.dialog.rotationHint.${rotation}`, ROTATION_TEXT[rotation].hint)}
         </p>
+        {ROTATION_TEXT[rotation].needs && (
+          <p className="text-muted-foreground text-xs" data-testid="tsc-rotation-needs">
+            {t(`tenableSc.dialog.rotationNeeds.${rotation}`, ROTATION_TEXT[rotation].needs ?? '')}
+          </p>
+        )}
       </div>
       {rotation !== 'off' && (
         <>
@@ -504,7 +522,7 @@ export function RotationFields({
               <p className="text-muted-foreground text-xs">
                 {t(
                   'tenableSc.dialog.rotationWaitHint',
-                  "1 to 72 hours, 12 by default. Match it to Tenable.sc's nightly cleanup; the license check before each batch confirms the capacity is free."
+                  "24 to 72 hours, 26 by default. Lifetimes apply only at Tenable.sc's nightly cleanup, so a shorter wait cannot see the license freed; the license check before each batch confirms the capacity."
                 )}
               </p>
             </div>

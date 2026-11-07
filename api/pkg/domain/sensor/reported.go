@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 )
 
 // Limits on a capability report. Anything beyond them is dropped: the report
@@ -74,6 +74,15 @@ const CapabilityScopeLimits = "scope.limits@1"
 // claimable only by a sensor that reported it; what an administrator
 // declares never counts.
 const CapabilityNetConfined = "net.confined@1"
+
+// CapabilityIsolationStrong is the capability of a sensor that proved a
+// strong isolation backend at start-up (sdk-go executor.
+// CapabilityIsolationStrong): a task of a tool whose manifest says
+// `isolation: strong` runs on it. A job of such a tool
+// (command.PayloadKeyRequiredFeatures) is claimable only by a sensor that
+// reported it, and waits otherwise; what an administrator declares never
+// counts.
+const CapabilityIsolationStrong = "isolation.strong@1"
 
 // CapabilityEgressUpstream is the capability of a sensor that runs a job's
 // tool connections through the job's proxy pool (the "egress" member) from
@@ -397,7 +406,7 @@ func (in CapabilityReportInput) CatalogCandidates() (tools, capabilities []strin
 
 // Sanitize keeps what is well-formed and known: tools in the tool catalog
 // (knownTools) or sensor service tools (sensorServiceTools), and capabilities that are in the capability registry
-// (knownCaps), in the OpenCTEM capability taxonomy (ctis/capability), name a
+// (knownCaps), in the OpenCTEM capability taxonomy (contract/capability), name a
 // known tool, or are "validate" / "validate:<known tool>". Lists are capped and deduplicated, versions and the platform are
 // reduced to safe tokens, and the concurrency is clamped to
 // 1..MaxReportedJobs. A list that was reported stays non-nil even when
@@ -501,7 +510,7 @@ func knownCapability(c string, knownTools, knownCaps map[string]bool) bool {
 	if knownCaps[c] || knownTools[c] || slices.Contains(sensorWideCapabilities, c) {
 		return true
 	}
-	// A capability of the OpenCTEM taxonomy (ctis/capability), as sensors on
+	// A capability of the OpenCTEM taxonomy (contract/capability), as sensors on
 	// the tool contract report them: "scan.ports" or "scan.ports@1"
 	// (RFC-055). The legacy words above stay accepted until OC5.
 	if _, ok := capability.Lookup(c); ok {

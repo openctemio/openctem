@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -72,7 +73,30 @@ type ToolResult struct {
 // or "unverifiable". A "fixed" verdict is only a confirmed fix when its
 // evidence proves the finding's endpoint was requested and answered
 // (decideNotMatched); a bare "fixed" is "not reproduced".
+//
+// A run that did not finish by itself (command.RunStopped: a non-zero exit, a
+// kill, a sensor stop) never proves a fix: a "fixed" or "not reproduced"
+// verdict from it is inconclusive. A match it reports still stands.
 func DecideToolVerdict(raw json.RawMessage, findingID, matchedAt string, cls ...Class) ToolResult {
+	out := decideToolVerdict(raw, findingID, matchedAt, cls...)
+	out.Verdict = GuardStopped(out.Verdict, raw)
+	return out
+}
+
+// GuardStopped turns a verdict that would close or clear a finding
+// (confirmed fixed, not reproduced) inconclusive when the run's result says
+// it stopped before it finished.
+func GuardStopped(v Verdict, raw json.RawMessage) Verdict {
+	if v.Outcome != OutcomeConfirmedFixed && v.Outcome != OutcomeNotReproduced {
+		return v
+	}
+	if stopped, _ := command.RunStopped(raw); stopped {
+		return inconclusive(ReasonError, "the check's run did not finish (non-zero exit or stopped); a fix is not proven")
+	}
+	return v
+}
+
+func decideToolVerdict(raw json.RawMessage, findingID, matchedAt string, cls ...Class) ToolResult {
 	if len(raw) == 0 {
 		return ToolResult{Verdict: inconclusive(ReasonNoResult, "the tool reported no result")}
 	}

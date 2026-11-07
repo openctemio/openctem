@@ -78,6 +78,31 @@ func TestEvaluateCommandCoverage_RecordsProposals(t *testing.T) {
 			t.Fatalf("held: outcome %+v, recorded %+v", out, pr.recorded)
 		}
 	})
+	t.Run("held run under off: nothing proposed, nothing closed", func(t *testing.T) {
+		svc, repo, _, _ := closureCase(t, fixedClosure{Mode: tenant.ClosingModeOff})
+		repo.open = 2
+		svc.SetCoverageAutoResolve(CoverageAutoResolveEnforce, BlindingGuard{Ratio: 0.5, MinFindings: 1})
+		pr := &proposalRepo{coverageFindingRepo: repo}
+		svc.findingRepo = pr
+		out := svc.EvaluateCommandCoverage(ctx, shared.NewID(), shared.NewID())
+		if !out.Held || len(repo.resolved) != 0 || len(pr.recorded) != 0 || len(out.Proposed) != 0 {
+			t.Fatalf("held under off: outcome %+v, recorded %+v", out, pr.recorded)
+		}
+	})
+	t.Run("held run: an id the tier query does not return is not proposed", func(t *testing.T) {
+		svc, repo, _, medium := closureCase(t, fixedClosure{Mode: tenant.ClosingModeAuto})
+		foreign := shared.NewID() // another tenant's finding: the tenant-scoped tier read omits it
+		repo.stale = []shared.ID{medium, foreign}
+		repo.unknown = map[shared.ID]bool{foreign: true}
+		repo.open = 2
+		svc.SetCoverageAutoResolve(CoverageAutoResolveEnforce, BlindingGuard{Ratio: 0.5, MinFindings: 1})
+		pr := &proposalRepo{coverageFindingRepo: repo}
+		svc.findingRepo = pr
+		out := svc.EvaluateCommandCoverage(ctx, shared.NewID(), shared.NewID())
+		if !out.Held || len(pr.recorded) != 1 || pr.recorded[0].FindingID != medium {
+			t.Fatalf("held cross-tenant: outcome %+v, recorded %+v", out, pr.recorded)
+		}
+	})
 	t.Run("dry run records nothing", func(t *testing.T) {
 		svc, repo, _, _ := closureCase(t, fixedClosure{Mode: tenant.ClosingModeReview})
 		svc.SetCoverageAutoResolve(CoverageAutoResolveDryRun, BlindingGuard{})

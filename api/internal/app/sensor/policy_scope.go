@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/ctis/addrscope"
+	"github.com/openctemio/contract/addrscope"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 )
@@ -23,6 +23,9 @@ import (
 const (
 	PolicySourceZones = "zones"
 	PolicySourceScope = "scope"
+	// PolicySourceHostPin: the networks a person entered when adding the
+	// sensor and chose to pin on its host (InstallIntent.AllowedRanges).
+	PolicySourceHostPin = "host_pin"
 )
 
 // MaxPolicyPrefillEntries caps each list of the prefill. The sensor accepts

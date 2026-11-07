@@ -70,6 +70,13 @@ func (s State) Automatic() bool {
 	return false
 }
 
+// AutomaticAllowed reports whether automation may store this decision: an
+// automatic state, or the provider-shared record of a published shared
+// front-end address (StateDependency with RuleProviderSharedFrontEnd).
+func (d Decision) AutomaticAllowed() bool {
+	return d.State.Automatic() || (d.State == StateDependency && d.Reason == RuleProviderSharedFrontEnd)
+}
+
 // StateUnattributed is never stored: it is the active-scan gate's answer for
 // an internet-facing asset with no attribution record that is neither inside
 // an active scope target nor at or under one of the tenant's root-domain
@@ -145,6 +152,12 @@ const (
 	// named in a result). Medium: it brings a name into the inventory as
 	// discovered, and never confirms one on its own (research/22 E7).
 	RuleScanDiscovered Rule = "tenant_scan_discovered"
+	// RuleProviderSharedFrontEnd: an address a scan found inside a range a
+	// provider publishes for a front end many organizations share
+	// (edgeaddr.SharedFrontEnd). It is recorded as the provider's
+	// (StateDependency), never as the tenant's own internet-facing asset;
+	// the names that resolve to it stay the tenant's.
+	RuleProviderSharedFrontEnd Rule = "provider_shared_front_end"
 	// RuleMatchesScopeTarget: an active, permanent scope target of the
 	// tenant (or a root-domain seed) covers the name; an IP address only
 	// through an IP, range or CIDR entry that contains it. A declared scope

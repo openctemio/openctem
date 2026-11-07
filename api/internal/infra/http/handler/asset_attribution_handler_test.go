@@ -285,3 +285,64 @@ func TestAssetAttributionHandler_CoveredByHidesHiddenEndpoint(t *testing.T) {
 		t.Errorf("visible endpoint dropped: %s", rec.Body)
 	}
 }
+
+// scopedByUser sees an asset of a non-network type (a credential) the way the
+// asset endpoints do: an admin sees all, a member only the assets in their
+// data scope, and the caller's identity reaches the check.
+type scopedByUser struct {
+	allowedUser string
+	gotUser     *string
+	gotAdmin    *bool
+}
+
+func (s scopedByUser) GetAssetWithScope(_ context.Context, _, _ string, user string, isAdmin bool) (*assetdom.Asset, error) {
+	*s.gotUser, *s.gotAdmin = user, isAdmin
+	if isAdmin || user == s.allowedUser {
+		return nil, nil
+	}
+	return nil, shared.ErrForbidden
+}
+
+// A credential asset answers the attribution request under the same tenant
+// and data-scope rule as the asset itself: an admin and a member with access
+// get an answer, a member outside the asset's data scope gets 404 and nothing
+// is read.
+func TestAssetAttributionHandler_CredentialAssetFollowsAssetAccess(t *testing.T) {
+	tenant := shared.NewID()
+	get := func(user string, admin bool, assets ScopedAssetGetter, reader *fakeAttrReader) int {
+		h := NewAssetAttributionHandler(reader, assets, logger.NewNop())
+		ctx := context.WithValue(context.Background(), middleware.TenantIDKey, tenant.String())
+		ctx = context.WithValue(ctx, middleware.UserIDKey, user)
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/assets/x/attribution", nil)
+		req.SetPathValue("id", shared.NewID().String())
+		h.Get(rec, req)
+		return rec.Code
+	}
+	var gotUser string
+	var gotAdmin bool
+	assets := scopedByUser{allowedUser: "member-with-access", gotUser: &gotUser, gotAdmin: &gotAdmin}
+
+	for name, tc := range map[string]struct {
+		user  string
+		admin bool
+		want  int
+		read  bool
+	}{
+		"admin":                {user: "admin-1", admin: true, want: http.StatusOK, read: true},
+		"member with access":   {user: "member-with-access", want: http.StatusOK, read: true},
+		"member outside scope": {user: "member-other", want: http.StatusNotFound},
+	} {
+		reader := &fakeAttrReader{view: &postgres.AttributionView{}}
+		if code := get(tc.user, tc.admin, assets, reader); code != tc.want {
+			t.Errorf("%s: status %d, want %d", name, code, tc.want)
+		}
+		if gotUser != tc.user || gotAdmin != tc.admin {
+			t.Errorf("%s: scope check saw user=%q admin=%v", name, gotUser, gotAdmin)
+		}
+		if read := !reader.asked.IsZero(); read != tc.read {
+			t.Errorf("%s: attribution read=%v, want %v", name, read, tc.read)
+		}
+	}
+}

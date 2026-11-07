@@ -123,6 +123,7 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"PUT /api/v1/admin/settings/console-mfa/":                                admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/email/":                                      admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/email-relay/":                                admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/settings/leaked-secret-storage/":                      admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/legal/":                                      admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/limits/":                                     admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":                      admin.AdminRoleSuperAdmin,
@@ -151,6 +152,7 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement":                   admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}":       admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/saml":                          admin.AdminRoleSuperAdmin,
+	"POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata":            admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/version-check/enabled":                                admin.AdminRoleSuperAdmin,
 }
 

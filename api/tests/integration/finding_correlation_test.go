@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
@@ -53,9 +53,9 @@ func (c *corrRig) scan(t *testing.T, tn v2Tenant, asset string, fs ...ctis.Findi
 	for i := range fs {
 		fs[i].AssetRef = "a"
 	}
-	rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nuclei"},
-		Metadata: ctis.ReportMetadata{ID: shared.NewID().String(), Timestamp: time.Now().UTC()},
-		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomain, Value: tn.tenant.String()[:8] + "." + asset}},
+	rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"},
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()},
+		Assets:   []ctis.Asset{{ID: "a", Type: ctis.AssetTypeDomainName, Value: tn.tenant.String()[:8] + "." + asset}},
 		Findings: fs}
 	if out, err := c.r.svc.Ingest(context.Background(), agt, ingest.Input{Report: rep}); err != nil || len(out.Errors) > 0 {
 		t.Fatalf("ingest: %v %+v", err, out)
@@ -161,7 +161,7 @@ func corrPair(sevA, sevB string) (generic, specific ctis.Finding) {
 		u := "https://shop.example.com" + path
 		f := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: rule, Severity: ctis.Severity(sev), RuleID: rule,
 			Location: &ctis.FindingLocation{Path: u}, Web: &ctis.WebLocation{URL: u, Method: "GET"},
-			Vulnerability: &ctis.VulnerabilityDetails{CWEID: "CWE-601", CWEIDs: []string{"CWE-601"}, CVEID: cve},
+			Vulnerability: &ctis.VulnerabilityDetails{CWEIDs: []string{"CWE-601"}, IDs: cveIDsOf(cve)},
 			EvidenceItems: []ctis.EvidenceItem{{Kind: "http_exchange", Version: 1, HTTP: &ctis.EvidenceHTTP{
 				Request:  &ctis.EvidenceRequest{Method: "GET", URL: u},
 				Response: &ctis.EvidenceResponse{Status: 302, Headers: []ctis.EvidenceHeader{{Name: "Location", Value: loc}}}}}}}

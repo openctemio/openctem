@@ -110,9 +110,47 @@ describe('StepUpDialogHost', () => {
     await user.click(input)
     await user.paste('000 000')
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'That code is not valid or was already used.'
+      `That code is not valid. Use the current code from the authenticator entry for ${window.location.hostname}.`
     )
     expect(input).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  })
+
+  it('a reused code gets its own message, not "not valid"', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? jsonResponse(403, { code: 'STEP_UP_CODE_USED', message: 'already used' })
+        : jsonResponse(200, { method: 'totp', window_seconds: 600 })
+    )
+    render(<StepUpDialogHost />)
+    act(() => {
+      void requestStepUp()
+    })
+    const input = await screen.findByLabelText('Code from your authenticator app')
+    await user.click(input)
+    await user.paste('123456')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('That code was already used. Wait for the next code')
+    expect(alert).not.toHaveTextContent('not valid')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  })
+
+  it('too many attempts gets the rate-limit message', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? jsonResponse(429, { code: 'RATE_LIMITED', message: 'Too many requests' })
+        : jsonResponse(200, { method: 'totp', window_seconds: 600 })
+    )
+    render(<StepUpDialogHost />)
+    act(() => {
+      void requestStepUp()
+    })
+    const input = await screen.findByLabelText('Code from your authenticator app')
+    await user.click(input)
+    await user.paste('123456')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts')
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
   })
 

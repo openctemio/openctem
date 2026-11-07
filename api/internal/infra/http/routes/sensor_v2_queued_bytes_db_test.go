@@ -21,7 +21,7 @@ import (
 )
 
 func TestSensorV2_QueuedBytesCeiling(t *testing.T) {
-	seg := func(name string) []byte { return v2Segment("semgrep", "1.0", name) }
+	seg := func(name string) []byte { return v2Segment("semgrep", "2.0", name) }
 	size := int64(len(seg("s0")))
 	// Room for two segments of this size (same-size segments), a started
 	// report for four.
@@ -57,7 +57,7 @@ func TestSensorV2_QueuedBytesCeiling(t *testing.T) {
 // A queue whose bytes cannot be read refuses (fail closed).
 func TestSensorV2_QueuedBytesUnreadableRefuses(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{maxQueuedBytes: 1 << 20, depth: brokenDepth{on: true}})
-	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), v2Segment("semgrep", "1.0", "a"))
+	resp, raw := h.do(http.MethodPut, "/api/v2/sensor/results/"+newReportID(), v2Segment("semgrep", "2.0", "a"))
 	h.expect(resp, raw, 503, "unavailable")
 }
 
@@ -65,7 +65,7 @@ func TestSensorV1_QueuedJobSealedReadAndEmptied(t *testing.T) {
 	h := newV2Harness(t, v2HarnessOpts{})
 	ctx := context.Background()
 	tenantID, sensorID := shared.MustIDFromString(h.tenantID), shared.MustIDFromString(h.sensorID)
-	report := []byte(`{"version":"1.0","metadata":{"id":"v1-sealed","source_type":"scanner"},"tool":{"name":"semgrep"},` +
+	report := []byte(`{"version":"2.0","metadata":{"id":"01936f4e-7b8c-7d4e-9f00-0123456789ab","generated_at":"2026-10-01T12:00:00Z","channel":"scanner"},"tool":{"name":"semgrep","techniques":["sast"]},` +
 		`"assets":[{"id":"repo","type":"repository","value":"github.com/acme/v1-sealed"}],` +
 		`"findings":[{"type":"vulnerability","title":"` + secretMarker + `","severity":"high","rule_id":"r1","asset_ref":"repo"}]}`)
 	t.Cleanup(func() {

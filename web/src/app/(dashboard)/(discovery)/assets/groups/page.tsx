@@ -20,6 +20,7 @@ import {
   BulkActionBar,
   FilterSheet,
   PageStack,
+  useFilterPanelOpen,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -86,6 +87,7 @@ import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { confirmName } from '@/lib/confirm-name'
+import { shareableLink } from '@/lib/org-link'
 
 // ============================================
 // CONSTANTS
@@ -165,25 +167,8 @@ export default function AssetGroupsPage() {
   const riskRange: [number, number] = riskDraft ?? [riskMin, riskMax]
 
   // Filter panel: closed by default; the viewer's choice is remembered.
-  const [filtersOpen, setFiltersOpenState] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(FILTERS_OPEN_KEY)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(FILTERS_OPEN_KEY) === '1') setFiltersOpenState(true)
-    } catch {
-      // storage unavailable — stay closed
-    }
-  }, [])
-  const toggleFiltersOpen = useCallback(() => {
-    setFiltersOpenState((prev) => {
-      try {
-        window.localStorage.setItem(FILTERS_OPEN_KEY, prev ? '0' : '1')
-      } catch {
-        // best-effort
-      }
-      return !prev
-    })
-  }, [])
 
   // Dialog state
   const [viewGroup, setViewGroup] = useState<AssetGroup | null>(null)
@@ -380,7 +365,7 @@ export default function AssetGroupsPage() {
   }
 
   const handleCopyLink = (id: string) => {
-    copyToClipboard(`${window.location.origin}/assets/groups/${id}`)
+    copyToClipboard(shareableLink(`/assets/groups/${id}`))
     toast.success(t('assetGroups.linkCopied', 'Link copied'))
   }
 
@@ -751,7 +736,7 @@ export default function AssetGroupsPage() {
                   }}
                   filterToggle={{
                     open: filtersOpen,
-                    onToggle: toggleFiltersOpen,
+                    onToggle: () => setFiltersOpen((o) => !o),
                     onOpenSheet: () => setFilterSheetOpen(true),
                     activeCount: activeFilterCount,
                     controlsId: 'asset-group-filters',

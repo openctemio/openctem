@@ -177,6 +177,8 @@ export interface ScanWorkflowStep {
   /** How the step picks its tool: pin (tool), prefer (prefer_tools) or auto. */
   tool_selection?: 'auto' | 'prefer' | 'pin'
   config?: Record<string, unknown>
+  /** Depth policy: per-depth overlays of the capability's standard params, min depth. */
+  run_policy?: Record<string, unknown>
   timeout_seconds?: number
   depends_on?: string[]
   condition?: StepCondition
@@ -351,6 +353,32 @@ export interface ScanRun {
   tasks_next_cursor?: string
   /** The targets that waited for their scan windows when the run started (RFC-067). */
   window_waits?: Schemas['internal_infra_http_handler.RunWindowWaitsResponse']
+  /** The split run this run is a zone run of (targets in several scan zones). */
+  parent_run_id?: string
+  /** A run split over scan zones: on the parent one group per zone, on a zone run its zone. */
+  zone_split?: RunZoneSplit
+}
+
+/** One zone group of a workflow run split over scan zones. */
+export interface RunZoneGroup {
+  zone_id?: string
+  /** Empty for the targets outside every scan zone. */
+  zone_name?: string
+  targets: number
+  status: 'started' | 'refused'
+  reason?: string
+  run_id?: string
+  run_status?: ScanRunStatus
+  total_findings?: number
+}
+
+export interface RunZoneSplit {
+  parent_run_id?: string
+  zone_id?: string
+  zone_name?: string
+  part?: number
+  parts?: number
+  groups?: RunZoneGroup[]
 }
 
 // ============================================
