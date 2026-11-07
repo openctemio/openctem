@@ -42,6 +42,9 @@ vi.mock('@/lib/permissions', () => ({
     SensorsApprove: 'sensors:approve',
     SensorsRead: 'sensors:read',
     ScanZonesRead: 'zones:read',
+    ScanZonesWrite: 'sensors:zones:write',
+    SensorsGrantWiden: 'sensors:grant:widen',
+    ScopeWrite: 'attack_surface:scope:write',
   },
   useHasPermission: (p: string) => perms.granted.has(p),
 }))
@@ -68,7 +71,16 @@ vi.mock('@/lib/api/sensor-pairing-hooks', () => ({
   },
 }))
 
-import { EnterCodePanel } from '../sensor-pairing-steps'
+const scope = vi.hoisted(() => ({ bulk: vi.fn(), report: vi.fn() }))
+vi.mock('@/features/scope/api/use-scope-api', () => ({
+  createScopeTargetsBulk: scope.bulk,
+  invalidateScopeCache: vi.fn(async () => undefined),
+}))
+vi.mock('@/features/scope/components/add-to-scope-action', () => ({
+  reportBulkResult: scope.report,
+}))
+
+import { EnterCodePanel, PairingReview } from '../sensor-pairing-steps'
 
 const onApproved = vi.fn()
 const onClose = vi.fn()
@@ -401,6 +413,116 @@ describe('EnterCodePanel', () => {
       expect(
         await screen.findByText(/This request replaces the key of an existing sensor/)
       ).toHaveAttribute('role', 'alert')
+    })
+  })
+
+  describe('trust and networks at approval', () => {
+    const setupPerms = [
+      'sensors:pair',
+      'sensors:approve',
+      'zones:read',
+      'sensors:zones:write',
+      'sensors:grant:widen',
+      'attack_surface:scope:write',
+    ]
+    const review = (over: Record<string, unknown> = {}, ranges?: string[]) => (
+      <PairingReview
+        view={pendingView({ mode: 'reverse', trust_eligible: true, ...over }) as never}
+        onApproved={onApproved}
+        onDone={onClose}
+        defaultRanges={ranges}
+      />
+    )
+
+    it('sends trusted and the stated networks, then adds them to scope as its own request', async () => {
+      perms.granted = new Set(setupPerms)
+      api.approve.mockResolvedValue({ ...pendingView(), status: 'approved', sensor_id: 's1' })
+      scope.bulk.mockResolvedValue({ created: 1 })
+      const user = userEvent.setup()
+      render(review({}, ['10.0.0.0/16']))
+      const trusted = await screen.findByRole('checkbox', { name: /trusted for active scanning/i })
+      await user.click(trusted)
+      expect(trusted).toBeChecked()
+      expect(screen.getByLabelText(/networks it scans/i)).toHaveValue('10.0.0.0/16')
+      await user.type(screen.getByLabelText(/networks it scans/i), ', 192.168.5.7')
+      expect(
+        screen.getByRole('checkbox', { name: /also add these networks to scope/i })
+      ).toBeChecked()
+      await pick(user)
+      await user.type(screen.getByLabelText('Authenticator code'), '123456')
+      await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
+      await waitFor(() => expect(api.approve).toHaveBeenCalledTimes(1))
+      expect(api.approve).toHaveBeenCalledWith(
+        'p1',
+        expect.objectContaining({
+          trusted: true,
+          ranges: ['10.0.0.0/16', '192.168.5.7'],
+          grant_profile: 'internal-network-scanner',
+        })
+      )
+      // Scope goes through the scope service after the approval.
+      await waitFor(() => expect(scope.bulk).toHaveBeenCalledTimes(1))
+      expect(scope.bulk.mock.invocationCallOrder[0]).toBeGreaterThan(
+        api.approve.mock.invocationCallOrder[0]
+      )
+      expect(scope.bulk).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [
+            { target_type: 'cidr', pattern: '10.0.0.0/16' },
+            { target_type: 'ip_address', pattern: '192.168.5.7' },
+          ],
+        })
+      )
+      expect(scope.report).toHaveBeenCalled()
+    })
+
+    it('starts with Trusted unticked: an explicit choice, never a default', async () => {
+      perms.granted = new Set(setupPerms)
+      api.approve.mockResolvedValue({ ...pendingView(), status: 'approved', sensor_id: 's1' })
+      const user = userEvent.setup()
+      render(review({}, ['10.0.0.0/16']))
+      expect(
+        await screen.findByRole('checkbox', { name: /trusted for active scanning/i })
+      ).not.toBeChecked()
+      await user.click(screen.getByRole('checkbox', { name: /also add these networks to scope/i }))
+      await pick(user)
+      await user.type(screen.getByLabelText('Authenticator code'), '123456')
+      await user.click(screen.getByRole('button', { name: /^approve into acme$/i }))
+      await waitFor(() => expect(api.approve).toHaveBeenCalledTimes(1))
+      expect(api.approve.mock.calls[0][1].trusted).toBeUndefined()
+      expect(scope.bulk).not.toHaveBeenCalled()
+    })
+
+    it('offers no Trusted box for a sensor-started code, without the widen permission, or on a re-pair', async () => {
+      perms.granted = new Set(setupPerms)
+      const { unmount } = render(review({ mode: 'forward', trust_eligible: false }))
+      await screen.findByRole('radio', { name: '512, tiger, violet, anchor' })
+      expect(screen.queryByRole('checkbox', { name: /trusted/i })).toBeNull()
+      unmount()
+
+      perms.granted = new Set(setupPerms.filter((p) => p !== 'sensors:grant:widen'))
+      const second = render(review())
+      await screen.findByRole('radio', { name: '512, tiger, violet, anchor' })
+      expect(screen.queryByRole('checkbox', { name: /trusted/i })).toBeNull()
+      second.unmount()
+
+      perms.granted = new Set(setupPerms)
+      render(review({ repair_sensor_id: 's9', repair_sensor_name: 'old' }))
+      await screen.findByRole('radio', { name: '512, tiger, violet, anchor' })
+      expect(screen.queryByTestId('approval-setup')).toBeNull()
+    })
+
+    it('hides the networks without sensors:zones:write, and scope without scope:write', async () => {
+      perms.granted = new Set(setupPerms.filter((p) => p !== 'sensors:zones:write'))
+      const { unmount } = render(review({}, ['10.0.0.0/16']))
+      await screen.findByRole('checkbox', { name: /trusted/i })
+      expect(screen.queryByLabelText(/networks it scans/i)).toBeNull()
+      unmount()
+
+      perms.granted = new Set(setupPerms.filter((p) => p !== 'attack_surface:scope:write'))
+      render(review({}, ['10.0.0.0/16']))
+      expect(await screen.findByLabelText(/networks it scans/i)).toBeInTheDocument()
+      expect(screen.queryByRole('checkbox', { name: /scope/i })).toBeNull()
     })
   })
 })

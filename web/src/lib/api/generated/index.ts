@@ -142,6 +142,7 @@ export type EvidenceItem = Schemas['github_com_openctemio_openctem_api_pkg_domai
 export type ScopeTargetResponse = Schemas['internal_infra_http_handler.ScopeTargetResponse']
 export type ScopeExclusionResponse = Schemas['internal_infra_http_handler.ScopeExclusionResponse']
 export type ScopeStatsResponse = Schemas['internal_infra_http_handler.ScopeStatsResponse']
+export type ScopeReplaceResponse = Schemas['internal_infra_http_handler.ScopeReplaceResponse']
 export type CheckScopeResponse = Schemas['internal_infra_http_handler.CheckScopeResponse']
 export type ScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
 export type ScopeBulkOperationResponse =

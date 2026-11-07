@@ -111,6 +111,9 @@ export function useFilterLabels() {
       if (field.name === 'related_to' && value === 'me') {
         return t('findings.filter.value.me', 'Me')
       }
+      if (field.name === 'asset_type') {
+        return t(`assets.typeLabel.${value}`, humanize(value))
+      }
       if (field.type === 'enum') {
         return t(`findings.filter.value.${field.name}.${value}`, humanize(value))
       }

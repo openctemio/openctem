@@ -266,6 +266,9 @@ const GROUP_OF: Record<string, FieldGroup> = {
   kev_ransomware: 'exploitation',
   exploit_available: 'exploitation',
   is_reachable: 'exploitation',
+  asset_type: 'asset',
+  asset_domain: 'asset',
+  asset_name: 'asset',
   asset_tag: 'asset',
   asset_criticality: 'asset',
   asset_group_id: 'asset',
@@ -293,6 +296,9 @@ const NOT_PICKABLE: ReadonlySet<string> = new Set([
 
 /** Fields derived from the asset: reading them needs permission to read assets. */
 export const ASSET_FIELDS: ReadonlySet<string> = new Set([
+  'asset_type',
+  'asset_domain',
+  'asset_name',
   'asset_tag',
   'asset_criticality',
   'asset_group_id',

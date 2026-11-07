@@ -66,9 +66,6 @@ type Repository interface {
 	// Platform Job Queue Methods (v3.2)
 	// ==========================================================================
 
-	// GetByAuthTokenHash retrieves a command by auth token hash.
-	GetByAuthTokenHash(ctx context.Context, hash string) (*Command, error)
-
 	// CountActivePlatformJobsByTenant counts active platform jobs for a tenant.
 	// Active = pending, acknowledged, or running.
 	CountActivePlatformJobsByTenant(ctx context.Context, tenantID shared.ID) (int, error)
@@ -100,9 +97,6 @@ type Repository interface {
 	// step that is already dead. A raw UPDATE here is what left scans hanging
 	// until an unrelated timeout controller reported a generic failure.
 	FindQueueExpiredPlatformJobs(ctx context.Context, maxQueueMinutes int) ([]*Command, error)
-
-	// GetQueuePosition gets the queue position for a specific command.
-	GetQueuePosition(ctx context.Context, commandID shared.ID) (*QueuePosition, error)
 
 	// ListPlatformJobsByTenant lists platform jobs for a tenant.
 	ListPlatformJobsByTenant(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*Command], error)

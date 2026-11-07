@@ -1,0 +1,11 @@
+DROP TRIGGER IF EXISTS trg_asset_relationships_domain_update ON asset_relationships;
+DROP TRIGGER IF EXISTS trg_asset_relationships_domain_delete ON asset_relationships;
+DROP TRIGGER IF EXISTS trg_asset_relationships_domain_insert ON asset_relationships;
+DROP TRIGGER IF EXISTS trg_assets_domain_update ON assets;
+DROP TRIGGER IF EXISTS trg_assets_domain_insert ON assets;
+DROP FUNCTION IF EXISTS asset_domain_enqueue_edge_update();
+DROP FUNCTION IF EXISTS asset_domain_enqueue_edges();
+DROP FUNCTION IF EXISTS asset_domain_enqueue_asset();
+DROP FUNCTION IF EXISTS asset_domain_enqueue_new_assets();
+DROP TABLE IF EXISTS asset_domain_queue;
+DROP TABLE IF EXISTS asset_domain_memberships;
