@@ -63,6 +63,26 @@ type checkCatalogEntry struct {
 // check.
 const sandboxDocs = "https://docs.openctem.io/sensors/troubleshooting/#runtime-sandbox-network"
 
+// The control channel's DNS (sdk-go httpsec last-known-good addresses).
+const (
+	controlDNSDocs    = "https://docs.openctem.io/sensors/troubleshooting/#runtime-control-dns"
+	coreAddressesDocs = "https://docs.openctem.io/sensors/troubleshooting/#network-core-addresses"
+)
+
+// controlDNSFix pins the platform host so the control channel needs no DNS
+// (the chart has no host alias value: on Kubernetes add a hostAliases entry
+// to the pod spec, see the docs).
+var controlDNSFix = map[string]string{
+	FixFormatEnv: `# Pin the platform host on the sensor host (replace the address):
+echo "<platform address> "{{.host}} | sudo tee -a /etc/hosts`,
+	FixFormatCompose: `services:
+  sensor:
+    # Pin the platform host (replace the address); keep the DNS servers,
+    # gateways, the platform and this host out of intrusive scans.
+    extra_hosts:
+      - {{joinq "" "host" ":<platform address>"}}`,
+}
+
 // sandboxSeccompFix runs the sensor under its own seccomp profile, which the
 // platform serves at /api/v1/sensors/install/seccomp-profile.
 var sandboxSeccompFix = map[string]string{
@@ -231,6 +251,13 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		Fix:  map[string]string{FixFormatEnv: outboxEnvFix, FixFormatCompose: outboxComposeFix, FixFormatHelm: dataHelmFix}},
 
 	// --- network -------------------------------------------------------------
+	{ID: CoreAddressesCheckID, Code: "listed", Group: "network", Title: "Core infrastructure this sensor depends on",
+		Why:  "The sensor's DNS resolvers, gateways, its own address and the platform's addresses. An intrusive scan that covers them can cut the sensor off its platform (an IPS block or a resolver knocked over): new scans warn when their targets include them.",
+		Docs: coreAddressesDocs},
+	{ID: CoreAddressesCheckID, Code: "not_reported", Group: "network", Title: "Core infrastructure addresses are not reported",
+		Why: "SENSOR_NETWORK_REPORT=off: the sensor names none of its resolvers, gateways or addresses, so scans cannot warn when they target them.", Docs: coreAddressesDocs},
+	{ID: CoreAddressesCheckID, Code: "none_known", Group: "network", Title: "No core infrastructure address known yet",
+		Why: "The sensor has not detected its resolvers, gateways or the platform's addresses yet, or the local policy does not let it scan them.", Docs: coreAddressesDocs},
 	{ID: "network.scan_proxy_inherit", Code: "direct", Group: "network", Title: "Scanners connect directly",
 		Why: "Scanners do not use the host's proxy settings.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#network-scan-proxy"},
 	{ID: "network.scan_proxy_inherit", Code: "inherit_explicit", Group: "network", Title: "Scanners use the host proxy on purpose",
@@ -271,13 +298,34 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		Why:  "The loop that fetches jobs from the platform stopped with an error, so the sensor runs nothing. Restart the sensor; the summary below is its message.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-command-poller"},
 
+	{ID: ControlDNSCheckID, Code: "resolving", Group: "runtime", Title: "The platform host name resolves",
+		Why: "The sensor looks up {host} and reaches the platform at the address it gets.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "address_literal", Group: "runtime", Title: "The platform URL is an IP address",
+		Why: "The sensor reaches the platform without a DNS lookup.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "via_proxy", Group: "runtime", Title: "The proxy resolves the platform host",
+		Why: "Platform requests go through a proxy, which looks up the platform host itself: the sensor's resolver is not on the control path.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "plain_http", Group: "runtime", Title: "No DNS fallback over plain HTTP",
+		Why: "The platform URL is plain HTTP, so the sensor never dials a cached platform address: only a TLS connection proves the address still belongs to the platform. Use an https URL.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "cached_address", Group: "runtime", Title: "The platform host name does not resolve",
+		Why:  "Lookups of {host} fail ({cause}). The sensor still reaches the platform at the address it last resolved, and TLS still verifies {host}, but it stops once that address is older than SENSOR_CONTROL_DNS_MAX_STALE. Check the resolver the sensor uses, pin the platform host, and keep the DNS server out of intrusive scans.",
+		Docs: controlDNSDocs, Fix: controlDNSFix},
+	{ID: ControlDNSCheckID, Code: "lookup_failed", Group: "runtime", Title: "The sensor lost the platform: DNS failure",
+		Why:  "Lookups of {host} fail ({cause}) and the sensor knows no recent address, so heartbeats, jobs and results stop until DNS answers; jobs it held are handed to other sensors when their lease ends. Check the resolver the sensor uses, pin the platform host, and keep the DNS server out of intrusive scans.",
+		Docs: controlDNSDocs, Fix: controlDNSFix},
+	{ID: ControlDNSCheckID, Code: "recovered", Group: "runtime", Title: "The platform host name failed to resolve for a while",
+		Why:  "Lookups of {host} failed for a period and work again; the summary below says when. If it happened during a scan, the scan probably reached the DNS server: exclude it and the other core infrastructure from intrusive scans, or pin the platform host.",
+		Docs: controlDNSDocs, Fix: controlDNSFix},
+
 	{ID: "runtime.sandbox_network", Code: "confined", Group: "runtime", Title: "Tool runs are network-confined",
 		Why: "Each tool task runs in its own network namespace and reaches only its targets, through its forwarder. The sensor can take jobs that need confinement (a web scope).", Docs: sandboxDocs},
+	{ID: "runtime.sandbox_network", Code: "userns_disabled_host", Group: "runtime", Title: "Tool runs are not network-confined: the host disables user namespaces",
+		Why:  "The host kernel refuses unprivileged user namespaces (kernel.unprivileged_userns_clone=0, or user.max_user_namespaces=0), so no container profile can allow them; the check's excerpt lists the values the sensor read. The host admin sets kernel.unprivileged_userns_clone=1 (or a positive user.max_user_namespaces) in /etc/sysctl.d and runs sysctl --system. Keep kernel.apparmor_restrict_unprivileged_userns=1 and the container's docker-default AppArmor profile so unconfined local processes stay restricted; never set the restriction to 0. If confinement still fails with the restriction on and docker-default applied, give the sensor container an AppArmor profile that grants userns. On a shared machine a dedicated host or VM for the sensor is the cleanest option. Until then jobs that need confinement (a web scope) go to other sensors.",
+		Docs: sandboxDocs},
 	{ID: "runtime.sandbox_network", Code: "userns_blocked", Group: "runtime", Title: "Tool runs are not network-confined: the container's seccomp profile blocks it",
-		Why:  "The container runtime's default seccomp profile refuses the namespaces confinement needs. Run the sensor with its own seccomp profile (the install commands download it). Until then jobs that need confinement (a web scope) go to other sensors.",
+		Why:  "The host allows user namespaces (its sysctls are not the cause) but the container runtime's seccomp profile refuses the namespaces confinement needs. Run the sensor with its own seccomp profile (the install commands download it). If it already runs with that profile, read the excerpt for the host values the sensor saw. Until then jobs that need confinement (a web scope) go to other sensors.",
 		Docs: sandboxDocs, Fix: sandboxSeccompFix},
 	{ID: "runtime.sandbox_network", Code: "userns_restricted", Group: "runtime", Title: "Tool runs are not network-confined: the host restricts user namespaces",
-		Why:  "The host refuses unprivileged user namespaces (on Ubuntu 23.10 and later, the AppArmor restriction applies to unconfined processes). Keep the container runtime's default AppArmor profile (never apparmor=unconfined), or allow user namespaces on the host.",
+		Why:  "The host's AppArmor restriction on unprivileged user namespaces (Ubuntu 23.10 and later, kernel.apparmor_restrict_unprivileged_userns=1) applies to this process. Keep the restriction on and run the container with its default AppArmor profile (never apparmor=unconfined), or with an AppArmor profile that grants userns. Do not set the restriction to 0 host-wide.",
 		Docs: sandboxDocs},
 	{ID: "runtime.sandbox_network", Code: "off", Group: "runtime", Title: "Network confinement is turned off",
 		Why: "SENSOR_SANDBOX_NETWORK=off: tool tasks are not confined, and jobs that need confinement (a web scope) go to other sensors. Remove the setting (the default is auto).", Docs: sandboxDocs},

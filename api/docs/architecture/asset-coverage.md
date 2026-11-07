@@ -490,6 +490,12 @@ counts per outcome and the number of organizations, never a tenant, asset
 or target. This aggregate is the one read across organizations, on purpose
 and counts only; the state is held by the loop's single replica.
 
+## Readers
+
+- Asset liveness ([asset-liveness.md](asset-liveness.md)): every settled run hands its per-target verdicts (with the
+  task's zone or sensor) to the liveness recorder: answered, no answer, resolved, NXDOMAIN or resolver failed. It never
+  changes the ledger and never fails a settlement.
+
 ## Other writers
 
 - DNS checks (`internal/app/easmdns`): rows `dns.dangling` and `dns.email`.

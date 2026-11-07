@@ -1,0 +1,4 @@
+### Fixed: a failed host discovery no longer lets the port scan sweep the whole range
+
+- A streamed workflow step started as soon as its source finished one task, even when that task reached none of its targets (a host discovery chunk whose probes never left the sensor). The step then took its seeds alone (for a swept scan, every address of the range) and kept running after the source failed. Such a task no longer starts the stream.
+- A streamed step whose source then fails (or ends without results) stops: its open tasks are canceled, the sensor holding one is told to stop, and the step ends with the new code DEPENDENCY_FAILED (skipped when nothing of it finished, partial when some tasks finished and kept their results). Workflows set to continue on a failed dependency keep the step running.

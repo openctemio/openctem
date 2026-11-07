@@ -269,7 +269,7 @@ func registerScopeRoutes(
 		// Scope settings (RFC-054 §6.3). Changing them widens or narrows the
 		// friction on widening: approvers only, with step-up.
 		r.GET("/settings", h.GetSettings, middleware.Require(permission.ScopeRead))
-		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUpSensitive())
 		// The owner-only part: how long an intrusive (t2) entry may last
 		// (RFC-054 §12.4). Owner, step-up, reason; audited, admins told.
 		r.PUT("/settings/intrusive", h.UpdateIntrusiveSettings, middleware.Require(permission.ScopeApprove), middleware.RequireOwner(), requireStepUp())
@@ -288,6 +288,11 @@ func registerScopeRoutes(
 		r.PUT("/{id}", h.UpdateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))
+		// Replace an entry's pattern: a new entry linked to the old one, with
+		// the checks, step-up and approvals of a new entry (in the service).
+		// The preview writes nothing.
+		r.POST("/{id}/replace", h.ReplaceTarget, middleware.Require(permission.ScopeWrite))
+		r.POST("/{id}/replace/preview", h.PreviewReplaceTarget, middleware.Require(permission.ScopeWrite))
 		// Approving puts a pending entry (a request or a widening) into
 		// effect: approvers only, with step-up (RFC-054 §6.1). Create,
 		// update and activate ask for step-up in the service when they widen.

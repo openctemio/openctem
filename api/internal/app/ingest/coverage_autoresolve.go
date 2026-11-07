@@ -486,6 +486,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
 	})
 	d.query.CommandID = commandID
+	d.query.KeepInformational = s.infoMatchesRouted(ctx, tenantID, d.query.ToolName)
 	stale, open, err := repo.CoverageStaleFindings(ctx, tenantID, d.query)
 	if err != nil {
 		out.Reason = coverageCandidateError(err)

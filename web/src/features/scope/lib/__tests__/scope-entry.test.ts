@@ -93,6 +93,7 @@ describe('scope entry status tones', () => {
       inactive: 'closed',
       rejected: 'closed',
       expired: 'closed',
+      superseded: 'closed',
     })
   })
 })

@@ -387,7 +387,10 @@ type Filter struct {
 	// MonitoringStates keeps the assets whose derived monitoring state
 	// (MonitoringStateOf) is one of these; UnclassifiedScanned is the
 	// tenant's input to it (its unclassified-scans mode is not off).
-	MonitoringStates    []string
+	MonitoringStates []string
+	// LivenessStates: the asset's liveness state (asset_liveness; unknown
+	// when it has no row).
+	LivenessStates      []string
 	UnclassifiedScanned bool
 	// Primary keeps the organization's root domains only (PrimarySQL).
 	Primary             bool

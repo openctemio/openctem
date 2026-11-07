@@ -48,8 +48,9 @@ const (
 	VerdictBlocked = "blocked"
 	// VerdictUnresolved: the target is a name that does not resolve. Its
 	// Outcome is OutcomeNoAnswer (the resolver answered that the name has
-	// no address: NXDOMAIN or NODATA) or ReasonResolverFailed (the lookup
-	// itself failed). A fact about the name, never a failure of the scan.
+	// no address: NXDOMAIN or NODATA), ReasonResolverFailed (the lookup
+	// itself failed) or OutcomeDNSUnknown (the sensor did not say which).
+	// A fact about the name, never a failure of the scan.
 	VerdictUnresolved = "unresolved"
 )
 
@@ -69,6 +70,12 @@ const (
 	// ReasonResolverFailed: the lookup failed (SERVFAIL, REFUSED, a resolver
 	// timeout); ambiguous, it may be the sensor's own DNS.
 	ReasonResolverFailed = "resolver_failed"
+	// OutcomeDNSUnknown: the sensor refused the name as unresolvable
+	// without saying whether the resolver answered "no such name" or the
+	// lookup failed (sensors before sdk-go v0.38.0). No evidence either
+	// way: it is never read as "no address", so it never parks a name and
+	// never counts towards gone.
+	OutcomeDNSUnknown = "dns_unknown"
 )
 
 // Outcomes recorded on pairs settled per target, besides OutcomeOK and
@@ -88,7 +95,8 @@ type Verdict struct {
 	Outcome string // ok, a failure class (unreachable, timeout, tool_error, egress_refused), unfinished, failed
 	Reason  string // for blocked: the skip class (refused, excluded)
 	Error   string
-	// Observer is the task's TaskResult.Observer for a failed verdict.
+	// Observer is the task's TaskResult.Observer (any kind but the run's
+	// own unfinished targets).
 	Observer string
 	// Vendor is the edge protection behind an edge_blocked or
 	// edge_challenged outcome (a token), "" when unknown.
@@ -138,9 +146,9 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 	for _, task := range tasks {
 		t := task
 		put := func(target string, v Verdict) {
-			if v.Kind == VerdictFailed {
-				v.Observer = t.Observer
-			}
+			// Every verdict names who saw it: the target-side streak and
+			// the liveness observers read it.
+			v.Observer = t.Observer
 			put(target, v)
 		}
 		outcomes, unreached, has := readResult(t.Result)
@@ -319,15 +327,25 @@ func readResult(raw json.RawMessage) ([]outcome.Target, map[string]bool, bool) {
 }
 
 // unresolvedVerdict is the verdict of a name that does not resolve, from
-// the sensor's DNS kind: "resolver_failed" when the lookup failed, else
-// (name_gone, or a sensor that does not say) no answer.
+// the sensor's DNS kind: no answer only when the sensor says the name is
+// gone (name_gone: NXDOMAIN or NODATA), "resolver_failed" when the lookup
+// failed, and unknown when the sensor does not say (an older sensor) or
+// says something else. Only an explicit name_gone is evidence of absence.
 func unresolvedVerdict(dns string) Verdict {
-	if dns == ReasonResolverFailed {
+	switch dns {
+	case dnsNameGone:
+		return Verdict{Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer, Error: "the name has no address"}
+	case ReasonResolverFailed:
 		return Verdict{Kind: VerdictUnresolved, Outcome: ReasonResolverFailed,
 			Error: "the sensor's DNS lookup of the name failed"}
 	}
-	return Verdict{Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer, Error: "the name has no address"}
+	return Verdict{Kind: VerdictUnresolved, Outcome: OutcomeDNSUnknown,
+		Error: "the sensor could not resolve the name and did not say why"}
 }
+
+// dnsNameGone is the sensor's DNS kind for a name the resolver answered has
+// no address (sdk-go reach.NameGone, contract outcome.NameGone).
+const dnsNameGone = string(outcome.NameGone)
 
 // Refused-target reasons a sensor lists in refused_targets (sdk-go
 // core.RefusedTarget*).
@@ -489,7 +507,8 @@ func readGaps(raw json.RawMessage) resultGaps {
 			g.short = true
 			continue
 		}
-		gap := scanrun.CoverageGap{Host: one.Host, Reason: one.Reason}
+		reason, _, _ := scanrun.NormalizeGapReason(one.Reason, "")
+		gap := scanrun.CoverageGap{Host: one.Host, Reason: reason}
 		if one.Reason == scanrun.GapReasonBlocked {
 			if one.Edge == scanrun.EdgeChallenged || one.Edge == scanrun.EdgeBlocked {
 				gap.Edge = one.Edge
@@ -505,12 +524,18 @@ func readGaps(raw json.RawMessage) resultGaps {
 	return g
 }
 
-// gapRank orders two gaps of one host: an edge answer is the most telling.
+// gapRank orders two gaps of one host: an edge answer is the most telling,
+// and a gap that leaves the host uncovered outranks one that does not.
 func gapRank(g scanrun.CoverageGap) int {
-	if g.Reason == scanrun.GapReasonBlocked {
-		return 2
+	switch g.Reason {
+	case scanrun.GapReasonBlocked:
+		return 3
+	case scanrun.GapReasonCatchAll, scanrun.GapReasonAuthWall, scanrun.GapReasonUnstableBaseline, scanrun.GapReasonScopeFiltered:
+		// A reason that leaves the host covered never hides one that
+		// does not.
+		return 1
 	}
-	return 1
+	return 2
 }
 
 // gapHostKey is the comparison form of a host or a target: its host name
@@ -567,6 +592,22 @@ func (g resultGaps) verdict(target string) (Verdict, bool) {
 	case scanrun.GapReasonProxyUnavailable:
 		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.SensorNetworkFault),
 			Error: "the scan's proxy failed, so the host was not judged"}, true
+	case scanrun.GapReasonEdgeProtected:
+		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.EdgeChallenged),
+			Error: edgeError(string(outcome.EdgeChallenged))}, true
+	case scanrun.GapReasonThrottled:
+		return Verdict{Kind: VerdictFailed, Outcome: string(outcome.RateLimited),
+			Error: "the origin kept slowing the requests down"}, true
+	case scanrun.GapReasonBudget:
+		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+			Error: "the request budget ran out before every candidate was checked"}, true
+	case scanrun.GapReasonNoCandidates:
+		return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
+			Error: "no candidate was left to request on the origin"}, true
+	case scanrun.GapReasonCatchAll, scanrun.GapReasonAuthWall, scanrun.GapReasonUnstableBaseline, scanrun.GapReasonScopeFiltered:
+		// The origin was checked; the reason says what the result means
+		// (it stays on the run's coverage gaps).
+		return Verdict{Kind: VerdictCovered, Outcome: OutcomeOK}, true
 	}
 	return Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
 		Error: "the sensor listed the host as a coverage gap"}, true

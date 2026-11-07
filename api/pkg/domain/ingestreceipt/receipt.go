@@ -233,6 +233,9 @@ const (
 const (
 	ErrorStoreFailed  = "store_failed"
 	ErrorFileRejected = "file_rejected"
+	// ErrorContractMismatch: the finding's tool reported a type its signed
+	// descriptor does not declare; the finding was ingested and flagged.
+	ErrorContractMismatch = "contract_mismatch"
 )
 
 // ErrorEntry is one problem of a receipt: the index of the finding (or of
@@ -283,10 +286,14 @@ type Receipt struct {
 	Errors           []ErrorEntry
 	// Outcomes counts the received findings that went elsewhere than the
 	// action counts (Outcome* codes).
-	Outcomes   map[string]int
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	FinishedAt *time.Time
+	Outcomes map[string]int
+	// ReleasedFromQuarantine: a report held in the results quarantine and
+	// applied later is part of this receipt (its sender is the original
+	// sensor).
+	ReleasedFromQuarantine bool
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	FinishedAt             *time.Time
 }
 
 // Source names the receipt a delta belongs to. For a command, CommandID is
@@ -306,6 +313,8 @@ type Delta struct {
 	TenantID shared.ID
 	Source   Source
 	Tool     string
+	// ToolVersion is the reporting tool's version, kept on the sightings.
+	ToolVersion string
 	// Instance is what sent the report (a sensor, a CI repository, a
 	// connector, the platform); empty for a coverage decision, which adds to
 	// the receipt's own counts only.
@@ -322,6 +331,9 @@ type Delta struct {
 	// counts (Outcome* codes). The repository adds OutcomeMerged for the
 	// findings an earlier delta of the receipt already acted on.
 	Outcomes map[string]int
+	// Released marks a report applied from the results quarantine: the
+	// receipt and the sender's row carry the marker, nothing else changes.
+	Released bool
 
 	Created  []shared.ID
 	Reopened []shared.ID
@@ -421,7 +433,7 @@ type Instance struct {
 // Empty reports whether the delta changes nothing.
 func (d *Delta) Empty() bool {
 	return d.Reports == 0 && d.Received == 0 && d.AssetsCreated == 0 && d.AssetsUpdated == 0 &&
-		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Outcomes) == 0 && len(d.Created) == 0 &&
+		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Outcomes) == 0 && !d.Released && len(d.Created) == 0 &&
 		len(d.Reopened) == 0 && len(d.Closed) == 0 && len(d.StillDetected) == 0 &&
 		len(d.Decided) == 0 && len(d.Items) == 0 &&
 		d.Coverage == "" && d.Untouched == nil && len(d.Errors) == 0

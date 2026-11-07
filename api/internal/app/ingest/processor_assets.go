@@ -33,6 +33,7 @@ type DedupReviewEnqueuer interface {
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
 	repo          asset.Repository
+	tagGovernor   TagGovernor // optional: governing tags an import may not set (nil = validator only)
 	repoExtRepo   asset.RepositoryExtensionRepository
 	relRepo       asset.RelationshipRepository
 	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
@@ -377,6 +378,10 @@ func (p *AssetProcessor) processBatch(
 	// The response header posture of an origin keeps its allow-listed keys
 	// only (names and flags, never a header or cookie value).
 	sanitizeHTTPPosture(report, scope)
+
+	// Tags a rule reads (team access, approvals, scan windows, assignment)
+	// are set by people with the rule's permission, never by a report.
+	p.dropGoverningTags(ctx, tenantID, report)
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
@@ -1500,18 +1505,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.UpdateDescription(desc)
 	}
 
-	// Set tags (with limit) - log if truncated
-	tags := ctisAsset.Tags
-	if len(tags) > MaxTagsPerAsset {
-		p.logger.Warn("asset tags truncated",
-			"original_count", len(tags),
-			"max_count", MaxTagsPerAsset,
-			"asset_id", ctisAsset.ID,
-		)
-		tags = tags[:MaxTagsPerAsset]
-	}
-	for _, tag := range tags {
-		newAsset.AddTag(tag)
+	// Tags: the shared validator and the per-import cap (a report is not
+	// trusted with arbitrary strings: see importTags).
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		newAsset.AddTag(t)
 	}
 
 	// Discovery info: the report's tool, unless a server-side report (the
@@ -1659,9 +1656,9 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// owner_ref and data classification of an existing asset are decided
 	// by attribute reconciliation (attributes.go, RFC-069), not here.
 
-	// Merge tags
-	for _, tag := range ctisAsset.Tags {
-		existing.AddTag(tag)
+	// Merge tags (validated like a first sight)
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		existing.AddTag(t)
 	}
 
 	// Merge properties using deep merge
