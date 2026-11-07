@@ -86,6 +86,21 @@ export interface SecuritySettings {
   jit_requires_approval?: boolean
   /** A sign-in through the organization's own IdP must carry its MFA proof. */
   sso_require_mfa_evidence?: boolean
+  /** Re-verification (step-up) policy in force, per risk tier. */
+  step_up?: StepUpPolicy
+}
+
+/** How often a tier asks the person to confirm their identity again. */
+export type StepUpMode = 'every_time' | 'once_per_window' | 'off'
+export type StepUpWindow = '10m' | '1h' | '4h' | '8h' | 'session'
+export interface StepUpRule {
+  mode: StepUpMode
+  window?: StepUpWindow
+}
+export interface StepUpPolicy {
+  critical: StepUpRule
+  sensitive: StepUpRule
+  routine: StepUpRule
 }
 
 export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
@@ -120,6 +135,8 @@ export interface UpdateSecuritySettingsInput {
   sso_exceptions?: SSOException[]
   jit_requires_approval?: boolean
   sso_require_mfa_evidence?: boolean
+  /** Replaces the re-verification policy (owner only; critical keeps its floor). */
+  step_up?: StepUpPolicy
 }
 
 // ============================================
