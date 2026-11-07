@@ -13,6 +13,7 @@ import { useSWRConfig } from 'swr'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useParams, useRouter } from 'next/navigation'
 import Link from '@/components/link'
+import { seenByFindingsHref } from '@/features/findings/api/receipts-api'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
@@ -632,11 +633,21 @@ export default function ScanDetailPage() {
               emptyMessage={t('scanDetail.runs.emptyTitle')}
               emptyDescription={t('scanDetail.runs.emptyDesc')}
               toolbarEnd={
-                <Button variant="outline" size="sm" className="h-9" asChild>
-                  <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
-                    {t('scanDetail.runs.viewAll')}
-                  </Link>
-                </Button>
+                <>
+                  <Button variant="outline" size="sm" className="h-9" asChild>
+                    <Link
+                      href={seenByFindingsHref('seen_by_scan_id', scanId)}
+                      data-testid="scan-reported-findings"
+                    >
+                      {t('scanDetail.runs.reportedFindings', 'Findings this scan reported')}
+                    </Link>
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-9" asChild>
+                    <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
+                      {t('scanDetail.runs.viewAll')}
+                    </Link>
+                  </Button>
+                </>
               }
             />
           </TabsContent>
