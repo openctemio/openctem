@@ -110,8 +110,18 @@ for (const width of [390, 1440]) {
       const back = dialog.getByTestId('wizard-back')
       const next = dialog.getByTestId('wizard-next')
       await expect(next).toBeEnabled()
-      const b = (await back.boundingBox())!
-      const n = (await next.boundingBox())!
+      await expect(back).toBeVisible()
+      // Both boxes are read in one synchronous call. On a phone the dialog is a
+      // sheet that slides in, and two separate boundingBox() calls a few ms
+      // apart straddle that motion (a slow runner showed 13 to 29px of drift
+      // between Back and Next); one snapshot is the layout at a single instant.
+      const { b, n } = await dialog.evaluate((root) => {
+        const rect = (id: string) => {
+          const r = root.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect()
+          return { x: r.x, y: r.y }
+        }
+        return { b: rect('wizard-back'), n: rect('wizard-next') }
+      })
       expect(Math.abs(b.y - n.y)).toBeLessThan(4)
       expect(n.x).toBeGreaterThan(b.x)
       await expect(dialog.getByRole('button', { name: /^cancel$/i })).toHaveCount(0)

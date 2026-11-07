@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
@@ -134,7 +136,12 @@ type SensorLookup interface {
 type ApprovalHook interface {
 	ValidProfile(profile string) bool
 	DefaultProfileFor(t sensordom.SensorType) string
-	OnApproved(tenantID shared.ID, profile string, zones []shared.ID, approvedBy shared.ID) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error
+	OnApproved(tenantID shared.ID, profile string, zones []shared.ID, approvedBy shared.ID, trusted bool) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error
+	// AuthorizeTrust decides, before anything is written, whether the
+	// approver may create the sensor Trusted (sensors:grant:widen and the
+	// widening approver); TrustedAtApproval audits it after the commit.
+	AuthorizeTrust(ctx context.Context, actor sensorgrant.Actor) error
+	TrustedAtApproval(ctx context.Context, actor sensorgrant.Actor, sensorID shared.ID)
 }
 
 // Actor is the authenticated user acting on the user plane.
@@ -145,6 +152,10 @@ type Actor struct {
 	Email     string
 	IP        string
 	UserAgent string
+	// CanWiden (sensors:grant:widen) and CanWriteZones (sensors:zones:write)
+	// are resolved by the handler from the session's permissions.
+	CanWiden      bool
+	CanWriteZones bool
 }
 
 // Service runs pairing.
@@ -157,6 +168,7 @@ type Service struct {
 	admins   AdminDirectory
 	notifier InAppNotifier
 	hook     ApprovalHook
+	zones    ZoneStore
 	releaser CommandReleaser
 	log      *logger.Logger
 	// jobRoot reads the job-signing root the views carry (nil: none).
@@ -721,6 +733,11 @@ type View struct {
 	// FingerprintChoices are three fingerprints, one of them the SAS: the
 	// approver picks the one the host shows, and the approval sends it.
 	FingerprintChoices []string `json:"fingerprint_choices,omitempty"`
+	// TrustEligible: an approval may make this sensor Trusted for active
+	// scanning (a request that attached to this organization's console
+	// code; never a sensor-started code, a token or a re-pair). The profile
+	// and the approver's permission are checked at approval.
+	TrustEligible bool `json:"trust_eligible"`
 }
 
 // RepairBefore is the sensor being re-paired as the platform last saw it.
@@ -846,6 +863,7 @@ func (s *Service) view(ctx context.Context, actor Actor, p *sensordom.Pairing) *
 	if p.SensorID != nil {
 		v.SensorID = p.SensorID.String()
 	}
+	v.TrustEligible = TrustEligible(p, actor.TenantID)
 	if s.jobRoot != nil {
 		v.JobSigningRoot = s.jobRoot(ctx)
 	}
@@ -1015,6 +1033,14 @@ type ApproveInput struct {
 	// RepairSensorID must name the sensor the request re-pairs, and be
 	// empty for a request that adds a sensor (ErrRepairNotAcknowledged).
 	RepairSensorID string
+	// Trusted makes the new sensor Trusted for active scanning
+	// (approve_setup.go: eligible requests and profiles only, with
+	// sensors:grant:widen).
+	Trusted bool
+	// Ranges are the private networks the sensor scans: a zone with exactly
+	// these ranges gets the sensor, else a new zone is created for it, in
+	// the approval transaction (sensors:zones:write).
+	Ranges []string
 }
 
 // Approve binds the request's key to the actor's tenant (a new sensor, or
@@ -1097,6 +1123,29 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 	if target != nil {
 		// A re-pair keeps the registration: its name, zones and grant.
 		name, zones = target.Name, nil
+		if in.Trusted || len(in.Ranges) > 0 {
+			return nil, ErrInvalid
+		}
+	}
+	// Trust and networks are checked before anything is written: a refusal
+	// creates nothing.
+	if in.Trusted {
+		if err := s.authorizeTrust(ctx, actor, p, profile, true); err != nil {
+			return nil, err
+		}
+	}
+	var zone *zonePlan
+	if len(in.Ranges) > 0 {
+		if zone, err = s.planZone(ctx, actor, in.Ranges, profile, name); err != nil {
+			return nil, err
+		}
+		if zone.existing != nil {
+			zones = append(slices.Clone(zones), zone.existing.ID)
+		}
+	}
+	grantZones := zones
+	if zone != nil && zone.create != nil {
+		grantZones = append(slices.Clone(zones), zone.create.ID)
 	}
 	approval := sensordom.PairingApproval{
 		PairingID: p.ID, CodeHash: p.CodeHash, TenantID: actor.TenantID, ApprovedBy: actor.UserID, Now: now, ConfirmBy: now.Add(ConfirmWindow),
@@ -1104,7 +1153,10 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 		OS: p.HostFacts.OS, Arch: p.HostFacts.Arch, Version: p.HostFacts.SensorVersion, ZoneIDs: zones, KeyID: shared.NewID(),
 	}
 	if s.hook != nil {
-		approval.OnApproved = s.hook.OnApproved(actor.TenantID, profile, zones, actor.UserID)
+		approval.OnApproved = s.hook.OnApproved(actor.TenantID, profile, grantZones, actor.UserID, in.Trusted)
+	}
+	if zone != nil {
+		approval.OnApproved = s.withZone(zone, actor, approval.OnApproved)
 	}
 	if p.IsEnrollment() && s.tokens != nil {
 		// A request a token started keeps the token's labels.
@@ -1120,6 +1172,12 @@ func (s *Service) Approve(ctx context.Context, actor Actor, id shared.ID, in App
 		return nil, err
 	}
 	s.onApproved(ctx, actor, res, name, profile)
+	if zone != nil {
+		s.auditZone(ctx, actor, zone, res.SensorID, name)
+	}
+	if in.Trusted && s.hook != nil {
+		s.hook.TrustedAtApproval(ctx, grantActor(actor, true), res.SensorID)
+	}
 	return s.view(ctx, actor, res.Pairing), nil
 }
 

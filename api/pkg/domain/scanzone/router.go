@@ -30,9 +30,14 @@ const (
 // Router assigns scan targets to zones (RFC-023 D4-D6):
 //
 //   - an address or CIDR goes to the zone with the narrowest range that holds
-//     all of it (ties: zone name, then id);
+//     all of it;
 //   - a hostname is routed by the addresses it resolves to from the platform
 //     (RFC-023 §12 Q2): the narrowest zone holding any of them;
+//   - zones tied at the narrowest width with different sensors are sites
+//     that reuse the same range (two offices, an office and a cloud
+//     network): the target is uncovered (KindAmbiguousZone) until the scan
+//     picks its zone, never routed by name. Tied zones with the same sensors
+//     route to the first by name, then id;
 //   - a public target no range holds goes to the tenant's default zone, or,
 //     when the tenant has none, is "unzoned" and dispatched as before zones;
 //   - a private target no range holds, an address in the deny list, a range
@@ -130,6 +135,10 @@ const (
 	// KindZoneSensorNoPrivate: the target is private and every sensor of
 	// the zone says its host refuses private targets.
 	KindZoneSensorNoPrivate = "zone_sensor_no_private"
+	// KindAmbiguousZone: zones with different sensors hold the target at
+	// the same narrowest width (sites that reuse a range); the scan must
+	// pick its zone.
+	KindAmbiguousZone = "ambiguous_zone"
 )
 
 // Uncovered is a target that will not be scanned, with the reason.
@@ -235,8 +244,15 @@ func (r *Router) routePrefix(rt *Route, p netip.Prefix) {
 		rt.Reason, rt.Kind = fmt.Sprintf("%s is in the built-in deny list (loopback, link-local/metadata, multicast, unspecified)", p), KindDenyList
 		return
 	}
-	if z := r.narrowest(p); z != nil {
+	if z, tied := r.narrowest(p); z != nil {
 		rt.Zone = z
+		return
+	} else if len(tied) > 0 {
+		what := p.String()
+		if p.IsSingleIP() {
+			what = p.Addr().String()
+		}
+		rt.Reason, rt.Kind = ambiguousReason(what, tied), KindAmbiguousZone
 		return
 	}
 	if prefixIsPrivate(p) {
@@ -253,7 +269,7 @@ func (r *Router) routePrefix(rt *Route, p netip.Prefix) {
 
 func (r *Router) routeAddrs(rt *Route, addrs []netip.Addr) {
 	var (
-		best     *Zone
+		best     []*Zone // the zones at bestBits
 		bestBits = -1
 		private  netip.Addr
 		denied   netip.Addr
@@ -266,17 +282,25 @@ func (r *Router) routeAddrs(rt *Route, addrs []netip.Addr) {
 		}
 		p := netip.PrefixFrom(a, a.BitLen())
 		for _, z := range r.zones {
-			if bits := z.Covers(p); bits > bestBits {
-				best, bestBits = z, bits
+			switch bits := z.Covers(p); {
+			case bits > bestBits:
+				best, bestBits = append(best[:0], z), bits
+			case bits == bestBits && bits >= 0 && !slices.Contains(best, z):
+				best = append(best, z)
 			}
 		}
 		if IsPrivate(a) && !private.IsValid() {
 			private = a
 		}
 	}
+	z, tied := pickTied(best)
 	switch {
-	case best != nil:
-		rt.Zone = best
+	case z != nil:
+		rt.Zone = z
+	// The reason names the zones, never the address: a private answer is
+	// not quoted (see below).
+	case len(tied) > 0:
+		rt.Reason, rt.Kind = ambiguousReason("this name resolves to an address that", tied), KindAmbiguousZone
 	// The reasons never quote a private or denied answer: the platform's
 	// resolver may know internal names, and a reason is shown to whoever
 	// asked (scan-zone preview).
@@ -323,15 +347,106 @@ func (p *Plan) RestrictTo(selected *Zone) *Plan {
 }
 
 // narrowest returns the zone with the narrowest range holding all of p.
-func (r *Router) narrowest(p netip.Prefix) *Zone {
-	var best *Zone
+// Zones tied at that width with different sensors are returned in tied
+// (and no zone): picking one by name could scan another site's network.
+func (r *Router) narrowest(p netip.Prefix) (*Zone, []*Zone) {
+	var best []*Zone
 	bestBits := -1
-	for _, z := range r.zones { // sorted: the first of equal matches wins
-		if bits := z.Covers(p); bits > bestBits {
-			best, bestBits = z, bits
+	for _, z := range r.zones {
+		switch bits := z.Covers(p); {
+		case bits > bestBits:
+			best, bestBits = append(best[:0], z), bits
+		case bits == bestBits && bits >= 0:
+			best = append(best, z)
 		}
 	}
-	return best
+	return pickTied(best)
+}
+
+// pickTied decides between zones tied at the narrowest width: the first
+// (by name, then id: the router's order) when they all have the same
+// sensors, which scan the same network either way; none, with the tied
+// zones, when the sensors differ.
+func pickTied(zones []*Zone) (*Zone, []*Zone) {
+	if len(zones) == 0 {
+		return nil, nil
+	}
+	first := slices.MinFunc(zones, zoneOrder)
+	for _, z := range zones {
+		if !sameSensors(first, z) {
+			sorted := slices.Clone(zones)
+			slices.SortFunc(sorted, zoneOrder)
+			return nil, sorted
+		}
+	}
+	return first, nil
+}
+
+// zoneOrder is the router's zone order: name (case-insensitive), then id.
+func zoneOrder(a, b *Zone) int {
+	if c := strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)); c != 0 {
+		return c
+	}
+	return strings.Compare(a.ID.String(), b.ID.String())
+}
+
+// sameSensors reports whether two zones have the same assigned sensors.
+func sameSensors(a, b *Zone) bool {
+	if len(a.SensorIDs) != len(b.SensorIDs) {
+		return false
+	}
+	x := make([]string, len(a.SensorIDs))
+	for i, id := range a.SensorIDs {
+		x[i] = id.String()
+	}
+	y := make([]string, len(b.SensorIDs))
+	for i, id := range b.SensorIDs {
+		y[i] = id.String()
+	}
+	slices.Sort(x)
+	slices.Sort(y)
+	return slices.Equal(x, y)
+}
+
+// SameRangeZones returns the zones of others (z itself left out) that hold
+// one of z's ranges exactly: targets there tie at the same width, so while
+// the zones' sensors differ a scan must pick its zone (KindAmbiguousZone).
+// A wider or narrower range is no tie (the narrowest zone wins).
+func SameRangeZones(z *Zone, others []*Zone) []*Zone {
+	var out []*Zone
+	for _, o := range others {
+		if o.ID == z.ID {
+			continue
+		}
+		for _, r := range z.Ranges {
+			if slices.Contains(o.Ranges, r) {
+				out = append(out, o)
+				break
+			}
+		}
+	}
+	slices.SortFunc(out, zoneOrder)
+	return out
+}
+
+// maxNamedTiedZones bounds the zone names an ambiguity reason lists.
+const maxNamedTiedZones = 3
+
+// ambiguousReason explains an ambiguous target: what is held, by which
+// zones, and the fix.
+func ambiguousReason(what string, zones []*Zone) string {
+	names := make([]string, 0, maxNamedTiedZones)
+	for _, z := range zones {
+		if len(names) == maxNamedTiedZones {
+			break
+		}
+		names = append(names, fmt.Sprintf("%q", z.Name))
+	}
+	list := strings.Join(names, ", ")
+	if n := len(zones) - len(names); n > 0 {
+		list += fmt.Sprintf(" and %d more", n)
+	}
+	return fmt.Sprintf("%s is in scan zones %s, which hold the same range with different sensors (different sites); pick the zone (site) for this scan", what, list)
 }
 
 func (r *Router) partlyCovered(p netip.Prefix) bool {
