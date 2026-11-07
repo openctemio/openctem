@@ -1739,6 +1739,11 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, *filter.CreatedAfter)
 		argIndex++
 	}
+	if filter.CreatedBefore != nil {
+		conditions = append(conditions, fmt.Sprintf("a.created_at <= $%d", argIndex))
+		args = append(args, *filter.CreatedBefore)
+		argIndex++
+	}
 	if filter.ExposureChangedOrCreatedAfter != nil {
 		conditions = append(conditions, fmt.Sprintf("(a.created_at >= $%d OR a.exposure_changed_at >= $%d)", argIndex, argIndex))
 		args = append(args, *filter.ExposureChangedOrCreatedAfter)
