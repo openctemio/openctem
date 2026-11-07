@@ -1364,7 +1364,7 @@
   "findings.receipts.closing.closed.not_in_scan": "Đã đóng: kiểm tra đã chạy và không thấy",
   "findings.receipts.closing.kept.check_not_run": "Giữ lại: kiểm tra này không nằm trong lượt quét",
   "findings.receipts.closing.kept.file_incomplete": "Giữ lại: tệp hoặc lượt tải lên không chứng minh được nó đã hết",
-  "findings.receipts.closing.kept.guard": "Giữ lại theo quy tắc an toàn: nghiêm trọng, đang bị khai thác, bí mật, được cảm biến thấy gần nhất hoặc chế độ đóng",
+  "findings.receipts.closing.kept.guard": "Giữ lại theo quy tắc an toàn: nghiêm trọng, đang bị khai thác, bí mật, được sensor thấy gần nhất hoặc chế độ đóng",
   "findings.receipts.closing.kept.host_not_finished": "Giữ lại: lượt quét máy chưa hoàn tất",
   "findings.receipts.closing.kept.local_checks_not_run": "Giữ lại: kiểm tra cục bộ nhưng lượt quét không đăng nhập được",
   "findings.receipts.closing.kept.needs_verify": "Giữ lại: cần quyền xác minh phát hiện để đóng",
