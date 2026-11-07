@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -454,4 +455,29 @@ func TestCTISWireTypes_NotAPIInputs(t *testing.T) {
 			t.Errorf("%s resolves to unclassified in the receiver", wire)
 		}
 	}
+}
+
+// A host's own listening sockets keep their local view; other details keys
+// and malformed values are not stored.
+func TestBuildServiceProperties_LocalListener(t *testing.T) {
+	props := buildServiceProperties(&ctis.ServiceTechnical{Port: 8443, Transport: ctis.TransportTCP, Details: map[string]string{
+		"observed_from": "host", "bind_address": "192.0.2.10", "process": "exampled", "ssh_kex": "x",
+	}})
+	assert.Equal(t, "host", props["observed_from"])
+	assert.Equal(t, "192.0.2.10", props["bind_address"])
+	assert.Equal(t, "exampled", props["process"])
+	assert.NotContains(t, props, "ssh_kex")
+
+	props = buildServiceProperties(&ctis.ServiceTechnical{Details: map[string]string{
+		"observed_from": "elsewhere", "bind_address": "192.0.2.10",
+	}})
+	assert.NotContains(t, props, "observed_from")
+	assert.NotContains(t, props, "bind_address")
+
+	props = buildServiceProperties(&ctis.ServiceTechnical{Details: map[string]string{
+		"observed_from": "network", "bind_address": "not-an-address", "process": strings.Repeat("p", 200),
+	}})
+	assert.Equal(t, "network", props["observed_from"])
+	assert.NotContains(t, props, "bind_address")
+	assert.NotContains(t, props, "process")
 }

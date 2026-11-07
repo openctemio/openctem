@@ -147,7 +147,7 @@ require (
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
 	github.com/openctemio/contract v1.5.1
 	github.com/openctemio/contract/transfer v1.0.1
-	github.com/openctemio/ctis/v2 v2.0.1
+	github.com/openctemio/ctis/v2 v2.0.2-0.20261107050733-95c099aa0477
 	github.com/openctemio/ctis/v2/interop/csaf v0.1.0
 	github.com/openctemio/ctis/v2/interop/cyclonedx v0.1.0
 	github.com/openctemio/ctis/v2/interop/openvex v0.1.0

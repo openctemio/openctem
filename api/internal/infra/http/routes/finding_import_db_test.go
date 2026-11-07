@@ -206,9 +206,10 @@ func TestFindingImport_RealFixtures_DB(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1`, ih.tenantID)
-			// A CSV has no signature to detect: its format is named.
+			// A CSV or a line list has no signature to detect: its format
+			// is named.
 			format := ""
-			if strings.HasSuffix(p, ".csv") {
+			if strings.HasSuffix(p, ".csv") || strings.HasSuffix(p, ".txt") {
 				format = "&format=" + filepath.Base(filepath.Dir(p))
 			}
 			rec, resp := ih.upload(t, ih.tenantID, "?dry_run=true"+format, filepath.Base(p), data, true)
