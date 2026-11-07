@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 
 import { useAssetTechnologies } from '../../hooks/use-asset-technologies'
 import { groupByCategory, useCategoryLabel } from './technologies-by-category'
+import { technologySourceLabel } from './technology-source'
 
 /**
  * The asset's Technologies tab (RFC-112): every technology probes detected,
@@ -89,7 +90,9 @@ export function AssetTechnologiesTab({
                       })
                     : null,
                   item.source
-                    ? t('assets.technologies.source', 'Source: {source}', { source: item.source })
+                    ? t('assets.technologies.source', 'Source: {source}', {
+                        source: technologySourceLabel(item.source, t),
+                      })
                     : null,
                   <MetaItem key="first" label={t('assets.technologies.firstSeen', 'First seen')}>
                     <RelativeTime date={item.first_seen_at} />

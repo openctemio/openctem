@@ -57,6 +57,12 @@ type Technology struct {
 	CPE       string
 	FirstSeen time.Time
 	LastSeen  time.Time
+	// Secondary marks a detection of a source that does not fingerprint the
+	// whole asset (a template scanner's info match,
+	// docs/architecture/template-facts.md): it refreshes last seen and fills
+	// what is unknown, but never replaces the source, confidence, category,
+	// vendor or CPE another source recorded.
+	Secondary bool
 }
 
 // WithCPE records the vendor and CPE 2.3 name a tool reported. A value that
