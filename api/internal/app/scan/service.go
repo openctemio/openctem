@@ -246,6 +246,7 @@ type Service struct {
 	stepQueuer       StepQueuer                // the scan run service's step dispatcher; nil refuses workflow scans
 	workflowVersions scanworkflow.VersionStore // pins workflow runs to the version they start with; nil leaves them on the live workflow
 	logger           *logger.Logger
+	misfireEvents    ScheduleMissEvents // optional; nil = the scan records the misfire but no event is sent
 }
 
 // ScopeExclusionFilter reports which of the given candidate targets match an
