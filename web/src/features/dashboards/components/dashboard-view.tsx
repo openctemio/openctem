@@ -78,11 +78,17 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
         const value = failed
           ? { id: '', index: i, widget_type: w.widget_type, state: 'error' as const }
           : valueAt(data, i)
-        // A widget with no figure (nothing yet, or not measured) takes one
-        // row: its message never holds a tall card of blank space.
+        // A full-width widget with no figure (nothing yet, or not measured)
+        // takes one row: its message never holds a tall card of blank space.
+        // A narrower one keeps its height: shrinking it would leave a hole
+        // under it beside the taller widget of its row.
         const state = value ? widgetModel(value, specOf(w), false).state : undefined
-        const compact = state === 'no_data_yet' || state === 'not_measured'
-        const rows = compact ? 1 : w.h
+        const compact =
+          (state === 'no_data_yet' || state === 'not_measured') && colSpanFor(w.w, cols) === cols
+        // The key figures strip is one row of tiles: a taller stored height
+        // (older layouts, the editor's former default) only left blank space
+        // under it, so it always takes one row and is as tall as its tiles.
+        const rows = compact || value?.shape === 'kpis' ? 1 : w.h
         return (
           <div
             key={spec?.id ?? `${w.widget_type}-${i}`}

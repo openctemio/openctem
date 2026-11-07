@@ -9,6 +9,11 @@ vi.mock('../api/use-admin-session', () => ({
   adminEndElevation: (...a: unknown[]) => end(...a),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+const factors = vi.fn()
+vi.mock('../api/use-console-factors', () => ({
+  useConsoleFactors: () => ({ data: factors() }),
+}))
+vi.mock('../lib/webauthn', () => ({ isWebAuthnSupported: () => true }))
 globalThis.ResizeObserver ??= class {
   observe() {}
   unobserve() {}
@@ -23,22 +28,64 @@ import type { AdminIdentity } from '../types'
 const base: AdminIdentity = { id: '1', email: 'root@x.io', name: 'Root', role: 'readonly' }
 
 describe('AdminElevationBar', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    factors.mockReturnValue({ totp_allowed: true, webauthn_enabled: false, authenticators: [] })
+  })
 
-  it('offers elevation to a read-only-acting administrator and sends role, minutes and reason', async () => {
+  it('elevates in one dialog: role, minutes, reason and the code go in one request', async () => {
     const changed = vi.fn()
     elevate.mockResolvedValueOnce({ role: 'super_admin', elevated_until: '2026-10-16T12:00:00Z' })
     const user = userEvent.setup()
     render(<AdminElevationBar admin={{ ...base, max_role: 'super_admin' }} onChanged={changed} />)
     await user.click(screen.getByRole('button', { name: 'Elevate' }))
     await user.type(screen.getByLabelText('Reason'), 'Rotate the platform IdP secret, ticket 77')
-    await user.click(screen.getAllByRole('button', { name: 'Elevate' }).at(-1)!)
+    const submit = screen.getAllByRole('button', { name: 'Elevate' }).at(-1)!
+    // No elevation without a fresh code.
+    expect(submit).toBeDisabled()
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '123456')
+    await user.click(submit)
     expect(elevate).toHaveBeenCalledWith(
       'super_admin',
       30,
-      'Rotate the platform IdP secret, ticket 77'
+      'Rotate the platform IdP secret, ticket 77',
+      '123456'
     )
     expect(changed).toHaveBeenCalled()
+  })
+
+  it('shows a refused code under the code field and keeps the dialog open', async () => {
+    const changed = vi.fn()
+    elevate.mockRejectedValueOnce(new Error('Invalid code'))
+    const user = userEvent.setup()
+    render(<AdminElevationBar admin={{ ...base, max_role: 'super_admin' }} onChanged={changed} />)
+    await user.click(screen.getByRole('button', { name: 'Elevate' }))
+    await user.type(screen.getByLabelText('Reason'), 'Rotate the platform IdP secret, ticket 77')
+    await user.type(screen.getByLabelText('Code from your authenticator app'), '000000')
+    await user.click(screen.getAllByRole('button', { name: 'Elevate' }).at(-1)!)
+    expect(changed).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText('Code from your authenticator app')).toHaveValue('')
+  })
+
+  it('lets a security-key holder leave the code empty, and asks for none on a key-only console', async () => {
+    elevate.mockResolvedValue({ role: 'super_admin', elevated_until: '2026-10-16T12:00:00Z' })
+    factors.mockReturnValue({ totp_allowed: true, webauthn_enabled: true, authenticators: [{}] })
+    const user = userEvent.setup()
+    const { unmount } = render(
+      <AdminElevationBar admin={{ ...base, max_role: 'super_admin' }} onChanged={vi.fn()} />
+    )
+    await user.click(screen.getByRole('button', { name: 'Elevate' }))
+    await user.type(screen.getByLabelText('Reason'), 'Rotate the platform IdP secret, ticket 77')
+    await user.click(screen.getAllByRole('button', { name: 'Elevate' }).at(-1)!)
+    expect(elevate).toHaveBeenLastCalledWith('super_admin', 30, expect.any(String), '')
+    unmount()
+
+    factors.mockReturnValue({ totp_allowed: false, webauthn_enabled: true, authenticators: [{}] })
+    render(<AdminElevationBar admin={{ ...base, max_role: 'super_admin' }} onChanged={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Elevate' }))
+    expect(screen.queryByLabelText('Code from your authenticator app')).not.toBeInTheDocument()
+    expect(screen.getByText(/confirm with your security key/)).toBeInTheDocument()
   })
 
   it('shows the active elevation and ends it', async () => {
@@ -56,7 +103,10 @@ describe('AdminElevationBar', () => {
         onChanged={changed}
       />
     )
-    expect(screen.getByText(/Acting as Operations admin until/)).toBeInTheDocument()
+    // Elevated: a compact chip with the role and the end time, the full
+    // sentence for screen readers.
+    expect(screen.getByRole('status')).toHaveTextContent(/Acting as .+ until/)
+    expect(screen.getByTestId('elevation-control')).toHaveTextContent(/until/)
     await user.click(screen.getByRole('button', { name: 'End now' }))
     expect(end).toHaveBeenCalled()
   })

@@ -1,4 +1,5 @@
 import { BrandLogoFull, PoweredBy } from '@/components/brand-logo'
+import { Overridable } from '@/lib/extension/overridable'
 
 type AuthLayoutProps = {
   children: React.ReactNode
@@ -26,7 +27,7 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
           <BrandLogoFull className="h-8 sm:h-10 w-auto" />
         </div>
         {children}
-        <PoweredBy className="pt-4" />
+        <Overridable id="auth.footer" fallback={PoweredBy} className="pt-4" />
       </div>
     </div>
   )

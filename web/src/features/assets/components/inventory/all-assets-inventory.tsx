@@ -47,8 +47,9 @@ import {
   PageStack,
   EmptyState,
   ErrorState,
-  FilterButton,
+  FilterPanelSlot,
   FilterSheet,
+  useFilterPanelOpen,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -137,8 +138,10 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     attribution: attributionQuery(f),
     scopeStatus: f.scopeStatus,
     monitoringState: f.monitoringState,
+    liveness: f.liveness,
     discoveredBy: f.discoveredBy,
     firstSeenAfter: f.firstSeenAfter,
+    firstSeenBefore: f.firstSeenBefore,
     // Each row's attribution and the scan gate's answer (the scope badge).
     withTriage: true,
     sort: f.sort,
@@ -207,6 +210,9 @@ function InventoryTableSkeleton() {
   )
 }
 
+/** Per-browser memory of the side panel (Findings uses the same shape). */
+const FILTERS_OPEN_KEY = 'openctem:assets-filters-open'
+
 export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode } = {}) {
   const router = useRouter()
   const pathname = usePathname()
@@ -247,6 +253,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   )
 
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+  // The side panel, as on Findings: closed until the viewer opens it, then remembered.
+  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(FILTERS_OPEN_KEY)
 
   // Data. The headline numbers come from the tenant-wide stats endpoint.
   const searchFilters = useMemo(() => toSearchFilters(filters), [filters])
@@ -269,7 +277,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   const [facetsWanted, setFacetsWanted] = useState(false)
   const { data: buData } = useBusinessUnits(
     undefined,
-    facetsWanted || filterSheetOpen || Boolean(filters.businessUnitIds?.length)
+    facetsWanted || filterSheetOpen || filtersOpen || Boolean(filters.businessUnitIds?.length)
   )
 
   // Typed mode: the list is one type (and maybe one sub-type).
@@ -434,16 +442,16 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     />
   )
 
-  // Phones and narrow windows: the facets open in a sheet. From `lg` up the
-  // filter row's Add filter does the same job without taking the table's width.
-  const filterButtons = (
-    <FilterButton
-      className="lg:hidden"
-      onClick={() => setFilterSheetOpen(true)}
-      aria-haspopup="dialog"
-      activeCount={activeCount}
-    />
-  )
+  // From `lg` up the button toggles the side panel; below it opens the same
+  // facets in a sheet. Add filter stays in the filter row for the chips and the
+  // advanced attribute filters.
+  const filterToggle = {
+    open: filtersOpen,
+    onToggle: () => setFiltersOpen((o) => !o),
+    onOpenSheet: () => setFilterSheetOpen(true),
+    activeCount,
+    controlsId: 'asset-filters',
+  }
 
   const chips = inventoryChips(filters, {
     groups: facetGroups,
@@ -586,8 +594,15 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           )}
         </div>
 
-        <div>
-          <div className="min-w-0">
+        <div className="flex items-start">
+          <FilterPanelSlot
+            open={filtersOpen}
+            id="asset-filters"
+            label={t('assets.inventoryPage.filters', 'Asset filters')}
+          >
+            {facetPanel}
+          </FilterPanelSlot>
+          <div className="min-w-0 flex-1">
             {isFirstLoad && !isError ? (
               <InventoryTableSkeleton />
             ) : (
@@ -624,7 +639,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 filterTags={filters.tags}
                 onToggleTagFilter={toggleTagFilter}
                 search={search}
-                filter={filterButtons}
+                filterToggle={filterToggle}
                 toolbarEnd={
                   <>
                     <InventoryViewsMenu

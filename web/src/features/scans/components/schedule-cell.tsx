@@ -10,6 +10,7 @@ import { enTranslate, type Translate } from '../lib/translate'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { hasSchedule, scheduleOn } from '../lib/scan-status'
 import { ScheduleOnConfirm } from './schedule-on-confirm'
+import { ScheduleMissedNote } from './schedule-missed-note'
 
 /** "in 2 days", "in 3 hours", "Soon", "Overdue"; null without a date. */
 export function formatNextRun(
@@ -121,6 +122,7 @@ export function ScheduleCell({
             t('scans.state.scheduleOff')
           )}
         </span>
+        <ScheduleMissedNote config={config} showRunNow={false} />
       </div>
     </div>
   )

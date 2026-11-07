@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -18,12 +18,16 @@ func implementsManifest(tool string, implements []string, produces ...string) se
 }
 
 func openPortReport(tool, claimed string) *ctis.Report {
-	return &ctis.Report{
-		Metadata: ctis.ReportMetadata{ID: "r-ports", Capability: claimed},
+	r := &ctis.Report{
+		Metadata: ctis.ReportMetadata{ID: testReportID},
 		Tool:     &ctis.Tool{Name: tool},
-		Assets: []ctis.Asset{{Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10",
-			Technical: &ctis.AssetTechnical{IPAddress: &ctis.IPAddressTechnical{Ports: []ctis.PortInfo{{Port: 443, Protocol: "tcp"}}}}}},
+		Assets: []ctis.Asset{
+			{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10"},
+			{ID: "svc", Type: ctis.AssetTypeService, Value: "192.0.2.10:443/tcp"},
+		},
 	}
+	setReportCapability(r, claimed)
+	return r
 }
 
 // The capability of a command-bound report comes from the command's tool,
@@ -31,7 +35,7 @@ func openPortReport(tool, claimed string) *ctis.Report {
 func TestBoundCapability(t *testing.T) {
 	agt := tenantSensor()
 	src := &fakeContracts{byKey: map[manifestKey]sensor.Manifest{
-		{tenantKey(agt.TenantID), agt.ID}: implementsManifest("acme-ports", []string{"scan.ports@1"}, "asset:ip_address", "asset:open_port"),
+		{tenantKey(agt.TenantID), agt.ID}: implementsManifest("acme-ports", []string{"scan.ports@1"}, "asset:ip_address", "asset:service"),
 	}}
 	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
 	ctx := context.Background()
@@ -59,9 +63,9 @@ func TestBoundCapability(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := openPortReport(tc.tool, tc.claim)
-			got := s.bindOutputTypes(ctx, agt, *agt.TenantID, boundCommand(tc.tool), r, Options{})
-			if got.Metadata.Capability != tc.want {
-				t.Fatalf("capability %q, want %q", got.Metadata.Capability, tc.want)
+			got, _, _ := s.bindOutputTypes(ctx, agt, *agt.TenantID, boundCommand(tc.tool), r, Options{})
+			if reportCapability(got) != tc.want {
+				t.Fatalf("capability %q, want %q", reportCapability(got), tc.want)
 			}
 		})
 	}
@@ -75,9 +79,9 @@ func TestBoundCapabilityIsTenantScoped(t *testing.T) {
 	}}
 	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeWarn}, contracts: src}
 	other.ID = owner.ID // same sensor id, another tenant
-	got := s.bindOutputTypes(context.Background(), other, *other.TenantID, boundCommand("acme-ports"), openPortReport("acme-ports", "scan.ports@1"), Options{})
-	if got.Metadata.Capability != "" {
-		t.Fatalf("a foreign tenant's declaration bound the capability: %q", got.Metadata.Capability)
+	got, _, _ := s.bindOutputTypes(context.Background(), other, *other.TenantID, boundCommand("acme-ports"), openPortReport("acme-ports", "scan.ports@1"), Options{})
+	if reportCapability(got) != "" {
+		t.Fatalf("a foreign tenant's declaration bound the capability: %q", reportCapability(got))
 	}
 }
 
@@ -88,11 +92,11 @@ func TestPortScanReportByCapability(t *testing.T) {
 	if !isPortScanReport(r) {
 		t.Fatal("a scan.ports report is a port scan")
 	}
-	r.Metadata.Capability = "probe.http@1"
+	setReportCapability(r, "probe.http@1")
 	if isPortScanReport(r) {
 		t.Fatal("a probe.http report is not a port scan")
 	}
-	r.Metadata.Capability = ""
+	setReportCapability(r, "")
 	r.Tool.Name = "naabu"
 	if !isPortScanReport(r) {
 		t.Fatal("an unbound report of a known port scanner keeps the name rule")
@@ -106,18 +110,18 @@ func TestPortScanReportByCapability(t *testing.T) {
 func TestCapabilityContractWarnsAndApplies(t *testing.T) {
 	agt := tenantSensor()
 	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
-	r := &ctis.Report{Metadata: ctis.ReportMetadata{ID: "r1"}, Tool: &ctis.Tool{Name: "naabu"},
-		Assets: []ctis.Asset{{Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10"}}} // no ports
-	got := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("naabu"), r, Options{})
-	if len(got.Assets) != 1 || got.Metadata.Capability != "scan.ports@1" {
-		t.Fatalf("applied %+v capability %q", got.Assets, got.Metadata.Capability)
+	r := &ctis.Report{Metadata: ctis.ReportMetadata{ID: testReportID}, Tool: &ctis.Tool{Name: "naabu"},
+		Assets: []ctis.Asset{{ID: "ip", Type: ctis.AssetTypeIPAddress, Value: "192.0.2.10"}}} // no ports
+	got, _, _ := s.bindOutputTypes(context.Background(), agt, *agt.TenantID, boundCommand("naabu"), r, Options{})
+	if len(got.Assets) != 1 || reportCapability(got) != "scan.ports@1" {
+		t.Fatalf("applied %+v capability %q", got.Assets, reportCapability(got))
 	}
 }
 
 func TestSanitizeToolContractImplements(t *testing.T) {
 	base := func() *sensor.ToolContract {
 		return &sensor.ToolContract{APIVersion: sensor.ToolContractAPIVersion, Digest: "sha256:" + string(make64('b')),
-			Version: "2.0.0", Class: "target-scan", Tier: "T1", Produces: []string{"asset:open_port"}}
+			Version: "2.0.0", Class: "target-scan", Tier: "T1", Produces: []string{"asset:service"}}
 	}
 	c := base()
 	c.Implements = []string{"scan.ports@1", "scan.ports@1"}

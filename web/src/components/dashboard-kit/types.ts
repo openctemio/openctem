@@ -218,6 +218,10 @@ export interface IntakeSourceRow {
   last_at: string | null
   last_status: string
   health: SourceHealth
+  /** The last receipt of whatever the health speaks about (the stale sender's own, not the freshest sender's). */
+  health_last_at?: string | null
+  /** Reports of this source applied from the results quarantine (the sender stays the original sensor). */
+  released?: number
   expected_every_seconds: number | null
   drill: string | null
   /** Assets the source discovered or updated in the period (discovery tools). */
@@ -238,6 +242,8 @@ export interface IntakeInstance {
   assets?: number
   health: SourceHealth
   last_at: string | null
+  /** Reports of this sender applied from the results quarantine. */
+  released?: number
   drill?: string | null
   sensor_href?: string | null
 }
@@ -249,6 +255,14 @@ export interface IntakeNoise {
   merged: number
   suppressed: number
   not_stored: number
+  /** Findings that existed and were reported again unchanged. */
+  seen_again?: number
+  /** Repeats of a finding the same scan already reported. */
+  repeated?: number
+  /** Every other place a received finding went, by receipt outcome code. */
+  outcomes?: Record<string, number>
+  /** What no receipt explains (receipts written before outcomes were counted). */
+  unaccounted?: number
 }
 
 export interface IntakeData {

@@ -22,7 +22,8 @@
 //	AES-256-GCM, raw bytes (pkg/domain/secretstore, key = hex-decoded key):
 //	  credentials.encrypted_data                      secret store (template sources, ...)
 //	Keyed hashes that are recomputed from the plaintext:
-//	  exposure_events.details.secret_fingerprint      HMAC keyed from the key
+//	  exposure_events.details.secret_fingerprint      HMAC under a per-organization
+//	                                                  key derived from the key
 //	  scanner_templates.signature_hash                HMAC(key, content)
 //
 // Token hashes peppered with the key (oct_ API keys, SCIM tokens, sensor
@@ -34,6 +35,9 @@
 // failure rolls the whole transaction back. A sweep over every text, bytea
 // and jsonb column also reports OLD-key ciphertext found anywhere this list
 // does not cover, so a location added later cannot be silently left behind.
+// The sweep covers every schema of the database, an extension's own schema
+// included: an extension stores no app-key-encrypted value until a rekey
+// seam lists its columns, and the sweep refuses the rotation if one does.
 package rekey
 
 import (
@@ -50,6 +54,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // Keys holds both keys in the APP_ENCRYPTION_KEY string form.
@@ -252,6 +257,7 @@ var registry = []location{
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"access_key"}, where: "key = 'storage_config'"},
 	jsonField{table: "settings", pk: "id", col: "value_json", path: []string{"secret_key"}, where: "key = 'storage_config'"},
 	textCol{table: "tenant_ai_settings", pk: "tenant_id", col: "key_enc"},
+	textCol{table: "tool_source_keys", pk: "id", col: "key_enc"},
 	textCol{table: "ai_mask_maps", pk: "id", col: "key_enc"},
 	textCol{table: "ai_mask_maps", pk: "id", col: "map_enc"},
 	jsonField{table: "platform_settings", pk: "key", col: "value", path: []string{"password_encrypted"}, where: "key = 'email.smtp'"},
@@ -437,9 +443,7 @@ func (l leakedSecret) run(ctx context.Context, tx *sql.Tx, ks *keyset) (Count, [
 		cnt.Absent = !ok
 		return cnt, nil, err
 	}
-	rows, err := collect(ctx, tx, `SELECT id::text, details->>'secret_value_enc' FROM exposure_events
-		WHERE details->>'secret_value_enc' IS NOT NULL AND details->>'secret_enc_scheme' = $1 FOR UPDATE`,
-		credential.SecretSchemeAESGCM)
+	rows, err := collectLeakedSecrets(ctx, tx)
 	if err != nil {
 		return cnt, nil, err
 	}
@@ -456,7 +460,7 @@ func (l leakedSecret) run(ctx context.Context, tx *sql.Tx, ks *keyset) (Count, [
 				if out, err = ks.newC.EncryptString(p); err != nil {
 					return cnt, nil, err
 				}
-				fp, oc = ks.newProtector.Fingerprint(p), rekeyed
+				fp, oc = ks.newProtector.Fingerprint(r.tenantID, p), rekeyed
 			} else if _, err := ks.newC.DecryptString(v); err == nil {
 				oc = already
 			}
@@ -464,14 +468,45 @@ func (l leakedSecret) run(ctx context.Context, tx *sql.Tx, ks *keyset) (Count, [
 		tally(&cnt, &fails, l.name(), r.pk, oc)
 		if oc == rekeyed {
 			if _, err := tx.ExecContext(ctx, `UPDATE exposure_events
-				SET details = jsonb_set(jsonb_set(details, '{secret_value_enc}', to_jsonb($1::text)),
-				                        '{secret_fingerprint}', to_jsonb($2::text))
-				WHERE id::text = $3`, out, fp, r.pk); err != nil {
+				SET details = jsonb_set(jsonb_set(jsonb_set(details, '{secret_value_enc}', to_jsonb($1::text)),
+				                        '{secret_fingerprint}', to_jsonb($2::text)),
+				                        '{secret_fingerprint_version}', to_jsonb($4::int))
+				WHERE id::text = $3 AND tenant_id = $5`, out, fp, r.pk, credential.FingerprintVersionTenant, r.tenantID.String()); err != nil {
 				return cnt, nil, err
 			}
 		}
 	}
 	return cnt, fails, nil
+}
+
+// leakedRow is one sealed leaked secret and its organization, which keys the
+// recomputed fingerprint.
+type leakedRow struct {
+	keyed
+	tenantID shared.ID
+}
+
+func collectLeakedSecrets(ctx context.Context, tx *sql.Tx) ([]leakedRow, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id::text, tenant_id::text, details->>'secret_value_enc' FROM exposure_events
+		WHERE details->>'secret_value_enc' IS NOT NULL AND details->>'secret_enc_scheme' = $1 FOR UPDATE`,
+		credential.SecretSchemeAESGCM)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []leakedRow
+	for rows.Next() {
+		var r leakedRow
+		var tid string
+		if err := rows.Scan(&r.pk, &tid, &r.v); err != nil {
+			return nil, err
+		}
+		if r.tenantID, err = shared.IDFromString(tid); err != nil {
+			return nil, fmt.Errorf("exposure %s: tenant id: %w", r.pk, err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // secretStore is credentials.encrypted_data (raw AES-GCM bytes).
@@ -575,14 +610,20 @@ const minCipherBytes = 28
 // so every registered value is already under NEW and anything the OLD key
 // still opens is in a place the registry does not cover.
 func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
-	type colRef struct{ table, col, typ string }
+	// Every schema of the database, not only the core one: an extension's
+	// own schema (pkg/extension) is swept too, so a value it encrypted with
+	// the app key is reported (and the run refused) instead of being left
+	// unreadable after the rotation. information_schema lists only what
+	// the role may access; a table it may not read is reported below.
+	type colRef struct{ schema, table, col, typ string }
 	listCols := func() ([]colRef, error) {
-		rows, err := tx.QueryContext(ctx, `SELECT c.table_name, c.column_name, c.data_type
+		rows, err := tx.QueryContext(ctx, `SELECT c.table_schema, c.table_name, c.column_name, c.data_type
 			FROM information_schema.columns c
 			JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
-			WHERE c.table_schema = current_schema() AND t.table_type = 'BASE TABLE'
+			WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema') AND c.table_schema NOT LIKE 'pg\_%'
+			  AND t.table_type = 'BASE TABLE'
 			  AND c.data_type IN ('text', 'character varying', 'bytea', 'jsonb', 'json')
-			ORDER BY 1, 2`)
+			ORDER BY 1, 2, 3`)
 		if err != nil {
 			return nil, err
 		}
@@ -590,7 +631,7 @@ func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
 		var cols []colRef
 		for rows.Next() {
 			var c colRef
-			if err := rows.Scan(&c.table, &c.col, &c.typ); err != nil {
+			if err := rows.Scan(&c.schema, &c.table, &c.col, &c.typ); err != nil {
 				return nil, err
 			}
 			cols = append(cols, c)
@@ -601,20 +642,32 @@ func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
 	if err != nil {
 		return nil, err
 	}
+	var current string
+	if err := tx.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&current); err != nil {
+		return nil, err
+	}
+	unreadable, err := unreadableTables(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
 
 	found := map[string]int{}
 	for _, c := range cols {
+		loc, from := c.table+"."+c.col, pgIdent(c.schema)+"."+pgIdent(c.table)
+		if c.schema != current {
+			loc = c.schema + "." + loc
+		}
 		// Identifiers come from information_schema and are quoted.
 		//nolint:gosec // G201: quoted catalog identifiers, no user input
-		q := fmt.Sprintf(`SELECT '', %s::text FROM %s WHERE %s IS NOT NULL`, pgIdent(c.col), pgIdent(c.table), pgIdent(c.col))
+		q := fmt.Sprintf(`SELECT '', %s::text FROM %s WHERE %s IS NOT NULL`, pgIdent(c.col), from, pgIdent(c.col))
 		if c.typ == "bytea" {
 			//nolint:gosec // G201: quoted catalog identifiers, no user input
 			q = fmt.Sprintf(`SELECT '', %s FROM %s WHERE length(%s) >= %d`,
-				pgIdent(c.col), pgIdent(c.table), pgIdent(c.col), minCipherBytes)
+				pgIdent(c.col), from, pgIdent(c.col), minCipherBytes)
 		}
 		vals, err := collect(ctx, tx, q)
 		if err != nil {
-			return nil, fmt.Errorf("%s.%s: %w", c.table, c.col, err)
+			return nil, fmt.Errorf("%s: %w", loc, err)
 		}
 		for _, r := range vals {
 			n := 0
@@ -633,10 +686,14 @@ func sweep(ctx context.Context, tx *sql.Tx, ks *keyset) ([]Failure, error) {
 					n = 1
 				}
 			}
-			found[c.table+"."+c.col] += n
+			found[loc] += n
 		}
 	}
-	out := make([]Failure, 0, len(found))
+	out := make([]Failure, 0, len(found)+len(unreadable))
+	for _, t := range unreadable {
+		out = append(out, Failure{Location: t, Key: "table",
+			Reason: "not readable by this database role, so OLD-key ciphertext there cannot be ruled out; grant SELECT or run as the owner"})
+	}
 	for loc, n := range found {
 		if n == 0 {
 			continue
@@ -685,4 +742,28 @@ func countOldInJSON(doc any, ks *keyset) int {
 		return n
 	}
 	return 0
+}
+
+// unreadableTables lists the base tables outside the system schemas that the
+// role may not read (information_schema hides them from the sweep).
+func unreadableTables(ctx context.Context, tx *sql.Tx) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT n.nspname || '.' || c.relname
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relkind IN ('r', 'p') AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+		  AND n.nspname NOT LIKE 'pg\_%'
+		  AND NOT (has_schema_privilege(n.oid, 'USAGE') AND has_table_privilege(c.oid, 'SELECT'))
+		ORDER BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }

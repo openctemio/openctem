@@ -3,9 +3,10 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
@@ -36,7 +37,7 @@ func dnsxReport() *ctis.Report {
 		Metadata: ctis.ReportMetadata{ID: "r1"},
 		Tool:     &ctis.Tool{Name: "dnsx"},
 		Assets: []ctis.Asset{
-			{ID: "a1", Type: ctis.AssetTypeDomain, Value: "acme.test"},
+			{ID: "a1", Type: ctis.AssetTypeDomainName, Value: "acme.test"},
 			{ID: "a2", Type: ctis.AssetTypeIPAddress, Value: "203.0.113.4"},
 			{ID: "a3", Type: ctis.AssetTypeRepository, Value: "github.com/evil/planted"},
 		},
@@ -60,7 +61,10 @@ func TestBindOutputTypes_QuarantinesOutOfContract(t *testing.T) {
 	agt := &sensor.Sensor{ID: shared.NewID()}
 	in := dnsxReport()
 
-	got := s.bindOutputTypes(context.Background(), agt, shared.NewID(), boundCommand("dnsx"), in, Options{Route: "ctis"})
+	got, nHeld, nLost := s.bindOutputTypes(context.Background(), agt, shared.NewID(), boundCommand("dnsx"), in, Options{Route: "ctis"})
+	if nHeld != 1 || nLost != 0 {
+		t.Fatalf("held %d, lost %d findings, want 1 held", nHeld, nLost)
+	}
 	if len(got.Assets) != 2 || len(got.Findings) != 1 || got.Findings[0].AssetRef != "a1" {
 		t.Fatalf("applied %d assets / %d findings", len(got.Assets), len(got.Findings))
 	}
@@ -86,7 +90,7 @@ func TestBindOutputTypes_QuarantinesOutOfContract(t *testing.T) {
 func TestBindOutputTypes_WarnModeApplies(t *testing.T) {
 	res := &policyResults{mode: sensorresult.ModeWarn}
 	s := &Service{logger: logger.NewNop(), results: res}
-	got := s.bindOutputTypes(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), boundCommand("dnsx"), dnsxReport(), Options{})
+	got, _, _ := s.bindOutputTypes(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), boundCommand("dnsx"), dnsxReport(), Options{})
 	if len(got.Assets) != 3 || len(res.items) != 0 {
 		t.Fatalf("warn mode: %d assets applied, %d quarantined", len(got.Assets), len(res.items))
 	}
@@ -98,10 +102,10 @@ func TestBindOutputTypes_NoContract(t *testing.T) {
 	res := &policyResults{mode: sensorresult.ModeQuarantine}
 	s := &Service{logger: logger.NewNop(), results: res}
 	agt := &sensor.Sensor{ID: shared.NewID()}
-	if got := s.bindOutputTypes(context.Background(), agt, shared.NewID(), Binding{}, dnsxReport(), Options{}); len(got.Assets) != 3 {
+	if got, _, _ := s.bindOutputTypes(context.Background(), agt, shared.NewID(), Binding{}, dnsxReport(), Options{}); len(got.Assets) != 3 {
 		t.Error("an unsolicited report was bound (it has its own gate)")
 	}
-	if got := s.bindOutputTypes(context.Background(), agt, shared.NewID(), boundCommand("acme-custom"), dnsxReport(), Options{}); len(got.Assets) != 3 {
+	if got, _, _ := s.bindOutputTypes(context.Background(), agt, shared.NewID(), boundCommand("acme-custom"), dnsxReport(), Options{}); len(got.Assets) != 3 {
 		t.Error("a tool without a contract was bound")
 	}
 	if len(res.items) != 0 {
@@ -114,16 +118,32 @@ func TestBindOutputTypes_NoContract(t *testing.T) {
 func TestBindOutputTypes_ReobservedInputsAndUnclassified(t *testing.T) {
 	s := &Service{logger: logger.NewNop(), results: &policyResults{mode: sensorresult.ModeQuarantine}}
 	r := &ctis.Report{Tool: &ctis.Tool{Name: "httpx"}, Assets: []ctis.Asset{
-		{ID: "s", Type: ctis.AssetTypeHTTPService, Value: "https://acme.test"},
-		{ID: "d", Type: ctis.AssetTypeDomain, Value: "acme.test"},
+		{ID: "s", Type: ctis.AssetTypeWebOrigin, Value: "https://acme.test"},
+		{ID: "d", Type: ctis.AssetTypeDomainName, Value: "acme.test"},
 		{ID: "u", Type: "made_up_type", Value: "x"},
 	}}
-	got := s.bindOutputTypes(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), boundCommand("httpx"), r, Options{})
+	got, _, _ := s.bindOutputTypes(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), boundCommand("httpx"), r, Options{})
 	ids := map[string]bool{}
 	for _, a := range got.Assets {
 		ids[a.ID] = true
 	}
 	if !ids["s"] || !ids["d"] || ids["u"] {
 		t.Fatalf("applied %v", ids)
+	}
+}
+
+type fullResults struct{ policyResults }
+
+func (fullResults) Create(context.Context, *sensorresult.Item, sensorresult.Limits) error {
+	return errors.New("quarantine full")
+}
+
+// A full quarantine keeps nothing: the findings are counted as lost, never as
+// held, so the step run does not claim them for review.
+func TestBindOutputTypes_QuarantineCannotTakeIt(t *testing.T) {
+	s := &Service{logger: logger.NewNop(), results: &fullResults{policyResults{mode: sensorresult.ModeQuarantine}}}
+	_, held, lost := s.bindOutputTypes(context.Background(), &sensor.Sensor{ID: shared.NewID()}, shared.NewID(), boundCommand("dnsx"), dnsxReport(), Options{})
+	if held != 0 || lost != 1 {
+		t.Fatalf("held %d, lost %d, want 0 held and 1 lost", held, lost)
 	}
 }

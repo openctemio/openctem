@@ -23,6 +23,19 @@ asset service/http (origin: https://api.example.com)
 
 ## Ingest (`internal/app/ingest/processor_endpoints.go`)
 
+```mermaid
+flowchart TD
+  R["CTIS report endpoints[], tenant from the sensor key"] --> B{"bindOutputTypes: stage reports<br/>endpoints and contract produces endpoint?"}
+  B -- no --> H["held, not stored"]
+  B -- yes --> P["planEndpoints: fold legacy discovered_url,<br/>webendpoint.Observe strict parse and template,<br/>refuse origins outside a command's targets"]
+  P --> A["asset ingest of origins as http_service:<br/>scope, exclusions, identity, attribution"]
+  A --> C{"recordEndpoints: persisted origin is an<br/>http_service the report may change?"}
+  C -- no --> REF["endpoints_refused"]
+  C -- yes --> X["markExcluded: path rule blocks the method,<br/>in_scope false with exclusion_id"]
+  X --> U["WebEndpointRepository.Record per origin:<br/>advisory lock, caps 5,000 endpoints,<br/>500 scripts, 100 params, hourly rewrite"]
+  U --> EV["web_endpoint_events in the same transaction"]
+```
+
 1. `bindOutputTypes` holds a report's `endpoints[]` unless the tool's stage
    reports endpoints (`stage.Stage.Endpoints`: `crawl.web`, `dast.web`) and,
    when the sensor declares a tool contract, its `produces` names `endpoint`.
@@ -45,8 +58,24 @@ asset service/http (origin: https://api.example.com)
    most hourly unless it changed.
 
 The ingest output reports `endpoints_created`, `endpoints_updated`,
-`endpoints_refused`, `endpoints_static`, `endpoints_over_cap` and
-`legacy_url_assets_folded`.
+`endpoints_refused`, `endpoints_no_evidence`, `endpoints_static`,
+`endpoints_over_cap` and `legacy_url_assets_folded`.
+
+### Source and response evidence (RFC-056 §9)
+
+| Bound capability | Stored source |
+|---|---|
+| `enumerate.web_paths`, `enumerate.web_params` | `guess`, whatever the report says; refused (`endpoints_no_evidence`) without valid evidence |
+| `crawl.web` | the claimed `crawl`, `js`, `sitemap` or `robots`, else `crawl` |
+| anything else, or no capability | the claimed CTIS source, never `guess` |
+
+Evidence travels as `extensions["io.openctem"].response = {"size": int,
+"hash": "16 lowercase hex"}` (the size of the response body and the first 16
+hex characters of the sha-256 of its normalised form; the body itself never
+leaves the sensor). It is stored in `web_endpoints.resp_size` and
+`resp_hash` (migration `20261105051408`), kept on later sightings by other
+sources, and returned by the API as `resp_size` and `resp_hash`. It is not
+part of `response_sig`.
 
 ## Chaining
 
@@ -63,7 +92,7 @@ with step-up. It is enforced in three places:
 | Where | What |
 |---|---|
 | Dispatch (`scope.Service.ExcludedTargets`) | a URL target under a blocking rule (for GET) is excluded; a host target never is |
-| Job (`scope.WebJobGuard`, the command repository's create guard) | every job whose tool requests web paths (crawl, template or web application tool, or a step whose capability names one), whatever path created it (quick scan, workflow step, scheduled or retried scan, zone batch, automation, `POST /api/v1/commands`), carries `web_scope` of its own tenant's rules: `deny_paths` for rules that block GET or HEAD, `methods: [GET, HEAD]` when a rule there blocks only other methods; nothing when no rule applies. A caller's own `web_scope` is replaced. A failed lookup refuses the job; a nuclei validation or retest with a rule on its host carries it and requires `net.confined@1` (refused with `NO_CONFINED_SENSOR` when no sensor of the organization reports it); a validation or retest of another web tool there is refused (`WEB_SCOPE_UNSUPPORTED`) |
+| Job (`scope.WebJobGuard`, the command repository's create guard) | every job whose tool requests web paths (crawl, template or web application tool, or a step whose capability names one), whatever path created it (quick scan, workflow step, scheduled or retried scan, zone batch, automation, `POST /api/v1/commands`), carries `web_scope` of its own tenant's rules: `deny_paths` for rules that block GET or HEAD (a `*` segment is cut to the path before it, `/tenants/*/admin` as `/tenants/`, which every sensor holds; a sensor that reads `*` segments, v0.38.2 or v0.37.2 and later, is sent the written form at claim, from the platform-only `deny_paths_wildcard` that never leaves the platform), `methods: [GET, HEAD]` when a rule there blocks only other methods; nothing when no rule applies. A caller's own `web_scope` is replaced. A failed lookup refuses the job; a nuclei validation or retest with a rule on its host carries it and requires `net.confined@1` (refused with `NO_CONFINED_SENSOR` when no sensor of the organization reports it); a validation or retest of another web tool there is refused (`WEB_SCOPE_UNSUPPORTED`) |
 | Ingest (`markExcluded`) | an endpoint whose method a rule blocks is stored `in_scope = false` with `exclusion_id`: excluded-untested, visible, never targeted |
 
 `GET /web-endpoints/stats` counts `excluded_untested`, so "0 findings" on an
@@ -73,7 +102,7 @@ origin with excluded paths is not read as "safe".
 
 | Route | Permission | Notes |
 |---|---|---|
-| `GET /api/v1/web-endpoints` | `assets:read` | list query contract (RFC-048, strict: an unknown param is 400); filters `origin_asset_id`, `method`, `kind`, `auth_state`, `state`, `in_scope`, `source`, `label`, `catalog_key`, `path_hash`, `path_template_contains`, `last_status`, `param_count`, seen and changed times; `q` searches the template |
+| `GET /api/v1/web-endpoints` | `assets:read` | list query contract (RFC-048, strict: an unknown param is 400); filters `origin_asset_id`, `method`, `kind`, `auth_state`, `state`, `in_scope`, `source` (including `guess`), `label`, `catalog_key`, `path_hash`, `path_template_contains`, `last_status`, `param_count`, seen and changed times; `q` searches the template |
 | `GET /api/v1/web-endpoints/stats` | `assets:read` | the same WHERE: counts by method, kind, auth state and state, and `excluded_untested` |
 | `GET /api/v1/web-endpoints/{id}` | `assets:read` | 404 for another tenant's id and for an origin outside the caller's data scope |
 | `GET /api/v1/web-endpoints/{id}/parameters` | `assets:read` | names, locations, risk hints; never a value |

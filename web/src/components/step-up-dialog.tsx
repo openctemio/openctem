@@ -24,15 +24,21 @@ import { ApiClientError } from '@/lib/api/error-handler'
 import {
   registerStepUpHandler,
   STEP_UP_ENDPOINT,
+  STEP_UP_CODE_USED_CODE,
   STEP_UP_FAILED_CODE,
   STEP_UP_UNAVAILABLE_CODE,
   type StepUpMethod,
   type StepUpProof,
+  type StepUpPrompt,
   type StepUpState,
 } from '@/lib/api/step-up'
 import { endSessionAndSignIn } from '@/stores/auth-store'
 
 type Translate = ReturnType<typeof useTranslation>['t']
+
+function currentHost(): string {
+  return typeof window === 'undefined' ? '' : window.location.hostname
+}
 
 /** The message to show for a failed POST /auth/step-up. */
 export function stepUpErrorMessage(
@@ -41,11 +47,20 @@ export function stepUpErrorMessage(
   method: StepUpMethod | null
 ): string {
   if (err instanceof ApiClientError) {
+    if (err.code === STEP_UP_CODE_USED_CODE) {
+      return t(
+        'components.stepUp.codeUsed',
+        'That code was already used. Wait for the next code in your authenticator app.'
+      )
+    }
     if (err.code === STEP_UP_FAILED_CODE) {
+      // Name this installation's host: a person with an account on two
+      // installations has two look-alike authenticator entries.
       return method === 'totp'
         ? t(
-            'components.stepUp.badCode',
-            'That code is not valid or was already used. Enter the current code.'
+            'components.stepUp.invalidCode',
+            'That code is not valid. Use the current code from the authenticator entry for {host}.',
+            { host: currentHost() }
           )
         : t('components.stepUp.badPassword', 'Incorrect password.')
     }
@@ -68,6 +83,7 @@ export function StepUpDialogHost() {
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<StepUpState | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [prompt, setPrompt] = useState<StepUpPrompt>({})
   const resolver = useRef<((ok: boolean) => void) | null>(null)
 
   const loadState = useCallback(() => {
@@ -81,9 +97,10 @@ export function StepUpDialogHost() {
   useEffect(
     () =>
       registerStepUpHandler(
-        () =>
+        (p) =>
           new Promise<boolean>((resolve) => {
             resolver.current = resolve
+            setPrompt(p ?? {})
             setOpen(true)
             loadState()
           })
@@ -114,7 +131,23 @@ export function StepUpDialogHost() {
     finish(true)
   }
 
-  const minutes = Math.max(1, Math.round((state?.window_seconds ?? 600) / 60))
+  const windowSeconds = prompt.window_seconds ?? state?.window_seconds ?? 600
+  const minutes = Math.max(1, Math.round(windowSeconds / 60))
+  const rememberNote =
+    prompt.mode === 'every_time'
+      ? t(
+          'components.stepUp.rememberEveryTime',
+          'You will be asked again for the next action like this.'
+        )
+      : prompt.window === 'session'
+        ? t('components.stepUp.rememberSession', 'You will not be asked again until you sign out.')
+        : minutes >= 60 && minutes % 60 === 0
+          ? t('components.stepUp.rememberHours', 'You will not be asked again for {hours} hours.', {
+              hours: minutes / 60,
+            })
+          : t('components.stepUp.remember', 'You will not be asked again for {minutes} minutes.', {
+              minutes,
+            })
 
   const notice = loadFailed
     ? {
@@ -172,11 +205,7 @@ export function StepUpDialogHost() {
         'components.stepUp.description',
         'This action changes how your organization is secured. Confirm your identity to continue.'
       )}
-      rememberNote={t(
-        'components.stepUp.remember',
-        'You will not be asked again for {minutes} minutes.',
-        { minutes }
-      )}
+      rememberNote={rememberNote}
       factor={method === 'password' ? 'password' : 'totp'}
       loading={!loadFailed && !method}
       notice={notice}

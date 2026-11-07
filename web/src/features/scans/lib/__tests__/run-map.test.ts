@@ -6,6 +6,7 @@ import {
   outputsByType,
   outputsDeltaLabel,
   producedNothing,
+  producedNothingWhy,
   stepEgressRefused,
   stepGuardRefused,
   stepTasks,
@@ -114,6 +115,32 @@ describe('comparison with the previous run', () => {
     expect(nodeBadgeLines(o(10, 8, 3, 1))).toEqual(['Done', '10 outputs', '+3 new, 1 gone'])
   })
 
+  it('says why a step that produced nothing skipped its targets', () => {
+    const skipped = (skipped_target_count: number, no_longer_resolve_count = 0) =>
+      node({
+        step_key: 'rdap',
+        name: 'Registration data',
+        state: 'succeeded',
+        outcome: { skipped_target_count, no_longer_resolve_count },
+      } as Partial<RunMapNode>)
+    expect(
+      zeroOutputWarnings({ nodes: [skipped(376, 376)], edges: [] } as unknown as RunMap)
+    ).toEqual([
+      {
+        key: 'rdap',
+        text: 'Registration data produced nothing: all 376 of its targets were refused because the name does not resolve.',
+      },
+    ])
+    expect(producedNothingWhy(skipped(10, 4), 'Registration data')).toBe(
+      'Registration data produced nothing: 4 of its 10 skipped targets were refused because the name does not resolve.'
+    )
+    expect(producedNothingWhy(skipped(3), 'Registration data')).toBe(
+      'Registration data produced nothing: 3 of its targets were skipped by the sensor.'
+    )
+    // Nothing skipped: the plain warning stays.
+    expect(producedNothingWhy(node({ state: 'succeeded' }), 'X')).toBeNull()
+  })
+
   it('warns about a finished step that produced nothing', () => {
     const quiet = node({
       step_key: 'ports',
@@ -213,5 +240,48 @@ describe('comparison with the previous run', () => {
         text: "Port scan could not reach 5 targets (blocked by the sensor's network confinement).",
       },
     ])
+  })
+})
+
+describe('waiting reasons', () => {
+  const chunks = (over: Partial<RunMapNode['chunks']>) =>
+    ({ total: 0, queued: 0, running: 0, completed: 0, failed: 0, ...over }) as RunMapNode['chunks']
+
+  it('names the gate when one holds every queued chunk', () => {
+    const hosts = node({
+      state: 'waiting',
+      reason: 'waiting_for_hosts',
+      chunks: chunks({ total: 5, queued: 5, hosts_busy: 5 }),
+    })
+    expect(nodeBadgeLines(hosts)[0]).toBe('Waiting for its hosts: another task is scanning them')
+    expect(nodeBadgeLines(hosts).join('\n')).not.toContain('queued:')
+    const refused = node({
+      state: 'waiting',
+      reason: 'waiting_after_refusal',
+      chunks: chunks({ total: 4, queued: 4, refused: 4 }),
+    })
+    expect(nodeBadgeLines(refused)[0]).toBe('Waiting for a sensor whose local policy allows it')
+  })
+
+  it('counts each gate when they are mixed', () => {
+    const lines = nodeBadgeLines(
+      node({
+        state: 'waiting',
+        reason: 'waiting_for_sensor',
+        chunks: chunks({ total: 9, queued: 9, hosts_busy: 5, refused: 4 }),
+      })
+    )
+    expect(lines[0]).toBe('Waiting for a sensor')
+    expect(lines).toContain('5 queued: their hosts are being scanned by another task')
+    expect(lines).toContain(
+      "4 queued: refused by a sensor's local policy, waiting for another sensor"
+    )
+  })
+
+  it('explains the queued chunks of a running step too', () => {
+    const lines = nodeBadgeLines(
+      node({ state: 'running', chunks: chunks({ total: 4, queued: 2, running: 2, hosts_busy: 2 }) })
+    )
+    expect(lines).toContain('2 queued: their hosts are being scanned by another task')
   })
 })

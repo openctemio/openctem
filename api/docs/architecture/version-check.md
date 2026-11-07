@@ -27,24 +27,35 @@ RFC as deferred and opt-in only; nothing sends it.
 
 ## Trust
 
-The file `openctem-releases.json` holds one DSSE envelope in the shared
-signed-feed format (`pkg/feedsign`): the **feed**
-(`openctem.io/release-feed/v1`) signed directly by one online key: a sequence
+The file `openctem-releases.json` (schema `openctem.io/release-bundle/v2`)
+holds the **feed** payload (`openctem.io/release-feed/v1`, base64 of the exact
+bytes that were signed) and its keyless Sigstore bundle: a sequence
 (the issue time in Unix seconds), an issue and an expiry time (at most 45 days
 apart), the releases, the advisories and the components (the newest
 release of each first-party sensor product and of the SDK: the
 `versions.yaml` section, the version, the publication time, the notes link and,
 for an image, its manifest digest).
 
-The instance trusts only the public keys pinned in the binary
-(`releasefeed.PinnedKeys`, at most two, so a rotation can overlap); there is
-no configuration override. See [signing keys](signing-keys.md). It refuses:
+There is no signing key. The `release-feed` workflow signs the payload with
+`cosign sign-blob` using its GitHub OIDC identity; the instance verifies the
+bundle **offline** (the platform has no direct egress; the file reaches it
+through its feed relay or an import) against the Sigstore trusted root
+embedded in the release (`CONTENT_SIGSTORE_TRUSTED_ROOT` names a newer file;
+the same root verifies content catalog publishers): the certificate chain to the
+Fulcio roots, a transparency log entry (inclusion promise or proof), the
+issuer `https://token.actions.githubusercontent.com` and the exact signer
+identity `releasefeed.SignerIdentityPattern`: the `release-feed.yml` workflow of
+`openctemio/openctem` on `refs/heads/main` or a `refs/tags/vX.Y.Z` tag. There is
+no configuration override of the identity. See [signing keys](signing-keys.md).
+It refuses:
 
-- a feed not signed by a pinned key, of another payload type (the same online
-  key also signs catalog content, under other payload types, so those
-  signatures never verify as a feed), with a sequence below the one it applied (rollback), with the applied sequence but
-  other content (the SHA-256 of the signed payload is stored; the publisher
-  never signs two feeds with one sequence), expired or issued in the future;
+- a feed whose bundle does not verify for that identity (wrong repository,
+  workflow, branch or issuer, a tampered payload, a missing log entry, an
+  expired certificate, a foreign trusted root), a signature made before the
+  feed's issue time or after its expiry, a sequence below the one it applied
+  (rollback), the applied sequence with other content (the SHA-256 of the
+  signed payload is stored; the publisher never signs two feeds with one
+  sequence), a feed expired or issued in the future;
 - any field out of bounds: versions must be `vX.Y.Z`, component names a
   `versions.yaml` section name and digests `sha256:` + 64 hex, severities
   low/medium/high/critical, titles at most 200 characters without control
@@ -59,7 +70,7 @@ the image repository always comes from the catalog built into the instance,
 a learned version is used only when it is not older than the built-in one,
 and the digest pins exactly the image the feed was signed for.
 
-Until a key is pinned in the build, the check is inert (no request) and the
+Until a Sigstore trusted root loads, the check is inert (no request) and the
 console says the feed cannot be verified.
 
 ## Comparison
@@ -70,6 +81,46 @@ console says the feed cannot be verified.
   candidate `vX.Y.Z-rc.N` as itself, so the final release counts as newer; a
   build with no version (`dev`) is not compared.
 - A stored feed past its expiry is shown as out of date with its date.
+
+## Component releases
+
+The feed lists the newest stable release of each first-party component: the
+sensor products of `versions.yaml` (`sensor`, `connector-tenable`), the SDK
+(`sdk`, openctemio/sdk-go) and the CI runner (`ci`, openctemio/ci, image
+`ghcr.io/openctemio/ci`). A component release never needs a change to this
+repository:
+
+- **Effective latest.** Each component's `latest` in `versions.yaml` is the
+  built-in baseline, the release this platform release was built with. The
+  instance overlays the verified feed (`internal/versions`): the learned
+  release counts only when it is a `vX.Y.Z` release not older than the
+  baseline, so a stale or replayed feed never lowers it and an invalid value
+  is dropped. The getters (`Products`, `SensorLatest`, `SDKLatest`,
+  `CIRunnerLatest`) return the effective value and are read per use, so a
+  feed refresh applies without a restart.
+- **CI runner.** The token exchange (refusal below `ci.min`), pipeline health
+  ("update available"), the CI alerts job and the console's pipeline snippets
+  use the effective CI runner release. `GET /api/v1/ci/settings` answers it as
+  `runner_release` (read-only, instance-wide, gated by `ci:read`); the console
+  pins it in every snippet and falls back to the release it was built with
+  (`CI_RELEASE_FALLBACK`, copied from `ci.latest`) only when the API names
+  none. `CI_RUNNER_LATEST_VERSION` set by the operator wins over the feed
+  (`none` turns the comparison off).
+- **Baseline refresh.** `cut-release.sh` moves every component's `latest`
+  forward on the release branch of a train, from the same public release
+  lists (`refresh-latest.sh`, the rule of `feed-components.sh`), and copies it
+  to its consumers (`sync-versions.sh`); the post-release merge brings it to
+  develop. Nobody opens a pull request to bump a `latest`. A component that
+  cannot be read keeps its value with a warning. A hotfix keeps its tag's
+  values.
+- **Compatibility stays in the repository.** `min` (and `sdk.advisories`) is
+  this platform's compatibility floor: it never comes from the feed and
+  changes only with a protocol change. `ci.min` is v0.4.0, the first runner
+  that speaks CTIS 2.0 (this platform refuses CTIS 1.x runners).
+- **Release preflight.** A `latest` behind the published release is reported,
+  never a blocker. Only compatibility facts block: a `latest` or `min` that
+  names a version that is not a published release. A `min` changed since the
+  last release is listed for review.
 
 ## Air-gapped and offline instances
 
@@ -113,34 +164,43 @@ fetches a due check. Instance-level; no tenant data.
 
 ## Publishing the feed
 
-`api/cmd/release-feed` builds and verifies the file (the keys are created by
-`scripts/signing/init-keys.sh`):
+`api/cmd/release-feed` builds, assembles and verifies the file; the signature
+comes from cosign:
 
 ```bash
-# Release pipeline:
+# Release pipeline (the workflow runs these in three jobs):
 gh release list --json tagName,publishedAt,isDraft,isPrerelease --limit 200 > releases.json
-go run ./cmd/release-feed components > components.txt   # sensor products + sdk-go, from versions.yaml
+go run ./cmd/release-feed components > components.txt   # sensor products, sdk-go, the CI runner
 bash ../.github/scripts/release/feed-components.sh components.txt > components.json
-go run ./cmd/release-feed build -key-env RELEASE_FEED_SIGNING_KEY -releases releases.json \
+go run ./cmd/release-feed build -releases releases.json \
     -advisories ../.github/release-feed/advisories.json -components components.json \
-    -out openctem-releases.json
-go run ./cmd/release-feed verify -key <online public key hex> openctem-releases.json
+    -out feed.json                                       # the exact bytes to sign
+cosign sign-blob --yes --bundle feed.sigstore.json feed.json
+go run ./cmd/release-feed assemble -feed feed.json -bundle feed.sigstore.json -out openctem-releases.json
+go run ./cmd/release-feed verify openctem-releases.json  # offline, embedded trusted root
 ```
 
 The workflow `.github/workflows/release-feed.yml` runs on every release (called
-by `release.yml`), every 6 hours (new sensor and SDK releases reach the feed
+by `release.yml`, which grants it `id-token: write`), every 6 hours (new sensor, SDK and CI runner releases reach the feed
 within that time, and the feed never expires between releases) and by hand.
 `feed-components.sh` picks, for each component, the newest stable release
 whose image tag is published and records the image digest; it reads only
-public release lists and public images, so the sensor and sdk-go
-repositories need no step and no secret. A component it cannot resolve fails
-the run (the previous feed stays published). Its job runs only on `main` or a `v*` tag (an explicit guard; the
-`release-feed` environment is restricted the same way). It uploads the file to
+public release lists and public images, so the sensor, connector,
+sdk-go and ci repositories need no step and no secret. A component it cannot resolve fails
+the run (the previous feed stays published). Three jobs: `build` (read-only: the payload), `sign` (the only job with
+`id-token: write`; it checks out nothing and runs only cosign) and `publish`
+(verifies the assembled file with the code of the checkout, as an instance
+would, then uploads it). They run only on `main` or a `v*` tag (an explicit
+guard; the signer identity names exactly these refs). The file is uploaded to
 the latest release, which is what the
 default URL `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
-serves. While the `RELEASE_FEED_SIGNING_KEY` secret is missing it fails with
-an error that links the setup below (it runs after the release job, so the
-release itself is complete): a missing feed must never go unnoticed.
+serves. If signing or verification fails the run fails (it runs after the
+release job, so the release itself is complete) and the previous feed stays
+published.
+
+Refreshing the trusted root: `make -C api sigstore-root-refresh` before each
+release (a test fails once the embedded root has nothing valid for the next 30
+days).
 
 Advisories: add an entry to `.github/release-feed/advisories.json` when an
 advisory is published (with or after the fixing release, never before), then
@@ -148,52 +208,23 @@ run the workflow by hand.
 
 ### Setup (maintainers)
 
-One time, by the owner, about 15 minutes. Until it is done the feed is not
-published: the `Release Feed` workflow fails with an error that links here,
-instances log one warning ("no release feed key is pinned in this build"),
-and Console > System shows "No release feed key in this build". Installs
-keep the sensor and SDK versions built into their release.
+None: there is no key or secret. The first run of the workflow on `main` after
+this change publishes a feed in the new format; check the run summary says
+"ok: sequence …, N components" and that
+`https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
+answers 200. Optionally keep the `release-feed` environment restricted to
+`main` and `v*` (the sign job uses it).
 
-1. **Create the keys on your own machine** (not CI, not a shared host), from a
-   checkout of this repository with Go installed:
-
-   ```bash
-   scripts/signing/init-keys.sh ~/openctem-signing-keys
-   ```
-
-   It writes `online.key` (the release feed key, secret), `online.pub` (its
-   public key, hex) and the separate content catalog keys, and prints only
-   public material plus the exact commands for the next steps. Back the
-   directory up offline; `catalog-root.key` never leaves it.
-2. **Create the GitHub environment** `release-feed` in `openctemio/openctem`
-   (Settings > Environments > New environment), with deployment branches and
-   tags limited to `main` and `v*`.
-3. **Store the secret** in that environment:
-
-   ```bash
-   gh secret set RELEASE_FEED_SIGNING_KEY --env release-feed -R openctemio/openctem \
-     < ~/openctem-signing-keys/online.key
-   ```
-4. **Pin the public key** in a pull request: add the content of
-   `online.pub` (64 hex characters) to `releasefeed.PinnedKeys` in
-   `api/pkg/releasefeed/releasefeed.go`. Instances trust the feed from the
-   first release that contains the pin.
-5. **Publish once by hand** (Actions > Release Feed > Run workflow, branch
-   `main`) and check the run summary says "ok: sequence …, N components".
-   `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json`
-   then answers 200.
-6. On an instance with that release: Console > System shows the version check
-   "OK" and a "Last release information" time; Monitoring > Software updates lists
-   the sensor and SDK releases.
-
-Rotation and compromise: see [signing keys](signing-keys.md). The catalog
-online key is a separate key with its own secret and environment.
+Instances running a release from before this change cannot read the new format
+and keep the sensor and SDK versions built into their release (the check
+reports an invalid feed) until they upgrade: the feed is display-only and
+nothing else depends on it.
 
 ### What an instance shows when the feed is missing
 
 | State | Log (one warning when the state changes) | Console > System |
 |---|---|---|
-| No key pinned in the build | once at start-up | "No release feed key in this build" |
+| No Sigstore trusted root loaded | once at start-up | "No release feed key in this build" |
 | Feed URL answers 404 | `reason=not_published` | "Release feed not published" |
 | Signature or content refused | `reason=invalid` | "Release feed signature invalid" |
 | No network / DNS / TLS | `reason=unreachable` | "Release feed unreachable" |
@@ -203,7 +234,7 @@ online key is a separate key with its own secret and environment.
 ## Key files
 
 - `api/pkg/releasefeed/` — format, verification, comparison
-- `api/pkg/feedsign/` — shared envelope and key set checks (the key set part is used by the content catalog)
+- `api/pkg/contentpkg/sigstore/` — the offline Sigstore verifier and the embedded trusted root (shared with the content catalog)
 - `api/internal/app/versioncheck/` — fetcher, schedule, import, console view
 - `api/internal/infra/controller/version_check.go` — hourly wake-up
 - `api/internal/infra/postgres/version_check_repository.go` — the state row

@@ -220,6 +220,7 @@ func (h *MCPHandler) SetFullDataRoles(r mcpFullDataRoles) { h.roles = r }
 // mcpModuleChecker is the route module gate (*middleware.ModuleGate).
 type mcpModuleChecker interface {
 	IsEnabled(ctx context.Context, tenantID, moduleID string) bool
+	IsReadable(ctx context.Context, tenantID, moduleID string) bool
 }
 
 // mcpModuleNotEnabled is the message of a tool or prompt of a module the
@@ -230,8 +231,18 @@ const mcpModuleNotEnabled = "This module is not enabled for your team"
 // as the REST routes of the same data do.
 func (h *MCPHandler) SetModuleGate(g mcpModuleChecker) { h.modules = g }
 
-func (h *MCPHandler) moduleEnabled(ctx context.Context, tenantID, moduleID string) bool {
-	return moduleID == "" || h.modules == nil || h.modules.IsEnabled(ctx, tenantID, moduleID)
+// moduleEnabled reports whether a tool or prompt of the module may be used. A
+// tool that changes data (a write or a proposal) needs the module on. A tool
+// that only reads, and a prompt, also work while the module is in its
+// read-only grace, as the GET routes of the same data do.
+func (h *MCPHandler) moduleEnabled(ctx context.Context, tenantID, moduleID string, changesData bool) bool {
+	if moduleID == "" || h.modules == nil {
+		return true
+	}
+	if changesData {
+		return h.modules.IsEnabled(ctx, tenantID, moduleID)
+	}
+	return h.modules.IsReadable(ctx, tenantID, moduleID)
 }
 
 // NewMCPHandler builds the handler and its tool registry from existing services.
@@ -345,7 +356,7 @@ func (h *MCPHandler) toolsListResult(ctx context.Context) map[string]any {
 		if t.RequiredPerm != "" && !middleware.HasPermission(ctx, t.RequiredPerm) {
 			continue
 		}
-		if !h.moduleEnabled(ctx, tenantID, t.Module) {
+		if !h.moduleEnabled(ctx, tenantID, t.Module, t.Write || t.Propose) {
 			continue
 		}
 		if t.Propose && !proposeToolsUsable(ctx) {
@@ -392,7 +403,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 
 	// A tool of a module the organization has off answers as the module's REST
 	// route does (the module gate runs before the permission check there too).
-	if !h.moduleEnabled(ctx, tenantID, tool.Module) {
+	if !h.moduleEnabled(ctx, tenantID, tool.Module, tool.Write || tool.Propose) {
 		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultDenied, true, 0)
 		h.writeResult(w, req.ID, toolErrorResult(mcpError{Code: mcpErrModuleDisabled, Message: mcpModuleNotEnabled}))
 		return

@@ -20,11 +20,14 @@ import (
 
 	_ "github.com/lib/pq"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
 	"github.com/openctemio/openctem/api/internal/app/sensor"
+	tasksecretapp "github.com/openctemio/openctem/api/internal/app/tasksecret"
+	toolsourceapp "github.com/openctemio/openctem/api/internal/app/toolsource"
 	"github.com/openctemio/openctem/api/internal/config"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
@@ -49,6 +52,9 @@ type ctlHarness struct {
 	cmds     *command.Service
 	results  *handler.SensorResultsV2Handler
 	egress   *proxypoolapp.Service
+	keys     *toolsourceapp.Service
+	secrets  *tasksecretapp.Service
+	logs     *syncBuffer
 	tenantID string
 	jwtToken string
 }
@@ -70,6 +76,20 @@ func newCtlHarness(t *testing.T, opts ...command.Option) *ctlHarness {
 // the command service and the v2 routes when egress is true.
 func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHarness {
 	t.Helper()
+	return newCtlHarnessConfig(t, ctlHarnessConfig{egress: egress}, opts...)
+}
+
+// ctlHarnessConfig wires optional services into the v2 routes.
+type ctlHarnessConfig struct {
+	egress bool
+	// secrets wires the task secrets (claim-time refs and the sealed
+	// fetch) with the proxy pools, provider keys and signed requests.
+	secrets bool
+}
+
+func newCtlHarnessConfig(t *testing.T, cfg ctlHarnessConfig, opts ...command.Option) *ctlHarness {
+	t.Helper()
+	egress := cfg.egress || cfg.secrets
 	dbURL := testdb.URL()
 	if dbURL == "" {
 		t.Skip("DATABASE_URL not set; skipping protocol v2 control-plane test")
@@ -84,6 +104,13 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 	}
 	db := &postgres.DB{DB: sqldb}
 	log := logger.NewNop()
+	var logs *syncBuffer
+	if cfg.secrets {
+		// Every log line of the stack is kept: a test checks it holds no
+		// secret value.
+		logs = &syncBuffer{}
+		log = logger.New(logger.Config{Level: "debug", Format: "json", Output: logs})
+	}
 
 	sensorRepo := postgres.NewSensorRepository(db)
 	sensorSvc := sensor.NewSensorService(sensorRepo, nil, log)
@@ -105,7 +132,25 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 		poolSvc.EnableTest(sensorRepo, cmdRepo, proxypoolapp.TestConfig{EchoBase: "https://echo.example.test", AltPort: 80})
 		opts = append(opts, command.WithSensorLookup(sensorRepo), command.WithEgress(poolSvc))
 	}
+	var (
+		secretsSvc *tasksecretapp.Service
+		keysSvc    *toolsourceapp.Service
+	)
+	if cfg.secrets {
+		enc, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		keysSvc = toolsourceapp.NewService(postgres.NewToolSourceKeyRepository(db), enc, nil, log)
+		secretsSvc = tasksecretapp.NewService(postgres.NewCommandSecretGrantRepository(db), nil,
+			postgres.NewSensorGrantRepository(db), keysSvc, poolSvc, auditapp.NewAuditService(postgres.NewAuditRepository(db), log), log)
+		opts = append(opts, command.WithTaskSecrets(secretsSvc))
+		sensorSvc.SetSigningKeyRepository(postgres.NewSensorSigningKeyRepository(db))
+	}
 	cmdSvc := command.NewService(cmdRepo, log, opts...)
+	if secretsSvc != nil {
+		secretsSvc.SetCommands(cmdSvc)
+	}
 	sensorSvc.SetCancelFinder(cmdRepo)
 
 	ih := handler.NewIngestHandler(ingestSvc, sensorSvc, log)
@@ -113,9 +158,12 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 	ch := handler.NewCommandHandler(cmdSvc, validator.New(), log)
 	ch.SetCommandLogs(commandlog.NewService(postgres.NewCommandLogRepository(db)))
 	sh := handler.NewSuppressionHandler(suppression.NewService(postgres.NewSuppressionRepository(db), log), log)
-	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, nil, log)
+	ctl := handler.NewSensorControlV2Handler(ih, ch, sh, log)
 	if poolSvc != nil {
 		ctl.SetEgress(poolSvc)
+	}
+	if secretsSvc != nil {
+		ctl.SetTaskSecrets(secretsSvc)
 	}
 	receiver := ingest.NewV2Receiver(postgres.NewIngestReportRepository(db), postgres.NewIngestJobRepository(db),
 		postgres.NewIngestJobRepository(db), cmdRepo, protov2.DefaultLimits(), 100, log)
@@ -141,7 +189,7 @@ func newCtlHarnessWith(t *testing.T, egress bool, opts ...command.Option) *ctlHa
 	t.Cleanup(srv.Close)
 
 	h := &ctlHarness{t: t, db: sqldb, srv: srv, sensors: sensorSvc, repo: sensorRepo, cmds: cmdSvc, results: results, jwtToken: tok,
-		egress: poolSvc}
+		egress: poolSvc, keys: keysSvc, secrets: secretsSvc, logs: logs}
 	h.tenantID = h.newTenant()
 	return h
 }
@@ -252,7 +300,7 @@ func TestSensorV2Control_HelloListsEveryFeature(t *testing.T) {
 	resp, raw := h.call(s.key, http.MethodGet, "/api/v2/sensor/hello", nil)
 	h.want(resp, raw, 200, "")
 	hello := decodeAs[protov2.Hello](t, raw)
-	want := append([]string{protov2.FeatureResults, protov2.FeatureResultsManifest}, protov2.ControlFeatures()...)
+	want := append([]string{protov2.FeatureResults, protov2.FeatureResultsManifest, protov2.FeatureResultsLeaseEpoch}, protov2.ControlFeatures()...)
 	if strings.Join(hello.Features, ",") != strings.Join(want, ",") {
 		t.Fatalf("features %v, want %v", hello.Features, want)
 	}

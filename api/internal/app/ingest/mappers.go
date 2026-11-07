@@ -5,8 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/severity"
+	"golang.org/x/net/publicsuffix"
+
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/severity"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -29,196 +31,101 @@ type ctisResolvedType struct {
 	normSubType string
 }
 
-// resolveCTISAssetType resolves a CTIS asset's type and properties.sub_type
-// to the stored pair (RFC-042 §6.3.8). Machine input is resolved leniently:
-// an unknown sub-type is kept in x_native_sub_type, never refused, and an
-// unknown type is `unclassified`.
+// resolveCTISAssetType resolves a CTIS 2.0 asset's wire type to the stored
+// (type, sub_type) pair (RFC-042 §6.3.8). The stored model is unchanged by
+// CTIS 2.0: the collapsed wire types map onto it (mapCTISAssetType), and the
+// accepted input names live in configs/asset-types.yaml (type_inputs).
+// Machine input is resolved leniently: an unknown sub-type is kept in
+// x_native_sub_type, never refused, and an unknown type is `unclassified`.
+// properties carry no meaning in CTIS 2.0, so nothing there moves an asset
+// to another type.
 func resolveCTISAssetType(ca *ctis.Asset) ctisResolvedType {
-	raw := reconcileTypeWithName(mapCTISAssetType(ca.Type), assetNameOf(ca))
-	sub, _ := ca.Properties["sub_type"].(string)
-	if ca.Type == ctis.AssetTypeKubernetes && strings.TrimSpace(sub) == "" {
-		sub = kubernetesSubType(ca.Properties)
-	}
-	typeOnly, err := asset.ResolveInputTypeLenient(string(raw), "")
-	if err != nil {
-		typeOnly = asset.ResolvedType{Type: asset.AssetTypeUnclassified}
-	}
+	raw, sub := mapCTISAssetType(ca)
 	full, err := asset.ResolveInputTypeLenient(string(raw), sub)
 	if err != nil {
-		full = typeOnly
+		full = asset.ResolvedType{Type: asset.AssetTypeUnclassified}
 	}
-	out := ctisResolvedType{stored: full, normType: full.Type, normSubType: typeOnly.SubType}
-	if full.Type != typeOnly.Type {
-		out.normSubType = full.SubType
-	}
-	return out
+	return ctisResolvedType{stored: full, normType: full.Type, normSubType: full.SubType}
 }
 
-// assetNameOf is the name an ingested CTIS asset is stored under.
+// assetNameOf is the name an ingested CTIS asset is stored under: its value,
+// which CTIS 2.0 requires in the canonical form of its type. name is a
+// display label and never the identity.
 func assetNameOf(ca *ctis.Asset) string {
-	if v := strings.TrimSpace(ca.Value); v != "" {
-		return v
-	}
-	return strings.TrimSpace(ca.Name)
+	return strings.TrimSpace(ca.Value)
 }
 
-// reconcileTypeWithName corrects a reported type that contradicts the asset's
-// own name. Sensors and importers declare the type, and the API used to store
-// it as given, so a DNS name reported as `ip_address` (a recon tool's target
-// type, a wrong default) showed up in the inventory as an IP address. The name
-// is the identity, so it wins in the two unambiguous cases:
-//   - `ip_address` whose name is a DNS name (not an IP) becomes `domain`;
-//   - `domain`/`subdomain` whose name is an IP literal becomes `ip_address`.
-//
-// Every other type is left as reported.
-func reconcileTypeWithName(t asset.AssetType, name string) asset.AssetType {
-	if name == "" {
-		return t
-	}
-	host := strings.Trim(name, "[]")
-	isIP := net.ParseIP(host) != nil
-	switch t {
-	case asset.AssetTypeIPAddress:
-		if !isIP && looksLikeDNSName(name) {
-			return asset.AssetTypeDomain
-		}
-	case asset.AssetTypeDomain, asset.AssetTypeSubdomain:
-		if isIP {
-			return asset.AssetTypeIPAddress
-		}
-	}
-	return t
-}
-
-// looksLikeDNSName reports a dotted hostname made of letters, digits, hyphens
-// and underscores, with a non-numeric last label: not a CIDR, URL, port or IP.
-func looksLikeDNSName(s string) bool {
-	s = strings.TrimSuffix(strings.ToLower(s), ".")
-	labels := strings.Split(s, ".")
-	if len(labels) < 2 {
-		return false
-	}
-	for _, l := range labels {
-		if l == "" || len(l) > 63 {
-			return false
-		}
-		for _, r := range l {
-			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' && r != '*' {
-				return false
-			}
-		}
-	}
-	last := labels[len(labels)-1]
-	return strings.Trim(last, "0123456789") != ""
-}
-
-// kubernetesSubType reads the kind of a CTIS `kubernetes` asset from
-// properties.kind: cluster, namespace, otherwise a workload. No kind keeps
-// the old reading (a cluster).
-func kubernetesSubType(props map[string]any) string {
-	kind, _ := props["kind"].(string)
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "", "cluster":
-		return "cluster"
-	case "namespace":
-		return "namespace"
-	default:
-		return "workload"
-	}
-}
-
-// mapCTISAssetType maps CTIS asset type to domain asset type.
-//
-//nolint:cyclop // Type mapping switch requires a case per asset type
-func mapCTISAssetType(ctisType ctis.AssetType) asset.AssetType {
-	switch ctisType {
-	// Discovery / External Attack Surface
-	case ctis.AssetTypeDomain:
+// domainNameStoredType is the stored type of a CTIS domain_name: a
+// registrable name (the public-suffix apex plus one label) is a domain,
+// anything below it a subdomain. A name the public suffix list cannot place
+// stays a domain.
+func domainNameStoredType(name string) asset.AssetType {
+	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
+	etld1, err := publicsuffix.EffectiveTLDPlusOne(name)
+	if err != nil || etld1 == name {
 		return asset.AssetTypeDomain
-	case ctis.AssetTypeSubdomain:
-		return asset.AssetTypeSubdomain
-	case ctis.AssetTypeIPAddress:
-		return asset.AssetTypeIPAddress
-	case ctis.AssetTypeCertificate:
-		return asset.AssetTypeCertificate
-
-	// Applications
-	case ctis.AssetTypeWebsite:
-		return asset.AssetTypeWebsite
-	case ctis.AssetTypeWebApplication:
-		return asset.AssetTypeWebApplication
-	case ctis.AssetTypeAPI:
-		return asset.AssetTypeAPI
-	case ctis.AssetTypeMobileApp:
-		return asset.AssetTypeMobileApp
-	case ctis.AssetTypeService:
-		return asset.AssetTypeService
-
-	// Code / Repository
-	case ctis.AssetTypeRepository:
-		return asset.AssetTypeRepository
-
-	// Cloud
-	case ctis.AssetTypeCloudAccount:
-		return asset.AssetTypeCloudAccount
-	case ctis.AssetTypeCompute:
-		return asset.AssetTypeCompute
-	case ctis.AssetTypeStorage:
-		return asset.AssetTypeStorage
-	case ctis.AssetTypeDatabase:
-		return asset.AssetTypeDatabase
-	case ctis.AssetTypeServerless:
-		return asset.AssetTypeServerless
-	case ctis.AssetTypeContainerRegistry:
-		return asset.AssetTypeContainerRegistry
-
-	// Infrastructure
-	case ctis.AssetTypeHost:
-		return asset.AssetTypeHost
-	case ctis.AssetTypeServer:
-		return asset.AssetTypeHost
-	case ctis.AssetTypeContainer:
-		return asset.AssetTypeContainer
-	case ctis.AssetTypeKubernetes:
-		// The kind comes from properties.kind (resolveCTISAssetType); it
-		// used to be read as a cluster whatever it was.
-		return asset.AssetTypeKubernetes
-	case ctis.AssetTypeKubernetesCluster:
-		return asset.AssetTypeKubernetesCluster
-	case ctis.AssetTypeKubernetesNamespace:
-		return asset.AssetTypeKubernetesNamespace
-
-	// Network
-	case ctis.AssetTypeNetwork:
-		return asset.AssetTypeNetwork
-	case ctis.AssetTypeVPC:
-		return asset.AssetTypeVPC
-	case ctis.AssetTypeSubnet:
-		return asset.AssetTypeSubnet
-	case ctis.AssetTypeLoadBalancer:
-		return asset.AssetTypeLoadBalancer
-	case ctis.AssetTypeFirewall:
-		return asset.AssetTypeFirewall
-
-	// Identity / IAM
-	case ctis.AssetTypeIAMUser:
-		return asset.AssetTypeIAMUser
-	case ctis.AssetTypeIAMRole:
-		return asset.AssetTypeIAMRole
-	case ctis.AssetTypeServiceAccount:
-		return asset.AssetTypeServiceAccount
-
-	// Recon-discovered
-	case ctis.AssetTypeHTTPService:
-		return asset.AssetTypeHTTPService
-	case ctis.AssetTypeOpenPort:
-		return asset.AssetTypeOpenPort
-	case ctis.AssetTypeDiscoveredURL:
-		return asset.AssetTypeDiscoveredURL
-
-	default:
-		return asset.AssetTypeUnclassified
 	}
+	return asset.AssetTypeSubdomain
+}
+
+// identityKindSubType maps technical.identity.kind to the stored identity
+// sub-type. A kind with no stored sub-type is kept as the native sub-type.
+func identityKindSubType(ca *ctis.Asset) string {
+	if ca.Technical == nil || ca.Technical.Identity == nil {
+		return ""
+	}
+	switch ca.Technical.Identity.Kind {
+	case ctis.IdentityUser:
+		return "iam_user"
+	case ctis.IdentityRole:
+		return "iam_role"
+	case ctis.IdentityServiceAccount:
+		return "service_account"
+	default:
+		return string(ca.Technical.Identity.Kind)
+	}
+}
+
+// mapCTISAssetType maps a CTIS 2.0 wire type to the input (type, sub_type)
+// the registry resolves to the stored pair (docs/profiles/openctem.md of the
+// CTIS module, section 5). Wire names that are not stored types themselves
+// are `type_inputs` of configs/asset-types.yaml; the cases here are the ones
+// that need the asset (domain apex, identity kind) or a fixed sub-type.
+func mapCTISAssetType(ca *ctis.Asset) (asset.AssetType, string) {
+	switch ca.Type {
+	case ctis.AssetTypeDomainName:
+		return domainNameStoredType(ca.Value), ""
+	case ctis.AssetTypeService:
+		// host:port/transport: the stored open_port service.
+		return asset.AssetTypeService, "open_port"
+	case ctis.AssetTypeIdentity:
+		return asset.AssetTypeIdentity, identityKindSubType(ca)
+	case ctis.AssetTypeNetworkDevice:
+		return asset.AssetTypeNetwork, networkDeviceSubType(ca)
+	case "":
+		return asset.AssetTypeUnclassified, ""
+	}
+	if t, ok := ctisWireTypes[ca.Type]; ok {
+		return t.typ, t.sub
+	}
+	// Stored types (host, ip_address, certificate, repository, ...) and the
+	// registry's type_inputs (kubernetes_cluster, web_application, ...). An
+	// unknown name resolves to unclassified.
+	return asset.AssetType(ca.Type), ""
+}
+
+// ctisWireTypes are the CTIS 2.0 wire types that are no stored type and need
+// nothing from the asset to place. They live here, not in the registry's
+// type_inputs, so the REST API's asset type inputs stay unchanged.
+var ctisWireTypes = map[ctis.AssetType]struct {
+	typ asset.AssetType
+	sub string
+}{
+	ctis.AssetTypeWebOrigin:          {asset.AssetTypeService, "http"},
+	ctis.AssetTypeIPRange:            {asset.AssetTypeNetwork, ""},
+	ctis.AssetTypeContainerImage:     {asset.AssetTypeContainer, "image"},
+	ctis.AssetTypeKubernetesWorkload: {asset.AssetTypeKubernetes, "workload"},
+	ctis.AssetTypeEndpointDevice:     {asset.AssetTypeHost, "workstation"},
 }
 
 // =============================================================================
@@ -257,7 +164,9 @@ func mapSDKSeverity(sev severity.Level) vulnerability.Severity {
 	case severity.Low:
 		return vulnerability.SeverityLow
 	case severity.Info:
-		return vulnerability.SeverityNone
+		// An informational finding is info, not none: none is a CVSS score of
+		// zero, and a list filtered on info must show it.
+		return vulnerability.SeverityInfo
 	default:
 		return vulnerability.SeverityMedium
 	}
@@ -267,48 +176,21 @@ func mapSDKSeverity(sev severity.Level) vulnerability.Severity {
 // Finding Source Detection
 // =============================================================================
 
-// detectFindingSource determines the finding source from tool info.
-// capabilityToSource maps a tool capability to the technique it implies.
-//
-// Matched on whole tokens, deliberately. This used to use strings.Contains,
-// which mis-routed every one of these:
-//
-//	["java", "sast"]            -> va    ("java" contains "va")
-//	["advanced", "dast"]        -> va    ("advanced" contains "va")
-//	["privacy", "secret"]       -> va    ("privacy" contains "va")
-//	["cloudflare", "iac"]       -> cspm  ("cloudflare" contains "cloud")
-//	["reconfiguration", "iac"]  -> easm  ("reconfiguration" contains "recon")
-//	["vulnerability-scan"]      -> sca   (ends in "-scan", contains "sca")
-//
-// The first match short-circuits, so a bogus early token beat the correct later
-// one. Capabilities are a free-form array supplied by whoever pushes the report,
-// so this is reachable by any third-party producer, not only by ours.
-var capabilityToSource = map[string]vulnerability.FindingSource{
-	// Emitted by the sensor's executors.
-	"sast":      vulnerability.FindingSourceSAST,
-	"sca":       vulnerability.FindingSourceSCA,
-	"dast":      vulnerability.FindingSourceDAST,
-	"secret":    vulnerability.FindingSourceSecret,
-	"iac":       vulnerability.FindingSourceIaC,
-	"container": vulnerability.FindingSourceContainer,
-
-	// Emitted by ctis/sarif.go detectCapabilities.
-	"misconfiguration": vulnerability.FindingSourceIaC,
-	"web3":             vulnerability.FindingSourceSAST,
-
-	// Recon capabilities from the sensor's discovery executor.
-	"subdomain":   vulnerability.FindingSourceEASM,
-	"dns":         vulnerability.FindingSourceEASM,
-	"portscan":    vulnerability.FindingSourceEASM,
-	"crawler":     vulnerability.FindingSourceEASM,
-	"tech-detect": vulnerability.FindingSourceEASM,
-
-	// Set explicitly by our importers so the mapper does not have to guess.
-	"va":       vulnerability.FindingSourceVA,
-	"easm":     vulnerability.FindingSourceEASM,
-	"cspm":     vulnerability.FindingSourceCSPM,
-	"external": vulnerability.FindingSourceExternal,
-	"import":   vulnerability.FindingSourceExternal,
+// techniqueSource maps a CTIS 2.0 detection technique (tool.techniques,
+// finding.technique; a closed vocabulary) to the stored finding source.
+var techniqueSource = map[ctis.Technique]vulnerability.FindingSource{
+	ctis.TechniqueSAST:      vulnerability.FindingSourceSAST,
+	ctis.TechniqueSCA:       vulnerability.FindingSourceSCA,
+	ctis.TechniqueSecret:    vulnerability.FindingSourceSecret,
+	ctis.TechniqueIaC:       vulnerability.FindingSourceIaC,
+	ctis.TechniqueContainer: vulnerability.FindingSourceContainer,
+	ctis.TechniqueDAST:      vulnerability.FindingSourceDAST,
+	ctis.TechniqueVA:        vulnerability.FindingSourceVA,
+	ctis.TechniqueEASM:      vulnerability.FindingSourceEASM,
+	ctis.TechniqueCSPM:      vulnerability.FindingSourceCSPM,
+	ctis.TechniqueBAS:       vulnerability.FindingSourceRedTeam,
+	ctis.TechniquePentest:   vulnerability.FindingSourcePentest,
+	ctis.TechniqueManual:    vulnerability.FindingSourceManual,
 }
 
 // toolNameToSource maps a substring of a tool name to its technique.
@@ -369,45 +251,13 @@ var toolNameToSource = []struct {
 	{"steampipe", vulnerability.FindingSourceCSPM},
 }
 
-// detectFindingSource works out which technique produced a finding.
-//
-// Capabilities win over the tool name: our importers set them explicitly, and
-// the tool name is caller-controlled through ?tool=, so name-based inference
-// alone can be steered.
-//
-// Note the tokens deliberately absent from capabilityToSource: "vulnerability"
-// and "infra". Both are emitted by real producers and both are too generic to
-// decide a technique — "vulnerability" is true of nearly every scanner, and
-// ctis emits it for trivy alongside "misconfiguration". Letting them fall
-// through to the tool name keeps trivy classified as a container scan rather
-// than reclassifying it on a word that means nothing in particular.
-// matchCapability resolves one capability string.
-//
-// The whole value is tried first so multi-word keys like "tech-detect" match,
-// then each token, so compound names like "secret_detection",
-// "container_scanning" and "iac_analysis" — which real producers emit and which
-// the substring version handled by accident — keep working.
-//
-// Tokenising is what makes this safe where Contains was not: "java" is one
-// token and matches nothing, whereas Contains found "va" inside it.
-func matchCapability(capability string) (vulnerability.FindingSource, bool) {
-	normalized := strings.ToLower(strings.TrimSpace(capability))
-	if src, ok := capabilityToSource[normalized]; ok {
-		return src, true
-	}
-	for _, token := range strings.FieldsFunc(normalized, func(r rune) bool {
-		return r == '_' || r == '-' || r == '.' || r == '/' || r == ' ' || r == ':'
-	}) {
-		if src, ok := capabilityToSource[token]; ok {
-			return src, true
-		}
-	}
-	return "", false
-}
-
-func detectFindingSource(toolName string, capabilities []string) vulnerability.FindingSource {
-	for _, capability := range capabilities {
-		if src, ok := matchCapability(capability); ok {
+// detectFindingSource works out which technique produced a finding: the
+// first technique the table knows (finding.technique before the tool's), then
+// the tool name. The techniques win: the tool name is caller-controlled
+// through ?tool=, so name-based inference alone can be steered.
+func detectFindingSource(toolName string, techniques ...ctis.Technique) vulnerability.FindingSource {
+	for _, t := range techniques {
+		if src, ok := techniqueSource[t]; ok {
 			return src
 		}
 	}
@@ -487,27 +337,6 @@ func buildIPAddressProperties(ip *ctis.IPAddressTechnical) map[string]any {
 	if ip.City != "" {
 		props["city"] = ip.City
 	}
-	if len(ip.Ports) > 0 {
-		ports := make([]map[string]any, 0, len(ip.Ports))
-		for _, p := range ip.Ports {
-			portInfo := map[string]any{
-				"port":     p.Port,
-				"protocol": p.Protocol,
-				"state":    p.State,
-			}
-			if p.Service != "" {
-				portInfo["service"] = p.Service
-			}
-			if p.Version != "" {
-				portInfo["version"] = p.Version
-			}
-			if p.Banner != "" {
-				portInfo["banner"] = p.Banner
-			}
-			ports = append(ports, portInfo)
-		}
-		props["ports"] = ports
-	}
 	if ip.Geolocation != nil {
 		props["geolocation"] = map[string]any{
 			"latitude":  ip.Geolocation.Latitude,
@@ -523,9 +352,6 @@ func buildIPAddressProperties(ip *ctis.IPAddressTechnical) map[string]any {
 func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 	props := make(map[string]any)
 
-	if svc.Name != "" {
-		props["name"] = svc.Name
-	}
 	if svc.Version != "" {
 		props["version"] = svc.Version
 	}
@@ -535,19 +361,21 @@ func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 	if svc.Port != 0 {
 		props["port"] = svc.Port
 	}
-	if svc.Protocol != "" {
-		props["protocol"] = svc.Protocol
+	// The application protocol (IANA service name) is the stored
+	// "protocol" attribute; the transport has its own.
+	if svc.AppProtocol != "" {
+		props["protocol"] = svc.AppProtocol
 	}
 	// A false TLS is what an unmeasured report sends too, so only a TLS the
 	// scanner saw is recorded (has_tls once promoted).
-	if svc.TLS {
+	if svc.IsTLS {
 		props["tls"] = true
 	}
 	if svc.Banner != "" {
 		props["banner"] = svc.Banner
 	}
 	if svc.Transport != "" {
-		props["transport"] = svc.Transport
+		props["transport"] = string(svc.Transport)
 	}
 	if svc.ExtraInfo != "" {
 		props["extra_info"] = svc.ExtraInfo
@@ -560,28 +388,54 @@ func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 		props["cpe"] = svc.CPE
 	}
 	if svc.TLSVersion != "" {
-		props["tls_version"] = svc.TLSVersion
+		props["tls_version"] = string(svc.TLSVersion)
 	}
-	if svc.TLSCertSubject != "" {
-		props["tls_cert_subject"] = svc.TLSCertSubject
-	}
-	if svc.TLSCertIssuer != "" {
-		props["tls_cert_issuer"] = svc.TLSCertIssuer
-	}
-	if svc.TLSCertExpiry != "" {
-		props["tls_cert_expiry"] = svc.TLSCertExpiry
-	}
+	// The certificate a service serves is its own asset in CTIS 2.0
+	// (serves_certificate), not attributes of the service.
 	if svc.State != "" {
-		props["state"] = svc.State
+		props["state"] = string(svc.State)
 	}
-	if svc.AuthRequired {
+	if svc.IsAuthRequired {
 		props["auth_required"] = true
+	}
+	// Only an access the probe saw is recorded: false is also what an
+	// unmeasured report sends.
+	if svc.HasAnonymousAccess {
+		props[asset.PropKeyHasAnonymousAccess] = true
 	}
 	if len(svc.AuthMethods) > 0 {
 		props["auth_methods"] = svc.AuthMethods
 	}
+	addLocalListenerProperties(props, svc.Details)
 
 	return props
+}
+
+// The local view of a service (technical.service.details.observed_from).
+const (
+	propObservedFrom    = "observed_from"
+	observedFromHost    = "host"
+	observedFromNetwork = "network"
+)
+
+// addLocalListenerProperties keeps the local view of a service a host
+// reported about itself (a credentialed scan's listening sockets):
+// observed_from "host" means only the host's own socket table shows it, and
+// the scanner did not reach it over the network; "network" means both. Only
+// these keys of technical.service.details are read, with bounded values.
+func addLocalListenerProperties(props map[string]any, d map[string]string) {
+	switch d[propObservedFrom] {
+	case observedFromHost, observedFromNetwork:
+		props[propObservedFrom] = d[propObservedFrom]
+	default:
+		return
+	}
+	if b := strings.TrimSpace(d["bind_address"]); b == "any" || net.ParseIP(b) != nil {
+		props["bind_address"] = b
+	}
+	if pr := strings.TrimSpace(d["process"]); pr != "" && len(pr) <= 128 {
+		props["process"] = pr
+	}
 }
 
 // buildCertificateProperties builds properties from CTIS CertificateTechnical.
@@ -594,8 +448,8 @@ func buildCertificateProperties(cert *ctis.CertificateTechnical) map[string]any 
 	if cert.SubjectCN != "" {
 		props["subject_cn"] = cert.SubjectCN
 	}
-	if len(cert.SANs) > 0 {
-		props["sans"] = cert.SANs
+	if len(cert.SubjectAltNames) > 0 {
+		props["sans"] = cert.SubjectAltNames
 	}
 	if cert.IssuerCN != "" {
 		props["issuer_cn"] = cert.IssuerCN
@@ -618,11 +472,57 @@ func buildCertificateProperties(cert *ctis.CertificateTechnical) map[string]any 
 	if cert.KeySize != 0 {
 		props["key_size"] = cert.KeySize
 	}
-	if cert.Fingerprint != "" {
-		props["fingerprint"] = cert.Fingerprint
+	if cert.SHA256Fingerprint != "" {
+		props["fingerprint"] = cert.SHA256Fingerprint
 	}
-	props["self_signed"] = cert.SelfSigned
-	props["expired"] = cert.Expired
+	props["self_signed"] = cert.IsSelfSigned
+	if cert.IsWildcard {
+		props["is_wildcard"] = true
+	}
+	// expired is derived, never reported (CTIS 2.0): from not_after at
+	// ingest time.
+	if cert.NotAfter != nil {
+		props["expired"] = cert.NotAfter.Before(time.Now())
+	}
 
 	return props
+}
+
+// buildHTTPProperties builds the flat attributes of a stored http service
+// from CTIS HTTPTechnical (the security headers become http_posture in
+// sanitizeHTTPPosture).
+func buildHTTPProperties(h *ctis.HTTPTechnical) map[string]any {
+	if h == nil {
+		return nil
+	}
+	props := make(map[string]any)
+	if h.StatusCode != 0 {
+		props["status_code"] = h.StatusCode
+	}
+	for k, v := range map[string]string{
+		"title": h.Title, propServer: h.WebServer, "content_type": h.ContentType,
+		"redirect_url": h.RedirectURL, "cdn": h.CDN, "waf": h.WAF, "jarm": h.JARM,
+		"favicon_mmh3": h.FaviconMMH3, "tls_version": string(h.TLSVersion),
+	} {
+		if v != "" {
+			props[k] = v
+		}
+	}
+	return props
+}
+
+// networkDeviceSubType maps technical.network_device.kind to the stored
+// network sub-type of a device; other or absent is no sub-type.
+func networkDeviceSubType(ca *ctis.Asset) string {
+	if ca.Technical == nil || ca.Technical.NetworkDevice == nil {
+		return ""
+	}
+	switch k := ca.Technical.NetworkDevice.Kind; k {
+	case ctis.NetworkDeviceRouter, ctis.NetworkDeviceSwitch, ctis.NetworkDeviceFirewall,
+		ctis.NetworkDeviceLoadBalancer, ctis.NetworkDeviceVPNGateway:
+		return string(k)
+	case ctis.NetworkDeviceWirelessAccessPoint:
+		return "access_point"
+	}
+	return ""
 }

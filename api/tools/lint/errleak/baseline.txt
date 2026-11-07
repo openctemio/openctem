@@ -19,7 +19,6 @@ audit-id internal/app/integration/secretstore.go:SecretStoreService.DeleteCreden
 audit-id internal/app/threatalert/service.go:Service.ChangeState 1
 audit-id internal/app/vex/service.go:Service.auditStatement 1
 audit-id internal/tools/toolaudit/toolaudit.go:Record 1
-domain-id internal/app/scan/trigger.go:Service.triggerWorkflow 1
 domain-id pkg/domain/component/errors.go:NotFoundError 1
 domain-id pkg/domain/vulnerability/errors.go:FindingNotFoundError 1
 domain-id pkg/domain/vulnerability/errors.go:VulnerabilityAlreadyExistsError 1
@@ -202,7 +201,6 @@ raw-json internal/infra/http/handler/tenant_handler.go:writeToggleErrorJSON 1
 status internal/app/automation/executor.go:WorkflowExecutor.executeNode 1
 status internal/app/automation/executor.go:WorkflowExecutor.finalizeRun 1
 status internal/app/compliance/pentest.go:PentestService.CreateReport 1
-status internal/app/outbox/service.go:Service.processOutboxEntry 2
 status internal/app/scan/connector.go:Service.triggerConnectorScan 1
 status internal/app/scan/trigger.go:Service.triggerSingleScan 1
 status internal/app/scanrun/deadline_admission.go:Service.settleStepDeadlineTooClose 1
@@ -252,7 +250,7 @@ wrap-err internal/app/finding/vulnerability_service.go:VulnerabilityService.List
 wrap-err internal/app/finding/vulnerability_service.go:VulnerabilityService.UpdateVulnerability 1
 wrap-err internal/app/finding/vulnerability_service.go:VulnerabilityService.updateFindingStatus 1
 wrap-err internal/app/findingimport/queued.go:Service.CommitUpload 1
-wrap-err internal/app/ingest/quarantine.go:Service.AcceptQuarantined 1
+wrap-err internal/app/ingest/quarantine.go:Service.applyQuarantined 1
 wrap-err internal/app/ingestqueue/backpressure.go:Admit 1
 wrap-err internal/app/integration/service.go:IntegrationService.CreateIntegration 2
 wrap-err internal/app/integration/service.go:IntegrationService.UpdateIntegration 2
@@ -266,7 +264,6 @@ wrap-err internal/app/scan/command_gate.go:Service.GateCommandPayload 4
 wrap-err internal/app/scan/crud.go:Service.UpdateScan 1
 wrap-err internal/app/scan/crud.go:Service.validateScanSecurityInputs 1
 wrap-err internal/app/scan/crud.go:configureScanSchedule 2
-wrap-err internal/app/scan/import_export.go:Service.ImportConfig 1
 wrap-err internal/app/scanrun/step_edit.go:checkStepSelection 1
 wrap-err internal/app/sensor/content.go:ContentService.UpdatePolicy 1
 wrap-err internal/app/sensor/tool_settings.go:SensorService.CheckScanToolConfig 1

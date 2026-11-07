@@ -28,6 +28,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // ApproverDirectory lists the organization's scope approvers
@@ -176,12 +177,7 @@ func (s *Service) SelfApproveTarget(ctx context.Context, targetID, tenantID stri
 	// The job signer's ledger gets the change with the approval marked
 	// self_approved (RFC-054 §12.3): it counts only under the sole-owner
 	// rule and only for the requester.
-	if err := s.commitEntry(ctx, before, t, false, func() error {
-		if err := s.targetRepo.Update(ctx, t); err != nil {
-			return fmt.Errorf("failed to approve scope target: %w", err)
-		}
-		return nil
-	}); err != nil {
+	if err := s.commitEntryUpdate(ctx, before, t); err != nil {
 		return nil, err
 	}
 	title := "Scope entry approved by its own requester (no other approver)"
@@ -298,7 +294,7 @@ func (s *Service) notifyApprovers(ctx context.Context, t *scopedom.Target, title
 // organization is escaped; the link only opens the page (sign-in and the
 // approval permission authorize), so a forwarded email grants nothing.
 func (s *Service) approvalMailBody(t *scopedom.Target) string {
-	link := s.webBaseURL + "/scope"
+	link := weblink.Console(s.webBaseURL, "/scope", t.TenantID().String())
 	return fmt.Sprintf(`<p>A scope entry is waiting for your approval.</p>
 <p><strong>%s</strong> (%s), %s, deepest probe %s.</p>
 <p>Reason: %s</p>

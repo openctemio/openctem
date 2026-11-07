@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/jwt"
 	"github.com/openctemio/openctem/api/pkg/keycloak"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -236,6 +237,7 @@ func UnifiedAuth(cfg UnifiedAuthConfig) func(http.Handler) http.Handler {
 			// Update the context logger with user_id and tenant_id
 			// so downstream services using logger.FromContext(ctx) get
 			// request-correlated logs automatically.
+			notePrincipal(ctx)
 			if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
 				enriched := ctxLogger.WithContext(ctx)
 				ctx = logger.ToContext(ctx, enriched)
@@ -267,6 +269,7 @@ func validateLocalToken(ctx context.Context, tokenString string, validator *jwt.
 	ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderLocal)
 	ctx = scangov.WithOrigin(ctx, scangov.OriginUI)
+	ctx = stepup.WithRequestState(ctx)
 	ctx = context.WithValue(ctx, LocalClaimsKey, claims)
 
 	// Add tenant memberships to context for authorization
@@ -305,6 +308,7 @@ func validateOIDCToken(ctx context.Context, tokenString string, validator *keycl
 	ctx = context.WithValue(ctx, TenantIDKey, claims.GetTenantID())
 	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderOIDC)
 	ctx = scangov.WithOrigin(ctx, scangov.OriginUI)
+	ctx = stepup.WithRequestState(ctx)
 	ctx = context.WithValue(ctx, ClaimsKey, claims)
 
 	return ctx, nil

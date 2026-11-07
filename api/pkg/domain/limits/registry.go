@@ -14,6 +14,7 @@ var KeyDescriptions = map[Key]string{
 	Sensors:                      "the organization's own sensors that are not revoked",
 	APIKeys:                      "active API keys",
 	CITrusts:                     "CI trust configurations",
+	SSOConnections:               "SAML and OIDC single sign-on connections",
 	InvitesPerDay:                "invitations created in the last 24 hours",
 	PlatformScansPerDay:          "scans started on shared sensors since 00:00 UTC",
 	PlatformScansConcurrent:      "shared-sensor jobs queued or running at once",
@@ -31,8 +32,7 @@ var KeyDescriptions = map[Key]string{
 
 // NamedFeatureDescriptions describes every named feature below module level.
 var NamedFeatureDescriptions = map[string]string{
-	FeatureSSOConnections:      "configuring per-organization SAML and OIDC connections",
-	FeatureSSOEnforcement:      "requiring SSO sign-in for members",
+	FeatureActiveScanning:      "sending active or intrusive probes (scan tiers above passive) from any sensor",
 	FeatureSCIM:                "SCIM provisioning (tokens and the SCIM API)",
 	FeatureSSOGroupLinks:       "identity-provider group to role links",
 	FeatureLDAP:                "LDAP sign-in (reserved, not built)",

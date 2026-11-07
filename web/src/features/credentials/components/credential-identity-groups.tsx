@@ -194,7 +194,7 @@ export function CredentialIdentityGroups({
         const identity = byKey.get(key)
         return identity ? <IdentityTitle identity={identity} /> : key
       },
-      renderActions: (key) => {
+      renderSummary: (key) => {
         const identity = byKey.get(key)
         return identity ? <IdentitySummary identity={identity} /> : null
       },

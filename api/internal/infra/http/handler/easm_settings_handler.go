@@ -117,6 +117,9 @@ type EASMSettingsResponse struct {
 	// WebScreenshotsEnabled: screenshots sent with web evidence are kept
 	// (30 days); off by default.
 	WebScreenshotsEnabled bool `json:"web_screenshots_enabled"`
+	// InfoMatchesAsFindings: info-severity template matches are filed as
+	// findings instead of info exposures; off by default.
+	InfoMatchesAsFindings bool `json:"info_matches_as_findings"`
 	// WeeklyDigestEnabled: the weekly "what changed" digest goes out.
 	WeeklyDigestEnabled bool `json:"weekly_digest_enabled"`
 	// DigestWeekday is the UTC weekday of the digest, 1..7 = Monday..Sunday.
@@ -145,6 +148,8 @@ type EASMSettingsUpdateRequest struct {
 	NetworkLookupsEnabled *bool `json:"network_lookups_enabled,omitempty"`
 	// WebScreenshotsEnabled omitted keeps it as it is.
 	WebScreenshotsEnabled *bool `json:"web_screenshots_enabled,omitempty"`
+	// InfoMatchesAsFindings omitted keeps it as it is.
+	InfoMatchesAsFindings *bool `json:"info_matches_as_findings,omitempty"`
 	// WeeklyDigestEnabled omitted keeps it as it is.
 	WeeklyDigestEnabled *bool `json:"weekly_digest_enabled,omitempty"`
 	// DigestWeekday omitted keeps it; 1..7 = Monday..Sunday.
@@ -193,6 +198,7 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		ReappearAfterDays:     int(es.ReappearAfter() / (24 * time.Hour)),
 		NetworkLookupsEnabled: !es.NetworkLookupsDisabled,
 		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
+		InfoMatchesAsFindings: es.InfoMatchesAsFindings,
 	}
 	if h.digests != nil {
 		if last, err := h.digests.LastDigestAt(ctx, tenantID); err == nil {
@@ -283,6 +289,9 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.WebScreenshotsEnabled != nil {
 		es.WebScreenshotsEnabled = *req.WebScreenshotsEnabled
+	}
+	if req.InfoMatchesAsFindings != nil {
+		es.InfoMatchesAsFindings = *req.InfoMatchesAsFindings
 	}
 	if req.WeeklyDigestEnabled != nil {
 		es.WeeklyDigestDisabled = !*req.WeeklyDigestEnabled

@@ -21,8 +21,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/ctis"
-	"github.com/openctemio/ctis/importer"
+	"github.com/openctemio/ctis/v2"
+	"github.com/openctemio/ctis/v2/importer"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -148,6 +148,15 @@ func (s *Service) currentCaller(ctx context.Context, tenantID shared.ID, env *En
 			env.CanApprove = ok
 		}
 	}
+	if env.CoverageVerify && s.perms != nil && env.Caller.APIKeyID == "" && !m.IsOwner() && !m.IsAdmin() {
+		// Closing as fixed is a verification: the right must still hold
+		// when the upload is applied.
+		ok, err := s.perms.HasPermission(ctx, tenantID.String(), uid.String(), permission.FindingsVerify.String())
+		if err != nil {
+			return fmt.Errorf("read the uploader's permissions: %w", err)
+		}
+		env.CoverageVerify = ok
+	}
 	return nil
 }
 
@@ -176,6 +185,9 @@ func (s *Service) currentKey(ctx context.Context, tenantID shared.ID, env *Envel
 	}
 	if !slices.Contains(key.Scopes(), permission.FindingsApprove.String()) {
 		env.CanApprove = false
+	}
+	if !slices.Contains(key.Scopes(), permission.FindingsVerify.String()) {
+		env.CoverageVerify = false
 	}
 	return nil
 }
@@ -435,7 +447,7 @@ func (s *Service) ProcessImportJob(ctx context.Context, job *ingestjob.Job) ([]b
 	}
 	var kb []byte
 	var results []FileResult
-	for i, ep := range env.Parts {
+	for _, ep := range env.Parts {
 		body, ok := byPart[ep.Part]
 		if !ok {
 			return nil, ingestjob.Permanent(ingestqueue.ErrorPayloadMissing, fmt.Errorf("part %d missing", ep.Part))
@@ -446,7 +458,7 @@ func (s *Service) ProcessImportJob(ctx context.Context, job *ingestjob.Job) ([]b
 		}
 		res, archive, refused := s.ImportUpload(ctx, req, Upload{
 			Name: ep.Name, Body: bytes.NewReader(body), KnowledgeBase: kb,
-			ReportIDPrefix: fmt.Sprintf("%s-%d", req.SessionID, i), TempDir: s.tempDir,
+			TempDir: s.tempDir,
 		})
 		switch {
 		case refused != nil:

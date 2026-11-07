@@ -111,22 +111,35 @@ credentials on their own.
 sequenceDiagram
     autonumber
     actor A as Admin (console)
+    box Platform
     participant P as Platform
+    end
+    box Sensor host
     participant S as Sensor
-    A->>P: POST /sensor-pairings/expectations (sensors:pair)
+    end
+    A->>P: POST /api/v1/sensor-pairings/expectations (sensors:pair)
     P-->>A: code K7QM-4ZTD (single use, 10 min) and the install command
-    A->>S: run the command (SENSOR_PAIRING_CODE)
-    S->>P: POST /api/v2/sensor/pairings (signed with its new key, commitment)
-    P-->>S: 201, request id, user code, platform signature (same answer for unknown codes)
-    S->>P: reveal nonce
-    P-->>S: fingerprint (SAS) computed from both keys and nonces
+    A->>S: run the command (SENSOR_PAIRING_CODE, SENSOR_JOB_SIGNING_ROOT)
+    S->>P: POST /api/v2/sensor/pairings/ (signed with its new key, commitment)
+    P-->>S: 201, pairing id, user code, platform signature (same answer for unknown codes)
+    S->>P: PUT /api/v2/sensor/pairings/{id}/nonce (reveal)
+    P->>P: fingerprint (SAS) computed from both keys and nonces
     S-->>A: prints the fingerprint on the host
-    A->>P: approve: fingerprint, organization echo, step-up (sensors:approve)
+    A->>P: POST /api/v1/sensor-pairings/{id}/approve: fingerprint, organization echo, step-up (sensors:approve)
     P->>P: sensor row (trust New), key pending, grant from the profile
-    S->>P: poll status, then confirm (signed transcript)
+    S->>P: GET /api/v2/sensor/pairings/{id} until approved: identity and the grant signed by the pairing key
+    S->>S: verify the grant (pairing id, sensor key, sensor nonce) before confirming
+    S->>P: POST /api/v2/sensor/pairings/{id}/complete (signed transcript)
     P->>P: key active, request completed
-    P-->>S: identity, job-signing and content keys
+    P-->>S: completed, grant: identity, content keys, job signer key set, TLS roots
+    S->>S: verify again; save only what the grant states
 ```
+
+The job signer's keys and key set come from the signed grant, not from an
+unsigned `hello`: the sensor keeps the key set's root (checked against
+`SENSOR_JOB_SIGNING_ROOT` when the install command gives one). A missing or
+invalid grant saves nothing (sdk-go `identity/pair.go`). Exact handlers and states:
+[sensor pairing](sensor-pairing.md#flow).
 
 ### 3.2 The sensor shows a code
 
@@ -352,13 +365,17 @@ Reason codes and their meaning: [placement](placement.md).
 
 **Sensor-local policy** (owner decision 2026-10-31): the platform's signed
 scope is the default; a host owner may add a local allow list that only
-narrows it, and the platform never writes it; the kill switch stays. Today a
-newly paired sensor without a policy refuses jobs with network targets (sdk-go
-`ResolveRequireLocalPolicy`), and a refused routed task is re-queued for
-another sensor whose reported policy accepts it
-(`internal/app/command/refusal.go:handleRefusal`). The move to an optional,
-narrow-only policy and policy-aware routing is in progress; this section
-changes with it.
+narrows it, and the platform never writes it; the kill switch stays. A sensor
+without a policy follows the signed scope (built-in deny list and kill switch
+still apply); `SENSOR_REQUIRE_LOCAL_POLICY=true` makes it refuse jobs with
+network targets instead (sdk-go `sensorkit/kit.go:ResolveRequireLocalPolicy`,
+`core/local_policy.go`). The dispatch gate reads the reported summary
+(`internal/app/command/local_policy.go`, `sensordom.Accepts`), and a refused
+routed task is re-queued for another sensor, at most 3 refusals or 6 hours
+(`internal/app/command/refusal.go:handleRefusal`). From v0.20.0: a refusal
+records the policy digest, a sensor that refused under the same policy is not
+offered the task again, and a refusal whose targets all fail to resolve
+completes with per-target skips. Flow: [sensors](sensors.md#sensor-local-policy-rfc-040-57).
 
 ## 10. The job loop
 
@@ -398,7 +415,7 @@ sequenceDiagram
 | Confinement | per-task network namespace with a relay on 127.0.0.1:1080 and DNS on :53, Landlock, seccomp, cgroup envelope | `sensorkit/executor` |
 | Rate | per-host AIMD with a breaker, `Retry-After` honoured; floors, blocks and breaker trips become coverage gaps | `adapt/hostrate.go:HostRate` |
 | Kill switch | policy flag or file, checked every 2 s; running jobs canceled and failed `kill_switch` | `core/command_poller.go:checkKillSwitch` |
-| Disk | outbox capped (1 GiB or half the free space), room kept for command results; a full store stops claiming and says so on the heartbeat | `outbox/outbox.go`, `sensorkit/store.go:acceptsWork` |
+| Disk | outbox capped (1 GiB, or half of used plus free space when smaller), claiming stops at 85 %, 2 % kept for command results; a full store stops claiming and says so on the heartbeat | `outbox/outbox.go`, `sensorkit/store.go:acceptsWork` |
 | Cancel and stop | `cancel_command_ids` stops and hands back; `stop_command_ids` stops and delivers what finished | `core/command_poller.go:CancelCommands`, `StopCommands` |
 
 ## 11. Results, binding and ingest
@@ -451,8 +468,19 @@ sequenceDiagram
   coverage type; the blinding guard stops a mass close; the default mode is
   dry run (`ingest/coverage_autoresolve.go:decideRunCoverage`). An
   infrastructure failure, a cancel or a stall never closes anything.
+- A stopped run proves nothing (`pkg/domain/command/stopped.go:RunStopped`).
+  A completed command's result describes a stopped run when `exit_code` is
+  present and not 0, its `status` is not a completed status, the sensor says
+  it stopped or failed (`stopped`, `stop_reason`, `failure`), or the result is
+  not valid JSON. Older sensors report a scanner killed by the job budget as
+  "completed", exit -1, full coverage, every target done. Every path that
+  closes something by absence reads the result through `RunStopped` first:
+  coverage auto-resolve, the per-branch occurrence sweep, per-target
+  settlement, the wildcard DNS mark and the retest verdicts. A crashed run's
+  finished targets count as unfinished and are scanned again.
 - The asset coverage ledger settles per target from the same outcomes; a
-  truncated result covers nothing (`pkg/domain/coverage/settle.go:Verdicts`).
+  truncated or stopped result covers nothing
+  (`pkg/domain/coverage/settle.go:Verdicts`).
   Blocked targets are rechecked after 6 hours.
 - Completion: a step is partial when it has gaps, skipped or unfinished
   targets; unfinished targets of a stopped task become a follow-up task;
@@ -473,7 +501,35 @@ expressed as a capability or feature the claim checks (`required_features`),
 so an older sensor simply is not offered that work and the task says why.
 `sensors.sh upgrade` verifies the image signature before it pulls.
 
+Nothing upgrades a sensor from the platform: the doorbell's `update` action
+is defined (`pkg/domain/sensor/doorbell.go`) but never sent, and the sensor
+only logs it (sdk-go `core/doorbell.go`). Tools ship in the sensor image or
+come from the operator's adapter directories (`SENSOR_ADAPTER_DIRS`); there
+is no host tool pin or update mechanism in code yet. Flow and version
+classification: [sensor compatibility](sensor-compatibility.md#flow).
+
 ## 14. Decommission
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Admin
+    box Platform
+    participant SV as SensorService
+    participant CMD as command_lease
+    participant ST as v3 streams
+    end
+    box Sensor host
+    participant S as Sensor
+    end
+    A->>SV: POST /api/v1/sensors/{id}/revoke (sensors:write or sensors:revoke)
+    SV->>SV: status revoked WHERE tenant_id, every sensor_keys row revoked
+    SV->>CMD: ReleaseHeldBySensor - routed work re-queued, the rest failed, late writes fenced by the epoch
+    SV->>ST: SetStatusNotifier wake - streams re-resolve and end UNAUTHENTICATED
+    S->>SV: next signed request
+    SV-->>S: 401 unauthenticated, the same as an unknown key
+    S->>S: AuthGate - stop polling, heartbeat backoff 30 s to 10 min, log pair again, identity files kept
+```
 
 | Action | Effect | Code |
 |---|---|---|
@@ -487,7 +543,7 @@ so an older sensor simply is not offered that work and the task says why.
 | # | Situation | Exact behaviour | Code | Test |
 |---|---|---|---|---|
 | E1 | Network loss, sensor side | heartbeat retried once, then about 10 s; outbox keeps results (sealed, fsync) and drains with backoff and jitter when the link returns; nothing is lost | sdk-go `client/control_v2.go`, `outbox/outbox.go` | sdk-go `outage_test.go:TestOneHourOutageDeliversEachResultExactlyOnce` |
-| E2 | Network loss longer than the lease | the platform expires the lease and re-queues the task for another sensor; the old holder's start, complete and fail are fenced by the epoch; its late results are refused at accept when they state an old epoch and dropped by the ingest worker when the run was taken back, for organization and shared sensors; the sensor stops the job past its lease plus a grace and sends nothing of it (sdk-go lease watchdog) | `postgres/command_lease.go:RequeueExpiredLeases`, `FencedUpdate`, `ingest/quarantine.go:OpenCommand`, `ingest/queued_sensor.go:heldRun`, sdk-go `core/lease_watchdog.go` | `postgres/command_lease_db_test.go:TestCommandLease_NoCompletionAfterRequeue`, `routes/sensor_lease_fencing_db_test.go:TestOrgResults_StatedEpochMustBeCurrent`, `TestOrgResults_QueuedReportOfATakenBackRunIsDropped`, sdk-go `TestCommandPoller_LeaseWatchdog` |
+| E2 | Network loss longer than the lease | the platform expires the lease and re-queues the task for another sensor; the old holder's start, complete and fail are fenced by the epoch; its late results are refused at accept when they state an old epoch and not applied by the ingest worker when the run was taken back (the report fails, its job ends dead with code `report_dropped` and keeps the sealed segment for the staging retention), for organization and shared sensors; the sensor stops the job past its lease plus a grace and sends nothing of it (sdk-go lease watchdog) | `postgres/command_lease.go:RequeueExpiredLeases`, `FencedUpdate`, `ingest/quarantine.go:OpenCommand`, `ingest/queued_sensor.go:heldRun`, sdk-go `core/lease_watchdog.go` | `postgres/command_lease_db_test.go:TestCommandLease_NoCompletionAfterRequeue`, `routes/sensor_lease_fencing_db_test.go:TestOrgResults_StatedEpochMustBeCurrent`, `TestOrgResults_QueuedReportOfATakenBackRunIsDropped`, sdk-go `TestCommandPoller_LeaseWatchdog` |
 | E3 | Platform restart | leases, queue and pairing state live in Postgres; offline convictions are held for the startup grace; the first answered heartbeat wakes the outbox | `app/sensor/platform_health.go:HoldConvictions` | `platform_health_test.go:TestPlatformHealth_StartupGrace`, `tests/unit/sensor_liveness_store_controller_test.go:TestLivenessStore_ColdStartNoMassOffline` |
 | E4 | Slow database or overloaded controller | offline convictions held while heartbeat p95 ≥ 2 s or after a stalled tick | `platform_health.go:HoldConvictions` | `TestPlatformHealth_SlowHeartbeats`, `TestPlatformHealth_Stall` |
 | E5 | 429 on the control plane or results | jittered `Retry-After`; the sensor honours it (pairing, heartbeat, outbox, poll) | `middleware/ingest_v2.go:V2Throttle` | `middleware/retry_after_test.go:TestV2Throttle_RetryAfterFollowsTheBucket` |
@@ -506,14 +562,15 @@ so an older sensor simply is not offered that work and the task says why.
 | E18 | No eligible sensor | the task waits and records why; the run ends `NO_SENSOR` with that reason after 1 h (interactive) or 4 h (scheduled); the coverage orchestrator holds the capability | `postgres/scan_run_repository.go:AbortUnclaimedRunsReporting`, `coverage/planner.go:hold` | `postgres/command_withheld_db_test.go:TestAbortUnclaimedRuns_NamesWithheldReason`, `tests/integration/asset_coverage_not_claimed_test.go:TestAssetCoverage_NotClaimedPausesAndResumes` |
 | E19 | Target behind edge protection | blocked or challenged targets are coverage gaps with the edge reason; never covered, never auto-close; rechecked later | `ingest/coverage_targets.go`, `coverage_autoresolve.go:resultLeftTargetsUncovered` | `ingest/coverage_autoresolve_test.go:TestDecideCoverage` |
 | E20 | Tool crash, missing tool, OOM, sensor resolver failure | moved to another eligible sensor, failed sensors excluded, 3 attempts; the same tool and content failing on two sensors stops the task (`FLEET_TOOL_FAILURE`) | `app/command/infra_failure.go:handleInfraFailure` | `postgres/command_infra_db_test.go:TestInfra_MovedToAnotherSensorExcludesFailedOne`, `TestInfra_FleetStopRuleAfterTwoSensors` |
-| E21 | Revoked or disabled while holding work | held commands released at once; late writes fenced; queued reports dropped and audited | `service.go:releaseHeldCommands`, `ingest/queued_sensor.go` | `app/sensor/revoke_release_db_test.go:TestRevokeSensor_ReleasesLeasedCommands_DB`, `routes/sensor_v2_routes_db_test.go:TestSensorV2_QueuedReportOfRevokedSensorIsDropped` |
+| E21 | Revoked or disabled while holding work | held commands released at once; late writes fenced; queued reports not applied, failed and audited; their jobs end dead (`report_dropped`) and keep the sealed segment for the staging retention, never emptied | `service.go:releaseHeldCommands`, `ingest/queued_sensor.go` | `app/sensor/revoke_release_db_test.go:TestRevokeSensor_ReleasesLeasedCommands_DB`, `routes/sensor_v2_routes_db_test.go:TestSensorV2_QueuedReportOfRevokedSensorIsDropped` |
 | E22 | Revoked sensor disabled then activated | refused: revoked is final | `service.go:DisableSensor`, `ActivateSensor` | `tests/unit/sensor_service_test.go:TestSensorService_DisableSensor_RevokedStaysRevoked` |
 | E23 | Cancel while running | the holder learns on its next heartbeat (or the v3 stream), stops and hands back; nothing from it is delivered | `postgres/command_lease.go:CommandsToCancel` | sdk-go `TestQueue_CancelFromHeartbeat` |
 | E24 | Scan window closes mid-run | after a grace the task is re-queued, then canceled | `app/command/window_closing.go:EnforceClosedWindows` | `tests/unit/command_window_hold_test.go:TestEnforceClosedWindows_GraceThenRequeue` |
 | E25 | Catalog gains a tool a sensor already reported | the sensor is asked for its manifest after the next platform start and re-projected | `app/sensor/manifest.go:LoadManifestRechecks` | `routes/sensor_manifest_db_test.go:TestSensorManifest_CatalogGainsToolReprojects` |
-| E27 | Bound result names hosts outside the job | located assets outside the targets (and their findings) are dropped, counted (`sensor_results_outside_job_total`) and audited (`sensor.results_outside_job`); never created | `ingest/job_bound.go` | `ingest/job_bound_test.go`, `routes/sensor_results_job_bound_db_test.go` |
+| E27 | Bound result names hosts outside the job | located assets outside the targets (and their findings) are recorded as discoveries that grant nothing and run no automations, counted (`sensor_results_outside_job_total`) and audited (`sensor.results_outside_job`); past 1000 per report they are refused (`over_cap`) | `ingest/job_bound.go` | `ingest/job_bound_test.go`, `routes/sensor_results_job_bound_db_test.go` |
 | E29 | Host completes the TLS handshake, then resets every HTTP request (often with an expired certificate, or another site's default certificate) | nuclei's host breaker skips it; the sensor rechecks each skipped host once (one handshake and one `HEAD /` through the task's egress proxy, at most 32 hosts and 90 s per run) and the gap carries `cause` (`http_reset`, `tls_failed`, `reset`, `refused`, `no_answer`, `answered`) and `cert` (`expired`, `not_yet_valid`, `name_mismatch`, `self_signed`); a host that opened the connection counts as reached, not unreachable. httpx's failed https URL whose host answered gets a live host with status 0 and the certificate the sensor read itself, so the certificate is recorded and judged. The host stays a coverage gap (never covered, findings never auto-closed); the console words the cause, the certificate and the fix (scanner addresses to allow, rescan) | sensor `internal/tlscheck`, `internal/recon/httpx/tls_only.go`, sdk-go `tlsprobe/tlsprobe.go`; `pkg/domain/scanrun/coverage_gaps.go:ParseCoverageGaps`, `web/src/features/scans/lib/placement-help.ts:gapReasonHelp` | sensor `TestSkippedHostThatResetsIsRecheckedNotUnreachable`, `TestFailedHTTPSKeepsTheCertificate`; `scanrun/coverage_gaps_test.go:TestParseCoverageGapsCauseAndCert`, `ingest/coverage_autoresolve_test.go:TestDecideCoverage` |
 | E28 | Sensor labels its findings `manual` or `integration` | ignored: the channel comes from the sensor's role | `ingest/channel.go` | `ingest/job_bound_test.go:TestPrincipalSourceType`, `routes/sensor_results_job_bound_db_test.go` |
+| E30 | Run stopped part-way but reported "completed" (budget kill at exit -1, a tool that gave up at exit 1, a partial status, a sensor stop) with full coverage claimed | proves nothing: no finding is auto-resolved, no branch occurrence is marked `auto_fixed`, no target is settled covered (its done targets are unfinished and scanned again), no name is marked wildcard-only, and a retest from it is inconclusive (a match still stands). The per-branch sweep of a report bound to a command runs once per run, after the command completed by itself and every report completed; two reports of one run on the same branch and tool sweep nothing | `pkg/domain/command/stopped.go:RunStopped`, `ingest/branch_sweep.go`, `coverage_autoresolve.go:decideRunCoverage`, `coverage/settle.go:Verdicts`, `ingest/wildcard_dns.go:resolutionOver`, `retest/retest.go:Decide`, `retest/tool_verdict.go:DecideToolVerdict` | `command/stopped_test.go:TestRunStopped`, `ingest/branch_sweep_test.go`, `ingest/run_stopped_test.go`, `coverage/settle_stopped_test.go`, `retest/stopped_test.go`, `app/retest/stopped_run_db_test.go` |
 | E26 | Sensor key lost (volume wiped) | the sensor cannot authenticate; console re-pair keeps the registration; outbox items are not identity-bound and are sent under the new key | `sensorpairing/service.go:Approve` | `sensorpairing/service_db_test.go:TestPairing_Repair_DB` |
 
 ## 16. Known limits

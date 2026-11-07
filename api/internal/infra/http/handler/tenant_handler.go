@@ -34,6 +34,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -76,6 +77,9 @@ type TenantHandler struct {
 	// scanIdentity answers the platform layer of the scan identification
 	// markers the settings page shows (optional).
 	scanIdentity PlatformScanIdentitySource
+	// leakedSecretDefault answers the platform default of leaked secret
+	// value storage the credential settings page shows (optional).
+	leakedSecretDefault LeakedSecretDefaultSource
 	// selfServiceLimits: the instance's self-service default limits and the
 	// per-person organization cap (none unless an operator set them).
 	selfServiceLimits auth.SelfServiceLimits
@@ -627,6 +631,11 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// carry stored values, so it is not logged here.
 		h.logger.Error("settings section unreadable")
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
+		return
+	}
+	if errors.Is(err, stepup.ErrBelowFloor) {
+		apierror.New(http.StatusUnprocessableEntity, apierror.Code("STEP_UP_POLICY_BELOW_FLOOR"),
+			"Critical actions ask every time or once per 10 minutes. They cannot be turned off or given a longer window.").WriteJSON(w)
 		return
 	}
 	if errors.Is(err, tenantapp.ErrMFABelowPlatformFloor) {
@@ -2228,6 +2237,9 @@ type SecuritySettingsResponse struct {
 	// admins, everyone). mfa_required and mfa_required_for_admins already
 	// include it; an organization can raise them, not lower them below it.
 	PlatformMFAFloor string `json:"platform_mfa_floor,omitempty"`
+	// StepUp is the re-verification policy in force (critical, sensitive,
+	// routine), with the platform floor applied.
+	StepUp stepup.Policy `json:"step_up"`
 	// PlatformScanIdentification is the platform's layer of the scan
 	// identification markers, merged under the organization's (read-only
 	// here; GET only).
@@ -2273,6 +2285,7 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 			JITRequiresApproval:                       s.Security.JITRequiresApproval,
 			SSORequireMFAEvidence:                     s.Security.SSORequireMFAEvidence,
+			StepUp:                                    s.Security.EffectiveStepUp(),
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
@@ -2383,12 +2396,16 @@ type UpdateSecuritySettingsRequest struct {
 	// SSOEnforced is accepted only to refuse it explicitly: SSO enforcement is
 	// set by the platform administrator per organization (RFC-022), and a
 	// silently ignored field would look like it saved.
-	SSOEnforced           *bool    `json:"sso_enforced"`
-	MFARequired           *bool    `json:"mfa_required"`
-	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
-	IPWhitelist           []string `json:"ip_whitelist"`
-	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
+	SSOEnforced          *bool `json:"sso_enforced"`
+	MFARequired          *bool `json:"mfa_required"`
+	MFARequiredForAdmins *bool `json:"mfa_required_for_admins"`
+	// StepUp replaces the re-verification policy: every tier's mode
+	// (every_time, once_per_window, off) and window (10m, 1h, 4h, 8h,
+	// session). Critical is every_time or once_per_window 10m.
+	StepUp                *stepup.Policy `json:"step_up,omitempty"`
+	IPWhitelist           []string       `json:"ip_whitelist"`
+	AllowedDomains        []string       `json:"allowed_domains"`
+	EmailVerificationMode *string        `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
 	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
 	// AllowSensorInteractsh / AllowSensorCustomTemplates: see
@@ -2464,6 +2481,7 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		SSOExceptions:                             req.SSOExceptions,
 		JITRequiresApproval:                       req.JITRequiresApproval,
 		SSORequireMFAEvidence:                     req.SSORequireMFAEvidence,
+		StepUp:                                    req.StepUp,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 		// Lockout guard: "SSO must prove two-factor" must not refuse this

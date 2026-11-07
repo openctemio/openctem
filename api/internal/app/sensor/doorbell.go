@@ -137,6 +137,7 @@ func (c DoorbellConfig) Normalized(offlineAfter, lease time.Duration) DoorbellCo
 // Doorbell computes heartbeat hints.
 type Doorbell struct {
 	src    PendingWorkSource
+	splits HostSplitSource
 	cfg    DoorbellConfig
 	logger *logger.Logger
 	now    func() time.Time
@@ -254,6 +255,34 @@ func (d *Doorbell) mayRing(ctx context.Context, a *sensordom.Sensor, action sens
 	return g.MayReceiveAction(string(action))
 }
 
+// HostSplitSource counts the commands a sensor's next claim would split
+// because only a few of their hosts are busy (command.Service.HostSplitReady).
+// The pending-work query counts only commands whose hosts are all free, so
+// without it an idle sensor is not told about work its claim would start,
+// and takes it only on its own safety poll, minutes later.
+type HostSplitSource interface {
+	HostSplitReady(ctx context.Context, tenantID, sensorID shared.ID, capabilities []string) (int, error)
+}
+
+// SetHostSplits makes the doorbell ring for commands the sensor's next claim
+// would split (HostSplitSource). nil turns it off.
+func (d *Doorbell) SetHostSplits(s HostSplitSource) { d.splits = s }
+
+// splitReady is HostSplitSource's count for the sensor, 0 when there is
+// none or it cannot be read (the heartbeat never fails for it).
+func (d *Doorbell) splitReady(ctx context.Context, tenantID, sensorID shared.ID, caps []string) int {
+	if d.splits == nil {
+		return 0
+	}
+	n, err := d.splits.HostSplitReady(ctx, tenantID, sensorID, caps)
+	if err != nil {
+		d.logger.Warn("heartbeat doorbell could not read commands waiting for hosts",
+			"sensor_id", sensorID.String(), "error", sanitizeLogValue(err.Error()))
+		return 0
+	}
+	return min(max(n, 0), d.cfg.PendingCap)
+}
+
 // NewDoorbell builds a doorbell over src. cfg should already be Normalized.
 func NewDoorbell(src PendingWorkSource, cfg DoorbellConfig, log *logger.Logger) *Doorbell {
 	return &Doorbell{src: src, cfg: cfg, logger: log.With("component", "heartbeat_doorbell"), now: time.Now}
@@ -304,6 +333,9 @@ func (d *Doorbell) Ring(ctx context.Context, req DoorbellRequest) sensordom.Hear
 		qctx, cancel := context.WithTimeout(ctx, d.cfg.QueryTimeout)
 		start := time.Now()
 		work, err := d.src.PendingWorkForSensor(qctx, *a.TenantID, a.ID, a.EffectiveCapabilities(), d.cfg.PendingCap)
+		if err == nil && work.Count == 0 && !req.NoFreeSlots {
+			work.Count = d.splitReady(qctx, *a.TenantID, a.ID, a.EffectiveCapabilities())
+		}
 		elapsed := time.Since(start)
 		cancel()
 		if err != nil {

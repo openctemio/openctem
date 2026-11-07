@@ -1,6 +1,8 @@
 package credential
 
 import (
+	"context"
+	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // A leaked credential's secret (the password, token or key that leaked) is
@@ -20,6 +23,12 @@ import (
 //     (APP_ENCRYPTION_KEY, AES-256-GCM) under DetailSecretCiphertext;
 //   - every read path returns only DetailSecretMasked and
 //     DetailSecretFingerprint (see RedactDetails);
+//   - the fingerprint is keyed per organization (HKDF of the platform key with
+//     the tenant id), so the same secret leaked for two organizations has two
+//     unrelated fingerprints and a database reader cannot link them;
+//   - an organization may choose not to keep the value at all
+//     (credentials.store_secret_values): the import then keeps only the mask,
+//     the credential type and the fingerprint (Seal with store=false);
 //   - the plaintext is returned only by the reveal endpoint, which requires
 //     findings:credentials:reveal and writes an audit event.
 //
@@ -36,8 +45,15 @@ const (
 	// DetailSecretMasked is a display-safe rendering of the secret.
 	DetailSecretMasked = "secret_masked"
 	// DetailSecretFingerprint is a keyed hash of the secret, for correlating
-	// the same secret across leaks without revealing it.
+	// the same secret across leaks of one organization without revealing it.
 	DetailSecretFingerprint = "secret_fingerprint"
+	// DetailSecretFingerprintVersion is the fingerprint recipe of
+	// DetailSecretFingerprint: FingerprintVersionTenant, or absent for the
+	// install-wide recipe that the start-up re-key replaces.
+	DetailSecretFingerprintVersion = "secret_fingerprint_version"
+
+	// FingerprintVersionTenant is the per-organization fingerprint recipe.
+	FingerprintVersionTenant = 2
 
 	// SecretSchemeAESGCM means DetailSecretCiphertext is AES-256-GCM ciphertext.
 	SecretSchemeAESGCM = "aes-256-gcm"
@@ -51,7 +67,17 @@ const (
 	maskPrefixLen         = 4
 	fingerprintBytes      = 16
 	fingerprintKeyContext = "openctem:leaked-credential-fingerprint:v1"
+	// tenantFingerprintInfo is the HKDF info prefix of the per-organization
+	// fingerprint key; the tenant id follows it.
+	tenantFingerprintInfo = "openctem:credential-fingerprint:v2:"
 )
+
+// StoragePolicy answers, per organization, whether an imported leaked secret
+// value is kept (encrypted). When it is not, only the mask, the credential
+// type and the organization's fingerprint are stored.
+type StoragePolicy interface {
+	StoresSecretValues(ctx context.Context, tenantID shared.ID) bool
+}
 
 // ErrSecretUnreadable is returned when a stored secret cannot be decrypted
 // (wrong or rotated key, corrupted row).
@@ -92,15 +118,20 @@ func credTypeOf(details map[string]any) string {
 // SecretProtector seals and opens the secret stored in a leaked-credential
 // exposure's details.
 type SecretProtector struct {
-	enc   crypto.Encryptor
-	real  bool
-	fpKey []byte
+	enc  crypto.Encryptor
+	real bool
+	// fpPRK is the HKDF pseudo-random key the per-organization fingerprint
+	// keys are expanded from.
+	fpPRK []byte
+	// fpKeyV1 is the install-wide fingerprint key, kept only to re-key rows
+	// written with it and to reverse that re-key.
+	fpKeyV1 []byte
 }
 
 // NewSecretProtector builds a protector. enc is the platform credential
 // encryptor; a nil or no-op encryptor stores secrets with SecretSchemeNone
-// (development only). keyMaterial keys the fingerprint HMAC (pass the
-// platform encryption key); it is never used directly as an HMAC key.
+// (development only). keyMaterial keys the fingerprints (pass the platform
+// encryption key string); it is never used directly as an HMAC key.
 func NewSecretProtector(enc crypto.Encryptor, keyMaterial []byte) *SecretProtector {
 	if enc == nil {
 		enc = crypto.NewNoOpEncryptor()
@@ -108,15 +139,46 @@ func NewSecretProtector(enc crypto.Encryptor, keyMaterial []byte) *SecretProtect
 	h := sha256.New()
 	h.Write([]byte(fingerprintKeyContext))
 	h.Write(keyMaterial)
-	return &SecretProtector{enc: enc, real: !crypto.IsNoOp(enc), fpKey: h.Sum(nil)}
+	// Extract fails only for a key too short for FIPS 140-only mode; the PRK
+	// then stays nil and no fingerprint is produced (never an unkeyed one).
+	prk, _ := hkdf.Extract(sha256.New, keyMaterial, []byte(tenantFingerprintInfo))
+	return &SecretProtector{enc: enc, real: !crypto.IsNoOp(enc), fpPRK: prk, fpKeyV1: h.Sum(nil)}
 }
 
 // Encrypts reports whether secrets are actually encrypted at rest.
 func (p *SecretProtector) Encrypts() bool { return p.real }
 
-// Fingerprint returns the keyed fingerprint of a secret.
-func (p *SecretProtector) Fingerprint(secret string) string {
-	mac := hmac.New(sha256.New, p.fpKey)
+// tenantKey is the organization's fingerprint key:
+// HKDF-SHA256(platform key, info = "openctem:credential-fingerprint:v2:" || tenant id).
+// It is nil when no key can be derived (no PRK, or no tenant).
+func (p *SecretProtector) tenantKey(tenantID shared.ID) []byte {
+	if len(p.fpPRK) == 0 || tenantID.IsZero() {
+		return nil
+	}
+	k, err := hkdf.Expand(sha256.New, p.fpPRK, tenantFingerprintInfo+tenantID.String(), sha256.Size)
+	if err != nil {
+		return nil
+	}
+	return k
+}
+
+// Fingerprint returns the organization's keyed fingerprint of a secret. The
+// same secret has the same fingerprint inside one organization and unrelated
+// fingerprints in two. It is "" when no key can be derived (no tenant).
+func (p *SecretProtector) Fingerprint(tenantID shared.ID, secret string) string {
+	key := p.tenantKey(tenantID)
+	if key == nil {
+		return ""
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(secret))
+	return hex.EncodeToString(mac.Sum(nil)[:fingerprintBytes])
+}
+
+// FingerprintV1 is the install-wide fingerprint the per-organization one
+// replaced. Only the re-key and its reversal use it.
+func (p *SecretProtector) FingerprintV1(secret string) string {
+	mac := hmac.New(sha256.New, p.fpKeyV1)
 	mac.Write([]byte(secret))
 	return hex.EncodeToString(mac.Sum(nil)[:fingerprintBytes])
 }
@@ -131,12 +193,15 @@ func (p *SecretProtector) NeedsSealing(details map[string]any) bool {
 	return p.real && details[DetailSecretScheme] == SecretSchemeNone
 }
 
-// Seal encrypts the secret in details in place. The plaintext is taken from
-// DetailSecretValue (new import, or a legacy row) or, when a real key is now
-// configured, from a SchemeNone ciphertext. Afterwards DetailSecretValue is
-// gone and the ciphertext, scheme, mask and fingerprint are set. Details
-// without a secret are left untouched.
-func (p *SecretProtector) Seal(details map[string]any) error {
+// Seal protects the secret in details in place, for an organization. The
+// plaintext is taken from DetailSecretValue (new import, or a legacy row) or,
+// when a real key is now configured, from a SchemeNone ciphertext.
+// Afterwards DetailSecretValue is gone and the mask, the per-organization
+// fingerprint and its version are set. With store, the secret is also
+// encrypted under DetailSecretCiphertext; without it no form of the value is
+// kept (any older ciphertext is removed, it would belong to another value).
+// Details without a secret are left untouched.
+func (p *SecretProtector) Seal(tenantID shared.ID, details map[string]any, store bool) error {
 	if details == nil {
 		return nil
 	}
@@ -146,6 +211,19 @@ func (p *SecretProtector) Seal(details map[string]any) error {
 	}
 	delete(details, DetailSecretValue)
 	if plaintext == "" {
+		return nil
+	}
+	details[DetailSecretMasked] = MaskSecret(credTypeOf(details), plaintext)
+	if fp := p.Fingerprint(tenantID, plaintext); fp != "" {
+		details[DetailSecretFingerprint] = fp
+		details[DetailSecretFingerprintVersion] = FingerprintVersionTenant
+	} else {
+		delete(details, DetailSecretFingerprint)
+		delete(details, DetailSecretFingerprintVersion)
+	}
+	if !store {
+		delete(details, DetailSecretCiphertext)
+		delete(details, DetailSecretScheme)
 		return nil
 	}
 	sealed, err := p.enc.EncryptString(plaintext)
@@ -158,9 +236,77 @@ func (p *SecretProtector) Seal(details map[string]any) error {
 	}
 	details[DetailSecretCiphertext] = sealed
 	details[DetailSecretScheme] = scheme
-	details[DetailSecretMasked] = MaskSecret(credTypeOf(details), plaintext)
-	details[DetailSecretFingerprint] = p.Fingerprint(plaintext)
 	return nil
+}
+
+// FingerprintOutcome is what RekeyFingerprint or RevertFingerprint did to
+// one row's details.
+type FingerprintOutcome int
+
+// Fingerprint re-key outcomes.
+const (
+	// FingerprintUnchanged: already in the wanted recipe, or no fingerprint.
+	FingerprintUnchanged FingerprintOutcome = iota
+	// FingerprintRekeyed: the fingerprint was recomputed from the stored secret.
+	FingerprintRekeyed
+	// FingerprintUnrecomputable: the row has a fingerprint in the old recipe
+	// but its secret cannot be opened (wrong key, or no stored value); the
+	// details are left as they are.
+	FingerprintUnrecomputable
+)
+
+// HasTenantFingerprint reports whether details' fingerprint is in the
+// per-organization recipe. JSON decodes the version as a float64.
+func HasTenantFingerprint(details map[string]any) bool {
+	switch v := details[DetailSecretFingerprintVersion].(type) {
+	case int:
+		return v == FingerprintVersionTenant
+	case float64:
+		return v == FingerprintVersionTenant
+	case json.Number:
+		return v.String() == fmt.Sprint(FingerprintVersionTenant)
+	}
+	return false
+}
+
+// RekeyFingerprint moves details' fingerprint to the per-organization recipe
+// of tenantID, recomputing it from the stored secret. It is idempotent: a
+// fingerprint already in that recipe is left alone.
+func (p *SecretProtector) RekeyFingerprint(tenantID shared.ID, details map[string]any) FingerprintOutcome {
+	if HasTenantFingerprint(details) {
+		return FingerprintUnchanged
+	}
+	if fp, _ := details[DetailSecretFingerprint].(string); fp == "" {
+		return FingerprintUnchanged
+	}
+	plain, ok, err := p.Open(details)
+	if err != nil || !ok || plain == "" {
+		return FingerprintUnrecomputable
+	}
+	fp := p.Fingerprint(tenantID, plain)
+	if fp == "" {
+		return FingerprintUnrecomputable
+	}
+	details[DetailSecretFingerprint] = fp
+	details[DetailSecretFingerprintVersion] = FingerprintVersionTenant
+	return FingerprintRekeyed
+}
+
+// RevertFingerprint is the reverse of RekeyFingerprint: it puts back the
+// install-wide fingerprint computed from the stored secret and removes the
+// version, for a rollback to a build that only knows that recipe. A row
+// without a stored secret keeps its per-organization fingerprint.
+func (p *SecretProtector) RevertFingerprint(details map[string]any) FingerprintOutcome {
+	if !HasTenantFingerprint(details) {
+		return FingerprintUnchanged
+	}
+	plain, ok, err := p.Open(details)
+	if err != nil || !ok || plain == "" {
+		return FingerprintUnrecomputable
+	}
+	details[DetailSecretFingerprint] = p.FingerprintV1(plain)
+	delete(details, DetailSecretFingerprintVersion)
+	return FingerprintRekeyed
 }
 
 // Open returns the plaintext secret held in details. ok is false when there is
@@ -248,7 +394,8 @@ var secretMetadataSuffixes = map[string]bool{
 	"type": true, "valid": true, "revoked": true, "entropy": true,
 	"needs_rotation": true, "expires_at": true, "masked": true,
 	"masked_value": true, "fingerprint": true, "fingerprint_prefix": true,
-	"id": true, "set": true, "changed": true, "service": true,
+	"fingerprint_version": true,
+	"id":                  true, "set": true, "changed": true, "service": true,
 	"pre_existing": true, "not_observed": true, "detection": true,
 	"scan": true, "source": true, "provider": true, "kind": true,
 	"status": true, "name": true, "length": true, "count": true,

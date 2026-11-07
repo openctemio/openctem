@@ -21,8 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -180,9 +181,12 @@ func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.
 			shared.ErrValidation)
 	}
 	t, err := tools.FindByCapabilities(ctx, tenantID, step.Capabilities)
-	if err != nil {
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
 		return StepTool{}, fmt.Errorf("step %s: find tool by capabilities: %w", step.StepKey, err)
 	}
+	// No tool with these capabilities (nil, or a lookup's not-found) is
+	// NO_MATCHING_TOOL below: an optional step is then skipped with the
+	// reason, and a required one refuses the run naming the step.
 	if !usableScanner(t) {
 		return StepTool{}, shared.NewDomainError(codeNoMatchingTool,
 			fmt.Sprintf("No active tool found for step '%s' with capabilities %v. Please configure a tool for this step.", step.StepKey, step.Capabilities),
@@ -329,6 +333,11 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	if toolName == "" {
 		return nil, shared.NewDomainError(codeNoMatchingTool,
 			fmt.Sprintf("step %s has no tool to run", step.StepKey), shared.ErrValidation)
+	}
+	// A step saved before the save-time check, or written around it, must
+	// not put a credential in a command.
+	if err := scan.RefuseConfigSecrets(step.Config); err != nil {
+		return nil, err
 	}
 	config, err := scanworkflow.NormalizeStepConfig(toolName, step.Config)
 	if err != nil {

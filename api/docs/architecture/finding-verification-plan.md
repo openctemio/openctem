@@ -30,7 +30,7 @@ horizon the engine uses.
 
 | Kind | Available when | Counts as proof |
 |---|---|---|
-| `retest` | the retest service would accept one now (`Availability`); reason codes: `status_not_eligible`, `secret_needs_rotation`, `check_cannot_run`, `no_tool_rule`, `template_not_rerun`, `no_asset`, `asset_inactive`, `asset_not_network_addressable`, `asset_no_address`, `target_refused`, `no_sensor`, `no_check_sensor` | yes |
+| `retest` | the retest service would accept one now (`Availability`); reason codes: `status_not_eligible`, `secret_needs_rotation`, `check_cannot_run`, `no_tool_rule`, `template_not_rerun`, `no_asset`, `asset_inactive`, `asset_not_network_addressable`, `asset_no_address`, `target_refused`, `no_sensor`, `no_check_sensor`, `no_automatic_retest` (a person's finding), `imported_no_retest` (an integration's tool no sensor runs), `reimport_to_verify` (a scanner's report imported from a file: the panel offers **Import newer results** to members who may import) | yes |
 | `covered_scan` (automatic) | a repository asset (a full default-branch scan closes it), or another asset while coverage auto-resolve enforces and the organization's [closing mode](#closing-mode) lets a covered scan close this finding (`coverage_auto_resolve_review` when it would propose, `_off` when the mode is off); never secrets (`absence_not_proof_for_secrets`), pentest/manual/bug bounty/red team (`source_not_scanned`); `coverage_auto_resolve_review` / `_off` otherwise | yes (the platform closes it) |
 | `safe_check` | an active network-addressable asset; not for secrets | no (reachability only) |
 | `rotation_proof` | secrets only; recorded through the verification checklist | yes |
@@ -97,6 +97,7 @@ open and records nothing; `review` proposes every close; `auto` closes per the t
 | a clean full default-branch scan (repository findings) | `ci_default_branch` | `evaluateRepoCoverage` |
 | a full-coverage upload (`coverage=full`) | `covered_scan` | `findingimport/coverage.go` (receipt `coverage.note = proposed` when it only proposed) |
 | the software matcher sees another installed version (`version_changed`) | `source_reported` | `vulnmatch/service.go` |
+| a retest confirms the fix, with the retest setting `auto_resolve` on | `retest_verified` | `retest/closing_mode.go` (activity `closure_decision`) |
 
 The matcher's other kinds are not fix claims and stay outside the rule: `not_observed`
 only marks a finding stale, and `advisory_updated` reclassifies a finding as a detection
@@ -107,7 +108,8 @@ guard), template drift and secrets behave as before: a held run never closes, an
 under `off`) its findings are proposed for a person to decide. When the policy or the
 tiers cannot be read, nothing closes (review; tiers read as critical). The verification
 plan's `covered_scan` method uses the same rule. Confirming a `ci_default_branch` proposal
-records verification `covered_scan`; a `source_reported` one records `source_reported`.
+records verification `covered_scan`; a `source_reported` one records `source_reported`; a
+`retest_verified` one records `retest`.
 
 ## Ready to close
 

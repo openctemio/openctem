@@ -63,6 +63,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, usePermissions } from '@/lib/permissions'
 import {
+  useCIRunnerRelease,
   useDeleteGatePolicy,
   useDeleteTrustConfig,
   useGateOverrides,
@@ -70,6 +71,7 @@ import {
   useRevokeGateOverride,
   useSaveGatePolicy,
   useSaveTrustConfig,
+  useSCMApps,
   useTrustConfigs,
   useTrustRefusals,
 } from '../api/use-ci'
@@ -131,7 +133,11 @@ export function CITrustSettings({ embedded = false }: { embedded?: boolean } = {
   const trusts = useTrustConfigs()
   const policies = useGatePolicies()
   const refusals = useTrustRefusals({ enabled: canWrite })
-  const settled = !trusts.isLoading && !policies.isLoading && !refusals.isLoading
+  // The pull request feedback section sits above break-glass and grows when
+  // its code-host apps arrive: wait for them too, or the scroll lands short.
+  const scmApps = useSCMApps()
+  const settled =
+    !trusts.isLoading && !policies.isLoading && !refusals.isLoading && !scmApps.isLoading
   useEffect(() => {
     if (!sectionParam || !settled) return
     const el = document.getElementById(sectionHeadingId(setupSection(sectionParam)))
@@ -876,6 +882,7 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
   const { currentTenant } = useTenant()
   const [copied, setCopied] = useState(false)
   const brand = useBrand()
+  const release = useCIRunnerRelease()
   const snippet = useMemo(
     () =>
       snippetFor((config.provider as CIProvider) ?? 'github', {
@@ -884,8 +891,9 @@ function SnippetDialog({ config, onClose }: { config: CITrustConfig; onClose: ()
         tenantId: currentTenant?.id ?? '',
         audience: config.audience ?? '',
         productName: brand.name,
+        release,
       }),
-    [config, currentTenant, brand.name]
+    [config, currentTenant, brand.name, release]
   )
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>

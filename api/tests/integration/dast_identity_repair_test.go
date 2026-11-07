@@ -9,7 +9,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -19,20 +19,17 @@ func TestDASTRepair_FoldsForkedFindings(t *testing.T) {
 	g := newGoldenRig(t)
 	ctx := context.Background()
 	file := goldenFile{Tool: "nuclei"}
-	file.Asset.Type, file.Asset.Value = ctis.AssetTypeDomain, "shop.example.com"
+	file.Asset.Type, file.Asset.Value = ctis.AssetTypeDomainName, "shop.example.com"
 	dast := func(rule, u, method string) ctis.Finding {
 		f := ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: rule, Severity: "medium", RuleID: rule,
-			Location: &ctis.FindingLocation{Path: u}}
-		if method != "" {
-			f.Properties = ctis.Properties{"method": method}
-		}
+			Location: &ctis.FindingLocation{Path: u}, Web: &ctis.WebLocation{URL: u, Method: method}}
 		return f
 	}
 	seed := func(tn v2Tenant) {
 		g.ingest(t, tn, file, "nuclei", dast("exposed-env", "https://shop.example.com/.env", "GET"))
 		g.ingest(t, tn, file, "nuclei", dast("exposed-env", "https://shop.example.com/.env", "POST"))
 		g.ingest(t, tn, file, "nuclei", dast("wp-user-enum", "https://shop.example.com/wp-json/wp/v2/users", ""))
-		g.ingest(t, tn, file, "nuclei", dast("wp-user-enum", "https://shop.example.com/?rest_route=/wp/v2/users", ""))
+		g.ingest(t, tn, file, "nuclei", dast("wp-user-enum", "https://shop.example.com/index.php/wp-json/wp/v2/users", ""))
 		// Turn the POST row into what the newer sensor wrote: method "",
 		// created later.
 		var id string

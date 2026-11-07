@@ -40,6 +40,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/controller"
 	"github.com/openctemio/openctem/api/internal/infra/jobs"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
@@ -156,6 +157,14 @@ func adminAuditRetentionConfig(cfg *config.Config, log *logger.Logger) *controll
 	}
 }
 
+// registerAddressAutoAdd schedules the address auto add (research/425),
+// under its controller lease (one replica at a time).
+func registerAddressAutoAdd(m *controller.Manager, repos *Repositories, svc *Services, log *logger.Logger) {
+	if a := newAddressAutoAdd(repos, svc, log.With("controller", "easm-address-auto-add")); a != nil {
+		m.Register(controller.NewEASMAddressAutoAddController(a, svc.Module, 0))
+	}
+}
+
 // registerPurgeControllers schedules the time-based deletes that had no caller:
 // expired invitations, expired platform-admin sessions and reviewed quarantined
 // sensor results. Each runs under its controller lease, so one replica at a
@@ -226,6 +235,39 @@ func registerPurgeControllers(m *controller.Manager, cfg *config.Config, repos *
 			},
 			log.With("controller", "sensor-result-quarantine-purge")))
 	}
+}
+
+// quarantineRetention is how long a pending quarantined result stays eligible
+// for the automatic release.
+func quarantineRetention(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.Worker.QuarantineRetention > 0 {
+		return cfg.Worker.QuarantineRetention
+	}
+	return 30 * 24 * time.Hour
+}
+
+// heldReleaseInterval is how often held out-of-contract results are
+// re-checked against their tools' current descriptors.
+const heldReleaseInterval = 5 * time.Minute
+
+// registerHeldResultRelease re-evaluates held out-of-contract results on a
+// schedule (ingest.ReleaseOutOfContract), a bounded number per run.
+func registerHeldResultRelease(m *controller.Manager, svc *Services, cfg *config.Config, log *logger.Logger) {
+	if svc.Ingest == nil {
+		return
+	}
+	ing := svc.Ingest
+	retention := quarantineRetention(cfg)
+	m.Register(controller.NewPurgeController("sensor-result-auto-release", heldReleaseInterval,
+		func(ctx context.Context) (int64, error) {
+			st, err := ing.ReleaseOutOfContract(ctx, ingest.ReleaseOptions{Retention: retention})
+			if st.Released > 0 || st.Failed > 0 {
+				log.Info("held sensor results re-checked", "groups", st.Groups, "examined", st.Examined,
+					"released", st.Released, "kept", st.Kept, "failed", st.Failed)
+			}
+			return int64(st.Released), err
+		},
+		log.With("controller", "sensor-result-auto-release")))
 }
 
 // signerLedgerSyncInterval is how often the job signer's ledger is narrowed
@@ -406,7 +448,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		if svc.Audit != nil {
 			auditor = svc.Audit
 		}
-		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, ciRunnerVersionPolicy(deps.Config, log), log)
+		job := cirunapp.NewAlertJob(repos.CIRun, notifier, auditor, cirun.StatusPolicy{}, log)
+		job.SetVersionSource(ciRunnerVersionPolicy(deps.Config, log))
 		w.ControllerManager.Register(controller.NewCIAlertsController(job, 0))
 		// Retention: expired run token hashes, run findings after 90 days,
 		// runs after 400 days (each scan workflow keeps its latest runs).
@@ -630,13 +673,6 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		))
 	}
 
-	// SSO enforcement after a limits change: turned off once the organization
-	// lost sso.enforcement and the grace ended (never a lock-out).
-	if svc.Tenant != nil {
-		w.ControllerManager.Register(controller.NewSSOEnforcementEntitlementController(
-			svc.Tenant, time.Hour, log.With("controller", "sso-enforcement-entitlement")))
-	}
-
 	// SAML IdP certificate expiry: owners are alerted 30, 7 and 1 days before
 	// and on expiry, once per level per certificate.
 	if svc.SAML != nil {
@@ -693,7 +729,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	registerPurgeControllers(w.ControllerManager, cfg, repos, svc, log)
+	registerAddressAutoAdd(w.ControllerManager, repos, svc, log)
 	registerSignerLedgerSync(w.ControllerManager, svc, log)
+	registerHeldResultRelease(w.ControllerManager, svc, cfg, log)
 
 	approvalExpiry := controller.NewApprovalExpirationController(
 		repos.FindingAcceptanceExpiry,
@@ -1048,6 +1086,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
 	}
 
+	// Domain membership of assets: drain the queue that database triggers
+	// fill on every asset and edge change (docs/architecture/asset-domain-membership.md).
+	w.ControllerManager.Register(controller.NewAssetDomainMembershipController(postgres.NewAssetDomainMembershipRepository(&postgres.DB{DB: deps.DB}), 0))
+
 	// Durable jobs: ticket status sync and invitation e-mails, queued in the
 	// transaction of the change that needs them.
 	if svc != nil {
@@ -1098,6 +1140,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	if svc != nil && svc.ScopeEffects != nil {
 		w.ControllerManager.Register(controller.NewScopeEffectsController(
 			svc.ScopeEffects, 5*time.Minute, log.With("controller", "scope-effects"),
+		))
+	}
+	// Asset liveness: liveness states with their guards, findings of gone
+	// assets closed as obsolete (where the organization turned it on) and
+	// reopened when the asset is seen again.
+	if svc != nil && svc.AssetLiveness != nil {
+		svc.AssetLiveness.EnableNotifications(repos.MemberLifecycle, svc.Notification)
+		w.ControllerManager.Register(controller.NewAssetLivenessController(
+			svc.AssetLiveness, 15*time.Minute, log.With("controller", "asset-liveness"),
 		))
 	}
 	// Tasks from a query in auto mode: add new matches as each task's owner
@@ -1347,6 +1398,18 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			// it gets no run; its pairs pause with the reason and resume by
 			// themselves.
 			svc.AssetCoverage.EnableReadiness(svc.Scan)
+			// A port scan that carried a name's addresses settles the name.
+			svc.AssetCoverage.WithAddressReader(repos.Attribution)
+			// Path discovery (enumerate.web_paths): the organization's
+			// switch, the daily request budget and the per-target program
+			// and shared-edge refusals (docs/architecture/web-discovery.md).
+			svc.AssetCoverage.SetPathDiscovery(svc.PathDiscovery)
+			// No scope entry pauses coverage only when unclassified assets
+			// are not scanned (RFC-054 §16): otherwise the gate decides per
+			// target, low-impact for what no entry covers.
+			if svc.ActiveGate != nil {
+				svc.AssetCoverage.EnableUnclassified(svc.ActiveGate.UnclassifiedMode)
+			}
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
@@ -1372,6 +1435,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	lifecycleWorker := assetapp.NewAssetLifecycleWorker(deps.DB, repos.Tenant, log)
 	lifecycleWorker.SetAuditService(svc.Audit)
 	lifecycleWorker.SetStateHistoryRepository(repos.AssetStateHistory)
+	if svc.AssetLiveness != nil {
+		lifecycleWorker.SetLivenessPreview(svc.AssetLiveness)
+	}
 	w.ControllerManager.Register(controller.NewAssetLifecycleController(
 		lifecycleWorker,
 		repos.Tenant,

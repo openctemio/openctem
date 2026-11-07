@@ -12,7 +12,9 @@ repository, renamed 2026-10-02; RFC-020). The repository holds two components:
 
 Separate repositories: [sensor](https://github.com/openctemio/sensor) (formerly
 agent), [sdk-go](https://github.com/openctemio/sdk-go),
-[ctis](https://github.com/openctemio/ctis),
+[ctis](https://github.com/openctemio/ctis) (CTIS 2.0 format, module
+`github.com/openctemio/ctis/v2`), [contract](https://github.com/openctemio/contract)
+(orchestration contracts),
 [helm-charts](https://github.com/openctemio/helm-charts) and the public
 [docs](https://github.com/openctemio/docs) site. Map:
 `docs/development/repositories.md`.
@@ -481,7 +483,7 @@ const (
 // Empty array = all events enabled (backward compatible)
 ```
 
-**NotificationExtension** config: `enabledSeverities`, `enabledEventTypes`, `messageTemplate`, `includeDetails`, `minIntervalMinutes`.
+**NotificationExtension** config: `enabledSeverities`, `enabledEventTypes`, `messageTemplate` (closed variable set, `pkg/notifymsg`), `detailLevel` (minimal, standard, full), `minIntervalMinutes`. Channel messages are `notifymsg.Card`s rendered per provider (`docs/architecture/notification-system.md`, "Channel messages").
 Provider-specific config in `Integration.Metadata` (non-sensitive) and `Integration.CredentialsEncrypted` (sensitive).
 
 **Adding new event type:** Add constant → update `AllKnownEventTypes()` → no migration needed.

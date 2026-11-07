@@ -8,6 +8,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/remediation"
 	ticketmapdom "github.com/openctemio/openctem/api/pkg/domain/ticketmap"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // AssetInfo is what a finding's mapping may show about its asset.
@@ -32,7 +33,7 @@ func FindingValues(f *vulnerability.Finding, asset *AssetInfo, assignee *UserInf
 	v := ticketmapdom.Values{
 		"finding.id":            ticketmapdom.Text(f.ID().String()),
 		"finding.title":         ticketmapdom.Text(findingTitle(f)),
-		"finding.url":           ticketmapdom.Text(strings.TrimRight(webBase, "/") + "/findings/" + f.ID().String()),
+		"finding.url":           ticketmapdom.Text(weblink.Console(webBase, "/findings/"+f.ID().String(), f.TenantID().String())),
 		"finding.severity":      ticketmapdom.Text(string(f.Severity())),
 		"finding.status":        ticketmapdom.Text(string(f.Status())),
 		"finding.source":        ticketmapdom.Text(string(f.Source())),

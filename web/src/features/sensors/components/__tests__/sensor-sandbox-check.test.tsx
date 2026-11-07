@@ -30,6 +30,26 @@ describe('install review: sandbox check', () => {
     expect(SENSOR_SECCOMP_PROFILE_URL).toBe('/api/v1/sensors/install/seccomp-profile')
   })
 
+  it('a host without the sandbox says active tools are refused, with no seccomp download', () => {
+    const box = sandbox({
+      network_enforced: false,
+      tools_unconfined: 'refused',
+    } as Sensor['posture'])
+    expect(
+      within(box).getByText(/Tools that contact their targets are refused/)
+    ).toBeInTheDocument()
+    expect(within(box).getByText(/SENSOR_SANDBOX=off/)).toBeInTheDocument()
+    expect(within(box).queryByRole('link')).toBeNull()
+  })
+
+  it('a sandbox turned off by the operator says every tool runs unconfined', () => {
+    const box = sandbox({
+      network_enforced: false,
+      tools_unconfined: 'acknowledged',
+    } as Sensor['posture'])
+    expect(within(box).getByText(/every tool runs unconfined/)).toBeInTheDocument()
+  })
+
   it('an older sensor that reports no posture says so', () => {
     const box = sandbox(undefined)
     expect(within(box).getByText(/does not report its sandbox/)).toBeInTheDocument()

@@ -60,10 +60,11 @@
   "protocol": 2,
   "features": [
     "results",
-    "results_manifest"
+    "results_manifest",
+    "results_lease_epoch"
   ],
   "media_types": [
-    "application/vnd.openctem.ctis.v1+json"
+    "application/vnd.ctis+json; version=2.0"
   ],
   "encodings": [
     "gzip",
@@ -97,6 +98,7 @@
   "features": [
     "results",
     "results_manifest",
+    "results_lease_epoch",
     "heartbeat",
     "commands",
     "suppressions",
@@ -116,7 +118,7 @@
     "logs"
   ],
   "media_types": [
-    "application/vnd.openctem.ctis.v1+json"
+    "application/vnd.ctis+json; version=2.0"
   ],
   "encodings": [
     "gzip",

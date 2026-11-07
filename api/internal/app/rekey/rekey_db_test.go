@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
 	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
 	"github.com/openctemio/openctem/api/pkg/domain/secretstore"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func randomHexKey(t *testing.T) string {
@@ -70,6 +71,8 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'rekey', 'rekey')`, tenantID)
 	exec(`INSERT INTO tenant_ai_settings (tenant_id, source, provider, key_enc) VALUES ($1, 'own', 'openai', $2)`,
 		tenantID, put("tenant_ai_settings.key_enc", "sk-llm-key"))
+	exec(`INSERT INTO tool_source_keys (tenant_id, source, key_enc) VALUES ($1, 'shodan', $2)`,
+		tenantID, put("tool_source_keys.key_enc", "shodan-source-key"))
 	exec(`INSERT INTO ai_mask_maps (tenant_id, run_id, key_enc, map_enc, expires_at) VALUES ($1, gen_random_uuid(), $2, $3, now() + interval '1 day')`,
 		tenantID, put("ai_mask_maps.key_enc", "bWFzay1rZXk="), put("ai_mask_maps.map_enc", `{"tokens":{"HOST_ABC2DE":"db01"}}`))
 	exec(`INSERT INTO users (id, email) VALUES ($1, 'rekey@example.com')`, userID)
@@ -153,7 +156,7 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 
 	// Leaked credential, sealed by the production protector.
 	details := map[string]any{credential.DetailSecretValue: "hunter2-leaked", "credential_type": "password"}
-	if err := credential.NewSecretProtector(c, []byte(key)).Seal(details); err != nil {
+	if err := credential.NewSecretProtector(c, []byte(key)).Seal(shared.MustIDFromString(tenantID), details, true); err != nil {
 		t.Fatal(err)
 	}
 	plain["exposure_events.details.secret_value_enc"] = "hunter2-leaked"
@@ -196,7 +199,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	one := func(q string) string {
 		t.Helper()
 		var v sql.NullString
-		if err := db.QueryRow(q).Scan(&v); err != nil {
+		if err := db.QueryRowContext(context.Background(), q).Scan(&v); err != nil {
 			t.Fatalf("read %q: %v", q, err)
 		}
 		return v.String
@@ -204,6 +207,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	out := map[string]string{}
 	for loc, q := range map[string]string{
 		"tenant_ai_settings.key_enc":                                 `SELECT key_enc FROM tenant_ai_settings`,
+		"tool_source_keys.key_enc":                                   `SELECT key_enc FROM tool_source_keys`,
 		"ai_mask_maps.key_enc":                                       `SELECT key_enc FROM ai_mask_maps`,
 		"ai_mask_maps.map_enc":                                       `SELECT map_enc FROM ai_mask_maps`,
 		"integrations.credentials_encrypted":                         `SELECT credentials_encrypted FROM integrations`,
@@ -235,16 +239,16 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 		out[loc] = dec(one(q))
 	}
 
-	var fp string
-	if err := db.QueryRow(`SELECT details->>'secret_fingerprint' FROM exposure_events`).Scan(&fp); err != nil {
+	var fp, fpTenant string
+	if err := db.QueryRowContext(context.Background(), `SELECT details->>'secret_fingerprint', tenant_id::text FROM exposure_events`).Scan(&fp, &fpTenant); err != nil {
 		t.Fatal(err)
 	}
-	if fp != credential.NewSecretProtector(c, []byte(key)).Fingerprint(out["exposure_events.details.secret_value_enc"]) {
+	if fp != credential.NewSecretProtector(c, []byte(key)).Fingerprint(shared.MustIDFromString(fpTenant), out["exposure_events.details.secret_value_enc"]) {
 		out["exposure_events.details.secret_fingerprint"] = "<stale>"
 	}
 
 	var data []byte
-	if err := db.QueryRow(`SELECT encrypted_data FROM credentials`).Scan(&data); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT encrypted_data FROM credentials`).Scan(&data); err != nil {
 		t.Fatal(err)
 	}
 	store, _ := secretstore.NewEncryptor(secretstore.KeyFromConfig(key))
@@ -256,7 +260,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 
 	var content []byte
 	var sig string
-	if err := db.QueryRow(`SELECT content, signature_hash FROM scanner_templates`).Scan(&content, &sig); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT content, signature_hash FROM scanner_templates`).Scan(&content, &sig); err != nil {
 		t.Fatal(err)
 	}
 	if scannertemplate.VerifySignature(content, key, sig) {
@@ -410,7 +414,7 @@ func TestRekey_PlaceholderIsNotCiphertext(t *testing.T) {
 		t.Fatalf("expected the placeholder listed as not ciphertext, got %+v", rep.NotCipher)
 	}
 	var raw []byte
-	if err := db.QueryRow(`SELECT encrypted_data FROM credentials WHERE name = 'placeholder'`).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT encrypted_data FROM credentials WHERE name = 'placeholder'`).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	if hex.EncodeToString(raw) != "deadbeef0a" {
@@ -420,4 +424,90 @@ func TestRekey_PlaceholderIsNotCiphertext(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertAll(t, readAll(t, db, newKey), want, "after apply with a placeholder")
+}
+
+// An extension keeps its tables in its own schema (pkg/extension). Until a
+// rekey seam lets it list its encrypted columns, a value it encrypted with
+// the app key must stop the rotation (named, nothing committed), never be
+// left unreadable under the new key; its other data passes.
+func TestRekey_SweepCoversExtensionSchemas(t *testing.T) {
+	db := freshDB(t)
+	ctx := context.Background()
+	oldKey, newKey := randomHexKey(t), randomHexKey(t)
+	seedAll(t, db, oldKey)
+	if _, err := db.ExecContext(ctx, `CREATE SCHEMA acme_ext; CREATE TABLE acme_ext.vault (id int PRIMARY KEY, secret text, note text)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO acme_ext.vault VALUES (1, NULL, 'plain text')`); err != nil {
+		t.Fatal(err)
+	}
+	// Plain extension data does not block a rotation.
+	if rep, err := Run(ctx, db, Keys{Old: oldKey, New: newKey}, Options{Sweep: true}); err != nil {
+		t.Fatalf("plain extension data blocked the dry run: %v %+v", err, rep.Unlisted)
+	}
+
+	c, _ := crypto.NewCipherFromKey(oldKey, "")
+	hidden, _ := c.EncryptString("extension secret")
+	if _, err := db.ExecContext(ctx, `UPDATE acme_ext.vault SET secret = $1`, hidden); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Run(ctx, db, Keys{Old: oldKey, New: newKey}, Options{Apply: true, Sweep: true})
+	if !errors.Is(err, ErrFailures) || rep.Committed {
+		t.Fatalf("expected ErrFailures without commit, got committed=%v err=%v", rep != nil && rep.Committed, err)
+	}
+	if len(rep.Unlisted) != 1 || rep.Unlisted[0].Location != "acme_ext.vault.secret" {
+		t.Fatalf("expected acme_ext.vault.secret reported, got %+v", rep.Unlisted)
+	}
+}
+
+// A table the rekey role may not read cannot be proved free of OLD-key
+// ciphertext, so it is reported and the run refused.
+func TestRekey_SweepReportsUnreadableTables(t *testing.T) {
+	db := freshDB(t)
+	ctx := context.Background()
+	role := "rekey_ro_" + strings.ToLower(randomHexKey(t)[:8])
+	stmts := []string{
+		`CREATE SCHEMA hidden`, `CREATE TABLE hidden.t (v text)`,
+		`CREATE ROLE ` + role,
+		`GRANT USAGE ON SCHEMA public TO ` + role,
+		`GRANT SELECT, UPDATE ON ALL TABLES IN SCHEMA public TO ` + role,
+	}
+	for _, s := range stmts {
+		if _, err := db.ExecContext(ctx, s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(ctx, `DROP OWNED BY `+role)
+		_, _ = db.ExecContext(ctx, `DROP ROLE `+role)
+	})
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, `SET ROLE `+role); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	got, err := unreadableTables(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, x := range got {
+		if x == "hidden.t" {
+			found = true
+		}
+		if strings.HasPrefix(x, "public.") {
+			t.Errorf("readable core table reported: %s", x)
+		}
+	}
+	if !found {
+		t.Fatalf("hidden.t not reported: %v", got)
+	}
 }

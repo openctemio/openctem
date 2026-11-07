@@ -2,7 +2,9 @@
  * Step-up re-authentication (API docs: architecture/step-up-reauth.md).
  *
  * Sensitive API routes answer `403 {code: "STEP_UP_REQUIRED"}` when the
- * session has not signed in or re-authenticated in the last 10 minutes. The
+ * session has not re-authenticated as the organization's re-verification
+ * policy asks for that action's tier (details: tier, mode, window,
+ * window_seconds). The
  * shared API client (`apiClient`) then calls `requestStepUp()`, which opens
  * the one re-authentication dialog (`StepUpDialogHost`, mounted once in the
  * app providers). When the user confirms, the client retries the original
@@ -15,6 +17,8 @@
 export const STEP_UP_REQUIRED_CODE = 'STEP_UP_REQUIRED'
 export const STEP_UP_UNAVAILABLE_CODE = 'STEP_UP_UNAVAILABLE'
 export const STEP_UP_FAILED_CODE = 'STEP_UP_FAILED'
+/** The authenticator code is from a time step already used: wait for the next code. */
+export const STEP_UP_CODE_USED_CODE = 'STEP_UP_CODE_USED'
 
 export const STEP_UP_ENDPOINT = '/api/v1/auth/step-up'
 
@@ -39,11 +43,38 @@ export function isStepUpRequired(
   return !!err && err.statusCode === 403 && err.code === STEP_UP_REQUIRED_CODE
 }
 
+/** What the refused request said about the rule that asked (403 details). */
+export interface StepUpPrompt {
+  tier?: 'critical' | 'sensitive' | 'routine'
+  mode?: 'every_time' | 'once_per_window' | 'off'
+  window?: string
+  window_seconds?: number
+}
+
+/** The prompt carried by a STEP_UP_REQUIRED error's details, if any. */
+export function stepUpPromptOf(details: Record<string, unknown> | undefined): StepUpPrompt {
+  if (!details) return {}
+  const out: StepUpPrompt = {}
+  if (details.tier === 'critical' || details.tier === 'sensitive' || details.tier === 'routine') {
+    out.tier = details.tier
+  }
+  if (
+    details.mode === 'every_time' ||
+    details.mode === 'once_per_window' ||
+    details.mode === 'off'
+  ) {
+    out.mode = details.mode
+  }
+  if (typeof details.window === 'string') out.window = details.window
+  if (typeof details.window_seconds === 'number') out.window_seconds = details.window_seconds
+  return out
+}
+
 /**
  * Opens the dialog and resolves true once the user re-authenticated, false
  * when they cancelled.
  */
-export type StepUpHandler = () => Promise<boolean>
+export type StepUpHandler = (prompt?: StepUpPrompt) => Promise<boolean>
 
 let handler: StepUpHandler | null = null
 let inFlight: Promise<boolean> | null = null
@@ -64,11 +95,11 @@ export function registerStepUpHandler(h: StepUpHandler): () => void {
  * Without a mounted dialog (server rendering, tests) it resolves false, and
  * the caller surfaces the original STEP_UP_REQUIRED error.
  */
-export function requestStepUp(): Promise<boolean> {
+export function requestStepUp(prompt?: StepUpPrompt): Promise<boolean> {
   if (typeof window === 'undefined' || !handler) return Promise.resolve(false)
   if (!inFlight) {
     const h = handler
-    inFlight = h()
+    inFlight = h(prompt)
       .catch(() => false)
       .finally(() => {
         inFlight = null

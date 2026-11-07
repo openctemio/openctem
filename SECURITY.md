@@ -39,6 +39,9 @@ fix, agree a disclosure date with you, and publish a GitHub security advisory
 with the fixed version, with a CVE identifier for a confirmed vulnerability in
 released software.
 
+How a confirmed vulnerability is contained, fixed, released as a patch and
+disclosed: [hotfix and incident response](api/docs/operations/hotfix-and-incident-response.md).
+
 ## Acknowledgements and rewards
 
 This is a vulnerability disclosure programme without monetary rewards. Unless

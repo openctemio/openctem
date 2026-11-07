@@ -632,6 +632,9 @@ asset's edges, never narrowed by `type` or `q`, so a search cannot be used to
 probe the names of assets the caller may not see. Every query is bound to the
 tenant, edges and assets alike.
 
+Deeper reads (the neighborhood up to three hops with clusters, and the
+discovery lineage) are in [asset-relationships.md](asset-relationships.md).
+
 ## Related
 
 - [RFC-042](../rfcs/RFC-042-asset-inventory-v2.md): the design and the

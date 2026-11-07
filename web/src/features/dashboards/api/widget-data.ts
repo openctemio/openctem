@@ -14,6 +14,7 @@
 import useSWR, { type SWRConfiguration } from 'swr'
 import { get, post } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
+import type { IntakeNoise } from '@/components/dashboard-kit/types'
 import type { DashboardKind } from './dashboards.types'
 import type { Polarity, ResultShape, VizType } from './widget-spec'
 
@@ -76,7 +77,7 @@ export interface IntakeValue {
   sources: IntakeSource[]
   totals: IntakeSource
   /** Received split into parts that sum to it. */
-  noise: { received: number; new: number; merged: number; suppressed: number; not_stored: number }
+  noise: IntakeNoise
   failing: number
   stale: number
   drill: string

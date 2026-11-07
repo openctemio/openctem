@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
 	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 )
 
 // =============================================================================
@@ -67,6 +68,8 @@ type Settings struct {
 	FindingViews FindingViewSettings `json:"finding_views,omitempty"`
 	// APIKeys is the API key policy (maximum lifetime of a new key).
 	APIKeys APIKeySettings `json:"api_keys,omitempty"`
+	// Credentials is the leaked-credential policy (whether secret values are kept).
+	Credentials CredentialSettings `json:"credentials,omitempty"`
 }
 
 // FindingCorrelationSettings are the per-organization kill switches of
@@ -296,6 +299,13 @@ type SecuritySettings struct {
 	// free names and values its sensors' tools send to targets, merged with
 	// the platform's layer (docs/architecture/scan-identification.md).
 	ToolHTTPHeaders []scanident.Header `json:"tool_http_headers,omitempty"`
+
+	// StepUp is the organization's re-verification policy: how often a
+	// person confirms their identity again before critical, sensitive and
+	// routine actions (pkg/domain/stepup). Nil (an organization that never
+	// saved one) is stepup.LegacyPolicy; read it with EffectiveStepUp.
+	// Changed by an owner with step-up, audited.
+	StepUp *stepup.Policy `json:"step_up,omitempty"`
 }
 
 // ToolHTTPPolicy is the organization's tool HTTP layer for sensor jobs.
@@ -900,6 +910,12 @@ func (s *SecuritySettings) Validate() error {
 	if err := scanident.CheckHeaders(s.ToolHTTPHeaders, scanident.MaxOrganizationHeaders, false); err != nil {
 		return fmt.Errorf("tool_http_headers: %w", err)
 	}
+	// The re-verification policy: critical actions keep the platform floor.
+	if s.StepUp != nil {
+		if err := s.StepUp.Validate(); err != nil {
+			return err
+		}
+	}
 	// Validate email verification mode
 	if !s.EmailVerificationMode.IsValid() {
 		return fmt.Errorf("%w: email_verification_mode must be one of: auto, always, never", shared.ErrValidation)
@@ -1213,4 +1229,10 @@ func (t *Tenant) UpdateAssetLifecycleSettings(al AssetLifecycleSettings) error {
 	settings := t.TypedSettings()
 	settings.AssetLifecycle = al
 	return t.UpdateSettings(settings)
+}
+
+// EffectiveStepUp is the re-verification policy in force: the stored one
+// clamped to the platform floor, or stepup.LegacyPolicy when none is stored.
+func (s SecuritySettings) EffectiveStepUp() stepup.Policy {
+	return stepup.Effective(s.StepUp)
 }

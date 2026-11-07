@@ -42,6 +42,12 @@ import (
 type Actor struct {
 	UserID     string
 	CanApprove bool
+	// Automatic marks a platform path that adds entries on the
+	// organization's behalf from evidence (an address its own network holds,
+	// research/425). It has no user, like the system, but the organization's
+	// approval policy still applies: its entries wait for their approvers
+	// when approvals are required, never effective by default.
+	Automatic bool
 }
 
 func (a Actor) system() bool { return a.UserID == "" }
@@ -276,6 +282,9 @@ func (s *Service) decideNewEntry(ctx context.Context, tenantID shared.ID, target
 		return d, scopedom.ErrIntrusiveNeeds
 	}
 	if in.Actor.system() {
+		if in.Actor.Automatic {
+			d.approvals = p.approvals(d.tier, false)
+		}
 		return d, nil
 	}
 	if !in.Actor.mayWiden(p.twoPerson()) {
@@ -391,12 +400,9 @@ func (s *Service) ApproveTarget(ctx context.Context, targetID, tenantID string, 
 	if err != nil {
 		return nil, false, err
 	}
-	if err := s.commitEntry(ctx, before, t, false, func() error {
-		if err := s.targetRepo.Update(ctx, t); err != nil {
-			return fmt.Errorf("failed to approve scope target: %w", err)
-		}
-		return nil
-	}); err != nil {
+	// An approved replacement retires the entry it replaces in the same
+	// transaction (replace.go).
+	if err := s.commitEntryUpdate(ctx, before, t); err != nil {
 		return nil, false, err
 	}
 	if effective {

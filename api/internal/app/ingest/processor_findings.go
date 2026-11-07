@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/ctis/fingerprint"
-	"github.com/openctemio/ctis/severity"
+	"github.com/openctemio/ctis/v2/fingerprint"
+	"github.com/openctemio/ctis/v2/severity"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -98,10 +98,6 @@ type FindingProcessor struct {
 	correlations CorrelationStore
 	issueLinks   IssueLinkStore
 	vulnAliases  VulnAliasResolver
-
-	// suppressionModules, when wired, turns ingest suppression off for a
-	// tenant whose suppressions module is disabled.
-	suppressionModules ModuleGuard
 
 	// secretFingerprinter keys the fingerprint of a reported secret with a
 	// server-held secret. Nil-safe: when unwired, no fingerprint is stored.
@@ -267,6 +263,17 @@ func (p *FindingProcessor) processBatch(
 		return nil
 	}
 
+	// The persisted assets the report recorded outside its command's
+	// targets: their new findings run no automations.
+	for ref := range output.OutsideJobAssetRefs {
+		if id, ok := assetMap[ref]; ok && !id.IsZero() {
+			if output.OutsideTargetAssetIDs == nil {
+				output.OutsideTargetAssetIDs = map[shared.ID]bool{}
+			}
+			output.OutsideTargetAssetIDs[id] = true
+		}
+	}
+
 	// Step 0: Lookup/create branch record if branch info is available
 	// This maps assetID -> branchID for setting findings.branch_id FK
 	branchMap := p.resolveBranches(ctx, tenantID, report, assetMap, tenantRules)
@@ -319,18 +326,6 @@ func (p *FindingProcessor) processBatch(
 	seenFingerprints := make(map[string]struct{}, len(report.Findings))
 	duplicatesInReport := 0
 
-	// Get default asset if available (single asset report)
-	var defaultAssetID shared.ID
-	// Not when an asset of the report was skipped by a scope exclusion: its
-	// findings would land on the one asset that was kept.
-	if len(assetMap) == 1 && !strictAssets && len(output.ExcludedAssetRefs) == 0 && len(output.OutOfScopeAssetRefs) == 0 &&
-		len(output.OutsideJobAssetRefs) == 0 {
-		for _, id := range assetMap {
-			defaultAssetID = id
-			break
-		}
-	}
-
 	// Debug: Log assetMap keys for diagnosis
 	if len(assetMap) > 0 {
 		assetMapKeys := make([]string, 0, len(assetMap))
@@ -345,7 +340,9 @@ func (p *FindingProcessor) processBatch(
 	for i, reported := range report.Findings {
 		// A network or SCA finding that names several CVEs is one finding
 		// per CVE (RFC-043 decisions D3, D20).
-		for _, ctisFinding := range splitMultiCVEFinding(reported) {
+		parts := splitMultiCVEFinding(reported)
+		output.addOutcome(ingestreceipt.OutcomeSplit, len(parts)-1)
+		for _, ctisFinding := range parts {
 			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
 				// Its asset matches a scope exclusion and was not added.
 				output.FindingsSkipped++
@@ -353,13 +350,19 @@ func (p *FindingProcessor) processBatch(
 					ingestreceipt.PolicyScopeExclusion, nil)
 				continue
 			}
-			if output.OutsideJobAssetRefs[ctisFinding.AssetRef] {
-				// Its asset lies outside the bound command's targets.
+			if output.OverCapAssetRefs[ctisFinding.AssetRef] {
+				// Its asset lies outside the bound command's targets and the
+				// report had recorded as many of those as one report may.
 				output.FindingsSkipped++
-				output.FindingsOutsideJob++
-				addItem(output, report, &ctisFinding, ingestreceipt.DispositionOutOfScope, ingestreceipt.ReasonOutsideJob,
+				output.FindingsOverCap++
+				addItem(output, report, &ctisFinding, ingestreceipt.DispositionRejected, ingestreceipt.ReasonOverCap,
 					ingestreceipt.PolicyBinding, nil)
 				continue
+			}
+			if output.OutsideJobAssetRefs[ctisFinding.AssetRef] {
+				// Its asset was recorded outside the bound command's targets:
+				// the finding is kept (research 436) and runs no automations.
+				output.FindingsOutsideJob++
 			}
 			if output.OutOfScopeAssetRefs[ctisFinding.AssetRef] {
 				// The upload's actor may not change its asset.
@@ -382,15 +385,10 @@ func (p *FindingProcessor) processBatch(
 				}
 			}
 
-			if targetAssetID.IsZero() && !defaultAssetID.IsZero() {
-				targetAssetID = defaultAssetID
-			}
-
 			if targetAssetID.IsZero() {
 				p.logger.Warn("finding skipped: no target asset",
 					"finding_index", i,
 					"asset_ref", logValue(ctisFinding.AssetRef),
-					"default_asset_available", !defaultAssetID.IsZero(),
 					"asset_map_size", len(assetMap),
 				)
 				addError(output, fmt.Sprintf("finding %d: no target asset", i))
@@ -498,6 +496,15 @@ func (p *FindingProcessor) processBatch(
 				AssetID:     fm.assetID,
 				MitigatedAt: mitigatedAt(&fm.finding, mitigatedNow),
 			})
+			output.addOutcome(ingestreceipt.OutcomeSourceMitigated, 1)
+			continue
+		}
+		// A compliance check that passed is no finding and no sighting of
+		// the failure of the same check (observation.go).
+		if isCompliancePass(&fm.finding) {
+			output.CompliancePassed = append(output.CompliancePassed, CompliancePass{Fingerprint: fm.fingerprint,
+				AssetID: fm.assetID, ObservedAt: findingObservedAt(&fm.finding, reportObservedAt(report, mitigatedNow), mitigatedNow)})
+			output.addOutcome(ingestreceipt.OutcomeCompliancePassed, 1)
 			continue
 		}
 		// One report naming the same finding twice (the same package in two
@@ -507,6 +514,7 @@ func (p *FindingProcessor) processBatch(
 		// findings (RFC-043 B2).
 		if _, dup := seenFingerprints[fm.fingerprint]; dup {
 			duplicatesInReport++
+			output.addOutcome(ingestreceipt.OutcomeMerged, 1)
 			continue
 		}
 		seenFingerprints[fm.fingerprint] = struct{}{}
@@ -527,6 +535,13 @@ func (p *FindingProcessor) processBatch(
 	// Step 2: Batch check existing fingerprints
 	existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, fingerprints)
 	if err != nil {
+		// Nothing of this batch is stored: each finding is counted as
+		// failed on the receipt, never dropped without a trace.
+		addError(output, fmt.Sprintf("check %d findings failed: %v", len(validFindings), err))
+		for _, fm := range validFindings {
+			output.FindingsSkipped++
+			output.FailedFindings = append(output.FailedFindings, createFailedFinding(fm, err.Error()))
+		}
 		return fmt.Errorf("failed to check fingerprints: %w", err)
 	}
 
@@ -542,6 +557,11 @@ func (p *FindingProcessor) processBatch(
 	existingNewData := make([]*vulnerability.Finding, 0) // Built findings for enrichment
 	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
 	existingSnippets := make(map[string]string)          // Track snippets for existing findings
+
+	// When the file saw each finding (an upload; observation.go).
+	observed := validFindingTimes(validFindings, func(fm findingMeta) (string, *ctis.Finding) {
+		return fm.fingerprint, &fm.finding
+	}, output.fileObserved)
 
 	// Fingerprints on assets the report may not change (RFC-040 §5.3): a
 	// finding a person resolved there stays resolved.
@@ -560,6 +580,7 @@ func (p *FindingProcessor) processBatch(
 			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				applyIdentityToFinding(newData, fm.identity, &fm.finding)
+				newData.ObservedAt(observed[fm.fingerprint])
 				existingNewData = append(existingNewData, newData)
 			} else {
 				// buildFinding failed — fall back to scan-id-only update for this fingerprint
@@ -569,6 +590,7 @@ func (p *FindingProcessor) processBatch(
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				applyIdentityToFinding(f, fm.identity, &fm.finding)
+				f.ObservedAt(observed[fm.fingerprint])
 			}
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
@@ -602,10 +624,10 @@ func (p *FindingProcessor) processBatch(
 		// A duplicate seen again is a sighting of the finding it was folded
 		// into: that one is not auto-resolved (marked seen here) and reopens
 		// below if it was closed. The duplicate itself is never reopened.
-		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, report.Metadata.ID, scanner)
+		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, reportIDOf(ctx), scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
-		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": report.Metadata.ID})
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints, reportObservedAt(report, time.Now()))
+		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": reportIDOf(ctx)}) //nolint:goconst // evidence key, as in the other transition evidence maps
+		reopenedMap, err := p.autoReopen(reopenCtx, tenantID, report, existingFingerprints, observed)
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {
@@ -655,8 +677,10 @@ func (p *FindingProcessor) processBatch(
 			// Fatal error - could not process any findings
 			p.logger.Error("failed to batch create findings", "error", err, "count", len(newFindings))
 			addError(output, fmt.Sprintf("batch create failed: %v", err))
-			// Track all findings as failed for audit
+			// Track all findings as failed for audit. Skipped holds the
+			// failures too (the receipt's skipped count leaves them out).
 			for i, fm := range newFindingsMeta {
+				output.FindingsSkipped++
 				output.FailedFindings = append(output.FailedFindings, createFailedFinding(fm, fmt.Sprintf("batch failed at index %d: %v", i, err)))
 			}
 		} else {
@@ -720,7 +744,7 @@ func (p *FindingProcessor) processBatch(
 
 	// Step 5: Enrich existing findings with new scan data
 	if len(existingFingerprints) > 0 {
-		scanID := report.Metadata.ID
+		scanID := reportIDOf(ctx)
 
 		// Step 5a: Enrich findings where buildFinding succeeded
 		if len(existingNewData) > 0 {
@@ -817,12 +841,12 @@ func (p *FindingProcessor) processBatch(
 		}
 		commit := reportCommit
 		if commit == "" && fm.finding.Location != nil {
-			commit = fm.finding.Location.CommitSHA
+			commit = commitSHA(fm.finding.Location)
 		}
 		occurrences = append(occurrences, vulnerability.BranchOccurrenceUpsert{
 			Fingerprint: fm.fingerprint,
 			BranchID:    *fm.branchID,
-			ScanID:      report.Metadata.ID,
+			ScanID:      reportIDOf(ctx),
 			CommitSHA:   commit,
 		})
 	}
@@ -902,7 +926,7 @@ func (p *FindingProcessor) processBatch(
 	// finding's status, and a baseline only narrows what later proves a fix.
 	sightings := make([]vulnerability.TemplateSighting, 0, len(validFindings))
 	for _, fm := range validFindings {
-		if prov := sightingProvenance(&fm.finding, report.Tool, scope); !prov.Empty() {
+		if prov := sightingProvenance(&fm.finding, report, scope); !prov.Empty() {
 			sightings = append(sightings, vulnerability.TemplateSighting{Fingerprint: fm.fingerprint, Provenance: prov})
 		}
 	}
@@ -913,7 +937,7 @@ func (p *FindingProcessor) processBatch(
 	if p.evidence != nil {
 		dets := make([]evidenceapp.Detection, 0)
 		for i := range validFindings {
-			if d, ok := findingEvidence(validFindings[i].fingerprint, &validFindings[i].finding, report.Tool); ok {
+			if d, ok := findingEvidence(validFindings[i].fingerprint, &validFindings[i].finding, report); ok {
 				dets = append(dets, d)
 			}
 		}
@@ -1072,10 +1096,10 @@ func generateFindingFingerprint(assetID shared.ID, ctisFinding *ctis.Finding, to
 		// false-merged distinct SCA/secret findings and churned fingerprints
 		// across scans when incidental fields (line numbers, messages) shifted.
 		if v := ctisFinding.Vulnerability; v != nil {
-			input.PackageName = v.Package
-			input.PackageVersion = v.AffectedVersion
-			if v.CVEID != "" {
-				input.VulnerabilityID = v.CVEID
+			input.PackageName = v.PackageName
+			input.PackageVersion = v.InstalledVersion
+			if c := primaryCVE(v); c != "" {
+				input.VulnerabilityID = c
 			}
 		}
 		if s := ctisFinding.Secret; s != nil {
@@ -1166,24 +1190,22 @@ func legacyClientFingerprint(assetID shared.ID, ctisFinding *ctis.Finding) strin
 // file location). Only a CVE-bearing finding with neither is treated as a network
 // VA. port is "" for a host-level finding (no specific port). When multiple CVEs
 // are grouped on one plugin, the lexically smallest id is used so two scanners
-// reporting the same CVE agree regardless of field placement (CVEID vs CVEIDs).
+// reporting the same CVE agree regardless of the order of vulnerability.ids.
 func networkVACVEKey(f *ctis.Finding) (cve, port string, ok bool) {
 	v := f.Vulnerability
 	if v == nil {
 		return "", "", false
 	}
-	if strings.TrimSpace(v.Package) != "" {
+	if strings.TrimSpace(v.PackageName) != "" {
 		return "", "", false // SCA / container — keyed by package elsewhere
 	}
 	if f.Location != nil && strings.TrimSpace(f.Location.Path) != "" {
 		return "", "", false // SAST / secret — keyed by file location elsewhere
 	}
 
-	cves := make([]string, 0, len(v.CVEIDs)+1)
-	if c := strings.ToLower(strings.TrimSpace(v.CVEID)); c != "" {
-		cves = append(cves, c)
-	}
-	for _, c := range v.CVEIDs {
+	all := findingCVEs(v)
+	cves := make([]string, 0, len(all))
+	for _, c := range all {
 		if c := strings.ToLower(strings.TrimSpace(c)); c != "" {
 			cves = append(cves, c)
 		}
@@ -1264,13 +1286,18 @@ func (p *FindingProcessor) buildFinding(
 	f.SetFingerprint(fp)
 	f.MarkIngestV1Key() // a version-2 identity applied later replaces it
 	f.SetSensorID(sensorID)
-	f.SetScanID(report.Metadata.ID)
+	f.SetScanID(reportIDOf(ctx))
+	if tech := findingClaimedTechnique(ctisFinding); tech != "" {
+		// The producer's technique, recorded apart from the source (which a
+		// bound capability decides).
+		f.SetMetadata(findingMetaTechnique, tech)
+	}
 
 	// Provenance. ctis.ReportMetadata.SourceType has always carried this — the
 	// Nessus converter sets "integration", the sensor's reports say "scanner" —
 	// and the processor read it and threw it away. An unrecognized value leaves
 	// the column NULL rather than guessing, so "unrecorded" stays honest.
-	if channel, ok := vulnerability.IngestChannelFromCTIS(report.Metadata.SourceType); ok {
+	if channel, ok := vulnerability.IngestChannelFromCTIS(string(report.Metadata.Channel)); ok {
 		f.SetIngestChannel(channel)
 	}
 	if branchID != nil {
@@ -1319,7 +1346,7 @@ func (p *FindingProcessor) buildFinding(
 
 	// Stamp VulnerabilityID from cveMap if the finding references a known CVE
 	if ctisFinding.Vulnerability != nil {
-		if id, ok := cveMap[vulnerability.NormalizeCVEID(ctisFinding.Vulnerability.CVEID)]; ok && !id.IsZero() {
+		if id, ok := cveMap[vulnerability.NormalizeCVEID(primaryCVE(ctisFinding.Vulnerability))]; ok && !id.IsZero() {
 			f.SetVulnerabilityID(id)
 		}
 	}
@@ -1364,8 +1391,8 @@ func (p *FindingProcessor) setFindingBasicFields(f *vulnerability.Finding, ctisF
 			FixCode:        ctisFinding.Remediation.FixCode,
 			FixRegex:       fixRegex,
 			Steps:          ctisFinding.Remediation.Steps,
-			References:     ctisFinding.Remediation.References,
-			Effort:         ctisFinding.Remediation.Effort,
+			References:     ctisFinding.References,
+			Effort:         string(ctisFinding.Remediation.Effort),
 			FixAvailable:   ctisFinding.Remediation.FixCode != "" || fixRegex != nil,
 			AutoFixable:    ctisFinding.Remediation.FixCode != "" || fixRegex != nil,
 		}
@@ -1407,7 +1434,7 @@ func (p *FindingProcessor) setFindingLocationFields(f *vulnerability.Finding, ct
 	// service-level queries only; generateFindingFingerprint reads the port from the
 	// CTIS finding itself, so storing it changes no fingerprint.
 	if n := ctisFinding.Network; n != nil {
-		f.SetNetwork(vulnerability.NetworkLocation{Port: n.Port, Transport: n.Protocol, Service: n.Service})
+		f.SetNetwork(vulnerability.NetworkLocation{Port: n.Port, Transport: string(n.Transport), Service: n.AppProtocol})
 	}
 
 	// Set branch info from report metadata or finding location
@@ -1416,9 +1443,9 @@ func (p *FindingProcessor) setFindingLocationFields(f *vulnerability.Finding, ct
 	} else if ctisFinding.Location != nil && ctisFinding.Location.Branch != "" {
 		f.SetFirstDetectedBranch(ctisFinding.Location.Branch)
 		f.SetLastSeenBranch(ctisFinding.Location.Branch)
-		if ctisFinding.Location.CommitSHA != "" {
-			f.SetFirstDetectedCommit(ctisFinding.Location.CommitSHA)
-			f.SetLastSeenCommit(ctisFinding.Location.CommitSHA)
+		if sha := commitSHA(ctisFinding.Location); sha != "" {
+			f.SetFirstDetectedCommit(sha)
+			f.SetLastSeenCommit(sha)
 		}
 	}
 }
@@ -1429,20 +1456,22 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 		return
 	}
 
-	cveID := ctisFinding.Vulnerability.CVEID
+	cveID := primaryCVE(ctisFinding.Vulnerability)
+	// The primary CVSS score of scores[] (ctis.PrimaryCVSS).
 	var cvssScore *float64
-	if ctisFinding.Vulnerability.CVSSScore > 0 {
-		score := ctisFinding.Vulnerability.CVSSScore
-		cvssScore = &score
+	cvssVector := ""
+	if s, ok := ctis.PrimaryCVSS(ctisFinding); ok {
+		if s.Value != nil && *s.Value > 0 {
+			score := *s.Value
+			cvssScore = &score
+		}
+		cvssVector = s.Vector
 	}
-	cvssVector := ctisFinding.Vulnerability.CVSSVector
 
 	// Collect CWE IDs
 	var cweIDs []string
 	if len(ctisFinding.Vulnerability.CWEIDs) > 0 {
 		cweIDs = ctisFinding.Vulnerability.CWEIDs
-	} else if ctisFinding.Vulnerability.CWEID != "" {
-		cweIDs = []string{ctisFinding.Vulnerability.CWEID}
 	}
 
 	// Collect OWASP IDs
@@ -1457,34 +1486,28 @@ func (p *FindingProcessor) setFindingClassification(f *vulnerability.Finding, ct
 		}
 	}
 
-	// Set ASVS (Application Security Verification Standard) compliance info
-	if ctisFinding.Vulnerability.ASVS != nil {
-		asvs := ctisFinding.Vulnerability.ASVS
-		if asvs.Section != "" {
-			f.SetASVSSection(asvs.Section)
+	// ASVS is a compliance control in CTIS 2.0 (finding.compliance with
+	// framework owasp_asvs).
+	if c := ctisFinding.Compliance; c != nil && c.Framework == ctis.ComplianceFramework("owasp_asvs") {
+		if c.ControlID != "" {
+			f.SetASVSControlID(c.ControlID)
 		}
-		if asvs.ControlID != "" {
-			f.SetASVSControlID(asvs.ControlID)
-		}
-		if asvs.ControlURL != "" {
-			f.SetASVSControlURL(asvs.ControlURL)
-		}
-		if asvs.Level > 0 {
-			level := asvs.Level
-			f.SetASVSLevel(&level)
+		if c.ControlName != "" {
+			f.SetASVSSection(c.ControlName)
 		}
 	}
 
 	// The scanner's exploit verdict is this tenant's observation: it is kept
 	// on the finding, never written to the shared CVE catalog, and the
 	// tenant's CVE views read it from here (global-catalog-trust.md).
-	if ctisFinding.Vulnerability.ExploitAvailable {
+	if ctis.HasThreatSignal(ctisFinding.Vulnerability, ctis.ThreatSignalPublicExploit,
+		ctis.ThreatSignalWeaponized, ctis.ThreatSignalExploitedInWild) {
 		f.SetMetadata(vulnerability.FindingMetaScannerExploitAvailable, true)
 	}
 	// The versions that fix this package, as the scanner reported them. Kept
 	// on the finding for the same reason (the catalog is not written from a
 	// report); the detail view picks the nearest one for the installed version.
-	if fixed := vulnerability.NormalizeFixedVersions(ctisFinding.Vulnerability.FixedVersion,
+	if fixed := vulnerability.NormalizeFixedVersions("",
 		ctisFinding.Vulnerability.FixedVersions); len(fixed) > 0 {
 		f.SetMetadata(vulnerability.FindingMetaFixedVersions, fixed)
 	}
@@ -1510,7 +1533,11 @@ func setAdvisoryMetadata(f *vulnerability.Finding, ctisFinding *ctis.Finding) {
 	if v.ModifiedAt != nil && !v.ModifiedAt.IsZero() {
 		f.SetMetadata(vulnerability.FindingMetaModifiedAt, v.ModifiedAt.UTC().Format(time.RFC3339))
 	}
-	if src := vulnerability.NormalizeScoreSource(v.CVSSSource); src != "" {
+	cvssSource := ""
+	if s, ok := ctis.PrimaryCVSS(ctisFinding); ok {
+		cvssSource = s.Source
+	}
+	if src := vulnerability.NormalizeScoreSource(cvssSource); src != "" {
 		f.SetMetadata(vulnerability.FindingMetaCVSSSource, src)
 	}
 }
@@ -1616,17 +1643,17 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 		return
 	}
 
-	if ctisFinding.Secret.SecretType != "" {
-		f.SetSecretType(ctisFinding.Secret.SecretType)
+	if ctisFinding.Secret.Type != "" {
+		f.SetSecretType(ctisFinding.Secret.Type)
 	}
 	if ctisFinding.Secret.Service != "" {
 		f.SetSecretService(ctisFinding.Secret.Service)
 	}
-	// The reported validity (secret.valid) is deliberately not stored: any
+	// The reported validity (secret.is_valid) is deliberately not stored: any
 	// uploader, including a fork pull request, could claim a live secret is
 	// dead and switch off the CI gate and the rotation task. Validity is
 	// recorded only from a validation the platform runs itself.
-	if ctisFinding.Secret.Revoked {
+	if ctisFinding.Secret.IsRevoked {
 		revoked := true
 		f.SetSecretRevoked(&revoked)
 	}
@@ -1644,8 +1671,8 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	if ctisFinding.Secret.RotationDueAt != nil {
 		f.SetSecretRotationDueAt(ctisFinding.Secret.RotationDueAt)
 	}
-	if ctisFinding.Secret.AgeInDays > 0 {
-		f.SetSecretAgeInDays(ctisFinding.Secret.AgeInDays)
+	if ctisFinding.Secret.AgeDays > 0 {
+		f.SetSecretAgeInDays(ctisFinding.Secret.AgeDays)
 	}
 	if len(ctisFinding.Secret.Scopes) > 0 {
 		f.SetSecretScopes(ctisFinding.Secret.Scopes)
@@ -1660,7 +1687,7 @@ func (p *FindingProcessor) setSecretFields(f *vulnerability.Finding, ctisFinding
 	if h := p.rawSecretHMAC(f.TenantID(), ctisFinding); h != "" {
 		f.SetSecretFingerprint(h)
 	}
-	if ctisFinding.Secret.InHistoryOnly {
+	if ctisFinding.Secret.IsHistoryOnly {
 		f.SetSecretInHistoryOnly(true)
 	}
 	if ctisFinding.Secret.CommitCount > 0 {
@@ -1682,7 +1709,7 @@ func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, ctisFin
 	}
 
 	if ctisFinding.Compliance.Framework != "" {
-		f.SetComplianceFramework(ctisFinding.Compliance.Framework)
+		f.SetComplianceFramework(string(ctisFinding.Compliance.Framework))
 	}
 	if ctisFinding.Compliance.FrameworkVersion != "" {
 		f.SetComplianceFrameworkVersion(ctisFinding.Compliance.FrameworkVersion)
@@ -1696,8 +1723,12 @@ func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, ctisFin
 	if ctisFinding.Compliance.ControlDescription != "" {
 		f.SetComplianceControlDescription(ctisFinding.Compliance.ControlDescription)
 	}
-	if v := normalizeEnumToken(ctisFinding.Compliance.Result); v != "" && vulnerability.ComplianceResult(v).IsValid() {
-		f.SetComplianceResult(v)
+	// The evaluation of a control is the finding's kind in CTIS 2.0.
+	switch ctisFinding.Kind {
+	case "pass", "fail", "not_applicable":
+		f.SetComplianceResult(ctisFinding.Kind)
+	case "review":
+		f.SetComplianceResult(string(vulnerability.ComplianceResultManual))
 	}
 }
 
@@ -1735,7 +1766,7 @@ func (p *FindingProcessor) setWeb3Fields(f *vulnerability.Finding, ctisFinding *
 	if ctisFinding.Web3.VulnerablePattern != "" {
 		f.SetMetadata("web3_vulnerable_pattern", ctisFinding.Web3.VulnerablePattern)
 	}
-	if ctisFinding.Web3.ExploitableOnMainnet {
+	if ctisFinding.Web3.IsExploitableOnMainnet {
 		f.SetMetadata("web3_exploitable_on_mainnet", true)
 	}
 	if ctisFinding.Web3.EstimatedImpactUSD > 0 {
@@ -1813,21 +1844,16 @@ func (p *FindingProcessor) setFindingSARIFFields(f *vulnerability.Finding, ctisF
 		confidence := ctisFinding.Confidence
 		_ = f.SetConfidence(&confidence)
 	}
-	// impact, likelihood, baseline_state, kind and compliance_result are
-	// CHECK-constrained columns. A value outside the vocabulary fails the INSERT
-	// and drops the whole finding, so each is normalized (case, SARIF camelCase)
-	// and anything still unrecognized is left unset rather than stored.
-	if v := normalizeEnumToken(ctisFinding.Impact); v != "" && vulnerability.ImpactLevel(v).IsValid() {
-		f.SetImpact(v)
+	// baseline_state and kind are CHECK-constrained columns. A value outside
+	// the vocabulary fails the INSERT and drops the whole finding, so each is
+	// normalized (case, SARIF camelCase) and anything still unrecognized is
+	// left unset rather than stored. Impact and likelihood are the
+	// receiver's to derive (CTIS 2.0 carries neither).
+	if len(ctisFinding.VulnerabilityClasses) > 0 {
+		f.SetVulnerabilityClass(ctisFinding.VulnerabilityClasses)
 	}
-	if v := normalizeEnumToken(ctisFinding.Likelihood); v != "" && vulnerability.LikelihoodLevel(v).IsValid() {
-		f.SetLikelihood(v)
-	}
-	if len(ctisFinding.VulnerabilityClass) > 0 {
-		f.SetVulnerabilityClass(ctisFinding.VulnerabilityClass)
-	}
-	if len(ctisFinding.Subcategory) > 0 {
-		f.SetSubcategory(ctisFinding.Subcategory)
+	if len(ctisFinding.Subcategories) > 0 {
+		f.SetSubcategory(ctisFinding.Subcategories)
 	}
 
 	// SARIF core fields
@@ -1899,38 +1925,72 @@ func (p *FindingProcessor) setFindingCTEMFields(f *vulnerability.Finding, ctisFi
 		if ctisFinding.Exposure.Vector != "" {
 			_ = f.SetExposureVector(vulnerability.ExposureVector(ctisFinding.Exposure.Vector))
 		}
-		f.SetNetworkAccessible(ctisFinding.Exposure.IsNetworkAccessible)
-		f.SetInternetAccessible(ctisFinding.Exposure.IsInternetAccessible)
+		if v := ctisFinding.Exposure.IsNetworkAccessible; v != nil {
+			f.SetNetworkAccessible(*v)
+		}
+		if v := ctisFinding.Exposure.IsInternetAccessible; v != nil {
+			f.SetInternetAccessible(*v)
+		}
 		if ctisFinding.Exposure.AttackPrerequisites != "" {
 			f.SetAttackPrerequisites(ctisFinding.Exposure.AttackPrerequisites)
 		}
 	}
 
-	// Remediation context fields
-	if ctisFinding.RemediationContext != nil {
-		if ctisFinding.RemediationContext.Type != "" {
-			_ = f.SetRemediationType(vulnerability.RemediationType(ctisFinding.RemediationContext.Type))
+	// Remediation context (CTIS 2.0 merged it into remediation).
+	if r := ctisFinding.Remediation; r != nil {
+		if t := remediationTypeOf(r.SolutionType); t != "" {
+			_ = f.SetRemediationType(t)
 		}
-		if ctisFinding.RemediationContext.EstimatedMinutes > 0 {
-			estTime := ctisFinding.RemediationContext.EstimatedMinutes
+		if r.EstimatedMinutes > 0 {
+			estTime := r.EstimatedMinutes
 			f.SetEstimatedFixTime(&estTime)
 		}
-		if ctisFinding.RemediationContext.Complexity != "" {
-			_ = f.SetFixComplexity(vulnerability.FixComplexity(ctisFinding.RemediationContext.Complexity))
+		if c := fixComplexityOf(r.Effort); c != "" {
+			_ = f.SetFixComplexity(c)
 		}
-		f.SetRemedyAvailable(ctisFinding.RemediationContext.RemedyAvailable)
+		if r.IsFixAvailable != nil {
+			f.SetRemedyAvailable(*r.IsFixAvailable)
+		}
 	}
+}
 
-	// Business impact fields
-	if ctisFinding.BusinessImpact != nil {
-		if ctisFinding.BusinessImpact.DataExposureRisk != "" {
-			_ = f.SetDataExposureRisk(vulnerability.DataExposureRisk(ctisFinding.BusinessImpact.DataExposureRisk))
-		}
-		f.SetReputationalImpact(ctisFinding.BusinessImpact.ReputationalImpact)
-		if len(ctisFinding.BusinessImpact.ComplianceImpact) > 0 {
-			f.SetComplianceImpact(ctisFinding.BusinessImpact.ComplianceImpact)
-		}
+// remediationTypeOf maps a CTIS 2.0 solution type (CSAF categories) to the
+// stored remediation type; "" when there is none.
+func remediationTypeOf(t ctis.SolutionType) vulnerability.RemediationType {
+	switch t {
+	case ctis.SolutionTypeVendorFix:
+		return vulnerability.RemediationTypePatch
+	case ctis.SolutionTypeUpgrade:
+		return vulnerability.RemediationTypeUpgrade
+	case ctis.SolutionTypeWorkaround:
+		return vulnerability.RemediationTypeWorkaround
+	case ctis.SolutionTypeConfigChange:
+		return vulnerability.RemediationTypeConfig
+	case ctis.SolutionTypeMitigation:
+		return vulnerability.RemediationTypeMitigate
 	}
+	return ""
+}
+
+// fixComplexityOf maps a CTIS 2.0 effort to the stored fix complexity.
+func fixComplexityOf(e ctis.Effort) vulnerability.FixComplexity {
+	switch e {
+	case ctis.EffortTrivial, ctis.EffortLow:
+		return vulnerability.FixComplexitySimple
+	case ctis.EffortMedium:
+		return vulnerability.FixComplexityModerate
+	case ctis.EffortHigh:
+		return vulnerability.FixComplexityComplex
+	}
+	return ""
+}
+
+// commitSHA is the commit of a code location (CTIS 2.0 location.commit).
+func commitSHA(loc *ctis.FindingLocation) string {
+	if loc == nil || loc.Commit == nil {
+		return ""
+	}
+	return loc.Commit.SHA
 }
 
 // mapCTISLocationToDomain converts a CTIS FindingLocation to a domain FindingLocation.
@@ -1947,7 +2007,7 @@ func mapCTISLocationToDomain(loc *ctis.FindingLocation) vulnerability.FindingLoc
 		Snippet:        loc.Snippet,
 		ContextSnippet: loc.ContextSnippet,
 		Branch:         loc.Branch,
-		CommitSHA:      loc.CommitSHA,
+		CommitSHA:      commitSHA(loc),
 	}
 	if loc.LogicalLocation != nil {
 		result.LogicalLocation = &vulnerability.LogicalLocation{
@@ -2219,17 +2279,16 @@ func mapCTISDataFlowToDomain(in *ctis.DataFlow) vulnerability.DataFlow {
 		steps = append(steps, mapCTISDataFlowLocationToStep(a.loc, a.typ, i))
 	}
 	return vulnerability.DataFlow{
-		Index:             0,
-		Message:           df.Summary,
-		Importance:        "essential",
-		Steps:             steps,
-		Tainted:           df.Tainted,
-		TaintType:         df.TaintType,
-		VulnerabilityType: df.VulnerabilityType,
-		Confidence:        df.Confidence,
-		Interprocedural:   df.Interprocedural,
-		CrossFile:         df.CrossFile,
-		CallPath:          df.CallPath,
+		Index:           0,
+		Message:         df.Summary,
+		Importance:      "essential",
+		Steps:           steps,
+		Tainted:         df.IsTainted,
+		TaintType:       df.TaintType,
+		Confidence:      df.Confidence,
+		Interprocedural: df.IsInterprocedural,
+		CrossFile:       df.IsCrossFile,
+		CallPath:        df.CallPath,
 	}
 }
 
@@ -2250,7 +2309,7 @@ func mapCTISDataFlowLocationToStep(loc ctis.DataFlowLocation, locationType strin
 		Message:        loc.Notes,
 		Importance:     "essential",
 		FunctionName:   loc.Function,
-		ClassName:      loc.Class,
+		ClassName:      loc.ClassName,
 		ModuleName:     loc.Module,
 		Operation:      loc.Operation,
 		CalledFunction: loc.CalledFunction,
@@ -2304,6 +2363,24 @@ func (p *FindingProcessor) enrichAndClassify(ctx context.Context, tenantID share
 // suppression rule set them to false positive or accepted before insert.
 // They raise no created event (notifications, tickets), get no SLA deadline
 // and are not promoted into the exposure store.
+// withoutOutsideTargets leaves out the findings on assets the report
+// recorded outside its command's targets (job_bound.go): what a scan saw
+// beyond its job is kept, but it notifies nobody, opens no ticket and is
+// routed to no group until a person looks at it.
+func withoutOutsideTargets(findings []*vulnerability.Finding, output *Output) []*vulnerability.Finding {
+	if output == nil || len(output.OutsideTargetAssetIDs) == 0 {
+		return findings
+	}
+	out := make([]*vulnerability.Finding, 0, len(findings))
+	for _, f := range findings {
+		if output.OutsideTargetAssetIDs[f.AssetID()] {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
 func withoutDecided(findings []*vulnerability.Finding) []*vulnerability.Finding {
 	out := make([]*vulnerability.Finding, 0, len(findings))
 	for _, f := range findings {
@@ -2362,8 +2439,8 @@ func findingTrace(fingerprint, commit string, df *ctis.DataFlow) (vulnerability.
 // traceCommit is the commit a finding's trace was reported for: the
 // finding's own location commit, else the report's branch commit.
 func traceCommit(report *ctis.Report, f *ctis.Finding) string {
-	if f.Location != nil && f.Location.CommitSHA != "" {
-		return f.Location.CommitSHA
+	if sha := commitSHA(f.Location); sha != "" {
+		return sha
 	}
 	if report != nil && report.Metadata.Branch != nil {
 		return report.Metadata.Branch.CommitSHA
@@ -2485,7 +2562,7 @@ func genericNetworkPort(f *ctis.Finding, input fingerprint.Input) string {
 	if fingerprint.DetectType(input) != fingerprint.TypeGeneric {
 		return ""
 	}
-	proto := strings.ToLower(strings.TrimSpace(f.Network.Protocol))
+	proto := strings.ToLower(strings.TrimSpace(string(f.Network.Transport)))
 	if proto == "" {
 		proto = "tcp"
 	}
@@ -2662,7 +2739,7 @@ func (p *FindingProcessor) afterCreate(
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
 	if p.findingCreatedCallback != nil || p.sideEffects != nil {
-		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutDecided(created))); len(counting) > 0 {
+		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutDecided(withoutOutsideTargets(created, output)))); len(counting) > 0 {
 			switch {
 			case p.sideEffects != nil:
 				p.enqueueCreated(ctx, tenantID, counting)
@@ -2675,7 +2752,7 @@ func (p *FindingProcessor) afterCreate(
 	// Route newly-created findings to groups via assignment rules
 	// (post-insert: FGA records need persisted finding IDs). Best-effort.
 	if p.assignmentApplier != nil {
-		if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, created); err != nil {
+		if assigned, err := p.assignmentApplier.ApplyBatch(ctx, tenantID, withoutOutsideTargets(created, output)); err != nil {
 			p.logger.Warn("failed to auto-route findings to groups", "error", err, "count", len(created))
 		} else if assigned > 0 {
 			p.logger.Info("auto-routed findings to groups", "assignments", assigned)
@@ -2711,23 +2788,30 @@ func addItem(output *Output, report *ctis.Report, f *ctis.Finding, disp ingestre
 	if len(output.Items) >= ingestreceipt.MaxActionsPerReceipt {
 		return
 	}
+	var version int64
+	if output.policy != nil {
+		version = output.policy.Version
+	}
+	output.Items = append(output.Items, receiptItem(report, f, disp, reason, policy, assetID, version))
+}
+
+// receiptItem is the receipt item of one reported finding that did not
+// become a finding: an identity key, the tool, a title and the severity.
+func receiptItem(report *ctis.Report, f *ctis.Finding, disp ingestreceipt.Disposition, reason, policy string,
+	assetID *shared.ID, policyVersion int64) ingestreceipt.Item {
 	tool := ""
-	if report.Tool != nil {
+	if report != nil && report.Tool != nil {
 		tool = report.Tool.Name
 	}
 	path, line := "", 0
 	if f.Location != nil {
 		path, line = f.Location.Path, f.Location.StartLine
 	}
-	var version int64
-	if output.policy != nil {
-		version = output.policy.Version
-	}
-	output.Items = append(output.Items, ingestreceipt.Item{
-		Key:         ingestreceipt.ItemKey(tool, f.RuleID, f.Title, f.AssetRef, f.AssetValue, path, strconv.Itoa(line)),
+	return ingestreceipt.Item{
+		Key:         ingestreceipt.ItemKey(tool, f.RuleID, f.Title, f.AssetRef, "", path, strconv.Itoa(line)),
 		Disposition: disp, ReasonCode: reason, AssetID: assetID, Tool: tool, Title: f.Title,
-		Severity: string(f.Severity), Policy: policy, PolicyVersion: version,
-	})
+		Severity: string(f.Severity), Policy: policy, PolicyVersion: policyVersion,
+	}
 }
 
 // duplicateTargetMarker is the repository's way to mark what duplicates were

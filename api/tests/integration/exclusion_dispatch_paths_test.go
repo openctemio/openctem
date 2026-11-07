@@ -16,7 +16,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scanrun"
 
-	"github.com/openctemio/ctis"
+	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
@@ -61,8 +61,8 @@ func TestIngest_ExcludedAssetsAreNotAdded(t *testing.T) {
 	agt := &sensor.Sensor{ID: tn.sensor, TenantID: &tid, Type: sensor.SensorTypeWorker, Status: sensor.SensorStatusActive}
 	ingestReport := func(assets []ctis.Asset, findings ...ctis.Finding) *ingest.Output {
 		t.Helper()
-		rep := &ctis.Report{Version: "1.0", Tool: &ctis.Tool{Name: "nmap"}, Assets: assets, Findings: findings,
-			Metadata: ctis.ReportMetadata{Timestamp: time.Now().UTC()}}
+		rep := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nmap"}, Assets: assets, Findings: findings,
+			Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC()}}
 		out, err := svc.Ingest(ctx, agt, ingest.Input{Report: rep})
 		if err != nil {
 			t.Fatalf("Ingest: %v", err)
@@ -98,9 +98,9 @@ func TestIngest_ExcludedAssetsAreNotAdded(t *testing.T) {
 	seedApprovedExclusion(t, r.db, tid, "cidr", "198.51.100.0/24")
 
 	out := ingestReport([]ctis.Asset{
-		{ID: "ok", Type: ctis.AssetTypeHost, Value: "ok.example.com", Properties: ctis.Properties{"ip": "203.0.113.5"}},
+		{ID: "ok", Type: ctis.AssetTypeHost, Value: "ok.example.com"},
 		{ID: "blocked", Type: ctis.AssetTypeHost, Value: "blocked.example.com"},
-		{ID: "via-ip", Type: ctis.AssetTypeHost, Value: "edge.example.com", Properties: ctis.Properties{"ip": "198.51.100.7"}},
+		{ID: "via-ip", Type: ctis.AssetTypeIPAddress, Value: "198.51.100.7"},
 		{ID: "old", Type: ctis.AssetTypeHost, Value: "old.example.com"},
 	}, ctis.Finding{Type: ctis.FindingTypeVulnerability, Title: "on an excluded host", Severity: ctis.SeverityHigh,
 		RuleID: "excluded-rule", AssetRef: "blocked"})

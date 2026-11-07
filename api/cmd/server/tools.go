@@ -3,8 +3,10 @@ package main
 import (
 	"path/filepath"
 
+	"github.com/openctemio/openctem/api/internal/tools/assetcanoncmd"
 	"github.com/openctemio/openctem/api/internal/tools/bootstrapadmin"
 	"github.com/openctemio/openctem/api/internal/tools/citrustscopeplan"
+	"github.com/openctemio/openctem/api/internal/tools/receiptreattribute"
 	"github.com/openctemio/openctem/api/internal/tools/refingerprintcmd"
 	"github.com/openctemio/openctem/api/internal/tools/repomerge"
 )
@@ -17,10 +19,12 @@ import (
 // whoever starts them: this changes how they are packaged, not who may run
 // them.
 var tools = map[string]func(){
+	"asset-canonical":     assetcanoncmd.Main,
 	"bootstrap-admin":     bootstrapadmin.Main,
 	"refingerprint":       refingerprintcmd.Main,
 	"repomerge":           repomerge.Main,
 	"ci-trust-scope-plan": citrustscopeplan.Main,
+	"receipt-reattribute": receiptreattribute.Main,
 }
 
 // toolFor returns the command named by argv0, or nil for the server.

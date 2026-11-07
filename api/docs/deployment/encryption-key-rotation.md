@@ -5,9 +5,9 @@
 1. **It encrypts stored secrets** (AES-256-GCM). `cmd/rekey` re-encrypts all
    of them with the new key in one transaction.
 2. **It keys hashes.**
-   - The leaked-credential fingerprint and the scanner-template signature can
-     be recomputed from data the database holds, so `cmd/rekey` recomputes
-     them too.
+   - The leaked-credential fingerprint (keyed per organization from the key)
+     and the scanner-template signature can be recomputed from data the
+     database holds, so `cmd/rekey` recomputes them too.
    - The hashes of `oct_` API keys, SCIM tokens and sensor keys are one-way
      and cannot be recomputed without the token. The server keeps verifying
      them with the old key while it is listed in
@@ -54,8 +54,11 @@ Each value gets exactly one of these outcomes:
   rolls the whole run back.
 
 The run also sweeps every text, bytea and jsonb column for values the old key
-still opens. If it finds any, the column is a location this list does not
-cover, and the run fails and nothing is committed.
+still opens, in every schema of the database (an extension's own schema
+included, not only the core one). If it finds any, the column is a location
+this list does not cover, and the run fails and nothing is committed. A table
+the connecting role may not read is reported the same way, since it cannot be
+proved free of old-key values: run `rekey` as the schema owner.
 
 Plaintext values left over from before encryption was configured count as
 failures. Run `cmd/encrypt-credentials` first if there are any.

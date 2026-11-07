@@ -30,6 +30,10 @@ function SandboxCheck({ sensor }: { sensor: Sensor }) {
   const value = postureNetwork(sensor)
   const confined = value.tone === 'ok'
   const unknown = value.tone === 'muted'
+  // Tools without the sandbox: refused for the ones that contact their
+  // targets (no sandbox on the host), or run unconfined by the operator's
+  // choice (SENSOR_SANDBOX=off).
+  const unconfined = sensor.posture?.tools_unconfined
   return (
     <section
       aria-label={t('sensors.review.sandboxTitle', 'Tool sandbox')}
@@ -52,22 +56,32 @@ function SandboxCheck({ sensor }: { sensor: Sensor }) {
           {t('sensors.review.sandboxTitle', 'Tool sandbox')}: {t(value.labelKey, value.label)}
         </p>
         <p className="text-muted-foreground">
-          {confined
+          {unconfined === 'refused'
             ? t(
-                'sensors.review.sandboxConfined',
-                'Each scan task reaches only its targets. This sensor can take jobs that need confinement (a web scope).'
+                'sensors.review.sandboxActiveRefused',
+                'This host has no tool sandbox (it is Linux only). Tools that contact their targets are refused here so they never run unconfined; passive lookups still run. Run the sensor on Linux or in its container, or set SENSOR_SANDBOX=off to acknowledge running every tool unconfined.'
               )
-            : unknown
+            : unconfined === 'acknowledged'
               ? t(
-                  'sensors.review.sandboxUnknown',
-                  'This sensor does not report its sandbox (an older release). Jobs that need confinement go to other sensors.'
+                  'sensors.review.sandboxAcknowledged',
+                  'The sandbox is turned off (SENSOR_SANDBOX=off): every tool runs unconfined, those that contact their targets included.'
                 )
-              : t(
-                  'sensors.review.sandboxNotConfined',
-                  "Jobs that need confinement (a web scope) go to other sensors. Run the container with the sensor's seccomp profile; its setup checklist names the cause."
-                )}
+              : confined
+                ? t(
+                    'sensors.review.sandboxConfined',
+                    'Each scan task reaches only its targets. This sensor can take jobs that need confinement (a web scope).'
+                  )
+                : unknown
+                  ? t(
+                      'sensors.review.sandboxUnknown',
+                      'This sensor does not report its sandbox (an older release). Jobs that need confinement go to other sensors.'
+                    )
+                  : t(
+                      'sensors.review.sandboxNotConfined',
+                      "Jobs that need confinement (a web scope) go to other sensors. Run the container with the sensor's seccomp profile; its setup checklist names the cause."
+                    )}
         </p>
-        {!confined && (
+        {!confined && !unconfined && (
           <a
             href={SENSOR_SECCOMP_PROFILE_URL}
             download="openctem-sensor-seccomp.json"

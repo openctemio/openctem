@@ -41,24 +41,23 @@ import (
 // SensorControlV2Handler serves the v2 control-plane routes. Any of its
 // collaborators may be nil; Features lists only what is wired.
 type SensorControlV2Handler struct {
-	ingest              *IngestHandler
-	commands            *CommandHandler
-	suppressions        *SuppressionHandler
-	suppressionsEnabled func(ctx context.Context, tenantID string) bool
-	content             *SensorContentV2Handler
-	feedRelay           *FeedRelayHandler
-	egress              *proxypoolapp.Service
-	limits              protov2.Limits
-	logger              *logger.Logger
+	ingest       *IngestHandler
+	commands     *CommandHandler
+	suppressions *SuppressionHandler
+	content      *SensorContentV2Handler
+	feedRelay    *FeedRelayHandler
+	egress       *proxypoolapp.Service
+	secrets      TaskSecrets
+	limits       protov2.Limits
+	logger       *logger.Logger
 }
 
-// NewSensorControlV2Handler builds the handler. suppressionsEnabled reports
-// whether the suppressions module is on for a tenant (nil: always on).
+// NewSensorControlV2Handler builds the handler.
 func NewSensorControlV2Handler(ih *IngestHandler, ch *CommandHandler, sh *SuppressionHandler,
-	suppressionsEnabled func(ctx context.Context, tenantID string) bool, log *logger.Logger,
+	log *logger.Logger,
 ) *SensorControlV2Handler {
 	return &SensorControlV2Handler{
-		ingest: ih, commands: ch, suppressions: sh, suppressionsEnabled: suppressionsEnabled,
+		ingest: ih, commands: ch, suppressions: sh,
 		limits: protov2.DefaultLimits(), logger: log.With("handler", "sensor-control-v2"),
 	}
 }
@@ -724,6 +723,20 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			in.Result = res
 			break
 		}
+		// The same for a task refused under the sensor's local policy whose
+		// every listed target is a name that does not resolve (the sensor
+		// says so, or the platform's own state does): another sensor would
+		// find the same, so the task is not re-queued, to this sensor or any
+		// other.
+		detail := req.ErrorMessage
+		if req.Refusal != nil {
+			detail = req.Refusal.Detail
+		}
+		if res, ok := h.unresolvableRefusalCompletion(r.Context(), tenantID, s.ID.String(), commandID, detail); ok {
+			t = command.TransitionComplete
+			in.Result = res
+			break
+		}
 		failCode = sensorFailureCode(req.ErrorCode, req.Refusal != nil)
 		if req.Refusal != nil {
 			in.Refusal = &sensor.DispatchRefusal{Layer: req.Refusal.Layer, Rule: req.Refusal.Rule, Detail: req.Refusal.Detail}
@@ -789,10 +802,64 @@ func (h *SensorControlV2Handler) unresolvableCompletion(ctx context.Context, ten
 	return unresolvableResultFor(cmd, sensorID, message)
 }
 
+// unresolvableRefusalCompletion returns the result to complete the command
+// with when detail (a local-policy refusal's detail) lists only names that
+// do not resolve. The platform's resolution state is read for the command's
+// own tenant only. A failed read keeps the refusal as it is.
+func (h *SensorControlV2Handler) unresolvableRefusalCompletion(ctx context.Context, tenantID, sensorID, commandID, detail string) (json.RawMessage, bool) {
+	if _, _, ok := scanrundom.ParseRefusedSummary(detail); !ok {
+		return nil, false
+	}
+	cmd, err := h.commands.service.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, false
+	}
+	return unresolvableRefusalResult(ctx, cmd, tenantID, sensorID, detail, h.commands.resolution)
+}
+
+// unresolvableRefusalResult is unresolvableRefusalCompletion for a command
+// already read; states is the platform's resolution state (nil: only the
+// sensor's own word counts).
+func unresolvableRefusalResult(ctx context.Context, cmd *commanddom.Command, tenantID, sensorID, detail string, states resolutionRecorder) (json.RawMessage, bool) {
+	entries, total, ok := scanrundom.ParseRefusedSummary(detail)
+	if !ok || cmd == nil || cmd.TenantID.String() != tenantID {
+		return nil, false
+	}
+	var notResolving map[string]bool
+	if states != nil {
+		var denied []string
+		for _, e := range entries {
+			if e.Reason == scanrundom.SkipReasonDenied {
+				denied = append(denied, e.Target)
+			}
+		}
+		if len(denied) > 0 {
+			var err error
+			if notResolving, err = states.NotResolving(ctx, cmd.TenantID, denied); err != nil {
+				return nil, false
+			}
+		}
+	}
+	hosts, ok := scanrundom.UnresolvableRefusal(entries, total, notResolving)
+	if !ok {
+		return nil, false
+	}
+	return unresolvableResultOf(cmd, sensorID, hosts, total)
+}
+
 // unresolvableResultFor is unresolvableCompletion for a command already read.
 func unresolvableResultFor(cmd *commanddom.Command, sensorID, message string) (json.RawMessage, bool) {
 	hosts, total, ok := scanrundom.ParseUnresolvableRefusal(message)
-	if !ok || cmd == nil || cmd.SensorID == nil || cmd.SensorID.String() != sensorID {
+	if !ok {
+		return nil, false
+	}
+	return unresolvableResultOf(cmd, sensorID, hosts, total)
+}
+
+// unresolvableResultOf is the completion of cmd, held by sensorID, with every
+// target skipped as unresolvable (hosts of total).
+func unresolvableResultOf(cmd *commanddom.Command, sensorID string, hosts []string, total int) (json.RawMessage, bool) {
+	if cmd == nil || cmd.SensorID == nil || cmd.SensorID.String() != sensorID {
 		return nil, false
 	}
 	switch cmd.Status {
@@ -900,32 +967,30 @@ func (h *SensorControlV2Handler) Suppressions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	list := protov2.SuppressionList{Rules: []protov2.SuppressionRule{}}
-	if h.suppressionsEnabled == nil || h.suppressionsEnabled(r.Context(), s.TenantID.String()) {
-		rules, err := h.suppressions.service.ListActiveRules(r.Context(), *s.TenantID)
-		if err != nil {
-			h.internal(w, "suppressions", err)
-			return
+	rules, err := h.suppressions.service.ListActiveRules(r.Context(), *s.TenantID)
+	if err != nil {
+		h.internal(w, "suppressions", err)
+		return
+	}
+	reachable, err := h.reachableRuleAssets(r, s, rules)
+	if err != nil {
+		h.internal(w, "suppressions", err)
+		return
+	}
+	for _, rule := range rules {
+		if rule.AssetID() != nil && !reachable[*rule.AssetID()] {
+			continue
 		}
-		reachable, err := h.reachableRuleAssets(r, s, rules)
-		if err != nil {
-			h.internal(w, "suppressions", err)
-			return
+		item := protov2.SuppressionRule{RuleID: rule.RuleID(), ToolName: rule.ToolName(), PathPattern: rule.PathPattern()}
+		if rule.AssetID() != nil {
+			a := rule.AssetID().String()
+			item.AssetID = &a
 		}
-		for _, rule := range rules {
-			if rule.AssetID() != nil && !reachable[*rule.AssetID()] {
-				continue
-			}
-			item := protov2.SuppressionRule{RuleID: rule.RuleID(), ToolName: rule.ToolName(), PathPattern: rule.PathPattern()}
-			if rule.AssetID() != nil {
-				a := rule.AssetID().String()
-				item.AssetID = &a
-			}
-			if rule.ExpiresAt() != nil {
-				e := rule.ExpiresAt().UTC().Format(time.RFC3339)
-				item.ExpiresAt = &e
-			}
-			list.Rules = append(list.Rules, item)
+		if rule.ExpiresAt() != nil {
+			e := rule.ExpiresAt().UTC().Format(time.RFC3339)
+			item.ExpiresAt = &e
 		}
+		list.Rules = append(list.Rules, item)
 	}
 	list.Count = len(list.Rules)
 

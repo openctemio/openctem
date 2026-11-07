@@ -22,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
 // mcpAssetContext is the asset page's reads (*asset.AssetService). Each
@@ -43,11 +44,11 @@ func (h *MCPHandler) SetAssetContext(c mcpAssetContext, webBase string) {
 }
 
 // assetConsoleURL is the asset page in the console, or "".
-func (h *MCPHandler) assetConsoleURL(id string) string {
+func (h *MCPHandler) assetConsoleURL(tenantID, id string) string {
 	if h.assetWebBase == "" || id == "" {
 		return ""
 	}
-	return h.assetWebBase + "/assets/" + url.PathEscape(id)
+	return weblink.Console(h.assetWebBase, "/assets/"+url.PathEscape(id), tenantID)
 }
 
 // get_asset sections, in the order the asset page shows them.
@@ -201,7 +202,7 @@ func (h *MCPHandler) toolSearchAssets(ctx context.Context, tenantID string, raw 
 	rows := make([]mcpAssetSearchRow, 0, len(res.Data))
 	for _, as := range res.Data {
 		row := mcpAssetSearchRow{mcpAssetDTO: toAssetDTO(as), SubType: as.SubType(), FindingCount: as.FindingCount(),
-			ConsoleURL: h.assetConsoleURL(as.ID().String())}
+			ConsoleURL: h.assetConsoleURL(tenantID, as.ID().String())}
 		if ls := as.LastSeen(); !ls.IsZero() {
 			row.LastSeen = ls.UTC().Format("2006-01-02T15:04:05Z")
 		}
@@ -326,7 +327,7 @@ func (h *MCPHandler) toolGetAsset(ctx context.Context, tenantID string, raw json
 		}
 	}
 	meta := map[string]any{"asset_id": id, "status_note": mcpStatusNote}
-	if u := h.assetConsoleURL(id); u != "" {
+	if u := h.assetConsoleURL(tenantID, id); u != "" {
 		meta["console_url"] = u
 	}
 	return untrustedResult(out, meta), nil
@@ -378,7 +379,7 @@ func (h *MCPHandler) resolveAssetRef(ctx context.Context, tenantID, id, name str
 	for _, as := range res.Data {
 		if strings.EqualFold(as.Name(), name) {
 			exact = append(exact, mcpAssetSearchRow{mcpAssetDTO: toAssetDTO(as), SubType: as.SubType(),
-				FindingCount: as.FindingCount(), ConsoleURL: h.assetConsoleURL(as.ID().String())})
+				FindingCount: as.FindingCount(), ConsoleURL: h.assetConsoleURL(tenantID, as.ID().String())})
 		}
 	}
 	switch len(exact) {

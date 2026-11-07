@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/ctis/outcome"
+	"github.com/openctemio/contract/outcome"
 
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
@@ -165,12 +165,12 @@ func TestRotation_Aging_WaitsForTheCleanup(t *testing.T) {
 		t.Fatalf("aging must wait: %+v", st)
 	}
 	s := State(e.intg)
-	if s.NextBatchAt == nil || !s.NextBatchAt.Equal(e.now.Add(12*time.Hour)) || s.LastBatchAdded != 50 {
+	if s.NextBatchAt == nil || !s.NextBatchAt.Equal(e.now.Add(26*time.Hour)) || s.LastBatchAdded != 50 {
 		t.Fatalf("state %+v", s)
 	}
 	// After the wait: sized as if the batch's 50 left the count (90-50=40
 	// outside the rotation repository): 100-2-40 = 58, every address new.
-	e.now = e.now.Add(13 * time.Hour)
+	e.now = e.now.Add(27 * time.Hour)
 	st, _ = e.svc.CoverageStatus(context.Background(), e.intg)
 	if !st.Ready || st.NewHeadroom != 58 || !st.AllNew || st.DefaultBatch != 58 {
 		t.Fatalf("after the wait: %+v", st)

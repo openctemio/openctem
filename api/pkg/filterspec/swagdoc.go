@@ -41,6 +41,9 @@ func (r *Registry) SwagParams() []SwagParam {
 		f := r.fields[n]
 		typ := swagType(f.Type)
 		label := strings.ReplaceAll(f.Name, "_", " ")
+		if f.Doc != "" {
+			label = f.Doc
+		}
 		add := func(name string, array bool, t string, desc string) {
 			p := SwagParam{Name: name, Type: t, Array: array, Description: desc}
 			if t == "string" && f.Type == TypeEnum && name != f.Name+"_null" {

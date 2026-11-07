@@ -38,6 +38,8 @@ import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useTranslation } from '@/context/i18n-provider'
 import { commandFilter } from '@/lib/command-filter'
 import { DOCS_URL } from '@/lib/docs-links'
+import { safeHref } from '@/lib/safe-href'
+import { useHelpEntries } from '@/hooks/use-help-entries'
 import { ScrollArea } from './ui/scroll-area'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
@@ -62,6 +64,7 @@ const KIND_ICON: Record<PaletteEntityKind, typeof Bug> = {
 
 export function CommandMenu() {
   const docsHref = useDocsHref()
+  const helpEntries = useHelpEntries()
   const router = useRouter()
   const { setTheme } = useTheme()
   const { open, setOpen } = useSearch()
@@ -348,6 +351,28 @@ export function CommandMenu() {
                 <BookOpen />
                 <span>{t('help.documentation', 'Documentation')}</span>
               </CommandItem>
+              {helpEntries.map((entry) => (
+                <CommandItem
+                  key={entry.id}
+                  value={entry.label}
+                  keywords={['Help', ...entry.keywords]}
+                  onSelect={() => {
+                    // The same link the Help menu opens, through the same encoder.
+                    const href = safeHref(entry.href, {
+                      allowRelative: false,
+                      allowMailto: entry.allowMailto,
+                    })
+                    if (!href) return
+                    runCommand(() => {
+                      if (href.startsWith('mailto:')) window.location.href = href
+                      else window.open(href, '_blank', 'noopener,noreferrer')
+                    })
+                  }}
+                >
+                  <entry.icon />
+                  <span>{entry.label}</span>
+                </CommandItem>
+              ))}
             </CommandGroup>
           )}
           {!commandMode && search.cve && (canFindings || canVulnerabilityPage) && (

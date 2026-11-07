@@ -4,7 +4,7 @@ package sensor
 // decisions TC1, TC8 and TC16). A tool's own tier is a request; the
 // platform takes the highest of:
 //
-//   - the floor of the capability the job runs (ctis/capability), or, for a
+//   - the floor of the capability the job runs (contract/capability), or, for a
 //     job that names none, the lowest tier of the catalog stages the tool
 //     implements (the rule before the tool contract);
 //   - the tier the tool's descriptor declares;
@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/openctemio/ctis/capability"
+	"github.com/openctemio/contract/capability"
 
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 )

@@ -17,7 +17,6 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -69,7 +68,7 @@ func newSensitiveHarness(t *testing.T) *sensitiveHarness {
 		out.pg = db
 		log := logger.NewNop()
 		checker := switchableStepUp{fresh: &fresh}
-		gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+		gate := middleware.RecentAuthGate{Checker: checker}
 		v := validator.New()
 
 		tenantSvc := tenantapp.NewTenantService(postgres.NewTenantRepository(db), log)
@@ -395,11 +394,11 @@ func TestSensitiveActionRefusals_CredentialReveal_DB(t *testing.T) {
 	o := h.org()
 	const secret = "Refusal-Test-Leaked-Pa55!"
 	details := map[string]any{"credential_type": "password", credential.DetailSecretValue: secret}
-	if err := h.secrets.Seal(details); err != nil {
+	tid := shared.MustIDFromString(o.tid)
+	if err := h.secrets.Seal(tid, details, true); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	tid := shared.MustIDFromString(o.tid)
 	ev := exposure.Reconstitute(shared.NewID(), tid, nil,
 		exposure.EventTypeCredentialLeaked, exposure.SeverityHigh, exposure.StateActive,
 		"alice@refusal.test", "", details, "fp-"+uuid.NewString()[:8], "data_breach", now, now, nil, nil, "", now, now)

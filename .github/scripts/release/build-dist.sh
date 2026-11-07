@@ -103,7 +103,7 @@ build_server() {
 	install -m 0755 "$WORK/gobin/server" "$d/bin/openctem-server"
 	install -m 0755 "$WORK/gobin/signer" "$d/bin/openctem-signer"
 	# The operator commands: links to the server binary (api/cmd/server/tools.go).
-	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan; do
+	for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute; do
 		ln -s openctem-server "$d/bin/$t"
 	done
 	# The migration runner (api/cmd/openctem-migrate), as in the migrations image.
@@ -116,6 +116,12 @@ build_server() {
 		make -s -C "$ROOT/api" swagger SWAG_VERSION="$(dockerfile_arg "$ROOT/api/Dockerfile" SWAG_VERSION)" >/dev/null
 	fi
 	install -m 0644 "$ROOT/api/api/openapi/swagger.yaml" "$d/api/openapi/swagger.yaml"
+	# The third-party notices the server serves (About > Open-source licenses),
+	# relative to its working directory as in the image. The tool runs here;
+	# GOOS/GOARCH tell its `go list` the target platform.
+	(cd "$ROOT/api" && CGO_ENABLED=0 go build -o "$WORK/gobin/third-party-notices" ./cmd/third-party-notices)
+	(cd "$ROOT/api" && CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" \
+		"$WORK/gobin/third-party-notices" -o "$d/third-party-notices.json")
 	install -m 0644 "$ROOT"/deploy/binary/systemd/openctem-server.service \
 		"$ROOT"/deploy/binary/systemd/openctem-signer.service \
 		"$ROOT"/deploy/binary/systemd/openctem-migrate.service \
@@ -209,6 +215,8 @@ build_web() {
 	cp -R "$ROOT/web/.next/static" "$d/app/.next/static"
 	cp -R "$ROOT/web/public" "$d/app/public"
 	cp "$ROOT/web/server-with-ws.mjs" "$d/app/server-with-ws.mjs"
+	# The web build's third-party notices, next to the server (web/Dockerfile).
+	(cd "$ROOT/web" && node scripts/third-party-notices.mjs --out "$d/app/third-party-notices.json")
 	mkdir -p "$d/app/.next/cache"
 	install -m 0644 "$ROOT/deploy/binary/systemd/openctem-web.service" "$ROOT/deploy/binary/systemd/openctem.sysusers" "$d/systemd/"
 	install -m 0644 "$ROOT/deploy/binary/env/web.env.example" "$d/env/"
@@ -225,6 +233,8 @@ build_console() {
 	mkdir -p "$d/systemd" "$d/env"
 	cp -R "$ROOT/web/console/.next/standalone" "$d/app"
 	cp -R "$ROOT/web/console/.next/static" "$d/app/console/.next/static"
+	# The console build's third-party notices (its server runs in app/console).
+	(cd "$ROOT/web" && node scripts/third-party-notices.mjs --out "$d/app/console/third-party-notices.json")
 	mkdir -p "$d/app/console/.next/cache"
 	install -m 0644 "$ROOT/deploy/binary/systemd/openctem-console.service" "$ROOT/deploy/binary/systemd/openctem.sysusers" "$d/systemd/"
 	install -m 0644 "$ROOT/deploy/binary/env/console.env.example" "$d/env/"

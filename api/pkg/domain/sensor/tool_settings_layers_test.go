@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/ctis/settings"
+	"github.com/openctemio/contract/settings"
 )
 
 // layersTestConfig: rate (scan scope, narrows), workers (sensor scope), a

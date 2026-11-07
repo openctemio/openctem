@@ -67,6 +67,7 @@
   "limits.key.platform_scans_per_day": "Platform scans a day",
   "limits.key.seats": "Seats",
   "limits.key.sensors": "Sensors",
+  "limits.key.sso_connections": "Single sign-on connections",
   "limits.key.storage_mb": "Storage (MiB)",
   "limits.loadError": "the limits",
   "limits.none.description": "This organization has no limits and every module is available.",

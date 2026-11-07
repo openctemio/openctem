@@ -6,7 +6,8 @@ import "testing"
 // the link's name selects the command, and any other name runs the server.
 func TestToolFor(t *testing.T) {
 	for _, argv0 := range []string{
-		"/app/bootstrap-admin", "./refingerprint", "repomerge", "/app/ci-trust-scope-plan",
+		"/app/bootstrap-admin", "./refingerprint", "repomerge", "/app/ci-trust-scope-plan", "/app/asset-canonical",
+		"/app/receipt-reattribute",
 	} {
 		if toolFor(argv0) == nil {
 			t.Errorf("toolFor(%q) = nil, want the command", argv0)

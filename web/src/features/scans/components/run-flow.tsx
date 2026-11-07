@@ -1,5 +1,6 @@
 'use client'
 
+import { ranWithSeverityLine } from '../lib/ran-with'
 import { HealthStatus } from '@/components/ui/health-status'
 import type { HealthState } from '@/lib/health-colors'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -24,8 +25,9 @@ import {
   compactCount,
   egressRefusedText,
   guardRefusedText,
-  mapStateLabel,
+  nodeStateLabel,
   outputsDeltaLabel,
+  queuedWaitLines,
   stepEgressRefused,
   stepGuardRefused,
   type EgressCountedTask,
@@ -488,7 +490,8 @@ function StepCard({
   const tone = warned && flowTone(node.state) === 'done' ? 'partial' : flowTone(node.state)
   const style = warned ? { ...TONE[tone], Icon: ShieldAlert } : TONE[tone]
   const name = node.name || node.step_key || ''
-  const state = mapStateLabel(node.state ?? 'pending', t)
+  const state = nodeStateLabel(node, t)
+  const waits = queuedWaitLines(node, t)
   const progress = stepProgress(node)
   const total = node.chunks?.total ?? 0
   const failedChunks = node.chunks?.failed ?? 0
@@ -496,7 +499,11 @@ function StepCard({
   const duration = stepDurationLabel(node, now)
   const outputs = node.outputs?.total ?? 0
   const findings = node.findings ?? 0
+  const infoObservations = node.info_observations ?? 0
+  const findingsHeld = node.findings_held ?? 0
+  const findingsRefused = node.findings_refused ?? 0
   const delta = outputsDeltaLabel(node, t)
+  const ranSeverity = ranWithSeverityLine(node.ran_with, t)
   const skipped = skippedReasonText(node, byKey, t)
   const failure =
     (tone === 'failed' || tone === 'partial' || tone === 'skipped') && !skipped && node.reason
@@ -506,6 +513,14 @@ function StepCard({
   if (outputs > 0) counts.push(t('scans.map.outputs', undefined, { count: compactCount(outputs) }))
   if (findings > 0)
     counts.push(t('scans.map.findings', undefined, { count: compactCount(findings) }))
+  if (findingsHeld > 0)
+    counts.push(t('scans.map.findingsHeld', undefined, { count: compactCount(findingsHeld) }))
+  if (findingsRefused > 0)
+    counts.push(t('scans.map.findingsRefused', undefined, { count: compactCount(findingsRefused) }))
+  if (infoObservations > 0)
+    counts.push(
+      t('scans.map.infoObservations', undefined, { count: compactCount(infoObservations) })
+    )
 
   return (
     <button
@@ -560,6 +575,9 @@ function StepCard({
       ) : null}
       {counts.length > 0 ? <span className="mt-1 block">{counts.join(', ')}</span> : null}
       {delta ? <span className="mt-0.5 block text-muted-foreground">{delta}</span> : null}
+      {ranSeverity ? (
+        <span className="mt-0.5 block text-muted-foreground">{ranSeverity}</span>
+      ) : null}
       {blocked ? (
         <span className="mt-1 flex items-start gap-1 text-warning">
           <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -572,6 +590,11 @@ function StepCard({
           {guarded}
         </span>
       ) : null}
+      {waits.map((line) => (
+        <span key={line} className="mt-1 block text-muted-foreground">
+          {line}
+        </span>
+      ))}
       {skipped ? <span className="mt-1 block text-muted-foreground">{skipped}</span> : null}
       {failure ? <span className="mt-1 block text-destructive">{failure}</span> : null}
     </button>

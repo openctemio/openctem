@@ -100,6 +100,9 @@ type V2Target struct {
 	// must send it (OpenSharedCommand); an organization sensor's, when sent,
 	// must be current (OpenCommand).
 	LeaseEpoch *int
+	// EpochPromised: the request names protov2.FeatureResultsLeaseEpoch,
+	// so a command-bound request without LeaseEpoch is refused.
+	EpochPromised bool
 }
 
 // Problem returns a *V2ReportError for a problem type.
@@ -122,6 +125,12 @@ func (v *V2Receiver) openCommand(ctx context.Context, tenantID shared.ID, t V2Ta
 		return nil, nil
 	}
 	if t.Sensor == nil || t.Sensor.TenantID == nil || *t.Sensor.TenantID != tenantID {
+		return nil, problem(protov2.ProblemCommandNotFound)
+	}
+	// A sensor that promised the epoch and sent none cannot say which run
+	// its results belong to: binding them to the command's current run
+	// could file a late report of a run taken back under the next one.
+	if t.EpochPromised && t.LeaseEpoch == nil {
 		return nil, problem(protov2.ProblemCommandNotFound)
 	}
 	cmd, err := OpenCommand(ctx, v.commands, t.Sensor, t.CommandID, t.LeaseEpoch, v.now())
@@ -240,8 +249,13 @@ func (v *V2Receiver) Put(ctx context.Context, t V2Target, seq int, whole bool, b
 		}
 	}
 
-	report, err := ParseV2Report(body.Decoded, t.ReportID, v.limits)
+	report, err := ParseV2Report(body.Decoded, v.limits)
 	if err != nil {
+		var verr *V2ReportError
+		if errors.As(err, &verr) && verr.Cause != nil {
+			v.logger.Info("v2: segment refused by CTIS 2.0 validation",
+				"sensor_id", t.Sensor.ID.String(), "error", logger.SanitizeError(verr.Cause))
+		}
 		return nil, err
 	}
 	// Canonical before the checks and the header digest, so every segment

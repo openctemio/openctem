@@ -55,7 +55,12 @@ func WithSharedAccess(p SharedAccessPolicy) Option {
 // flight (platform_scans_concurrent). Without it the shared claim hands out
 // nothing (fail closed).
 func WithSharedLimits(l SharedLimitSource) Option {
-	return func(s *Service) { s.sharedLimits = l }
+	return func(s *Service) {
+		s.sharedLimits = l
+		if f, ok := l.(FeatureAllower); ok {
+			s.activeScan = f
+		}
+	}
 }
 
 // ErrNotSharedSensor: the shared claim path was asked for by a sensor that
@@ -195,6 +200,10 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 	}
 	delivered, err := s.deliver(ctx, sensorID.String(), got, rules, layers)
 	if err != nil {
+		return handBack(err)
+	}
+	// The job's secret refs (task_secrets.go), before the signature.
+	if delivered, err = s.stampSecrets(ctx, sensorID.String(), delivered); err != nil {
 		return handBack(err)
 	}
 	// Signed per organization: the statement's tenant is the command's.

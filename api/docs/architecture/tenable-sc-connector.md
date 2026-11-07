@@ -12,14 +12,70 @@ off refuses new Tenable integrations (the connector validator is not wired),
 stops registering the sync and coverage controllers and hides the page;
 stored rows are kept. It stays Beta until a run against a real Tenable.sc has
 confirmed the API details only the documentation states (RFC-047 §12.6), in
-particular the unit of `maxScanTime`.
+particular the unit of `maxScanTime` and the data removal steps of license
+rotation (purge and recycle are unverified).
 
-**`maxScanTime`.** The connector sends the scan's maximum duration in
-seconds. The Tenable.sc API reference states a default of 3600 without a
-unit, and the user guide speaks of hours, so Tenable.sc may let a scan run
-longer than asked. The connector does not rely on it: it stops the scan
-itself at `max_scan_seconds` plus 30 minutes for the import and reports it
-partial.
+**`maxScanTime`.** The connector (from the release after v0.2.0) sends the
+scan's maximum duration in whole hours, rounded up, at least 1: the API
+reference states a default of 3600 without a unit, and the user guide names
+the setting "Max scan duration (hours)". The connector does not rely on it:
+it stops the scan itself at `max_scan_seconds` plus 30 minutes for the import
+and reports it partial. When a scan reaches Tenable.sc's own limit,
+Tenable.sc creates a rollover scan; the connector deletes the rollover scans
+of its own scan.
+
+## Flow
+
+As of v0.19.1 (unchanged on develop since) and openctemio/connector-tenable
+v0.2.0. Scheduled or manual sync (`tenablesc.Service.requestSync`,
+`internal/app/tenablesc/service.go`) and the connector's side
+(`internal/tenablesc/sync.go` in openctemio/connector-tenable):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box api (tenant-scoped)
+    participant H as IntegrationHandler.Sync / TenableSCSyncController
+    participant S as tenablesc.Service
+    participant DB as Postgres
+  end
+  box Customer network
+    participant C as connector-tenable (sensorkit)
+    participant T as Tenable.sc
+  end
+  H->>S: RequestSync (POST /api/v1/integrations/<id>/sync) or ScheduledSync (every 2 min)
+  S->>DB: GetByTenantAndID integration, reconcile the open sync first
+  alt an open sync
+    S-->>H: AlreadyOpen (the same command)
+  end
+  S->>DB: ClaimSyncDue - CAS on next_sync_at (schedule only)
+  S->>DB: sensors.GetByTenantAndID, not shared, active, reports tenable_sc
+  S->>S: syncWindow (full or incremental days), admitGrant connector_sync
+  S->>DB: commands insert connector_sync, sensor_id set, expires_at now + 6 h
+  S->>DB: metadata.tenable_sync.open_command_id, audit integration.sync_requested
+  C->>DB: poll commands every 30 s, dispatch gate re-checks the grant
+  C->>C: admit - payload 64 KB, known fields, instance configured, sync allowed, repositories allowed
+  C->>T: /rest/system, /rest/status, /rest/analysis (cumulative, patched), hosts, /rest/plugin
+  Note over C,T: 5 req/s default, 5 attempts, backoff 1 to 30 s, Retry-After at most 60 s
+  C->>DB: v2 reports of 2,000 findings max, tool tenable_sc, coverage incremental, bound to the command
+  C->>DB: command completed (counts, version, licence, catalog)
+  H->>S: next controller pass - reconcile
+  S->>DB: CommandCoverage - every report completed and tool tenable_sc?
+  alt settled
+    S->>DB: finish - cursor at command start, counts, catalog, ConnectorScope, SetConnected
+  else failed, expired or a report failed
+    S->>DB: RecordSyncFailure, next_sync_at at most now + 30 min
+  end
+```
+
+Manual sync answers `409` with the domain code for
+`CONNECTOR_SENSOR_UNAVAILABLE`, a disabled integration and a grant refusal
+(`IntegrationHandler.syncConnector`); a scheduled sync records a refusal the
+owner can fix on the integration and tries again at the next interval. The
+window: full when there was no successful or full sync yet, every
+`full_sync_days` (default 7, 1 to 90) or after a gap of more than 365 days;
+otherwise the days since the last successful sync plus one. The sync interval
+is `sync_interval_minutes` (default 360, at least 60).
 
 ## Shape
 
@@ -30,12 +86,12 @@ integration (provider tenable, engine tenable_sc, execution_mode sensor,
    │  or the tenable-sc-sync controller (every 2 min; due by sync_interval_minutes)
    ▼
 tenablesc.Service.RequestSync ── connector_sync command, pinned to sensor_id
-   │                              (payload: scanner=tenable_sc, instance, mode,
-   │                               window_days, include, min_severity, repositories)
+   │                              (payload: scanner=tenable_sc, instance, integration_id,
+   │                               mode, window_days, include, min_severity, repositories)
    ▼
 connector image ghcr.io/openctemio/connector-tenable (openctemio/connector-tenable):
 a sensor that runs nothing but the connector; keys and URL only there
-   │  Tenable.sc /rest/analysis, /rest/plugin, /rest/status
+   │  Tenable.sc /rest/system, /rest/status, /rest/analysis, /rest/plugin, /rest/repository
    ▼
 CTIS reports, tool tenable_sc, coverage incremental, bound to the command
    ▼
@@ -53,8 +109,8 @@ integration metadata.tenable_sync (cursor, counts, license), status connected
 | Schedule controller | `internal/infra/controller/tenable_sc_sync.go` |
 | Scheduled-sync claim (compare-and-set on `next_sync_at`) | `IntegrationRepository.ClaimSyncDue` |
 | Create/update validation (own sensor, no platform sensor, no credentials, engine `tenable_sc` + mode `sensor` only) | `IntegrationService` + `tenablesc.Service.ValidateConnector` |
-| Command types `connector_sync`, `connector_scan` | `pkg/domain/command`, migration `000496` |
-| Tool catalog row `tenable_sc` (kind `connector`, never scannable) | migration `000495`, `tool.Tool.IsConnector` |
+| Command types `connector_sync`, `connector_scan` | `pkg/domain/command` (migration `000496`, now in `001146_baseline`) |
+| Tool catalog row `tenable_sc` (kind `connector`, never scannable) | migration `000495` (now in `001146_baseline`), `tool.Tool.IsConnector` |
 | Source-asserted resolve | `internal/app/ingest/source_resolve.go`, `FindingRepository.ResolveSourceMitigated` |
 
 ## Install and grant
@@ -118,7 +174,8 @@ A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
   per-target outcome (ctis `target_outcomes`: done, failed unreachable for a
   host that did not reply to a completed scan, unfinished) and reach
   observations; a refused import (licence `Blocked`, import error) fails the
-  command with the reason. A connector scan is never split into follow-ups:
+  command with the reason (`IMPORT_BLOCKED ... scan_result_id=<id>` for a
+  Blocked import, which imported nothing). A connector scan is never split into follow-ups:
   its unfinished targets (normalized against the command's own targets,
   `command.ConnectorUnfinishedTargets`) end the step partial and are
   recorded on the run (`scan_runs.unfinished_targets`), which the next
@@ -130,7 +187,7 @@ A scan whose `scanner_name` is `tenable_sc` is an ordinary OpenCTEM scan
   polls `scanResult`, stops it on cancel or timeout, pulls the individual
   result and deletes the definition it created.
 
-## Synced assets are in scope (research/117)
+## Synced assets are in scope
 
 The organization's own scanner is an ownership source: after a successful
 sync, the public names and addresses its reports wrote get their exact scope
@@ -163,42 +220,73 @@ Source-asserted resolve writes one audit entry per report:
 
 The coverage scheduler (`scancoverage`, claim-once across replicas, the target
 gate) drives the connector from the asset coverage ledger (RFC-093,
-capability `network_va.connector`). Design: research/143 §4; owner decisions
-D1 (rotation off by default, behind an acknowledgement) and D3 (recycling
-opt-in, administrator key only on the connector).
+capability `network_va.connector`). Decided: rotation is off by default and
+needs an acknowledgement; aging is the recommended mode; purge and recycle
+are opt-in and unverified against a real Tenable.sc, and recycle needs a
+Tenable.sc Administrator key, configured only on the connector.
 
 - **Opt-in per connector**: `coverage_enabled: true` with
   `coverage_policy_id` and `coverage_repository_id` (optional
   `coverage_zone_id`, `coverage_max_scan_seconds`), plus `batch_size`,
   `license_cap` (optional lower cap) and `safety_margin`.
-- **Rotation** (`coverage_rotation`): `off` (default), `aging` or `recycle`.
-  Anything but `off` needs `coverage_rotation_acknowledged: true`: an
-  administrator (`integrations:manage`, audited with the integration update)
-  confirms that the customer's Tenable license terms allow rotating more
-  assets than licensed. `coverage_rotation_wait_hours` (1-72, default 12) is
-  how long `aging` waits after a batch.
+- **Rotation** (`coverage_rotation`): `off` (default), `aging`, `purge` or
+  `recycle`. Anything but `off` needs `coverage_rotation_acknowledged: true`:
+  an administrator (`integrations:manage`, audited with the integration
+  update) confirms that the customer's Tenable license terms allow rotating
+  more assets than licensed.
+
+  | Mode | What frees the license | Needs | Pace | Risk |
+  |---|---|---|---|---|
+  | `off` | nothing | | what the license holds | none |
+  | `aging` (recommended) | 1-day lifetimes, applied at Tenable.sc's nightly cleanup | a dedicated universal rotation repository as the coverage repository | about one batch a day | none: Tenable.sc removes only aged data |
+  | `purge` | an imported empty `.nessus` whose `TARGET` lists the previous batch's hosts | operation `purge` and a purge repository on the connector; user keys | one batch after another | unverified; removes every asset sharing an address in a universal repository |
+  | `recycle` | a verified replacement repository, then the old one deleted | operation `recycle`, two repository names and an Administrator key on the connector | one batch after another | unverified; repository id changes |
+
   - `off`: no data is removed. Assets the connector assessed before are
     rescanned without using headroom; new ones only while the license has
     room; the rest stay due (counted as left out by the license).
-  - `aging`: the rotation repository's lifetimes free the license at
-    Tenable.sc's nightly cleanup (set by its administrator); the next batch
-    is tried after the wait.
-  - `recycle`: each batch scans into the connector's rotation repository
-    (found by name on the connector), and the next batch asks the connector
-    to delete and recreate it first, only after the previous batch's results
-    were ingested. A batch that failed after it launched may have imported
-    results that were never ingested: rotation stalls (`rotation_stalled`)
-    until an administrator resumes it (`POST
+  - `aging`: the customer's administrator creates a universal repository
+    with an IP range covering the coverage targets, every vulnerability
+    lifetime 1 day and group access for the connector user, and picks it as
+    the coverage repository. Lifetimes are whole days and apply only at the
+    nightly cleanup, so `coverage_rotation_wait_hours` is 24-72 (default 26);
+    the license guard confirms the capacity before each batch.
+  - `purge`: each batch scans into the connector's purge repository (found
+    by name on the connector). After the previous batch was ingested, the
+    next batch carries `purge {previous_command_id, targets}` (the previous
+    command is read tenant-scoped): the connector removes the hosts that
+    batch imported, refuses hosts outside its targets and agent
+    repositories, and confirms by an analysis query and a lower license
+    count. A purge it cannot confirm fails with `purge_unverified` and
+    stalls rotation.
+  - `recycle`: each batch scans into the connector's current rotation
+    repository; after the previous batch was ingested, the next batch asks
+    the connector to create the other repository from it, verify it, and
+    only then delete the old one. A failed check deletes nothing.
+  - With `purge` or `recycle`, a batch that failed after it launched may
+    have imported results that were never ingested: rotation stalls
+    (`rotation_stalled`) until an administrator resumes it (`POST
     /api/v1/integrations/{id}/coverage/reactivate`, `integrations:manage`,
-    audited).
+    audited). A refusal before launch (the sensor created nothing, error
+    "tenable.sc connector refused the job") keeps the pending purge or
+    recycle for the next batch and does not stall.
+  - A `Blocked` import (`IMPORT_BLOCKED`) imported nothing: it never stalls
+    and its targets stay due. The state keeps the result id and the
+    batch's targets (`reimport`); the next batch carries
+    `reimport_scan_result_id` with those targets, recycles and purges
+    nothing, and the connector imports that result again once the license
+    guard sees capacity.
 - **Sizing and verification**: every batch carries the license guard
   (`licence_guard {new_addresses, headroom}`, the connector's wire key): the
-  connector launches only when Tenable.sc's `/rest/status` shows that free
-  capacity, otherwise it refuses with `LICENCE_CAPACITY` before creating
-  anything and the batch's targets stay due (retry after an hour). The
-  platform sizes the batch from the license numbers the previous batch
-  reported after its import (`active_ips`, `active_ips_before`): with
-  rotation, the previous batch's addresses leave the count.
+  connector launches only when the license status is `Valid` (it reads
+  `/rest/v1/license` on 6.9 and later, else `/rest/status`) and the free
+  capacity covers the batch, otherwise it refuses with `LICENCE_CAPACITY`
+  before creating anything and the batch's targets stay due (retry after an
+  hour). The platform sizes the batch from the license numbers the previous
+  batch reported after its import (`active_ips`, `active_ips_before`): with
+  rotation, the previous batch's addresses leave the count; the guard stays
+  the authority (a host also counted in another repository may not leave
+  it).
 - **One batch at a time per connector**: the next batch waits until the
   previous `connector_scan` finished and its reports were ingested.
 - **Per-target settlement**: dispatch leaves the batch's ledger rows `queued`;
@@ -265,8 +353,10 @@ Behind `TENABLE_CONNECTOR_ENABLED` (`web/src/features/integrations/config/featur
   scan freshness; numbers that need a sync say "Not enough data". A stalled
   rotation shows its reason and Resume rotation (`integrations:manage`, after
   a confirmation).
-- **Connector dialog**: license rotation (off, aging, recycle, each
-  explained), the acknowledgement it requires, and the aging wait (1-72 h).
+- **Connector dialog**: license rotation (off, aging (recommended), purge
+  and recycle (Beta, unverified), each explained with what it needs; recycle
+  says it needs an Administrator key on the connector), the acknowledgement
+  it requires, and the aging wait (24-72 h, default 26).
 - **Scan now**: "Scan with Tenable.sc" in the asset's Scope and scanning
   section (IP address and host assets) and "Rescan with Tenable.sc" next to
   the retest section of a finding whose tool is `tenable_sc`

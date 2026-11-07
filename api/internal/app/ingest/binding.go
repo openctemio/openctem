@@ -57,9 +57,16 @@ type Binding struct {
 	Tool string
 	// CommandType is the bound command's type (BindingCommand only).
 	CommandType command.CommandType
+	// Capability is the capability the bound command runs ("" when its
+	// payload names none). The platform sets the source of the report's web
+	// endpoints from it (webendpoint.BindSource), never from the report.
+	Capability string
 	// StepRunID is the workflow step run the bound command belongs to (nil
 	// for a command outside a scan run): the scan run its results came from.
 	StepRunID *shared.ID
+	// ScanZoneID is the scan zone the bound command was routed to (nil:
+	// none): the vantage point of the sensor's DNS answers.
+	ScanZoneID *shared.ID
 	// CIRunID is the CI run the report belongs to (BindingCIRun only).
 	CIRunID *shared.ID
 	// DispatchedAt is when the bound command was handed to the sensor
@@ -92,7 +99,8 @@ func CommandBinding(cmd *command.Command) Binding {
 	}
 	ports, top := command.PayloadPortSettings(cmd.Payload)
 	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd),
-		CommandType: cmd.Type, StepRunID: cmd.StepRunID, DispatchedAt: dispatched, JobPorts: ports, JobTopPorts: top}
+		CommandType: cmd.Type, Capability: command.PayloadCapability(cmd.Payload), StepRunID: cmd.StepRunID, ScanZoneID: cmd.ScanZoneID,
+		DispatchedAt: dispatched, JobPorts: ports, JobTopPorts: top}
 }
 
 // TrustedBinding is the binding of a server-side ingest.
@@ -422,6 +430,19 @@ func (s *alterScope) mayAlter(a *asset.Asset) bool {
 	return false
 }
 
+// mayLinkName reports whether this report may add an edge from a stored DNS
+// name it only mentions (a port scan's host name, linked to the address it
+// scanned): whenever it may change the name, and for a report bound to a
+// command assigned to its sensor, which reports the name it was given or
+// resolved. An unsolicited report, or an upload whose actor may not change
+// the name, adds none (RFC-040 §5.3).
+func (s *alterScope) mayLinkName(a *asset.Asset) bool {
+	if a == nil || s.actorDenies(a.ID()) {
+		return false
+	}
+	return s.mayAlter(a) || (s != nil && s.commandBound)
+}
+
 // primeCollector looks up, in one call, whether the report's collector
 // source owns these existing assets.
 func (s *alterScope) primeCollector(existing map[string]*asset.Asset) {
@@ -523,9 +544,10 @@ func reportedAddresses(name string, properties map[string]any) []string {
 // outsideAddressChunk reports whether a report asset lies outside the
 // addresses its command was given (RFC-088): the command's targets are all
 // addresses or ranges, the asset names at least one address, and none of
-// them is a target or inside a target range. Such a result is dropped: a
-// sensor cannot have observed it on this job. An asset that names no
-// address (a name seen in a certificate) is left to the other checks.
+// them is a target or inside a target range. Such an asset is recorded as a
+// discovery outside the targets (recordOutsideTargets), never dropped. An
+// asset that names no address (a name seen in a certificate) is left to the
+// other checks.
 func (s *alterScope) outsideAddressChunk(name string, properties map[string]any) bool {
 	if s == nil || !s.addrChunk {
 		return false
@@ -542,16 +564,4 @@ func (s *alterScope) outsideAddressChunk(name string, properties map[string]any)
 		}
 	}
 	return true
-}
-
-// skipOutsideChunk counts a report asset dropped because it lies outside
-// its command's addresses; its findings are dropped with it.
-func skipOutsideChunk(output *Output, ref string) {
-	output.AssetsOutsideChunk++
-	if ref != "" {
-		if output.OutOfScopeAssetRefs == nil {
-			output.OutOfScopeAssetRefs = map[string]bool{}
-		}
-		output.OutOfScopeAssetRefs[ref] = true
-	}
 }

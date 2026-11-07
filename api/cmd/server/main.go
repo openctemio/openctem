@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	nethttp "net/http"
 	"os"
 	"os/signal"
@@ -293,6 +294,11 @@ func run() int {
 	// Console setting changes are told to every administrator (e-mail and
 	// the alert webhook).
 	services.SettingRecorder.SetNotifier(newAdminNotifier(cfg, repos, services, log))
+	// A first-party tool reporting a type its descriptor does not declare is
+	// told to the platform administrators, once per tool, type and version a day.
+	if n := newAdminNotifier(cfg, repos, services, log); n != nil && services.Ingest != nil {
+		services.Ingest.SetMismatchNotifier(n)
+	}
 
 	// Account security e-mails (2FA turned off, recovery code used, password
 	// changed) go to the user through the system SMTP server.
@@ -303,6 +309,9 @@ func run() int {
 	// mailbox.
 	if services.OAuth != nil && services.Email != nil {
 		services.OAuth.SetIdentityNotifier(services.Email)
+	}
+	if services.SSO != nil && services.Email != nil {
+		services.SSO.SetIdentityNotifier(services.Email)
 	}
 
 	// Owners of an organization whose e-mail channel was stopped by the
@@ -344,6 +353,7 @@ func run() int {
 			domains = repos.VerifiedDomain
 		}
 		services.Email.SetTenantSMTPResolver(auth.NewIntegrationSMTPResolver(repos.Integration, services.Encryptor.DecryptString, mode, domains, log))
+		services.Email.SetLocaleResolver(auth.NewRepoEmailLocaleResolver(repos.User, repos.Tenant, log))
 	}
 
 	// ==========================================================================
@@ -447,7 +457,10 @@ func run() int {
 	if handlers.AdminConsole != nil && services.PlatformCaptcha != nil {
 		handlers.AdminConsole.SetLoginGuard(services.PlatformCaptcha, newLoginFailureCounter(redisClient, log))
 	}
-	wireStepUpGate(&handlers, services)
+	// Each organization's re-verification policy, for the routes and the
+	// services' step-up gate alike.
+	handlers.StepUpPolicies = routes.NewStepUpPolicyProvider(repos.Tenant)
+	wireStepUpGate(&handlers, services, handlers.StepUpPolicies)
 
 	// ==========================================================================
 	// WebSocket Hub
@@ -570,8 +583,12 @@ func run() int {
 		}
 
 		// Seal leaked-credential secrets still stored in plaintext (rows written
-		// before secrets were encrypted, or without a key). Idempotent, batched,
-		// SKIP LOCKED: safe on every start and across replicas.
+		// before secrets were encrypted, or without a key), then move every
+		// leaked-secret fingerprint from the install-wide key to its
+		// organization's key, recomputed from the sealed value. Both are
+		// idempotent, batched and resumable: safe on every start and across
+		// replicas. The re-key's reversal: encrypt-credentials
+		// -revert-credential-fingerprints.
 		go func() {
 			n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
 			if err != nil {
@@ -580,6 +597,15 @@ func run() int {
 			}
 			if n > 0 {
 				log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
+			}
+			rep, err := postgres.RekeyLeakedCredentialFingerprints(ctx, db.DB, services.CredentialSecrets)
+			if err != nil {
+				log.Error("leaked credential fingerprint re-key failed", "error", err, "rekeyed", rep.Rekeyed)
+				return
+			}
+			if rep.Rekeyed > 0 || rep.Unrecomputable > 0 {
+				log.Info("leaked credential fingerprints keyed per organization",
+					"rekeyed", rep.Rekeyed, "unrecomputable", rep.Unrecomputable)
 			}
 		}()
 
@@ -600,14 +626,19 @@ func run() int {
 			}()
 		}
 
-		// Stored findings follow the current identity recipe (version 3, the
-		// CTIS fingerprint recipe v2): re-keyed per tenant in batches, merges
-		// through the finding merge, old keys kept as aliases, scan
-		// auto-resolve paused per tenant while its run is open. Idempotent
-		// and resumable; one replica at a time (advisory lock). Ingest also
-		// re-keys a finding on its next sighting, so nothing is split while
-		// this runs. Down step: refingerprint -down -apply.
-		go runFindingRekeyOnStart(ctx, db, log)
+		// Stored asset names to the CTIS 2.0 canonical form first
+		// (asset_canonical.go), then stored findings to the current identity
+		// recipe (version 4, the CTIS fingerprint recipe v2; finding_rekey.go).
+		// In this order, in one goroutine: an asset merge moves findings,
+		// which the re-key then keys once, and the two never contend for the
+		// same rows. Both are idempotent and resumable; the re-key runs on one
+		// replica at a time (advisory lock), and ingest re-keys a finding on
+		// its next sighting, so nothing is split while they run. Down steps:
+		// asset-canonical -revert, refingerprint -down -apply.
+		go func() {
+			runAssetCanonicalOnStart(ctx, db, log)
+			runFindingRekeyOnStart(ctx, db, log)
+		}()
 
 		// Host keys for commands queued before every command got them at
 		// create (research/130). Idempotent and SKIP LOCKED: safe on every
@@ -740,6 +771,11 @@ func loggerConfig(cfg *config.Config) logger.Config {
 		Level:  cfg.Log.Level,
 		Format: cfg.Log.Format,
 		Output: os.Stdout,
+		Attrs: []slog.Attr{
+			slog.String("service", "api"),
+			slog.String("version", version.Get().Version),
+			slog.String("env", cfg.App.Env),
+		},
 		Sampling: logger.SamplingConfig{
 			Enabled:   cfg.Log.SamplingEnabled,
 			Tick:      time.Second,

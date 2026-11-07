@@ -176,16 +176,13 @@ export function useIntegrationsApi(filters?: IntegrationListFilters, config?: SW
 
 /**
  * Fetch SCM integrations with their extensions
- * Only fetches if tenant has SCM module enabled (prevents 403 MODULE_NOT_ENABLED)
  */
 export function useSCMIntegrationsApi(config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
-  const { moduleIds, isLoading: modulesLoading } = useTenantModules()
+  const { isLoading: modulesLoading } = useTenantModules()
 
-  const hasSCMModule = moduleIds.includes('integrations.scm')
-
-  // Only fetch if SCM module is enabled - prevents 403 MODULE_NOT_ENABLED
-  const key = currentTenant && hasSCMModule && !modulesLoading ? `${BASE_URL}/scm` : null
+  // Integrations are always on: wait for the module list, then fetch.
+  const key = currentTenant && !modulesLoading ? `${BASE_URL}/scm` : null
 
   return useSWR<SCMIntegrationsResponse>(key, fetchSCMIntegrations, {
     ...defaultConfig,
@@ -625,4 +622,26 @@ export function useSetJiraWebhookSecretApi(integrationId: string) {
     currentTenant && integrationId ? `${BASE_URL}/${integrationId}/jira-webhook/secret` : null,
     async (url: string, { arg }: { arg: { secret: string } }) => put<JiraWebhookConfig>(url, arg)
   )
+}
+
+/** The preview of a channel message (POST /integrations/notifications/preview). */
+export interface NotificationPreview {
+  headline: string
+  severity: string
+  lines: { label?: string; value: string }[]
+  action_label: string
+  text: string
+  variables: string[]
+}
+
+export interface NotificationPreviewRequest {
+  detail_level?: string
+  message_template?: string
+  event_type?: string
+  locale?: string
+}
+
+/** Render a channel message from sample data; a bad template is refused (400). */
+export function previewNotificationMessage(req: NotificationPreviewRequest) {
+  return post<NotificationPreview>(`${BASE_URL}/notifications/preview`, req)
 }

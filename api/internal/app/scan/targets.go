@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/ctis/addrscope"
+	"github.com/openctemio/contract/addrscope"
 
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -16,6 +16,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // maxResolvedTargets bounds how many targets one scan run may dispatch. Larger
@@ -239,9 +240,32 @@ func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resol
 	if sc.ScannerName != "" {
 		tier = ProbeTier(sc.ScannerName)
 	}
+	// A range wider than a /16 runs only live hosts first (RFC-151): cut into
+	// /16 chunks for host discovery, up to the organization's widest range.
+	// Group members are included: a network asset wider than the bound is
+	// refused or cut like a typed range (splitRangeTargets).
+	rangeBits, err := s.tenantRangeHostBits(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	// Only a scan that finds hosts first (a workflow with a host discovery
+	// step, checked again now: its steps may have changed since the save)
+	// in liveness mode gets a large range; any other is held to a /16.
+	if rangeBits > validator.DefaultCIDRHostBits {
+		finds := false
+		if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
+			if finds, err = s.scanFindsHostsFirst(ctx, sc); err != nil {
+				return nil, err
+			}
+		}
+		if !finds {
+			rangeBits = validator.DefaultCIDRHostBits
+		}
+	}
 	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
 		TenantID:               sc.TenantID,
 		Targets:                names,
+		MaxRangeHostBits:       rangeBits,
 		Assets:                 assets,
 		ActScope:               true,
 		FallbackUser:           actorOf(sc),

@@ -19,6 +19,7 @@
  */
 
 import { Permission } from '@/lib/permissions'
+import { Module } from './modules.generated'
 
 export interface RoutePermissionConfig {
   /** Required permission to access this route (RBAC layer) */
@@ -30,72 +31,11 @@ export interface RoutePermissionConfig {
 }
 
 /**
- * Module IDs (matches backend licensing module IDs)
- *
- * NOTE: Only include modules that are actually in the licensing system.
- * Core features like "team", "billing" are NOT licensed modules - they're
- * always available and only controlled by RBAC permissions.
+ * Module ids. Generated from the API registry (api/configs/modules/*.yaml), the
+ * one list of modules: a name here that the registry does not have fails the
+ * type check.
  */
-export const Module = {
-  Dashboard: 'dashboard',
-  Assets: 'assets',
-  Findings: 'findings',
-  Scans: 'scans',
-  Sensors: 'sensors',
-  Reports: 'reports',
-  Audit: 'audit',
-  Components: 'components',
-  Pentest: 'pentest',
-  Credentials: 'credentials',
-  // Exposures (non-CVE security issues) is its own toggleable module. The API
-  // gates /api/v1/exposures on ModuleExposures, so the route guard + sidebar
-  // must key off the same module — not `findings`, which used to be a stale
-  // mirror that let the toggle 403 the API while leaving the nav visible.
-  Exposures: 'exposures',
-  Remediation: 'remediation',
-  Suppressions: 'suppressions',
-  ThreatIntel: 'threat_intel',
-  // IOC catalogue — its own backend module (`iocs`, migration 000156)
-  // that gates /api/v1/iocs. Distinct from `threat_intel` so an operator
-  // can run threat-intel enrichment without exposing the runtime IOC
-  // catalogue, and so the ModuleIOCs toggle gates a real page.
-  Iocs: 'iocs',
-  // SLA is a real optional module (api gates registerSLARoutes on ModuleSLA).
-  Sla: 'sla',
-  Integrations: 'integrations',
-  Compliance: 'compliance',
-  // Migration 000161 additions — these need their own constants so
-  // the route guard checks the same module the sidebar binds to.
-  // Mismatched module names → "Feature Not Available" while sidebar
-  // shows the entry (the bug this list was extended for).
-  AttackSurface: 'attack_surface',
-  ScopeConfig: 'scope_config',
-  BusinessServices: 'business_services',
-  CTEMCycles: 'ctem_cycles',
-  AttackerProfiles: 'attacker_profiles',
-  Relationships: 'relationships',
-  // Scoping split-outs (api migration 000214) — each toggleable on its
-  // own instead of sharing scope_config / attack_surface.
-  BusinessUnits: 'business_units',
-  CrownJewels: 'crown_jewels',
-  ThreatModel: 'threat_model',
-  PriorityRules: 'priority_rules',
-  RiskAnalysis: 'risk_analysis',
-  RiskScoring: 'risk_scoring',
-  BusinessImpact: 'business_impact',
-  CompensatingControls: 'compensating_controls',
-  Workflows: 'workflows',
-  ExecutiveSummary: 'executive_summary',
-  CTEMMaturity: 'ctem_maturity',
-  MITRECoverage: 'mitre_coverage',
-  SBOMExport: 'sbom_export',
-  ScannerTemplates: 'scanner_templates',
-  TemplateSources: 'template_sources',
-  ScanWorkflows: 'scan_workflows',
-  AttackSimulation: 'attack_simulation',
-  ControlTesting: 'control_testing',
-  AITriage: 'ai_triage',
-} as const
+export { Module }
 
 /**
  * Route to permission mapping
@@ -199,7 +139,6 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/crown-jewels': {
     permission: Permission.AssetsRead,
-    module: Module.CrownJewels,
   },
   '/scope': {
     permission: Permission.ScopeRead,
@@ -294,6 +233,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SecretStoreRead,
     module: Module.Scans,
   },
+  '/settings/scanning/tool-sources': {
+    permission: Permission.SecretStoreRead,
+    module: Module.Scans,
+  },
 
   // ========================================
   // Discovery Phase - Scans (Module: scans)
@@ -362,13 +305,13 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // matching what the backend enforces on /api/v1/iocs.
   '/threat-intel/iocs': {
     permission: Permission.ThreatIntelRead,
-    module: Module.Iocs,
+    module: Module.IOCs,
   },
   // Detections (Detect & Respond) — tenant-wide IOC match feed. Same `iocs`
   // module + threat_intel:read as the catalogue; backend gates /api/v1/iocs/matches.
   '/threat-intel/detections': {
     permission: Permission.ThreatIntelRead,
-    module: Module.Iocs,
+    module: Module.IOCs,
   },
   '/threat-intel/**': {
     permission: Permission.VulnerabilitiesRead,
@@ -385,7 +328,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/business-impact': {
     permission: Permission.VulnerabilitiesRead,
-    module: Module.BusinessImpact,
+    module: Module.BusinessServices,
   },
   // A CTEM working object in Prioritization (was /settings/priority-rules).
   '/priority-rules': {
@@ -425,7 +368,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/validation/attack-coverage': {
     permission: Permission.PentestRead,
-    module: Module.MITRECoverage,
+    module: Module.ThreatIntel,
   },
   // Finding library (finding templates), under Settings › Pentest methodology.
   // Longer patterns win over '/settings/pentest'.
@@ -481,11 +424,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/sla': {
     permission: Permission.SLARead,
-    module: Module.Sla,
+    module: Module.SLA,
   },
   '/exceptions': {
     permission: Permission.SuppressionsRead,
-    module: Module.Suppressions,
   },
 
   // ========================================
@@ -550,11 +492,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/insights/executive': {
     permission: Permission.DashboardRead,
-    module: Module.ExecutiveSummary,
+    module: Module.Reports,
   },
   '/insights/ctem-maturity': {
     permission: Permission.DashboardRead,
-    module: Module.CTEMMaturity,
+    module: Module.CTEMCycles,
   },
 
   // ========================================
@@ -705,7 +647,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // stay gated by the integrations entries below.
   '/settings/sla-policies': {
     permission: Permission.SLARead,
-    module: Module.Sla,
+    module: Module.SLA,
   },
   // Readable by anyone with pentest access; the page itself is read-only
   // unless the caller may PATCH the settings (organization administrators).
@@ -798,10 +740,9 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.ScannerTemplates,
   },
 
-  // Risk scoring config — its own module
+  // Risk scoring is always on: a settings page, no module
   '/settings/risk-scoring': {
     permission: Permission.TeamUpdate,
-    module: Module.RiskScoring,
   },
 
   // Asset lifecycle settings — no dedicated module, gated purely on
@@ -813,6 +754,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Vulnerability matching policy (RFC-066): owners and admins.
   '/settings/vulnerability-matching': {
     permission: Permission.TeamUpdate,
+  },
+  // Leaked-credential policy (whether secret values are kept): owners and admins.
+  '/settings/leaked-credentials': {
+    permission: Permission.TeamUpdate,
+    module: Module.Credentials,
   },
   // Emerging-threat alert policy: owners and admins.
   '/settings/emerging-threats': {

@@ -270,6 +270,17 @@ export const userEndpoints = {
     `/api/v1/me/sign-in-method-links/${encodeURIComponent(provider)}/complete`,
   identity: (id: string) => `/api/v1/me/sign-in-methods/${encodeURIComponent(id)}`,
   /**
+   * Organization sign-in links (Account > Security): the member's
+   * organizations with single sign-on, link start and unlink (each with the
+   * code or password typed for it), and the link completion called by the
+   * SSO link route after the identity provider's redirect.
+   */
+  ssoLinks: () => '/api/v1/me/sso-links',
+  ssoLinkStart: (provider: string) => `/api/v1/me/sso-links/${encodeURIComponent(provider)}/start`,
+  ssoLinkComplete: (provider: string) =>
+    `/api/v1/me/sso-links/${encodeURIComponent(provider)}/complete`,
+  ssoLink: (id: string) => `/api/v1/me/sso-links/identities/${encodeURIComponent(id)}`,
+  /**
    * The pending link a refused social sign-in left, confirmed after signing
    * in (describe, confirm with the typed code or password, cancel). Called by server actions
    * with the HttpOnly pending-link cookie.
@@ -780,6 +791,13 @@ export const assetEndpoints = {
     `${API_BASE.ASSETS}/${assetId}/relationships/groups${query ? `?${query}` : ''}`,
 
   /**
+   * The assets around an asset up to three hops, with its lineage (GET).
+   * Out-of-scope neighbors are only counted (`hidden_neighbors`).
+   */
+  neighborhood: (assetId: string, query?: string) =>
+    `${API_BASE.ASSETS}/${assetId}/neighborhood${query ? `?${query}` : ''}`,
+
+  /**
    * Get one relationship by its own ID (GET)
    */
   getRelationship: (relationshipId: string) => `/api/v1/relationships/${relationshipId}`,
@@ -1181,6 +1199,7 @@ export const sensorEndpoints = {
 
   /** The sensor's setup report and its checks (research/26, sensors:read). */
   configReport: (sensorId: string) => `${API_BASE.SENSORS}/${sensorId}/config-report`,
+  coreAddresses: () => `${API_BASE.SENSORS}/core-addresses`,
 
   /** The tenant's scanner content policy (RFC-031): GET, PUT with sensors:write. */
   contentPolicy: () => `${API_BASE.SENSORS}/content-policy`,

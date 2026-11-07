@@ -59,7 +59,8 @@ func TestScanHandler_TriggerRefusalKeepsItsCode(t *testing.T) {
 	h := &ScanHandler{logger: logger.NewNop()}
 	for _, c := range []string{"NO_ZONE_COVERAGE", "ZONE_SPLIT_REQUIRED", "TOO_MANY_JOBS", "NO_TARGETS",
 		"ALL_TARGETS_EXCLUDED", "PLATFORM_SENSOR_REFUSED", "SCAN_ZONE_NOT_FOUND",
-		"NO_SENSOR_FOR_TOOL", "NO_SENSOR_AVAILABLE", "TOOL_NOT_FOUND", "TOOL_DISABLED", "TOOL_NOT_SCANNER"} {
+		"NO_SENSOR_FOR_TOOL", "NO_SENSOR_AVAILABLE", "TOOL_NOT_FOUND", "TOOL_DISABLED", "TOOL_NOT_SCANNER",
+		"NO_RUNNABLE_STEPS"} {
 		rec := httptest.NewRecorder()
 		h.handleServiceError(rec, shared.NewDomainError(c, "refused: "+c, shared.ErrValidation))
 		code, msg := errorBody(t, rec)
@@ -102,7 +103,8 @@ func TestScanHandler_ToolUnavailableDetails(t *testing.T) {
 func TestScanHandler_TargetRefusalKeepsItsCode(t *testing.T) {
 	h := &ScanHandler{logger: logger.NewNop()}
 	for _, c := range []string{"ALL_TARGETS_UNCONFIRMED", "NO_COMPATIBLE_TARGETS", "TIER_EXCEEDS",
-		"INTERNAL_TARGET_OUTSIDE_ZONES", "NO_RESOLVING_TARGETS", "INTENSITY_EXCEEDED", "LIVENESS_NEEDS_HOST_DISCOVERY"} {
+		"INTERNAL_TARGET_OUTSIDE_ZONES", "NO_RESOLVING_TARGETS", "INTENSITY_EXCEEDED", "LIVENESS_NEEDS_HOST_DISCOVERY",
+		"LARGE_RANGE_NEEDS_LIVENESS", "LARGE_RANGE_UNCONFIRMED"} {
 		rec := httptest.NewRecorder()
 		h.handleServiceError(rec, fmt.Errorf("trigger: %w", shared.NewDomainError(c, "refused: "+c, shared.ErrValidation)))
 		code, msg := errorBody(t, rec)
@@ -171,5 +173,29 @@ func TestScanHandler_NothingToScanCarriesReasonsAndNoIDs(t *testing.T) {
 	}
 	if regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-`).MatchString(b.Message) {
 		t.Errorf("message carries a UUID: %q", b.Message)
+	}
+}
+
+// An unconfirmed large range answers 400 LARGE_RANGE_UNCONFIRMED with the
+// ranges and their address and chunk counts, so an API caller sees what it
+// is about to confirm.
+func TestScanHandler_LargeRangeUnconfirmedCarriesCounts(t *testing.T) {
+	h := &ScanHandler{logger: logger.NewNop()}
+	rec := httptest.NewRecorder()
+	h.handleServiceError(rec, shared.NewDomainError(scansvc.CodeLargeRangeUnconfirmed, "10.0.0.0/8: 16,777,216 addresses", shared.ErrValidation).
+		WithDetails(scansvc.LargeRangeDetails{Ranges: []string{"10.0.0.0/8"}, Addresses: 16777216, Chunks: 256}))
+	var body struct {
+		Code    string `json:"code"`
+		Details struct {
+			Ranges    []string `json:"ranges"`
+			Addresses uint64   `json:"addresses"`
+			Chunks    uint64   `json:"chunks"`
+		} `json:"details"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusBadRequest || body.Code != "LARGE_RANGE_UNCONFIRMED" || body.Details.Addresses != 16777216 || body.Details.Chunks != 256 {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}
 }

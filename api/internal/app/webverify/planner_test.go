@@ -3,6 +3,7 @@ package webverify
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
 )
 
 type fakeStore struct {
@@ -207,5 +209,65 @@ func TestDepthNeverPlansIntrusive(t *testing.T) {
 	}
 	if dast, _ := stage.Lookup(stage.DASTWeb); dast.Tier != stage.TierIntrusive {
 		t.Fatal("dast.web is expected to be T2, never planned by verification")
+	}
+}
+
+// A guessed backup, archive or dump file (found by path discovery, with an
+// ext label) has no catalog entry and is checked with the sensor's own backup
+// signature template; a guessed page, config or source file is not.
+func TestGuessedBackupIsVerifiedWithTheSensorsOwnCheck(t *testing.T) {
+	if webendpoint.BackupSignatureTemplate != "openctem-backup-file-signature" {
+		t.Fatalf("the template id the sensor carries is openctem-backup-file-signature, not %q", webendpoint.BackupSignatureTemplate)
+	}
+	guessed := func(origin, path string) Candidate {
+		c := cand(origin, path, "")
+		c.Guessed = true
+		return c
+	}
+	s := &fakeStore{cands: []Candidate{
+		guessed("https://a.example.com", "/site.zip"),
+		guessed("https://a.example.com", "/db/dump.sql"),
+		guessed("https://b.example.com", "/index.php.bak"),
+		guessed("https://b.example.com", "/admin.php"),           // not a file class
+		guessed("https://b.example.com", "/settings.yml"),        // config: no archive bytes to check
+		cand("https://c.example.com", "/site.zip", ""),           // crawled, not guessed, no catalog entry
+		cand("https://c.example.com", "/.git/config", "vcs.git"), // a catalog entry keeps its own templates
+	}}
+	d := &fakeDisp{}
+	res, err := newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backup, catalog []scanapp.WebVerifyInput
+	for _, in := range d.calls {
+		if slices.Equal(in.TemplateIDs, []string{webendpoint.BackupSignatureTemplate}) {
+			backup = append(backup, in)
+		} else {
+			catalog = append(catalog, in)
+		}
+	}
+	if len(backup) == 1 && !slices.Equal(backup[0].Tags, []string{webendpoint.BackupSignatureTag}) {
+		t.Fatalf("tags %v: a sensor that ignores template_ids must load no template", backup[0].Tags)
+	}
+	if len(backup) != 1 || len(backup[0].Targets) != 3 {
+		t.Fatalf("backup calls %+v, want one run of 3 guessed files", d.calls)
+	}
+	for _, u := range backup[0].Targets {
+		if strings.Contains(u, "admin.php") || strings.Contains(u, "settings.yml") || strings.Contains(u, "c.example.com") {
+			t.Errorf("%s is not a guessed backup file", u)
+		}
+	}
+	if len(catalog) != 1 || catalog[0].TemplateIDs[0] != "git-config" || len(catalog[0].Tags) != 0 {
+		t.Fatalf("catalog calls %+v", catalog)
+	}
+	if res.Planned != 4 || res.Invalid != 3 {
+		t.Fatalf("res %+v, want 4 planned and 3 not verifiable", res)
+	}
+	keys := map[string]int{}
+	for _, p := range s.planned {
+		keys[p.CatalogKey]++
+	}
+	if keys[webendpoint.GuessedVerifyKey] != 3 || keys["vcs.git"] != 1 {
+		t.Fatalf("ledger keys %v", keys)
 	}
 }

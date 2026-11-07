@@ -2,6 +2,8 @@
 // Its own module so the browser loads only the active locale's catalog:
 // src/lib/i18n.ts imports it on demand, and the bundler gives it its own chunk.
 
+import { messages } from '@extension/messages'
+import { assertCompatible, mergeMessages } from '@/lib/extension/merge'
 import vi_account from './vi/account.json'
 import vi_activity from './vi/activity.json'
 import vi_auditLog from './vi/auditLog.json'
@@ -9,6 +11,7 @@ import vi_actor from './vi/actor.json'
 import vi_admin from './vi/admin.json'
 import vi_announcements from './vi/announcements.json'
 import vi_assetFreshness from './vi/assetFreshness.json'
+import vi_assetLiveness from './vi/assetLiveness.json'
 import vi_assetCoverage from './vi/assetCoverage.json'
 import vi_assetPorts from './vi/assetPorts.json'
 import vi_assetSources from './vi/assetSources.json'
@@ -21,6 +24,7 @@ import vi_brand from './vi/brand.json'
 import vi_businessContext from './vi/businessContext.json'
 import vi_easmReview from './vi/easmReview.json'
 import vi_threatIntel from './vi/threatIntel.json'
+import vi_toolSources from './vi/toolSources.json'
 import vi_emergingThreats from './vi/emergingThreats.json'
 import vi_auth from './vi/auth.json'
 import vi_automations from './vi/automations.json'
@@ -110,6 +114,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   admin: vi_admin,
   announcements: vi_announcements,
   assetFreshness: vi_assetFreshness,
+  assetLiveness: vi_assetLiveness,
   assetCoverage: vi_assetCoverage,
   assetPorts: vi_assetPorts,
   assetSources: vi_assetSources,
@@ -122,6 +127,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   businessContext: vi_businessContext,
   easmReview: vi_easmReview,
   threatIntel: vi_threatIntel,
+  toolSources: vi_toolSources,
   emergingThreats: vi_emergingThreats,
   auth: vi_auth,
   automations: vi_automations,
@@ -202,4 +208,11 @@ export const viNamespaces: Record<string, Dictionary> = {
   crownJewels: vi_crownJewels,
 }
 
-export const vi: Dictionary = Object.assign({}, ...Object.values(viNamespaces)) as Dictionary
+assertCompatible('extension @extension/messages', messages.apiVersion)
+
+// The core catalog plus the entries of the build's extension (none by
+// default); an extension may add keys, never replace one.
+export const vi: Dictionary = mergeMessages(
+  Object.assign({}, ...Object.values(viNamespaces)) as Dictionary,
+  messages.vi
+)

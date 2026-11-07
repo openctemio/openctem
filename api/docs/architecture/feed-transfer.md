@@ -1,8 +1,8 @@
 # Feed transfer
 
-Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: ctis
+Design: [RFC-072](../rfcs/RFC-072-chunked-feed-transfer.md). Code: contract
 `transfer` (fetcher) and `transfer/bundle` (format, writer, consumer), one Go
-module of their own, `github.com/openctemio/ctis/transfer` (tags
+module of their own, `github.com/openctemio/contract/transfer` (tags
 `transfer/vX.Y.Z`). It is a contract: the feed publishers and the api share
 it, and the api depends on no sensor SDK module at all
 ([RFC-094](../rfcs/RFC-094-platform-contracts-only.md)). It moved unchanged
@@ -40,7 +40,7 @@ The importer (one per feed, scheduled, one run at a time) calls
 | Step | Check or effect |
 |---|---|
 | key set | the feed's `Trust` (pinned offline root, key-set version) |
-| pointer | signature, feed, expiry (≤ 8 days), sequence > applied (older: refused) |
+| pointer | signature, feed, validity (contract default ≤ 8 days; the vulnerability feed sets 7, `vulnbundle.MaxBundleValidity`), sequence > applied (older: refused, equal: up to date) |
 | choose | the bundle in progress (resume), else the delta on exactly its base, else the snapshot |
 | manifest | matches the pointer's pin, signature, caps (chunks, sizes, total) — before any chunk |
 | each chunk | fetched (hash and size verified), records streamed and validated by the feed parser, upserted in one transaction guarded by `feed_sequence`, checkpoint saved |
@@ -56,6 +56,52 @@ uploaded bundle directory) through the SSRF-guarded client: retries with
 back-off and jitter, Retry-After, per-attempt deadline, stall guard, Range
 resume, ETag, a circuit breaker per origin. Mirrors cannot change content:
 everything is pinned by the signed pointer and manifests.
+
+### Flow of one vulnerability feed import
+
+Verified against `develop` (2026-11-05) and contract `transfer` v1.0.1; unchanged since v0.19.1.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as controller vuln-feed-import (20 min, exclusive, 45 min timeout)
+  participant IM as vulnfeed.Importer.Run
+  box Untrusted origins
+  participant O as transfer.Fetcher (release, VULNFEED_MIRRORS, or one local dir)
+  end
+  participant BC as bundle.Consumer.Run
+  participant AP as vulnfeed.chunkApplier
+  participant DB as cve_records, vulnerability_affected, feed_checkpoints
+  C->>IM: Run
+  IM->>IM: RootKeyID set, status enabled, TryStart(vulnfeed, 1 h)
+  IM->>IM: origin: VULNFEED_BUNDLE_DIR, else relay dir (DirIfRelay), else network
+  IM->>O: latest.v2.dsse.json present? (else the v1 reader, never in relay mode)
+  IM->>IM: syncCheckpoint carries the v1 applied sequence forward
+  IM->>BC: Run with Trust, Checkpoint, Limits v2Limits
+  BC->>O: keyset.dsse.json, then trust: pinned root, key set version floor
+  BC->>O: pointer, signature, Validate (feed, validity at most 7 days, MaxBundleValidity)
+  alt pointer.Sequence < applied
+    BC-->>IM: ErrRollback, status refused
+  else equal
+    BC-->>IM: UpToDate
+  else newer
+    BC->>O: manifest pinned by the pointer (SHA-256 and size), signature, caps
+    loop each chunk from checkpoint.NextChunk
+      BC->>O: Blob(sha256-hex.jsonl.gz, digest, size)
+      BC->>AP: ApplyChunk, records parsed by pkg/vulnbundle, ids ascending
+      AP->>DB: upsert with feed_sequence and the checkpoint, one tx
+    end
+    BC->>AP: Complete, FinishFeedBundle behind the removal guard max(500, 2 %)
+    AP->>DB: applied sequence, ranges of older sequences removed
+  end
+  IM->>O: aliases, vulnids and intel side manifests (syncAliases, syncVulnIDs, syncIntel)
+  C->>C: vulnevent.Emitter.EmitCorpus, then Prune
+```
+
+- A refused chunk or a crash leaves `feed_checkpoints.next_chunk`; the next run resumes there. A
+  newer pointer while a bundle is in progress abandons it (logged) and starts the new one.
+- The import writes catalog tables only (no tenant column). Tenants see the result only through
+  their own `asset_software` links and findings.
 
 ### The vulnerability feed (CVE corpus)
 

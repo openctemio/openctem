@@ -72,10 +72,10 @@ describe('Scoping rows', () => {
     ])
   })
 
-  it('Business context carries Crown jewels | Services | Units, each on its own module', () => {
+  it('Business context carries Crown jewels | Services | Units; crown jewels is on with assets', () => {
     expect(row('Scoping', 'Business context').sections).toBe(BUSINESS_CONTEXT_SECTION_TABS)
     expect(BUSINESS_CONTEXT_SECTION_TABS.map((t) => [t.label, t.href, t.module])).toEqual([
-      ['Crown jewels', '/crown-jewels', 'crown_jewels'],
+      ['Crown jewels', '/crown-jewels', undefined],
       ['Services', '/business-services', 'business_services'],
       ['Units', '/business-units', 'business_units'],
     ])
@@ -171,10 +171,11 @@ describe('moves out of Scoping', () => {
 
 describe('per-tab gating', () => {
   const tabs = BUSINESS_CONTEXT_SECTION_TABS
-  const allow = (modules: string[]) => (t: { module?: string }) => modules.includes(t.module!)
+  const allow = (modules: string[]) => (t: { module?: string }) =>
+    !t.module || modules.includes(t.module)
 
   it('keeps the tabs whose module is on, in order', () => {
-    const v = visibleSections(tabs, allow(['business_units', 'crown_jewels']))
+    const v = visibleSections(tabs, allow(['business_units']))
     expect(v.map((t) => t.label)).toEqual(['Crown jewels', 'Units'])
   })
 
@@ -184,13 +185,14 @@ describe('per-tab gating', () => {
   })
 
   it('the row keeps its url while that tab is visible', () => {
-    const v = visibleSections(tabs, allow(['crown_jewels', 'business_services']))
+    const v = visibleSections(tabs, allow(['business_services']))
     expect(rowUrlForSections('/crown-jewels', tabs, v)).toBe('/crown-jewels')
   })
 
   it('the row opens the first visible tab when its own tab is off', () => {
-    const v = visibleSections(tabs, allow(['business_services', 'business_units']))
-    expect(rowUrlForSections('/crown-jewels', tabs, v)).toBe('/business-services')
+    const two = [{ href: '/a', module: 'x' }, { href: '/b' }]
+    const v = visibleSections(two, () => false)
+    expect(rowUrlForSections('/a', two, v)).toBe('/b')
   })
 
   it('a url that is not a tab is kept', () => {

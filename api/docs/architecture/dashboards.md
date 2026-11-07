@@ -455,6 +455,10 @@ receipt or on the discovery tool whose report named the software.
 - Health: `failed` when the latest receipt failed; `stale` when nothing
   came for more than twice the usual interval and at least a day; `ok`
   otherwise. A source with fewer than three receipts is never stale.
+- A source whose senders include a stale one is stale, and its note names
+  that sender's own last receipt (`health_last_at`), not the freshest
+  sender's. A sender's `released` is its reports applied from the results
+  quarantine; the card says "Includes N released from quarantine".
 - Noise: received splits into new or reopened (created plus reopened:
   the receipt list's New and Reopened totals added), merged into findings
   that exist (the rest after new, reopened and not stored: still detected
@@ -463,6 +467,13 @@ receipt or on the discovery tool whose report named the software.
   on arrival (the list's Suppressed total); it is inside New, not a fourth
   part. One definition per label: the intake summary, the noise headline,
   the hero funnel and the source tooltip all use it.
+- Reconciliation: the noise also carries the receipts' full split
+  (`seen_again`: still detected; `repeated`: the `merged` outcome;
+  `outcomes`: every other receipt outcome, summed from
+  `ingest_receipt_tools.outcomes`; `unaccounted`: what none of them
+  explains, from receipts written before outcomes were counted). The
+  funnel keeps two steps, received and new or reopened; the tooltip of
+  either step lists every row that is not zero.
 - Funnel: received and new or reopened are the period's flow (received is
   at least new or reopened); actionable is a stock (open findings of
   classes P0 to P3 now), so the hero shows it once, apart from the flow
@@ -1194,7 +1205,7 @@ widget kit's frame, with its own error boundary.
   template, created once and computed for their own access, with a hint to
   customize it or choose another template.
 - **New layout offer**: a personal copy of a template (three or more of its
-  `w_ov*` / `w_ct*` / `w_ex*` / `w_pr*` / `w_tr*` widget ids) is offered the
+  `w_ct*` / `w_ex*` / `w_as*` / `w_pr*` / `w_tr*` widget ids) is offered the
   template's changes. When it lacks some of the template's widgets (by
   metric) the hint names them: "Add them to this dashboard" (each missing
   widget is inserted where the template has it: a single figure after its
@@ -1212,30 +1223,51 @@ widget kit's frame, with its own error boundary.
 - **Templates** are typed widget configs in
   `web/src/features/dashboards/templates.json`, in reading order (the grid
   places widgets in that order without back-filling, so the order is the
-  layout). Every template opens on its headline figures, then the decision
-  widget, then the story, and ends with diagnostics:
-  - CTEM (first-visit default): key figures; levers; exposure flow (the five
-    CTEM stages); new on the attack surface (7 days) beside certificate
-    expiry; attack paths to crown jewels beside the weekly brief; fix next;
-    open exposure by priority (90 days); new vs fixed beside open by age;
-    intake and noise reduction.
-  - Overview: key figures; levers; exposure flow; open exposure by priority
-    beside new vs fixed; new on the attack surface beside certificate
-    expiry; weekly brief beside attack paths; fix next.
-  - Executive: key figures; weekly brief; open exposure by priority over 12
-    months; new vs fixed beside time to fix by priority; new on the attack
-    surface (30 days) beside accepted risks ending; levers.
-  - Vulnerability program: within SLA, P0-P1 open, KEV open and time to fix;
-    SLA at risk beside new vs fixed; time to fix by priority beside open by
-    age; accepted risks ending beside open findings by SLA state.
-  - Triage: P0-P1 open, KEV open, open findings and within SLA; fix next;
-    open findings by severity beside open findings by SLA state; new vs
-    fixed per day over 30 days.
-  `web/src/features/dashboards/__tests__/template-layouts.test.ts` checks
-  that each template fills its rows with one height per row at four columns
-  and leaves no hole at two columns or on a phone, and that each opens on a
-  one-row headline. `/dashboards` copies one into a personal dashboard ("Use
-  template"); the copy is a stored dashboard like any other.
+  layout). There is one template per persona:
+  - CTEM (first-visit default, the program lead): key figures; exposure flow
+    (the five CTEM stages); levers; fix next; attack paths to crown jewels
+    beside open exposure by priority (90 days); new vs fixed beside open by
+    age; new on the attack surface (7 days) beside certificate expiry.
+  - Executive (leadership): key figures; open exposure by priority over 12
+    months; weekly brief; attack paths beside new vs fixed (12 months); time
+    to fix by priority beside accepted risks ending; new on the attack
+    surface (30 days) beside remediation campaign progress.
+  - Attack surface: discovery coverage, crown jewels exposed, KEV open and
+    P0-P1 open; posture beside attack paths; fix next; new on the attack
+    surface (30 days) beside certificate expiry.
+  - Vulnerability program (VM lead): within SLA, P0-P1 open, KEV open and
+    time to fix; SLA at risk; new vs fixed beside open by age; time to fix by
+    priority beside accepted risks ending.
+  - Triage (analyst): P0-P1 open, KEV open, open findings and within SLA;
+    fix next; new vs fixed per day beside open by age; open findings by
+    severity beside open findings by SLA state.
+- **Template layout rules** (`web/src/features/dashboards/template-rules.ts`,
+  checked for every template by `__tests__/template-layouts.test.ts`):
+  - Four columns; each visualization has a fixed set of sizes: single
+    figures 3x1 (in runs of four), the key figures strip, levers and brief
+    12x1, bar lists 6x1, charts 6x2 or 12x2, heatmap, posture and attack
+    paths 6x2, lists 12x3, the flow and tables 12x4.
+  - Rows are full at four columns, hold one height and one height band
+    (single figures, short bar lists, charts and lists, or a full-width
+    widget alone): rows grow to their tallest widget, so a bar list beside a
+    chart would stretch into blank space. No hole at two columns or on a
+    phone.
+  - Sections in order: headline figures first (strip or four figures), the
+    hero visual (flow, posture or a full-width chart), what to act on
+    (levers, brief, lists, attack paths), trends, then breakdowns.
+  - At most ten widgets; never the same metric, grouping and filter twice;
+    never two widgets with the same figures (the strip and a single figure
+    it carries, the brief and the levers, the flow and intake or the loop).
+  - The phone shows the template order; single figures pair up.
+  - Module-gated widgets go only in a template whose persona needs the
+    module (posture in Attack surface).
+  - A full-width widget with no figure yet takes one row; a narrower one
+    keeps its row height with its message centred, so no hole opens beside
+    a taller neighbour.
+  `/dashboards` copies one into a personal dashboard ("Use
+  template"); the copy is a stored dashboard like any other. Stored
+  dashboards are never rearranged when a template changes: copies get the
+  new layout offer above.
   `api/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
   Names and descriptions are in the `dashboards` i18n namespace.
@@ -1404,9 +1436,24 @@ Rules every visualization follows:
   `aria-describedby` while open) gives the title, two or three figures, the
   definition and a link to the same list as the figure; Escape, moving the
   pointer out or moving focus out closes it; the second tap on touch follows
-  the link. A healthy source's wire carries a moving dash (static under
-  reduced motion); stale is a dotted amber line and failed a dotted red line,
-  and the row says so in words.
+  the link. A healthy source's wire carries a travelling light (a short
+  bright dash, a CSS animation of `stroke-dashoffset` only, so no layout per
+  frame); its speed follows the findings received on a log scale
+  (`flowDuration`, 3.2 s per cycle for the smallest to 1.1 s for the
+  largest), and a wire with nothing received is a thin dashed still line.
+  The lights stop off screen and in a hidden tab (`FlowWireLayer`, an
+  `IntersectionObserver` and `visibilitychange` set `data-flow-paused`) and
+  are not drawn at all under reduced motion or `data-motion="off"`; width,
+  line style and the row's figure carry everything the motion repeats.
+  Stale is a dotted amber line and failed a dotted red line, still, and the
+  row says so in words.
+- **Source wires.** Every shown source row has a wire, by tool and by
+  instance (`sourceWires` in `source-view.tsx`, shared by both widgets). A
+  wire always carries the findings the row sent, the only thing that enters
+  the findings funnel: ranked by assets, a discovery source's bar shows its
+  assets while its wire stays thin and dashed, and a line under the
+  switchers says that the lines carry findings only. Rows behind "Show all"
+  have no wire.
 - **Receipt list.** `/findings/imports` lists the receipts with the filters
   of the figure that opened it (`origin`, `tool`, `since`, removable chips)
   and the API's totals of the filter above the list, so the totals equal

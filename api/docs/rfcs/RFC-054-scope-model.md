@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented; ownership confirmation only on managed platform sensors 2026-10-26, §20: implemented); P0 implemented |
+| Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented; ownership confirmation only on managed platform sensors 2026-10-26, §20: implemented; everything a scan sees is recorded 2026-11-05, §22: results outside a job's targets recorded, the rest planned); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
-| Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
+| Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md), [scope-entry-replace.md](../architecture/scope-entry-replace.md) (replacing an entry's pattern) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
 
 ## 1. Summary
@@ -557,6 +557,9 @@ saved or scanned; with no target left the create is refused
 | `out_of_data_scope` | asset outside the actor's data scope | — |
 | `not_an_asset` | a restricted member typed free text | `request_access` |
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
+| `zone_sensor_new` | every sensor of the target's zone is New and the job is above T0 | `trust_sensor` (`id`: the sensor; `sensors:grant:widen`) |
+| `zone_sensor_no_private` | a private target, and every sensor of its zone reports that its host refuses private targets | `allow_private_targets` (`id`: the sensor; a step on the host, no console permission) |
+| `ambiguous_zone` | zones with different sensors hold the target at the same width (sites reusing a range) | `pick_zone` (the scan's zone picker; no permission) |
 | `unresolved` | a hostname with no DNS answer from the platform, so zone routing cannot place it | — (fix the DNS record or scan its address) |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
@@ -1420,6 +1423,11 @@ omitted keeps the stored value):
 The Strict scan approval mode forces `off` (`unclassified_scans_effective`).
 An unreadable setting is `off`.
 
+Continuous coverage (RFC-093) follows the same setting: an organization with
+no scope entry at all is paused as `no_scope` only when the setting in force
+is `off` (or unreadable). With `low_impact` or `full` its coverage runs, and
+the gate decides each target as above.
+
 ### 16.6 Job signer ledger
 
 The signer's ledger (RFC-040 §5.6) is unchanged: it signs only targets inside
@@ -1672,6 +1680,39 @@ as many as one bulk create adds, so the inventory's Undo is one call.
 | A temporary exclusion ends after findings were closed | temporary exclusions never close findings |
 
 Design and the wider plan (sensor-side name exclusions, imports, alerts, exports): research note 320.
+### 20.6 Amendment 2026-11-05: an out-of-scope close is never shown as fixed
+
+A finding closed as `out_of_scope` was not fixed, and every consumer now treats it so:
+
+- **Metrics**: `RemediatedSQL` takes its obsolete list from `ClosureReason.IsObsolete`, which includes
+  `out_of_scope`, so MTTR, fix rate, program, CTEM cycle and risk snapshot figures no longer count these closes as
+  remediated (they did; the Go rule `CountsAsRemediated` already said no).
+- **SLA**: the close sets `sla_status = not_applicable` (trigger `recompute_finding_sla_status`, and
+  `Finding.UpdateSLAStatus`); before, it counted as met or missed. A reopen keeps the deadline, so excluding and
+  re-including never resets a clock.
+- **Audit**: every close and reopen writes a `finding.status_changed` row in the same transaction (the action a
+  person's status change writes), with `source: scope_effects`, `trigger` (`out_of_scope` or `back_in_scope`),
+  old and new status, and the cause: `exclusions` (id and kind of each closing exclusion that matched) and
+  `not_ours_decision`. Closing a critical-tier finding (critical, P0 or KEV) is high, any other move medium. The
+  per-pass `scope_exclusion.effects_applied` row stays.
+- **Tickets**: the pass queues the outbound status push (Jira, GitHub) of every moved finding that has a ticket, in
+  its transaction. Jira comments on an out-of-scope close and never transitions the issue; GitHub leaves the issue
+  open. A reopen pushes as usual. Outbound writes stay opt-in per integration.
+- **Critical confirm**: a permanent `not_ours`/`retired` exclusion (create, bulk create, or a kind change that
+  makes it closing) that would close open critical, P0 or KEV findings is refused with 409
+  `EXCLUSION_CLOSES_CRITICAL_FINDINGS` (details `critical_findings`, the organization's count) until the request
+  carries `confirm_critical`; a bulk request is checked as a whole before anything is written. The count runs after
+  the data scope reach check (§20.3), so a member with limited access only counts assets they see. The bulk preview
+  returns `critical_findings` per item.
+
+| Threat | Control |
+|---|---|
+| An insider closes a critical or KEV finding by marking its asset not ours | explicit confirm with the count, server side; high audit row per finding naming the exclusion; never counted as fixed |
+| Exclude then re-include to reset an SLA | the deadline is kept on reopen |
+| A board shows "not ours" as done | Jira gets a comment, never a done transition; GitHub stays open |
+
+Design and the per-use-case plan: research note 438.
+
 ## 20. Amendment 2026-10-26: confirmation only on managed platform sensors
 
 ### 20.1 Decision
@@ -1761,3 +1802,40 @@ Every remaining address reaches a person with the same weight and no reason.
 | An attacker steers an in-scope name (taken-over alias, claimed dangling record) at a victim's address | The victim's network is no anchor of the organization; the assessment cannot reach high from attacker-controlled evidence (test `TestAttackerControlledEvidenceNeverHigh`); nothing is added automatically |
 | A signal reveals names outside the caller's data scope | Signals read visible names only (test `TestSuggestionCards_OwnershipOrderAndBands`) |
 | Cross-tenant reads | Rows come from the existing tenant-scoped store; the assessment reads nothing else |
+
+## 22. Amendment 2026-11-05: everything a scan sees is recorded
+
+### 22.1 Decision
+
+Owner decision: every asset and finding a scan finds is recorded. Not marked out of scope means in scope by
+default; a person marks assets out of scope and they are excluded from the next scan on. Nothing is lost.
+
+| Item | Rule |
+|---|---|
+| Recording | default-in for everything: inventory, findings, exposures, relationships. Each discovered asset carries its provenance (the command, tool and run in its attribution evidence). No held area for the organization's own surface |
+| Results outside a scan job's targets | recorded as scan discoveries (`discovered`), never dropped, at most 1000 per report (RFC-040 §5.3.2); they grant nothing |
+| Active checks | unchanged in this step: the gate (§4.2, §15, §16) decides. Names under the organization's domains and its own networks get the scan's tier or the low-impact profile; provider-shared infrastructure (CDN and edge networks, cloud front doors, shared hosting, landing-page providers, other organizations' networks) stays `guardrailed`, passive only |
+| Provider edge addresses | a new address a scan finds inside a range a provider publishes for a shared front end (`edgeaddr.SharedFrontEnd`, the edge ranges dataset) is recorded with attribution `dependency` (rule `provider_shared_front_end`): the provider's, not the organization's own internet-facing asset; passive only; automation never raises it and a re-scan keeps it; the names that resolve to it stay the organization's |
+| Shared infrastructure | recorded and watched passively (DNS, certificates, ownership, takeover). Active checks only after one confirm per provider group, made by a person through the scope approvals (planned) |
+| Out of scope | a person marks an asset or group out of scope (exclusion kinds, §20): excluded from scans from the next run on, its data stays and is labelled, reversible and audited |
+| Explicit out-of-scope entries | exclusions, the deny list and rejected decisions are never scanned. A result that touches one is recorded as evidence and flagged (planned; today ingest refuses to create an excluded asset and counts it on the receipt) |
+| Guards that stay | cross-tenant, malformed input, signature and lease, volume caps. Each refusal is counted on the receipt and visible on the run |
+
+### 22.2 Consistency with earlier decisions
+
+- **A name grant is not an IP grant** (§4.3) and §21.2 rule 5 stand in this step. Making addresses with
+  high-band ownership evidence default-in (research/425) amends §21 when it is built.
+- **CDN never added automatically**: kept. Shared infrastructure is recorded and passive until a person confirms it.
+- **The tenant decides scope**: kept. Nothing here creates a scope entry or an exclusion on its own.
+- RFC-042 F16 (ingest only refuses to create an excluded asset) is reversed by the "explicit out-of-scope
+  entries" row when that row is built.
+
+### 22.3 Threats
+
+| Threat | Control |
+|---|---|
+| A hostile sensor plants third-party hosts | recorded as discoveries that grant nothing; the gate keeps names outside the organization's domains and shared or unknown networks passive; at most 1000 per report; findings on them run no automations |
+| A redirect leads a template scanner to a CDN or attacker host | the host is recorded and guardrailed, never probed actively without a person's confirm |
+| Another tenant's assets | the tenant comes from the sensor row only; a name another tenant holds is a separate asset of the sender's tenant |
+
+Design study: research/436 (local).

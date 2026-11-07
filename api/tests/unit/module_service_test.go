@@ -536,12 +536,12 @@ func TestModuleService_GetTenantEnabledModules_WithSubModules(t *testing.T) {
 
 func TestModuleService_GetTenantEnabledModules_DisabledParentExcludesSubModules(t *testing.T) {
 	repo := newModuleMockRepo()
-	repo.addModule(makeModule("integrations", "Integrations", true, false))
-	repo.addModule(makeSubModule("integrations.scm", "SCM", "integrations", true))
+	repo.addModule(makeModule("pentest", "Pentest", true, false))
+	repo.addModule(makeSubModule("pentest.scm", "SCM", "pentest", true))
 
 	tenantRepo := newModuleTenantMockRepo()
 	tenantID, _ := shared.IDFromString(validTenantID())
-	tenantRepo.addOverride(tenantID, "integrations", false)
+	tenantRepo.addOverride(tenantID, "pentest", false)
 
 	svc := newTestModuleServiceWithTenant(repo, tenantRepo)
 

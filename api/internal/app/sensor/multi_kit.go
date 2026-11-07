@@ -30,3 +30,20 @@ func MultiKitCommand(name, apiURL, pairingCode, caPins string) string {
 	b.WriteString("\n")
 	return b.String()
 }
+
+// MultiKitPrivateNote follows MultiKitCommand for a sensor that scans
+// internal networks: the kit has no flag for the private-target switch, so
+// the host owner sets it in the sensor's environment.
+const MultiKitPrivateNote = "# This sensor scans internal networks: add SENSOR_ALLOW_PRIVATE_TARGETS=1 to its\n" +
+	"# environment in the kit (the guide shows where), or the host refuses private addresses.\n"
+
+// MultiKitPinNote follows MultiKitCommand when the person pinned the sensor
+// to stated networks: the kit has no flag for the pin, so the host owner sets
+// it in the kit environment.
+const MultiKitPinNote = "# To pin this sensor to the networks you listed, add SENSOR_ALLOWED_RANGES=<list> to its\n" +
+	"# environment in the kit (the guide shows where); the kit does not carry the pin.\n"
+
+// KubernetesPinNote is the same for the Kubernetes manifests, which carry no
+// pin: a policy file in a ConfigMap is how a pod is narrowed.
+const KubernetesPinNote = "# These manifests do not carry the networks you listed: create the policy ConfigMap with\n" +
+	"# those ranges (the Policy tab shows the file), or the pod is not pinned.\n"

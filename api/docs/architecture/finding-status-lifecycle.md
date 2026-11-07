@@ -128,6 +128,86 @@ validate population) are allow-listed there with their reason, and
 status. The API refuses an unknown status with a 400, in a status change and in
 a list filter; it never maps one to another.
 
+## Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05. Person moves
+come from `ValidStatusTransitions` (`pkg/domain/vulnerability/value_objects.go`),
+platform-only moves from `PlatformStatusTransitions`
+(`status_lifecycle.go`); `EvaluateTransition` (`transition_engine.go`)
+decides who may make each one. Pentest findings have their own map (`draft`,
+`in_review`) and are not drawn here. Observation (`present`, `stale`) and
+validation (`reproducible`, `not_reproducible`) are fields, not states.
+
+```mermaid
+stateDiagram-v2
+  [*] --> new: ingest, import or POST /findings
+  new --> confirmed: triage (findings status)
+  confirmed --> in_progress: work starts
+  in_progress --> confirmed: person
+  in_progress --> fix_applied: fix claimed (findings fix_apply, owner of the fix, note)
+  fix_applied --> in_progress: reject-fix (findings verify), or retest still matches
+  confirmed --> resolved: verify (findings verify, evidence by risk tier)
+  fix_applied --> resolved: verify, or retest passes with auto_resolve
+  new --> resolved: platform (covered scan, source mitigated, CI default branch)
+  confirmed --> resolved: platform
+  in_progress --> resolved: platform
+  new --> duplicate: POST /duplicates (findings triage)
+  confirmed --> duplicate: POST /duplicates
+  new --> false_positive: approved request or suppression rule
+  confirmed --> false_positive: approved request or suppression rule
+  in_progress --> false_positive: suppression rule or software matcher (platform)
+  confirmed --> accepted: approved request with an end date
+  new --> accepted: suppression rule (platform)
+  resolved --> confirmed: seen again after triage, retest still matches, person
+  resolved --> new: seen again, never triaged (platform)
+  false_positive --> confirmed: person (findings status and findings approve)
+  accepted --> confirmed: acceptance ended (hourly) or person
+  duplicate --> confirmed: person, or canonical finding deleted
+  false_positive --> new: suppression rule lifted
+  accepted --> new: suppression rule lifted
+```
+
+Not drawn for space: `fix_applied` also reaches `resolved`, `false_positive`
+and `accepted` through the platform like `in_progress`; a suppression rule
+re-link moves between `false_positive` and `accepted`. Ticket webhooks may
+only move to `confirmed`, `in_progress` or `fix_applied`; workflows may not
+leave `false_positive`, `accepted`, `duplicate` or `resolved`.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor P as Member
+  participant API as PATCH /api/v1/findings/{id}/status
+  participant SVC as finding.Service
+  participant ENG as EvaluateTransition and the organization scheme
+  participant DB as Postgres (tenant_id in every WHERE)
+  P->>API: new status, note, If-Match
+  API->>API: RequireTenant, membership, findings:status, DataScopeGuard
+  API->>SVC: UpdateStatus(tenant, id)
+  SVC->>DB: GetByID(tenant, id), assertFindingScope (404 when out of scope)
+  SVC->>ENG: move allowed for this actor and evidence?
+  alt refused
+    ENG-->>P: 4xx with the rule (permission, evidence, approval needed)
+  else allowed
+    SVC->>DB: guarded update (from status as read)
+    SVC->>SVC: afterStatusChange: timeline, finding.status_changed audit,<br/>SLA, notifications, retest on fix_applied
+    SVC-->>P: 200
+  end
+```
+
+Known gaps (code, 2026-11-05):
+
+- `/actions/verify` always needs a complete checklist, while PATCH resolves a
+  standard-tier finding with a note (`internal/app/finding/actions.go`).
+- The scope-effects reopen moves `resolved` back to `in_progress` or
+  `fix_applied` from a hand-written list; neither edge is in either map
+  (`scope_effects_repository.go`).
+- Retest settle moves write no audit row (see
+  [every move is in the audit log](#every-move-is-in-the-audit-log)).
+- The comment on `PlatformStatusTransitions` says `in_progress`/`fix_applied`
+  -> `false_positive` is a VEX statement; VEX only opens a pending request, and
+  the direct writer is the software matcher.
+
 ## The lifecycle
 
 `pkg/domain/vulnerability/status_lifecycle.go` holds three maps:
@@ -137,7 +217,8 @@ a list filter; it never maps one to another.
   reopen).
 - `PlatformStatusTransitions`: the extra moves only the platform makes, each on
   evidence a person does not hand over: a covered scan or a source's own
-  "mitigated" state closes open work (`new`/`in_progress` -> `resolved`), a VEX
+  "mitigated" state closes open work (`new`, `confirmed`, `in_progress` or
+  `fix_applied` -> `resolved`, `AutoCloseFromStatuses`), a VEX
   `not_affected` statement does not move it (it opens a pending false-positive
   request), an approved suppression
   rule gives a new finding, and on approval the open findings it matches
@@ -174,9 +255,10 @@ a list filter; it never maps one to another.
   domain sets and checks them against the platform map when the package loads:
   a list that drifts stops the server at start and fails every test.
 - `UpdateStatusBatch` and `BulkUpdateStatusByFilter` (bulk change, verify or
-  reject by filter, approvals, acceptance expiry) only touch rows whose current
+  reject by filter, approvals) only touch rows whose current
   status a person may move to the target, so a finding that changed since the
-  request is left alone.
+  request is left alone. The acceptance end uses its own guarded UPDATE
+  (`finding_acceptance_expiry.go`).
 - The retest settle refuses a decision that is not a lifecycle move and rolls
   back. An approval is refused when the finding can no longer reach the
   approved status; an expired acceptance reopens a finding only while it is
@@ -304,7 +386,10 @@ are not. So every applied status move also writes an audit row
 for a close, severity, asset, `actor_kind` user or system, the actor), from the
 one side-effect path (`afterStatusChange`, `internal/app/finding/status_audit.go`)
 that the status PATCH, bulk status, the fix claim / verify / reject actions,
-approvals, ticket webhooks and VEX all end in. A batch of more than one finding
+approvals, ticket webhooks and VEX all end in. A retest settle does not pass
+through it: the moves a retest makes (`resolved`, `confirmed`, `in_progress`)
+write only the timeline entry today (`finding_retest_repository.go` `Settle`),
+not an audit row. A batch of more than one finding
 adds one `finding.bulk_updated` summary row. Closing or dispositioning a
 critical-tier finding is audited at high severity, other moves at medium.
 Assignments write `finding.assigned` / `finding.unassigned` with the previous
@@ -416,7 +501,8 @@ A remediation group or campaign "resolve" is a **mark fixed**, never a close
 
 - Every open, in-scope, non-pentest member takes the legal person steps to
   `fix_applied` (`vulnerability.FixClaimPath`: `new → confirmed → in_progress
-  → fix_applied`, `confirmed`/`not_observed → in_progress → fix_applied`).
+  → fix_applied`, `confirmed → in_progress → fix_applied`; the retired
+  `not_observed` status is no longer a starting point).
   Each step is a separate status write that accepts only that step's exact
   predecessors (`vulnerability.FixClaimStepFrom`, through
   `UpdateStatusBatchFrom`): a finding closed while the claim runs (for example
@@ -425,8 +511,8 @@ A remediation group or campaign "resolve" is a **mark fixed**, never a close
   records every step. The findings are read back afterwards: one that
   changed in between is reported with its current status.
 - A member already `fix_applied` is skipped, never rewritten (its earlier
-  note and actor stay). A `validated_fixed` member is refused: a reviewer
-  verifies it.
+  note and actor stay). (`validated_fixed` is a retired status: the API
+  refuses it.)
 - The fix claim rules above apply (`findings:fix_apply`, a note, only the
   person's own findings). The group and campaign services refuse a missing
   permission or note before reading the group or spending the bulk budget.
@@ -453,6 +539,7 @@ writer, and by `Finding.UpdateSLAStatus` with the same rules
 |---|---|
 | no deadline | `not_applicable` |
 | `false_positive`, `accepted`, `duplicate` | `not_applicable` (a decision not to fix leaves the SLA) |
+| `resolved` with closure reason `out_of_scope` | `not_applicable` (the asset was marked not ours or retired; migration `20261105072455`); a reopen on re-include keeps the deadline |
 | `resolved` | `on_track` when closed by the deadline (met), else `exceeded` (missed): the clock stops at the verified fix; `fix_applied` keeps it running |
 | open, past the deadline | `overdue` |
 | open, otherwise | `on_track`, or `warning` when the escalation job set it and the deadline did not change |

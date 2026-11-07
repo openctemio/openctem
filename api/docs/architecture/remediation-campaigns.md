@@ -18,6 +18,52 @@ campaign (program: owner, due date)
         └── member findings (each with its own status, SLA and verification)
 ```
 
+## Flow
+
+```mermaid
+stateDiagram-v2
+  [*] --> draft: POST /campaigns
+  draft --> active: PATCH status active (Activate, start date = now when unset)
+  active --> completed: PATCH status completed, wholeSummary.IsDone, else 400
+  active --> completed: reconcile TryAutoComplete (trigger auto_complete)
+  completed --> active: PATCH status active (Reopen)
+  completed --> active: reconcile TryAutoReopen, a task live again (auto_reopen)
+  draft --> canceled: PATCH status canceled
+  active --> canceled: PATCH status canceled, tasks recomputed
+```
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Member
+  participant H as RemediationCampaignHandler
+  participant CS as exposure.RemediationCampaignService
+  participant TS as remediation.TaskService
+  participant R as RemediationCampaignRepository
+  participant C as remediation-progress controller
+  U->>H: POST /api/v1/remediation/campaigns/{id}/tasks (findings:remediation:write, module remediation)
+  H->>CS: AddCampaignTasks(task_ids max 200, move)
+  CS->>R: getWritable: WHERE tenant_id, visible to caller, no task outside scope (404 or 403)
+  CS->>CS: TakesTasks: draft or active, else 400
+  CS->>TS: checkTasksToAdd: each task writable (TaskForChange)
+  alt a task is in another campaign and move is false
+    CS-->>U: 409 TASKS_IN_OTHER_CAMPAIGN (campaign named only when visible)
+  else
+    CS->>R: put tasks, bump task versions, timeline entries
+    CS->>TS: recompute deadlines: min(member SLA, manual, campaign due)
+    CS-->>U: 200 view with summary and can_edit
+  end
+  loop every 30 minutes, tenants with the remediation module on
+    C->>CS: ReconcileProgress
+    CS->>R: ListForReconcile, wholeSummary per campaign
+    CS->>R: Update (optimistic, skipped when changed since read)
+    CS->>CS: audit status_changed actor system, Jira epic comment on completion
+  end
+```
+
+A campaign that completes (by hand or by the reconcile) with a linked Jira epic gets a completion comment
+(`syncEpicOnCompletion`, [remediation-campaign-jira-sync.md](remediation-campaign-jira-sync.md)).
+
 ## Summary (derived, never stored)
 
 Every read derives the summary from the campaign's tasks (archived tasks left out) and their active members, over
@@ -130,8 +176,8 @@ finding id, asset or tool is needed; an unparseable filter tracks nothing):
   (`updated`) or kept another campaign's claim (`campaign_conflict`), a `remediation_task_changed` entry on each
   moved finding, one notice to the owners and admins, and a summary in the migration output.
 
-Campaigns whose filter named only severities, sources, statuses or search text tracked nothing (research 188
-C-003) and hold no task: their audit row says so.
+Campaigns whose filter named only severities, sources, statuses or search text tracked nothing (the API
+never evaluated those fields) and hold no task: their audit row says so.
 
 Migration `remediation_campaigns_drop_finding_filter` ran the conversion once more for campaigns created in
 between, mapped `paused` and `validating` to `active` (audited), dropped the conversion functions and the columns

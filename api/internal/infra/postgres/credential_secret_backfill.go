@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/openctemio/openctem/api/pkg/domain/credential"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // credentialSecretBackfillBatch bounds how many rows one transaction rewrites.
@@ -52,7 +53,13 @@ func backfillCredentialSecretBatch(ctx context.Context, db *sql.DB, p *credentia
 		if !p.NeedsSealing(row.details) {
 			continue
 		}
-		if err := p.Seal(row.details); err != nil {
+		tid, err := shared.IDFromString(row.tenantID)
+		if err != nil {
+			return 0, fmt.Errorf("tenant of exposure %s: %w", row.id, err)
+		}
+		// Values written before the storage setting existed are encrypted
+		// as they are: the setting decides what new imports keep.
+		if err := p.Seal(tid, row.details, true); err != nil {
 			return 0, fmt.Errorf("seal secret of exposure %s: %w", row.id, err)
 		}
 		raw, err := json.Marshal(row.details)
@@ -93,20 +100,5 @@ func selectPlaintextSecrets(ctx context.Context, tx *sql.Tx, canEncrypt bool) ([
 	if err != nil {
 		return nil, fmt.Errorf("select plaintext credential secrets: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
-
-	var batch []pendingSecretRow
-	for rows.Next() {
-		var id, tenantID string
-		var raw []byte
-		if err := rows.Scan(&id, &tenantID, &raw); err != nil {
-			return nil, fmt.Errorf("scan credential secret row: %w", err)
-		}
-		details := map[string]any{}
-		if err := json.Unmarshal(raw, &details); err != nil {
-			return nil, fmt.Errorf("decode details of exposure %s: %w", id, err)
-		}
-		batch = append(batch, pendingSecretRow{id: id, tenantID: tenantID, details: details})
-	}
-	return batch, rows.Err()
+	return scanPendingSecretRows(rows)
 }

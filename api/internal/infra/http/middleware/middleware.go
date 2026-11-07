@@ -151,8 +151,11 @@ func LoggerWithConfig(log *logger.Logger, cfg LoggerConfig) func(http.Handler) h
 
 			start := time.Now()
 			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			// Authentication further in fills the principal, so a refused
+			// (401/403) or failed request can be attributed.
+			ctx, principal := withRequestPrincipal(r.Context())
 
-			next.ServeHTTP(wrapped, r)
+			next.ServeHTTP(wrapped, r.WithContext(ctx))
 
 			duration := time.Since(start)
 
@@ -174,6 +177,7 @@ func LoggerWithConfig(log *logger.Logger, cfg LoggerConfig) func(http.Handler) h
 				"client_ip", getClientIP(r),
 				"user_agent", logUserAgent(r.UserAgent()),
 			}
+			attrs = append(attrs, principal.attrs()...)
 
 			switch {
 			case wrapped.statusCode >= 500:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	tooldom "github.com/openctemio/openctem/api/internal/app/tool"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
@@ -144,6 +145,7 @@ func (s *Service) PreviewWorkflow(ctx context.Context, in WorkflowPreviewInput) 
 		}
 		out.Nodes = append(out.Nodes, node)
 	}
+	markDependentsSkipped(tpl, out.Nodes)
 	if targets.Error != nil {
 		out.Blocking = true
 	}
@@ -183,20 +185,37 @@ func (s *Service) previewStepAtDepth(ctx context.Context, tenantID shared.ID, zo
 		}
 		return node
 	}
-	at := step
-	if len(overlay.Params) > 0 {
-		cp := *step
-		cp.Config = step.RunPolicy.ConfigAt(step.Config, depth)
-		at = &cp
-	}
-	node := s.previewStep(ctx, tenantID, zoneID, at)
-	node.DepthParams, node.MaxTargets = overlay.Params, overlay.MaxTargets
+	node := s.previewStep(ctx, tenantID, zoneID, StepAtDepth(step, depth))
+	node.DepthParams, node.MaxTargets = previewDepthParams(step, depth, overlay.Params), overlay.MaxTargets
 	if node.Blocking != nil && step.RunPolicy.Optional && node.Blocking.Code == codeNoMatchingTool {
 		node.Skipped = &PreviewError{Code: CodeToolNotInstalled,
 			Message: "Skipped: available when a tool that runs this capability is installed."}
 		node.Blocking = nil
 	}
 	return node
+}
+
+// markDependentsSkipped marks the steps that need the results of a step the
+// run skips for want of a tool as DEPENDENCY_SKIPPED, as the trigger does
+// (SkipDependents). Steps the depth skips are not counted, and a node that
+// already blocks or is skipped keeps its own verdict.
+func markDependentsSkipped(tpl *scanworkflow.Workflow, nodes []WorkflowPreviewNode) {
+	skips := map[string]StepSkip{}
+	for _, n := range nodes {
+		if n.Skipped != nil && n.Skipped.Code != CodeDepthSkipped {
+			skips[n.StepKey] = StepSkip{Code: n.Skipped.Code}
+		}
+	}
+	if len(skips) == 0 {
+		return
+	}
+	SkipDependents(tpl.Steps, skips, tpl.Settings.ContinueOnFailedDependency, nil)
+	for i := range nodes {
+		n := &nodes[i]
+		if sk, ok := skips[n.StepKey]; ok && sk.Dependency && n.Skipped == nil && n.Blocking == nil {
+			n.Skipped = &PreviewError{Code: scanrun.FailureDependencySkipped, Message: sk.Reason}
+		}
+	}
 }
 
 // previewStep resolves one step as the trigger would.
@@ -232,4 +251,28 @@ func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *s
 		node.Blocking = &PreviewError{Code: CodeNoSensorForTool, Message: toolUnavailableMessage(ta, step.StepKey, zoneID != nil)}
 	}
 	return node
+}
+
+// previewDepthParams are the params the step takes from its depth: the
+// overlay's, and the capability's depth defaults for the params neither the
+// step nor the overlay sets (stage.DepthDefaults).
+func previewDepthParams(step *scanworkflow.Step, depth scanworkflow.Depth, overlay map[string]any) map[string]any {
+	st, ok := stage.ForStep(step.Tool, step.Capabilities)
+	if !ok {
+		return overlay
+	}
+	defs := st.DepthDefaults(string(depth))
+	if len(defs) == 0 {
+		return overlay
+	}
+	out := make(map[string]any, len(overlay)+len(defs))
+	for k, v := range defs {
+		if cur, set := step.Config[k]; !set || cur == nil {
+			out[k] = v
+		}
+	}
+	for k, v := range overlay {
+		out[k] = v
+	}
+	return out
 }

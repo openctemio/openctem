@@ -2,38 +2,29 @@ package releasefeed
 
 import (
 	"bytes"
-	"crypto/ed25519"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/feedsign"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
 )
 
-var testNow = time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+// The virtual log is valid from the moment the test starts, so the clock is real.
+var testNow = time.Now().UTC().Truncate(time.Second)
 
-func seedKey(b byte) ed25519.PrivateKey {
-	return ed25519.NewKeyFromSeed(bytes.Repeat([]byte{b}, ed25519.SeedSize))
-}
-
+// fixture is a virtual Sigstore the production verifier trusts, and a signer
+// that behaves like the release-feed workflow.
 type fixture struct {
-	online ed25519.PrivateKey
-	trust  Trust
-}
-
-func pubHex(k ed25519.PrivateKey) string {
-	return hex.EncodeToString(k.Public().(ed25519.PublicKey))
+	sig   *releasefeedtest.Sigstore
+	trust Trust
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{online: seedKey(2)}
-	f.trust = Trust{Keys: []string{pubHex(f.online)}}
-	return f
+	sig := releasefeedtest.New(t)
+	return &fixture{sig: sig, trust: Trust{Verifier: sig.Verifier(t)}}
 }
 
 func sampleFeed(seq uint64) Feed {
@@ -55,82 +46,121 @@ func sampleFeed(seq uint64) Feed {
 	}
 }
 
-func (f *fixture) build(t *testing.T, feed Feed) []byte {
+// signedAt is when the workflow signs in the tests: a minute after testNow,
+// inside the validity of the virtual certificate (made at the real time).
+func signedAt(Feed) time.Time { return testNow.Add(time.Minute) }
+
+func (f *fixture) publish(t *testing.T, feed Feed, identity, issuer string, at time.Time, withoutTlog bool) []byte {
 	t.Helper()
-	raw, err := Build(f.online, feed)
+	payload, err := Payload(feed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := Assemble(payload, f.sig.Sign(t, payload, identity, issuer, at, withoutTlog))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return raw
 }
 
+func (f *fixture) build(t *testing.T, feed Feed) []byte {
+	t.Helper()
+	return f.publish(t, feed, releasefeedtest.GoodIdentityMain, releasefeedtest.GitHubIssuer, signedAt(feed), false)
+}
+
 func TestVerify_Valid(t *testing.T) {
 	f := newFixture(t)
-	v, err := Verify(f.build(t, sampleFeed(100)), f.trust, testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v.KeyID != jobsign.KeyID(f.online.Public().(ed25519.PublicKey)) || v.Feed.Sequence != 100 || len(v.Feed.Releases) != 2 || len(v.Digest) != 64 {
-		t.Fatalf("verified = %+v", v)
+	for _, id := range []string{releasefeedtest.GoodIdentityMain, releasefeedtest.GoodIdentityTag} {
+		feed := sampleFeed(100)
+		v, err := Verify(f.publish(t, feed, id, releasefeedtest.GitHubIssuer, signedAt(feed), false), f.trust, testNow)
+		if err != nil {
+			t.Fatalf("%s: %v", id, err)
+		}
+		if v.Feed.Sequence != 100 || len(v.Feed.Releases) != 2 || len(v.Digest) != 64 || !v.SignedAt.Equal(signedAt(feed)) {
+			t.Fatalf("verified = %+v", v)
+		}
 	}
 }
 
-// With no key pinned nothing verifies: the version check stays inert.
-func TestVerify_InertWithoutKeys(t *testing.T) {
+func TestVerify_InertWithoutVerifier(t *testing.T) {
 	f := newFixture(t)
 	if _, err := Verify(f.build(t, sampleFeed(1)), Trust{}, testNow); !errors.Is(err, ErrNoKey) {
-		t.Fatalf("err = %v, want ErrNoKey", err)
-	}
-	for _, k := range PinnedKeys {
-		if b, err := hex.DecodeString(k); err != nil || len(b) != ed25519.PublicKeySize {
-			t.Fatalf("pinned key %q is not a hex Ed25519 public key", k)
-		}
-	}
-	if len(PinnedKeys) > MaxPinnedKeys {
-		t.Fatalf("%d pinned keys, at most %d", len(PinnedKeys), MaxPinnedKeys)
+		t.Fatalf("no verifier: err = %v", err)
 	}
 }
 
-// A feed signed by a key that is not pinned is refused.
-func TestVerify_UnpinnedKey(t *testing.T) {
+// Only the release-feed workflow of this repository on main or a release tag,
+// from the GitHub issuer, is accepted.
+func TestVerify_SignerIdentity(t *testing.T) {
 	f := newFixture(t)
-	raw, err := Build(seedKey(9), sampleFeed(5))
-	if err != nil {
-		t.Fatal(err)
+	feed := sampleFeed(5)
+	wf := "https://github.com/openctemio/openctem/.github/workflows/release-feed.yml@"
+	cases := map[string]struct{ id, issuer string }{
+		"another repository": {"https://github.com/evil/openctem/.github/workflows/release-feed.yml@refs/heads/main", releasefeedtest.GitHubIssuer},
+		"similar repository": {"https://github.com/openctemio/openctem-fork/.github/workflows/release-feed.yml@refs/heads/main", releasefeedtest.GitHubIssuer},
+		"another workflow":   {"https://github.com/openctemio/openctem/.github/workflows/release.yml@refs/heads/main", releasefeedtest.GitHubIssuer},
+		"another branch":     {wf + "refs/heads/feature", releasefeedtest.GitHubIssuer},
+		"pull request ref":   {wf + "refs/pull/1/merge", releasefeedtest.GitHubIssuer},
+		"suffix on the tag":  {wf + "refs/tags/v1.2.3-evil/x", releasefeedtest.GitHubIssuer},
+		"prefix on the url":  {"x" + wf + "refs/heads/main", releasefeedtest.GitHubIssuer},
+		"another issuer":     {releasefeedtest.GoodIdentityMain, "https://accounts.example.com"},
+		"issuer lookalike":   {releasefeedtest.GoodIdentityMain, releasefeedtest.GitHubIssuer + ".evil"},
 	}
-	if _, err := Verify(raw, f.trust, testNow); err == nil || !strings.Contains(err.Error(), "not signed by a pinned key") {
-		t.Fatalf("unpinned key: err = %v", err)
-	}
-}
-
-// Rotation: while two keys are pinned, a feed signed by either verifies; once
-// a release pins only the new key, the old key's feed is refused.
-func TestVerify_RotationWithTwoPinnedKeys(t *testing.T) {
-	oldK, newK := seedKey(2), seedKey(3)
-	both := Trust{Keys: []string{pubHex(oldK), pubHex(newK)}}
-	for name, k := range map[string]ed25519.PrivateKey{"old": oldK, "new": newK} {
-		raw, err := Build(k, sampleFeed(10))
-		if err != nil {
-			t.Fatal(err)
-		}
-		v, err := Verify(raw, both, testNow)
-		if err != nil || v.KeyID != jobsign.KeyID(k.Public().(ed25519.PublicKey)) {
-			t.Fatalf("%s key under both pins: %v %+v", name, err, v)
-		}
-	}
-	rawOld, _ := Build(oldK, sampleFeed(11))
-	if _, err := Verify(rawOld, Trust{Keys: []string{pubHex(newK)}}, testNow); err == nil {
-		t.Fatal("the retired key still verified")
-	}
-	if _, err := Verify(rawOld, Trust{Keys: []string{pubHex(oldK), pubHex(newK), pubHex(seedKey(4))}}, testNow); err == nil {
-		t.Fatal("three pinned keys were accepted")
-	}
-	if _, err := Verify(rawOld, Trust{Keys: []string{"zz"}}, testNow); err == nil {
-		t.Fatal("a malformed pin was accepted")
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Verify(f.publish(t, feed, c.id, c.issuer, signedAt(feed), false), f.trust, testNow); err == nil || !strings.Contains(err.Error(), "signature") {
+				t.Fatalf("accepted: err = %v", err)
+			}
+		})
 	}
 }
 
-// A changed byte anywhere in the signed feed is refused.
+// A feed another Sigstore signed (a foreign trusted root) is refused, and so
+// is one the verifier's root does not know.
+func TestVerify_ForeignTrustedRoot(t *testing.T) {
+	f := newFixture(t)
+	other := newFixture(t)
+	if _, err := Verify(other.build(t, sampleFeed(5)), f.trust, testNow); err == nil {
+		t.Fatal("a feed signed under a foreign trusted root verified")
+	}
+}
+
+// The signing certificate is short-lived: a signature whose log time is long
+// after the certificate expired is refused.
+func TestVerify_ExpiredCertificate(t *testing.T) {
+	f := newFixture(t)
+	feed := sampleFeed(5)
+	raw := f.publish(t, feed, releasefeedtest.GoodIdentityMain, releasefeedtest.GitHubIssuer, testNow.Add(3*time.Hour), false)
+	if _, err := Verify(raw, f.trust, testNow); err == nil {
+		t.Fatal("a signature logged after its certificate expired verified")
+	}
+}
+
+func TestVerify_MissingTlogEntry(t *testing.T) {
+	f := newFixture(t)
+	feed := sampleFeed(5)
+	raw := f.publish(t, feed, releasefeedtest.GoodIdentityMain, releasefeedtest.GitHubIssuer, signedAt(feed), true)
+	if _, err := Verify(raw, f.trust, testNow); err == nil {
+		t.Fatal("a bundle without a transparency log entry verified")
+	}
+}
+
+// A signature made before the feed was issued, or after it expired, is not
+// the publisher's feed.
+func TestVerify_SignedOutsideValidity(t *testing.T) {
+	f := newFixture(t)
+	early := sampleFeed(5)
+	early.IssuedAt, early.ExpiresAt = testNow.Add(time.Hour), testNow.Add(30*24*time.Hour)
+	if _, err := Verify(f.build(t, early), f.trust, testNow.Add(2*time.Hour)); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Fatalf("signed before issue: err = %v", err)
+	}
+	late := sampleFeed(6)
+	late.IssuedAt, late.ExpiresAt = testNow.Add(-time.Hour), testNow.Add(30*time.Second)
+	if _, err := Verify(f.build(t, late), f.trust, testNow); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Fatalf("signed after expiry: err = %v", err)
+	}
+}
+
 func TestVerify_TamperedFeed(t *testing.T) {
 	f := newFixture(t)
 	raw := f.build(t, sampleFeed(100))
@@ -138,43 +168,23 @@ func TestVerify_TamperedFeed(t *testing.T) {
 	if err := json.Unmarshal(raw, &b); err != nil {
 		t.Fatal(err)
 	}
-	var env map[string]any
-	if err := json.Unmarshal(b.Feed, &env); err != nil {
-		t.Fatal(err)
-	}
-	var feed Feed
-	payload := mustPayload(t, b.Feed)
-	if err := json.Unmarshal(payload, &feed); err != nil {
-		t.Fatal(err)
-	}
-	feed.Releases[1].Version = "v9.9.9"
-	forged, _ := json.Marshal(feed)
-	env["payload"] = forged // the original signature stays
-	b.Feed, _ = json.Marshal(env)
+	b.Feed = bytes.Replace(b.Feed, []byte("v0.9.8"), []byte("v9.9.9"), 1) // the original signature stays
 	tampered, _ := json.Marshal(b)
-	if _, err := Verify(tampered, f.trust, testNow); err == nil || !strings.Contains(err.Error(), "not signed") {
+	if _, err := Verify(tampered, f.trust, testNow); err == nil || !strings.Contains(err.Error(), "signature") {
 		t.Fatalf("tampered feed: err = %v", err)
 	}
 }
 
-func mustPayload(t *testing.T, env json.RawMessage) []byte {
-	t.Helper()
-	e, err := feedsign.Open(env, FeedPayloadType, MaxBundleBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return e.Payload
-}
-
-// A feed envelope of another payload type (content signed by the same
-// online key) is refused: domain separation.
-func TestVerify_OtherPayloadType(t *testing.T) {
+// Another feed's signature pasted onto this one does not verify either.
+func TestVerify_SwappedSignature(t *testing.T) {
 	f := newFixture(t)
-	payload, _ := json.Marshal(sampleFeed(5))
-	env, _ := feedsign.Sign(f.online, "application/vnd.openctem.package-index+json", payload)
-	b, _ := json.Marshal(Bundle{Schema: BundleSchema, Feed: env})
-	if _, err := Verify(b, f.trust, testNow); err == nil || !strings.Contains(err.Error(), "payload type") {
-		t.Fatalf("another payload type: err = %v", err)
+	var a, b Bundle
+	_ = json.Unmarshal(f.build(t, sampleFeed(100)), &a)
+	_ = json.Unmarshal(f.build(t, sampleFeed(101)), &b)
+	a.Signature = b.Signature
+	swapped, _ := json.Marshal(a)
+	if _, err := Verify(swapped, f.trust, testNow); err == nil {
+		t.Fatal("a swapped signature verified")
 	}
 }
 
@@ -269,8 +279,8 @@ func TestFeedValidate(t *testing.T) {
 			if err := f.Validate(); err == nil {
 				t.Fatal("accepted")
 			}
-			if _, err := Build(seedKey(2), f); err == nil {
-				t.Fatal("the builder signed an invalid feed")
+			if _, err := Payload(f); err == nil {
+				t.Fatal("the builder produced an invalid feed")
 			}
 		})
 	}
@@ -352,5 +362,24 @@ func TestVerify_NoComponents(t *testing.T) {
 	v, err := Verify(f.build(t, feed), f.trust, testNow)
 	if err != nil || len(v.Feed.Components) != 0 {
 		t.Fatalf("v = %+v, err = %v", v, err)
+	}
+}
+
+// A signature made across a second boundary verifies: the virtual
+// certificate starts at the second it is made in, the log entry carries the
+// time the caller read earlier (whole seconds), and the signer must not log a
+// signature before its certificate exists. The wait puts the boundary between
+// reading the clock and signing, so this fails every time without the fix.
+func TestVerify_SignedAcrossSecondBoundary(t *testing.T) {
+	f := newFixture(t)
+	{
+		at := time.Now().UTC()
+		time.Sleep(time.Until(at.Truncate(time.Second).Add(time.Second + 5*time.Millisecond)))
+		feed := sampleFeed(200)
+		feed.IssuedAt, feed.ExpiresAt = at.Add(-time.Minute), at.Add(time.Hour)
+		raw := f.publish(t, feed, releasefeedtest.GoodIdentityMain, releasefeedtest.GitHubIssuer, at, false)
+		if _, err := Verify(raw, f.trust, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

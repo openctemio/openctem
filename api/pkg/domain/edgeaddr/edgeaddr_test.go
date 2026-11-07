@@ -17,6 +17,14 @@ func TestAddress(t *testing.T) {
 		{"cloudflare v6 range", "2606:4700::1", "", "", Edge, "Cloudflare", BasisRange},
 		{"mapped v4 in range", "::ffff:104.16.1.1", "", "", Edge, "Cloudflare", BasisRange},
 		{"fastly published range", "151.101.1.1", "", "", Edge, "Fastly", BasisRange},
+		// Published edge ranges with no network data at all: a name resolving
+		// there is served by the provider's shared edge, never offered.
+		{"cloudfront v6 edge, no network data", "2600:9000:26b8:1a00:12:3a5:40:93a1", "", "", Edge, "Amazon CloudFront", BasisRange},
+		{"cloudfront v4 edge", "13.32.1.1", "", "", Edge, "Amazon CloudFront", BasisRange},
+		{"cloudfront wins over the amazon network name", "13.32.1.2", "", "AMAZON-02", Edge, "Amazon CloudFront", BasisRange},
+		{"azure front door", "13.107.246.1", "", "", Edge, "Azure Front Door", BasisRange},
+		{"imperva range", "45.60.1.1", "", "", Edge, "Imperva", BasisRange},
+		{"google front end", "142.250.1.1", "", "", CloudShared, "Google", BasisRange},
 		{"range wins over the network name", "151.101.2.2", "", "Amazon.com, Inc.", Edge, "Fastly", BasisRange},
 		{"record names a CDN", "198.51.100.1", "cloudflare", "", Edge, "Cloudflare", BasisCDN},
 		{"record names an unknown CDN", "198.51.100.1", "examplecdn", "", Edge, "examplecdn", BasisCDN},
@@ -143,6 +151,7 @@ func TestSharedFrontEnd(t *testing.T) {
 		{"104.16.1.1", true},
 		{"[2606:4700::1]", true},
 		{"::ffff:151.101.1.1", true},
+		{"2600:9000:26b8:1a00:12:3a5:40:93a1", true}, // Amazon CloudFront edge
 		{"203.0.113.7", false},
 		{"23.192.0.1", false}, // an Akamai address: no published range in the dataset
 		{"not-an-ip", false},
@@ -175,5 +184,37 @@ func TestSharedFrontEnd(t *testing.T) {
 	}
 	if d := mixed.DedicatedPrefixes(); len(d) != 1 || d[0] != netip.MustParsePrefix("192.0.2.128/25") {
 		t.Fatalf("dedicated prefixes = %v", d)
+	}
+}
+
+// Shared mail and SaaS providers: the addresses mail.* and autodiscover.*
+// names resolve to are never the organization's.
+func TestDefault_SharedMailAndSaaSProviders(t *testing.T) {
+	c := Default()
+	for _, a := range []string{"40.107.5.5", "52.96.1.1", "2a01:111:f400::1"} {
+		r := c.Address(a, "", "")
+		if r.Provider != "Microsoft 365" || r.Class != CloudShared || r.Basis != BasisRange || !r.Shared() {
+			t.Errorf("%s: %+v", a, r)
+		}
+		if _, ok := c.SharedFrontEnd(a); !ok {
+			t.Errorf("%s: not a shared front end", a)
+		}
+	}
+	for org, provider := range map[string]string{"ZOHO-AS": "Zoho", "Proofpoint, Inc.": "Proofpoint", "MIMECAST": "Mimecast", "SENDGRID": "SendGrid"} {
+		if r := c.Address("192.0.2.1", "", org); r.Provider != provider || !r.ProviderSpace() {
+			t.Errorf("%s: %+v", org, r)
+		}
+	}
+	for host, provider := range map[string]string{
+		"autodiscover.outlook.com": "Microsoft 365", "example-com.mail.protection.outlook.com": "Microsoft 365",
+		"aspmx.l.google.com": "Google", "mx1.example.pphosted.com": "Proofpoint",
+	} {
+		if r := c.Host(host); r.Provider != provider || !r.Shared() {
+			t.Errorf("%s: %+v", host, r)
+		}
+	}
+	// A look-alike is not the provider.
+	if r := c.Host("outlook.com.example.org"); r.Provider != "" {
+		t.Errorf("look-alike: %+v", r)
 	}
 }

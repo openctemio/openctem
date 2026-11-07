@@ -85,7 +85,9 @@ func TestAITriage_UseCaseUnreadable_FailsClosed(t *testing.T) {
 // public sends only public ids. A secret finding never sends its snippet.
 func TestAITriage_UseCaseCeiling_FiltersThePrompt(t *testing.T) {
 	ctx := context.Background()
-	const snippet = "password = load_from_vault()"
+	// Not credential-shaped: the snippet is masked with every class, and a
+	// credential assignment would become SECRET_n.
+	const snippet = "rows = db.query(sql_text)"
 	run := func(t *testing.T, ceiling aidom.DataClass, src vulnerability.FindingSource, cve string) (string, *aitriagedom.TriageResult) {
 		h := newEgressHarness(t)
 		h.svc.SetUseCases(fakeUseCases{set: withMode(aidom.UseCaseSuggest, ceiling)})

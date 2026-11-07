@@ -265,12 +265,18 @@ message PutResultRequest {
   optional uint32 segment = 3;
   // The content as sent: CTIS JSON, possibly compressed.
   bytes content = 4;
-  // application/vnd.openctem.ctis.v1+json
+  // application/vnd.ctis+json; version=2.0
   string content_type = 5;
   // "", "gzip" or "zstd".
   string content_encoding = 6;
   // RFC 9530 Content-Digest of content as sent (sha-256 or sha-512).
   string content_digest = 7;
+  // The lease epoch the sensor held command_id under when it produced the
+  // report (v2: X-OpenCTEM-Lease-Epoch); absent for a report of no command.
+  // When set it must be the command's current epoch, else the call fails
+  // as command-not-found; set, it also commits the sensor to sending it on
+  // every call of a command-bound report (v2 feature results_lease_epoch).
+  optional int64 lease_epoch = 8;
 }
 
 message PutResultResponse {
@@ -287,6 +293,8 @@ message CommitResultRequest {
   string command_id = 2;
   // The protocol v2 commit body, application/json.
   bytes body_json = 3;
+  // The lease epoch of the report's command, as on PutResultRequest.
+  optional int64 lease_epoch = 4;
 }
 
 message CommitResultResponse {

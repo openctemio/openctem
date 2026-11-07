@@ -100,9 +100,22 @@ type StepRun struct {
 	ConditionResult    *bool
 	SkipReason         string
 
+	// EffectiveConfig is what the platform dispatched the step with and
+	// SensorSettings what the sensor reported it ran with (nil: none).
+	EffectiveConfig *EffectiveConfig
+	SensorSettings  *SensorSettings
+
 	// Results
 	FindingsCount int
-	Output        map[string]any
+	// InfoObservations counts the template scanner info matches the step
+	// run's reports filed as exposures instead of findings.
+	InfoObservations int
+	// FindingsHeld counts reported findings held for review (results
+	// quarantine); FindingsRefused those not stored. FindingsCount is what
+	// the sensor reported: stored + held + refused + info observations.
+	FindingsHeld    int
+	FindingsRefused int
+	Output          map[string]any
 
 	// Retry tracking
 	Attempt     int
@@ -206,6 +219,20 @@ func (sr *StepRun) Skip(reason string) {
 	sr.CompletedAt = &now
 	sr.Status = StepRunStatusSkipped
 	sr.SkipReason = reason
+}
+
+// SkipWithCode marks the step as skipped with the code of the reason
+// (TOOL_NOT_INSTALLED, NO_SENSOR_FOR_TOOL, DEPENDENCY_SKIPPED, ...), so the
+// run view can explain it in the reader's language.
+func (sr *StepRun) SkipWithCode(reason, code string) {
+	sr.Skip(reason)
+	sr.ErrorCode = code
+}
+
+// SkippedUnsupported reports whether the step was skipped because no tool or
+// sensor of the organization runs it (the run then ends partial).
+func (sr *StepRun) SkippedUnsupported() bool {
+	return sr != nil && sr.Status == StepRunStatusSkipped && IsUnsupportedSkipCode(sr.ErrorCode)
 }
 
 // Cancel marks the step as canceled.
