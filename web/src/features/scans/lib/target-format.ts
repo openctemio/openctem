@@ -4,10 +4,13 @@
  * private ranges, tiers) is the API's answer (POST /scope/check), never
  * decided here. The rules mirror the API's target validator
  * (api/pkg/validator/target.go) so that nothing accepted here is refused at
- * create: CIDRs of at most 2^16 addresses, `[v6]:port`, service names
+ * create: CIDRs of at most 2^24 addresses (an IPv4 /8, an IPv6 /104; the
+ * organization may set a lower bound), `[v6]:port`, service names
  * (`host:25/tcp`), and paths or repositories refused as network targets.
  * Unicode domain names are sent in their ASCII (punycode) form.
- * Design: research/418.
+ * The CIDR bounds and their words are one contract with the API:
+ * api/pkg/validator/testdata/cidr_targets.json is read by both test suites.
+ * Design: research/418; large ranges: api/docs/rfcs/RFC-151-large-range-targets.md.
  */
 
 import type { Translate } from './translate'
@@ -73,8 +76,24 @@ const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
 const IPV4 = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`)
 // Shell and markup characters never appear in a target.
 const UNSAFE = /[;&|`$(){}<>\\'"!\s]/
-// Largest range the API takes: 2^16 addresses.
-export const MAX_HOST_BITS = 16
+// Largest range the API takes: 2^24 addresses (an IPv4 /8, an IPv6 /104).
+export const MAX_HOST_BITS = 24
+/**
+ * A range wider than this (2^16 addresses, an IPv4 /16) is a large range:
+ * cut into /16 chunks at dispatch and scanned live hosts first.
+ */
+export const LARGE_RANGE_HOST_BITS = 16
+/**
+ * The organization's widest range when it set none (scope setting
+ * max_range_prefix 16): a /16. Anything wider is opt-in.
+ */
+export const DEFAULT_RANGE_PREFIX = 16
+
+/** The widest range in host bits for a max_range_prefix (unset: the /16 default). */
+export function rangeHostBitsOf(maxRangePrefix: number | null | undefined): number {
+  const p = maxRangePrefix && maxRangePrefix > 0 ? maxRangePrefix : DEFAULT_RANGE_PREFIX
+  return Math.min(Math.max(32 - p, 0), MAX_HOST_BITS)
+}
 /** The most ranges a too-large range is offered to be split into in one click. */
 export const MAX_SPLIT_PIECES = 256
 
@@ -83,18 +102,19 @@ function fill(text: string, vars: Record<string, string>): string {
   return text.replace(/\{(\w+)\}/g, (m, k: string) => vars[k] ?? m)
 }
 
-/** A range wider than MAX_HOST_BITS: the reason with its numbers, and the split it allows. */
+/** A range wider than maxHostBits: the reason with its numbers, and the split it allows. */
 function tooLarge(
   input: string,
   value: string,
   totalBits: number,
-  prefix: number
+  prefix: number,
+  maxHostBits: number
 ): ClassifiedTarget {
-  const maxBits = totalBits - MAX_HOST_BITS
+  const maxBits = totalBits - maxHostBits
   const reasonVars = {
     cidr: value,
     count: (BigInt(1) << BigInt(totalBits - prefix)).toLocaleString(),
-    max: (2 ** MAX_HOST_BITS).toLocaleString(),
+    max: (2 ** maxHostBits).toLocaleString(),
     prefix: `/${maxBits}`,
   }
   const pieces = 2 ** (maxBits - prefix)
@@ -202,8 +222,14 @@ function looksLikeRepo(input: string): boolean {
   return false
 }
 
+export interface ClassifyOptions {
+  /** The widest range accepted, in host bits (MAX_HOST_BITS; the organization may set less). */
+  maxHostBits?: number
+}
+
 /** The format of one typed entry. */
-export function classifyTarget(raw: string): ClassifiedTarget {
+export function classifyTarget(raw: string, opts: ClassifyOptions = {}): ClassifiedTarget {
+  const maxHostBits = Math.min(Math.max(opts.maxHostBits ?? MAX_HOST_BITS, 0), MAX_HOST_BITS)
   const input = raw.trim()
   const refuse = (id: keyof typeof REASONS, kind: TargetKind = 'invalid'): ClassifiedTarget => ({
     input,
@@ -267,13 +293,13 @@ export function classifyTarget(raw: string): ClassifiedTarget {
     if (rest.length === 0 && /^\d{1,3}$/.test(bits ?? '')) {
       const n = Number(bits)
       if (IPV4.test(addr) && n <= 32) {
-        return 32 - n > MAX_HOST_BITS
-          ? tooLarge(input, lower, 32, n)
+        return 32 - n > maxHostBits
+          ? tooLarge(input, lower, 32, n, maxHostBits)
           : { input, value: lower, kind: 'cidr' }
       }
       if (isIPv6(addr) && n <= 128) {
-        return 128 - n > MAX_HOST_BITS
-          ? tooLarge(input, lower, 128, n)
+        return 128 - n > maxHostBits
+          ? tooLarge(input, lower, 128, n, maxHostBits)
           : { input, value: lower, kind: 'cidr' }
       }
       return refuse('badCidr')
@@ -300,6 +326,25 @@ export function classifyTarget(raw: string): ClassifiedTarget {
   if (host && punycodeTld(host)) return refuse('idnTld')
   if (host && DOMAIN.test(host)) return { input, value: host, kind: 'domain' }
   return refuse('unknown')
+}
+
+/**
+ * The address count of a CIDR target, or null when it is not one. Large
+ * counts stay exact (IPv6).
+ */
+export function cidrAddressCount(target: string): bigint | null {
+  const [addr, len] = target.trim().toLowerCase().split('/')
+  if (!addr || !/^\d{1,3}$/.test(len ?? '')) return null
+  const total = IPV4.test(addr) ? 32 : isIPv6(addr) ? 128 : 0
+  const n = Number(len)
+  if (!total || n > total) return null
+  return BigInt(1) << BigInt(total - n)
+}
+
+/** Whether a target is a range wider than a /16 (IPv6 /112): a large range. */
+export function isLargeRange(target: string): boolean {
+  const n = cidrAddressCount(target)
+  return n !== null && n > BigInt(1) << BigInt(LARGE_RANGE_HOST_BITS)
 }
 
 /** Why an entry is not added, in the active language, with its numbers. */
@@ -344,7 +389,10 @@ export function splitEntries(lines: readonly string[]): string[] {
 }
 
 /** Classify, normalize and de-duplicate typed lines. */
-export function parsePastedTargets(lines: readonly string[]): PastedTargets {
+export function parsePastedTargets(
+  lines: readonly string[],
+  opts: ClassifyOptions = {}
+): PastedTargets {
   const out: PastedTargets = {
     lines: [],
     targets: [],
@@ -355,7 +403,7 @@ export function parsePastedTargets(lines: readonly string[]): PastedTargets {
   }
   const seen = new Set<string>()
   for (const raw of splitEntries(lines)) {
-    const c = classifyTarget(raw)
+    const c = classifyTarget(raw, opts)
     out.lines.push(c)
     if (isRefusedKind(c.kind)) {
       out.byKind[c.kind] = (out.byKind[c.kind] ?? 0) + 1
