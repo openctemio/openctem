@@ -16,6 +16,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
@@ -169,6 +170,12 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 	if err != nil {
 		return nil, err
 	}
+	states, err := s.zoneSensorStates(ctx, sc.TenantID, routing.ZoneOrder)
+	if err != nil {
+		return nil, err
+	}
+	tier := scanJobTier(sc)
+	private := routePrivateTargets(routing)
 
 	zoneSummaries := make([]map[string]any, 0, len(routing.ZoneOrder))
 	for _, zid := range routing.ZoneOrder {
@@ -197,10 +204,22 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 		queued, jobs := 0, 0
 		for _, chunk := range chunkTargets(zoneTargets, batchSize) {
 			b := zoneBatch{Zone: z, Targets: chunk}
-			if len(cands) > 0 {
+			// Plan-time readiness (research 466 g): a batch no sensor of the
+			// zone could take (every one New for an active job, or every
+			// one refusing private targets on its host) is not dispatched
+			// to fail at claim or on the host.
+			ready := scanzone.JudgeZoneSensors(z, states[zid], scanzone.SensorNeed{Tier: tier, Private: anyOf(chunk, private)})
+			if ready.Kind != "" {
+				for _, t := range chunk {
+					plan.Uncovered = append(plan.Uncovered, scanzone.Uncovered{Target: t, Reason: ready.Reason, Kind: ready.Kind, SensorID: ready.SensorID.String()})
+				}
+				continue
+			}
+			eligible := eligibleCandidates(cands, ready.Eligible)
+			if len(eligible) > 0 {
 				// Only a sensor whose reported local policy accepts the
 				// batch is a candidate (sensor.Accepts).
-				v := judge(reports, names, scanJob(sc, chunk), opts)
+				v := judge(pick(reports, eligible), pick(names, eligible), scanJob(sc, chunk), opts)
 				if len(v.accepted) == 0 {
 					reason := v.reason(fmt.Sprintf("scan zone %q", z.Name))
 					plan.PolicyRefused = appendUnique(plan.PolicyRefused, reason)
@@ -209,7 +228,7 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 					}
 					continue
 				}
-				i := leastLoadedOf(load, v.accepted)
+				i := leastLoadedOf(load, pick(eligible, v.accepted))
 				load[i]++
 				id := cands[i].ID
 				b.SensorID = &id
@@ -253,6 +272,87 @@ func (s *Service) planZoneBatches(ctx context.Context, sc *scan.Scan, routing *s
 		plan.Summary["selected_zone_id"] = sc.ScanZoneID.String()
 	}
 	return plan, nil
+}
+
+// zoneSensorStates loads the active sensors of the zones for the plan-time
+// readiness check (scanzone.JudgeZoneSensors). A directory that cannot list
+// them (a test double) turns the check off: the claim and the sensor still
+// decide, as before the check. A failed lookup stops the dispatch.
+func (s *Service) zoneSensorStates(ctx context.Context, tenantID shared.ID, zoneIDs []shared.ID) (map[shared.ID][]scanzone.ZoneSensorState, error) {
+	r, ok := s.zones.(scanzone.ZoneSensorStateReader)
+	if !ok || len(zoneIDs) == 0 {
+		return nil, nil
+	}
+	states, err := r.ZoneSensorStates(ctx, tenantID, zoneIDs)
+	if err != nil {
+		return nil, fmt.Errorf("scan zone sensor lookup failed, scan not dispatched: %w", err)
+	}
+	return states, nil
+}
+
+// scanJobTier is the tier the grant gives the jobs of a single-scanner scan
+// (sensor.CommandTierFor), or scanzone.TierUnknown for a tool the platform
+// does not know: its reported contract decides at claim.
+func scanJobTier(sc *scan.Scan) int {
+	job := scanJob(sc, nil)
+	if !job.Interactsh && job.CustomTemplates == 0 && (job.Tool == "" || len(stage.ForTool(job.Tool)) == 0) {
+		return scanzone.TierUnknown
+	}
+	return sensor.CommandTierFor(string(command.CommandTypeScan), job, nil)
+}
+
+// toolTier is the tier the grant gives a scan job of tool, or fallback when
+// the platform does not know the tool (or none is named).
+func toolTier(tool string, fallback int) int {
+	job := sensor.Job{Type: string(command.CommandTypeScan), Tool: sensor.CanonicalTool(tool)}
+	if job.Tool == "" || len(stage.ForTool(job.Tool)) == 0 {
+		return fallback
+	}
+	return sensor.CommandTierFor(string(command.CommandTypeScan), job, nil)
+}
+
+// routePrivateTargets is the set of routed targets that are private
+// addresses, or hostnames that resolved to one (scanzone.RoutePrivate).
+func routePrivateTargets(p *scanzone.Plan) map[string]bool {
+	out := map[string]bool{}
+	for _, rt := range p.Routes {
+		if rt.Zone != nil && scanzone.RoutePrivate(rt) {
+			out[rt.Target] = true
+		}
+	}
+	return out
+}
+
+func anyOf(targets []string, set map[string]bool) bool {
+	for _, t := range targets {
+		if set[t] {
+			return true
+		}
+	}
+	return false
+}
+
+// eligibleCandidates returns the indexes of the candidates the readiness
+// check allows (all of them when it decided nothing).
+func eligibleCandidates(cands []scanzone.SensorCandidate, eligible map[shared.ID]bool) []int {
+	out := make([]int, 0, len(cands))
+	for i, c := range cands {
+		if eligible == nil || eligible[c.ID] {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// pick returns xs at the given indexes.
+func pick[T any](xs []T, idx []int) []T {
+	out := make([]T, 0, len(idx))
+	for _, i := range idx {
+		if i < len(xs) {
+			out = append(out, xs[i])
+		}
+	}
+	return out
 }
 
 // tooManyJobsError refuses a run that would create more than

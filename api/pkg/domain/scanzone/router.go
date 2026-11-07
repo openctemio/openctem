@@ -129,6 +129,12 @@ const (
 	// KindSensorPolicy: no sensor of the zone accepts the job under its
 	// local policy.
 	KindSensorPolicy = "sensor_policy"
+	// KindZoneSensorNew: every sensor of the zone is New (passive work
+	// only) and the job is above T0.
+	KindZoneSensorNew = "zone_sensor_new"
+	// KindZoneSensorNoPrivate: the target is private and every sensor of
+	// the zone says its host refuses private targets.
+	KindZoneSensorNoPrivate = "zone_sensor_no_private"
 	// KindAmbiguousZone: zones with different sensors hold the target at
 	// the same narrowest width (sites that reuse a range); the scan must
 	// pick its zone.
@@ -140,6 +146,10 @@ type Uncovered struct {
 	Target string `json:"target"`
 	Reason string `json:"reason"`
 	Kind   string `json:"kind,omitempty"`
+	// SensorID is the zone sensor the fix acts on (KindZoneSensorNew: a
+	// sensor to trust; KindZoneSensorNoPrivate: a host to switch), the
+	// tenant's own sensor; "" otherwise.
+	SensorID string `json:"sensor_id,omitempty"`
 }
 
 // Plan is the routing of a whole target list.
