@@ -69,4 +69,78 @@ describe('TargetChipsField', () => {
     await user.click(remove)
     expect(onRemove).toHaveBeenCalledTimes(1)
   })
+
+  describe('editing a typed chip', () => {
+    const editable = (label: string, onEdit: (n: string) => void): TargetChip => ({
+      key: label,
+      label,
+      kind: 'typed',
+      onEdit,
+    })
+
+    it('turns the chip into an input on click, Enter and F2, and commits on Enter', async () => {
+      const user = userEvent.setup()
+      const onEdit = vi.fn()
+      render(<TargetChipsField id="f" chips={[editable('a.exmaple', onEdit)]} onAdd={vi.fn()} />)
+      await user.click(screen.getByRole('button', { name: 'Edit a.exmaple' }))
+      const input = screen.getByTestId('target-chip-edit')
+      expect(input).toHaveValue('a.exmaple')
+      await user.clear(input)
+      await user.type(input, 'a.example{Enter}')
+      expect(onEdit).toHaveBeenCalledExactlyOnceWith('a.example')
+      expect(screen.queryByTestId('target-chip-edit')).not.toBeInTheDocument()
+
+      screen.getByRole('button', { name: 'Edit a.exmaple' }).focus()
+      await user.keyboard('{Enter}')
+      expect(screen.getByTestId('target-chip-edit')).toBeInTheDocument()
+      await user.keyboard('{Escape}')
+      screen.getByRole('button', { name: 'Edit a.exmaple' }).focus()
+      await user.keyboard('{F2}')
+      expect(screen.getByTestId('target-chip-edit')).toBeInTheDocument()
+    })
+
+    it('commits on blur', async () => {
+      const user = userEvent.setup()
+      const onEdit = vi.fn()
+      render(<TargetChipsField id="f" chips={[editable('a.exmaple', onEdit)]} onAdd={vi.fn()} />)
+      await user.click(screen.getByRole('button', { name: 'Edit a.exmaple' }))
+      await user.type(screen.getByTestId('target-chip-edit'), '2')
+      await user.tab()
+      expect(onEdit).toHaveBeenCalledExactlyOnceWith('a.exmaple2')
+    })
+
+    it('cancels on Escape without changing the chip', async () => {
+      const user = userEvent.setup()
+      const onEdit = vi.fn()
+      render(<TargetChipsField id="f" chips={[editable('a.example', onEdit)]} onAdd={vi.fn()} />)
+      await user.click(screen.getByRole('button', { name: 'Edit a.example' }))
+      await user.type(screen.getByTestId('target-chip-edit'), 'zzz{Escape}')
+      expect(onEdit).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Edit a.example' })).toBeInTheDocument()
+    })
+
+    it('hands an empty commit to the parent, which removes the chip', async () => {
+      const user = userEvent.setup()
+      const onEdit = vi.fn()
+      render(<TargetChipsField id="f" chips={[editable('a.example', onEdit)]} onAdd={vi.fn()} />)
+      await user.click(screen.getByRole('button', { name: 'Edit a.example' }))
+      await user.clear(screen.getByTestId('target-chip-edit'))
+      await user.keyboard('{Enter}')
+      expect(onEdit).toHaveBeenCalledExactlyOnceWith('')
+    })
+
+    it('does not make asset or group chips editable', () => {
+      render(
+        <TargetChipsField
+          id="f"
+          chips={[
+            { key: 'a', label: 'web-1', kind: 'asset', onRemove: vi.fn() },
+            { key: 'g', label: 'prod', kind: 'group', onRemove: vi.fn() },
+          ]}
+          onAdd={vi.fn()}
+        />
+      )
+      expect(screen.queryByRole('button', { name: /^Edit / })).not.toBeInTheDocument()
+    })
+  })
 })

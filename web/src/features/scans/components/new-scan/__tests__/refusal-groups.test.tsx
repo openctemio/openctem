@@ -3,6 +3,7 @@
  * Targets and Review steps share it), the readiness line, and the routing
  * note.
  */
+import type * as React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -15,6 +16,20 @@ vi.mock('@/lib/api/client', () => ({
 }))
 vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1', name: 'ORG' } }),
+}))
+vi.mock('@/features/scan-zones/components/scan-zone-dialog', () => ({
+  ScanZoneDialog: ({ open, initialRanges }: { open: boolean; initialRanges?: string[] }) =>
+    open ? (
+      <div role="dialog" aria-label="add zone">
+        {(initialRanges ?? []).join(',')}
+      </div>
+    ) : null,
+}))
+const perms = vi.hoisted(() => ({ zones: true }))
+vi.mock('@/lib/permissions', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions')>()),
+  Can: ({ children, fallback }: { children: React.ReactNode; fallback?: React.ReactNode }) =>
+    perms.zones ? children : (fallback ?? null),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/features/attack-surface/components/easm-verify-domain-dialog', () => ({
@@ -70,10 +85,7 @@ describe('RefusalGroups', () => {
         'Resolves to 10.0.0.7, an internal address: scanning it would hit your own network.'
       )
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Set up a scan zone' })).toHaveAttribute(
-      'href',
-      '/sensors?tab=zones'
-    )
+    expect(screen.getByRole('button', { name: 'Add scan zone' })).toBeInTheDocument()
   })
 
   it('offers one bulk action per group: own sensor, remove the group', async () => {
@@ -254,5 +266,57 @@ describe('RoutingNote', () => {
       />
     )
     expect(screen.getByTestId('routing-note')).toHaveTextContent('none of your sensors')
+  })
+})
+
+describe('zone refusals of a private range', () => {
+  const range: Result = {
+    target: '10.0.0.0/16',
+    allowed: false,
+    code: 'zone_none',
+    fixes: [{ action: 'add_zone' }],
+    remedies: [{ action: 'remove' }],
+  }
+
+  it('offers Add scan zone, which opens the zone dialog prefilled with the range', async () => {
+    perms.zones = true
+    const user = userEvent.setup()
+    render(<RefusalGroups results={[range]} onRemove={vi.fn()} onRecheck={vi.fn()} />)
+    const group = screen.getByTestId('refusal-group-zone')
+    expect(group).toHaveTextContent('add a zone and put the sensor that can reach it in it')
+    await user.click(within(group).getByRole('button', { name: 'Add scan zone' }))
+    expect(screen.getByRole('dialog', { name: 'add zone' })).toHaveTextContent('10.0.0.0/16')
+  })
+
+  it('without sensors:zones:write, links to the zones page instead of the dialog', () => {
+    perms.zones = false
+    render(<RefusalGroups results={[range]} onRemove={vi.fn()} onRecheck={vi.fn()} />)
+    const group = screen.getByTestId('refusal-group-zone')
+    expect(within(group).queryByRole('button', { name: 'Add scan zone' })).not.toBeInTheDocument()
+    expect(within(group).getByRole('link', { name: 'Set up a scan zone' })).toHaveAttribute(
+      'href',
+      '/sensors?tab=zones'
+    )
+    perms.zones = true
+  })
+
+  it('shows the server reason for a code it does not know', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    render(
+      <RefusalGroups
+        results={[
+          {
+            target: 'x.example.com',
+            allowed: false,
+            code: 'future_code',
+            message: 'Blocked by a rule added later.',
+          },
+        ]}
+        onRemove={vi.fn()}
+        onRecheck={vi.fn()}
+      />
+    )
+    expect(screen.getByText('Blocked by a rule added later.')).toBeInTheDocument()
+    expect(screen.queryByText('Not a valid target')).not.toBeInTheDocument()
   })
 })
