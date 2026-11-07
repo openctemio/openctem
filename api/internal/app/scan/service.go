@@ -215,6 +215,7 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	rangeLimits         RangeLimits          // optional; nil = every range target at most a /16
 	nameAddresses       NameAddressReader    // optional; resolution relations for the exclusion match (dispatch_gate.go)
 	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
 	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
@@ -246,6 +247,7 @@ type Service struct {
 	stepQueuer       StepQueuer                // the scan run service's step dispatcher; nil refuses workflow scans
 	workflowVersions scanworkflow.VersionStore // pins workflow runs to the version they start with; nil leaves them on the live workflow
 	logger           *logger.Logger
+	misfireEvents    ScheduleMissEvents // optional; nil = the scan records the misfire but no event is sent
 }
 
 // ScopeExclusionFilter reports which of the given candidate targets match an

@@ -1714,8 +1714,12 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		// against the caller's own card, applied through the scope, review
 		// and network seed services.
 		if svc.Scope != nil && svc.EASMNetworkSeeds != nil && repos.EASMDeclinedNetwork != nil {
-			h.SetAddressDecisions(easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
-				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log)))
+			decisions := easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
+				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log))
+			// "Retry" makes an address's network lookup due again; a
+			// sensor runs it (the platform looks nothing up).
+			decisions.SetLookupQueue(repos.Attribution)
+			h.SetAddressDecisions(decisions)
 		}
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
@@ -1751,6 +1755,10 @@ func newEASMSuggestions(repos *Repositories, svc *Services) *easmapp.SuggestionS
 	// Networks the organization answered "not ours" are not offered again.
 	if repos.EASMDeclinedNetwork != nil {
 		suggestions.SetDeclined(repos.EASMDeclinedNetwork)
+	}
+	// The summary counts the addresses that joined scope automatically.
+	if repos.EASMAddressAutoAdd != nil {
+		suggestions.SetAutoAdded(repos.EASMAddressAutoAdd)
 	}
 	// The organization's address setting in force (never hides the card;
 	// Strict scan approval turns automatic adds into ask).

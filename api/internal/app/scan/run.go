@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/validator"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -203,7 +204,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	validatedTargets, err := s.validateScanTargets(ctx, CreateScanInput{
 		TenantID: input.TenantID,
 		Targets:  input.Targets,
-	})
+	}, validator.DefaultCIDRHostBits)
 	if err != nil {
 		return nil, err
 	}

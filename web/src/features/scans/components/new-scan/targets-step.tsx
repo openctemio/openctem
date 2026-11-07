@@ -69,11 +69,14 @@ import { canFindLiveHosts } from '../../lib/liveness'
 import { intensityForTier, type ProbeTier } from '../../lib/scan-intensity'
 import { lowerIntensityAllowed } from '../../lib/targets-step'
 import { useTargetsCheck } from '../../hooks/use-targets-check'
+import { useRangeHostBits } from '../../hooks/use-range-host-bits'
 import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { TargetChipsField, type TargetChip } from './target-chips-field'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
 import { TargetList } from './target-list'
 import { InvalidTargetsNote } from './invalid-targets-note'
+import { LargeRangeConfirm } from './large-range-confirm'
+import { largeRangeSummary } from '../../lib/large-range'
 import { BulkTargetsPanel } from './bulk-targets-panel'
 import { CoreInfraWarning } from './core-infra-warning'
 
@@ -135,7 +138,12 @@ export function TargetsStep({
       ),
     [targets.assetIds, targets.assetNames]
   )
-  const pasted = useMemo(() => parsePastedTargets(targets.customTargets), [targets.customTargets])
+  // The organization's widest range (a /16 unless it opted in to wider).
+  const maxHostBits = useRangeHostBits(canReadScope)
+  const pasted = useMemo(
+    () => parsePastedTargets(targets.customTargets, { maxHostBits }),
+    [targets.customTargets, maxHostBits]
+  )
 
   const setAssets = (assets: PickedAsset[], picked: boolean) => {
     const names = { ...targets.assetNames }
@@ -200,6 +208,7 @@ export function TargetsStep({
     return [...bad, ...valid]
   }, [pasted.lines])
   const asList = listEntries.length > CHIP_LIMIT
+  const largeRanges = useMemo(() => largeRangeSummary(pasted.targets), [pasted.targets])
   // Remove targets the scope check refused: typed lines, and picked assets by name.
   const removeTargets = (names: string[]) => {
     const drop = new Set(names.map((n) => n.trim().toLowerCase()))
@@ -446,6 +455,13 @@ export function TargetsStep({
           entries={pasted.invalid}
           onSplit={(entry, pieces) => replaceTyped(entry, pieces.join(', '))}
         />
+        {largeRanges && (
+          <LargeRangeConfirm
+            summary={largeRanges}
+            confirmed={targets.largeRangeConfirmed}
+            onConfirm={(key) => onChange({ targets: { ...targets, largeRangeConfirmed: key } })}
+          />
+        )}
         {over && (
           <p role="alert" className="text-xs text-destructive">
             {t('scans.summary.tooMany', undefined, {
@@ -518,6 +534,7 @@ export function TargetsStep({
             id={`${fieldId}-bulk`}
             present={pasted.lines.map((l) => targetKey(l.input))}
             capacity={Math.max(0, MAX_DIRECT_TARGETS - sent.length)}
+            maxHostBits={maxHostBits}
             onAdd={(added) => {
               addTyped(added)
               setBulkOpen(false)

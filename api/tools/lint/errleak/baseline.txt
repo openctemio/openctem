@@ -264,7 +264,6 @@ wrap-err internal/app/scan/command_gate.go:Service.GateCommandPayload 4
 wrap-err internal/app/scan/crud.go:Service.UpdateScan 1
 wrap-err internal/app/scan/crud.go:Service.validateScanSecurityInputs 1
 wrap-err internal/app/scan/crud.go:configureScanSchedule 2
-wrap-err internal/app/scan/import_export.go:Service.ImportConfig 1
 wrap-err internal/app/scanrun/step_edit.go:checkStepSelection 1
 wrap-err internal/app/sensor/content.go:ContentService.UpdatePolicy 1
 wrap-err internal/app/sensor/tool_settings.go:SensorService.CheckScanToolConfig 1
