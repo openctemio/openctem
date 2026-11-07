@@ -203,7 +203,7 @@ export function QueryParamFields({
           aria-label={t('sensors.scanIdent.query.name', 'Parameter name')}
           aria-invalid={err ? true : undefined}
           className="font-mono"
-          placeholder="scan"
+          placeholder={t('sensors.scanIdent.query.namePlaceholder', 'scan')}
           value={value.name}
           maxLength={MAX_QUERY_PART}
           onChange={(e) => onChange({ ...value, name: e.target.value })}
@@ -213,7 +213,7 @@ export function QueryParamFields({
           aria-label={t('sensors.scanIdent.query.value', 'Parameter value')}
           aria-invalid={err ? true : undefined}
           className="font-mono"
-          placeholder="corp-1"
+          placeholder={t('sensors.scanIdent.query.valuePlaceholder', 'corp-1')}
           value={value.value}
           maxLength={MAX_QUERY_PART}
           onChange={(e) => onChange({ ...value, value: e.target.value })}
@@ -267,7 +267,7 @@ export function HeaderListEditor({
               aria-label={t('sensors.scanIdent.headerNameN', 'Header {n} name', { n: i + 1 })}
               aria-invalid={errors[i] ? true : undefined}
               className="font-mono"
-              placeholder="X-Scan-Id"
+              placeholder={t('sensors.scanIdent.headerNamePlaceholder', 'X-Scan-Id')}
               value={h.name}
               maxLength={MAX_HEADER_NAME}
               onChange={(e) => set(i, { name: e.target.value })}
