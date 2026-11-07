@@ -1688,10 +1688,11 @@ func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, 
 		UPDATE commands
 		SET status = 'failed',
 		    error_message = CASE
-		        WHEN dispatch_attempts >= $1 AND jsonb_array_length(attempts) > 0 THEN
+		        WHEN dispatch_attempts >= $1 AND jsonb_array_length(attempts) > 0 THEN COALESCE(
 		            (SELECT 'Failed on ' || count(*) || ' sensor attempt(s) for infrastructure reasons, none about the target ('
 		                    || string_agg('sensor ' || left(a ->> 'sensor_id', 8) || ': ' || (a ->> 'class'), '; ' ORDER BY ord DESC) || ')'
-		             FROM jsonb_array_elements(attempts) WITH ORDINALITY AS t(a, ord))
+		             FROM jsonb_array_elements(attempts) WITH ORDINALITY AS t(a, ord)
+		             WHERE a ->> 'counted' IS DISTINCT FROM 'false'), 'Max dispatch attempts exceeded')
 		        WHEN dispatch_attempts >= $1 THEN 'Max dispatch attempts exceeded'
 		        ELSE $3::text END,
 		    failure_class = CASE WHEN jsonb_array_length(attempts) > 0 THEN attempts -> -1 ->> 'class' ELSE failure_class END,

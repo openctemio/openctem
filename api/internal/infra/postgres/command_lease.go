@@ -134,6 +134,12 @@ func (r *CommandRepository) CancelIfOpen(ctx context.Context, cmd *command.Comma
 // RequeueExpiredLeases puts every command whose lease ran out back to
 // pending, shared jobs included (their holder is sensor_id too): one more dispatch attempt (so
 // fail_exhausted_commands ends a command that keeps killing its sensors).
+// A routed command whose holder is offline now (the health ladder convicted
+// it and ended its leases: a network or DNS outage, a host down) waits
+// instead: no dispatch attempt is used, the attempt is recorded with
+// counted false and the wait message, up to command.MaxOfflineWaits times.
+// The back-off of every re-queue (requeue_count, command.MaxRequeues) and the
+// run's deadline still bound it.
 // A command addressed to one sensor on purpose (pinned_sensor_id, recorded
 // at its claim) goes back addressed to that sensor and waits for it until
 // it expires; every other command is unpinned with its zone kept.
@@ -145,9 +151,9 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 		SET status = 'pending', sensor_id = c.pinned_sensor_id,
 		    acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL,
-		    dispatch_attempts = c.dispatch_attempts + 1,
+		    dispatch_attempts = c.dispatch_attempts + CASE WHEN `+offlineWaitSQL+` THEN 0 ELSE 1 END,
 		    `+requeueSQL("c.")+`,
-		    error_message = $1,
+		    error_message = CASE WHEN `+offlineWaitSQL+` THEN format($2::text, expired.holder_name) ELSE $1 END,
 		    failed_on = CASE
 		        WHEN `+leaseLostRoutedSQL+`
 		         AND NOT (c.failed_on @> ARRAY[expired.old_sensor_id])
@@ -164,10 +170,16 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 		    attempts = CASE
 		        WHEN `+leaseLostRoutedSQL+` AND jsonb_array_length(c.attempts) < `+fmt.Sprint(command.MaxInfraAttempts)+`
 		        THEN c.attempts || jsonb_build_array(jsonb_build_object(
-		            'sensor_id', expired.old_sensor_id, 'class', 'infra.sensor_offline', 'at', NOW()))
+		            'sensor_id', expired.old_sensor_id, 'class', 'infra.sensor_offline', 'at', NOW(),
+		            'counted', NOT (`+offlineWaitSQL+`)))
 		        ELSE c.attempts END
 		FROM (
-			SELECT id, sensor_id AS old_sensor_id, lease_epoch AS old_epoch
+			SELECT commands.id, commands.sensor_id AS old_sensor_id, commands.lease_epoch AS old_epoch,
+			       EXISTS (SELECT 1 FROM sensors s
+			               WHERE s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id
+			                 AND s.health = 'offline') AS holder_offline,
+			       COALESCE((SELECT s.name FROM sensors s
+			                 WHERE s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id), '') AS holder_name
 			FROM commands
 			WHERE status IN ('acknowledged', 'running')
 			  AND lease_expires_at IS NOT NULL
@@ -176,12 +188,20 @@ func (r *CommandRepository) RequeueExpiredLeases(ctx context.Context) ([]command
 		) expired
 		WHERE c.id = expired.id
 		RETURNING c.id, c.tenant_id, expired.old_sensor_id, expired.old_epoch`,
-		command.LeaseExpiredMessage)
+		command.LeaseExpiredMessage, command.SensorOfflineWaitMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to re-queue commands with an expired lease: %w", err)
 	}
 	return r.collectRequeued(rows)
 }
+
+// offlineWaitSQL is true for a routed command whose holder is offline and
+// that has waited fewer than command.MaxOfflineWaits times: its lost lease
+// uses up no dispatch attempt (RequeueExpiredLeases). A shared job or one
+// addressed to one sensor is not routed and keeps today's rule.
+var offlineWaitSQL = `(` + leaseLostRoutedSQL + ` AND expired.holder_offline
+	AND (SELECT count(*) FROM jsonb_array_elements(c.attempts) a
+	     WHERE a->>'class' = 'infra.sensor_offline' AND a->>'counted' = 'false') < ` + fmt.Sprint(command.MaxOfflineWaits) + `)`
 
 // leaseLostRoutedSQL is true for a command the platform routed (a scan of
 // a run, held by a sensor of the tenant): its lost lease counts against
