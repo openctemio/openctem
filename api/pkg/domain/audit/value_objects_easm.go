@@ -89,6 +89,7 @@ const (
 	ActionEASMAddressesRejected    Action = "easm_address_decision.rejected"
 	ActionEASMNetworkDeclined      Action = "easm_declined_network.added"
 	ActionEASMNetworkDeclineUndone Action = "easm_declined_network.deleted"
+	ActionEASMAddressLookupRetried Action = "easm_address_decision.lookup_retried"
 )
 
 var _ = registerActions("easm", map[Action]Severity{
@@ -96,6 +97,7 @@ var _ = registerActions("easm", map[Action]Severity{
 	ActionEASMAddressesRejected:    SeverityMedium,
 	ActionEASMNetworkDeclined:      SeverityMedium,
 	ActionEASMNetworkDeclineUndone: SeverityMedium,
+	ActionEASMAddressLookupRetried: SeverityLow,
 })
 
 var _ = registerActions("easm", map[Action]Severity{

@@ -455,6 +455,7 @@ func registerEASMRoutes(
 		if h.HasAddressDecisions() {
 			r.POST("/suggestions/addresses/add", h.AddAddresses, middleware.Require(permission.ScopeWrite))
 			r.POST("/suggestions/addresses/reject", h.RejectAddresses, middleware.Require(permission.AssetsWrite))
+			r.POST("/suggestions/addresses/lookup", h.RetryAddressLookup, middleware.Require(permission.AssetsWrite))
 			r.POST("/suggestions/networks/ours", h.NetworkIsOurs, middleware.Require(permission.ScopeWrite), requireStepUp())
 			r.POST("/suggestions/networks/not-ours", h.NetworkNotOurs, middleware.Require(permission.AssetsWrite))
 			r.DELETE("/suggestions/declined-networks/{id}", h.UndeclineNetwork, middleware.Require(permission.AssetsWrite))

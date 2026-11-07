@@ -32,10 +32,12 @@ func TestEASMAddressDecisions_DB(t *testing.T) {
 		cards := easmapp.NewSuggestionService(attr, gate, nil, org, nil)
 		cards.SetDeclined(declined)
 		review := easmapp.NewReviewService(attr, nil)
+		decisions := easmapp.NewAddressDecisions(cards, scopeSvc, review, nil, declined, nil)
+		decisions.SetLookupQueue(attr)
 		hs.EASM = handler.NewEASMHandler(easmapp.NewService(postgres.NewEASMSummaryRepository(db), nil), log).
 			SetReview(review, auditapp.NewAuditService(postgres.NewAuditRepository(db), log)).
 			SetSuggestions(cards).
-			SetAddressDecisions(easmapp.NewAddressDecisions(cards, scopeSvc, review, nil, declined, nil))
+			SetAddressDecisions(decisions)
 	}
 	t.Cleanup(func() { changeAuditExtraHandlers = nil })
 	h := newChangeAuditHarness(t, func(s *scopeapp.Service, _ *handler.ScopeHandler, _ *postgres.DB) { scopeSvc = s })
@@ -64,6 +66,9 @@ func TestEASMAddressDecisions_DB(t *testing.T) {
 	mail := asset(orgID, "mail.decide-db.example", "subdomain", `{}`)
 	foreign := asset(orgID, "192.0.2.77", "ip_address", `{"asn": 7552, "asn_org": "Other Telecom"}`)
 	behind(orgID, mail, foreign)
+	vpn := asset(orgID, "vpn.decide-db.example", "subdomain", `{}`)
+	ip2 := asset(orgID, "203.0.113.91", "ip_address", `{}`)
+	behind(orgID, vpn, ip2)
 	// An address of another organization that nothing of the caller's points at.
 	asset(otherID, "198.51.100.66", "ip_address", `{}`)
 
@@ -103,6 +108,37 @@ func TestEASMAddressDecisions_DB(t *testing.T) {
 	}
 	// Added: no longer pending, so a second add is refused.
 	h.expect(admin, http.MethodPost, "/api/v1/easm/suggestions/addresses/add", add, http.StatusBadRequest)
+
+	// Network lookup retry: assets write, the caller's own card only; it
+	// only makes the sensor lookup due (no lookup from the platform).
+	retry := `{"addresses":["203.0.113.91"]}`
+	h.expect(viewer, http.MethodPost, "/api/v1/easm/suggestions/addresses/lookup", retry, http.StatusForbidden)
+	if body := h.expect(otherAdmin, http.MethodPost, "/api/v1/easm/suggestions/addresses/lookup", retry, http.StatusBadRequest); !strings.Contains(body, "DECISION_NOT_PENDING") {
+		t.Fatalf("other org retry: %s", body)
+	}
+	h.exec(`INSERT INTO asset_coverage (tenant_id, asset_id, capability, state, reason, fail_streak, next_due_at) VALUES ($1, $2, 'lookup.asn', 'failed', 'tool_error', 3, now() + interval '7 days')`, orgID, ip2)
+	var lr easmapp.LookupRetryResult
+	if err := json.Unmarshal([]byte(h.expect(admin, http.MethodPost, "/api/v1/easm/suggestions/addresses/lookup", retry, http.StatusOK)), &lr); err != nil {
+		t.Fatal(err)
+	}
+	if lr.Queued != 1 || count(`SELECT COUNT(*) FROM asset_coverage WHERE tenant_id = $1 AND asset_id = $2 AND capability = 'lookup.asn' AND state = 'due' AND fail_streak = 0 AND next_due_at <= now()`, orgID, ip2) != 1 {
+		t.Fatalf("retry %+v did not make the lookup due", lr)
+	}
+	if count(`SELECT COUNT(*) FROM asset_coverage WHERE tenant_id = $1`, otherID) != 0 {
+		t.Fatal("a retry touched another organization's ledger")
+	}
+	// The card says where the lookup stands.
+	cardBody := h.expect(admin, http.MethodGet, "/api/v1/easm/suggestions", "", http.StatusOK)
+	if !strings.Contains(cardBody, `"lookup":{"state":"pending"`) || !strings.Contains(cardBody, `"summary":`) {
+		t.Fatalf("card without lookup state or summary: %s", cardBody)
+	}
+	// A whole group in one decision.
+	if err := json.Unmarshal([]byte(h.expect(admin, http.MethodPost, "/api/v1/easm/suggestions/addresses/add", `{"groups":["block:203.0.113.0/24"]}`, http.StatusOK)), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Created != 1 || entries(orgID, "203.0.113.91") != 1 {
+		t.Fatalf("group add %+v", res)
+	}
 
 	// "Is this network yours?" No: the organization's own row, the address rejected.
 	h.expect(otherAdmin, http.MethodPost, "/api/v1/easm/suggestions/networks/not-ours", `{"key":"other_network:AS7552"}`, http.StatusBadRequest)
