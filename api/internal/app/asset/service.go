@@ -112,6 +112,8 @@ type AssetService struct {
 	// Freshness of attribute classes. Optional: nil serves no observation.
 	freshness freshdom.Repository
 	coverage  covdom.Repository
+	// coverageInfo reads the organization's info pass setting.
+	coverageInfo covdom.InfoPolicyReader
 	// The open ports of the addresses a name resolves to. Optional.
 	resolvedPorts assetdom.ResolvedPortReader
 	lineage       assetdom.LineageReader
