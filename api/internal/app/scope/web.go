@@ -137,6 +137,80 @@ type WebScope struct {
 	// gets DenyPaths, where a "*" rule is cut to the path before it.
 	DenyPathsWildcard []string `json:"deny_paths_wildcard,omitempty"`
 	Methods           []string `json:"methods,omitempty"`
+	// MaxRequestsPerHost caps the requests the job sends to one host; the
+	// sensor's forwarder counts and refuses past it (0: no cap). Set only
+	// on a path discovery job.
+	MaxRequestsPerHost int `json:"max_requests_per_host,omitempty"`
+}
+
+// Bounds of a path discovery job's per-host request cap (the contract's
+// max_requests_per_origin).
+const (
+	MinDiscoveryRequestsPerHost = 50
+	MaxDiscoveryRequestsPerHost = 100000
+)
+
+// BuildDiscoveryWebScope returns the strict web scope of a path discovery
+// job (enumerate.web_paths) on targets: GET and HEAD only, every path
+// exclusion on a target host denied unless its testing mode is allowed (a
+// read_only exclusion is denied too: an approver who allowed reads did not
+// allow volume), and the per-host request cap. It is never nil: a discovery
+// job always carries its limits, even with no exclusion. A failed lookup is
+// an error (the caller does not dispatch).
+func (s *Service) BuildDiscoveryWebScope(ctx context.Context, tenantID shared.ID, targets []string, maxRequestsPerHost int) (*WebScope, error) {
+	ws, err := s.discoveryScope(ctx, tenantID, targets)
+	if err != nil {
+		return nil, err
+	}
+	ws.Methods = slices.Clone(readMethods)
+	ws.MaxRequestsPerHost = min(max(maxRequestsPerHost, MinDiscoveryRequestsPerHost), MaxDiscoveryRequestsPerHost)
+	return ws, nil
+}
+
+// DiscoveryDenyPaths are the path prefixes path discovery never requests on
+// the targets' hosts: every path exclusion whose host pattern covers a
+// target host and whose testing mode is not allowed at this moment. They are
+// matched with contract/webpath semantics (decoded, dot segments resolved,
+// case-insensitive prefix) by the candidate list, the tool and the sensor.
+// Each is written as BuildWebScope writes it (scopedom.JobDenyPaths: the
+// decoded form too, and cut before a "*" segment, which a sensor before
+// webpath 1.3.1 compares literally).
+func (s *Service) DiscoveryDenyPaths(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {
+	ws, err := s.discoveryScope(ctx, tenantID, targets)
+	if err != nil {
+		return nil, err
+	}
+	return ws.DenyPaths, nil
+}
+
+// discoveryScope is the deny lists of a path discovery job: DenyPaths in the
+// job form and DenyPathsWildcard as written, like BuildWebScope. Both are
+// non-nil-safe to read; DenyPaths is never nil.
+func (s *Service) discoveryScope(ctx context.Context, tenantID shared.ID, targets []string) (*WebScope, error) {
+	exclusions, err := s.effectiveExclusions(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list active scope exclusions: %w", err)
+	}
+	hosts := make([]string, 0, len(targets))
+	for _, t := range targets {
+		if h := hostOfTarget(t); h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	now := time.Now()
+	ws := &WebScope{DenyPaths: []string{}}
+	for _, e := range exclusions {
+		web := e.Web()
+		if e.ExclusionType() != scopedom.ExclusionTypePath || web == nil || web.EffectiveTesting(now) == scopedom.TestingAllowed {
+			continue
+		}
+		if !slices.ContainsFunc(hosts, func(h string) bool { return scopedom.HostPatternMatches(e.HostPattern(), h) }) {
+			continue
+		}
+		ws.addDeny(web.PathPrefix)
+	}
+	ws.finishDeny()
+	return ws, nil
 }
 
 // readMethods are what a job keeps when a rule blocks other methods only.

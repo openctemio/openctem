@@ -109,6 +109,12 @@ type Planner struct {
 	names    NameSource
 	lists    OrganizationLists
 	logger   *slog.Logger
+	// webPaths and discoveryDeny build a path discovery job's derived list.
+	webPaths      WebPathSource
+	discoveryDeny DiscoveryDenySource
+	// packOrigins says whether an active scope entry names an origin's host:
+	// a wordlist pack runs only on such origins (webpaths.go).
+	packOrigins PackOriginSource
 }
 
 // New returns a planner. names may be nil: no list is generated.
@@ -175,6 +181,37 @@ func (p *Planner) PinJobContent(ctx context.Context, req command.PinRequest) ([]
 		dir, ok := purposeDir[r.Purpose]
 		if !ok {
 			return nil, nil, refuse("wordlist purpose %q is not supported", clip(r.Purpose, 40))
+		}
+		if r.Purpose == PurposeWebPaths && isDiscovery(req.Payload) {
+			// Path discovery: the derived list inline; a pack only when
+			// the job asks for a pack list too.
+			lists := discoveryLists(req.Payload)
+			if needsPack(lists) {
+				// A pack is the platform's list, not the organization's
+				// inventory: it runs only on origins an active scope entry
+				// names, at the size class the run's depth allows (standard
+				// S; deep M; no plan offers a larger one).
+				if err := p.requirePackOrigins(ctx, req.TenantID, commanddom.PayloadTargets(req.Payload)); err != nil {
+					return nil, nil, err
+				}
+				item, err := p.packFor(ctx, r.Slot, dir, class)
+				if err != nil {
+					return nil, nil, err
+				}
+				content = append(content, *item)
+			}
+			if slices.Contains(lists, ListDerived) {
+				in, err := p.derivedWebPaths(ctx, req.TenantID, r.Slot, commanddom.PayloadTargets(req.Payload))
+				if err != nil {
+					return nil, nil, err
+				}
+				if inputsBytes+len(in.Data) > protov2.MaxJobInputsGzipTotal || len(inputs) >= protov2.MaxJobInputs {
+					return nil, nil, refuse("the derived path list does not fit the job's inline budget")
+				}
+				inputsBytes += len(in.Data)
+				inputs = append(inputs, *in)
+			}
+			continue
 		}
 		item, err := p.packFor(ctx, r.Slot, dir, class)
 		if err != nil {
