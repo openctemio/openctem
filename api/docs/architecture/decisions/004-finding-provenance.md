@@ -1,6 +1,6 @@
 # 004 — Finding provenance belongs to the sighting, not the finding
 
-**Status:** accepted, implemented (channel column; sightings in [finding-sightings.md](../finding-sightings.md), 2026-11-05)
+**Status:** accepted, implemented (channel column; sightings in [finding-sightings.md](../finding-sightings.md), 2026-11-05; per-source values in [finding-source-records.md](../finding-source-records.md), 2026-11-07)
 **Date:** 2026-07-28
 
 ## The question

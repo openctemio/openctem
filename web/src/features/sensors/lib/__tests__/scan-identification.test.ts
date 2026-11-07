@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  normalizeQuery,
+  parseUserAgentList,
+  queryError,
+  requiredWithoutMarker,
+  userAgentBothError,
+  userAgentListErrors,
   headerListErrors,
   headerNameError,
   headerValueError,
@@ -66,11 +72,14 @@ describe('mergeIdentity', () => {
     ],
   }
   it('keeps the union; the organization wins unless the platform enforces', () => {
-    const e = mergeIdentity(platform, 'corp-scan', [
-      { name: 'x-operator', value: 'mine' },
-      { name: 'x-env', value: 'uat' },
-      { name: 'ATTT', value: 'is-here' },
-    ])
+    const e = mergeIdentity(platform, {
+      userAgent: 'corp-scan',
+      headers: [
+        { name: 'x-operator', value: 'mine' },
+        { name: 'x-env', value: 'uat' },
+        { name: 'ATTT', value: 'is-here' },
+      ],
+    })
     expect(e.headers).toEqual([
       { name: 'X-Operator', value: 'saas', source: 'platform_enforced' },
       { name: 'x-env', value: 'uat', source: 'organization' },
@@ -88,10 +97,92 @@ describe('mergeIdentity', () => {
     ])
   })
   it('uses the platform User-Agent as a default, or always when enforced', () => {
-    expect(mergeIdentity(platform, '', []).userAgent).toBe('openctem-scanner')
-    expect(mergeIdentity({ ...platform, user_agent_enforced: true }, 'corp', []).userAgent).toBe(
+    expect(mergeIdentity(platform, { userAgent: '', headers: [] }).userAgent).toBe(
       'openctem-scanner'
     )
-    expect(mergeIdentity(undefined, '', []).headers).toEqual([])
+    expect(
+      mergeIdentity({ ...platform, user_agent_enforced: true }, { userAgent: 'corp', headers: [] })
+        .userAgent
+    ).toBe('openctem-scanner')
+    expect(mergeIdentity(undefined, { userAgent: '', headers: [] }).headers).toEqual([])
+  })
+})
+
+describe('User-Agent rotation list', () => {
+  it('reads one value per line, trimmed, blank lines dropped', () => {
+    expect(parseUserAgentList(' a/1 \n\n b/2\n')).toEqual(['a/1', 'b/2'])
+  })
+  it('flags each bad line by number: too long, not ASCII, duplicate', () => {
+    const text = ['ok/1', 'x'.repeat(257), 'caf\u00e9', 'ok/1'].join('\n')
+    expect(userAgentListErrors(text).map((e) => e.line)).toEqual([2, 3, 4])
+  })
+  it('refuses more than 200 values for the whole list', () => {
+    const text = Array.from({ length: 201 }, (_, i) => `ua/${i}`).join('\n')
+    const errs = userAgentListErrors(text)
+    expect(errs[0].line).toBe(0)
+    expect(userAgentListErrors(text.split('\n').slice(0, 200).join('\n'))).toEqual([])
+  })
+  it('refuses a single User-Agent together with a list', () => {
+    expect(userAgentBothError('one', ['a'])).not.toBeNull()
+    expect(userAgentBothError('', ['a'])).toBeNull()
+  })
+})
+
+describe('query parameter', () => {
+  it('accepts URL-safe parts and treats an empty pair as none', () => {
+    expect(queryError({ name: 'scan', value: 'corp-1.a_b~c' })).toBeNull()
+    expect(queryError({ name: ' ', value: '' })).toBeNull()
+    expect(normalizeQuery({ name: '', value: '' })).toBeNull()
+    expect(queryError({ name: 'a b', value: 'v' })).not.toBeNull()
+    expect(queryError({ name: 'n', value: 'a&b=c' })).not.toBeNull()
+    expect(queryError({ name: 'n', value: '' })).not.toBeNull()
+  })
+})
+
+describe('rotation, query and required in the merge', () => {
+  const platform = {
+    user_agent: '',
+    user_agents: ['p/1', 'p/2'],
+    user_agent_enforced: false,
+    headers: [],
+    query: { name: 'scan', value: 'plat' },
+    identification_required: true,
+  }
+  it('uses the winning list whole and ORs the requirement', () => {
+    const e = mergeIdentity(platform, {
+      userAgent: '',
+      userAgents: ['o/1', 'o/2', 'o/3'],
+      headers: [],
+    })
+    expect(e.userAgents).toEqual(['o/1', 'o/2', 'o/3'])
+    expect(e.userAgent).toBe('o/1')
+    expect(e.query).toEqual({ name: 'scan', value: 'plat' })
+    expect(e.querySource).toBe('platform')
+    expect(e.required).toBe(true)
+    expect(e.requiredBy).toEqual(['platform'])
+    expect(previewLines(e)[0]).toBe('GET /?scan=plat HTTP/1.1')
+  })
+  it('keeps an enforced platform list and query', () => {
+    const e = mergeIdentity(
+      { ...platform, user_agent_enforced: true, query_enforced: true },
+      { userAgent: 'mine', headers: [], query: { name: 'scan', value: 'org' } }
+    )
+    expect(e.userAgents).toEqual(['p/1', 'p/2'])
+    expect(e.userAgentSource).toBe('platform_enforced')
+    expect(e.query?.value).toBe('plat')
+  })
+  it('reports required without a header or query parameter', () => {
+    const none = mergeIdentity(undefined, { userAgent: '', headers: [], required: true })
+    expect(none.requiredBy).toEqual(['organization'])
+    expect(requiredWithoutMarker(none)).toBe(true)
+    const withHeader = mergeIdentity(undefined, {
+      userAgent: '',
+      headers: [{ name: 'X-Scan', value: '1' }],
+      required: true,
+    })
+    expect(requiredWithoutMarker(withHeader)).toBe(false)
+    expect(requiredWithoutMarker(mergeIdentity(platform, { userAgent: '', headers: [] }))).toBe(
+      false
+    )
   })
 })

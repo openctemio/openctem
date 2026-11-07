@@ -3,6 +3,8 @@ package scanidentity
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
@@ -63,5 +65,42 @@ func TestUpdate(t *testing.T) {
 	l, err := svc.PlatformLayer(ctx)
 	if err != nil || !l.Headers[0].Enforced {
 		t.Fatalf("%+v %v", l, err)
+	}
+}
+
+// The rotation list, query parameter and requirement are stored, trimmed,
+// validated (a list with a single User-Agent, CR/LF, 201 values and a bad
+// query parameter are refused) and audited with the previous and new values.
+func TestUpdateRotationQueryRequired(t *testing.T) {
+	audit := &cst.Audit{}
+	svc := NewService(cst.NewRepo(), cst.Recorder(audit, &cst.Notifier{}))
+	ctx := context.Background()
+	actor := cst.SuperAdmin(t)
+	many := make([]string, 201)
+	for i := range many {
+		many[i] = fmt.Sprintf("ua/%d", i)
+	}
+	for name, bad := range map[string]scanident.PlatformLayer{
+		"both":  {UserAgent: "x", UserAgents: []string{"a", "b"}},
+		"201":   {UserAgents: many},
+		"CR/LF": {UserAgents: []string{"a\r\nX-B: b"}},
+		"query": {Query: &scanident.Query{Name: "a=b", Value: "c"}},
+	} {
+		if _, err := svc.Update(ctx, actor, bad, "why", 0, "", ""); !errors.Is(err, shared.ErrValidation) {
+			t.Errorf("%s accepted: %v", name, err)
+		}
+	}
+	in := scanident.PlatformLayer{UserAgents: []string{" ua/1 ", "ua/2"}, UserAgentEnforced: true,
+		Query: &scanident.Query{Name: "scan", Value: "op-1"}, QueryEnforced: true, IdentificationRequired: true}
+	g, err := svc.Update(ctx, actor, in, "rotation", 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := g.Layer
+	if len(l.UserAgents) != 2 || l.UserAgents[0] != "ua/1" || !l.UserAgentEnforced || l.Query == nil || !l.QueryEnforced || !l.IdentificationRequired {
+		t.Fatalf("stored %+v", l)
+	}
+	if len(audit.Entries) != 1 || !strings.Contains(fmt.Sprint(audit.Entries[0].RequestBody), "identification_required:true") {
+		t.Fatalf("audit %+v", audit.Entries)
 	}
 }

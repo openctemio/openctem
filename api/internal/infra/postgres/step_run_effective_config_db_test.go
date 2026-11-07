@@ -30,7 +30,9 @@ func TestStepRunConfigRecorder_RoundTripAndTenantScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	ss := scanrun.SensorSettings{IgnoredConfigKeys: []string{"targets"},
-		Effective: map[string]scanrun.SensorSetting{"rate": {Value: 50.0, Source: "policy"}}}
+		Effective: map[string]scanrun.SensorSetting{"rate": {Value: 50.0, Source: "policy"}},
+		SentWith: []scanrun.AppliedIdentity{{Tool: "nuclei", UserAgent: "ua/2", UserAgentPool: 3, Required: true,
+			Carrier: scanrun.CarrierForwarder, Query: &scanrun.AppliedQuery{Name: "scan", Value: "corp", Applied: true}}}}
 	if err := repo.SetSensorSettings(ctx, tenantA, stepRunID, ss); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +45,8 @@ func TestStepRunConfigRecorder_RoundTripAndTenantScope(t *testing.T) {
 		t.Fatalf("effective config: %+v", got.EffectiveConfig)
 	}
 	if got.SensorSettings == nil || got.SensorSettings.IgnoredConfigKeys[0] != "targets" ||
-		got.SensorSettings.Effective["rate"].Source != "policy" {
+		got.SensorSettings.Effective["rate"].Source != "policy" || len(got.SensorSettings.SentWith) != 1 ||
+		got.SensorSettings.SentWith[0].UserAgentPool != 3 || got.SensorSettings.SentWith[0].Query.Value != "corp" {
 		t.Fatalf("sensor settings: %+v", got.SensorSettings)
 	}
 
