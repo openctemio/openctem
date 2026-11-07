@@ -20,6 +20,7 @@
 
 import { Layers } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Tag } from '@/components/ui/tag'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import {
   Table,
@@ -38,6 +39,7 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useSettleSignal } from '@/features/shared/components/settle-group'
+import { KeyValueList } from '@/features/shared/components/text-layout'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import {
   useFindingSources,
@@ -192,9 +194,7 @@ function SourceRecordBody({ s }: { s: FindingSourceRecord }) {
           {s.vulnerability_ids && s.vulnerability_ids.length > 0 ? (
             <span className="flex flex-wrap gap-1.5">
               {s.vulnerability_ids.map((v) => (
-                <Badge key={`${v.type}:${v.id}`} variant="outline" className="font-mono text-xs">
-                  {v.id}
-                </Badge>
+                <Tag key={`${v.type}:${v.id}`} label={<span className="font-mono">{v.id}</span>} />
               ))}
             </span>
           ) : null}
@@ -236,14 +236,14 @@ function SourceRecordBody({ s }: { s: FindingSourceRecord }) {
             count: extra.length,
           })}
         >
-          <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-            {extra.map(([k, v]) => (
-              <div key={k} className="min-w-0">
-                <dt className="text-xs break-all text-muted-foreground">{k}</dt>
-                <dd className="text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{v}</dd>
-              </div>
-            ))}
-          </dl>
+          <KeyValueList
+            className="mt-2"
+            items={extra.map(([k, v]) => ({
+              key: k,
+              label: k,
+              value: <span className="whitespace-pre-wrap">{v}</span>,
+            }))}
+          />
         </DetailDisclosure>
       )}
     </div>
