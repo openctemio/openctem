@@ -534,14 +534,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		if item.Shared != "" {
 			summary.ThirdParty++
-			card.SharedCount++
-			if item.Network.Class != "" && item.Network.Class != string(edgeaddr.Dedicated) {
-				card.ProviderCount++
-				providers[item.Network.Provider+"|"+item.Network.Class]++
-			}
-			if len(card.SharedAddresses) < itemLimit {
-				card.SharedAddresses = append(card.SharedAddresses, *item)
-			}
+			card.addShared(*item, providers, itemLimit)
 			continue
 		}
 		if checks && item.Network.Known {
@@ -558,12 +551,7 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		}
 		if !item.Network.Known {
 			card.UnknownNetworkCount++
-			switch item.Lookup.State {
-			case LookupPending:
-				summary.LookingUp++
-			case LookupFailed:
-				summary.LookupFailed++
-			}
+			summary.countLookup(item.Lookup)
 		}
 		summary.NeedYou++
 		offered = append(offered, *item)
@@ -596,6 +584,31 @@ func (s *SuggestionService) addressCard(ctx context.Context, tenantID shared.ID,
 		return nil, nil
 	}
 	return card, nil
+}
+
+// addShared counts a shared address and lists it within the limit.
+func (c *SuggestionCard) addShared(item SuggestionAddress, providers map[string]int, limit int) {
+	c.SharedCount++
+	if item.Network.Class != "" && item.Network.Class != string(edgeaddr.Dedicated) {
+		c.ProviderCount++
+		providers[item.Network.Provider+"|"+item.Network.Class]++
+	}
+	if len(c.SharedAddresses) < limit {
+		c.SharedAddresses = append(c.SharedAddresses, item)
+	}
+}
+
+// countLookup counts a waiting address whose lookup is running or failed.
+func (s *AddressSummary) countLookup(l *NetworkLookup) {
+	if l == nil {
+		return
+	}
+	switch l.State {
+	case LookupPending:
+		s.LookingUp++
+	case LookupFailed:
+		s.LookupFailed++
+	}
 }
 
 // countAutoAdded counts the covering patterns the automatic add wrote.
