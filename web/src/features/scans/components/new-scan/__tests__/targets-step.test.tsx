@@ -13,12 +13,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const perms = vi.hoisted(() => ({ scope: true }))
 const workflow = vi.hoisted(() => ({ value: undefined as unknown }))
+const coreAddrs = vi.hoisted(() => ({ value: undefined as unknown }))
+const excluded = vi.hoisted(() => ({ calls: [] as unknown[] }))
 
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({
     can: (p: string) => (p === 'attack_surface:scope:read' ? perms.scope : true),
   }),
+}))
+vi.mock('@/lib/api/sensor-hooks', () => ({
+  useSensorCoreAddresses: () => ({ data: coreAddrs.value }),
+}))
+vi.mock('@/features/assets/api/triage-api', () => ({
+  createExclusions: async (items: { pattern: string }[], opts: unknown) => {
+    excluded.calls.push({ items, opts })
+    return {
+      results: items.map((i) => ({ ...i, result: 'created' })),
+      created: items.length,
+      existing: 0,
+      refused: 0,
+    }
+  },
 }))
 vi.mock('@/lib/api/scan-workflow-hooks', () => ({
   useScanWorkflow: () => ({ data: workflow.value }),
@@ -90,6 +106,51 @@ describe('TargetsStep', () => {
   beforeEach(() => {
     perms.scope = true
     workflow.value = undefined
+    coreAddrs.value = undefined
+    excluded.calls = []
+  })
+
+  it('warns when range targets cover a sensor resolver, and excludes it on request', async () => {
+    const user = userEvent.setup()
+    coreAddrs.value = {
+      items: [
+        {
+          sensor_id: 's1',
+          sensor_name: 'scanner-hn',
+          addresses: [
+            { address: '10.0.0.53', role: 'resolver' },
+            { address: '192.0.2.1', role: 'gateway' },
+          ],
+        },
+      ],
+    }
+    render(<Harness initial={withTargets(['10.0.0.0/24', 'www.example.com'])} />)
+    const warning = screen.getByTestId('core-infra-warning')
+    expect(warning).toHaveTextContent('10.0.0.53')
+    expect(warning).toHaveTextContent('scanner-hn')
+    expect(warning).not.toHaveTextContent('192.0.2.1')
+    await user.click(within(warning).getByRole('button', { name: 'Exclude these' }))
+    expect(excluded.calls).toEqual([
+      {
+        items: [{ exclusion_type: 'ip_address', pattern: '10.0.0.53' }],
+        opts: expect.objectContaining({ kind: 'do_not_scan' }),
+      },
+    ])
+    expect(screen.queryByTestId('core-infra-warning')).not.toBeInTheDocument()
+  })
+
+  it('shows no core infrastructure warning when no target covers it', () => {
+    coreAddrs.value = {
+      items: [
+        {
+          sensor_id: 's1',
+          sensor_name: 'x',
+          addresses: [{ address: '10.0.0.53', role: 'resolver' }],
+        },
+      ],
+    }
+    render(<Harness initial={withTargets(['203.0.113.0/24'])} />)
+    expect(screen.queryByTestId('core-infra-warning')).not.toBeInTheDocument()
   })
 
   it('groups ranges on the result side with the ranges choice beside them, live hosts first for a new scan', () => {

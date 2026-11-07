@@ -392,14 +392,14 @@
   stroke-dasharray: none;
 }
 
-/* Connected visuals (dashboard exposure flow, intake panel): a healthy
-   source's wire carries a moving dash; volume is the wire's width, so the
-   speed is constant. Static under reduced motion (the meaning holds through
-   width and the row's words). */
-
-/* The travelling light of a healthy wire (FlowWire): a short bright dash that
-   runs along the path from source to target, the same speed on every wire
-   (px, not a share of the length). None under reduced motion or motion off. */
+/* Connected visuals (dashboard exposure flow, intake panel): the travelling
+   light of a healthy wire (FlowWire), a short bright dash that runs along the
+   path from source to target. Its speed follows the volume on a log scale
+   (FlowWire sets animation-duration from flowDuration); a wire with nothing
+   received has no light. Only stroke-dashoffset animates: no layout, a
+   repaint of the wires' own SVG layer. The layer pauses off screen and in a
+   hidden tab (data-flow-paused, FlowWireLayer). No light at all under
+   reduced motion or motion off: width and the row's figure carry the volume. */
 .animate-flow-light {
   stroke-dasharray: 10 44;
   animation: flow-light 1.8s linear infinite;
@@ -408,6 +408,9 @@
   to {
     stroke-dashoffset: -54;
   }
+}
+[data-flow-paused] .animate-flow-light {
+  animation-play-state: paused;
 }
 @media (prefers-reduced-motion: reduce) {
   .animate-flow-light {

@@ -281,3 +281,35 @@ func TestSAMLNameIDCommentInjectionReadsWholeValue(t *testing.T) {
 		t.Fatalf("NameID read as %q, want the whole signed value %q", got, signed)
 	}
 }
+
+// An audience the IdP signed as "<sp>.evil" and a comment or processing
+// instruction splits into "<sp>"
+// and ".evil" still verifies (comments are not canonicalized), but the
+// restriction must be read whole: it does not name this service provider.
+func TestSAMLAudienceCommentSplitRefused(t *testing.T) {
+	const sp = "https://sp.example.com/metadata"
+	conds := func(t *testing.T, audience string) *etree.Element {
+		t.Helper()
+		doc := etree.NewDocument()
+		xml := `<Assertion IssueInstant="` + time.Now().UTC().Format(time.RFC3339) + `"><Conditions><AudienceRestriction><Audience>` +
+			audience + `</Audience></AudienceRestriction></Conditions></Assertion>`
+		if err := doc.ReadFromString(xml); err != nil {
+			t.Fatal(err)
+		}
+		return doc.Root()
+	}
+	if err := checkSAMLAssertionConditions(conds(t, sp), sp, time.Now()); err != nil {
+		t.Fatalf("plain audience refused: %v", err)
+	}
+	if err := checkSAMLAssertionConditions(conds(t, "https://sp.example.com/<!--x-->metadata"), sp, time.Now()); err != nil {
+		t.Fatalf("a comment inside the audience must not change its value: %v", err)
+	}
+	err := checkSAMLAssertionConditions(conds(t, sp+"<!--x-->.evil.example"), sp, time.Now())
+	if err == nil {
+		t.Fatal("comment-split audience accepted: only the text before the comment was read")
+	}
+	// A processing instruction also splits the text; etree's Text() stops there.
+	if err := checkSAMLAssertionConditions(conds(t, sp+"<?x y?>.evil.example"), sp, time.Now()); err == nil {
+		t.Fatal("audience split by a processing instruction accepted")
+	}
+}

@@ -266,6 +266,12 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_type  query  []string  false  "asset type: any of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  asset_type_not  query  []string  false  "asset type: none of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  asset_domain  query  []string  false  "asset domain (example.com: the name and every asset under it; *.example.com: only under it): any of (comma list)"  collectionFormat(csv)
+// @Param  asset_domain_not  query  []string  false  "asset domain (example.com: the name and every asset under it; *.example.com: only under it): none of (comma list)"  collectionFormat(csv)
+// @Param  asset_name  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): any of (comma list)"  collectionFormat(csv)
+// @Param  asset_name_not  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): none of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
 // @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"

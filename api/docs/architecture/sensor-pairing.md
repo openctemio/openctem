@@ -366,6 +366,23 @@ sensors on one host, shows the multi-sensor kit's `sensors.sh add` line
 expectation (waiting, pick the fingerprint, approved) and the new sensor
 (online). The inline empty state creates the expectation only on a click.
 
+The panel asks first what the sensor will scan (research note 466):
+internet-facing, internal networks or both, sent as `purpose` (`internet`,
+the default, `internal`, `both`; `GET` takes it as a query parameter). For
+`internal` and `both` every command sets `SENSOR_ALLOW_PRIVATE_TARGETS=1`,
+with a one-line comment that says what it does, and the narrowing policy
+prefill says `allow_private: true`; `internet` never sets it. The switch is
+the host owner's consent to scan private networks, so it lives in the
+command they run, never in a setting the console can turn on later. With
+`internal` the person may also pin the host to the networks they listed
+(`allowed_ranges`, private ranges only, parsed by
+`scanzone.ParseLANRanges`, at most 64): the commands then set
+`SENSOR_ALLOWED_RANGES` (docker, Compose, Linux) and the policy prefill lists
+the same ranges (Kubernetes reads the policy file). A pin is refused with
+`both` (it would refuse the public targets) and without `internal`. The
+validation is `sensorapp.InstallIntent.Apply`; nothing is rendered for a
+refused intent. Shared and platform sensors never install from this route.
+
 A start with a code uses it as the request's own code (attached, or a
 tenantless request under the same code when nothing expects it), and every
 start without a token answers a `user_code` and, when `APP_URL` is set, the
@@ -378,6 +395,38 @@ component as the dialog (`PairingReview`). The review carries
 `internal/app/sensorpairing/fingerprint.go`); the approval sends the picked
 `fingerprint`, and a wrong pick denies the request, audited high, every
 administrator notified.
+
+### Approve with trust and networks
+
+The approval may also set up what an internal scan needs (research note
+466, `internal/app/sensorpairing/approve_setup.go`). Each part is its own
+decision with its own permission and audit, checked before anything is
+written, so a refusal creates nothing:
+
+- `trusted`: the new sensor starts Trusted. Only for a request that attached
+  to a console expectation of the approver's organization
+  (`TrustEligible`: reverse mode, created by a person, not an enrollment or
+  instance token, not a re-pair; the view says `trust_eligible`), only for
+  profiles whose grant has no credentials and no push ingest
+  (`sensordom.TrustableAtApproval`: internal-network-scanner, easm-external,
+  scan-connector), and only with `sensors:grant:widen` through
+  `sensorgrant.AuthorizeTrust` and the widening approver. The approval's
+  verified step-up proof is the recent re-authentication the approver asks
+  for (`sensorgrant.Actor.StepUpVerified`). The grant is written Trusted in
+  the approval transaction and audited after the commit as
+  `sensor.grant_changed` (trust level widened, high, every administrator
+  notified), as a promotion. A code the sensor printed (`/activate`) can be
+  phished; those requests always start New.
+- `ranges`: the private networks the sensor scans (`scanzone.ParseLANRanges`,
+  RFC 1918 and ULA only), for profiles that scan zones, with
+  `sensors:zones:write`. A non-default zone of the organization with exactly
+  these ranges gets the sensor; otherwise a zone "<sensor> networks" is
+  created with the sensor assigned (`ScanZoneRepository.CreateWithSensorTx`)
+  in the approval transaction, and the zone limit of the grant includes it.
+  Audited as `scan_zone.created` and `scan_zone.sensor_assigned`.
+- Scope is never written by the approval. The console adds the ranges with
+  `POST /api/v1/scope/targets/bulk` after it, so the scope service, its
+  permission and its approvals decide as for any other entry.
 
 ### Re-pair (the sensor keeps its registration)
 

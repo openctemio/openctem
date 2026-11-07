@@ -16,6 +16,7 @@ import type {
   CheckScopeResponse,
   ScopeStatsResponse,
   ScopeTargetResponse,
+  ScopeReplaceResponse,
 } from '@/lib/api/generated'
 
 // Types imported from '../types' are used for reference only - actual API values are strings
@@ -37,6 +38,15 @@ import type {
 export type ApiScopeTarget = ScopeTargetResponse
 export type ApiScopeExclusion = ScopeExclusionResponse
 export type ApiScopeStats = ScopeStatsResponse
+// POST /scope/targets/{id}/replace (and /replace/preview): a pattern
+// replacement, done or previewed.
+export type ApiScopeReplace = ScopeReplaceResponse
+
+/** Input of a pattern replacement: the new pattern and why. */
+export interface ReplaceScopeTargetInput {
+  pattern: string
+  reason: string
+}
 // POST /scope/check is a dry run of the active-probe gate (RFC-054 §6.4).
 export type ApiCheckScopeResponse = CheckScopeResponse
 // POST /scope/targets/bulk: one result per item (RFC-054 §14).
