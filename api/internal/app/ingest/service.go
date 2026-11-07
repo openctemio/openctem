@@ -557,6 +557,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		policy:            policy,
 		FindingsHeld:      findingsHeld,
 		FindingsLost:      findingsLost,
+		fileObserved:      opts.Receipt != nil && opts.Receipt.Kind == ingestreceipt.SourceUpload,
 	}
 	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
 	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)

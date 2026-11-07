@@ -148,6 +148,15 @@ func (s *Service) currentCaller(ctx context.Context, tenantID shared.ID, env *En
 			env.CanApprove = ok
 		}
 	}
+	if env.CoverageVerify && s.perms != nil && env.Caller.APIKeyID == "" && !m.IsOwner() && !m.IsAdmin() {
+		// Closing as fixed is a verification: the right must still hold
+		// when the upload is applied.
+		ok, err := s.perms.HasPermission(ctx, tenantID.String(), uid.String(), permission.FindingsVerify.String())
+		if err != nil {
+			return fmt.Errorf("read the uploader's permissions: %w", err)
+		}
+		env.CoverageVerify = ok
+	}
 	return nil
 }
 
@@ -176,6 +185,9 @@ func (s *Service) currentKey(ctx context.Context, tenantID shared.ID, env *Envel
 	}
 	if !slices.Contains(key.Scopes(), permission.FindingsApprove.String()) {
 		env.CanApprove = false
+	}
+	if !slices.Contains(key.Scopes(), permission.FindingsVerify.String()) {
+		env.CoverageVerify = false
 	}
 	return nil
 }
