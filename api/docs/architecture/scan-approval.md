@@ -46,6 +46,15 @@ business hours in the organization's timezone
 `ScanApprovalRepository.RequesterProfile`). Unknown caller or time is
 caught (fail closed).
 
+The criticality condition (`min_criticality`) reads each target asset's
+**effective** criticality: the highest of its own criticality, its business
+units (a unit inherits its parents'), the business services it powers and
+the assets it is a control plane for. It is the same resolver finding
+priority uses (`BusinessContextLookupRepo.EffectiveCriticalities`), so an
+asset raised by its unit or service cannot escape a rule on high-criticality
+assets. Deleted assets are not targets. A lookup error fails the evaluation
+(the run is not started).
+
 Conditions inside a rule are AND'ed, rules are OR'ed. Every matched rule
 is listed; the matched rule with the most approvals decides the approvers;
 evidence requirements add up; the shortest validity wins; Strict raises

@@ -3,7 +3,7 @@
 /** Triage actions and "create remediation task" of one alert. */
 
 import { useMemo, useState } from 'react'
-import { ListChecks, Loader2 } from 'lucide-react'
+import { ListChecks, Loader2, Radar } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
@@ -21,6 +21,8 @@ import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission } from '@/lib/permissions'
+import { LazyScanAssetsDialog } from '@/features/scans/components/lazy-dialogs'
+import type { ScanCandidate } from '@/features/scans/components/scan-assets-dialog'
 import { createRemediationTask, setAlertState, useRevalidateEmergingThreats } from '../api'
 import {
   MAX_TASK_TITLE_LENGTH,
@@ -97,6 +99,11 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
       </Can>
       <Can permission={Permission.RemediationWrite}>
         <CreateTaskButton alert={alert} />
+      </Can>
+      <Can permission={Permission.ScansWrite}>
+        <Can permission={Permission.ScansExecute}>
+          <ScanAffectedButton alert={alert} />
+        </Can>
       </Can>
       <NotAffectedDialog
         open={naOpen}
@@ -241,5 +248,51 @@ export function TaskCoverageNote({ alert }: { alert: EmergingThreatDetail }) {
     <p className="text-xs text-muted-foreground">
       {t('emergingThreats.task.alreadyInTask', undefined, { n: alreadyInTask.length })}
     </p>
+  )
+}
+
+/** Asset types a quick scan takes by name (the asset page's rule). */
+const SCANNABLE_TYPES = new Set(['domain', 'subdomain', 'ip_address'])
+
+/** The affected assets a quick scan can verify: domains, subdomains and IP addresses. */
+export function scanCandidates(alert: Pick<EmergingThreatDetail, 'assets'>): ScanCandidate[] {
+  const seen = new Set<string>()
+  const out: ScanCandidate[] = []
+  for (const a of alert.assets) {
+    if (!SCANNABLE_TYPES.has(a.asset_type) || seen.has(a.asset_id)) continue
+    seen.add(a.asset_id)
+    out.push({ id: a.asset_id, label: a.asset_name, target: a.asset_name.trim() })
+  }
+  return out
+}
+
+/**
+ * "Scan affected assets": the shared quick-scan dialog over the alert's
+ * scannable assets (it checks scope and readiness before it starts). The
+ * caller gates it on scans:write and scans:execute; the API checks again.
+ */
+function ScanAffectedButton({ alert }: { alert: EmergingThreatDetail }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const candidates = useMemo(() => scanCandidates(alert), [alert])
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={candidates.length === 0}
+        title={candidates.length === 0 ? t('emergingThreats.scan.none') : undefined}
+        onClick={() => setOpen(true)}
+      >
+        <Radar className="me-2 h-4 w-4" aria-hidden />
+        {t('emergingThreats.scan.affected')}
+      </Button>
+      <LazyScanAssetsDialog
+        open={open}
+        onOpenChange={setOpen}
+        candidates={candidates}
+        title={t('emergingThreats.scan.title', undefined, { vulnId: alert.vuln_id })}
+      />
+    </>
   )
 }

@@ -62,7 +62,7 @@ func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, maski
 	}
 	router.Group("/api/v1/organization/settings/ai", func(r Router) {
 		r.GET("/", h.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
-		r.PUT("/", h.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.PUT("/", h.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUpSensitive())
 		r.POST("/test", h.Test, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
 		// Automatic triage: a loosening (on, more severities) needs a recent
 		// sign-in, asked by the service; tightening is one click.
@@ -82,7 +82,7 @@ func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, maski
 		// sign-in; the preview reads a finding under the caller's own scope.
 		if masking != nil {
 			r.GET("/masking", masking.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
-			r.PUT("/masking", masking.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
+			r.PUT("/masking", masking.Update, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUpSensitive())
 			r.POST("/masking/preview", masking.Preview, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
 		}
 	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)

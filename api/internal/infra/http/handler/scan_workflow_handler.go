@@ -301,7 +301,11 @@ type RunResponse struct {
 	// versions.
 	ScanWorkflowVersion int    `json:"scan_workflow_version,omitempty"`
 	SpecDigest          string `json:"spec_digest,omitempty"`
-	CreatedAt           string `json:"created_at"`
+	// ParentRunID is the split run this run is a zone run of; ZoneSplit
+	// describes the split (on the parent: one group per scan zone).
+	ParentRunID *string               `json:"parent_run_id,omitempty"`
+	ZoneSplit   *RunZoneSplitResponse `json:"zone_split,omitempty"`
+	CreatedAt   string                `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open.
@@ -639,6 +643,10 @@ type SkipReasonResponse struct {
 // StepRunResponse represents a step run in the response.
 type StepRunResponse struct {
 	ID string `json:"id"`
+	// EffectiveConfig is the standard params the step's command carried with
+	// their source; SensorSettings what the sensor reported it ran with.
+	EffectiveConfig *scanrundom.EffectiveConfig `json:"effective_config,omitempty"`
+	SensorSettings  *scanrundom.SensorSettings  `json:"sensor_settings,omitempty"`
 	// StepID is empty once the step was removed from the scan workflow; the step
 	// run keeps its key, name and tool.
 	StepID   string `json:"step_id,omitempty"`
@@ -1293,6 +1301,14 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := withRunTriggerLabel(toRunResponse(run), runTriggerNames(r.Context(), h.users, h.logger, run))
+	if resp.ZoneSplit != nil && len(resp.ZoneSplit.Groups) > 0 {
+		// The zone runs, read in the run's tenant.
+		children, err := h.service.ZoneRuns(r.Context(), run)
+		if err != nil {
+			h.logger.Warn("failed to read the zone runs of a split run", "run_id", run.ID.String(), "error", err)
+		}
+		withZoneRunStatuses(resp.ZoneSplit, children)
+	}
 	tasks, err := h.service.GetRunTasks(r.Context(), run)
 	if err != nil {
 		h.logger.Error("failed to read run tasks", "run_id", run.ID.String(), "error", err)
@@ -1635,6 +1651,11 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		sid := r.ScanID.String()
 		resp.ScanID = &sid
 	}
+	if r.ParentRunID != nil {
+		pid := r.ParentRunID.String()
+		resp.ParentRunID = &pid
+	}
+	resp.ZoneSplit = toRunZoneSplit(r.Context)
 
 	if r.ScanProfileID != nil {
 		spid := r.ScanProfileID.String()
@@ -1860,6 +1881,9 @@ func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 		InfoObservations: sr.InfoObservations,
 		FindingsHeld:     sr.FindingsHeld,
 		FindingsRefused:  sr.FindingsRefused,
+
+		EffectiveConfig: sr.EffectiveConfig,
+		SensorSettings:  sr.SensorSettings,
 	}
 	if !sr.StepID.IsZero() {
 		resp.StepID = sr.StepID.String()

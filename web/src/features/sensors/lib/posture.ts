@@ -31,6 +31,12 @@ const ISSUES: Record<SensorUnhardenedReason, Omit<PostureIssue, 'reason'>> = {
     fixKey: 'sensors.posture.fix.pinNone',
     fix: 'Pin the platform CA with SENSOR_CA_FINGERPRINT.',
   },
+  tools_unconfined: {
+    labelKey: 'sensors.posture.issue.toolsUnconfined',
+    label: 'Tools run without the sandbox',
+    fixKey: 'sensors.posture.fix.toolsUnconfined',
+    fix: 'Run the sensor on Linux or in its container: without the sandbox, tools that contact their targets are refused (or run unconfined when SENSOR_SANDBOX=off).',
+  },
   network_unenforced: {
     labelKey: 'sensors.posture.issue.networkUnenforced',
     label: 'Tools not network-confined',

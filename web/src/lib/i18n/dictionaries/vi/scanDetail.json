@@ -64,6 +64,7 @@
   "scanDetail.runs.emptyTitle": "Chưa có lần chạy",
   "scanDetail.runs.message": "Thông báo của lần chạy",
   "scanDetail.runs.noun": "lần chạy",
+  "scanDetail.runs.reportedFindings": "Các phát hiện lần quét này đã báo cáo",
   "scanDetail.runs.steps": "{done}/{total} bước",
   "scanDetail.runs.viewAll": "Xem tất cả lần chạy",
   "scanDetail.tab.configuration": "Cấu hình",

@@ -32,7 +32,6 @@ type cmdMockRepo struct {
 	getPendingErr          error
 	findExpiredResult      []*commanddom.Command
 	findExpiredErr         error
-	getByAuthTokenHashErr  error
 	countActiveErr         error
 	countQueuedTenantErr   error
 	countQueuedAllErr      error
@@ -41,7 +40,6 @@ type cmdMockRepo struct {
 	recoverStuckErr        error
 	expirePlatformErr      error
 	queueExpiredResult     []*commanddom.Command
-	getQueuePositionErr    error
 	listPlatformTenantErr  error
 	listPlatformAdminErr   error
 	getPlatformBySensorErr error
@@ -159,13 +157,6 @@ func (m *cmdMockRepo) FindExpired(_ context.Context) ([]*commanddom.Command, err
 	return m.findExpiredResult, nil
 }
 
-func (m *cmdMockRepo) GetByAuthTokenHash(_ context.Context, _ string) (*commanddom.Command, error) {
-	if m.getByAuthTokenHashErr != nil {
-		return nil, m.getByAuthTokenHashErr
-	}
-	return nil, shared.ErrNotFound
-}
-
 func (m *cmdMockRepo) CountActivePlatformJobsByTenant(_ context.Context, _ shared.ID) (int, error) {
 	if m.countActiveErr != nil {
 		return 0, m.countActiveErr
@@ -213,13 +204,6 @@ func (m *cmdMockRepo) FindQueueExpiredPlatformJobs(_ context.Context, _ int) ([]
 		return nil, m.expirePlatformErr
 	}
 	return m.queueExpiredResult, nil
-}
-
-func (m *cmdMockRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*commanddom.QueuePosition, error) {
-	if m.getQueuePositionErr != nil {
-		return nil, m.getQueuePositionErr
-	}
-	return &commanddom.QueuePosition{Position: 1, TotalQueued: 1}, nil
 }
 
 func (m *cmdMockRepo) ListPlatformJobsByTenant(_ context.Context, _ shared.ID, page pagination.Pagination) (pagination.Result[*commanddom.Command], error) {

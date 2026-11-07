@@ -102,6 +102,26 @@ type streamCmds struct {
 	mu        sync.Mutex
 	cmds      []*command.Command
 	finalized map[shared.ID]bool
+	// reach is the reach summary a completed command reported
+	// (ReachTargets, Reached, Unreached).
+	reach map[shared.ID]command.StepBatch
+}
+
+func (c *streamCmds) CancelOpenByStepRun(_ context.Context, _, stepRunID shared.ID) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var n int64
+	for _, cmd := range c.cmds {
+		if cmd.StepRunID == nil || *cmd.StepRunID != stepRunID {
+			continue
+		}
+		switch cmd.Status {
+		case command.CommandStatusPending, command.CommandStatusAcknowledged, command.CommandStatusRunning:
+			cmd.Status = command.CommandStatusCanceled
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (c *streamCmds) Create(_ context.Context, cmd *command.Command) error {
@@ -124,6 +144,13 @@ func (c *streamCmds) StepBatchState(_ context.Context, _, stepRunID shared.ID) (
 		switch cmd.Status {
 		case command.CommandStatusPending, command.CommandStatusAcknowledged, command.CommandStatusRunning:
 			b.Active++
+		case command.CommandStatusCompleted:
+			if r, ok := c.reach[cmd.ID]; ok {
+				b.ReachBatches++
+				b.ReachTargets += r.ReachTargets
+				b.Reached += r.Reached
+				b.Unreached += r.Unreached
+			}
 		case command.CommandStatusFailed, command.CommandStatusExpired, command.CommandStatusCanceled:
 			b.Failed++
 			if b.FirstError == "" {

@@ -100,6 +100,22 @@ func parseSAMLRequestCookie(v string) (requestID string, forced bool) {
 	return v, false
 }
 
+// samlRequestIDsFromCookie returns the AuthnRequest ID the request-tracking
+// cookie carries (none without the cookie) and whether that request asked for
+// ForceAuthn. An empty ID is no ID: it would match a response that answers no
+// request (an unsolicited one), and only a real ID binds the response.
+func samlRequestIDsFromCookie(r *http.Request, org string) ([]string, bool) {
+	c, err := r.Cookie(samlRequestCookieName(org))
+	if err != nil || c.Value == "" {
+		return nil, false
+	}
+	id, forced := parseSAMLRequestCookie(c.Value)
+	if id == "" {
+		return nil, false
+	}
+	return []string{id}, forced
+}
+
 // isTrueParam reads a boolean query parameter ("true" or "1").
 func isTrueParam(v string) bool { return v == "true" || v == "1" }
 
@@ -153,12 +169,7 @@ func isSafeIdPRedirect(u string) bool {
 func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 	org := chi.URLParam(r, "org")
 
-	var possibleRequestIDs []string
-	forcedAuthn := false
-	if c, cerr := r.Cookie(samlRequestCookieName(org)); cerr == nil && c.Value != "" {
-		id, forced := parseSAMLRequestCookie(c.Value)
-		possibleRequestIDs, forcedAuthn = []string{id}, forced
-	}
+	possibleRequestIDs, forcedAuthn := samlRequestIDsFromCookie(r, org)
 	// Clear the single-use request cookie regardless of the outcome.
 	http.SetCookie(w, &http.Cookie{
 		Name: samlRequestCookieName(org), Value: "", Path: "/", MaxAge: -1,

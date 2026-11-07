@@ -28,12 +28,14 @@ import type {
   InviteesPolicy,
   PersonalAccountsPolicy,
   SSOException,
+  StepUpPolicy,
   TenantSettings,
 } from '../types/settings.types'
 import { AccessRestrictionsCard, isIpLockoutError, parseLines } from './access-restrictions-card'
 import { InvitationPolicyCard } from './invitation-policy-card'
 import { LastChanged } from './last-changed'
 import { PersonalAccountsCard } from './personal-accounts-card'
+import { LEGACY_STEP_UP, StepUpPolicyCard, stepUpLooser } from './step-up-policy-card'
 import { SettingsLoadError, SettingsLoading } from './settings-load-state'
 
 type EmailVerificationMode = 'auto' | 'always'
@@ -51,6 +53,7 @@ export interface SignInForm {
   sso_exceptions: SSOException[]
   jit_requires_approval: boolean
   sso_require_mfa_evidence: boolean
+  step_up: StepUpPolicy
 }
 
 /** The fields this page saves, for "last changed by". */
@@ -66,6 +69,7 @@ export const SIGN_IN_FIELDS = [
   'sso_exceptions',
   'jit_requires_approval',
   'sso_require_mfa_evidence',
+  'step_up',
 ] as const
 
 export function signInFormFrom(settings: TenantSettings | undefined): SignInForm {
@@ -82,6 +86,7 @@ export function signInFormFrom(settings: TenantSettings | undefined): SignInForm
     sso_exceptions: s?.sso_exceptions ?? [],
     jit_requires_approval: s?.jit_requires_approval ?? false,
     sso_require_mfa_evidence: s?.sso_require_mfa_evidence ?? false,
+    step_up: s?.step_up ?? LEGACY_STEP_UP,
   }
 }
 
@@ -135,6 +140,7 @@ export function looseningsOf(saved: SignInForm, next: SignInForm): string[] {
   if (saved.external_access_end_required && !next.external_access_end_required) {
     out.push('externalEndOff')
   }
+  if (stepUpLooser(saved.step_up, next.step_up)) out.push('stepUpLooser')
   return out
 }
 
@@ -150,6 +156,7 @@ const LOOSENING_TEXT: Record<string, string> = {
   ssoExceptionAdded: 'More members may sign in without single sign-on.',
   inviteesAny: 'Anyone may be invited.',
   externalEndOff: 'External members no longer need an end date.',
+  stepUpLooser: 'People are asked to confirm their identity less often.',
 }
 
 /**
@@ -203,6 +210,7 @@ export function AuthenticationSettings() {
         sso_exceptions: form.sso_exceptions,
         jit_requires_approval: form.jit_requires_approval,
         sso_require_mfa_evidence: form.sso_require_mfa_evidence,
+        step_up: form.step_up,
       })
       if (result) await mutate(result, { revalidate: false })
       toast.success(t('org.auth.saved', 'Sign-in settings saved'))
@@ -323,6 +331,12 @@ export function AuthenticationSettings() {
               />
             </CardContent>
           </Card>
+
+          <StepUpPolicyCard
+            policy={form.step_up}
+            onChange={(p) => patchForm({ step_up: p })}
+            disabled={disabled}
+          />
 
           <Card>
             <CardHeader>

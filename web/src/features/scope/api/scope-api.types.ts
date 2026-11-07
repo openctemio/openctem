@@ -16,6 +16,7 @@ import type {
   CheckScopeResponse,
   ScopeStatsResponse,
   ScopeTargetResponse,
+  ScopeReplaceResponse,
 } from '@/lib/api/generated'
 
 // Types imported from '../types' are used for reference only - actual API values are strings
@@ -37,6 +38,15 @@ import type {
 export type ApiScopeTarget = ScopeTargetResponse
 export type ApiScopeExclusion = ScopeExclusionResponse
 export type ApiScopeStats = ScopeStatsResponse
+// POST /scope/targets/{id}/replace (and /replace/preview): a pattern
+// replacement, done or previewed.
+export type ApiScopeReplace = ScopeReplaceResponse
+
+/** Input of a pattern replacement: the new pattern and why. */
+export interface ReplaceScopeTargetInput {
+  pattern: string
+  reason: string
+}
 // POST /scope/check is a dry run of the active-probe gate (RFC-054 §6.4).
 export type ApiCheckScopeResponse = CheckScopeResponse
 // POST /scope/targets/bulk: one result per item (RFC-054 §14).
@@ -166,7 +176,16 @@ export interface UpdateScopeSettingsInput {
    * (opt-in, default off); omitted keeps the stored value.
    */
   ci_scope_requires_proof?: boolean
+  /**
+   * The widest range one scan target may name, as an IPv4 prefix length
+   * (8 to 24; IPv6 gets the same address count). Omitted keeps the stored
+   * value (RFC-151).
+   */
+  max_range_prefix?: number
 }
+
+/** The widest range choices of the scope policy (IPv4 prefix lengths). */
+export const RANGE_PREFIX_CHOICES = [8, 12, 16, 20, 24] as const
 
 /** The address setting: what happens to addresses in-scope names resolve to. */
 export type AddressAutoAdd = 'auto_strong' | 'ask' | 'never'
@@ -201,6 +220,8 @@ export interface CreateScopeExclusionInput {
   path_prefix?: string
   /** Methods the path rule blocks; empty blocks every method. */
   methods?: string[]
+  /** Confirms closing open critical, P0 or KEV findings (after a 409 EXCLUSION_CLOSES_CRITICAL_FINDINGS). */
+  confirm_critical?: boolean
 }
 
 /**

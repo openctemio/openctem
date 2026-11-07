@@ -364,3 +364,22 @@ func TestVerify_NoComponents(t *testing.T) {
 		t.Fatalf("v = %+v, err = %v", v, err)
 	}
 }
+
+// A signature made across a second boundary verifies: the virtual
+// certificate starts at the second it is made in, the log entry carries the
+// time the caller read earlier (whole seconds), and the signer must not log a
+// signature before its certificate exists. The wait puts the boundary between
+// reading the clock and signing, so this fails every time without the fix.
+func TestVerify_SignedAcrossSecondBoundary(t *testing.T) {
+	f := newFixture(t)
+	{
+		at := time.Now().UTC()
+		time.Sleep(time.Until(at.Truncate(time.Second).Add(time.Second + 5*time.Millisecond)))
+		feed := sampleFeed(200)
+		feed.IssuedAt, feed.ExpiresAt = at.Add(-time.Minute), at.Add(time.Hour)
+		raw := f.publish(t, feed, releasefeedtest.GoodIdentityMain, releasefeedtest.GitHubIssuer, at, false)
+		if _, err := Verify(raw, f.trust, time.Now().UTC()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

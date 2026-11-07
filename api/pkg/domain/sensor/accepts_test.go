@@ -76,8 +76,9 @@ func TestAccepts(t *testing.T) {
 
 		"custom templates refused": {enforced(LocalPolicySummary{}), Job{Type: "scan", Tool: "nuclei", CustomTemplates: 1}, DispatchOptions{}, RefusalLayerLocal, RuleAllowCustomTemplates},
 		"custom templates allowed": {enforced(LocalPolicySummary{AllowCustomTemplates: true}), Job{Type: "scan", Tool: "nuclei", CustomTemplates: 1}, DispatchOptions{}, "", ""},
-		"interactsh refused":       {enforced(LocalPolicySummary{}), Job{Type: "scan", Tool: "nuclei", Interactsh: true}, DispatchOptions{}, RefusalLayerLocal, RuleAllowInteractsh},
-		"interactsh allowed":       {enforced(LocalPolicySummary{AllowInteractsh: true}), Job{Type: "scan", Tool: "nuclei", Interactsh: true}, DispatchOptions{}, "", ""},
+		// A sensor narrows callbacks its policy turns off: the job is not kept from it.
+		"interactsh off on the sensor": {enforced(LocalPolicySummary{}), Job{Type: "scan", Tool: "nuclei", Interactsh: true}, DispatchOptions{}, "", ""},
+		"interactsh allowed":           {enforced(LocalPolicySummary{AllowInteractsh: true}), Job{Type: "scan", Tool: "nuclei", Interactsh: true}, DispatchOptions{}, "", ""},
 
 		"ports inside":           {enforced(LocalPolicySummary{Ports: "80,443,8000-8999"}), Job{Type: "scan", Tool: "naabu", Ports: "443,8000-8100"}, DispatchOptions{}, "", ""},
 		"ports across ranges":    {enforced(LocalPolicySummary{Ports: "1-100,101-200"}), Job{Type: "scan", Tool: "naabu", Ports: "50-150"}, DispatchOptions{}, "", ""},
@@ -154,11 +155,20 @@ func TestAccepts_OptIns(t *testing.T) {
 			t.Errorf("%s: %+v, want managed/%s", name, got, tc.wantRule)
 		}
 	}
-	// Enabled at the organization but refused by the sensor's own policy:
-	// the local refusal stands (the platform never widens the sensor).
+	// Enabled at the organization but turned off by the sensor's own
+	// policy: the job still goes to the sensor, which runs it without
+	// callbacks (it never widens the sensor: the sensor narrows the job).
 	strict := &LocalPolicyReport{State: LocalPolicyEnforced, Summary: &LocalPolicySummary{TargetsAllow: -1}}
-	if got := Accepts(strict, oast, DispatchOptions{OptIns: &OptIns{AllowInteractsh: true}}); got == nil || got.Layer != RefusalLayerLocal {
-		t.Errorf("enabled but locally refused: %+v", got)
+	if got := Accepts(strict, oast, DispatchOptions{OptIns: &OptIns{AllowInteractsh: true}}); got != nil {
+		t.Errorf("enabled but off on the sensor: %+v", got)
+	}
+	// Custom templates the sensor's policy refuses still keep the job away.
+	if got := Accepts(strict, tmpl, DispatchOptions{OptIns: &OptIns{AllowCustomTemplates: true}}); got == nil || got.Layer != RefusalLayerLocal {
+		t.Errorf("templates enabled but locally refused: %+v", got)
+	}
+	// The organization's own switch still refuses: that is its decision.
+	if got := Accepts(strict, oast, off); got == nil || got.Rule != RuleAllowInteractsh {
+		t.Errorf("organization off: %+v", got)
 	}
 }
 

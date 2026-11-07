@@ -372,6 +372,7 @@ func (m *mockAssetGroupRepo) CountAssetsByType(_ context.Context, _ shared.ID) (
 type mockRunRepo struct {
 	runs                map[string]*scanrundom.Run
 	createLimitErr      error
+	createChildErr      error // fails the creation of a zone run (a run with a parent)
 	activeByScanCount   int
 	activeByTenantCount int
 }
@@ -436,6 +437,9 @@ func (m *mockRunRepo) CountActiveByScanID(_ context.Context, _ shared.ID) (int, 
 func (m *mockRunRepo) CreateRunIfUnderLimit(_ context.Context, r *scanrundom.Run, _, _ int) error {
 	if m.createLimitErr != nil {
 		return m.createLimitErr
+	}
+	if m.createChildErr != nil && r.ParentRunID != nil {
+		return m.createChildErr
 	}
 	m.runs[r.ID.String()] = r
 	return nil
@@ -579,9 +583,6 @@ func (m *mockCommandRepo) Delete(_ context.Context, _ shared.ID, _ shared.ID) er
 func (m *mockCommandRepo) FindExpired(_ context.Context) ([]*commanddom.Command, error) {
 	return nil, nil
 }
-func (m *mockCommandRepo) GetByAuthTokenHash(_ context.Context, _ string) (*commanddom.Command, error) {
-	return nil, nil
-}
 func (m *mockCommandRepo) CountActivePlatformJobsByTenant(_ context.Context, _ shared.ID) (int, error) {
 	return 0, nil
 }
@@ -597,9 +598,6 @@ func (m *mockCommandRepo) RecoverStuckJobs(_ context.Context, _, _ int) (int64, 
 	return 0, nil
 }
 func (m *mockCommandRepo) FindQueueExpiredPlatformJobs(_ context.Context, _ int) ([]*commanddom.Command, error) {
-	return nil, nil
-}
-func (m *mockCommandRepo) GetQueuePosition(_ context.Context, _ shared.ID) (*commanddom.QueuePosition, error) {
 	return nil, nil
 }
 func (m *mockCommandRepo) ListPlatformJobsByTenant(_ context.Context, _ shared.ID, _ pagination.Pagination) (pagination.Result[*commanddom.Command], error) {

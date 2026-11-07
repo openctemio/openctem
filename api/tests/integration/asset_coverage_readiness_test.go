@@ -153,6 +153,96 @@ func TestAssetCoverageReadiness_NoScope(t *testing.T) {
 	}
 }
 
+// fixedUnclassified answers one unclassified-scans mode per tenant ("off"
+// when unset) and records which tenants were asked.
+type fixedUnclassified struct {
+	mu    sync.Mutex
+	modes map[shared.ID]string
+	err   error
+	asked map[shared.ID]int
+}
+
+func (f *fixedUnclassified) mode(_ context.Context, tenantID shared.ID) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.asked == nil {
+		f.asked = map[shared.ID]int{}
+	}
+	f.asked[tenantID]++
+	if f.err != nil {
+		return "", f.err
+	}
+	if m, ok := f.modes[tenantID]; ok {
+		return m, nil
+	}
+	return "off", nil
+}
+
+// Owner rule: everything found is in scope unless excluded. A tenant
+// without any scope entry whose unclassified mode is low_impact or full is
+// not paused as no_scope: the run starts and the gate decides per target.
+// The mode off keeps the pause, and an unreadable mode fails closed.
+func TestAssetCoverageReadiness_NoScopeFollowsUnclassifiedMode(t *testing.T) {
+	g := newCycleRig(t)
+	uc := &fixedUnclassified{modes: map[shared.ID]string{}}
+	g.svc.EnableUnclassified(uc.mode)
+	low := g.r.newTenant()
+	full := g.r.newTenant()
+	off := g.r.newTenant()
+	uc.modes[low.tenant] = "low_impact"
+	uc.modes[full.tenant] = "full"
+	uc.modes[off.tenant] = "off"
+	lowName := g.asset(low, "low.unclassified.test", "subdomain", "", "")
+	fullName := g.asset(full, "full.unclassified.test", "subdomain", "", "")
+	offName := g.asset(off, "off.unclassified.test", "subdomain", "", "")
+
+	if got := g.pass(low)["resolve.dns"]; strings.Join(got, ",") != "low.unclassified.test" {
+		t.Fatalf("low_impact without scope started %v", got)
+	}
+	if r := g.row(low, lowName, "resolve.dns"); r.State == covdom.StatePaused {
+		t.Fatalf("low_impact pair paused: %s", r.Reason)
+	}
+	if got := g.pass(full)["resolve.dns"]; strings.Join(got, ",") != "full.unclassified.test" {
+		t.Fatalf("full without scope started %v", got)
+	}
+	if r := g.row(full, fullName, "resolve.dns"); r.State == covdom.StatePaused {
+		t.Fatalf("full pair paused: %s", r.Reason)
+	}
+	if got := g.pass(off); len(got) != 0 {
+		t.Fatalf("off without scope started %v", got)
+	}
+	if r := g.row(off, offName, "resolve.dns"); r.State != covdom.StatePaused || r.Reason != covdom.ReadyNoScope {
+		t.Fatalf("off pair = %s:%s, want paused no_scope", r.State, r.Reason)
+	}
+	// Each tenant's own mode is read: another tenant's low_impact does not
+	// lift tenant off's pause.
+	if uc.asked[off.tenant] == 0 || uc.asked[low.tenant] == 0 {
+		t.Fatalf("modes asked = %v", uc.asked)
+	}
+
+	// Switching the mode on resumes the paused pair by itself.
+	uc.mu.Lock()
+	uc.modes[off.tenant] = "low_impact"
+	uc.mu.Unlock()
+	if got := g.pass(off)["resolve.dns"]; strings.Join(got, ",") != "off.unclassified.test" {
+		t.Fatalf("after switching to low_impact = %v", got)
+	}
+}
+
+// A mode read error fails closed: the capability stays paused as no_scope.
+func TestAssetCoverageReadiness_UnclassifiedModeErrorFailsClosed(t *testing.T) {
+	g := newCycleRig(t)
+	g.svc.EnableUnclassified((&fixedUnclassified{err: context.DeadlineExceeded}).mode)
+	a := g.r.newTenant()
+	name := g.asset(a, "err.unclassified.test", "subdomain", "", "")
+	if got := g.pass(a); len(got) != 0 {
+		t.Fatalf("started %v with an unreadable mode", got)
+	}
+	if r := g.row(a, name, "resolve.dns"); r.State != covdom.StatePaused || r.Reason != covdom.ReadyNoScope {
+		t.Fatalf("pair = %s:%s, want paused no_scope", r.State, r.Reason)
+	}
+}
+
 // An expired scope entry is no scope.
 func TestAssetCoverageReadiness_ExpiredScopeIsNoScope(t *testing.T) {
 	g := newCycleRig(t)

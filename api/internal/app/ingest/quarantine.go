@@ -228,6 +228,7 @@ func (s *Service) bindingFromCommandID(ctx context.Context, tenantID shared.ID, 
 			b.Tool = commandTool(cmd)
 			b.CommandType = cmd.Type
 			b.StepRunID = cmd.StepRunID
+			b.ScanZoneID = cmd.ScanZoneID
 		}
 	}
 	return b
@@ -428,7 +429,8 @@ func (s *Service) applyQuarantined(ctx context.Context, actx auditapp.AuditConte
 	// finding needs a real asset, and the shared CVE catalog is never
 	// written from sensor data.
 	opts := Options{Binding: TrustedBinding(), Admitted: true, DeferAutoResolve: true, DeferSensorStats: true,
-		RequireAssetForFindings: true, NoCatalogWrites: true}
+		RequireAssetForFindings: true, NoCatalogWrites: true,
+		ReleasedFromQuarantine: true, SenderName: item.SensorName}
 	agt := &sensor.Sensor{ID: item.SensorID, TenantID: &tenantID, Type: sensor.SensorType(item.SensorType), Status: sensor.SensorStatusActive}
 	out, ingErr := s.Ingest(ctx, agt, Input{Report: &report, ReportID: item.ReportID, Options: opts})
 	if ingErr == nil {
@@ -627,7 +629,8 @@ func (s *Service) recordQuarantined(ctx context.Context, agt *sensor.Sensor, ten
 	}
 	d := &ingestreceipt.Delta{TenantID: tenantID, Source: receiptSource(agt, Binding{Kind: BindingUnsolicited}, Options{}, reportIDOf(ctx)),
 		Instance: receiptInstance(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
-		Received: len(report.Findings), Items: out.Items, At: time.Now()}
+		Received: len(report.Findings), Items: out.Items, At: time.Now(),
+		Outcomes: map[string]int{ingestreceipt.OutcomeQuarantined: len(report.Findings)}}
 	if report.Tool != nil {
 		d.Tool = report.Tool.Name
 	}

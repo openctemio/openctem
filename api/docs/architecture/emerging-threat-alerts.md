@@ -175,10 +175,18 @@ affected asset ids for the delivery resolver (private program routing).
 
 | Route | Gate | Data scope |
 |---|---|---|
-| `GET /api/v1/emerging-threats` | `findings:vulnerabilities:read` | alerts with an asset in scope; counts in scope |
+| `GET /api/v1/emerging-threats` | `findings:vulnerabilities:read` | alerts with an asset in scope; counts, crown jewels (`critical_assets`), the best product (`product`, `product_count`) all over in-scope assets |
 | `GET /api/v1/emerging-threats/{id}` | `findings:vulnerabilities:read` | 404 without an asset in scope; assets in scope; `can_suppress` |
 | `POST /api/v1/emerging-threats/{id}/state` | `findings:triage` | not affected needs every asset in scope (409) |
 | `GET, PUT /api/v1/organization/settings/emerging-threats` | administrator | organization settings, audited |
+
+List filters: `level`, `state` (open by default), `tier`, `exposure=internet`,
+`kev=true` (known exploited), `search` (CVE id or title). Each row carries the
+score breakdown (`ets_breakdown`); the summary counts the open alerts by
+level, `new` (not triaged yet), `kev` and `internet_facing`. The stored
+`title` names the first product over every asset of the organization, so the
+console shows `product` instead: a member with a data scope never reads the
+product of an asset outside it.
 
 Routes are behind the `threat_intel` module; the planner skips organizations
 with the module off or alerts disabled. A remediation task from an alert
@@ -195,11 +203,24 @@ Audit: `tenant.emerging_threats_updated`, `emerging_threat.state_changed`
 
 ## Console (shipped)
 
-- **Prioritization > Emerging threats** (`/emerging-threats`): summary cards,
-  filters (level, state, tier, internet-facing, search), the list by level
-  and score; the alert page shows the score breakdown, the recommended
-  action, exploitation facts, what changed (the public events) and the
-  affected assets by tier with their findings and tasks.
+- **Prioritization > Emerging threats** (`/emerging-threats`): a triage
+  queue. Levels read as priorities: immediate is **Act now**, digest **This
+  week**, listed **Watch** (the tooltip names the notification cadence; API
+  values are unchanged). Five filter tiles (Act now, Untriaged, This week,
+  Known exploited, Internet-facing); one toolbar with the state token, search,
+  the filter panel (priority, match, known exploited, internet-facing) and
+  Display; one compact row per threat: CVE and in-scope product, priority,
+  score (breakdown on hover), exploit (KEV and ransomware; the EPSS figure as
+  "Exploit chance" only without KEV), affected (confirmed, possible,
+  internet-facing, crown jewels; zeros left out), state, last change, and a
+  row menu (view, open page, acknowledge, remediating, reopen).
+- A row opens a drawer: recommended action, score, affected, internet-facing
+  and crown-jewel counts, why it is ranked (score parts), exploit status with
+  the disclosure date, affected products by version, the most important
+  assets, what changed, and every action, including **Scan affected assets**
+  (`scans:write` and `scans:execute`: the quick-scan dialog over the
+  affected domains, subdomains and IP addresses, scope-checked before it
+  starts). The alert page keeps the full asset table and timeline.
 - Triage (`findings:triage`): acknowledge, remediating, reopen, not affected
   (reason required; hidden with a hint when assets are outside the viewer's
   scope). **Create remediation task** (`findings:remediation:write`) from the

@@ -17,7 +17,6 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -69,7 +68,7 @@ func newSensitiveHarness(t *testing.T) *sensitiveHarness {
 		out.pg = db
 		log := logger.NewNop()
 		checker := switchableStepUp{fresh: &fresh}
-		gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+		gate := middleware.RecentAuthGate{Checker: checker}
 		v := validator.New()
 
 		tenantSvc := tenantapp.NewTenantService(postgres.NewTenantRepository(db), log)

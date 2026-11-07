@@ -121,6 +121,8 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	opts.Binding = s.bindingFromCommandID(ctx, prov.TenantID, prov.CommandID)
 	opts.Admitted = true
 	// A finding that names no asset of its segment was refused above; it
+	// still counts as received on the receipt (outcome unresolved_ref).
+	opts.FindingsRefusedBeforeIngest = len(report.Findings) - len(kept)
 	// is still booked on the run's receipt item log.
 	opts.RefusedItems = refusedV2Items(report, keptIdx)
 	// The report id of the URL path is the scan identity of every finding
@@ -410,7 +412,8 @@ func SensorDeclaresTool(tools []string, toolName string) bool {
 // CommitV2Report runs the report-level steps once, after every segment of a
 // committed report was processed: auto-resolve over the assets the report
 // touched (full coverage on a default branch, a tool the sensor declares,
-// behind the blinding guard), the per-branch occurrence sweep. Failures are logged; they never fail the report, as in v1.
+// behind the blinding guard), the per-branch occurrence sweep of an unbound
+// report (a bound one is swept with its run). Failures are logged; they never fail the report, as in v1.
 //
 //nolint:cyclop // a sequence of guarded, independent steps
 func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2Header, touched []shared.ID, guard BlindingGuard) CommitResult {
@@ -481,8 +484,12 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 		}
 	}
 
-	// Per-branch occurrences: any full scan, on the branch it scanned.
-	if input.IsFullCoverage() && s.branchRepo != nil && md.Branch != nil && md.Branch.Name != "" {
+	// Per-branch occurrences: any full scan, on the branch it scanned. A
+	// report bound to a command is swept with its run, once the command
+	// completed by itself (EvaluateCommandCoverage, sweepRunBranchOccurrences):
+	// a killed run must never mark what it did not reach as fixed. An unbound
+	// report (warn mode) carries no exit code: only its own metadata decides.
+	if commitSweepsBranch(prov, md) && s.branchRepo != nil {
 		for _, assetID := range scoped {
 			br, err := s.branchRepo.GetByName(ctx, assetID, md.Branch.Name)
 			if err != nil || br == nil {

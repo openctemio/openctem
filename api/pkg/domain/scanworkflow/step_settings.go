@@ -57,7 +57,7 @@ const (
 
 // refusedTemplateTags select templates that can take a target down or flood
 // it; the sensor refuses them per scan.
-var refusedTemplateTags = []string{"dos", "fuzz", "fuzzing", "intrusive"}
+var refusedTemplateTags = []string{"dos", "fuzz", "fuzzing", "intrusive", "default-login", "bruteforce", "brute-force"}
 
 var nucleiSeverities = []string{"info", "low", "medium", "high", "critical", "unknown"}
 

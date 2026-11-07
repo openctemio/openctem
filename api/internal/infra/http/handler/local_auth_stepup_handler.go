@@ -203,6 +203,15 @@ func (c recentAuthChecker) RecentAuthAt(ctx context.Context, userID, sessionID s
 	return at, err
 }
 
+// SpendRecentAuth implements middleware.RecentAuthSpender (every_time).
+func (c recentAuthChecker) SpendRecentAuth(ctx context.Context, userID, sessionID string, notBefore time.Time) (bool, error) {
+	ok, err := c.svc.SpendRecentAuth(ctx, userID, sessionID, notBefore)
+	if errors.Is(err, authapp.ErrStepUpUnavailable) {
+		return false, nil
+	}
+	return ok, err
+}
+
 // OwnSignInChecker is what middleware.RequireOwnSignIn asks: whether an
 // action on the account itself needs the account's own sign-in.
 func (h *LocalAuthHandler) OwnSignInChecker() middleware.OwnSignInChecker {

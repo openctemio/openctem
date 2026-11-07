@@ -307,6 +307,12 @@ type IntakeRow struct {
 	MedianGap     *time.Duration
 	// Assets is the assets the source's reports created or updated.
 	Assets int64
+	// Outcomes sums the receipt outcomes of the source's reports (where the
+	// received findings went beyond the counts above), by outcome code.
+	Outcomes map[string]int64
+	// Released is the reports of the source applied from the results
+	// quarantine (the sender stays the original sensor).
+	Released int64
 	// Instances are the senders of the source's reports (sensors, CI
 	// repositories, connectors), busiest first; their figures sum to the
 	// row's.
@@ -328,6 +334,9 @@ type IntakeInstanceRow struct {
 	LastAt     time.Time
 	LastStatus string
 	MedianGap  *time.Duration
+	// Released is the reports of this sender applied from the results
+	// quarantine.
+	Released int64
 }
 
 // CrownJewelCounts are the crown jewels of a scope.

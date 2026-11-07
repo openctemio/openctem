@@ -84,6 +84,22 @@ func TestEmergingThreatHandler(t *testing.T) {
 		len(store.lastFilter.States) != 3 || store.lastFilter.Tier != threatalert.TierPossible {
 		t.Fatalf("list: %d %+v", w.Code, store.lastFilter)
 	}
+	if store.lastFilter.KEVOnly {
+		t.Fatal("kev filter set without kev=true")
+	}
+	// kev=true keeps known-exploited alerts; the row carries the in-scope
+	// product, the crown-jewel count and the score breakdown.
+	store.alert.Product, store.alert.ProductCount, store.alert.Critical = "WordPress", 2, 1
+	store.alert.Breakdown = threatalert.Breakdown{Exploitation: 40, Total: 40}
+	w := do(h.List, emergingReq(http.MethodGet, "/api/v1/emerging-threats?kev=true", "", tenant, ""))
+	if w.Code != http.StatusOK || !store.lastFilter.KEVOnly {
+		t.Fatalf("kev list: %d %+v", w.Code, store.lastFilter)
+	}
+	for _, want := range []string{`"product":"WordPress"`, `"product_count":2`, `"critical_assets":1`, `"ets_breakdown":{"exploitation":40`, `"new":0`} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("list body misses %s: %s", want, w.Body.String())
+		}
+	}
 	if w := do(h.Get, emergingReq(http.MethodGet, "/", "", tenant, id)); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"can_suppress":false`) {
 		t.Fatalf("get: %d %s", w.Code, w.Body.String())
 	}

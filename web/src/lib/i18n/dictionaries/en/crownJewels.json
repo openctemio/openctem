@@ -95,6 +95,7 @@
   "crownJewels.toast.designateFailed": "Could not designate the crown jewel.",
   "crownJewels.toast.designated": "Asset designated as a crown jewel.",
   "crownJewels.toast.notesRequired": "Enter the business impact notes.",
+  "crownJewels.toast.removalPending": "Removal is pending approval. The asset stays a crown jewel until a second person approves it.",
   "crownJewels.toast.removeFailed": "Could not remove the crown jewel.",
   "crownJewels.toast.removed": "Crown jewel removed.",
   "crownJewels.toast.required": "Fill in all required fields.",

@@ -21,7 +21,9 @@
  * priority class, the actionable total in the middle. A source keeps one
  * colour on its row and its two arcs.
  * Sources are a ranked bar list (RankedBars) by findings or assets, by tool or
- * by instance. Wires are drawn between measured rows. "Show table" gives the
+ * by instance. Every shown source row has a wire to the rings, drawn between
+ * measured rows; it carries the findings the row sent (a thin dashed line for
+ * none), whatever the bars rank by. "Show table" gives the
  * same figures as tables. Research: research/359-exposure-flow-phone.
  */
 
@@ -46,6 +48,7 @@ import {
   useFlowFocus,
   useWireAnchors,
   FlowWire,
+  FlowWireLayer,
   wirePath,
   type FlowTipContent,
 } from './flow-parts'
@@ -59,11 +62,13 @@ import {
   sourceName,
   sourceRankRows,
   sourceViewFor,
+  sourceWires,
   useSourceView,
 } from './source-view'
 import { StackedBar } from './stacked-bar'
 import { ActHere, StageStateIcon, useStageStateText } from './stage-state'
 import { ChartOrTable } from './viz-parts'
+import { receivedBreakdown } from '@/features/shared/lib/receipt-outcomes'
 import type { FlowFigure, FlowResult, IntakeInstance, Stage } from './types'
 
 /** Source rows with a value before "Show all": wide and mid cards, a phone. */
@@ -195,7 +200,9 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
   ]
   const outcome = (key: string) => outcomes.find((o) => o.key === key) as Outcome
 
-  const maxSource = Math.max(1, ...sources.map((s) => s.received))
+  // One wire per shown source row, by tool or by instance, carrying the
+  // findings it sent (what enters the funnel), whatever the bars rank by.
+  const { wires: sourceWireRows, max: maxSource } = sourceWires(sources, instances, g)
   const maxOutcome = Math.max(1, ...outcomes.filter((o) => !o.sub).map((o) => o.fig.value))
 
   // What lights with what: a source lights its wire, the funnel and the
@@ -210,8 +217,8 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
     if (active === 'f:received' && k.startsWith('s:')) return true
     if (active === 'f:new' && k.startsWith('n:')) return true
     if (active === 'f:actionable' && k.startsWith('p:')) return true
-    if (k === 'ring') return /^(s|n|p|o|f):/.test(active)
-    if (k === 'funnel') return /^(s|n|f):/.test(active)
+    if (k === 'ring') return /^(s|i|n|p|o|f):/.test(active)
+    if (k === 'funnel') return /^(s|i|n|f):/.test(active)
     if (k.startsWith('w:')) return k.slice(2) === active
     return false
   }
@@ -317,7 +324,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         ],
         definition: t(
           'dashboardKit.flow.tip.newDef',
-          'Findings this source reported in the period that were new or reopened (the rest were seen again or not stored). An organization figure.'
+          'Findings this source reported in the period that were new or reopened. Where the rest went is on the Findings received figure. An organization figure.'
         ),
         link: { label: viewReceipts(s.receipts), href: s.drill },
       }
@@ -392,10 +399,12 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
     }
     if (active.startsWith('f:') && intake) {
       const which = active.slice(2) === 'new' ? 'new' : 'received'
-      const v = which === 'new' ? intake.noise.new : intake.totals.received
+      // Both funnel steps show the full reconciliation of what was received.
       return {
         title: t(`dashboardKit.flow.funnel.${which}`, which),
-        rows: [[t('dashboardKit.flow.tip.findings', 'Findings'), n(v)]],
+        rows: receivedBreakdown(t, { ...intake.noise, received: intake.totals.received }).map(
+          ([label, v]): [string, string] => [label, n(v)]
+        ),
         definition: t(`dashboardKit.flow.funnelDef.${which}`, ''),
         link: { label: viewReceipts(intake.totals.receipts), href: intake.drill },
       }
@@ -472,6 +481,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
             hasInstances={hasInstances}
             setMeasure={setMeasure}
             setGroup={setGroup}
+            wired={band === 'wide'}
           />
         </div>
       )}
@@ -497,7 +507,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
           }
           rowProps={(r) => ({
             className: dimClass(active, lit(r.key)),
-            ...(r.key.startsWith('s:') ? { 'data-wire-out': r.key } : {}),
+            'data-wire-out': r.key,
             ...bind(r.key),
           })}
         />
@@ -846,7 +856,8 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
     </section>
   )
 
-  const wireSources = band === 'wide' && g === 'tool' ? sources : []
+  // Source wires need the sources beside the core (wide); mid puts them above.
+  const wireSources = band === 'wide' ? sourceWireRows : []
 
   return (
     <div className="@container flex flex-col gap-4">
@@ -868,17 +879,12 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
         {...containerProps}
       >
         {layout && !narrow && (
-          <svg
-            aria-hidden
-            className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-            width={layout.width}
-            height={layout.height}
-          >
+          <FlowWireLayer width={layout.width} height={layout.height}>
             {wireSources.map((s) => {
-              const from = layout.out[`s:${s.id}`]
+              const from = layout.out[s.key]
               const to = layout.in.ring
               if (!from || !to) return null
-              const k = `w:s:${s.id}`
+              const k = `w:${s.key}`
               // Focused, the wire takes its source's colour (one source, one
               // colour: bar, arcs, wire) and is the only wire that glows.
               return (
@@ -890,7 +896,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                   max={maxSource}
                   health={s.health}
                   focused={lit(k)}
-                  focusColor={sourceColor.get(s.id) ?? 'var(--signal)'}
+                  focusColor={(s.sourceId && sourceColor.get(s.sourceId)) || 'var(--signal)'}
                   className={dimClass(active, lit(k))}
                 />
               )
@@ -915,7 +921,7 @@ function FlowChart({ result, scope }: { result: FlowResult; scope?: 'organizatio
                   />
                 )
               })}
-          </svg>
+          </FlowWireLayer>
         )}
 
         {narrow ? (

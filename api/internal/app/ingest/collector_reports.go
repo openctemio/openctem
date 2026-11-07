@@ -90,10 +90,10 @@ type CollectorAssetStore interface {
 func (s *Service) SetCollectorAssets(store CollectorAssetStore) { s.collectorAssets = store }
 
 // completeCoverage reports whether a report says it covers everything its
-// source has: coverage_type "full". Partial, incremental and unset are not
-// complete.
+// source has: coverage_type "full" and every target it lists done. Partial,
+// incremental and unset are not complete.
 func completeCoverage(md ctis.ReportMetadata) bool {
-	return md.CoverageType == ctis.CoverageFull
+	return reportCoverageFull(md)
 }
 
 // collectorSourceOf is the collector source of a report from a trusted
