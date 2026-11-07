@@ -219,4 +219,30 @@ describe('TargetsStep', () => {
     expect(screen.queryByTestId('coverage-choice')).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Every address' })).toBeChecked()
   })
+
+  it('edits a typed chip in place: re-validated like a new entry, empty removes it', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={withTargets(['203.0.113.0/24'])} />)
+    const field = screen.getByTestId('target-chips-field')
+    const kinds = () =>
+      within(field)
+        .getAllByRole('listitem')
+        .map((li) => li.dataset.kind)
+    expect(kinds()).toEqual(['typed'])
+
+    // A typo makes it an invalid entry (not silently kept), and fixing it restores it.
+    await user.click(within(field).getByRole('button', { name: 'Edit 203.0.113.0/24' }))
+    await user.clear(screen.getByTestId('target-chip-edit'))
+    await user.type(screen.getByTestId('target-chip-edit'), '203.0.113.0/99{Enter}')
+    expect(kinds()).toEqual(['invalid'])
+    await user.click(within(field).getByRole('button', { name: 'Edit 203.0.113.0/99' }))
+    await user.clear(screen.getByTestId('target-chip-edit'))
+    await user.type(screen.getByTestId('target-chip-edit'), '203.0.113.0/25{Enter}')
+    expect(kinds()).toEqual(['typed'])
+
+    await user.click(within(field).getByRole('button', { name: 'Edit 203.0.113.0/25' }))
+    await user.clear(screen.getByTestId('target-chip-edit'))
+    await user.keyboard('{Enter}')
+    expect(within(field).queryAllByRole('listitem')).toHaveLength(0)
+  })
 })
