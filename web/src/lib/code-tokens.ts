@@ -25,8 +25,7 @@ export interface Token {
 
 // Colour classes per token type, readable on the light and the dark card
 // (code blocks sit on a muted tint of the card, not on a black panel).
-export const TOKEN_COLORS: Record<TokenType, string> = {
-  // label-ok: syntax-highlight colours for code blocks, not a label
+export const TOKEN_CLASSES: Record<TokenType, string> = {
   keyword: 'text-purple-700 dark:text-purple-300', // palette-ok: distinct syntax-highlight accents
   string: 'text-emerald-700 dark:text-emerald-300', // palette-ok: distinct syntax-highlight accents
   number: 'text-amber-700 dark:text-amber-300', // palette-ok: distinct syntax-highlight accents
