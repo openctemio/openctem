@@ -131,7 +131,9 @@ func TargetKey(t string) string { return strings.ToLower(strings.TrimSpace(t)) }
 // finished a target overrides the task that left it unfinished). The run's
 // own unfinished targets fail unless a task covered them. A truncated task
 // (metadata.truncated: cut short by a deadline, disk or cap) covers nothing:
-// its done targets are unfinished, so a later complete task decides them.
+// its done targets are unfinished, so a later complete task decides them. A
+// completed task whose result says the run stopped (command.RunStopped: a
+// non-zero exit, a kill, a sensor stop) is treated the same way.
 func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 	out := map[string]Verdict{}
 	put := func(target string, v Verdict) {
@@ -164,7 +166,16 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 				put(target, r)
 			}
 		}
-		if t.Status == "completed" && command.ResultTruncated(t.Result) {
+		// A truncated result, or one of a run that exited non-zero, was
+		// killed or that the sensor says it stopped (research/467 F6: older
+		// sensors call such a run "completed", every target done), covers
+		// nothing: its done targets are unfinished.
+		stopped, _ := command.RunStopped(t.Result)
+		if t.Status == "completed" && (stopped || command.ResultTruncated(t.Result)) {
+			cutShort := "the result was cut short; no target of it is treated as covered"
+			if stopped {
+				cutShort = "the run did not finish (non-zero exit or stopped); no target of it is treated as covered"
+			}
 			if has {
 				// A done outcome of a truncated task is withheld: the
 				// target reads as unfinished (Normalize), and a later
@@ -177,8 +188,7 @@ func Verdicts(tasks []TaskResult, runUnfinished []string) map[string]Verdict {
 							Error: "the sensor reached no service on the target"})
 						continue
 					}
-					put(target, Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished,
-						Error: "the result was cut short; no target of it is treated as covered"})
+					put(target, Verdict{Kind: VerdictFailed, Outcome: OutcomeUnfinished, Error: cutShort})
 				}
 				continue
 			}
