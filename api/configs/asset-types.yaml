@@ -279,6 +279,9 @@ properties:
   service_kind: { label: Service kind, label_vi: Loại dịch vụ, classes: [service] }
   service_category: { label: Service category, label_vi: Nhóm dịch vụ, classes: [service] }
   kind_source: { label: Kind identified by, label_vi: Nhận diện loại bằng, classes: [service] }
+  observed_from: { label: Observed from, label_vi: Quan sát từ, classes: [service] }
+  bind_address: { label: Bind address, label_vi: Địa chỉ lắng nghe, classes: [service] }
+  process: { label: Listening process, label_vi: Tiến trình lắng nghe, classes: [service] }
   response_time_ms: { label: "Response time (ms)", label_vi: "Thời gian phản hồi (ms)", classes: [service, web_endpoint, application] }
   url: { label: URL, label_vi: URL, format: url }
   host: { label: Host, label_vi: Máy chủ }
@@ -833,6 +836,9 @@ types:
       - { name: is_auth_required, type: bool, facet: true }
       - { name: has_anonymous_access, type: bool, facet: true }
       - { name: response_time_ms, type: int }
+      - { name: observed_from, type: enum, values: [host, network], facet: true }
+      - { name: bind_address, type: string }
+      - { name: process, type: string }
     columns: [name, port, service_kind, product, findings.open, last_seen]
     card: service
     scannable_by: [service, port]

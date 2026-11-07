@@ -1,0 +1,47 @@
+{
+  "text": "Phát hiện mới (Nghiêm trọng)",
+  "attachments": [
+    {
+      "color": "#dc2626",
+      "blocks": [
+        {
+          "type": "header",
+          "text": {
+            "type": "plain_text",
+            "text": "🔴 Phát hiện mới",
+            "emoji": true
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Mức độ:* Nghiêm trọng\n*Tài sản:* shop.example.com (domain)\n*Nội dung:* CVE-2026-12345: Remote code execution in the file upload handler\n*Vì sao quan trọng:* Đã bị khai thác thực tế (CISA KEV); EPSS 42%: có khả năng sớm bị khai thác\n*Bước tiếp theo:* Vá hoặc giảm thiểu trước tiên: lỗ hổng đang bị khai thác.\n*Chi tiết:* The upload endpoint accepts a crafted archive that writes outside the upload directory."
+          }
+        },
+        {
+          "type": "context",
+          "elements": [
+            {
+              "type": "mrkdwn",
+              "text": "Example Corp"
+            }
+          ]
+        },
+        {
+          "type": "actions",
+          "elements": [
+            {
+              "type": "button",
+              "text": {
+                "type": "plain_text",
+                "text": "Mở phát hiện"
+              },
+              "url": "https://ctem.example.com/findings"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

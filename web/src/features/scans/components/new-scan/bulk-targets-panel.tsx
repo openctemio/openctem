@@ -22,6 +22,8 @@ interface BulkTargetsPanelProps {
   present: readonly string[]
   /** Direct targets the scan can still take. */
   capacity: number
+  /** The organization's widest range, in host bits (default: the API's limit). */
+  maxHostBits?: number
   onAdd: (targets: string[]) => void
   onCancel: () => void
 }
@@ -30,12 +32,13 @@ export function BulkTargetsPanel({
   id,
   present,
   capacity,
+  maxHostBits,
   onAdd,
   onCancel,
 }: BulkTargetsPanelProps) {
   const { t } = useTranslation()
   const [lines, setLines] = useState<string[]>([])
-  const parsed = useMemo(() => parsePastedTargets(lines), [lines])
+  const parsed = useMemo(() => parsePastedTargets(lines, { maxHostBits }), [lines, maxHostBits])
   const already = useMemo(() => new Set(present), [present])
   const fresh = parsed.targets.filter((x) => !already.has(x.toLowerCase()))
   const repeated = parsed.targets.length - fresh.length

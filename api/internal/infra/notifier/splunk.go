@@ -106,6 +106,8 @@ type splunkEventBody struct {
 	URL       string            `json:"url,omitempty"`
 	Fields    map[string]string `json:"fields,omitempty"`
 	Source    string            `json:"source"`
+	// Notification is the structured message, as in the webhook payload.
+	Notification *cardNotification `json:"notification,omitempty"`
 }
 
 // Send posts a single event to the HEC endpoint.
@@ -168,13 +170,14 @@ func (c *SplunkClient) buildEvent(msg Message) splunkEvent {
 		Index:      c.index,
 		Source:     "openctem.io",
 		Event: splunkEventBody{
-			EventType: eventType,
-			Title:     msg.Title,
-			Body:      msg.Body,
-			Severity:  msg.Severity,
-			URL:       msg.URL,
-			Fields:    msg.Fields,
-			Source:    "openctem.io",
+			EventType:    eventType,
+			Title:        msg.Title,
+			Body:         msg.Body,
+			Severity:     msg.Severity,
+			URL:          msg.URL,
+			Fields:       msg.Fields,
+			Source:       "openctem.io",
+			Notification: newCardNotification(msg.Card),
 		},
 	}
 }

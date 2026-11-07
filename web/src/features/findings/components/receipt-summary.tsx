@@ -15,6 +15,11 @@ import { DetailSection } from '@/features/shared/components/detail-sheet'
 import { KeyValueList } from '@/features/shared/components/text-layout'
 import { cn } from '@/lib/utils'
 import {
+  RECEIPT_OUTCOME_CODES,
+  receiptOutcomeLabel,
+  unaccountedFindings,
+} from '@/features/shared/lib/receipt-outcomes'
+import {
   useFindingReceipts,
   useReceipts,
   type FindingReceipt,
@@ -77,6 +82,18 @@ export function ReceiptSummary({
   const received = receipt.received ?? 0
   const assetsCreated = receipt.assets?.created ?? 0
   const assetsUpdated = receipt.assets?.updated ?? 0
+  const unaccounted = unaccountedFindings(
+    received,
+    {
+      created: c?.created ?? 0,
+      stillDetected: c?.updated ?? 0,
+      reopened: c?.reactivated ?? 0,
+      suppressed: c?.suppressed ?? 0,
+      failed: c?.failed ?? 0,
+      skipped: c?.skipped ?? 0,
+    },
+    receipt.outcomes
+  )
   const hasActivity = reports > 0 || received > 0 || assetsCreated > 0 || assetsUpdated > 0
   return (
     <div className="space-y-2" data-testid="receipt-summary">
@@ -113,6 +130,10 @@ export function ReceiptSummary({
           />
           <Cell label={t('findings.receipts.skipped', 'Skipped')} value={c?.skipped ?? 0} />
           <Cell
+            label={t('findings.receipts.suppressed', 'Closed on arrival by a rule')}
+            value={c?.suppressed ?? 0}
+          />
+          <Cell
             label={t('findings.receipts.failed', 'Failed')}
             value={c?.failed ?? 0}
             tone="danger"
@@ -120,6 +141,16 @@ export function ReceiptSummary({
         </div>
       )}
       <ReceiptOutcomes outcomes={receipt.outcomes} />
+      {!running && unaccounted > 0 ? (
+        <p className="text-muted-foreground text-xs tabular-nums" data-testid="receipt-unaccounted">
+          {t(
+            'findings.receipts.unaccounted',
+            '{count} received findings are not explained by the counts above: this receipt was written before every outcome was counted.',
+            { count: unaccounted }
+          )}
+        </p>
+      ) : null}
+      <ReceiptClosing closing={receipt.closing} />
       <p className="text-muted-foreground text-xs">
         {running
           ? t(
@@ -180,38 +211,142 @@ export function ReceiptSummary({
   )
 }
 
-/** The latest uploads of the organization (or, without the organization view, yours). */
-/** Outcome codes the API sends (ingestreceipt.AllOutcomes), in display order. */
-const OUTCOME_CODES = [
-  'merged',
-  'exposure',
-  'source_mitigated',
-  'unresolved_ref',
-  'out_of_contract',
-  'reserved_tool',
-  'split',
+/** What a scan file's own coverage closed (ingestreceipt.Closing). */
+type Closing = NonNullable<ReceiptResponse['closing']>
+
+/** Closed reasons, then kept reasons, as the API sends them, in display order. */
+const CLOSED_CODES = ['not_in_scan', 'compliance_passed'] as const
+const KEPT_CODES = [
+  'host_not_finished',
+  'local_checks_not_run',
+  'check_not_run',
+  'seen_later',
+  'file_incomplete',
+  'needs_verify',
+  'guard',
 ] as const
 
-function outcomeLabel(t: T, code: (typeof OUTCOME_CODES)[number]): string {
+function closedLabel(t: T, code: (typeof CLOSED_CODES)[number]): string {
   switch (code) {
-    case 'merged':
-      return t('findings.receipts.outcome.merged', 'Repeats merged')
-    case 'exposure':
-      return t('findings.receipts.outcome.exposure', 'Filed as exposures')
-    case 'source_mitigated':
-      return t('findings.receipts.outcome.source_mitigated', 'Mitigated at the source')
-    case 'unresolved_ref':
-      return t('findings.receipts.outcome.unresolved_ref', 'Named no asset, refused')
-    case 'out_of_contract':
+    case 'not_in_scan':
       return t(
-        'findings.receipts.outcome.out_of_contract',
-        "Held for review, outside the tool's contract"
+        'findings.receipts.closing.closed.not_in_scan',
+        'Closed: the check ran and did not find it'
       )
-    case 'reserved_tool':
-      return t('findings.receipts.outcome.reserved_tool', 'Refused, reserved tool name')
-    case 'split':
-      return t('findings.receipts.outcome.split', 'Added by splitting findings with several CVEs')
+    case 'compliance_passed':
+      return t(
+        'findings.receipts.closing.closed.compliance_passed',
+        'Closed: the compliance check passed'
+      )
   }
+}
+
+function keptLabel(t: T, code: (typeof KEPT_CODES)[number]): string {
+  switch (code) {
+    case 'host_not_finished':
+      return t(
+        'findings.receipts.closing.kept.host_not_finished',
+        'Kept: the host scan did not finish'
+      )
+    case 'local_checks_not_run':
+      return t(
+        'findings.receipts.closing.kept.local_checks_not_run',
+        'Kept: local check, but the scan could not log in'
+      )
+    case 'check_not_run':
+      return t(
+        'findings.receipts.closing.kept.check_not_run',
+        'Kept: the check was not part of the scan'
+      )
+    case 'seen_later':
+      return t('findings.receipts.closing.kept.seen_later', 'Kept: seen after this scan')
+    case 'file_incomplete':
+      return t(
+        'findings.receipts.closing.kept.file_incomplete',
+        'Kept: the file or the upload cannot prove it is gone'
+      )
+    case 'needs_verify':
+      return t(
+        'findings.receipts.closing.kept.needs_verify',
+        'Kept: closing needs the verify findings permission'
+      )
+    case 'guard':
+      return t(
+        'findings.receipts.closing.kept.guard',
+        'Kept by a safety rule: critical, known exploited, a secret, last seen by a sensor, or the closing mode'
+      )
+  }
+}
+
+/**
+ * What a scan file closed and why the other open findings of its hosts stayed
+ * open. Every considered finding has one line: closed, proposed or kept.
+ */
+export function ReceiptClosing({ closing }: { closing?: Closing | null }) {
+  const { t } = useTranslation()
+  if (!closing || !closing.considered) return null
+  const closed = CLOSED_CODES.filter((code) => (closing.closed?.[code] ?? 0) > 0)
+  const kept = KEPT_CODES.filter((code) => (closing.kept?.[code] ?? 0) > 0)
+  const rows = [
+    ...closed.map((code) => ({
+      key: code,
+      label: closedLabel(t, code),
+      n: closing.closed?.[code] ?? 0,
+    })),
+    ...(closing.proposed
+      ? [
+          {
+            key: 'proposed',
+            label: t('findings.receipts.closing.proposed', 'Waiting in Ready to close'),
+            n: closing.proposed,
+          },
+        ]
+      : []),
+    ...kept.map((code) => ({ key: code, label: keptLabel(t, code), n: closing.kept?.[code] ?? 0 })),
+  ]
+  const authFailed = closing.hosts_local_checks_failed ?? 0
+  const unfinished = closing.hosts_unfinished ?? 0
+  return (
+    <div className="space-y-1" data-testid="receipt-closing">
+      <p className="text-muted-foreground text-xs font-medium">
+        {t(
+          'findings.receipts.closing.title',
+          '{considered} open findings of the scanned hosts were not in the file',
+          { considered: closing.considered }
+        )}
+      </p>
+      <KeyValueList
+        size="meta"
+        items={rows.map((r) => ({
+          key: r.key,
+          label: r.label,
+          value: (
+            <span className="tabular-nums" data-testid={`receipt-closing-${r.key}`}>
+              {r.n}
+            </span>
+          ),
+        }))}
+      />
+      {authFailed > 0 ? (
+        <p className="text-muted-foreground text-xs" data-testid="receipt-closing-auth">
+          {t(
+            'findings.receipts.closing.authFailed',
+            'Authentication failed on {count} hosts: local findings there were not closed. Fix the scan credentials and scan again.',
+            { count: authFailed }
+          )}
+        </p>
+      ) : null}
+      {unfinished > 0 ? (
+        <p className="text-muted-foreground text-xs" data-testid="receipt-closing-unfinished">
+          {t(
+            'findings.receipts.closing.unfinished',
+            'The scan did not finish on {count} hosts: their findings were not closed.',
+            { count: unfinished }
+          )}
+        </p>
+      ) : null}
+    </div>
+  )
 }
 
 /**
@@ -220,7 +355,7 @@ function outcomeLabel(t: T, code: (typeof OUTCOME_CODES)[number]): string {
  */
 export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number> }) {
   const { t } = useTranslation()
-  const rows = OUTCOME_CODES.filter((code) => (outcomes?.[code] ?? 0) > 0)
+  const rows = RECEIPT_OUTCOME_CODES.filter((code) => (outcomes?.[code] ?? 0) > 0)
   if (rows.length === 0) return null
   return (
     <div className="space-y-1" data-testid="receipt-outcomes">
@@ -231,7 +366,7 @@ export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number
         size="meta"
         items={rows.map((code) => ({
           key: code,
-          label: outcomeLabel(t, code),
+          label: receiptOutcomeLabel(t, code),
           value: (
             <span className="tabular-nums" data-testid={`receipt-outcome-${code}`}>
               {outcomes?.[code] ?? 0}
@@ -243,6 +378,7 @@ export function ReceiptOutcomes({ outcomes }: { outcomes?: Record<string, number
   )
 }
 
+/** The latest uploads of the organization (or, without the organization view, yours). */
 export function RecentImports() {
   const { t } = useTranslation()
   const { data, isLoading, error } = useReceipts({ sourceKind: 'upload', perPage: 5 })

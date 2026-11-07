@@ -467,6 +467,13 @@ receipt or on the discovery tool whose report named the software.
   on arrival (the list's Suppressed total); it is inside New, not a fourth
   part. One definition per label: the intake summary, the noise headline,
   the hero funnel and the source tooltip all use it.
+- Reconciliation: the noise also carries the receipts' full split
+  (`seen_again`: still detected; `repeated`: the `merged` outcome;
+  `outcomes`: every other receipt outcome, summed from
+  `ingest_receipt_tools.outcomes`; `unaccounted`: what none of them
+  explains, from receipts written before outcomes were counted). The
+  funnel keeps two steps, received and new or reopened; the tooltip of
+  either step lists every row that is not zero.
 - Funnel: received and new or reopened are the period's flow (received is
   at least new or reopened); actionable is a stock (open findings of
   classes P0 to P3 now), so the hero shows it once, apart from the flow

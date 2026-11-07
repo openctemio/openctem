@@ -660,6 +660,14 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 	if res.Untouched != nil {
 		untouched = *res.Untouched
 	}
+	var closing any
+	if res.Closing != nil {
+		b, err := json.Marshal(res.Closing)
+		if err != nil {
+			return fmt.Errorf("receipt closing: %w", err)
+		}
+		closing = string(b)
+	}
 	status := res.Status
 	if status == "" {
 		status = ingestreceipt.StatusCompleted
@@ -669,6 +677,7 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 			status = $3,
 			format = COALESCE(NULLIF($4, ''), format),
 			skipped = skipped + $5,
+			findings_received = findings_received + $5,
 			components = components + $6,
 			statements = statements + $7,
 			vex_stored = vex_stored + $8,
@@ -677,11 +686,12 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 			coverage_note = COALESCE(NULLIF($11, ''), coverage_note),
 			findings_untouched = CASE WHEN $12::integer IS NULL THEN findings_untouched ELSE $12::integer END,
 			errors = `+mergeErrorsHead+`$13`+mergeErrorsTail+`,
+			closing = COALESCE($14::jsonb, closing),
 			finished_at = now(),
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload'`,
 		tenantID.String(), id.String(), status, res.Format, res.Skipped, res.Components, res.Statements,
-		res.VEXStored, res.VEXRequested, res.Coverage, res.CoverageNote, untouched, string(errs))
+		res.VEXStored, res.VEXRequested, res.Coverage, res.CoverageNote, untouched, string(errs), closing)
 	if err != nil {
 		return fmt.Errorf("finish upload receipt: %w", err)
 	}
@@ -692,12 +702,15 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 		return nil
 	}
 	// The file-level skipped count joins the upload's tool row, so the tool
-	// rows still sum to the receipt.
+	// rows still sum to the receipt. What the parser skipped was received
+	// (it was in the upload) and not imported: it counts on both sides, so
+	// the receipt reconciles.
 	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, skipped, first_at, last_at)
-		SELECT tenant_id, id, `+receiptToolSQL+`, '`+ingestreceipt.InstanceImport+`', '`+ingestreceipt.InstanceImport+`', $3, now(), now()
+		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, received, skipped, first_at, last_at)
+		SELECT tenant_id, id, `+receiptToolSQL+`, '`+ingestreceipt.InstanceImport+`', '`+ingestreceipt.InstanceImport+`', $3, $3, now(), now()
 		FROM ingest_receipts WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload'
 		ON CONFLICT (receipt_id, tool, instance_kind, instance_id) DO UPDATE SET
+			received = ingest_receipt_tools.received + EXCLUDED.received,
 			skipped = ingest_receipt_tools.skipped + EXCLUDED.skipped,
 			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at)`,
 		tenantID.String(), id.String(), res.Skipped)
@@ -728,7 +741,7 @@ const receiptColumns = `id::text, tenant_id::text, source_kind, source_ref, acto
 	reports, findings_received, assets_created, assets_updated, components, statements, vex_stored, vex_closed,
 	findings_created, findings_updated, findings_reopened, findings_closed, findings_untouched,
 	skipped, findings_failed, findings_suppressed, actions_recorded, actions_truncated, errors,
-	created_at, updated_at, finished_at, outcomes, released_from_quarantine`
+	created_at, updated_at, finished_at, outcomes, released_from_quarantine, closing`
 
 type receiptScanner interface{ Scan(...any) error }
 
@@ -741,13 +754,14 @@ func scanReceipt(s receiptScanner) (*ingestreceipt.Receipt, error) {
 		errs             []byte
 		finished         sql.NullTime
 		outcomes         []byte
+		closing          []byte
 	)
 	err := s.Scan(&id, &tenant, &kind, &rec.SourceRef, &actor, &rec.ToolName, &rec.Format, &rec.FilenameSHA256, &rec.Coverage,
 		&rec.CoverageNote, &rec.Status, &rec.Reports, &rec.Received, &rec.AssetsCreated, &rec.AssetsUpdated,
 		&rec.Components, &rec.Statements, &rec.VEXStored, &rec.VEXRequested,
 		&rec.Counts.Created, &rec.Counts.StillDetected, &rec.Counts.Reopened, &rec.Counts.Closed, &untouched,
 		&rec.Counts.Skipped, &rec.Counts.Failed, &rec.Counts.Suppressed, &rec.ActionsRecorded, &rec.ActionsTruncated,
-		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished, &outcomes, &rec.ReleasedFromQuarantine)
+		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished, &outcomes, &rec.ReleasedFromQuarantine, &closing)
 	if err != nil {
 		return nil, err
 	}
@@ -776,6 +790,13 @@ func scanReceipt(s receiptScanner) (*ingestreceipt.Receipt, error) {
 		if err := json.Unmarshal(outcomes, &rec.Outcomes); err != nil {
 			return nil, fmt.Errorf("receipt outcomes: %w", err)
 		}
+	}
+	if len(closing) > 0 {
+		c := ingestreceipt.NewClosing()
+		if err := json.Unmarshal(closing, c); err != nil {
+			return nil, fmt.Errorf("receipt closing: %w", err)
+		}
+		rec.Closing = c
 	}
 	return &rec, nil
 }
