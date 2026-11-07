@@ -89,6 +89,10 @@ var findingMergeRefs = []mergeRef{
 	// row (one row per receipt and finding).
 	{table: "finding_ingest_actions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"receipt_id"}}}},
+	// Who reported the loser reported the survivor; a source the survivor
+	// already has keeps the survivor's row (one row per finding and source).
+	{table: "finding_sightings", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"channel", "sender", "tool"}, nullSafe: []string{"sensor_id", "scan_id"}}}}, //nolint:goconst // column names of the key
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
