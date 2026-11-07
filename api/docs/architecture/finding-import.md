@@ -69,7 +69,9 @@ Nessus v2 XML, Qualys host detection XML with an optional KnowledgeBase,
 SARIF 2.1.0, trivy, grype, semgrep (and opengrep), gitleaks (and
 betterleaks), nuclei, ZAP (JSON and XML), vuls, CycloneDX (SBOM, VDR, VEX),
 SPDX, osv-scanner results, CSAF 2.0, OpenVEX, DefectDojo Generic Findings
-JSON and the generic `bounty_report` (ctis v2.0.1). A `bounty_report` file is
+JSON, the generic `bounty_report`, and the inventory formats nmap XML,
+testssl.sh JSON, ffuf, S3Scanner, arjun, a line list (`format=lines`) and CTIS
+2.0 itself (ctis v2.0.2). A `bounty_report` file is
 read, but its findings get the source `external` (no tool name in the
 ingest table matches) and the importer's `extensions[io.openctem].bounty_report`
 is not read into `metadata.bounty_report`, so they are not `bug_bounty`
@@ -79,6 +81,33 @@ fixtures and a field-coverage test in the ctis repository
 `importer.Detect`, `importer.Parse` and `importer.OpenZip` only, through one entry
 point, `findingimport.Convert` (content sniffing, archive limits, KnowledgeBase
 pairing), which any other caller that accepts exported files reuses.
+
+## Nessus host inventory
+
+A credentialed `.nessus` file describes the inside of each host. The ctis
+importer (mapping: ctis `docs/importers/nessus.md`) emits it and ingest stores
+it like any other CTIS report:
+
+- `cpe-*` host properties become technologies with a CPE 2.3 name
+  (`asset_technologies`); a CPE technology is also software of the asset
+  (`recordSoftware`), so vulnerability matching finds CVEs from it even when
+  the export carries none.
+- The package lists of Software Enumeration (SSH) and Windows Installed
+  Software Enumeration become dependencies with `asset_ref` set to their host.
+  `ComponentProcessor.resolveDepAssetIDs` honours `asset_ref`: a package goes
+  to the host it names, and is skipped when that host was not stored (out of
+  scope, left out), never moved to another host of the file. An import writes
+  packages add-only (`software.SnapshotMode`).
+- `netstat-listen-*` sockets become open-port services with
+  `observed_from` (`host`: only the host's socket table shows it; `network`:
+  the scanner also reached it), `bind_address` and `process`
+  (`addLocalListenerProperties` reads only these keys of
+  `technical.service.details`). Loopback-only sockets are not services.
+- `ssh-fingerprint` keys are kept in the host's properties
+  (`ssh_host_key_fingerprints`); CTIS identity hints have no SSH key member,
+  so they do not match hosts yet.
+- A file without plugin details gets the importer issue "export lacks plugin
+  details; re-export with full plugin attributes", shown on the import result.
 
 ## Recon results (reconFTW directory)
 
