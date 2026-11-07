@@ -1259,6 +1259,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Asset.SetFreshness(repos.AssetFreshness)
 	s.Asset.SetResolution(repos.AssetResolution)
 	s.Asset.SetCoverage(repos.AssetCoverage)
+	s.Asset.SetCoverageInfoPolicy(coverageapp.GovernanceSwitch{Settings: s.Tenant})
 	s.Asset.SetResolvedPorts(repos.AssetRelationship)
 	// How an asset was found: its ancestor chain (docs/architecture/easm.md).
 	s.Asset.SetLineage(repos.AssetRelationship)
@@ -2717,6 +2718,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Secret findings: fingerprint keyed by the platform secret (RFC-043).
 	s.Ingest.SetSecretFingerprinter(vulnerability.NewSecretFingerprinter([]byte(cfg.FingerprintSecret())))
 	s.Ingest.SetDetectionRules(s.DetectionRules)
+	// Template info matches become asset facts by the stable template facts pack.
+	s.Ingest.SetTemplateFacts(s.DetectionRules)
 	// Receipts of uploads and sensor runs, with the daily ingest fact (RFC-122).
 	s.Ingest.SetReceiptRecorder(repos.IngestReceipt)
 	// Coverage-scoped auto-resolve of non-repository findings (default dry_run).

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 
 import type { TechnologyCategory } from '../../types'
 import { FactChip } from '../service-cells/fact-chip'
+import { technologySourceLabel } from './technology-source'
 
 /** The categories in display order (RFC-112). */
 export const TECHNOLOGY_CATEGORIES: readonly TechnologyCategory[] = [
@@ -110,7 +111,9 @@ function TechnologyChip({ item }: { item: TechnologyChipData }) {
       ? t('assets.technologies.confidence', 'Confidence {value}', { value: item.confidence })
       : null,
     item.source
-      ? t('assets.technologies.source', 'Source: {source}', { source: item.source })
+      ? t('assets.technologies.source', 'Source: {source}', {
+          source: technologySourceLabel(item.source, t),
+        })
       : null,
   ].filter(Boolean) as string[]
   if (details.length === 0 && !item.last_seen_at) {

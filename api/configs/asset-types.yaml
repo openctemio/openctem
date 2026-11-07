@@ -881,6 +881,7 @@ types:
     scannable_by: [url, service, port]
     coverage:
       - { capability: vuln.templates, every: 7d, requires: [no_named_twin] }
+      - { capability: vuln.templates_info, every: 30d, requires: [no_named_twin] }
       - { capability: enumerate.web_paths, every: 30d, requires: [origin_scope_entry, inventory_changed, edge_clear] }
       - { capability: capture.screenshot, every: 30d, requires: [no_named_twin] }
     sections: [overview, attributes, technologies, certificate, findings, relationships, owners, sources, history]

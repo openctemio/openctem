@@ -135,6 +135,11 @@ type ScopeSettingsResponse struct {
 	AutoCoverage *bool `json:"auto_coverage"`
 	// AutoCoverageEffective: automatic coverage runs now (read-only).
 	AutoCoverageEffective bool `json:"auto_coverage_effective"`
+	// InfoCoverage: the info pass of continuous coverage (vuln.templates at
+	// severity info, on a slower cadence) runs. Default true.
+	InfoCoverage bool `json:"info_coverage"`
+	// InfoCoverageDays is the interval of the info pass, 7..90 (default 30).
+	InfoCoverageDays int `json:"info_coverage_days"`
 	// PathDiscovery: path discovery of web services runs (default true):
 	// candidate paths derived from the organization's own inventory, GET
 	// and HEAD only, at most one run per origin per 30 days.
@@ -206,6 +211,10 @@ type ScopeSettingsRequest struct {
 	AddressAutoAdd string `json:"address_auto_add" validate:"omitempty,oneof=auto_strong ask never"`
 	// AutoCoverage: true or false; omitted keeps the stored choice.
 	AutoCoverage *bool `json:"auto_coverage"`
+	// InfoCoverage: true or false; omitted keeps the stored choice.
+	InfoCoverage *bool `json:"info_coverage"`
+	// InfoCoverageDays: 7..90; omitted keeps the stored value.
+	InfoCoverageDays int `json:"info_coverage_days" validate:"omitempty,min=7,max=90"`
 	// PathDiscovery: true or false; omitted keeps the stored choice.
 	PathDiscovery *bool `json:"path_discovery"`
 	// CIScopeRequiresProof: true or false; omitted keeps the stored value.
@@ -231,6 +240,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
 		ReviewBeforeInventory: ss.ReviewBeforeInventory,
 		AutoCoverage:          ss.AutoCoverage, AutoCoverageEffective: ss.AutoCoverageOn(mode == scangov.ModeStrict),
+		InfoCoverage: ss.InfoCoverageOn(), InfoCoverageDays: ss.InfoCoverageEvery(),
 		PathDiscovery:        ss.PathDiscoveryOn(),
 		CIScopeRequiresProof: ss.CIScopeRequiresProof,
 		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
@@ -322,6 +332,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
 		UnclassifiedScans: req.UnclassifiedScans, AutoCoverage: req.AutoCoverage,
 		AddressAutoAdd: req.AddressAutoAdd, MaxRangePrefix: req.MaxRangePrefix, PathDiscovery: req.PathDiscovery,
+		InfoCoverage: req.InfoCoverage, InfoCoverageDays: req.InfoCoverageDays,
 	}
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
@@ -333,7 +344,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
 	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
-		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil {
+		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil || req.InfoCoverage == nil || req.InfoCoverageDays == 0 {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -351,6 +362,12 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.AutoCoverage == nil {
 			ss.AutoCoverage = before.AutoCoverage
+		}
+		if req.InfoCoverage == nil {
+			ss.InfoCoverage = before.InfoCoverage
+		}
+		if req.InfoCoverageDays == 0 {
+			ss.InfoCoverageDays = before.InfoCoverageDays
 		}
 		if req.CIScopeRequiresProof == nil {
 			ss.CIScopeRequiresProof = before.CIScopeRequiresProof
