@@ -187,7 +187,11 @@ func TestScanRunSummary_MigrationBackfillMatchesRepository(t *testing.T) {
 	// Migration 001285 renamed the tables after 001157 ran; compare under
 	// the current names.
 	mig := norm(strings.NewReplacer("pipeline_runs", "scan_runs", "pipeline_id", "scan_workflow_id").Replace(string(raw)))
-	if !strings.Contains(mig, norm(scanRunSummaryUpdateSQL)) {
+	// The zone runs of a split run (parent_run_id, added later) are left
+	// out of the summary; no run had a parent when 001157 ran, so the rule
+	// is the same.
+	repo := strings.ReplaceAll(scanRunSummaryUpdateSQL, " AND pr.parent_run_id IS NULL", "")
+	if !strings.Contains(mig, norm(repo)) {
 		t.Fatal("migration 001157's backfill differs from scanRunSummaryUpdateSQL")
 	}
 }

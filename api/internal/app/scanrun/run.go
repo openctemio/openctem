@@ -1138,10 +1138,15 @@ func (s *Service) finishRun(ctx context.Context, run *scanrun.Run, status scanru
 	}
 	metrics.ScanRunsInProgress.WithLabelValues().Dec()
 	metrics.ScanRunsTotal.WithLabelValues(string(status)).Inc()
+	run.Status = status
+	run.TotalFindings = findings
+	if run.ParentRunID != nil {
+		// A zone child: its parent is the scan's run (zone_split.go).
+		s.settleSplitParent(ctx, run)
+		return true
+	}
 	s.recordScanRun(ctx, run, string(status))
 	if s.runCompleted != nil {
-		run.Status = status
-		run.TotalFindings = findings
 		s.runCompleted(ctx, run)
 	}
 	return true
@@ -2305,14 +2310,20 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	run.Cancel()
 	metrics.ScanRunsInProgress.WithLabelValues().Dec()
 	metrics.ScanRunsTotal.WithLabelValues(string(scanrun.RunStatusCanceled)).Inc()
-	s.recordScanRun(ctx, run, string(scanrun.RunStatusCanceled))
 
 	closure := s.closeCanceledRun(ctx, run)
 	s.notifyRun(run.TenantID, run.ID)
-	// A canceled run finished too: automations listening for finished runs
-	// hear about it (research/62 P0-11).
-	if s.runCompleted != nil {
-		s.runCompleted(ctx, run)
+	// A split run's zone runs are canceled with it (zone_split.go).
+	s.cancelZoneChildren(ctx, run)
+	if run.ParentRunID != nil {
+		s.settleSplitParent(ctx, run)
+	} else {
+		s.recordScanRun(ctx, run, string(scanrun.RunStatusCanceled))
+		// A canceled run finished too: automations listening for finished
+		// runs hear about it (research/62 P0-11).
+		if s.runCompleted != nil {
+			s.runCompleted(ctx, run)
+		}
 	}
 
 	event := NewSuccessEvent(audit.ActionScanRunCanceled, audit.ResourceTypeScanRun, runID).

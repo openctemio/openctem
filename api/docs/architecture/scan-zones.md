@@ -128,11 +128,50 @@ Each batch payload carries only its own targets: `targets`/`target`, a
 `targets`, `scanner_config`, warnings or routing report. The protocol-v1 wire
 shape is unchanged.
 
-**Workflow scans** run as one scan run, so their routed targets must fall in a
-single zone (or all be unzoned): otherwise the trigger fails with
-`ZONE_SPLIT_REQUIRED`. The run is stamped with the zone (`scan_zone_id` in the
-run context) and every step command, including those the scan run service
-schedules later, is stamped with it and left to the zone's sensors.
+**Workflow scans** whose routed targets form one zone group (one zone, or all
+unzoned) run as one scan run. The run is stamped with the zone (`scan_zone_id`
+in the run context) and every step command, including those the scan run
+service schedules later, is stamped with it and left to the zone's sensors.
+
+### Workflow runs over several zones
+
+A workflow scan whose routed targets form several zone groups is not refused:
+it runs as one **zone run** per group under a **parent run**
+(`internal/app/scan/zone_split.go`). The groups are computed per target from
+the router's plan: one per zone that has sensors (first-seen order), plus the
+unzoned public targets. A zone without sensors gets no zone run; its targets
+are uncovered on the parent, with the reason.
+
+- Each zone run is an ordinary workflow run created by the same path as an
+  unsplit run, with its own copy of the run context: its targets, the zone
+  stamp (none for the unzoned group, which routes to shared or organization
+  sensors exactly as an unzoned run does), and `zone_split`
+  (`parent_run_id`, `zone_id`, `zone_name`, `part`, `parts`). Its scan windows
+  are checked with its own zone. A group that is refused (a window that never
+  opens, for example) is listed on the parent with its reason; when every
+  group is refused nothing is created and the trigger fails as before.
+- The parent (`scan_runs.parent_run_id IS NULL`, no steps, no commands) holds
+  the scan's schedule occurrence and its concurrency slot: zone runs never use
+  the per-scan or per-tenant limits, and the parent counts once. Its run
+  context lists the groups (`zone_split.groups`: zone, targets, `started` with
+  the zone run id, or `refused` with the reason) and the uncovered targets.
+- A zone run links to its parent with `scan_runs.parent_run_id` (composite
+  foreign key on `(tenant_id, parent_run_id)`, so both are in one tenant).
+- The parent settles when its last zone run finishes
+  (`ScanRunRepository.SettleSplitParent`, and `SettleSplitParents` after each
+  pass of the timeout controller for zone runs the reapers ended): completed
+  when every zone run completed, canceled when every one was canceled, failed
+  when none produced results, partial otherwise; findings are summed. Only the
+  parent is recorded on the scan (summary, run list, automatic retry) and
+  handed to the run-settled callback. Canceling the parent cancels its open
+  zone runs.
+- `GET /api/v1/scan-runs/{id}` returns `parent_run_id` and `zone_split`; on a
+  parent each group carries its zone run's status and findings. The run detail
+  shows a "Scan zones" section with one row per zone and a link to each zone
+  run; a zone run links back to its parent.
+
+The routing preview answers `zone_runs` (how many zone runs a workflow trigger
+starts) instead of an error.
 
 ### Run completion with batches
 
@@ -154,9 +193,8 @@ zone alone, so a target it holds goes to it even when a narrower zone also holds
 the target, and every other target is uncovered with the reason
 `outside the selected scan zone "<name>"`; public targets too, unless the
 selected zone is the default zone. Deny-list and DNS failures keep their own
-reason. Workflow scans follow the same rule, so pinning a workflow to a zone is
-also how to run it on targets that would otherwise need `ZONE_SPLIT_REQUIRED`
-splitting. Non-network tools are not routed, so the picker does not apply to
+reason. Workflow scans follow the same rule, so pinning a workflow to a zone keeps
+it in that zone instead of splitting it into zone runs. Non-network tools are not routed, so the picker does not apply to
 them. A pinned zone that no longer exists fails the trigger closed
 (`SCAN_ZONE_NOT_FOUND`); `dispatch.zone_routing.selected_zone_id` records the
 choice on the run.
@@ -167,7 +205,7 @@ choice on the run.
 to be created, read-only: creation's target validation (with zone admission of
 private targets), asset-group expansion, scope exclusions, the zone router
 (selected zone included), batching and least-busy sensor pinning, or the
-workflow single-zone rule. It creates no scan, run or command. Hostnames are
+workflow zone groups. It creates no scan, run or command. Hostnames are
 resolved at preview time, as a trigger would, so the answer can change with DNS
 and sensor health. What a trigger would refuse is returned in `error` rather
 than as an HTTP error.

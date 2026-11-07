@@ -234,7 +234,7 @@ Decisions taken while building it, where this RFC left room:
 | No healthy sensor | Batches are stamped with the zone, left unpinned, and wait for a zone sensor (warning on the run). A zone with no sensors assigned makes its targets uncovered. |
 | Claim predicate (layer 2) | Applies to poll and acknowledge, to pinned commands too, and survives the reaper unpinning a command. Tool match: `payload.scanner` / `payload.preferred_tool`. |
 | Run completion | All batches share the step run; the step settles once, after the last batch, with summed findings; a failed batch fails the step without a generic retry. |
-| Workflow scans | Must route to a single zone (`ZONE_SPLIT_REQUIRED` otherwise); every step command is stamped with it. |
+| Workflow scans | Targets in one zone group run as one run stamped with the zone. Targets in several zone groups run as one zone run per group under a parent run, each stamped with its zone (docs/architecture/scan-zones.md, "Workflow runs over several zones"). |
 | Non-network tools | Tools whose supported targets are only files, repositories or containers are not zone-routed (D20, before the tool manifest exists). |
 | Results (§6 step 5) | Stamped on the command only (`commands.scan_zone_id`): v1 ingest does not carry the command, so per-record zone provenance waits for D21 (Phase 2). |
 | Run report | `GET /pipeline-runs/{id}` gains `dispatch` (resolved/excluded counts, warnings, uncovered targets with reasons, zone routing). |

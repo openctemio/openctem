@@ -82,6 +82,9 @@ const (
 
 // Reconcile ends runs no sensor picked up, then marks expired runs as timed out.
 func (c *ScanTimeoutController) Reconcile(ctx context.Context) (int, error) {
+	// A split run whose zone runs the reapers ended settles from them
+	// after this pass (zone_split.go).
+	defer c.settleSplitRuns(ctx)
 	// First, so an unclaimed run ends with the reason instead of as a
 	// generic timeout (and is not retried: no sensor is a permanent class).
 	if rep, ok := c.runRepo.(scanrun.ReapedRunReporter); ok && c.onReaped != nil {
@@ -135,4 +138,21 @@ func (c *ScanTimeoutController) reconcileReporting(ctx context.Context, rep scan
 		c.onReaped(ctx, timedOut)
 	}
 	return len(unclaimed) + len(timedOut), nil
+}
+
+// settleSplitRuns settles the split runs whose zone runs all finished: the
+// zone runs this controller ended do not go through the run service.
+func (c *ScanTimeoutController) settleSplitRuns(ctx context.Context) {
+	store, ok := c.runRepo.(scanrun.ZoneSplitStore)
+	if !ok {
+		return
+	}
+	n, err := store.SettleSplitParents(ctx)
+	if err != nil {
+		c.logger.Error("failed to settle split scan runs", "error", err)
+		return
+	}
+	if n > 0 {
+		c.logger.Info("settled split scan runs from their zone runs", "count", n)
+	}
 }
