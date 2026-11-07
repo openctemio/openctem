@@ -43,7 +43,7 @@ merges:
 
 and `tool_version`, `first_seen_at`, `last_seen_at` (the source's own
 observation time, a file's scan end for an upload; the number of reports is in [finding sightings](finding-sightings.md)),
-`truncated` (a value was cut to its cap) and `backfilled`.
+`clipped` (a value was cut to its cap) and `backfilled`.
 
 **Per source, the newest wins; an empty value never erases.** A repeat of the
 same source replaces each value it carries when its observation is not older
@@ -57,7 +57,7 @@ updates. Every value is capped before storage and by a column CHECK: title
 1 KiB, description 32 KiB, snippet 10 KiB, recommendation 16 KiB, message
 4 KiB, type details 16 KiB, and the interop members at the limits of
 [finding source interop](finding-source-interop.md) (`SanitizeInteropData`).
-A cut value sets `truncated`; the finding page says so.
+A cut value sets `clipped`; the finding page says so.
 
 ## Merged view on the finding row
 

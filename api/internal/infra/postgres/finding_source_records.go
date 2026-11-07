@@ -57,7 +57,7 @@ const (
 //
 //	$1 tenant, $2 channel, $3 sensor id (nullable), $4 sender, $5 tool,
 //	$6 whether the sender is a sensor, $7 the per-finding cap,
-//	$8 fingerprints, $9 observed at, $10 truncated, then one array per
+//	$8 fingerprints, $9 observed at, $10 clipped, then one array per
 //	value column (sourceRecordValueCols).
 //
 // A repeat of the source replaces each value it carries when its
@@ -65,7 +65,7 @@ const (
 // erases. Rows are written in finding id order.
 var upsertSourceRecordsSQL = func() string {
 	inArrays := "$8::text[], $9::timestamptz[], $10::boolean[]"
-	inNames := "fingerprint, observed_at, truncated"
+	inNames := "fingerprint, observed_at, clipped"
 	insCols, insVals, sets := "", "", ""
 	for i, c := range sourceRecordValueCols {
 		typ := sqlTextArray
@@ -92,9 +92,9 @@ WITH sen AS (
 	JOIN findings f ON f.tenant_id = $1 AND f.fingerprint = i.fingerprint
 )
 INSERT INTO finding_source_records AS r (tenant_id, finding_id, channel, sensor_id, sender, tool,
-	first_seen_at, last_seen_at, truncated` + insCols + `)
+	first_seen_at, last_seen_at, clipped` + insCols + `)
 SELECT $1::uuid, d.finding_id, $2::text, src.sensor_id, src.sender, $5::text,
-	d.observed_at, d.observed_at, d.truncated` + insVals + `
+	d.observed_at, d.observed_at, d.clipped` + insVals + `
 FROM d CROSS JOIN src
 WHERE (SELECT count(*) FROM finding_source_records x WHERE x.tenant_id = $1 AND x.finding_id = d.finding_id) < $7::integer
    OR EXISTS (SELECT 1 FROM finding_source_records x
@@ -104,7 +104,7 @@ ORDER BY d.finding_id
 ON CONFLICT (tenant_id, finding_id, channel, sensor_id, sender, tool) DO UPDATE SET
 	first_seen_at = LEAST(r.first_seen_at, EXCLUDED.first_seen_at),
 	last_seen_at  = GREATEST(r.last_seen_at, EXCLUDED.last_seen_at),
-	truncated     = r.truncated OR EXCLUDED.truncated,
+	clipped     = r.clipped OR EXCLUDED.clipped,
 	backfilled    = false,
 	updated_at    = now()` + sets
 }()
@@ -180,7 +180,7 @@ func (r *FindingRepository) UpsertSourceRecords(ctx context.Context, tenantID sh
 func sourceRecordArgs(fps []string, byFP map[string]vulnerability.SourceRecordValues) ([]any, error) {
 	n := len(fps)
 	observed := make([]string, n)
-	truncated := make([]bool, n)
+	clipped := make([]bool, n)
 	cols := make([][]sql.NullString, len(sourceRecordValueCols))
 	for i := range cols {
 		cols[i] = make([]sql.NullString, n)
@@ -188,7 +188,7 @@ func sourceRecordArgs(fps []string, byFP map[string]vulnerability.SourceRecordVa
 	for i, fp := range fps {
 		v := byFP[fp]
 		observed[i] = v.ObservedAt.UTC().Format(time.RFC3339Nano)
-		truncated[i] = v.Truncated
+		clipped[i] = v.Truncated
 		var nid, scheme string
 		if v.Interop.Native != nil {
 			nid, scheme = v.Interop.Native.VulnID, v.Interop.Native.Scheme
@@ -215,7 +215,7 @@ func sourceRecordArgs(fps []string, byFP map[string]vulnerability.SourceRecordVa
 			cols[c][i] = row[c]
 		}
 	}
-	args := []any{pq.Array(fps), pq.Array(observed), pq.Array(truncated)}
+	args := []any{pq.Array(fps), pq.Array(observed), pq.Array(clipped)}
 	for _, c := range cols {
 		args = append(args, pq.Array(c))
 	}
@@ -229,7 +229,7 @@ func sourceRecordArgs(fps []string, byFP map[string]vulnerability.SourceRecordVa
 func (r *FindingRepository) ListSourceRecords(ctx context.Context, tenantID, findingID shared.ID) ([]vulnerability.SourceRecord, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT s.channel, s.sensor_id::text, COALESCE(se.name, ''), s.sender, s.tool, COALESCE(s.tool_version, ''),
-			s.first_seen_at, s.last_seen_at, s.truncated, s.backfilled,
+			s.first_seen_at, s.last_seen_at, s.clipped, s.backfilled,
 			(btrim(f.tool_name) <> '' AND lower(btrim(f.tool_name)) = lower(btrim(s.tool))) AS is_primary,
 			COALESCE(s.title, ''), COALESCE(s.description, ''), COALESCE(s.snippet, ''), COALESCE(s.recommendation, ''),
 			COALESCE(s.message, ''), COALESCE(s.severity, ''), s.cvss_score::float8, COALESCE(s.cvss_vector, ''),
@@ -337,7 +337,7 @@ func foldLoserSourceRecords(ctx context.Context, tx *sql.Tx, tenantID, survivorI
 		UPDATE finding_source_records s SET
 			first_seen_at = LEAST(s.first_seen_at, l.first_seen_at),
 			last_seen_at = GREATEST(s.last_seen_at, l.last_seen_at),
-			truncated = s.truncated OR l.truncated,
+			clipped = s.clipped OR l.clipped,
 			backfilled = s.backfilled AND l.backfilled,
 			updated_at = now()`+sets+`
 		FROM finding_source_records l

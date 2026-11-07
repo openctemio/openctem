@@ -85,7 +85,7 @@ const missingSQL = `
 // backfillBatchSQL writes the records of the next batch of findings after
 // the cursor ($2) and returns the batch's last id and the rows written.
 // Values are capped like the writer's (vulnerability.MaxSource*); a JSON
-// document over its cap is left out and the record marked truncated.
+// document over its cap is left out and the record marked clipped.
 var backfillBatchSQL = fmt.Sprintf(`
 	WITH cand AS (
 		SELECT f.id, f.tenant_id FROM findings f
@@ -96,7 +96,7 @@ var backfillBatchSQL = fmt.Sprintf(`
 		INSERT INTO finding_source_records (tenant_id, finding_id, channel, sensor_id, sender, tool, tool_version,
 			first_seen_at, last_seen_at, title, description, snippet, recommendation, message, severity,
 			cvss_score, cvss_vector, type_details, native_vuln_id, native_scheme, source_meta, scores,
-			vulnerability_ids, source_extra, location_key, truncated, backfilled)
+			vulnerability_ids, source_extra, location_key, clipped, backfilled)
 		SELECT f.tenant_id, f.id, s.channel, s.sensor_id, s.sender, s.tool, COALESCE(s.tool_version, f.tool_version),
 			s.first_seen_at, s.last_seen_at,
 			NULLIF(left(f.title, %[1]d), ''), NULLIF(left(f.description, %[2]d), ''), NULLIF(left(f.snippet, %[3]d), ''),

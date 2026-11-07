@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS finding_source_records (
     vulnerability_ids jsonb,
     source_extra      jsonb,
     location_key      varchar(512),
-    truncated         boolean       NOT NULL DEFAULT false,
+    clipped         boolean       NOT NULL DEFAULT false,
     backfilled        boolean       NOT NULL DEFAULT false,
     updated_at        timestamptz   NOT NULL DEFAULT now(),
     CONSTRAINT ux_finding_source_records_source UNIQUE NULLS NOT DISTINCT
@@ -72,7 +72,7 @@ COMMENT ON COLUMN finding_source_records.sensor_id IS
     'The tenant''s own sensor that reported it; NULL for a shared platform sensor (sender is then platform) and for non-sensor channels. No FK: the record outlives a deleted sensor.';
 COMMENT ON COLUMN finding_source_records.sender IS
     'The CI repository or connector source name for those channels; platform for a shared sensor; empty otherwise. Untrusted text, clipped.';
-COMMENT ON COLUMN finding_source_records.truncated IS
+COMMENT ON COLUMN finding_source_records.clipped IS
     'true when a value of this source was cut to its cap before storage.';
 COMMENT ON COLUMN finding_source_records.backfilled IS
     'true when the row was derived by finding-source-backfill from the finding row as it was before records existed; its values may mix earlier sources.';
