@@ -173,6 +173,9 @@ type Stats struct {
 	// CloseSkipped counts tenants whose close phase was skipped because
 	// the pass could not read all of their matches.
 	CloseSkipped int
+	// Failed counts findings the store refused; each is built again and
+	// retried on the organization's next reconcile.
+	Failed int
 }
 
 // Run does one pass within budget: feed changes reset the affected
@@ -543,8 +546,17 @@ func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candi
 	}
 	if res != nil {
 		st.Created += res.Created
+		st.Failed += len(res.Errors)
 		for i, msg := range res.Errors {
-			s.logger.Warn("vulnerability matching: finding not stored", "index", i, "error", msg)
+			cve := ""
+			if i >= 0 && i < len(findings) {
+				cve = findings[i].CVEID()
+			}
+			// Held for retry: the match it came from stays, and the next
+			// reconcile of the organization (its next software change, the
+			// daily sweep at the latest) builds and stores it again.
+			s.logger.Warn("vulnerability matching: finding not stored, retried on the next reconcile",
+				"tenant_id", tenantID.String(), "cve", cve, "error", logger.SanitizeText(msg))
 		}
 	}
 	s.queueAlerts(ctx, tenantID, findings, res)
@@ -589,6 +601,10 @@ func (s *Service) recordReceipt(ctx context.Context, tenantID shared.ID, finding
 	}
 	for i, f := range findings {
 		if _, failed := res.Errors[i]; failed {
+			// A fixed code: the database's message may quote the value.
+			if len(d.Errors) < ingestreceipt.MaxErrors {
+				d.Errors = append(d.Errors, ingestreceipt.ErrorEntry{Index: i, Code: ingestreceipt.ErrorStoreFailed})
+			}
 			continue
 		}
 		inserted := res.Inserted == nil || res.Inserted[i]
