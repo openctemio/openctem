@@ -48,8 +48,9 @@ const (
 	VerdictBlocked = "blocked"
 	// VerdictUnresolved: the target is a name that does not resolve. Its
 	// Outcome is OutcomeNoAnswer (the resolver answered that the name has
-	// no address: NXDOMAIN or NODATA) or ReasonResolverFailed (the lookup
-	// itself failed). A fact about the name, never a failure of the scan.
+	// no address: NXDOMAIN or NODATA), ReasonResolverFailed (the lookup
+	// itself failed) or OutcomeDNSUnknown (the sensor did not say which).
+	// A fact about the name, never a failure of the scan.
 	VerdictUnresolved = "unresolved"
 )
 
@@ -69,6 +70,12 @@ const (
 	// ReasonResolverFailed: the lookup failed (SERVFAIL, REFUSED, a resolver
 	// timeout); ambiguous, it may be the sensor's own DNS.
 	ReasonResolverFailed = "resolver_failed"
+	// OutcomeDNSUnknown: the sensor refused the name as unresolvable
+	// without saying whether the resolver answered "no such name" or the
+	// lookup failed (sensors before sdk-go v0.38.0). No evidence either
+	// way: it is never read as "no address", so it never parks a name and
+	// never counts towards gone.
+	OutcomeDNSUnknown = "dns_unknown"
 )
 
 // Outcomes recorded on pairs settled per target, besides OutcomeOK and
@@ -320,15 +327,25 @@ func readResult(raw json.RawMessage) ([]outcome.Target, map[string]bool, bool) {
 }
 
 // unresolvedVerdict is the verdict of a name that does not resolve, from
-// the sensor's DNS kind: "resolver_failed" when the lookup failed, else
-// (name_gone, or a sensor that does not say) no answer.
+// the sensor's DNS kind: no answer only when the sensor says the name is
+// gone (name_gone: NXDOMAIN or NODATA), "resolver_failed" when the lookup
+// failed, and unknown when the sensor does not say (an older sensor) or
+// says something else. Only an explicit name_gone is evidence of absence.
 func unresolvedVerdict(dns string) Verdict {
-	if dns == ReasonResolverFailed {
+	switch dns {
+	case dnsNameGone:
+		return Verdict{Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer, Error: "the name has no address"}
+	case ReasonResolverFailed:
 		return Verdict{Kind: VerdictUnresolved, Outcome: ReasonResolverFailed,
 			Error: "the sensor's DNS lookup of the name failed"}
 	}
-	return Verdict{Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer, Error: "the name has no address"}
+	return Verdict{Kind: VerdictUnresolved, Outcome: OutcomeDNSUnknown,
+		Error: "the sensor could not resolve the name and did not say why"}
 }
+
+// dnsNameGone is the sensor's DNS kind for a name the resolver answered has
+// no address (sdk-go reach.NameGone, contract outcome.NameGone).
+const dnsNameGone = string(outcome.NameGone)
 
 // Refused-target reasons a sensor lists in refused_targets (sdk-go
 // core.RefusedTarget*).
