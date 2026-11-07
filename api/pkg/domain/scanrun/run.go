@@ -75,6 +75,11 @@ type Run struct {
 	TenantID       shared.ID
 	AssetID        *shared.ID
 	ScanID         *shared.ID // Reference to the scan that triggered this run
+	// ParentRunID links a zone child to the run of a workflow scan whose
+	// targets fell in several scan zones (zone_split.go): the parent
+	// dispatches nothing and settles from its children. Nil for every other
+	// run.
+	ParentRunID *shared.ID
 
 	// Trigger info
 	TriggerType scanworkflow.TriggerType

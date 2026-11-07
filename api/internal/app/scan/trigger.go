@@ -481,24 +481,73 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	}
 	var wfPlan *zonePlan
 	if len(zones) > 0 {
-		// A workflow stays inside one zone; see routeWorkflowTargets.
-		if targets, wfPlan, err = s.routeWorkflowTargets(ctx, sc, zones, targets, runContext); err != nil {
+		routing, err := s.routeForScan(ctx, sc, zones, targets)
+		if err != nil {
+			return nil, err
+		}
+		if groups, uncovered := workflowZoneGroups(routing); len(groups) > 1 {
+			// Targets in several zone groups: one child run per zone
+			// (zone_split.go), never a refusal.
+			return s.triggerZoneSplit(ctx, workflowRunInput{
+				sc: sc, template: template, steps: steps, skips: skips, triggerType: triggerType,
+				triggeredBy: triggeredBy, runContext: runContext, resolved: resolved,
+				retryAttempt: retryAttempt, scheduledFor: scheduledFor,
+			}, routing, groups, uncovered)
+		}
+		// One zone group: the run stays inside it; see routeWorkflowTargets.
+		if targets, wfPlan, err = s.routeWorkflowTargets(sc, routing, runContext); err != nil {
 			return nil, err
 		}
 	}
-	recordSkipGroups(runContext, skipGroups(maxRunSkipSamples, nil, resolved, nil, wfPlan))
-	runZone, err := s.workflowRunZone(ctx, sc, targets, runContext)
-	if err != nil {
+	in := workflowRunInput{
+		sc: sc, template: template, steps: steps, skips: skips, triggerType: triggerType,
+		triggeredBy: triggeredBy, runContext: runContext, resolved: resolved, targets: targets, plan: wfPlan,
+		retryAttempt: retryAttempt, scheduledFor: scheduledFor,
+	}
+	if err := s.admitWorkflowRun(ctx, &in); err != nil {
 		return nil, err
+	}
+	return s.startWorkflowRun(ctx, &in)
+}
+
+// workflowRunInput is one workflow run to start: a whole scan's, or one zone
+// child of a split (parent set).
+type workflowRunInput struct {
+	sc           *scan.Scan
+	template     *scanworkflow.Workflow
+	steps        []*scanworkflow.Step
+	skips        map[string]StepSkip
+	triggerType  scanworkflow.TriggerType
+	triggeredBy  string
+	runContext   map[string]any
+	resolved     *resolvedTargets
+	targets      []string
+	plan         *zonePlan
+	retryAttempt int
+	scheduledFor *time.Time
+	// parent is the split run this run is a zone child of (nil: none).
+	parent *scanrun.Run
+}
+
+// admitWorkflowRun runs the checks of one run before anything is created:
+// it records the run's targets and routing (workflowRunZone) and applies
+// the scan windows of the run's zone.
+func (s *Service) admitWorkflowRun(ctx context.Context, in *workflowRunInput) error {
+	recordSkipGroups(in.runContext, skipGroups(maxRunSkipSamples, nil, in.resolved, nil, in.plan))
+	runZone, err := s.workflowRunZone(ctx, in.sc, in.targets, in.runContext)
+	if err != nil {
+		return err
 	}
 	// Scan windows (windows.go): never-opening targets refuse the run, a
 	// scheduled run with nothing open is deferred.
-	if err := s.checkWindows(ctx, sc, triggerType, triggeredBy, targets, oneZone(runZone), workflowTier(steps), runContext); err != nil {
-		return nil, err
-	}
+	return s.checkWindows(ctx, in.sc, in.triggerType, in.triggeredBy, in.targets, oneZone(runZone), workflowTier(in.steps), in.runContext)
+}
 
-	// Create scan run
-	run, err := scanrun.NewRun(template.ID, sc.TenantID, nil, triggerType, triggeredBy, runContext)
+// startWorkflowRun creates an admitted workflow run, its step runs, and
+// schedules its first steps.
+func (s *Service) startWorkflowRun(ctx context.Context, in *workflowRunInput) (*scanrun.Run, error) {
+	sc, template, steps := in.sc, in.template, in.steps
+	run, err := scanrun.NewRun(template.ID, sc.TenantID, nil, in.triggerType, in.triggeredBy, in.runContext)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scan run: %w", err)
 	}
@@ -508,9 +557,15 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	if err := scanrun.PinWorkflow(ctx, s.workflowVersions, run, &pinned); err != nil {
 		return nil, err
 	}
-	run.RetryAttempt = retryAttempt
-	run.ScheduledFor = scheduledFor
+	run.RetryAttempt = in.retryAttempt
 	run.ScanID = &sc.ID // Link run to scan for concurrent limit tracking
+	if in.parent != nil {
+		// A zone child: the parent holds the schedule occurrence and counts
+		// against the concurrency limits.
+		run.ParentRunID = &in.parent.ID
+	} else {
+		run.ScheduledFor = in.scheduledFor
+	}
 	if sc.ProfileID != nil {
 		run.ScanProfileID = sc.ProfileID // Propagate scan profile for quality gate evaluation
 	}
@@ -519,12 +574,12 @@ func (s *Service) triggerWorkflow(ctx context.Context, sc *scan.Scan, template *
 	if err := s.runRepo.CreateRunIfUnderLimit(ctx, run, MaxConcurrentRunsPerScan, MaxConcurrentRunsPerTenant); err != nil {
 		return nil, err // Error already includes proper domain error for limit exceeded
 	}
-	s.recordScopeSnapshot(ctx, run, targets)
+	s.recordScopeSnapshot(ctx, run, in.targets)
 
 	// Create step runs
 	for _, step := range steps {
 		stepRun := scanrun.NewStepRunForStep(run.ID, step)
-		if skip, ok := skips[step.StepKey]; ok {
+		if skip, ok := in.skips[step.StepKey]; ok {
 			// Nothing here runs it: skipped with the reason, never queued.
 			stepRun.SkipWithCode(skip.Reason, skip.Code)
 		}
