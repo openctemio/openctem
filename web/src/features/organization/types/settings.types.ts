@@ -1,4 +1,8 @@
-import type { IdentHeader, PlatformIdentLayer } from '@/features/sensors/lib/scan-identification'
+import type {
+  IdentHeader,
+  IdentQuery,
+  PlatformIdentLayer,
+} from '@/features/sensors/lib/scan-identification'
 
 /**
  * Tenant Settings Types
@@ -65,6 +69,12 @@ export interface SecuritySettings {
   forbid_tool_insecure_tls?: boolean
   /** Scan identification headers of the organization (free names and values). */
   tool_http_headers?: IdentHeader[]
+  /** A User-Agent rotation list instead of tool_http_user_agent (at most 200). */
+  tool_http_user_agents?: string[]
+  /** The identification query parameter added to every request URL. */
+  tool_http_query?: IdentQuery | null
+  /** Every request of the organization's scans must carry a header or the query parameter. */
+  tool_http_identification_required?: boolean
   /** The platform's layer of the scan identification markers (read-only, GET only). */
   platform_scan_identification?: PlatformIdentLayer
   /**
@@ -128,6 +138,11 @@ export interface UpdateSecuritySettingsInput {
   forbid_tool_insecure_tls?: boolean
   /** Replaces the organization's scan identification headers. */
   tool_http_headers?: IdentHeader[]
+  /** Replaces the rotation list ([] none). */
+  tool_http_user_agents?: string[]
+  /** Replaces the query parameter (a blank name and value: none). */
+  tool_http_query?: IdentQuery
+  tool_http_identification_required?: boolean
   personal_accounts?: PersonalAccountsPolicy
   invitees?: InviteesPolicy
   external_access_end_required?: boolean
