@@ -40,9 +40,15 @@ vi.mock('../api/use-task-query', async (orig) => {
       create: api.create,
       explain: api.explain,
     },
-    useFindingQuerySchema: () => ({ data: { fields: [] } }),
   }
 })
+vi.mock('@/features/query/api/query-api', () => ({
+  queryApi: {
+    parse: vi.fn(() => new Promise(() => {})),
+    values: vi.fn(() => new Promise(() => {})),
+  },
+  useQuerySchema: () => ({ data: { fields: [] } }),
+}))
 
 function preview(over: Partial<QueryTaskPreview> = {}): QueryTaskPreview {
   return {
