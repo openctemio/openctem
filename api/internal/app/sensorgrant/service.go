@@ -80,6 +80,12 @@ type Actor struct {
 	SessionID string
 	CanNarrow bool
 	CanWiden  bool
+	// StepUpVerified: the caller presented a step-up proof (TOTP, password
+	// or a fresh sign-in) that the server verified in this same request,
+	// such as a pairing approval. It satisfies the recent re-authentication
+	// a widening needs. Set only by server code after that verification,
+	// never from request input.
+	StepUpVerified bool
 }
 
 // Service manages grants.
@@ -366,7 +372,11 @@ func (s *Service) DefaultProfileFor(t sensordom.SensorType) string {
 // a new sensor's grant becomes the chosen profile at trust level New. A
 // re-paired sensor keeps its grant (what it may do did not change, only its
 // key did) and returns to trust level New.
-func (s *Service) OnApproved(tenantID shared.ID, profile string, zones []shared.ID, approvedBy shared.ID) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error {
+//
+// trusted (a new sensor only, after AuthorizeTrust allowed it) writes the
+// grant at trust level Trusted in the same transaction; TrustedAtApproval
+// audits it once the transaction committed.
+func (s *Service) OnApproved(tenantID shared.ID, profile string, zones []shared.ID, approvedBy shared.ID, trusted bool) func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error {
 	return func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error {
 		if repair {
 			return s.repo.SetTrustTx(ctx, tx, tenantID, sensorID, sensordom.TrustNew)
@@ -375,6 +385,12 @@ func (s *Service) OnApproved(tenantID shared.ID, profile string, zones []shared.
 		if err != nil {
 			return err
 		}
+		if trusted {
+			if !sensordom.TrustableAtApproval(profile) {
+				return fmt.Errorf("%w: profile %s cannot be trusted at approval", shared.ErrValidation, profile)
+			}
+			g.TrustLevel = sensordom.TrustTrusted
+		}
 		if err := g.Normalize(); err != nil {
 			return err
 		}
@@ -382,6 +398,22 @@ func (s *Service) OnApproved(tenantID shared.ID, profile string, zones []shared.
 		g.UpdatedBy = &by
 		return s.repo.ReplaceTx(ctx, tx, g)
 	}
+}
+
+// TrustedAtApproval audits a sensor that its approval made Trusted, exactly
+// as a promotion through Trust is audited: sensor.grant_changed with the
+// trust level widened from New, high severity, every administrator
+// notified. Called after the approval transaction committed.
+func (s *Service) TrustedAtApproval(ctx context.Context, actor Actor, sensorID shared.ID) {
+	next, err := s.Get(ctx, actor.TenantID, sensorID)
+	if err != nil {
+		s.log.Error("trusted at approval: read the grant for the audit", "sensor_id", sensorID.String(), "error", err)
+		return
+	}
+	cur := *next
+	cur.TrustLevel = sensordom.TrustNew
+	s.onChangedWith(ctx, actor, cur, *next, []string{sensordom.DimTrust}, []string{sensordom.DimTrust},
+		map[string]any{"at_approval": true})
 }
 
 // ---------------------------------------------------------------------------

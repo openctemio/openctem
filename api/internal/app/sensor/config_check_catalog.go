@@ -63,6 +63,26 @@ type checkCatalogEntry struct {
 // check.
 const sandboxDocs = "https://docs.openctem.io/sensors/troubleshooting/#runtime-sandbox-network"
 
+// The control channel's DNS (sdk-go httpsec last-known-good addresses).
+const (
+	controlDNSDocs    = "https://docs.openctem.io/sensors/troubleshooting/#runtime-control-dns"
+	coreAddressesDocs = "https://docs.openctem.io/sensors/troubleshooting/#network-core-addresses"
+)
+
+// controlDNSFix pins the platform host so the control channel needs no DNS
+// (the chart has no host alias value: on Kubernetes add a hostAliases entry
+// to the pod spec, see the docs).
+var controlDNSFix = map[string]string{
+	FixFormatEnv: `# Pin the platform host on the sensor host (replace the address):
+echo "<platform address> "{{.host}} | sudo tee -a /etc/hosts`,
+	FixFormatCompose: `services:
+  sensor:
+    # Pin the platform host (replace the address); keep the DNS servers,
+    # gateways, the platform and this host out of intrusive scans.
+    extra_hosts:
+      - {{joinq "" "host" ":<platform address>"}}`,
+}
+
 // sandboxSeccompFix runs the sensor under its own seccomp profile, which the
 // platform serves at /api/v1/sensors/install/seccomp-profile.
 var sandboxSeccompFix = map[string]string{
@@ -231,6 +251,13 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 		Fix:  map[string]string{FixFormatEnv: outboxEnvFix, FixFormatCompose: outboxComposeFix, FixFormatHelm: dataHelmFix}},
 
 	// --- network -------------------------------------------------------------
+	{ID: CoreAddressesCheckID, Code: "listed", Group: "network", Title: "Core infrastructure this sensor depends on",
+		Why:  "The sensor's DNS resolvers, gateways, its own address and the platform's addresses. An intrusive scan that covers them can cut the sensor off its platform (an IPS block or a resolver knocked over): new scans warn when their targets include them.",
+		Docs: coreAddressesDocs},
+	{ID: CoreAddressesCheckID, Code: "not_reported", Group: "network", Title: "Core infrastructure addresses are not reported",
+		Why: "SENSOR_NETWORK_REPORT=off: the sensor names none of its resolvers, gateways or addresses, so scans cannot warn when they target them.", Docs: coreAddressesDocs},
+	{ID: CoreAddressesCheckID, Code: "none_known", Group: "network", Title: "No core infrastructure address known yet",
+		Why: "The sensor has not detected its resolvers, gateways or the platform's addresses yet, or the local policy does not let it scan them.", Docs: coreAddressesDocs},
 	{ID: "network.scan_proxy_inherit", Code: "direct", Group: "network", Title: "Scanners connect directly",
 		Why: "Scanners do not use the host's proxy settings.", Docs: "https://docs.openctem.io/sensors/troubleshooting/#network-scan-proxy"},
 	{ID: "network.scan_proxy_inherit", Code: "inherit_explicit", Group: "network", Title: "Scanners use the host proxy on purpose",
@@ -270,6 +297,24 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 	{ID: "runtime.command_poller", Code: "stopped", Group: "runtime", Title: "The sensor stopped taking jobs",
 		Why:  "The loop that fetches jobs from the platform stopped with an error, so the sensor runs nothing. Restart the sensor; the summary below is its message.",
 		Docs: "https://docs.openctem.io/sensors/troubleshooting/#runtime-command-poller"},
+
+	{ID: ControlDNSCheckID, Code: "resolving", Group: "runtime", Title: "The platform host name resolves",
+		Why: "The sensor looks up {host} and reaches the platform at the address it gets.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "address_literal", Group: "runtime", Title: "The platform URL is an IP address",
+		Why: "The sensor reaches the platform without a DNS lookup.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "via_proxy", Group: "runtime", Title: "The proxy resolves the platform host",
+		Why: "Platform requests go through a proxy, which looks up the platform host itself: the sensor's resolver is not on the control path.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "plain_http", Group: "runtime", Title: "No DNS fallback over plain HTTP",
+		Why: "The platform URL is plain HTTP, so the sensor never dials a cached platform address: only a TLS connection proves the address still belongs to the platform. Use an https URL.", Docs: controlDNSDocs},
+	{ID: ControlDNSCheckID, Code: "cached_address", Group: "runtime", Title: "The platform host name does not resolve",
+		Why:  "Lookups of {host} fail ({cause}). The sensor still reaches the platform at the address it last resolved, and TLS still verifies {host}, but it stops once that address is older than SENSOR_CONTROL_DNS_MAX_STALE. Check the resolver the sensor uses, pin the platform host, and keep the DNS server out of intrusive scans.",
+		Docs: controlDNSDocs, Fix: controlDNSFix},
+	{ID: ControlDNSCheckID, Code: "lookup_failed", Group: "runtime", Title: "The sensor lost the platform: DNS failure",
+		Why:  "Lookups of {host} fail ({cause}) and the sensor knows no recent address, so heartbeats, jobs and results stop until DNS answers; jobs it held are handed to other sensors when their lease ends. Check the resolver the sensor uses, pin the platform host, and keep the DNS server out of intrusive scans.",
+		Docs: controlDNSDocs, Fix: controlDNSFix},
+	{ID: ControlDNSCheckID, Code: "recovered", Group: "runtime", Title: "The platform host name failed to resolve for a while",
+		Why:  "Lookups of {host} failed for a period and work again; the summary below says when. If it happened during a scan, the scan probably reached the DNS server: exclude it and the other core infrastructure from intrusive scans, or pin the platform host.",
+		Docs: controlDNSDocs, Fix: controlDNSFix},
 
 	{ID: "runtime.sandbox_network", Code: "confined", Group: "runtime", Title: "Tool runs are network-confined",
 		Why: "Each tool task runs in its own network namespace and reaches only its targets, through its forwarder. The sensor can take jobs that need confinement (a web scope).", Docs: sandboxDocs},

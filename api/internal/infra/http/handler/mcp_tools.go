@@ -275,6 +275,9 @@ const mcpFindingListSchema = `{"type":"object","properties":{` +
 	`"source":{"type":"string","description":"comma list, e.g. sca,sast,dast,secret,iac,container,pentest"},` +
 	`"search":{"type":"string","description":"free text over title, file, rule, CVE and asset name"},` +
 	`"asset_id":{"type":"string","description":"comma list of asset UUIDs"},` +
+	`"asset_type":{"type":"string","description":"comma list of asset types, e.g. domain,subdomain,repository"},` +
+	`"asset_domain":{"type":"string","description":"comma list of domains: example.com is the name and every asset under it (addresses it resolves to, services, certificates); *.example.com only under it"},` +
+	`"asset_name":{"type":"string","description":"asset name pattern: * any characters, ? one (e.g. api-*)"},` +
 	`"cve":{"type":"string","description":"comma list of CVE ids"},` +
 	`"kev":{"type":"boolean","description":"known exploited (CISA KEV) or not"},` +
 	`"min_epss":{"type":"number","description":"0..1 EPSS floor"},` +
@@ -296,6 +299,9 @@ type findingListArgs struct {
 	Source        string   `json:"source"`
 	Search        string   `json:"search"`
 	AssetID       string   `json:"asset_id"`
+	AssetType     string   `json:"asset_type"`
+	AssetDomain   string   `json:"asset_domain"`
+	AssetName     string   `json:"asset_name"`
 	CVE           string   `json:"cve"`
 	KEV           *bool    `json:"kev"`
 	MinEPSS       *float64 `json:"min_epss"`
@@ -327,6 +333,9 @@ func (a findingListArgs) values() (url.Values, error) {
 	set("source", strings.ToLower(a.Source))
 	set("q", a.Search)
 	set("asset_id", a.AssetID)
+	set("asset_type", strings.ToLower(a.AssetType))
+	set("asset_domain", a.AssetDomain)
+	set("asset_name", a.AssetName)
 	set("cve_id", strings.ToUpper(a.CVE))
 	set("priority_class", strings.ToUpper(a.PriorityClass))
 	set("sla_status", strings.ToLower(a.SLAStatus))
