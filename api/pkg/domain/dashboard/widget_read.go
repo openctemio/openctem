@@ -307,6 +307,9 @@ type IntakeRow struct {
 	MedianGap     *time.Duration
 	// Assets is the assets the source's reports created or updated.
 	Assets int64
+	// Outcomes sums the receipt outcomes of the source's reports (where the
+	// received findings went beyond the counts above), by outcome code.
+	Outcomes map[string]int64
 	// Released is the reports of the source applied from the results
 	// quarantine (the sender stays the original sensor).
 	Released int64
