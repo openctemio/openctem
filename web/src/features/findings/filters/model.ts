@@ -47,6 +47,8 @@ export const NON_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'tab',
   'state',
   'strict',
+  // A filter chips cannot show, as query text (filter-query-mode.tsx).
+  'fq',
 ])
 
 /** The URL suffix each operator uses, longest first (`_gte` before `_gt`). */

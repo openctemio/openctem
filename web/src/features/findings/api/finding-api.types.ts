@@ -730,6 +730,8 @@ export interface AddCommentInput {
 // ============================================
 
 export interface FindingApiFilters {
+  /** A filter chips cannot show, as canonical query text (the URL's fq). */
+  fq?: string
   asset_id?: string
   branch_id?: string
   /** Per-branch occurrence state (only meaningful with branch_id): open | fixed | all */
