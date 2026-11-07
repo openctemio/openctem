@@ -26,14 +26,15 @@ export interface Token {
 // Colour classes per token type, readable on the light and the dark card
 // (code blocks sit on a muted tint of the card, not on a black panel).
 export const TOKEN_COLORS: Record<TokenType, string> = {
-  keyword: 'text-purple-700 dark:text-purple-300',
-  string: 'text-emerald-700 dark:text-emerald-300',
-  number: 'text-amber-700 dark:text-amber-300',
+  // label-ok: syntax-highlight colours for code blocks, not a label
+  keyword: 'text-purple-700 dark:text-purple-300', // palette-ok: distinct syntax-highlight accents
+  string: 'text-emerald-700 dark:text-emerald-300', // palette-ok: distinct syntax-highlight accents
+  number: 'text-amber-700 dark:text-amber-300', // palette-ok: distinct syntax-highlight accents
   comment: 'text-muted-foreground italic',
-  function: 'text-blue-700 dark:text-blue-300',
-  type: 'text-cyan-700 dark:text-cyan-300',
-  operator: 'text-pink-700 dark:text-pink-300',
-  variable: 'text-orange-700 dark:text-orange-300',
+  function: 'text-blue-700 dark:text-blue-300', // palette-ok: distinct syntax-highlight accents
+  type: 'text-cyan-700 dark:text-cyan-300', // palette-ok: distinct syntax-highlight accents
+  operator: 'text-pink-700 dark:text-pink-300', // palette-ok: distinct syntax-highlight accents
+  variable: 'text-orange-700 dark:text-orange-300', // palette-ok: distinct syntax-highlight accents
   punctuation: 'text-muted-foreground',
   text: 'text-foreground',
 }
