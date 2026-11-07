@@ -89,6 +89,9 @@ var findingMergeRefs = []mergeRef{
 	// row (one row per receipt and finding).
 	{table: "finding_ingest_actions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"receipt_id"}}}},
+	// The services a version-match finding is observed on follow it; a
+	// location belongs to one finding (unique key), so a move cannot collide.
+	{table: "finding_locations", column: "finding_id", tenantCol: "tenant_id"},
 	// Who reported the loser reported the survivor; a source the survivor
 	// already has keeps the survivor's row (one row per finding and source).
 	{table: "finding_sightings", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
@@ -130,6 +133,10 @@ var findingMergeKeptRefs = map[string]string{
 	"finding_link_keys.finding_id":   "kept on the tombstone; tombstones are never link candidates",
 	"finding_issue_links.primary_id": "kept on the tombstone; re-derived for the survivor",
 	"finding_issue_links.member_id":  "kept on the tombstone; re-derived for the survivor",
+	// The recovery journal of the version-match location merge names the
+	// findings it folded; it is history and never moves.
+	"finding_location_merges.survivor_id": "kept; the location merge journal",
+	"finding_location_merges.loser_id":    "kept; the location merge journal",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to
