@@ -135,6 +135,10 @@ type ScopeSettingsResponse struct {
 	AutoCoverage *bool `json:"auto_coverage"`
 	// AutoCoverageEffective: automatic coverage runs now (read-only).
 	AutoCoverageEffective bool `json:"auto_coverage_effective"`
+	// PathDiscovery: path discovery of web services runs (default true):
+	// candidate paths derived from the organization's own inventory, GET
+	// and HEAD only, at most one run per origin per 30 days.
+	PathDiscovery bool `json:"path_discovery"`
 	// CIScopeRequiresProof: a CI trust's new repository entries wait
 	// inactive for a verified pipeline run under them (opt-in, default off).
 	CIScopeRequiresProof bool `json:"ci_scope_requires_proof"`
@@ -202,6 +206,8 @@ type ScopeSettingsRequest struct {
 	AddressAutoAdd string `json:"address_auto_add" validate:"omitempty,oneof=auto_strong ask never"`
 	// AutoCoverage: true or false; omitted keeps the stored choice.
 	AutoCoverage *bool `json:"auto_coverage"`
+	// PathDiscovery: true or false; omitted keeps the stored choice.
+	PathDiscovery *bool `json:"path_discovery"`
 	// CIScopeRequiresProof: true or false; omitted keeps the stored value.
 	CIScopeRequiresProof *bool  `json:"ci_scope_requires_proof"`
 	OneOffTargets        string `json:"one_off_targets" validate:"omitempty,oneof=admins admins_and_requests disabled"`
@@ -225,6 +231,7 @@ func (h *ScopeHandler) settingsResponse(ctx context.Context, tenantID string, ss
 		AutoJoinDiscovered: !ss.AutoJoinDisabled, ConfirmAddsToScope: !ss.ConfirmAddsToScopeDisabled,
 		ReviewBeforeInventory: ss.ReviewBeforeInventory,
 		AutoCoverage:          ss.AutoCoverage, AutoCoverageEffective: ss.AutoCoverageOn(mode == scangov.ModeStrict),
+		PathDiscovery:        ss.PathDiscoveryOn(),
 		CIScopeRequiresProof: ss.CIScopeRequiresProof,
 		UnclassifiedScans:    ss.Unclassified(), UnclassifiedScansEffective: scangov.UnclassifiedMode(mode, ss.Unclassified()),
 		AddressAutoAdd: ss.AddressMode(), AddressAutoAddEffective: ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict),
@@ -314,7 +321,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		OneOffTargets:              req.OneOffTargets, OneOffMaxDays: req.OneOffMaxDays,
 		WideningApprovals: req.WideningApprovals, DefaultMaxTier: req.DefaultMaxTier,
 		UnclassifiedScans: req.UnclassifiedScans, AutoCoverage: req.AutoCoverage,
-		AddressAutoAdd: req.AddressAutoAdd, MaxRangePrefix: req.MaxRangePrefix,
+		AddressAutoAdd: req.AddressAutoAdd, MaxRangePrefix: req.MaxRangePrefix, PathDiscovery: req.PathDiscovery,
 	}
 	if req.ReviewBeforeInventory != nil {
 		ss.ReviewBeforeInventory = *req.ReviewBeforeInventory
@@ -326,7 +333,7 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	// review_before_inventory or unclassified_scans keeps the stored value
 	// instead of resetting it.
 	if req.ConfirmAddsToScope == nil || req.ReviewBeforeInventory == nil || req.UnclassifiedScans == "" || req.AutoCoverage == nil ||
-		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 {
+		req.CIScopeRequiresProof == nil || req.AddressAutoAdd == "" || req.MaxRangePrefix == 0 || req.PathDiscovery == nil {
 		before, err := h.settings.GetScopeSettings(ctx, tenantID)
 		if err != nil {
 			h.logger.Error("scope settings: read", "error", logger.SanitizeError(err))
@@ -353,6 +360,9 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.MaxRangePrefix == 0 {
 			ss.MaxRangePrefix = before.MaxRangePrefix
+		}
+		if req.PathDiscovery == nil {
+			ss.PathDiscovery = before.PathDiscovery
 		}
 
 	}

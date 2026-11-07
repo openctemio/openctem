@@ -89,6 +89,11 @@ type ScopeSettings struct {
 	// the default: on, except while the Strict scan approval mode is in force
 	// (owner decision D1).
 	AutoCoverage *bool `json:"auto_coverage,omitempty"`
+	// PathDiscovery turns the platform's path discovery of web services on
+	// or off: candidate paths derived from the organization's own
+	// inventory, at most one run per origin per 30 days, GET and HEAD only
+	// (docs/architecture/web-discovery.md). Nil is the default: on.
+	PathDiscovery *bool `json:"path_discovery,omitempty"`
 	// CIScopeRequiresProof keeps a CI trust's new repository scope entries
 	// inactive until a verified pipeline run under them (opt-in governance,
 	// default off: a trust's entries are in effect at once).
@@ -300,6 +305,11 @@ func (s ScopeSettings) AutoCoverageOn(strict bool) bool {
 		return *s.AutoCoverage
 	}
 	return !strict
+}
+
+// PathDiscoveryOn reports whether path discovery runs (default on).
+func (s ScopeSettings) PathDiscoveryOn() bool {
+	return s.PathDiscovery == nil || *s.PathDiscovery
 }
 
 // Tier returns the default tier with its default (t1).

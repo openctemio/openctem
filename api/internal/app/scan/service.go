@@ -177,6 +177,9 @@ type Service struct {
 	// programRules refuses runs a bug-bounty program's rules forbid
 	// (program_rules.go); nil: not checked.
 	programRules ProgramRuleChecker
+	// pathGate refuses path discovery scans the shared gate does not allow
+	// (path_discovery_gate.go).
+	pathGate PathDiscoveryTriggerGate
 	// scopeSnapshots records the scope each run relied on (RFC-065 §9).
 	scopeSnapshots ScopeSnapshotRecorder
 	scanRepo       scan.Repository

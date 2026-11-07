@@ -131,6 +131,11 @@ var assetMergeRefs = []mergeRef{
 	// asset themselves (asset_id trigger).
 	{table: "finding_priority_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// The path discovery ledger (one row per web origin): the kept origin's
+	// row wins; a merged origin's row moves when the kept one has none, so
+	// the per-origin request cap survives the merge.
+	{table: "web_path_discovery_runs", column: "origin_asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",

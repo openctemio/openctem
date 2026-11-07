@@ -557,6 +557,8 @@ saved or scanned; with no target left the create is refused
 | `out_of_data_scope` | asset outside the actor's data scope | — |
 | `not_an_asset` | a restricted member typed free text | `request_access` |
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
+| `zone_sensor_new` | every sensor of the target's zone is New and the job is above T0 | `trust_sensor` (`id`: the sensor; `sensors:grant:widen`) |
+| `zone_sensor_no_private` | a private target, and every sensor of its zone reports that its host refuses private targets | `allow_private_targets` (`id`: the sensor; a step on the host, no console permission) |
 | `ambiguous_zone` | zones with different sensors hold the target at the same width (sites reusing a range) | `pick_zone` (the scan's zone picker; no permission) |
 | `unresolved` | a hostname with no DNS answer from the platform, so zone routing cannot place it | — (fix the DNS record or scan its address) |
 

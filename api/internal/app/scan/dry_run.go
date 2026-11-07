@@ -58,6 +58,9 @@ type DryRunResult struct {
 	// Resolved are the addresses a hostname resolved to when zone routing
 	// refused it (a name that resolves to a private address).
 	Resolved []string
+	// SensorID is the tenant's own zone sensor a zone_sensor_new or
+	// zone_sensor_no_private fix acts on.
+	SensorID string
 }
 
 // DryRunOutcome is the dry run's answer per target and where the job would
@@ -267,7 +270,11 @@ func (s *Service) dryRunResults(ctx context.Context, in DryRunInput, routing *Dr
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier, Placement: place, MaxRangeHostBits: rangeBits})
+	// The zone sensors' readiness at the tier the grant gives the job: the
+	// tool's when the platform knows it, else the asked tier.
+	sensorTier := toolTier(in.Tool, int(tier))
+	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier, Placement: place, MaxRangeHostBits: rangeBits,
+		ZoneSensorTier: &sensorTier})
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +284,9 @@ func (s *Service) dryRunResults(ctx context.Context, in DryRunInput, routing *Dr
 		})
 	}
 	for _, rt := range res.Refused {
-		set(rt.Target, func(r *DryRunResult) { r.Code, r.Reason, r.Resolved = rt.Code, rt.Reason, rt.Resolved })
+		set(rt.Target, func(r *DryRunResult) {
+			r.Code, r.Reason, r.Resolved, r.SensorID = rt.Code, rt.Reason, rt.Resolved, rt.SensorID
+		})
 	}
 
 	// 4. Proof, when the platform requires it: platform sensors need it, the

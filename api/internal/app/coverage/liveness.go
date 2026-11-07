@@ -37,8 +37,14 @@ func livenessKind(capability string, v covdom.Verdict) (liveness.Kind, bool) {
 	switch {
 	case v.Kind == covdom.VerdictUnresolved && v.Outcome == covdom.ReasonResolverFailed:
 		return liveness.KindResolverFailed, true
-	case v.Kind == covdom.VerdictUnresolved:
+	case v.Kind == covdom.VerdictUnresolved && v.Outcome == covdom.OutcomeNoAnswer:
+		// Only an explicit "no such name" from the sensor's resolver.
 		return liveness.KindNXDomain, true
+	case v.Kind == covdom.VerdictUnresolved:
+		// The sensor did not say why the name did not resolve (an older
+		// sensor): no evidence either way. It neither advances nor resets
+		// the gone streak.
+		return "", false
 	case capability == covdom.CapabilityResolveDNS && v.Kind == covdom.VerdictCovered:
 		return liveness.KindResolved, true
 	case !reachCapabilities[capability]:
