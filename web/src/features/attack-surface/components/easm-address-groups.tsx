@@ -8,11 +8,18 @@
  * waiting address, always after a dialog that lists exactly what changes.
  * "Is this network yours?" records the answer once for the whole network.
  *
- * The server checks every address and range against the caller's own card
- * (POST /easm/suggestions/addresses/*, /networks/*): this component never
- * decides what may be added. A shared or provider address is never part of a
- * bulk add; it can only be added on its own ("Add anyway"). Every decision
- * offers an Undo.
+ * Every list and group can be chosen in bulk: row and group checkboxes,
+ * "Select all" (and every waiting address past the card's list), one "Add
+ * selected (as ranges)" and one "Not ours". The server turns chosen addresses
+ * next to each other into ranges that hold only those addresses. Safety is
+ * in the confirmation: it names the network owners and counts, and leaves
+ * third-party (shared, provider) addresses out unless the person ticks them
+ * in. Where the network is unknown the card says whether the sensor lookup
+ * is running, found nothing or failed (with a retry).
+ *
+ * The server checks every address, group and range against the caller's own
+ * card (POST /easm/suggestions/addresses/*, /networks/*): this component never
+ * decides what may be added. Every decision offers an Undo.
  */
 
 import { useMemo, useState } from 'react'
@@ -39,10 +46,10 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import {
   addCardAddresses,
   answerNetwork,
-  MAX_DECISION_ITEMS,
   rejectCardAddresses,
   removeNetworkSeed,
   removeScopeEntries,
+  retryAddressLookup,
   undoDeclinedNetwork,
 } from '../api/address-decisions-api'
 import { refreshEASMSuggestions } from '../hooks/use-easm-suggestions'
@@ -102,6 +109,20 @@ export function evidenceText(t: TFn, id: string, count: number, total: number): 
       })
 }
 
+/** One side of an add: what the person chose, as the server takes it. */
+interface AddPlan {
+  addresses: string[]
+  groups: string[]
+  ranges: string[]
+  allWaiting: boolean
+  /** The chosen addresses of third parties (shared, provider, declined). */
+  sharedAddrs: string[]
+  /** The chosen groups that are third parties'. */
+  sharedGroups: string[]
+  /** Network owners of the chosen addresses, with counts. */
+  owners: { name: string; count: number; shared: boolean }[]
+}
+
 interface Pending {
   kind: 'add' | 'reject' | 'yes' | 'no'
   title: string
@@ -109,7 +130,17 @@ interface Pending {
   confirm: string
   /** What changes, one line each. */
   items: string[]
-  run: () => Promise<void>
+  /** More lines than items lists (a selection past the card's list). */
+  more?: number
+  plan?: AddPlan
+  run: (includeShared: boolean) => Promise<void>
+}
+
+/** The card's selection: addresses, or every waiting address (also past the list). */
+interface Selection {
+  addresses: string[]
+  groups: string[]
+  allWaiting: boolean
 }
 
 export function AddressGroupsCard({
@@ -128,7 +159,9 @@ export function AddressGroupsCard({
   const canDecide = useHasPermission(Permission.AssetsWrite)
   const canRemove = useHasPermission(Permission.ScopeDelete)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [allWaiting, setAllWaiting] = useState(false)
   const [pending, setPending] = useState<Pending | null>(null)
+  const [includeShared, setIncludeShared] = useState(false)
 
   const groups = useMemo(() => card.groups ?? [], [card.groups])
   const waiting = card.count ?? 0
@@ -141,7 +174,6 @@ export function AddressGroupsCard({
   )
   const asked = groups.filter((g) => g.kind === 'other_network')
   const shared = groups.filter((g) => !OWN_KINDS.has(g.kind ?? '') && g.kind !== 'other_network')
-  const waitingAddrs = (card.addresses ?? []).map((a) => a.address ?? '').filter(Boolean)
   const byAddress = useMemo(() => {
     const m = new Map<string, EASMSuggestionAddress>()
     for (const list of [card.addresses, card.checked_addresses, card.shared_addresses]) {
@@ -149,8 +181,19 @@ export function AddressGroupsCard({
     }
     return m
   }, [card])
+  const groupOf = useMemo(() => {
+    const m = new Map<string, EASMSuggestionGroup>()
+    for (const g of groups) for (const a of g.addresses ?? []) m.set(a, g)
+    return m
+  }, [groups])
+  // Every address a person may decide on the card's own groups.
+  const ownAddrs = useMemo(() => own.flatMap((g) => g.addresses ?? []), [own])
+  const allOwnSelected = ownAddrs.length > 0 && ownAddrs.every((a) => selected.has(a))
+  const someSelected = selected.size > 0
+  const needYou = card.summary?.need_you ?? waiting
 
-  const toggle = (addrs: string[], on: boolean) =>
+  const toggle = (addrs: string[], on: boolean) => {
+    setAllWaiting(false)
     setSelected((prev) => {
       const next = new Set(prev)
       for (const a of addrs) {
@@ -159,10 +202,46 @@ export function AddressGroupsCard({
       }
       return next
     })
+  }
+
+  const clear = () => {
+    setSelected(new Set())
+    setAllWaiting(false)
+  }
 
   const done = async () => {
-    setSelected(new Set())
+    clear()
     await refreshEASMSuggestions()
+  }
+
+  const ownersOf = (addrs: string[]) => {
+    const m = new Map<string, { name: string; count: number; shared: boolean }>()
+    for (const a of addrs) {
+      const g = groupOf.get(a)
+      const name = g ? groupTitle(t, g) : a
+      const cur = m.get(name) ?? { name, count: 0, shared: Boolean(g?.shared) }
+      cur.count++
+      m.set(name, cur)
+    }
+    return [...m.values()].sort((x, y) => y.count - x.count)
+  }
+
+  const planOf = (sel: Selection, ranges: string[] = []): AddPlan => {
+    const sharedAddrs = sel.addresses.filter((a) => groupOf.get(a)?.shared)
+    const sharedGroups = sel.groups.filter((k) => groups.find((g) => g.key === k)?.shared)
+    const groupAddrs = sel.groups.flatMap((k) => groups.find((g) => g.key === k)?.addresses ?? [])
+    const listed = sel.allWaiting
+      ? (card.addresses ?? []).map((a) => a.address ?? '').filter(Boolean)
+      : [...sel.addresses, ...groupAddrs]
+    return {
+      addresses: sel.addresses,
+      groups: sel.groups,
+      ranges,
+      allWaiting: sel.allWaiting,
+      sharedAddrs,
+      sharedGroups,
+      owners: ownersOf(Array.from(new Set(listed))),
+    }
   }
 
   const reportAdd = (res: EASMAddressAddResult) => {
@@ -207,24 +286,44 @@ export function AddressGroupsCard({
     else toast.success(text, { duration: UNDO_TOAST_MS, action: undo })
   }
 
-  const confirmAdd = (addresses: string[], ranges: string[], title: string, shared = false) => {
-    const lines = [...ranges, ...addresses.filter((a) => !ranges.some((r) => inRange(a, r)))]
+  const confirmAdd = (sel: Selection, title: string, ranges: string[] = []) => {
+    const plan = planOf(sel, ranges)
+    const count = plan.owners.reduce((n, o) => n + o.count, 0)
+    const total = sel.allWaiting ? needYou : count
+    const items = [
+      ...ranges,
+      ...(sel.allWaiting
+        ? (card.addresses ?? []).map((a) => a.address ?? '')
+        : [
+            ...sel.addresses,
+            ...sel.groups.flatMap((k) => groups.find((g) => g.key === k)?.addresses ?? []),
+          ]
+      ).filter((a) => a && !ranges.some((r) => inRange(a, r))),
+    ]
+    setIncludeShared(false)
     setPending({
       kind: 'add',
       title,
-      desc: shared
-        ? t(
-            `${K}.addSharedDesc`,
-            'This address is shared: other organizations use it too, and scanning it reaches them. Add it only if it is dedicated to you.'
-          )
-        : t(
-            `${K}.addDesc`,
-            'Each line becomes a scope entry, so full scans may reach it on the next coverage pass. A name pointing at an address does not prove the address is yours. If your organization requires approval, the entries wait for your approvers. You can remove them on the Scope page.'
-          ),
+      desc: t(
+        `${K}.addDesc`,
+        'Each line becomes a scope entry, so full scans may reach it on the next coverage pass. Addresses next to each other become one range, and a range holds only the addresses you chose. A name pointing at an address does not prove the address is yours. If your organization requires approval, the entries wait for your approvers. You can remove them on the Scope page.'
+      ),
       confirm: t('scope.bulk.confirm', 'Add to scope'),
-      items: lines,
-      run: async () => {
-        const res = await addCardAddresses(addresses, ranges, shared)
+      items: Array.from(new Set(items)),
+      more: Math.max(total - items.length, 0),
+      plan,
+      run: async (withShared) => {
+        const shareSet = new Set(plan.sharedAddrs)
+        const shareGroups = new Set(plan.sharedGroups)
+        const res = await addCardAddresses(
+          {
+            addresses: withShared ? plan.addresses : plan.addresses.filter((a) => !shareSet.has(a)),
+            groups: withShared ? plan.groups : plan.groups.filter((k) => !shareGroups.has(k)),
+            allWaiting: plan.allWaiting,
+          },
+          plan.ranges,
+          withShared && (plan.sharedAddrs.length > 0 || plan.sharedGroups.length > 0)
+        )
         reportAdd(res)
         await invalidateScopeCache()
         await done()
@@ -232,24 +331,32 @@ export function AddressGroupsCard({
     })
   }
 
-  const confirmReject = (addresses: string[]) => {
+  const confirmReject = (sel: Selection, title?: string) => {
+    const groupAddrs = sel.groups.flatMap((k) => groups.find((g) => g.key === k)?.addresses ?? [])
+    const listed = sel.allWaiting
+      ? (card.addresses ?? []).map((a) => a.address ?? '').filter(Boolean)
+      : Array.from(new Set([...sel.addresses, ...groupAddrs]))
+    const total = sel.allWaiting ? needYou : listed.length
     setPending({
       kind: 'reject',
-      title: plural(
-        t,
-        'attackSurface.decide.notOursTitle',
-        addresses.length,
-        'Mark 1 address as not yours?',
-        'Mark {count} addresses as not yours?'
-      ),
+      title:
+        title ??
+        plural(
+          t,
+          'attackSurface.decide.notOursTitle',
+          total,
+          'Mark 1 address as not yours?',
+          'Mark {count} addresses as not yours?'
+        ),
       desc: t(
         'attackSurface.decide.notOursDesc',
         'They are never scanned or suggested again, until someone undoes it on the asset.'
       ),
       confirm: t('attackSurface.decide.notOurs', 'Not ours'),
-      items: addresses,
+      items: listed,
+      more: Math.max(total - listed.length, 0),
       run: async () => {
-        const res = await rejectCardAddresses(addresses)
+        const res = await rejectCardAddresses(sel)
         const ids = res.asset_ids ?? []
         toast.success(
           plural(
@@ -277,6 +384,26 @@ export function AddressGroupsCard({
         await done()
       },
     })
+  }
+
+  const retryLookup = async (addrs: string[]) => {
+    try {
+      const res = await retryAddressLookup({ addresses: addrs, groups: [], allWaiting: false })
+      toast.success(
+        plural(
+          t,
+          `${K}.lookup.retried`,
+          res.queued ?? 0,
+          'The network lookup of 1 address runs again',
+          'The network lookups of {count} addresses run again'
+        )
+      )
+      await refreshEASMSuggestions()
+    } catch (err) {
+      toast.error(
+        getErrorMessage(err, t(`${K}.lookup.retryFailed`, 'The lookup could not be asked again'))
+      )
+    }
   }
 
   const confirmNetwork = (g: EASMSuggestionGroup, ours: boolean) => {
@@ -371,8 +498,93 @@ export function AddressGroupsCard({
     }
   }
 
-  const sel = Array.from(selected).slice(0, MAX_DECISION_ITEMS)
+  const sel: Selection = { addresses: Array.from(selected), groups: [], allWaiting }
+  const selCount = allWaiting ? needYou : selected.size
   const shownOwn = limit ? own.slice(0, limit) : own
+  const rowProps = {
+    byAddress,
+    selected,
+    onToggle: toggle,
+    canAdd,
+    canDecide,
+    onAddGroup: (g: EASMSuggestionGroup) =>
+      confirmAdd(
+        { addresses: [], groups: [g.key ?? ''], allWaiting: false },
+        g.range
+          ? t(`${K}.addRangeTitle`, 'Add {range} to scope?', { range: g.range })
+          : plural(
+              t,
+              `${K}.addGroupTitle`,
+              g.addresses?.length ?? 0,
+              'Add the address of {network}?',
+              'Add all {count} addresses of {network}?',
+              { network: groupTitle(t, g) }
+            ),
+        g.range && !g.shared ? [g.range] : []
+      ),
+    onRejectGroup: (g: EASMSuggestionGroup) =>
+      confirmReject(
+        { addresses: [], groups: [g.key ?? ''], allWaiting: false },
+        plural(
+          t,
+          `${K}.notOursGroupTitle`,
+          g.addresses?.length ?? 0,
+          'Mark the address of {network} as not yours?',
+          'Mark all {count} addresses of {network} as not yours?',
+          { network: groupTitle(t, g) }
+        )
+      ),
+    onNetwork: confirmNetwork,
+    onRetry: retryLookup,
+  }
+
+  const summary = card.summary
+  const summaryParts: string[] = []
+  if (summary) {
+    if ((summary.auto_added ?? 0) > 0)
+      summaryParts.push(
+        plural(
+          t,
+          `${K}.summary.autoAdded`,
+          summary.auto_added ?? 0,
+          '1 added automatically (yours)',
+          '{count} added automatically (yours)'
+        )
+      )
+    if ((summary.third_party ?? 0) > 0)
+      summaryParts.push(
+        plural(
+          t,
+          `${K}.summary.thirdParty`,
+          summary.third_party ?? 0,
+          '1 third-party (never scanned)',
+          '{count} third-party (never scanned)'
+        )
+      )
+    if ((summary.checked ?? 0) > 0)
+      summaryParts.push(
+        plural(
+          t,
+          `${K}.summary.checked`,
+          summary.checked ?? 0,
+          '1 gets low-impact checks',
+          '{count} get low-impact checks'
+        )
+      )
+    summaryParts.push(
+      plural(t, `${K}.summary.needYou`, summary.need_you ?? 0, '1 needs you', '{count} need you')
+    )
+    if ((summary.looking_up ?? 0) > 0)
+      summaryParts.push(
+        plural(
+          t,
+          `${K}.summary.lookingUp`,
+          summary.looking_up ?? 0,
+          'network lookup running for 1',
+          'network lookup running for {count}'
+        )
+      )
+  }
 
   const askedSection = !limit && asked.length > 0 && (
     <section className="space-y-1" aria-labelledby="decide-asked-heading">
@@ -387,25 +599,7 @@ export function AddressGroupsCard({
       </p>
       <ul className="divide-y rounded-md border" data-testid="decide-asked-groups">
         {asked.map((g) => (
-          <GroupRow
-            key={g.key}
-            group={g}
-            byAddress={byAddress}
-            selected={selected}
-            onToggle={toggle}
-            canAdd={canAdd}
-            canDecide={canDecide}
-            onAdd={(addrs) =>
-              confirmAdd(
-                addrs,
-                [],
-                t(`${K}.addAnywayTitle`, 'Add {address} anyway?', { address: addrs[0] }),
-                true
-              )
-            }
-            onReject={confirmReject}
-            onNetwork={confirmNetwork}
-          />
+          <GroupRow key={g.key} group={g} {...rowProps} />
         ))}
       </ul>
     </section>
@@ -436,21 +630,7 @@ export function AddressGroupsCard({
             <GroupRow
               key={g.key}
               group={g}
-              byAddress={byAddress}
-              selected={selected}
-              onToggle={toggle}
-              canAdd={canAdd}
-              canDecide={canDecide}
-              onAdd={(addrs) =>
-                confirmAdd(
-                  addrs,
-                  [],
-                  t(`${K}.addAnywayTitle`, 'Add {address} anyway?', { address: addrs[0] }),
-                  true
-                )
-              }
-              onReject={confirmReject}
-              onNetwork={confirmNetwork}
+              {...rowProps}
               onUndoDecline={canDecide ? undoDecline : undefined}
             />
           ))}
@@ -458,23 +638,75 @@ export function AddressGroupsCard({
       )}
     </section>
   )
+
+  const plan = pending?.plan
+  const sharedChosen = plan
+    ? plan.owners.filter((o) => o.shared).reduce((n, o) => n + o.count, 0)
+    : 0
+  const ownChosen =
+    plan && (plan.allWaiting || plan.ranges.length > 0 || plan.owners.some((o) => !o.shared))
   const dialog = (
     <ConfirmDialog
       open={pending !== null}
       onOpenChange={(o) => !o && setPending(null)}
       title={pending?.title ?? ''}
+      disabled={pending?.kind === 'add' && !ownChosen && !includeShared}
       desc={
         <div className="space-y-2">
           <p>{pending?.desc}</p>
+          {plan && plan.owners.length > 0 && (
+            <ul className="space-y-0.5 text-sm" data-testid="decide-confirm-owners">
+              {plan.owners.map((o) => (
+                <li key={o.name} className={o.shared ? 'text-warning' : undefined}>
+                  {o.shared
+                    ? t(`${K}.ownerShared`, '{owner}: {count}, third party', {
+                        owner: o.name,
+                        count: o.count,
+                      })
+                    : t(`${K}.owner`, '{owner}: {count}', { owner: o.name, count: o.count })}
+                </li>
+              ))}
+            </ul>
+          )}
+          {sharedChosen > 0 && (
+            <label className="flex items-start gap-2 text-sm" data-testid="decide-include-shared">
+              <Checkbox
+                className="mt-0.5"
+                checked={includeShared}
+                onCheckedChange={(v) => setIncludeShared(v === true)}
+              />
+              <span>
+                {plural(
+                  t,
+                  `${K}.includeShared`,
+                  sharedChosen,
+                  'Also add the third-party address. Other organizations use it too, and scanning it reaches them.',
+                  'Also add the {count} third-party addresses. Other organizations use them too, and scanning them reaches them.'
+                )}
+              </span>
+            </label>
+          )}
           <ul
             className="max-h-56 space-y-0.5 overflow-auto rounded-md border px-3 py-2 font-mono text-xs"
             data-testid="decide-confirm-items"
           >
             {(pending?.items ?? []).map((i) => (
-              <li key={i} className="break-all">
+              <li
+                key={i}
+                className={
+                  plan && (plan.sharedAddrs.includes(i) || groupOf.get(i)?.shared)
+                    ? 'break-all text-warning'
+                    : 'break-all'
+                }
+              >
                 {i}
               </li>
             ))}
+            {(pending?.more ?? 0) > 0 && (
+              <li className="font-sans text-muted-foreground">
+                {t('confirm.sampleMore', 'and {count} more', { count: pending?.more ?? 0 })}
+              </li>
+            )}
           </ul>
         </div>
       }
@@ -484,7 +716,7 @@ export function AddressGroupsCard({
         const p = pending
         if (!p) return
         try {
-          await p.run()
+          await p.run(includeShared)
           setPending(null)
         } catch (err) {
           toast.error(getErrorMessage(err, t('attackSurface.decide.notOursFailed', 'Not saved')))
@@ -514,7 +746,7 @@ export function AddressGroupsCard({
           {plural(
             t,
             'attackSurface.decide.addresses.title',
-            waiting,
+            needYou,
             '1 address your in-scope names resolve to',
             '{count} addresses your in-scope names resolve to'
           )}
@@ -529,13 +761,28 @@ export function AddressGroupsCard({
             'A name never makes an address yours: it may be shared, or released and now used by someone else. Add only addresses you know are yours.'
           )}
         </CardDescription>
+        {summaryParts.length > 0 && (
+          <p className="text-sm" data-testid="decide-summary">
+            {summaryParts.join(', ')}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2" data-testid="decide-groups-toolbar">
-          {sel.length > 0 ? (
+          {ownAddrs.length > 0 && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={allOwnSelected ? true : someSelected ? 'indeterminate' : false}
+                onCheckedChange={(v) => (v === true ? toggle(ownAddrs, true) : clear())}
+                aria-label={t(`${K}.selectAll`, 'Select all')}
+              />
+              <span aria-hidden>{t(`${K}.selectAll`, 'Select all')}</span>
+            </label>
+          )}
+          {selCount > 0 ? (
             <>
               <span className="text-sm font-medium" aria-live="polite">
-                {plural(t, `${K}.selected`, sel.length, '1 selected', '{count} selected')}
+                {plural(t, `${K}.selected`, selCount, '1 selected', '{count} selected')}
               </span>
               {canAdd && (
                 <Button
@@ -543,12 +790,11 @@ export function AddressGroupsCard({
                   onClick={() =>
                     confirmAdd(
                       sel,
-                      [],
-                      plural(t, `${K}.addN`, sel.length, 'Add 1 address', 'Add {count} addresses')
+                      plural(t, `${K}.addN`, selCount, 'Add 1 address', 'Add {count} addresses')
                     )
                   }
                 >
-                  {t(`${K}.addSelected`, 'Add selected')}
+                  {t(`${K}.addSelected`, 'Add selected (as ranges)')}
                 </Button>
               )}
               {canDecide && (
@@ -556,48 +802,60 @@ export function AddressGroupsCard({
                   {t('attackSurface.decide.notOurs', 'Not ours')}
                 </Button>
               )}
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              <Button size="sm" variant="ghost" onClick={clear}>
                 {t(`${K}.clear`, 'Clear selection')}
               </Button>
             </>
           ) : (
-            <>
-              {canAdd && waitingAddrs.length > 0 && (
+            onSnooze && (
+              <Button size="sm" variant="outline" onClick={onSnooze}>
+                {t('attackSurface.decide.notNow', 'Not now')}
+              </Button>
+            )
+          )}
+        </div>
+        {card.truncated && allOwnSelected && (
+          <p className="text-sm" role="status" data-testid="decide-select-all-matching">
+            {allWaiting ? (
+              <>
+                {plural(
+                  t,
+                  `${K}.allWaitingSelected`,
+                  needYou,
+                  'The 1 waiting address is selected.',
+                  'All {count} waiting addresses are selected.'
+                )}{' '}
+                <Button variant="link" size="sm" className="h-auto p-0" onClick={clear}>
+                  {t(`${K}.clear`, 'Clear selection')}
+                </Button>
+              </>
+            ) : (
+              <>
+                {plural(
+                  t,
+                  `${K}.pageSelected`,
+                  ownAddrs.length,
+                  'The 1 address listed here is selected.',
+                  'The {count} addresses listed here are selected.'
+                )}{' '}
                 <Button
+                  variant="link"
                   size="sm"
-                  variant="outline"
-                  data-testid="decide-add-all"
-                  onClick={() =>
-                    confirmAdd(
-                      waitingAddrs,
-                      [],
-                      plural(
-                        t,
-                        `${K}.addAllTitle`,
-                        waitingAddrs.length,
-                        'Add the 1 waiting address?',
-                        'Add all {count} waiting addresses?'
-                      )
-                    )
-                  }
+                  className="h-auto p-0"
+                  onClick={() => setAllWaiting(true)}
                 >
                   {plural(
                     t,
-                    `${K}.addAll`,
-                    waitingAddrs.length,
-                    'Add all (1)',
-                    'Add all ({count})'
+                    `${K}.selectAllWaiting`,
+                    needYou,
+                    'Select the 1 waiting address',
+                    'Select all {count} waiting addresses'
                   )}
                 </Button>
-              )}
-              {onSnooze && (
-                <Button size="sm" variant="outline" onClick={onSnooze}>
-                  {t('attackSurface.decide.notNow', 'Not now')}
-                </Button>
-              )}
-            </>
-          )}
-        </div>
+              </>
+            )}
+          </p>
+        )}
         {!canAdd && waiting > 0 && (
           <p className="text-xs text-muted-foreground">
             {t(
@@ -606,41 +864,11 @@ export function AddressGroupsCard({
             )}
           </p>
         )}
-        {card.truncated && (
-          <p className="text-xs text-muted-foreground">
-            {t('attackSurface.decide.truncated', 'More after these: the card comes back')}
-          </p>
-        )}
 
         {shownOwn.length > 0 && (
           <ul className="divide-y rounded-md border" data-testid="decide-groups">
             {shownOwn.map((g) => (
-              <GroupRow
-                key={g.key}
-                group={g}
-                byAddress={byAddress}
-                selected={selected}
-                onToggle={toggle}
-                canAdd={canAdd}
-                canDecide={canDecide}
-                onAdd={(addrs, ranges) =>
-                  confirmAdd(
-                    addrs,
-                    ranges,
-                    ranges.length > 0
-                      ? t(`${K}.addRangeTitle`, 'Add {range} to scope?', { range: ranges[0] })
-                      : plural(
-                          t,
-                          `${K}.addN`,
-                          addrs.length,
-                          'Add 1 address',
-                          'Add {count} addresses'
-                        )
-                  )
-                }
-                onReject={confirmReject}
-                onNetwork={confirmNetwork}
-              />
+              <GroupRow key={g.key} group={g} {...rowProps} />
             ))}
           </ul>
         )}
@@ -696,6 +924,22 @@ function toBits(ip: string): string | null {
     .join('')
 }
 
+/** How many of the addresses are in each network lookup state. */
+function lookupCounts(addrs: string[], byAddress: Map<string, EASMSuggestionAddress>) {
+  const out = { pending: 0, failed: 0, not_found: 0, source: 0, failedAddrs: [] as string[] }
+  for (const a of addrs) {
+    const s = byAddress.get(a)?.lookup?.state
+    if (s === 'pending') out.pending++
+    else if (s === 'not_found') out.not_found++
+    else if (s === 'failed') {
+      out.failed++
+      if (byAddress.get(a)?.lookup?.reason === 'source_unavailable') out.source++
+      out.failedAddrs.push(a)
+    }
+  }
+  return out
+}
+
 function GroupRow({
   group: g,
   byAddress,
@@ -703,9 +947,10 @@ function GroupRow({
   onToggle,
   canAdd,
   canDecide,
-  onAdd,
-  onReject,
+  onAddGroup,
+  onRejectGroup,
   onNetwork,
+  onRetry,
   onUndoDecline,
 }: {
   group: EASMSuggestionGroup
@@ -714,37 +959,42 @@ function GroupRow({
   onToggle: (addrs: string[], on: boolean) => void
   canAdd: boolean
   canDecide: boolean
-  onAdd: (addresses: string[], ranges: string[]) => void
-  onReject: (addresses: string[]) => void
+  onAddGroup: (g: EASMSuggestionGroup) => void
+  onRejectGroup: (g: EASMSuggestionGroup) => void
   onNetwork: (g: EASMSuggestionGroup, ours: boolean) => void
+  onRetry: (addrs: string[]) => void
   onUndoDecline?: (id: string) => void
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const addrs = g.addresses ?? []
   const count = addrs.length
-  const selectable = !g.shared
   const inSel = addrs.filter((a) => selected.has(a)).length
   const names = g.resolved_from ?? []
   const shownNames = names.slice(0, 3)
   const title = groupTitle(t, g)
+  const lookups = lookupCounts(addrs, byAddress)
+  const hasLookup = lookups.pending + lookups.failed + lookups.not_found > 0
   return (
     <li className="space-y-2 px-3 py-3" data-testid="decide-group" data-kind={g.kind}>
       <div className="flex items-start gap-3">
-        {selectable && (
-          <Checkbox
-            className="mt-0.5"
-            checked={inSel === 0 ? false : inSel === count ? true : 'indeterminate'}
-            onCheckedChange={(v) => onToggle(addrs, v === true)}
-            aria-label={t(`${K}.selectGroup`, 'Select the addresses of {group}', { group: title })}
-          />
-        )}
+        <Checkbox
+          className="mt-0.5"
+          checked={inSel === 0 ? false : inSel === count ? true : 'indeterminate'}
+          onCheckedChange={(v) => onToggle(addrs, v === true)}
+          aria-label={t(`${K}.selectGroup`, 'Select the addresses of {group}', { group: title })}
+        />
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="break-all text-sm font-medium">{title}</span>
             <span className="text-xs text-muted-foreground">
               {plural(t, `${K}.count`, count, '1 address', '{count} addresses')}
             </span>
+            {g.shared && (
+              <span className="text-xs text-muted-foreground">
+                {t(`${K}.thirdParty`, 'third party: never scanned as yours, passive checks only')}
+              </span>
+            )}
             {(g.checked ?? 0) > 0 && (g.waiting ?? 0) === 0 && (
               <span className="text-xs text-muted-foreground">
                 {t(`${K}.alreadyChecked`, 'already get low-impact checks')}
@@ -762,14 +1012,70 @@ function GroupRow({
             </p>
           )}
           {((g.evidence ?? []).length > 0 || g.kind === 'block') && (
-            <div className="flex flex-wrap gap-1" data-testid="decide-group-evidence">
-              {g.kind === 'block' && (
+            <div className="flex flex-wrap items-center gap-1" data-testid="decide-group-evidence">
+              {g.kind === 'block' && !hasLookup && (
                 <Badge
                   variant="outline"
                   className="h-auto whitespace-normal text-start text-warning"
                 >
                   {t(`${K}.evidence.network_unknown`, 'No network data yet')}
                 </Badge>
+              )}
+              {lookups.pending > 0 && (
+                <Badge variant="outline" className="h-auto whitespace-normal text-start">
+                  {plural(
+                    t,
+                    `${K}.lookup.pending`,
+                    lookups.pending,
+                    'Looking up the network',
+                    'Looking up the network of {count}'
+                  )}
+                </Badge>
+              )}
+              {lookups.not_found > 0 && (
+                <Badge variant="outline" className="h-auto whitespace-normal text-start">
+                  {plural(
+                    t,
+                    `${K}.lookup.not_found`,
+                    lookups.not_found,
+                    'No routing data holds it',
+                    'No routing data holds {count} of them'
+                  )}
+                </Badge>
+              )}
+              {lookups.failed > 0 && (
+                <>
+                  <Badge
+                    variant="outline"
+                    className="h-auto whitespace-normal text-start text-warning"
+                  >
+                    {lookups.source === lookups.failed
+                      ? plural(
+                          t,
+                          `${K}.lookup.sourceUnavailable`,
+                          lookups.failed,
+                          'Network lookup failed (source unavailable)',
+                          'Network lookup failed for {count} (source unavailable)'
+                        )
+                      : plural(
+                          t,
+                          `${K}.lookup.failed`,
+                          lookups.failed,
+                          'Network lookup failed',
+                          'Network lookup failed for {count}'
+                        )}
+                  </Badge>
+                  {canDecide && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7"
+                      onClick={() => onRetry(lookups.failedAddrs)}
+                    >
+                      {t(`${K}.lookup.retry`, 'Retry lookup')}
+                    </Button>
+                  )}
+                </>
               )}
               {(g.evidence ?? []).map((e) => (
                 <Badge
@@ -808,21 +1114,28 @@ function GroupRow({
           )}
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {canAdd && !g.shared && g.range && (
-              <Button size="sm" onClick={() => onAdd(addrs, [g.range!])}>
+              <Button size="sm" onClick={() => onAddGroup(g)}>
                 {t(`${K}.addRange`, 'Add range {range}', { range: g.range })}
               </Button>
             )}
             {canAdd && !g.shared && !g.range && (
-              <Button
-                size="sm"
-                variant={g.kind === 'block' ? 'outline' : 'default'}
-                onClick={() => onAdd(addrs, [])}
-              >
-                {plural(t, `${K}.addN`, count, 'Add 1 address', 'Add {count} addresses')}
+              <Button size="sm" onClick={() => onAddGroup(g)}>
+                {plural(
+                  t,
+                  `${K}.addAllGroup`,
+                  count,
+                  'Add 1 (as a range where possible)',
+                  'Add all {count} (as ranges)'
+                )}
+              </Button>
+            )}
+            {canAdd && g.shared && g.kind !== 'declined' && (
+              <Button size="sm" variant="outline" onClick={() => onAddGroup(g)}>
+                {t(`${K}.addAnyway`, 'Add anyway')}
               </Button>
             )}
             {canDecide && g.kind !== 'declined' && (
-              <Button size="sm" variant="outline" onClick={() => onReject(addrs)}>
+              <Button size="sm" variant="outline" onClick={() => onRejectGroup(g)}>
                 {t('attackSurface.decide.notOurs', 'Not ours')}
               </Button>
             )}
@@ -859,13 +1172,11 @@ function GroupRow({
                 className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
               >
                 <div className="flex min-w-0 flex-1 items-center gap-2">
-                  {selectable && (
-                    <Checkbox
-                      checked={selected.has(a)}
-                      onCheckedChange={(v) => onToggle([a], v === true)}
-                      aria-label={t(`${K}.selectOne`, 'Select {address}', { address: a })}
-                    />
-                  )}
+                  <Checkbox
+                    checked={selected.has(a)}
+                    onCheckedChange={(v) => onToggle([a], v === true)}
+                    aria-label={t(`${K}.selectOne`, 'Select {address}', { address: a })}
+                  />
                   <code className="break-all font-mono text-xs" data-testid="decide-address">
                     {a}
                   </code>
@@ -876,21 +1187,6 @@ function GroupRow({
                       ports: (item?.ports ?? []).join(', '),
                     })}
                   </span>
-                )}
-                {canAdd && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 self-start sm:self-auto"
-                    onClick={() => onAdd([a], [])}
-                    aria-label={t('attackSurface.decide.addOneLabel', 'Add {address} to scope', {
-                      address: a,
-                    })}
-                  >
-                    {g.shared
-                      ? t(`${K}.addAnyway`, 'Add anyway')
-                      : t('attackSurface.decide.addOne', 'Add')}
-                  </Button>
                 )}
               </li>
             )
