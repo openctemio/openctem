@@ -61,6 +61,8 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.acceptance_expires_at_lte)
     params.set('acceptance_expires_at_lte', filters.acceptance_expires_at_lte)
   if (filters.asset_crown_jewel) params.set('asset_crown_jewel', 'true')
+  if (filters.practice) params.set('practice', filters.practice)
+  if (filters.practice_not) params.set('practice_not', filters.practice_not)
   if (filters.view) params.set('view', filters.view)
   if (filters.sort) params.set('sort', filters.sort)
   // Filters the page carries as they are (the filter contract names them).

@@ -54,6 +54,11 @@ export interface SlaPolicy {
    * most this long after it is first seen as known exploited. 0 = off.
    */
   kev_cap_days?: number
+  /**
+   * Absent: the policy governs every finding except compliance (the
+   * vulnerability policy). `compliance`: it governs only compliance findings.
+   */
+  practice?: SlaPolicyPractice
   warning_threshold_pct: number
   escalation_enabled: boolean
   is_active: boolean
@@ -73,6 +78,9 @@ export interface SlaPolicyListResponse {
 }
 
 /** POST body — matches CreateSLAPolicyRequest. Day fields are required 1..365. */
+/** What a policy governs: compliance findings only, or (empty) every other finding. */
+export type SlaPolicyPractice = '' | 'compliance'
+
 export interface CreateSlaPolicyInput {
   name: string
   description?: string
@@ -93,6 +101,8 @@ export interface CreateSlaPolicyInput {
   escalation_enabled?: boolean
   /** Optional per-asset override; omit for a tenant-level policy. */
   asset_id?: string
+  /** Fixed at create: `compliance` or empty (vulnerabilities). */
+  practice?: SlaPolicyPractice
 }
 
 /** PUT body — matches UpdateSLAPolicyRequest (all fields optional). */
