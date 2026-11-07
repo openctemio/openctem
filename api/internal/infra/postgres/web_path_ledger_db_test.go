@@ -207,19 +207,27 @@ func TestWebDiscoveryDerivedInput_GuessesAreNotInputs(t *testing.T) {
 // the table size and statistics, which change with whatever else has run in the
 // database (a merge-queue group), so the test turns sequential scans off in its
 // own transaction and asserts that this index, and not another, serves the query.
+//
+// The plan does not depend on the row count once sequential scans are off, and
+// deleting the tenant at the end of the test cascades through every foreign key
+// to assets row by row (about 1.3 ms per asset), so the table is kept small: 20000
+// rows of each kind made that cleanup run for 50s here and past the statement
+// timeout on a busy CI runner.
+const indexTestRows = 1000
+
 func TestWebPathDiscovery_LookupsUseIndexes(t *testing.T) {
 	f := newWebFixture(t)
 	ctx := context.Background()
 	if _, err := f.sqlDB.ExecContext(ctx, `
 		INSERT INTO assets (id, tenant_id, name, asset_type, sub_type, status, exposure)
 		SELECT gen_random_uuid(), $1, 'https://h' || g || '.example.com', 'service', 'http', 'active', 'public'
-		FROM generate_series(1, 20000) g`, f.tenant.String()); err != nil {
+		FROM generate_series(1, $2::int) g`, f.tenant.String(), indexTestRows); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.sqlDB.ExecContext(ctx, `
 		INSERT INTO assets (id, tenant_id, name, asset_type, status, exposure)
 		SELECT gen_random_uuid(), $1, 'host' || g, 'domain', 'active', 'public'
-		FROM generate_series(1, 20000) g`, f.tenant.String()); err != nil {
+		FROM generate_series(1, $2::int) g`, f.tenant.String(), indexTestRows); err != nil {
 		t.Fatal(err)
 	}
 	// ANALYZE skips a table the connection does not own, and the app role owns
