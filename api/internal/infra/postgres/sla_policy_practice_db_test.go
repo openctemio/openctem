@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/openctemio/openctem/api/pkg/domain/sla"
@@ -55,17 +56,12 @@ func TestSLAPolicy_PracticeDefaults_DB(t *testing.T) {
 	if err := repo.UpdateMakingDefault(ctx, comp2); err != nil {
 		t.Fatal(err)
 	}
-	var defaults []string
-	rows, err := db.QueryContext(ctx, `SELECT COALESCE(practice, '') || ':' || name FROM sla_policies WHERE tenant_id = $1 AND is_default ORDER BY 1`, tenant.String())
-	if err != nil {
+	var joined string
+	if err := db.QueryRowContext(ctx, `SELECT string_agg(COALESCE(practice, '') || ':' || name, ',' ORDER BY 1)
+		FROM sla_policies WHERE tenant_id = $1 AND is_default`, tenant.String()).Scan(&joined); err != nil {
 		t.Fatal(err)
 	}
-	for rows.Next() {
-		var s string
-		_ = rows.Scan(&s)
-		defaults = append(defaults, s)
-	}
-	_ = rows.Close()
+	defaults := strings.Split(joined, ",")
 	if len(defaults) != 2 || defaults[0] != ":Default SLA Policy" || defaults[1] != "compliance:Compliance 2" {
 		t.Fatalf("defaults = %v", defaults)
 	}
