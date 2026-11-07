@@ -27,7 +27,8 @@ import (
 // EASMAddressDecider applies bulk decisions (*easmapp.AddressDecisions).
 type EASMAddressDecider interface {
 	Add(ctx context.Context, tenantID shared.ID, actor easmapp.ScopeActor, in easmapp.AddressAddInput) (*easmapp.AddressAddResult, error)
-	Reject(ctx context.Context, tenantID shared.ID, actor easmapp.ScopeActor, addresses []string) (*easmapp.AddressRejectResult, error)
+	Reject(ctx context.Context, tenantID shared.ID, actor easmapp.ScopeActor, sel easmapp.AddressSelection) (*easmapp.AddressRejectResult, error)
+	RetryLookup(ctx context.Context, tenantID shared.ID, sel easmapp.AddressSelection) (*easmapp.LookupRetryResult, error)
 	NetworkIsOurs(ctx context.Context, tenantID shared.ID, actor easmapp.ScopeActor, key string) (*easmapp.NetworkAnswerResult, error)
 	NetworkNotOurs(ctx context.Context, tenantID shared.ID, actor easmapp.ScopeActor, key string) (*easmapp.NetworkAnswerResult, error)
 	Undecline(ctx context.Context, tenantID shared.ID, id string) (*easmseed.Declined, error)
@@ -42,17 +43,44 @@ func (h *EASMHandler) SetAddressDecisions(d EASMAddressDecider) *EASMHandler {
 // HasAddressDecisions reports whether the bulk decisions are wired.
 func (h *EASMHandler) HasAddressDecisions() bool { return h.decisions != nil }
 
+// EASMAddressSelection is what the person chose on the card: addresses,
+// whole groups (keys from the card) and/or every waiting address, also
+// those past the card's list.
+type EASMAddressSelection struct {
+	Addresses  []string `json:"addresses" validate:"max=2000"`
+	Groups     []string `json:"groups" validate:"max=500"`
+	AllWaiting bool     `json:"all_waiting"`
+}
+
+func (s EASMAddressSelection) app() easmapp.AddressSelection {
+	return easmapp.AddressSelection{Addresses: s.Addresses, Groups: s.Groups, AllWaiting: s.AllWaiting}
+}
+
 // EASMAddressAddRequest adds addresses (and own ranges) of the card.
 type EASMAddressAddRequest struct {
-	Addresses []string `json:"addresses" validate:"max=200"`
-	Ranges    []string `json:"ranges" validate:"max=200"`
-	// IncludeShared adds one shared address on its own ("add anyway").
+	EASMAddressSelection
+	Ranges []string `json:"ranges" validate:"max=200"`
+	// IncludeShared also adds the chosen shared, provider and declined
+	// addresses (each an exact entry); without it a selection holding one
+	// is refused.
 	IncludeShared bool `json:"include_shared"`
 }
 
 // EASMAddressRejectRequest marks addresses of the card not the organization's.
 type EASMAddressRejectRequest struct {
-	Addresses []string `json:"addresses" validate:"max=200"`
+	EASMAddressSelection
+}
+
+// maxDecisionBody bounds a decision body (2000 addresses fit).
+const maxDecisionBody = 256 << 10
+
+func decodeDecision(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxDecisionBody)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return false
+	}
+	return true
 }
 
 // EASMNetworkAnswerRequest answers "is this network yours?" for one group.
@@ -123,14 +151,12 @@ func (h *EASMHandler) AddAddresses(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limitBody(w, r)
 	var req EASMAddressAddRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
+	if !decodeDecision(w, r, &req) {
 		return
 	}
 	res, err := h.decisions.Add(r.Context(), tenantID, confirmActor(r.Context()), easmapp.AddressAddInput{
-		Addresses: req.Addresses, Ranges: req.Ranges, IncludeShared: req.IncludeShared,
+		AddressSelection: req.app(), Ranges: req.Ranges, IncludeShared: req.IncludeShared,
 	})
 	if err != nil {
 		h.decisionError(w, "Addresses", err)
@@ -178,13 +204,11 @@ func (h *EASMHandler) RejectAddresses(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limitBody(w, r)
 	var req EASMAddressRejectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		apierror.BadRequest("Invalid request body").WriteJSON(w)
+	if !decodeDecision(w, r, &req) {
 		return
 	}
-	res, err := h.decisions.Reject(r.Context(), tenantID, confirmActor(r.Context()), req.Addresses)
+	res, err := h.decisions.Reject(r.Context(), tenantID, confirmActor(r.Context()), req.app())
 	if err != nil {
 		h.decisionError(w, "Addresses", err)
 		return
@@ -194,6 +218,38 @@ func (h *EASMHandler) RejectAddresses(w http.ResponseWriter, r *http.Request) {
 		WithMetadata("items", strings.Join(res.Addresses, ",")).
 		WithMetadata("asset_ids", strings.Join(res.AssetIDs, ",")).
 		WithMetadata("count", len(res.AssetIDs)))
+	writeDecisionJSON(w, res)
+}
+
+// RetryAddressLookup handles POST /api/v1/easm/suggestions/addresses/lookup
+// @Summary      Look up the network of addresses again
+// @Description  Makes the network lookup (lookup.asn) of chosen addresses of the caller's own addresses card due now, for the addresses whose network is still unknown. The coverage loop sends the lookups to a sensor; the platform itself looks nothing up. Every address and group must be on the card (400 DECISION_NOT_PENDING otherwise); a lookup already queued is left alone. One audit event lists the addresses.
+// @Tags         Attack Surface
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      EASMAddressSelection  true  "Addresses, groups or every waiting address"
+// @Success      200   {object}  easmapp.LookupRetryResult
+// @Failure      400   {object}  apierror.Error
+// @Router       /easm/suggestions/addresses/lookup [post]
+func (h *EASMHandler) RetryAddressLookup(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := h.decisionTenant(w, r)
+	if !ok {
+		return
+	}
+	var req EASMAddressSelection
+	if !decodeDecision(w, r, &req) {
+		return
+	}
+	res, err := h.decisions.RetryLookup(r.Context(), tenantID, req.app())
+	if err != nil {
+		h.decisionError(w, "Addresses", err)
+		return
+	}
+	h.decisionAudit(r, auditapp.NewSuccessEvent(auditdom.ActionEASMAddressLookupRetried, auditdom.ResourceTypeAsset, "").
+		WithMessage("Network lookup asked again from the Decisions card").
+		WithMetadata("items", strings.Join(res.Addresses, ",")).
+		WithMetadata("queued", res.Queued))
 	writeDecisionJSON(w, res)
 }
 
