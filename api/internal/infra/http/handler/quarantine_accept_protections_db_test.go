@@ -119,7 +119,7 @@ func TestQuarantineAccept_AcceptedOnlyAfterApply(t *testing.T) {
 	if _, err := r.svc.AcceptQuarantined(ctx, auditapp.AuditContext{}, r.tenant, item.ID, user); !errors.Is(err, sensorresult.ErrBeingApplied) {
 		t.Fatalf("second accept while claimed: %v", err)
 	}
-	if err := r.results.Review(ctx, r.tenant, item.ID, sensorresult.StatusDiscarded, user); !errors.Is(err, sensorresult.ErrBeingApplied) {
+	if err := r.results.Review(ctx, r.tenant, item.ID, sensorresult.StatusDiscarded, &user); !errors.Is(err, sensorresult.ErrBeingApplied) {
 		t.Fatalf("discard while claimed: %v", err)
 	}
 	// Another tenant cannot claim or release it.

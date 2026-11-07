@@ -679,6 +679,9 @@ export default function CredentialsPage() {
         open={!!selectedCredential}
         onOpenChange={(open) => !open && setSelectedCredential(null)}
         icon={KeyRound}
+        // A leak row is not an inventory asset: its id answers 404 on every
+        // per-asset endpoint, so the sheet must not ask them.
+        assetBacked={false}
         canEdit={false}
         canDelete={false}
         onEdit={() => undefined}

@@ -33,6 +33,7 @@ type DedupReviewEnqueuer interface {
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
 	repo          asset.Repository
+	tagGovernor   TagGovernor // optional: governing tags an import may not set (nil = validator only)
 	repoExtRepo   asset.RepositoryExtensionRepository
 	relRepo       asset.RelationshipRepository
 	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
@@ -65,6 +66,8 @@ type AssetProcessor struct {
 
 	// webEvidence stores the reserved web_evidence captures (nil = dropped).
 	webEvidence WebEvidenceRecorder
+	// pageChange schedules a new capture of a web service whose page changed (nil = cadence only).
+	pageChange PageChangeNotifier
 	// webContent takes the reserved web_content fetches (nil = dropped).
 	webContent WebContentRecorder
 }
@@ -267,12 +270,17 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	observedAt time.Time,
 	recovered *[]shared.ID,
 	becameExposed *[]*asset.Asset,
+	pageChanged *[]shared.ID,
 ) []*asset.AssetStateChange {
 	oldExposure := existing.Exposure()
 	oldInternet := existing.IsInternetAccessible()
 	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
 
+	pageBefore := pageSignature(existing)
 	p.mergeCTISIntoAsset(existing, ctisAsset, tool, observedAt, recovered)
+	if pageChanged != nil && pageBefore != "" && pageSignature(existing) != pageBefore {
+		*pageChanged = append(*pageChanged, existing.ID())
+	}
 
 	if becameExposed != nil && !wasFacing &&
 		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
@@ -370,6 +378,10 @@ func (p *AssetProcessor) processBatch(
 	// The response header posture of an origin keeps its allow-listed keys
 	// only (names and flags, never a header or cookie value).
 	sanitizeHTTPPosture(report)
+
+	// Tags a rule reads (team access, approvals, scan windows, assignment)
+	// are set by people with the rule's permission, never by a report.
+	p.dropGoverningTags(ctx, tenantID, report)
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
@@ -388,6 +400,10 @@ func (p *AssetProcessor) processBatch(
 	// The addresses the report's in-bound assets vouch for (job_bound.go),
 	// read before any asset is dropped.
 	scope.primeJobBound(report)
+
+	// The source of the service protocols the report names, from the
+	// capability the platform bound it to (service_kind.go).
+	kindEvidence := serviceKindEvidence(report)
 
 	// Junk names from passive sources (a domain that is not a host name, the
 	// remnant of a percent-encoded delimiter) never become assets.
@@ -461,6 +477,8 @@ func (p *AssetProcessor) processBatch(
 	// Set once the upsert persisted the merges, so a failed upsert never
 	// announces an exposure that was not saved.
 	var exposedPersisted []*asset.Asset
+	// Web services whose page changed (title, status, redirect, favicon).
+	var pageChanged []shared.ID
 
 	cfg := p.defaultCorrelationConfig()
 	if tenantCfg != nil {
@@ -527,7 +545,8 @@ func (p *AssetProcessor) processBatch(
 			}
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
+				classifyReportedService(existing, ctisAsset, kindEvidence)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -576,6 +595,7 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			scope.dropUntrustedClaims(newAsset)
+			classifyReportedService(newAsset, ctisAsset, kindEvidence)
 			// Seen when its source saw it, so a later report observed earlier
 			// cannot pass it.
 			newAsset.MarkSeenAt(seenAt)
@@ -829,6 +849,7 @@ func (p *AssetProcessor) processBatch(
 		p.flushIdentity(ctx, idx, finalID)
 		discovered = append(discovered, inserted...)
 		exposedPersisted = becameExposed
+		p.notifyPagesChanged(ctx, tenantID, pageChanged)
 	}
 
 	// Step 5: Create/update repository extensions for repository assets
@@ -1484,18 +1505,10 @@ func (p *AssetProcessor) createAssetFromCTIS(
 		newAsset.UpdateDescription(desc)
 	}
 
-	// Set tags (with limit) - log if truncated
-	tags := ctisAsset.Tags
-	if len(tags) > MaxTagsPerAsset {
-		p.logger.Warn("asset tags truncated",
-			"original_count", len(tags),
-			"max_count", MaxTagsPerAsset,
-			"asset_id", ctisAsset.ID,
-		)
-		tags = tags[:MaxTagsPerAsset]
-	}
-	for _, tag := range tags {
-		newAsset.AddTag(tag)
+	// Tags: the shared validator and the per-import cap (a report is not
+	// trusted with arbitrary strings: see importTags).
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		newAsset.AddTag(t)
 	}
 
 	// Discovery info: the report's tool, unless a server-side report (the
@@ -1643,9 +1656,9 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// owner_ref and data classification of an existing asset are decided
 	// by attribute reconciliation (attributes.go, RFC-069), not here.
 
-	// Merge tags
-	for _, tag := range ctisAsset.Tags {
-		existing.AddTag(tag)
+	// Merge tags (validated like a first sight)
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		existing.AddTag(t)
 	}
 
 	// Merge properties using deep merge

@@ -20,6 +20,7 @@ import type {
 } from '@/lib/api/scan-types'
 import { DEFAULT_NEW_SCAN, type NewScanFormData, type ScheduleFrequency } from '../types'
 import { parsePastedTargets } from './target-format'
+import { largeRangeKey, largeRangeSummary } from './large-range'
 import { enTranslate, type Translate } from './translate'
 import { instantToZonedWallTime, viewerTimeZone, zonedWallTimeToInstant } from './zoned-time'
 import {
@@ -206,6 +207,15 @@ export function targetsError(form: NewScanFormData, t: Translate = enTranslate):
       count: invalid,
     })
   }
+  // A range wider than a /16 runs live hosts first, and only once the
+  // person confirmed its size (RFC-151).
+  const large = largeRangeSummary(parsePastedTargets(targets.customTargets).targets)
+  if (large) {
+    const mode = targets.targetOptions?.cidr_mode
+    if (mode && mode !== 'liveness') return t('scans.err.largeRangeLiveness')
+    if (targets.largeRangeConfirmed !== largeRangeKey(large))
+      return t('scans.err.largeRangeConfirm')
+  }
   const n = directTargets(form).length
   if (n > MAX_DIRECT_TARGETS) {
     return t('scans.err.tooMany', undefined, {
@@ -214,6 +224,16 @@ export function targetsError(form: NewScanFormData, t: Translate = enTranslate):
     })
   }
   return null
+}
+
+/**
+ * Whether the person confirmed the large ranges the typed targets hold now
+ * (LargeRangeConfirm): the API refuses a range wider than a /16 unless the
+ * request says so (confirm_large_range).
+ */
+function largeRangeConfirmed(targets: NewScanFormData['targets']): boolean {
+  const large = largeRangeSummary(parsePastedTargets(targets.customTargets).targets)
+  return large !== null && targets.largeRangeConfirmed === largeRangeKey(large)
 }
 
 /** New scan: form -> POST /scans. Combines asset groups, assets and custom targets. */
@@ -249,8 +269,12 @@ export function formDataToCreateRequest(form: NewScanFormData): CreateScanConfig
   if (targets.assetIds.length > 0) request.asset_ids = [...targets.assetIds]
   const typed = typedAndExpanded(form)
   if (typed.length > 0) request.targets = typed
+  if (largeRangeConfirmed(targets)) request.confirm_large_range = true
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
+  if (form.mode === 'workflow' && Object.keys(form.stepParams).length > 0) {
+    request.step_params = form.stepParams
+  }
   if (form.mode === 'single') request.scanner_name = form.scannerName
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
     request.scanner_config = tenableScanConfigToApi(readTenableScanConfig(form.scannerConfig))
@@ -318,6 +342,8 @@ export function scanConfigToFormData(config: ScanConfig): NewScanFormData {
     ruleSources: config.rule_sources ?? '',
     customTemplateIds: storedTemplateIds(config.scanner_config),
     workflowId: config.scan_workflow_id,
+    stepParams: config.step_params ? { ...config.step_params } : {},
+    depth: config.depth,
     sensorPreference: config.sensor_preference || 'auto',
     targets: {
       type: 'asset_groups',
@@ -401,6 +427,7 @@ export function formDataToUpdateRequest(
   if (form.targets.assetIds.length > 0 || !sameTargets(typed, config.targets ?? [])) {
     request.targets = typed
     if (form.targets.assetIds.length > 0) request.asset_ids = [...form.targets.assetIds]
+    if (largeRangeConfirmed(form.targets)) request.confirm_large_range = true
   }
   const storedGroups =
     config.asset_group_ids ?? (config.asset_group_id ? [config.asset_group_id] : [])
@@ -409,6 +436,8 @@ export function formDataToUpdateRequest(
   }
 
   if (form.mode === 'workflow' && form.workflowId) request.scan_workflow_id = form.workflowId
+  // Sent whole: {} clears the scan's step settings.
+  if (form.mode === 'workflow') request.step_params = form.stepParams
   if (form.mode === 'single' && form.scannerName) request.scanner_name = form.scannerName
   if (form.mode === 'single' && form.scannerName === TENABLE_SC_TOOL) {
     request.scanner_config = tenableScanConfigToApi(

@@ -8,7 +8,7 @@ import type { ApiCredential, ApiCredentialStats } from '../api/credential-api.ty
 import type { Asset } from '@/features/assets'
 import type { Status } from '@/features/shared/types'
 import type { CriticalityLevel } from '@/lib/criticality'
-import { severityCounts } from '@/lib/severity'
+import { SEVERITY_LEVELS, severityCounts } from '@/lib/severity'
 
 // Map API state to frontend status
 const stateToStatus: Record<string, Status> = {
@@ -104,7 +104,12 @@ export function mapCredentialToAsset(credential: ApiCredential): CredentialLeakR
     scope: 'internal',
     exposure: 'public',
     riskScore: severityToRiskScore[severity] || 50,
+    // A leak is one exposure at its own severity: the count and the breakdown
+    // the asset sheet draws from it are the same one finding.
     findingCount: 1,
+    findingSeverityCounts: (SEVERITY_LEVELS as readonly string[]).includes(severity)
+      ? { [severity]: 1 }
+      : {},
     metadata: {
       source,
       username: username || email,

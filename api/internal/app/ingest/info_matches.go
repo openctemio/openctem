@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -125,6 +126,7 @@ func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, repo
 			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		return
 	}
+	output.addOutcome(ingestreceipt.OutcomeExposure, len(report.Findings)-len(keep))
 	report.Findings = keep
 	output.InfoObservations += n
 	if s.stepInfo != nil && binding.Kind == BindingCommand && binding.StepRunID != nil && n > 0 {
@@ -133,6 +135,17 @@ func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, repo
 				"tenant_id", tenantID.String(), "scan_run_step_id", binding.StepRunID.String(), "error", logger.SanitizeError(err))
 		}
 	}
+}
+
+// infoMatchesRouted reports whether this ingest files the tool's info
+// matches as exposures instead of findings (a template scanner, the
+// projection wired, the organization's setting off). A covered run of such
+// a tool then never reports an informational match as a finding, so its
+// absence from the run proves nothing: coverage auto-resolve leaves the
+// informational findings of the tool alone (they move to exposures with
+// their own closure reason, never as fixed).
+func (s *Service) infoMatchesRouted(ctx context.Context, tenantID shared.ID, tool string) bool {
+	return s.templateMatches != nil && templateScanner(tool) && !s.infoMatchesAsFindings(ctx, tenantID)
 }
 
 // infoMatchesAsFindings reads the organization's choice (false when the

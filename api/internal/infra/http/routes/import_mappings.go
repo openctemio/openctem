@@ -36,7 +36,7 @@ func registerImportMappingRoutes(router Router, h *handler.ImportMappingHandler,
 			middleware.BodyLimit(handler.MaxImportMappingPreviewBody))
 		r.GET("/{id}", h.Get, read)
 		r.PATCH("/{id}", h.Update, manage, body)
-		r.DELETE("/{id}", h.Delete, manage, requireStepUp())
+		r.DELETE("/{id}", h.Delete, manage, requireStepUpSensitive())
 		r.POST("/{id}/versions", h.AddVersion, manage, body)
 		r.GET("/{id}/versions/{version_id}", h.GetVersion, read)
 	}, tenantMiddlewares...)

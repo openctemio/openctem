@@ -59,6 +59,8 @@ type SensorHandler struct {
 	policyPrefill *SensorPolicyPrefill
 	// grants serves the per-sensor grant routes (RFC-052 §5); nil: 404.
 	grants *sensorgrant.Service
+	// readiness serves GET /sensors/{id}/readiness; nil: 503.
+	readiness *sensorapp.ReadinessService
 	// jobRoot returns the job-signing root id the onboarding snippets pass
 	// as SENSOR_JOB_SIGNING_ROOT; nil: none.
 	jobRoot   func(ctx context.Context) string

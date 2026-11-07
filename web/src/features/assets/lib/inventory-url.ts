@@ -58,6 +58,7 @@ export type InventoryFilters = Pick<
   | 'attribution'
   | 'scopeStatus'
   | 'monitoringState'
+  | 'liveness'
   | 'discoveredBy'
   | 'firstSeenAfter'
   | 'sort'
@@ -101,6 +102,7 @@ const ARRAY_PARAMS = {
   attribution: 'attribution',
   scopeStatus: 'scope_status',
   monitoringState: 'monitoring_state',
+  liveness: 'liveness',
   discoveredBy: 'discovered_by',
   technologies: 'technology',
   technologyCategories: 'technology_category',

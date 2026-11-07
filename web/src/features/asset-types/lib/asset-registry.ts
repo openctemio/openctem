@@ -85,3 +85,24 @@ export function classAndLensLabel(
   const label = classLabel(registry, assetClass)
   return lens ? `${label}, ${lensLabel(registry, lens)}` : label
 }
+
+/**
+ * Whether scans can reach assets of this type: the registry lists at least one
+ * scan target for it (`scannable_by`; an alias without its own list inherits
+ * the core type's). A type the registry does not know has no scan target.
+ * Undefined until the registry has loaded, so a caller keeps its default
+ * instead of guessing.
+ */
+export function isScannableAssetType(
+  registry: AssetTypeRegistry | undefined,
+  type: string,
+  subType?: string | null
+): boolean | undefined {
+  if (!registry?.types?.length) return undefined
+  const core = registry.types.find((t) => t.type === type && !t.alias_of)
+  const alias = subType
+    ? registry.types.find((t) => t.alias_of?.type === type && t.alias_of?.sub_type === subType)
+    : undefined
+  const own = alias?.scannable_by?.length ? alias.scannable_by : (core?.scannable_by ?? [])
+  return own.length > 0
+}

@@ -77,7 +77,7 @@ func newChangeAuditHarness(t *testing.T, configure ...func(*scopeapp.Service, *h
 	scopeSvc := scopeapp.NewService(postgres.NewScopeTargetRepository(db),
 		postgres.NewScopeExclusionRepository(db),
 		postgres.NewAssetRepository(db), log)
-	scopeSvc.SetStepUpGate(middleware.RecentAuthGate{Checker: alwaysSteppedUp{}, Window: time.Hour})
+	scopeSvc.SetStepUpGate(middleware.RecentAuthGate{Checker: alwaysSteppedUp{}})
 	scopeSvc.SetEntryPolicy(nil, postgres.NewMemberLifecycleRepository(db), nil)
 	scope := handler.NewScopeHandler(scopeSvc, v, log)
 	scope.SetAuditService(auditSvc)
