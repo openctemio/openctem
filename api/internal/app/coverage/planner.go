@@ -235,7 +235,9 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 				continue
 			}
 			reason := covdom.ReasonUnresolvable
-			if v.Outcome == covdom.ReasonResolverFailed {
+			if v.Outcome == covdom.ReasonResolverFailed || v.Outcome == covdom.OutcomeDNSUnknown {
+				// A failed lookup, or one the sensor did not explain: never
+				// "the name has no address".
 				reason = covdom.ReasonResolverFailed
 			}
 			unresolved = append(unresolved, covdom.FailedPair{AssetID: d.AssetID, Outcome: reason, Error: v.Error})
