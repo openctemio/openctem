@@ -176,7 +176,7 @@ func MergeJobRules(programs []*Program) (*JobRules, error) {
 		return nil, fmt.Errorf("%w: the User-Agent is not printable ASCII; edit the program's rules", ErrRulesConflict)
 	}
 	if err := scanident.CheckUserAgents("", out.UserAgents); err != nil {
-		return nil, fmt.Errorf("%w: the User-Agent list: %w; edit the program's rules", ErrRulesConflict, err)
+		return nil, fmt.Errorf("%w: the User-Agent list is not acceptable; edit the program's rules", ErrRulesConflict)
 	}
 	return out, nil
 }
