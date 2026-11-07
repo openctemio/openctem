@@ -111,14 +111,20 @@ tenant only):
 - outside a covering program's testing windows the job waits: the scan
   window hold evaluates them as allow windows that cannot be overridden
   (RFC-067, [scan-windows.md](scan-windows.md));
-- two programs with different values for one header, or two User-Agents:
+- two programs with different values for one header, or different
+  User-Agent settings (a single value or a rotation list, compared whole):
   the job fails with `PROGRAM_RULES_CONFLICT`;
 - otherwise the delivered copy carries the headers and User-Agent in
   `http_policy` and a `rate_limit` capped at the smallest program rate; the
   stored command is unchanged;
 - headers or a User-Agent go only to a sensor that reports the capability
   `http.identity@1` (its tools send them on every request; others would
-  ignore them); a failed lookup withholds the job.
+  ignore them); a failed lookup withholds the job;
+- a program's `identification_required` (new programs default to on in the
+  console) makes the job require identification: without a header or query
+  parameter from any layer it fails with `IDENTIFICATION_REQUIRED_MISSING`,
+  and only a sensor that reports `http.identity.required@1` gets it
+  ([scan-identification.md](scan-identification.md)).
 
 The trigger refuses conflicting rules up front (`PROGRAM_RULES_CONFLICT`);
 a run outside a testing window waits, a scheduled one is deferred to the
