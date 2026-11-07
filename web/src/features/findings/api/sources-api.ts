@@ -1,5 +1,5 @@
 /**
- * What each source reported for one finding (GET /api/v1/findings/{id}/sources,
+ * What each source reported for one finding (GET /api/v1/findings/{id}/source-records,
  * docs/architecture/finding-source-records.md): one record per source with
  * its own title, text, severity, native identity, scores and unmapped fields,
  * the primary (first reporting) source first, and the fields the sources
@@ -18,7 +18,7 @@ export type FindingSourceDifference = S['internal_infra_http_handler.FindingSour
 export type FindingSourcesResponse = S['internal_infra_http_handler.FindingSourcesResponse']
 
 export function findingSourcesUrl(findingId: string): string {
-  return `/api/v1/findings/${encodeURIComponent(findingId)}/sources`
+  return `/api/v1/findings/${encodeURIComponent(findingId)}/source-records`
 }
 
 const swrConfig = { revalidateOnFocus: false, shouldRetryOnError: false }

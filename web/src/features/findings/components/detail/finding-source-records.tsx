@@ -11,7 +11,7 @@
  *   Each source              its own title, text, ratings, native identity,
  *                            scores, ids and unmapped fields, folded
  *
- * Read: GET /api/v1/findings/{id}/sources. Shown only when two or more
+ * Read: GET /api/v1/findings/{id}/source-records. Shown only when two or more
  * sources reported the finding (with one, the finding's own fields are that
  * source's values). A 404 (outside the caller's data scope) hides the
  * section. Every value is producer-supplied: rendered as text, free text
