@@ -1,5 +1,6 @@
 'use client'
 
+import { PossiblePathLabel } from '@/components/ui/possible-path-label'
 import { useMemo } from 'react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
@@ -137,10 +138,17 @@ export default function ExposureChainsPage() {
       <PageStack>
         <PageHeader
           title={t('prioritization.exposureChains.title', 'Exposure chains')}
-          description={t(
-            'prioritization.exposureChains.description',
-            'Paths from internet-facing entry points to assets with KEV or critical findings, ranked by urgency.'
-          )}
+          description={
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>
+                {t(
+                  'prioritization.exposureChains.description',
+                  'Possible paths from internet-facing entry points to assets with KEV or critical findings, ranked by urgency.'
+                )}
+              </span>
+              <PossiblePathLabel />
+            </span>
+          }
         />
 
         {isLoading ? (

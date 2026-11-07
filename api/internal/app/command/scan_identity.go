@@ -8,10 +8,14 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
+	"github.com/openctemio/contract/identity"
+
+	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -54,24 +58,46 @@ func (s *Service) jobIdentity(ctx context.Context, tenantID shared.ID) (scaniden
 		names = append(names, n)
 	}
 	slices.SortFunc(names, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
-	layer := scanident.OrganizationLayer{UserAgent: org.UserAgent}
+	layer := scanident.OrganizationLayer{UserAgent: org.UserAgent, UserAgents: org.UserAgents, Query: org.Query,
+		IdentificationRequired: org.IdentificationRequired}
 	for _, n := range names {
 		layer.Headers = append(layer.Headers, scanident.Header{Name: n, Value: org.Headers[n]})
 	}
 	return scanident.Merge(plat, layer), org, nil
 }
 
-// jobHTTPPolicy is the http_policy a job of tenantID carries.
-func (s *Service) jobHTTPPolicy(ctx context.Context, tenantID shared.ID) (sensordom.ToolHTTPPolicy, error) {
-	eff, org, err := s.jobIdentity(ctx, tenantID)
+// jobHTTPPolicy is the http_policy job c carries (its own tenant's layers).
+func (s *Service) jobHTTPPolicy(ctx context.Context, c *commanddom.Command) (sensordom.ToolHTTPPolicy, error) {
+	eff, org, err := s.jobIdentity(ctx, c.TenantID)
 	if err != nil {
 		return sensordom.ToolHTTPPolicy{}, err
 	}
-	return sensordom.ToolHTTPPolicy{
-		UserAgent:        eff.UserAgent,
-		AllowInsecureTLS: org.AllowInsecureTLS,
-		Headers:          eff.HeaderMap(),
-		LockedHeaders:    eff.LockedNames(),
-		UserAgentLocked:  eff.UserAgentLocked,
-	}, nil
+	pol := sensordom.ToolHTTPPolicy{
+		UserAgent:              eff.UserAgent,
+		AllowInsecureTLS:       org.AllowInsecureTLS,
+		Headers:                eff.HeaderMap(),
+		LockedHeaders:          eff.LockedNames(),
+		UserAgentLocked:        eff.UserAgentLocked,
+		Query:                  eff.Query,
+		IdentificationRequired: eff.IdentificationRequired,
+	}
+	// The list travels only when it rotates; the first value stays in
+	// user_agent for a sensor without rotation.
+	if len(eff.UserAgents) > 1 {
+		pol.UserAgents, pol.UserAgentKey = eff.UserAgents, userAgentKey(c)
+	}
+	return pol, nil
+}
+
+// userAgentKey is the rotation key of job c: its scan run's id, so every
+// task of one run sends one value to one host, else the command id. A run id
+// the contract refuses as a key falls back to the command id.
+func userAgentKey(c *commanddom.Command) string {
+	var p struct {
+		ScanRunID string `json:"scan_run_id"`
+	}
+	if json.Unmarshal(c.Payload, &p) == nil && p.ScanRunID != "" && identity.CheckKey(p.ScanRunID) == nil {
+		return p.ScanRunID
+	}
+	return c.ID.String()
 }
