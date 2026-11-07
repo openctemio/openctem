@@ -187,6 +187,10 @@ export function TargetsStep({
     setTyped(withoutTargets(targets.customTargets, [targetKey(entry)]))
   const replaceTyped = (entry: ClassifiedTarget, next: string) =>
     setTyped(replaceEntryInLines(targets.customTargets, entry.input, next))
+  // Editing a chip in place: the typed text is replaced and classified again
+  // like a new entry; empty removes it.
+  const editTyped = (entry: ClassifiedTarget, next: string) =>
+    next.trim() === '' ? removeTyped(entry.input) : replaceTyped(entry, next.trim())
   // One row per target (repeats folded), the entries that are not added after.
   const listEntries = useMemo(() => {
     const seen = new Set<string>()
@@ -278,12 +282,16 @@ export function TargetsStep({
                 kind: 'invalid' as const,
                 title: targetReasonText(t, entry),
                 onRemove: () => removeTyped(entry.input),
+                editValue: entry.input,
+                onEdit: (next: string) => editTyped(entry, next),
               }
             : {
                 key: `t:${entry.value}`,
                 label: entry.value,
                 kind: 'typed' as const,
                 onRemove: () => removeTyped(entry.input),
+                editValue: entry.input,
+                onEdit: (next: string) => editTyped(entry, next),
               }
         )),
     // The *.domain targets the coverage level made of typed or picked
