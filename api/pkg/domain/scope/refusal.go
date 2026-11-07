@@ -127,7 +127,7 @@ const (
 
 // RefusalMessages are the messages shown with each code.
 var RefusalMessages = map[string]string{
-	RefusalInvalidTarget:      "Not a valid scan target here (malformed, loopback, link-local, metadata, or a private address outside every scan zone).",
+	RefusalInvalidTarget:      "Not a valid scan target here (malformed, loopback, link-local or metadata address).",
 	RefusalDenyList:           "The platform does not allow this target.",
 	RefusalExcluded:           "An active scope exclusion covers this target.",
 	RefusalRejected:           "Your organization marked this name, or a name above it, as not yours.",
