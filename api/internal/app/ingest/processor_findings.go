@@ -535,6 +535,13 @@ func (p *FindingProcessor) processBatch(
 	// Step 2: Batch check existing fingerprints
 	existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, fingerprints)
 	if err != nil {
+		// Nothing of this batch is stored: each finding is counted as
+		// failed on the receipt, never dropped without a trace.
+		addError(output, fmt.Sprintf("check %d findings failed: %v", len(validFindings), err))
+		for _, fm := range validFindings {
+			output.FindingsSkipped++
+			output.FailedFindings = append(output.FailedFindings, createFailedFinding(fm, err.Error()))
+		}
 		return fmt.Errorf("failed to check fingerprints: %w", err)
 	}
 
@@ -670,8 +677,10 @@ func (p *FindingProcessor) processBatch(
 			// Fatal error - could not process any findings
 			p.logger.Error("failed to batch create findings", "error", err, "count", len(newFindings))
 			addError(output, fmt.Sprintf("batch create failed: %v", err))
-			// Track all findings as failed for audit
+			// Track all findings as failed for audit. Skipped holds the
+			// failures too (the receipt's skipped count leaves them out).
 			for i, fm := range newFindingsMeta {
+				output.FindingsSkipped++
 				output.FailedFindings = append(output.FailedFindings, createFailedFinding(fm, fmt.Sprintf("batch failed at index %d: %v", i, err)))
 			}
 		} else {

@@ -255,6 +255,14 @@ export interface IntakeNoise {
   merged: number
   suppressed: number
   not_stored: number
+  /** Findings that existed and were reported again unchanged. */
+  seen_again?: number
+  /** Repeats of a finding the same scan already reported. */
+  repeated?: number
+  /** Every other place a received finding went, by receipt outcome code. */
+  outcomes?: Record<string, number>
+  /** What no receipt explains (receipts written before outcomes were counted). */
+  unaccounted?: number
 }
 
 export interface IntakeData {
