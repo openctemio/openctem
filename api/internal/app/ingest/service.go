@@ -765,9 +765,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// rows, never the finding's headline status. Best-effort.
 	// Skipped when this ingest could not record its occurrences: the sweep
 	// would mark the findings it did see as gone from the branch.
+	// A report bound to a command sweeps only when that command already
+	// completed by itself: a run that exited non-zero, was killed or that
+	// the sensor stopped proves nothing about what it did not report
+	// (research/467 F6), and a report that lists an unfinished target is
+	// not full.
 	if !opts.DeferAutoResolve && unsolicitedMayResolve && !output.BranchOccurrencesFailed && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil &&
-		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
+		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" &&
+		s.v1RunMaySweepBranch(ctx, tenantID, binding, report.Metadata) {
 		toolName := report.Tool.Name
 		scanID := reportID
 		branchName := report.Metadata.Branch.Name

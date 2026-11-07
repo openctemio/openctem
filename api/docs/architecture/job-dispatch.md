@@ -620,7 +620,21 @@ flowchart TD
   job's own limits, a proxy pool without an endpoint) are in
   `pkg/domain/command/infra_failure.go`; the decision is
   `internal/app/command/infra_failure.go`. A command pinned to a sensor by a
-  person and a shared job fail as before.
+  person and a shared job fail as before. The move waits out the re-queue
+  back-off (`command_requeue_backoff_secs`: 5 s doubling to 5 min), so an
+  outage that hits the next sensor too does not spend the remaining attempts
+  in seconds.
+- **Offline holder waits:** a routed command whose lease is lost while its
+  holder is offline (the health ladder convicted the sensor and ended its
+  leases: a network or DNS outage, a host down) goes back to pending without
+  using a dispatch attempt. The attempt is recorded with `counted: false`, the
+  task reads "waiting for sensor <name> to come back …", and it runs again
+  when an eligible sensor (that one, or another of its zone) is online. Up to
+  `command.MaxOfflineWaits` (8) such waits per command; past them each lost
+  lease counts again, so a task that takes its sensor offline every time
+  still fails after 3 more. The re-queue back-off, `command.MaxRequeues` and
+  the run's deadline bound the waits. A lost lease of a sensor that is still
+  online (it crashed on the task and came back) counts as before.
 - **One budget:** 3 attempts per command for any cause (a lost lease, a
   refusal, an infrastructure failure; `command.MaxDispatchAttempts`). When it
   is spent, or no other sensor can take the work, the command fails with every
@@ -628,7 +642,7 @@ flowchart TD
   matching code (`TOOL_UNAVAILABLE`, `TOOL_CRASHED_ON_INPUT`,
   `RESOURCE_EXHAUSTED`, `CONTENT_UNAVAILABLE`, `SENSOR_LOST`). The causes are
   named only when `commands.attempts` has entries (infrastructure failures,
-  lost leases of routed work); a command whose attempts were spent by
+  lost leases of routed work; waits for an offline holder are not listed); a command whose attempts were spent by
   refusals, stalls or lost leases of shared or addressed work fails with the
   plain "Max dispatch attempts exceeded".
 - **Fleet stop rule:** when the same tool and content version fails with a
