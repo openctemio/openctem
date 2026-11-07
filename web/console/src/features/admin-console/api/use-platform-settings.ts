@@ -55,8 +55,12 @@ export const useScanIdentification = () =>
 /** Step-up and a reason; every administrator is notified. */
 export function saveScanIdentification(input: {
   user_agent: string
+  user_agents: string[]
   user_agent_enforced: boolean
   headers: { name: string; value: string; enforced: boolean }[]
+  query: { name: string; value: string } | null
+  query_enforced: boolean
+  identification_required: boolean
   reason: string
   version: number
 }) {
