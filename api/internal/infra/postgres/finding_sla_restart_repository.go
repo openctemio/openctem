@@ -39,7 +39,7 @@ func (r *FindingSLARestartRepository) LoadRegressionCandidates(ctx context.Conte
 		strs = append(strs, id.String())
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, asset_id, COALESCE(priority_class, ''), severity, sla_deadline, COALESCE(sla_status, '')
+		SELECT id, asset_id, COALESCE(priority_class, ''), severity, sla_deadline, COALESCE(sla_status, ''), practice
 		FROM findings
 		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND status = ANY($3)`,
 		tenantID.String(), pq.Array(strs), pq.Array(openStatusesForSLA))
@@ -55,7 +55,7 @@ func (r *FindingSLARestartRepository) LoadRegressionCandidates(ctx context.Conte
 			c        sladom.RegressionCandidate
 			deadline sql.NullTime
 		)
-		if err := rows.Scan(&idStr, &assetID, &c.PriorityClass, &c.Severity, &deadline, &c.SLAStatus); err != nil {
+		if err := rows.Scan(&idStr, &assetID, &c.PriorityClass, &c.Severity, &deadline, &c.SLAStatus, &c.Practice); err != nil {
 			return nil, fmt.Errorf("scan regression candidate: %w", err)
 		}
 		id, err := shared.IDFromString(idStr)

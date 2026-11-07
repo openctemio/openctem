@@ -3353,7 +3353,11 @@ func (h *TenantHandler) previewDeadlines(ctx context.Context, tenantID shared.ID
 		if !f.AssetID().IsZero() {
 			aid = f.AssetID().String()
 		}
-		d, derr := fn(aid, string(class), f.Severity(), now)
+		practice := ""
+		if f.Practice() == vulnerability.PracticeCompliance {
+			practice = string(vulnerability.PracticeCompliance)
+		}
+		d, derr := fn(aid, practice, string(class), f.Severity(), now)
 		if derr != nil {
 			return time.Time{}
 		}
