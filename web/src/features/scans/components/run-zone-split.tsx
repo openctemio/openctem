@@ -6,8 +6,6 @@ import { RunStatusBadge } from '@/features/shared'
 import type { RunZoneSplit } from '@/lib/api/scan-workflow-types'
 import { toDisplayText } from '@/lib/untrusted-text'
 
-const runHref = (id: string) => `/scans/runs?run=${encodeURIComponent(id)}`
-
 /**
  * A workflow run whose targets fell in several scan zones runs as one zone
  * run per zone. On the parent: one row per zone (targets, status, link to
@@ -35,7 +33,10 @@ export function RunZoneSplitPanel({
             parts: split.parts ?? 1,
           }
         )}{' '}
-        <Link href={runHref(parent)} className="font-medium underline-offset-2 hover:underline">
+        <Link
+          href={`/scans/runs?run=${encodeURIComponent(parent)}`}
+          className="font-medium underline-offset-2 hover:underline"
+        >
           {t('scans.runZoneSplit.openParent')}
         </Link>
       </p>
@@ -66,7 +67,7 @@ export function RunZoneSplitPanel({
                   {g.run_status && <RunStatusBadge status={g.run_status} />}
                   {g.run_id && (
                     <Link
-                      href={runHref(g.run_id)}
+                      href={`/scans/runs?run=${encodeURIComponent(g.run_id)}`}
                       className="font-medium underline-offset-2 hover:underline"
                     >
                       {t('scans.runZoneSplit.openRun')}
