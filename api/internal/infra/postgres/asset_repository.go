@@ -1620,6 +1620,13 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, pq.Array(filter.MonitoringStates), filter.UnclassifiedScanned)
 		argIndex += 2
 	}
+	if len(filter.LivenessStates) > 0 {
+		// Pinned to the asset's tenant; an asset with no row is unknown.
+		conditions = append(conditions, fmt.Sprintf(`COALESCE((SELECT lv.state FROM asset_liveness lv
+			WHERE lv.tenant_id = a.tenant_id AND lv.asset_id = a.id), 'unknown') = ANY($%d)`, argIndex))
+		args = append(args, pq.Array(filter.LivenessStates))
+		argIndex++
+	}
 	if filter.Primary {
 		// Constant SQL; every subquery is pinned to the asset's tenant.
 		conditions = append(conditions, asset.PrimarySQL("a"))

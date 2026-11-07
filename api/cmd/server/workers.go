@@ -1142,6 +1142,15 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.ScopeEffects, 5*time.Minute, log.With("controller", "scope-effects"),
 		))
 	}
+	// Asset liveness: liveness states with their guards, findings of gone
+	// assets closed as obsolete (where the organization turned it on) and
+	// reopened when the asset is seen again.
+	if svc != nil && svc.AssetLiveness != nil {
+		svc.AssetLiveness.EnableNotifications(repos.MemberLifecycle, svc.Notification)
+		w.ControllerManager.Register(controller.NewAssetLivenessController(
+			svc.AssetLiveness, 15*time.Minute, log.With("controller", "asset-liveness"),
+		))
+	}
 	// Tasks from a query in auto mode: add new matches as each task's owner
 	// (suspends a task whose owner left or lost access).
 	if svc != nil && svc.RemediationTask != nil {
@@ -1422,6 +1431,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	lifecycleWorker := assetapp.NewAssetLifecycleWorker(deps.DB, repos.Tenant, log)
 	lifecycleWorker.SetAuditService(svc.Audit)
 	lifecycleWorker.SetStateHistoryRepository(repos.AssetStateHistory)
+	if svc.AssetLiveness != nil {
+		lifecycleWorker.SetLivenessPreview(svc.AssetLiveness)
+	}
 	w.ControllerManager.Register(controller.NewAssetLifecycleController(
 		lifecycleWorker,
 		repos.Tenant,

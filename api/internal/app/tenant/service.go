@@ -2690,6 +2690,10 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		// "must run dry-run before enabling" gate by submitting a
 		// fabricated timestamp in the PUT body.
 		al.DryRunCompletedAt = before.DryRunCompletedAt
+		// A body without liveness keeps the stored liveness settings.
+		if al.Liveness == nil {
+			al.Liveness = before.Liveness
+		}
 
 		// Demoting more assets, sooner or with fewer guards hides them from
 		// monitoring: it needs a recent re-authentication.
@@ -2721,7 +2725,9 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		WithMetadata("grace_period_days_before", before.GracePeriodDays).
 		WithMetadata("grace_period_days_after", al.GracePeriodDays).
 		WithMetadata("excluded_source_types_before", before.ExcludedSourceTypes).
-		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes)
+		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes).
+		WithMetadata("close_findings_when_gone_before", before.LivenessSettings().CloseFindingsWhenGone).
+		WithMetadata("close_findings_when_gone_after", al.LivenessSettings().CloseFindingsWhenGone)
 	if lifecycleLoosened(before, t.TypedSettings().AssetLifecycle) {
 		event = event.WithSeverity(audit.SeverityHigh)
 		s.notifyPolicyLoosened(ctx, tenantID, actx, "Asset lifecycle loosened",

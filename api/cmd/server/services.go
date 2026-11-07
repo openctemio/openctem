@@ -67,6 +67,7 @@ import (
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
 	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	livenessapp "github.com/openctemio/openctem/api/internal/app/liveness"
 	"github.com/openctemio/openctem/api/internal/app/participation"
 	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
@@ -689,6 +690,9 @@ type Services struct {
 	// ScopeEffects closes and reopens findings as assets go out of scope
 	// for good and come back (research/320).
 	ScopeEffects *scope.Effects
+	// AssetLiveness records liveness evidence from the coverage loop and
+	// applies it (docs/architecture/asset-liveness.md).
+	AssetLiveness *livenessapp.Service
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
@@ -1302,6 +1306,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// them (research/320); every exclusion change kicks a pass.
 	s.ScopeEffects = scope.NewEffects(postgres.NewScopeEffectsRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
 	s.Scope.SetEffects(s.ScopeEffects)
+	s.AssetLiveness = livenessapp.NewService(postgres.NewAssetLivenessRepository(&postgres.DB{DB: deps.DB}), s.Tenant, s.Audit, log)
+	if s.AssetCoverage != nil {
+		s.AssetCoverage.WithLiveness(s.AssetLiveness)
+	}
 	// Program entries (RFC-065) cover nothing a program lists as out of
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
