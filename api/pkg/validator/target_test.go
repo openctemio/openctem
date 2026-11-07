@@ -183,7 +183,7 @@ func TestValidateSingleTarget_CIDR(t *testing.T) {
 		{"blocked - private 10.x CIDR", "10.0.0.0/8", false, "CIDR range contains internal IP addresses"},
 		{"blocked - private 192.168.x CIDR", "192.168.0.0/16", false, "CIDR range contains internal IP addresses"},
 		{"blocked - localhost CIDR", "127.0.0.0/8", false, "CIDR range contains localhost addresses"},
-		{"too large /8", "8.0.0.0/8", false, "CIDR range too large"},
+		{"too large /8", "8.0.0.0/8", false, "8.0.0.0/8 has 16,777,216 addresses; the most one target can hold is 65,536 (/16)"},
 		{"invalid format", "invalid/24", false, "invalid CIDR format"},
 		{"invalid prefix", "8.8.8.8/33", false, "invalid CIDR format"},
 		{"absolute path", "/srv/code/app", false, "not a network target"},
