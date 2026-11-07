@@ -52,6 +52,47 @@ func (r *ScanZoneRepository) Create(ctx context.Context, z *scanzone.Zone) error
 	return mapZoneWriteError(err)
 }
 
+// CreateWithSensorTx inserts a zone and assigns one sensor of the same
+// tenant to it inside tx (a pairing approval that states the sensor's
+// networks: the zone, the sensor and its grant commit together or not at
+// all). Only a non-platform sensor of the zone's tenant qualifies.
+func (r *ScanZoneRepository) CreateWithSensorTx(ctx context.Context, tx *sql.Tx, z *scanzone.Zone, sensorID shared.ID, assignedBy *shared.ID) error {
+	// The planning step counted the zones before the transaction; count
+	// again inside it, under a per-tenant lock so two approvals racing at
+	// the limit cannot both create a zone.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('scan_zones:' || $1::text, 0))`, z.TenantID.String()); err != nil {
+		return fmt.Errorf("lock scan zones: %w", err)
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM scan_zones WHERE tenant_id = $1`, z.TenantID.String()).Scan(&n); err != nil {
+		return fmt.Errorf("count scan zones: %w", err)
+	}
+	if n >= scanzone.MaxZonesPerTenant {
+		return scanzone.ErrTooManyZones
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_zones (id, tenant_id, name, description, is_default, ranges, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6::cidr[], $7, $8, $9)`,
+		z.ID.String(), z.TenantID.String(), z.Name, z.Description, z.IsDefault,
+		pq.Array(z.RangeStrings()), nullIDString(z.CreatedBy), z.CreatedAt, z.UpdatedAt); err != nil {
+		return mapZoneWriteError(err)
+	}
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO scan_zone_sensors (tenant_id, zone_id, sensor_id, created_by)
+		SELECT $1, $2, s.id, $4
+		FROM sensors s
+		WHERE s.id = $3 AND s.tenant_id = $1 AND s.scope = 'organization'
+		ON CONFLICT (zone_id, sensor_id) DO NOTHING`,
+		z.TenantID.String(), z.ID.String(), sensorID.String(), nullIDString(assignedBy))
+	if err != nil {
+		return fmt.Errorf("assign sensor to scan zone: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return scanzone.ErrSensorNotFound
+	}
+	return nil
+}
+
 // Update writes a zone's mutable fields.
 func (r *ScanZoneRepository) Update(ctx context.Context, z *scanzone.Zone) error {
 	res, err := r.db.ExecContext(ctx, `

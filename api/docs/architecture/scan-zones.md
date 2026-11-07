@@ -61,8 +61,18 @@ failing closed, as in api#555).
 2. Tools whose `supported_targets` are only `file`/`repository`/`container`
    (SAST, SCA, secrets, IaC) are not network scans and are not routed (D20).
 3. `scanzone.Router` assigns each target:
-   - address or CIDR → the zone with the **narrowest** range holding all of it
-     (ties: zone name, then id);
+   - address or CIDR → the zone with the **narrowest** range holding all of it;
+   - zones tied at that narrowest width: with the **same** assigned sensors, the
+     first by name, then id (the same sensors scan either way); with
+     **different** sensors they are different sites reusing the range (two
+     offices, an office and a cloud network), so the target is uncovered with
+     kind `ambiguous_zone` (refusal code `ambiguous_zone`, fix `pick_zone`)
+     and is never sent to a zone picked by name (research 466 D9). A scan
+     pinned to one zone (the zone picker) routes there. The same applies to a
+     hostname whose addresses tie. Saving a zone returns `same_range_zones`
+     (other zones of the organization that hold one of its ranges exactly), so
+     the console can warn before scans ask. Zones of another tenant never tie:
+     routing reads the tenant's own zones only;
    - hostname → resolved with `SCAN_ZONE_RESOLVER` (the platform's own resolver,
      or a public recursive resolver on self-service installs so that tenants
      never resolve names through the platform's internal DNS; 3 s per
@@ -110,7 +120,7 @@ failing closed, as in api#555).
    pre-zone platform/tenant rules.
 8. Every uncovered target is listed in the run's `dispatch_warnings` (with its
    reason) and `uncovered_targets`; `zone_routing` summarises the routing. If no
-   target is left, the trigger is refused and the refusal names each reason with its targets and the next step, grouped by kind (`uncovered_targets[].kind`: `unresolved`, `outside_zones`, `partly_covered`, `outside_selected_zone`, `zone_no_sensor`, `zone_sensor_new`, `zone_sensor_no_private`, `sensor_policy`, `deny_list`, `invalid`), with every target in `details.refused` (code `unresolved`, `zone_none`, `zone_no_sensor`, `zone_sensor_new`, `zone_sensor_no_private`, `deny_list`, `invalid_target`). When every target is a name that does not resolve in DNS the code is `NO_RESOLVING_TARGETS` and the message says only that (a fact about the names, no zone wording); otherwise `NO_ZONE_COVERAGE` (or `SENSOR_POLICY_REFUSED` when sensor policy is the only reason). The message never carries the scan's name or an id. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it fires only the `scan_completed` automations whose `status_filter` includes `partial`).
+   target is left, the trigger is refused and the refusal names each reason with its targets and the next step, grouped by kind (`uncovered_targets[].kind`: `unresolved`, `outside_zones`, `partly_covered`, `outside_selected_zone`, `ambiguous_zone`, `zone_no_sensor`, `zone_sensor_new`, `zone_sensor_no_private`, `sensor_policy`, `deny_list`, `invalid`), with every target in `details.refused` (code `unresolved`, `zone_none`, `ambiguous_zone`, `zone_no_sensor`, `zone_sensor_new`, `zone_sensor_no_private`, `deny_list`, `invalid_target`). When every target is a name that does not resolve in DNS the code is `NO_RESOLVING_TARGETS` and the message says only that (a fact about the names, no zone wording); otherwise `NO_ZONE_COVERAGE` (or `SENSOR_POLICY_REFUSED` when sensor policy is the only reason). The message never carries the scan's name or an id. A run that leaves targets uncovered ends **`partial`**, never `completed`, even when every job succeeded (it fires only the `scan_completed` automations whose `status_filter` includes `partial`).
 
 Each batch payload carries only its own targets: `targets`/`target`, a
 `scanner_config` whose `targets`/`target` keys are rewritten to the batch

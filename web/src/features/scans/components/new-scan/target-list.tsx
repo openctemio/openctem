@@ -20,7 +20,13 @@ import { VirtualList } from '@/components/ui/virtual-list'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { scopeRefusalLabel, scopeRefusalMessage, type ApiScopeCheckResult } from '@/features/scope'
-import { isRefusedKind, TARGET_KIND_LABELS, type ClassifiedTarget } from '../../lib/target-format'
+import {
+  isRefusedKind,
+  TARGET_KIND_LABELS,
+  targetReasonText,
+  type ClassifiedTarget,
+} from '../../lib/target-format'
+import { SplitRangeButton } from './invalid-targets-note'
 import type { Translate } from '../../lib/translate'
 
 const ROW = 52
@@ -104,7 +110,7 @@ export function TargetList({
         state: isRefusedKind(entry.kind)
           ? ({
               kind: 'invalid',
-              text: entry.reasonKey ? t(entry.reasonKey, entry.reason) : (entry.reason ?? ''),
+              text: targetReasonText(t, entry),
             } as const)
           : targetVerdict(t, resultFor?.(entry.value), { checking, checkAvailable }),
       })),
@@ -197,7 +203,13 @@ export function TargetList({
                       'block truncate text-xs',
                       state.kind === 'invalid' ? 'text-destructive' : 'text-muted-foreground'
                     )}
-                    title={state.kind === 'refused' ? state.title : undefined}
+                    title={
+                      state.kind === 'refused'
+                        ? state.title
+                        : state.kind === 'invalid'
+                          ? state.text
+                          : undefined
+                    }
                   >
                     {isRefusedKind(entry.kind)
                       ? null
@@ -205,6 +217,10 @@ export function TargetList({
                     {verdictText(t, state)}
                   </span>
                 </span>
+                <SplitRangeButton
+                  entry={entry}
+                  onSplit={(e, pieces) => onReplace(e, pieces.join(', '))}
+                />
                 {isRefusedKind(entry.kind) && (
                   <Button
                     type="button"

@@ -48,6 +48,10 @@ const (
 	// RefusalZoneSensorNoPrivate: the target is private and every sensor of
 	// its zone says its host does not allow private targets.
 	RefusalZoneSensorNoPrivate = "zone_sensor_no_private"
+	// RefusalAmbiguousZone: zones with different sensors hold the target at
+	// the same width (sites that reuse a range); the scan must pick its
+	// zone (research 466 D9).
+	RefusalAmbiguousZone = "ambiguous_zone"
 	// RefusalConstrained: only port- or path-limited entries cover the
 	// target and the job could reach other ports or paths (RFC-065 §16.8).
 	RefusalConstrained = "constrained"
@@ -87,6 +91,8 @@ const (
 	// FixAllowPrivateTargets is the host owner's step: set the sensor's
 	// private-range switch on its host (ID: the sensor).
 	FixAllowPrivateTargets = "allow_private_targets"
+	// FixPickZone: choose the scan's zone (site) in the scan form.
+	FixPickZone = "pick_zone"
 )
 
 // Permissions fixes need (strings, so the domain does not import RBAC).
@@ -155,6 +161,7 @@ var RefusalMessages = map[string]string{
 	RefusalUnresolved:          "This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.",
 	RefusalZoneNoSensor:        "The scan zone of this target has no sensors.",
 	RefusalZoneSensorMismatch:  "The chosen sensor is not in this target's scan zone.",
+	RefusalAmbiguousZone:       "More than one scan zone holds this target with different sensors (different sites using the same range). Pick the zone for this scan.",
 	RefusalZoneSensorNew:       "Every sensor of this target's scan zone is New and runs passive checks only. Trust a sensor of the zone to run this scan.",
 	RefusalZoneSensorNoPrivate: "No sensor of this target's scan zone allows private targets on its host. On the sensor's host, set SENSOR_ALLOW_PRIVATE_TARGETS=1 and restart the sensor.",
 	RefusalConstrained:         "The scope entries covering this target are limited to some ports or a path, and this job could reach others.",
@@ -263,6 +270,9 @@ func FixesFor(code, target string, rule *RuleRef, oneOffDays int) []Fix {
 	case RefusalZoneSensorNoPrivate:
 		// A step on the host, by its owner: no console permission applies.
 		return []Fix{{Action: FixAllowPrivateTargets}}
+	case RefusalAmbiguousZone:
+		// The scan's own setting: whoever edits the scan may pick it.
+		return []Fix{{Action: FixPickZone}}
 	case RefusalDenyList:
 		return []Fix{{Action: FixContactSupport}}
 	}
