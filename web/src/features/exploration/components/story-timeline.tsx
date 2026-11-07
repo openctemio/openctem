@@ -21,6 +21,7 @@ import { MetaLine } from '@/features/shared/components/text-layout'
 import { AssetTypeIcon, getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { discoverySourceLabel, lineageEdgeLabel } from '@/features/assets/lib/asset-lineage'
 import { sightingChannelLabel } from '@/features/findings/components/detail/finding-seen-by'
+import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { hiddenHint, stepHref, stepRoleLabel, type Story, type StoryStep } from '../lib/story'
 
@@ -76,7 +77,8 @@ function StepName({ step }: { step: StoryStep }) {
   } else if (step.finding) {
     name = step.finding.title
   }
-  const href = stepHref(step)
+  // Built from ids and a scope pattern of our own API; checked all the same.
+  const href = safeHref(stepHref(step))
   if (!href) return <span className="break-all font-medium">{name}</span>
   return (
     <Link href={href} className={cn('font-medium', linkClass)}>
