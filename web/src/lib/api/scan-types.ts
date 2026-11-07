@@ -171,6 +171,10 @@ export interface ScanConfig {
   /** The one run of a once schedule (RFC 3339, UTC). */
   schedule_run_at?: string
   next_run_at?: string
+  /** A scheduled occurrence the scheduler skipped (missed by more than one interval); cleared when a later scheduled run starts. */
+  last_missed_at?: string
+  /** Reason code of the skip (platform_unavailable, once_grace_exceeded). */
+  last_missed_reason?: string
   tags?: string[]
   run_on_tenant_runner: boolean
   sensor_preference: SensorPreference
@@ -327,6 +331,11 @@ export interface CreateScanConfigRequest {
    * (RFC-054 §6.4).
    */
   skip_refused_targets?: boolean
+  /**
+   * Confirms targets that name a range wider than a /16. Required for such
+   * a scan: the API refuses it without (LARGE_RANGE_UNCONFIRMED).
+   */
+  confirm_large_range?: boolean
 }
 
 /**
@@ -377,6 +386,8 @@ export interface UpdateScanConfigRequest {
   max_retries?: number
   /** Initial backoff seconds between retries (10-86400) */
   retry_backoff_seconds?: number
+  /** Confirms new targets that name a range wider than a /16 (LARGE_RANGE_UNCONFIRMED without). */
+  confirm_large_range?: boolean
 }
 
 /**

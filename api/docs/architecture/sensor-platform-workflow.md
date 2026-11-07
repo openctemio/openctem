@@ -468,8 +468,19 @@ sequenceDiagram
   coverage type; the blinding guard stops a mass close; the default mode is
   dry run (`ingest/coverage_autoresolve.go:decideRunCoverage`). An
   infrastructure failure, a cancel or a stall never closes anything.
+- A stopped run proves nothing (`pkg/domain/command/stopped.go:RunStopped`).
+  A completed command's result describes a stopped run when `exit_code` is
+  present and not 0, its `status` is not a completed status, the sensor says
+  it stopped or failed (`stopped`, `stop_reason`, `failure`), or the result is
+  not valid JSON. Older sensors report a scanner killed by the job budget as
+  "completed", exit -1, full coverage, every target done. Every path that
+  closes something by absence reads the result through `RunStopped` first:
+  coverage auto-resolve, the per-branch occurrence sweep, per-target
+  settlement, the wildcard DNS mark and the retest verdicts. A crashed run's
+  finished targets count as unfinished and are scanned again.
 - The asset coverage ledger settles per target from the same outcomes; a
-  truncated result covers nothing (`pkg/domain/coverage/settle.go:Verdicts`).
+  truncated or stopped result covers nothing
+  (`pkg/domain/coverage/settle.go:Verdicts`).
   Blocked targets are rechecked after 6 hours.
 - Completion: a step is partial when it has gaps, skipped or unfinished
   targets; unfinished targets of a stopped task become a follow-up task;
@@ -559,6 +570,7 @@ sequenceDiagram
 | E27 | Bound result names hosts outside the job | located assets outside the targets (and their findings) are recorded as discoveries that grant nothing and run no automations, counted (`sensor_results_outside_job_total`) and audited (`sensor.results_outside_job`); past 1000 per report they are refused (`over_cap`) | `ingest/job_bound.go` | `ingest/job_bound_test.go`, `routes/sensor_results_job_bound_db_test.go` |
 | E29 | Host completes the TLS handshake, then resets every HTTP request (often with an expired certificate, or another site's default certificate) | nuclei's host breaker skips it; the sensor rechecks each skipped host once (one handshake and one `HEAD /` through the task's egress proxy, at most 32 hosts and 90 s per run) and the gap carries `cause` (`http_reset`, `tls_failed`, `reset`, `refused`, `no_answer`, `answered`) and `cert` (`expired`, `not_yet_valid`, `name_mismatch`, `self_signed`); a host that opened the connection counts as reached, not unreachable. httpx's failed https URL whose host answered gets a live host with status 0 and the certificate the sensor read itself, so the certificate is recorded and judged. The host stays a coverage gap (never covered, findings never auto-closed); the console words the cause, the certificate and the fix (scanner addresses to allow, rescan) | sensor `internal/tlscheck`, `internal/recon/httpx/tls_only.go`, sdk-go `tlsprobe/tlsprobe.go`; `pkg/domain/scanrun/coverage_gaps.go:ParseCoverageGaps`, `web/src/features/scans/lib/placement-help.ts:gapReasonHelp` | sensor `TestSkippedHostThatResetsIsRecheckedNotUnreachable`, `TestFailedHTTPSKeepsTheCertificate`; `scanrun/coverage_gaps_test.go:TestParseCoverageGapsCauseAndCert`, `ingest/coverage_autoresolve_test.go:TestDecideCoverage` |
 | E28 | Sensor labels its findings `manual` or `integration` | ignored: the channel comes from the sensor's role | `ingest/channel.go` | `ingest/job_bound_test.go:TestPrincipalSourceType`, `routes/sensor_results_job_bound_db_test.go` |
+| E30 | Run stopped part-way but reported "completed" (budget kill at exit -1, a tool that gave up at exit 1, a partial status, a sensor stop) with full coverage claimed | proves nothing: no finding is auto-resolved, no branch occurrence is marked `auto_fixed`, no target is settled covered (its done targets are unfinished and scanned again), no name is marked wildcard-only, and a retest from it is inconclusive (a match still stands). The per-branch sweep of a report bound to a command runs once per run, after the command completed by itself and every report completed; two reports of one run on the same branch and tool sweep nothing | `pkg/domain/command/stopped.go:RunStopped`, `ingest/branch_sweep.go`, `coverage_autoresolve.go:decideRunCoverage`, `coverage/settle.go:Verdicts`, `ingest/wildcard_dns.go:resolutionOver`, `retest/retest.go:Decide`, `retest/tool_verdict.go:DecideToolVerdict` | `command/stopped_test.go:TestRunStopped`, `ingest/branch_sweep_test.go`, `ingest/run_stopped_test.go`, `coverage/settle_stopped_test.go`, `retest/stopped_test.go`, `app/retest/stopped_run_db_test.go` |
 | E26 | Sensor key lost (volume wiped) | the sensor cannot authenticate; console re-pair keeps the registration; outbox items are not identity-bound and are sent under the new key | `sensorpairing/service.go:Approve` | `sensorpairing/service_db_test.go:TestPairing_Repair_DB` |
 
 ## 16. Known limits

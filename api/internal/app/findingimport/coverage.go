@@ -67,6 +67,11 @@ const (
 	// noteProposed: the organization's closing mode asked a person to confirm
 	// the closes (Ready to close); the upload closed nothing itself.
 	noteProposed = "proposed"
+	// noteResolved: the closes were decided (some may be none); noteHeld:
+	// the mass-close guard held them; noteError: a read or write failed.
+	noteResolved = "resolved"
+	noteHeld     = "held"
+	noteError    = "error"
 )
 
 // receiptRecorder records the findings an upload closed on its receipt.
@@ -165,7 +170,8 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 		if fr.Error != nil || fr.Stats.Skipped > 0 || fr.Ingest != nil && (len(fr.Ingest.FailedFindings) > 0 || fr.Ingest.ReceiptFailed) {
 			return noteIncomplete, nil
 		}
-		if fr.Ingest != nil && fr.Tool != "" {
+		// A file with its own coverage is decided by it (filecoverage.go).
+		if fr.Ingest != nil && fr.Tool != "" && fr.Coverage == nil {
 			tools[fr.Tool] = true
 		}
 	}
@@ -186,7 +192,7 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 		return noteScopeChanged, nil
 	}
 	assets := uniqueIDs(req.Coverage.AssetIDs)
-	note = "resolved"
+	note = noteResolved
 	total, proposals, resolvedAny := 0, 0, false
 	for _, tool := range names {
 		stale, open, err := repo.ImportCoverageCandidates(ctx, req.TenantID, assets, tool, req.ReceiptID)
@@ -197,7 +203,7 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 		}
 		if err != nil {
 			s.logger.Warn("finding import: coverage candidates", "tenant_id", req.TenantID.String(), "error", err)
-			return "error", nil
+			return noteError, nil
 		}
 		var proposed []shared.ID
 		// The organization's closing mode decides per finding: close,
@@ -208,7 +214,7 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 			// A held run closes nothing; a person decides in Ready to close.
 			proposed = append(proposed, toClose...)
 			toClose = nil
-			note = "held"
+			note = noteHeld
 		}
 		if len(proposed) > 0 {
 			s.proposeClosures(ctx, req, tool, proposed)
@@ -218,7 +224,7 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 			closed, err := repo.ResolveImportCoverage(ctx, req.TenantID, assets, toClose, tool, req.ReceiptID)
 			if err != nil {
 				s.logger.Warn("finding import: coverage resolve", "tenant_id", req.TenantID.String(), "error", err)
-				return "error", nil
+				return noteError, nil
 			}
 			resolvedAny = resolvedAny || len(closed) > 0
 			if len(closed) > 0 {
@@ -235,7 +241,7 @@ func (s *Service) closeUncovered(ctx context.Context, req Request, results []Fil
 		}
 		total += n
 	}
-	if note == "resolved" && proposals > 0 && !resolvedAny {
+	if note == noteResolved && proposals > 0 && !resolvedAny {
 		note = noteProposed
 	}
 	return note, &total
@@ -265,6 +271,21 @@ func (s *Service) proposeClosures(ctx context.Context, req Request, tool string,
 		recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodCoveredScan, Evidence: evidence, EvidenceAt: at}
 	}
 	s.closureDecider().Record(ctx, req.TenantID, recs)
+}
+
+// declaredTools reports whether a declared full coverage has anything to
+// decide: a file without its own coverage, or no stored file at all (the
+// declaration then records why nothing closed).
+func declaredTools(results []FileResult) bool {
+	if !hasFileCoverage(results) {
+		return true
+	}
+	for _, fr := range results {
+		if fr.Error == nil && fr.Coverage == nil && fr.Ingest != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func uniqueIDs(in []shared.ID) []shared.ID {

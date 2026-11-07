@@ -140,6 +140,12 @@ func (c *SlackClient) TestConnection(ctx context.Context) (*SendResult, error) {
 
 // buildMessage builds a Slack message from the notification message.
 func (c *SlackClient) buildMessage(msg Message) slackMessage {
+	if msg.Card != nil {
+		return slackMessage{
+			Text:        slackCardFallback(*msg.Card),
+			Attachments: []slackAttachment{{Color: GetSeverityColor(msg.Card.Severity), Blocks: slackCardBlocks(*msg.Card)}},
+		}
+	}
 	emoji := GetSeverityEmoji(msg.Severity)
 	color := msg.Color
 	if color == "" {

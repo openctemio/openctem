@@ -400,15 +400,6 @@ export function DashboardHome() {
             row: switcher, Customize, schedule, Refresh now, More. */}
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
-          description={
-            <span className="max-sm:hidden">
-              {dashboard?.description ||
-                t(
-                  'dashboards.description',
-                  'How exposed you are, whether it is getting better, and what to do next.'
-                )}
-            </span>
-          }
           actionsClassName="basis-full sm:basis-auto"
         >
           <div

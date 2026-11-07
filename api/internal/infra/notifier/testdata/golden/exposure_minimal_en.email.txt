@@ -1,0 +1,7 @@
+New exposure
+
+Severity: High
+Next step: Open it in the console to triage.
+Organization: Example Corp
+
+Open exposure: https://ctem.example.com/exposures

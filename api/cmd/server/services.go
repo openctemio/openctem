@@ -2263,6 +2263,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Outbox.SetBrand(cfg.Brand)
 	// Delivered links are absolute and name their organization (pkg/weblink).
 	s.Outbox.SetLinkBase(cfg.SMTP.BaseURL)
+	// Channel messages name the asset, what it is and why it matters, read
+	// at send time inside the event's tenant (notification-system.md).
+	s.Outbox.SetFactsSource(postgres.NewNotificationFactsRepository(&postgres.DB{DB: deps.DB}))
 	// An e-mail channel whose relay the managed service rules refuse is
 	// stopped with a visible status and its owners are told.
 	s.Outbox.SetRelayRefusedHandler(s.Integration)
@@ -2893,6 +2896,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// The widest range one scan target may name: the organization's scope
+		// setting, a /8 at most; wider than a /16 runs live hosts first in
+		// /16 chunks (RFC-151).
+		scan.WithRangeLimits(s.Tenant),
 		// Shared-sensor scans per day (RFC-100 §10): generic limits by key;
 		// unset means unlimited.
 		scan.WithSharedScanLimits(s.Entitlement),
@@ -2929,6 +2936,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	// A skipped (missed) scheduled occurrence is announced as scan.schedule_missed.
+	s.Scan.SetScheduleMissEvents(s.Outbox)
 	// Wildcard domains and inventory-mode CIDRs are expanded from the
 	// inventory at each run start (RFC-068).
 	s.Scan.SetSelectorAssets(repos.ScanSelector)

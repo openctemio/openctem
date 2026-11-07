@@ -137,7 +137,7 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		Released:      opts.ReleasedFromQuarantine,
 		Created:       output.CreatedIDs,
 		Reopened:      output.ReopenedIDs,
-		StillDetected: output.SightedFingerprints,
+		StillDetected: sightedNotFailed(output),
 		Decided:       output.Decided,
 		Items:         output.Items,
 		At:            time.Now(),
@@ -229,4 +229,25 @@ func (s *Service) recordCoverageReceipt(ctx context.Context, tenantID, commandID
 		s.logger.Warn("coverage receipt not recorded", "tenant_id", tenantID.String(),
 			"command_id", commandID.String(), "error", logger.SanitizeError(err))
 	}
+}
+
+// sightedNotFailed is the reported fingerprints less the ones that failed to
+// store: a finding counts once on its receipt, as failed, even when a row
+// with its key exists (the absence decision still reads every reported
+// fingerprint from the output).
+func sightedNotFailed(output *Output) []string {
+	if len(output.FailedFindings) == 0 {
+		return output.SightedFingerprints
+	}
+	failed := make(map[string]struct{}, len(output.FailedFindings))
+	for _, ff := range output.FailedFindings {
+		failed[ff.Fingerprint] = struct{}{}
+	}
+	out := make([]string, 0, len(output.SightedFingerprints))
+	for _, fp := range output.SightedFingerprints {
+		if _, ok := failed[fp]; !ok {
+			out = append(out, fp)
+		}
+	}
+	return out
 }

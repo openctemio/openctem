@@ -9,6 +9,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/api/pkg/notifymsg"
 	"github.com/openctemio/openctem/api/pkg/safetext"
 )
 
@@ -40,6 +41,12 @@ type Message struct {
 	EventVersion int
 	// OccurredAt is when the event was recorded (zero: now).
 	OccurredAt time.Time
+
+	// Card is the structured message of an event delivery (pkg/notifymsg).
+	// When set, every provider renders the card and Title/Body are its
+	// plain-text form; when nil (test and direct messages) the legacy
+	// Title/Body/Fields layout is used.
+	Card *notifymsg.Card
 }
 
 // Attachment represents a message attachment.
@@ -214,6 +221,10 @@ func (m Message) Cleaned() Message {
 		}
 		m.Fields = fields
 	}
+	if m.Card != nil {
+		card := m.Card.Map(func(s string) string { return clean(s, maxNotificationFieldRunes) })
+		m.Card = &card
+	}
 	if m.Attachments != nil {
 		atts := make([]Attachment, len(m.Attachments))
 		for i, a := range m.Attachments {
@@ -256,15 +267,15 @@ func GetSeverityColor(severity string) string {
 func GetSeverityEmoji(severity string) string {
 	switch severity {
 	case SeverityCritical:
-		return "\U0001F6A8" // 🚨
+		return "\U0001F534" // red circle
 	case SeverityHigh:
-		return "\U000026A0" // ⚠️
+		return "\U0001F7E0" // orange circle
 	case SeverityMedium:
-		return "\U0001F7E1" // 🟡
+		return "\U0001F7E1" // yellow circle
 	case SeverityLow:
-		return "\U0001F535" // 🔵
+		return "\U0001F535" // blue circle
 	default:
-		return "\U00002139" // ℹ️
+		return "\U000026AA" // white circle
 	}
 }
 

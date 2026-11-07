@@ -149,6 +149,12 @@ type CreateScanRequest struct {
 	// codes in skipped_targets and on every run. Nothing the gate refuses is
 	// saved or scanned.
 	SkipRefusedTargets bool `json:"skip_refused_targets"`
+	// ConfirmLargeRange confirms direct targets that name a range wider than
+	// a /16 (scanned live hosts first in /16 chunks). Required for such a
+	// scan: without it the request is refused with LARGE_RANGE_UNCONFIRMED,
+	// whose message and details carry the ranges and their address and
+	// chunk counts.
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
@@ -202,6 +208,9 @@ type UpdateScanRequest struct {
 	// AssetGroupIDs: omitted = unchanged; given = the scan's asset groups
 	// ([] = none; the scan must keep a target or a group).
 	AssetGroupIDs *[]string `json:"asset_group_ids" validate:"omitempty,max=100,dive,uuid"`
+	// ConfirmLargeRange confirms new targets that name a range wider than a
+	// /16; required for such an edit (LARGE_RANGE_UNCONFIRMED without it).
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // TriggerScanRequest represents the request body for triggering a scan.
@@ -336,13 +345,18 @@ type ScanDetailResponse struct {
 	RetryBackoffSeconds int     `json:"retry_backoff_seconds"`
 	Status              string  `json:"status"`
 	// AdHoc: an unsaved quick scan (not listed as a configuration until saved).
-	AdHoc          bool    `json:"ad_hoc"`
-	LastRunID      *string `json:"last_run_id,omitempty"`
-	LastRunAt      *string `json:"last_run_at,omitempty"`
-	LastRunStatus  string  `json:"last_run_status,omitempty"`
-	TotalRuns      int     `json:"total_runs"`
-	SuccessfulRuns int     `json:"successful_runs"`
-	FailedRuns     int     `json:"failed_runs"`
+	AdHoc         bool    `json:"ad_hoc"`
+	LastRunID     *string `json:"last_run_id,omitempty"`
+	LastRunAt     *string `json:"last_run_at,omitempty"`
+	LastRunStatus string  `json:"last_run_status,omitempty"`
+	// LastMissedAt/LastMissedReason: the last scheduled occurrence that was
+	// skipped because it was missed (reason is a code the UI translates).
+	// Cleared when a later scheduled run starts.
+	LastMissedAt     *string `json:"last_missed_at,omitempty"`
+	LastMissedReason string  `json:"last_missed_reason,omitempty"`
+	TotalRuns        int     `json:"total_runs"`
+	SuccessfulRuns   int     `json:"successful_runs"`
+	FailedRuns       int     `json:"failed_runs"`
 	// PartialRuns: runs that kept results but lost some work.
 	PartialRuns int `json:"partial_runs"`
 	// BlockedRuns: triggers refused before anything was dispatched; each
@@ -388,7 +402,7 @@ type ScanStatsResponse struct {
 
 // CreateScan handles POST /api/v1/scans
 // @Summary      Create scan
-// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response).
+// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response). Direct targets that name a range wider than a /16 need confirm_large_range: true and an organization limit that allows them (Scoping settings, max_range_prefix; a /16 by default); without the confirmation the request is refused (400 LARGE_RANGE_UNCONFIRMED, with the address and chunk counts).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -493,6 +507,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 
 		StartWhenScopeApproved: req.StartWhenScopeApproved,
 		SkipRefusedTargets:     req.SkipRefusedTargets,
+		ConfirmLargeRange:      req.ConfirmLargeRange,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -648,7 +663,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 
 // UpdateScan handles PUT /api/v1/scans/{id}
 // @Summary      Update scan
-// @Description  Update an existing scan configuration
+// @Description  Update an existing scan configuration. New targets that name a range wider than a /16 need confirm_large_range: true (400 LARGE_RANGE_UNCONFIRMED without it).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -719,6 +734,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		AssetIDs:            req.AssetIDs,
 		AssetGroupIDs:       req.AssetGroupIDs,
 		ActorID:             middleware.GetUserID(r.Context()),
+		ConfirmLargeRange:   req.ConfirmLargeRange,
 	}
 
 	s, err := h.service.UpdateScan(h.auditCtx(r), input)
@@ -1609,6 +1625,10 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		ra := s.ScheduleRunAt.UTC().Format(time.RFC3339)
 		resp.ScheduleRunAt = &ra
 	}
+	if s.LastMissedAt != nil {
+		lma := s.LastMissedAt.Format(time.RFC3339)
+		resp.LastMissedAt = &lma
+	}
 	if s.NextRunAt != nil {
 		nra := s.NextRunAt.Format(time.RFC3339)
 		resp.NextRunAt = &nra
@@ -1950,10 +1970,11 @@ func (h *ScanHandler) ExportConfig(w http.ResponseWriter, r *http.Request) {
 
 // ImportConfig handles POST /api/v1/scans/import
 // @Summary      Import scan configuration
-// @Description  Create a new scan from an imported JSON configuration
+// @Description  Create a new scan from an imported JSON configuration. A configuration whose targets name a range wider than a /16 needs ?confirm_large_range=true (400 LARGE_RANGE_UNCONFIRMED without it).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
+// @Param        confirm_large_range  query  bool  false  "Confirm targets wider than a /16"
 // @Param        request  body      object  true  "Scan configuration JSON (exported format)"
 // @Success      201  {object}  ScanDetailResponse
 // @Failure      400  {object}  apierror.Error
@@ -1976,7 +1997,8 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()))
+	sc, err := h.service.ImportConfigConfirmed(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()),
+		r.URL.Query().Get("confirm_large_range") == "true")
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

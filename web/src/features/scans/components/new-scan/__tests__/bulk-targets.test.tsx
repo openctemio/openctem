@@ -29,7 +29,7 @@ describe('PasteSource', () => {
           '203.0.113.0/24',
           '[2001:db8::1]:443',
           'bücher.de',
-          '10.0.0.0/8',
+          '10.0.0.0/7',
           'git@code.example.com:t/app.git',
         ]}
       />
@@ -42,10 +42,10 @@ describe('PasteSource', () => {
     expect(counts).toHaveTextContent(/1 repeated/i)
     expect(screen.getByText('2 entries will not be added')).toBeInTheDocument()
     const list = screen.getByTestId('paste-invalid-list')
-    expect(within(list).getByText('10.0.0.0/8')).toBeInTheDocument()
+    expect(within(list).getByText('10.0.0.0/7')).toBeInTheDocument()
     expect(
       within(list).getByText(
-        /has 16,777,216 addresses; the most one target can hold is 65,536 \(\/16\)/
+        /has 33,554,432 addresses; the most one target can hold is 16,777,216 \(\/8\)/
       )
     ).toBeInTheDocument()
     expect(
@@ -55,16 +55,16 @@ describe('PasteSource', () => {
 
   it('removes all entries that will not be added in one go', async () => {
     const user = userEvent.setup()
-    render(<PasteHarness initial={['a.example.com', 'b@d', '10.0.0.0/8']} />)
+    render(<PasteHarness initial={['a.example.com', 'b@d', '10.0.0.0/7']} />)
     await user.click(screen.getByRole('button', { name: 'Remove all' }))
     expect(screen.getByTestId('lines')).toHaveTextContent(/^a\.example\.com$/)
   })
 
   it('fixes one entry in place', async () => {
     const user = userEvent.setup()
-    render(<PasteHarness initial={['a.example.com, 10.0.0.0/8']} />)
-    await user.click(screen.getByRole('button', { name: 'Edit 10.0.0.0/8' }))
-    const field = screen.getByRole('textbox', { name: 'Edit 10.0.0.0/8' })
+    render(<PasteHarness initial={['a.example.com, 10.0.0.0/7']} />)
+    await user.click(screen.getByRole('button', { name: 'Edit 10.0.0.0/7' }))
+    const field = screen.getByRole('textbox', { name: 'Edit 10.0.0.0/7' })
     await user.clear(field)
     await user.type(field, '10.0.0.0/16{Enter}')
     expect(screen.getByTestId('lines')).toHaveTextContent('a.example.com, 10.0.0.0/16')
@@ -132,7 +132,7 @@ describe('TargetList', () => {
     'app.example.com',
     'shop.other.org',
     'new.example.com',
-    '10.0.0.0/8',
+    '10.0.0.0/7',
   ])
   const list = [...entries.invalid, ...entries.lines.filter((l) => l.kind !== 'invalid')]
   const results: Record<string, ApiScopeCheckResult> = {
@@ -166,7 +166,7 @@ describe('TargetList', () => {
     expect(row('app.example.com')).toHaveTextContent('In scope, by *.example.com')
     expect(row('shop.other.org')).toHaveAttribute('data-state', 'refused')
     expect(row('new.example.com')).toHaveTextContent('Checking scope')
-    expect(row('10.0.0.0/8')).toHaveAttribute('data-state', 'invalid')
+    expect(row('10.0.0.0/7')).toHaveAttribute('data-state', 'invalid')
   })
 
   it('says "not checked" when the caller cannot run the check', () => {
@@ -185,9 +185,9 @@ describe('TargetList', () => {
     const rows = screen.getByTestId('target-list-rows')
     expect(within(rows).queryByText('app.example.com')).not.toBeInTheDocument()
     expect(within(rows).getByText('shop.other.org')).toBeInTheDocument()
-    expect(within(rows).getByText('10.0.0.0/8')).toBeInTheDocument()
+    expect(within(rows).getByText('10.0.0.0/7')).toBeInTheDocument()
     await user.type(screen.getByRole('searchbox', { name: 'Search targets' }), 'shop')
-    expect(within(rows).queryByText('10.0.0.0/8')).not.toBeInTheDocument()
+    expect(within(rows).queryByText('10.0.0.0/7')).not.toBeInTheDocument()
   })
 
   it('removes a target and edits an invalid one', async () => {
@@ -199,12 +199,12 @@ describe('TargetList', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Remove shop.other.org' }))
     expect(onRemove).toHaveBeenCalledWith(expect.objectContaining({ value: 'shop.other.org' }))
-    await user.click(screen.getByRole('button', { name: 'Edit 10.0.0.0/8' }))
-    const field = screen.getByRole('textbox', { name: 'Edit 10.0.0.0/8' })
+    await user.click(screen.getByRole('button', { name: 'Edit 10.0.0.0/7' }))
+    const field = screen.getByRole('textbox', { name: 'Edit 10.0.0.0/7' })
     await user.clear(field)
     await user.type(field, '10.0.0.0/16{Enter}')
     expect(onReplace).toHaveBeenCalledWith(
-      expect.objectContaining({ input: '10.0.0.0/8' }),
+      expect.objectContaining({ input: '10.0.0.0/7' }),
       '10.0.0.0/16'
     )
   })
@@ -236,24 +236,25 @@ describe('a range wider than one target', () => {
     )
   }
 
-  it('says why inline and splits it into /16 ranges in one click', async () => {
-    render(<StepHarness initial={['10.0.0.0/14']} />)
+  it('says why inline and splits it into /8 ranges in one click', async () => {
+    render(<StepHarness initial={['10.0.0.0/6']} />)
     const note = screen.getByTestId('invalid-targets')
     expect(note).toHaveTextContent(
-      '10.0.0.0/14 has 262,144 addresses; the most one target can hold is 65,536 (/16)'
+      '10.0.0.0/6 has 67,108,864 addresses; the most one target can hold is 16,777,216 (/8)'
     )
     expect(note).not.toHaveTextContent('under Paste')
-    await userEvent.click(screen.getByRole('button', { name: 'Split into 4 /16 ranges' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Split into 4 /8 ranges' }))
     expect(screen.getByTestId('lines')).toHaveTextContent(
-      '10.0.0.0/16, 10.1.0.0/16, 10.2.0.0/16, 10.3.0.0/16'
+      '8.0.0.0/8, 9.0.0.0/8, 10.0.0.0/8, 11.0.0.0/8'
     )
     expect(screen.queryByTestId('invalid-targets')).toBeNull()
   })
 
-  it('offers 256 /16 ranges for a /8, and no split for a /7', () => {
-    render(<StepHarness initial={['10.0.0.0/8', '10.0.0.0/7']} />)
-    expect(screen.getByRole('button', { name: 'Split into 256 /16 ranges' })).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /^Split into/ })).toHaveLength(1)
+  it('takes a /8 as one target and offers no split for an IPv6 /32', () => {
+    render(<StepHarness initial={['10.0.0.0/8', '2001:db8::/32']} />)
+    expect(screen.getByTestId('invalid-targets')).toHaveTextContent('2001:db8::/32 has')
+    expect(screen.getByTestId('invalid-targets')).not.toHaveTextContent('10.0.0.0/8')
+    expect(screen.queryAllByRole('button', { name: /^Split into/ })).toHaveLength(0)
   })
 
   it('names three entries and counts the rest', () => {
@@ -264,8 +265,8 @@ describe('a range wider than one target', () => {
   })
 
   it('splits from the paste list too', async () => {
-    render(<PasteHarness initial={['10.0.0.0/15']} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Split into 2 /16 ranges' }))
-    expect(screen.getByTestId('lines')).toHaveTextContent('10.0.0.0/16, 10.1.0.0/16')
+    render(<PasteHarness initial={['10.0.0.0/7']} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Split into 2 /8 ranges' }))
+    expect(screen.getByTestId('lines')).toHaveTextContent('10.0.0.0/8, 11.0.0.0/8')
   })
 })

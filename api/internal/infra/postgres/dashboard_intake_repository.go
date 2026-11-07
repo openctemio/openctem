@@ -10,6 +10,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -50,7 +51,7 @@ func (r *DashboardWidgetRepository) Outcomes(ctx context.Context, scope dashboar
 const intakeBaseSQL = `SELECT ` + receiptOriginSQL + ` AS origin, t.tool, t.instance_kind AS ikind, t.instance_id AS iid,
 		t.instance_name AS iname, r.id, r.status, r.created_at, r.updated_at,
 		t.received, t.created, t.still_detected, t.reopened, t.closed, t.skipped, t.failed, t.suppressed,
-		t.assets_created + t.assets_updated AS assets, t.released_reports AS released
+		t.assets_created + t.assets_updated AS assets, t.released_reports AS released, t.outcomes
 	FROM ingest_receipt_tools t
 	JOIN ingest_receipts r ON r.tenant_id = t.tenant_id AND r.id = t.receipt_id
 	WHERE r.tenant_id = $1 AND t.tenant_id = $1 AND r.updated_at >= $2`
@@ -73,7 +74,12 @@ func (r *DashboardWidgetRepository) OrgIntake(ctx context.Context, tenantID shar
 			COALESCE(SUM(skipped), 0), COALESCE(SUM(failed), 0), COALESCE(SUM(suppressed), 0),
 			MAX(updated_at), (array_agg(status ORDER BY updated_at DESC, rc.id DESC))[1],
 			(array_agg(rc.id::text ORDER BY updated_at DESC, rc.id DESC))[1],
-			CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END, COALESCE(SUM(assets), 0), COALESCE(SUM(released), 0)
+			CASE WHEN MAX(med.n) >= 2 THEN MAX(med.gap) END, COALESCE(SUM(assets), 0), COALESCE(SUM(released), 0),
+			(SELECT COALESCE(jsonb_object_agg(o.code, o.n), '{}'::jsonb) FROM (
+				SELECT e.key AS code, SUM(e.value::bigint) AS n
+				FROM rc oc, jsonb_each_text(oc.outcomes) e
+				WHERE oc.origin = rc.origin AND oc.tool = rc.tool
+				GROUP BY e.key) o)
 		FROM rc LEFT JOIN med ON med.origin = rc.origin AND med.tool = rc.tool
 		GROUP BY rc.origin, rc.tool
 		ORDER BY SUM(received) DESC, SUM(assets) DESC, rc.origin, rc.tool
@@ -90,10 +96,14 @@ func (r *DashboardWidgetRepository) OrgIntake(ctx context.Context, tenantID shar
 		var row dashboard.IntakeRow
 		var id string
 		var gap sql.NullFloat64
+		var outcomes []byte
 		if err := rows.Scan(&row.Origin, &row.Tool, &row.Receipts, &row.Received, &row.Created, &row.StillDetected,
 			&row.Reopened, &row.Closed, &row.Skipped, &row.Failed, &row.Suppressed, &row.LastAt, &row.LastStatus, &id, &gap,
-			&row.Assets, &row.Released); err != nil {
+			&row.Assets, &row.Released, &outcomes); err != nil {
 			return nil, fmt.Errorf("scan intake: %w", err)
+		}
+		if err := json.Unmarshal(outcomes, &row.Outcomes); err != nil {
+			return nil, fmt.Errorf("intake outcomes: %w", err)
 		}
 		if sid, perr := shared.IDFromString(id); perr == nil {
 			row.LastReceiptID = sid

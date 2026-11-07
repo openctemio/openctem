@@ -206,9 +206,10 @@ func TestFindingImport_RealFixtures_DB(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := ih.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1`, ih.tenantID)
-			// A CSV has no signature to detect: its format is named.
+			// A CSV or a line list has no signature to detect: its format
+			// is named.
 			format := ""
-			if strings.HasSuffix(p, ".csv") {
+			if strings.HasSuffix(p, ".csv") || strings.HasSuffix(p, ".txt") {
 				format = "&format=" + filepath.Base(filepath.Dir(p))
 			}
 			rec, resp := ih.upload(t, ih.tenantID, "?dry_run=true"+format, filepath.Base(p), data, true)
@@ -430,7 +431,10 @@ func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rec.ActorUserID == nil || *rec.ActorUserID != user || rec.Format != "nessus" || rec.Counts.Created == 0 || rec.AssetsCreated == 0 ||
-		rec.SourceKind != "upload" || rec.Status != "completed" || rec.Reports != 1 || rec.Coverage != "partial" {
+		rec.SourceKind != "upload" || rec.Status != "completed" || rec.Reports != 1 ||
+		// A Nessus file with its scan policy proves its own coverage
+		// (finding_import_nessus_close_db_test.go).
+		rec.Coverage != "full" || rec.Closing == nil {
 		t.Fatalf("record = %+v", rec)
 	}
 	if strings.Contains(rec.FilenameSHA256, "weekly") || len(rec.FilenameSHA256) != 64 {
