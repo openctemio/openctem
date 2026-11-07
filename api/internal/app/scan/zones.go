@@ -616,76 +616,105 @@ func appendUnique(xs []string, x string) []string {
 	return append(xs, x)
 }
 
-// routeWorkflowTargets applies zones to a workflow run. A workflow runs as one
-// scan workflow, so all of its routed targets must fall in one zone (or all be
-// unzoned public targets); the run is stamped with that zone and every step
-// command stays inside it.
-func (s *Service) routeWorkflowTargets(ctx context.Context, sc *scan.Scan, zones []*scanzone.Zone, targets []string, runContext map[string]any) ([]string, *zonePlan, error) {
-	routing, err := s.routeForScan(ctx, sc, zones, targets)
-	if err != nil {
-		return nil, nil, err
+// routeWorkflowTargets applies zones to a workflow run whose routed targets
+// form one zone group (workflowZoneGroups): the run is stamped with that
+// zone and every step command stays inside it. Targets in several groups
+// run as one child run per group (zone_split.go).
+func (s *Service) routeWorkflowTargets(sc *scan.Scan, routing *scanzone.Plan, runContext map[string]any) ([]string, *zonePlan, error) {
+	groups, uncovered := workflowZoneGroups(routing)
+	var g *workflowZoneGroup
+	if len(groups) > 0 {
+		g = &groups[0]
 	}
-	plan, kept, err := planWorkflowZone(sc, routing)
-	if err != nil {
-		return nil, nil, err
-	}
+	plan := planWorkflowGroup(sc, routing, g, uncovered)
 	if zid, ok := plan.Summary["zone_id"].(string); ok {
 		runContext[scanrun.RunContextKeyScanZoneID] = zid
 	}
 	if err := recordZonePlan(plan, runContext); err != nil {
 		return nil, nil, err
 	}
+	var kept []string
+	if g != nil {
+		kept = g.Targets
+	}
 	return kept, plan, nil
 }
 
-// planWorkflowZone decides the one zone of a workflow run from its routing.
-// It returns ZONE_SPLIT_REQUIRED when the targets span zones.
-func planWorkflowZone(sc *scan.Scan, routing *scanzone.Plan) (*zonePlan, []string, error) {
-	plan := &zonePlan{Uncovered: slices.Clone(routing.Uncovered), Routing: routing}
-	var kept []string
-	var zoneID string
-	switch {
-	case len(routing.ZoneOrder) > 1 || (len(routing.ZoneOrder) == 1 && len(routing.Unzoned) > 0):
-		names := make([]string, 0, len(routing.ZoneOrder)+1)
-		for _, id := range routing.ZoneOrder {
-			names = append(names, routing.Zones[id].Name)
+// workflowZoneGroup is the targets of a workflow run that one run covers: a
+// scan zone's (Zone set), or the unzoned public targets (Zone nil), which
+// route to shared or organization sensors as an unzoned run always did.
+type workflowZoneGroup struct {
+	Zone    *scanzone.Zone
+	Targets []string
+}
+
+// workflowZoneGroups groups a workflow run's routed targets per target: one
+// group per zone that has sensors, in first-seen order, then the unzoned
+// public targets. A zone without sensors adds its targets to the uncovered
+// ones instead (never silently dropped, RFC-023 D5).
+func workflowZoneGroups(routing *scanzone.Plan) ([]workflowZoneGroup, []scanzone.Uncovered) {
+	uncovered := slices.Clone(routing.Uncovered)
+	var groups []workflowZoneGroup
+	for _, id := range routing.ZoneOrder {
+		z := routing.Zones[id]
+		targets := routing.ByZone[id]
+		if z == nil || len(targets) == 0 {
+			continue
 		}
-		if len(routing.Unzoned) > 0 {
-			names = append(names, "(no zone)")
-		}
-		return nil, nil, shared.NewDomainError("ZONE_SPLIT_REQUIRED", fmt.Sprintf(
-			"This workflow scan has targets in several scan zones (%s); a workflow runs in one zone, so split it into one scan per zone.",
-			strings.Join(names, ", ")), shared.ErrValidation)
-	case len(routing.ZoneOrder) == 1:
-		z := routing.Zones[routing.ZoneOrder[0]]
-		kept = routing.ByZone[z.ID]
 		if len(z.SensorIDs) == 0 {
-			for _, t := range kept {
-				plan.Uncovered = append(plan.Uncovered, scanzone.Uncovered{Target: t, Reason: fmt.Sprintf("scan zone %q has no sensors assigned", z.Name), Kind: scanzone.KindZoneNoSensor})
+			for _, t := range targets {
+				uncovered = append(uncovered, scanzone.Uncovered{Target: t, Reason: fmt.Sprintf("scan zone %q has no sensors assigned", z.Name), Kind: scanzone.KindZoneNoSensor})
 			}
-			kept = nil
-		} else {
-			zoneID = z.ID.String()
-			plan.Batches = []zoneBatch{{Zone: z, Targets: kept}}
+			continue
 		}
-	default:
-		kept = routing.Unzoned
-		if len(kept) > 0 {
-			plan.Batches = []zoneBatch{{Targets: kept}}
+		groups = append(groups, workflowZoneGroup{Zone: z, Targets: slices.Clone(targets)})
+	}
+	if len(routing.Unzoned) > 0 {
+		groups = append(groups, workflowZoneGroup{Targets: slices.Clone(routing.Unzoned)})
+	}
+	return groups, uncovered
+}
+
+// planWorkflowGroup is the zone plan of one workflow run over group g (nil:
+// nothing to scan), with the uncovered targets of the whole trigger.
+func planWorkflowGroup(sc *scan.Scan, routing *scanzone.Plan, g *workflowZoneGroup, uncovered []scanzone.Uncovered) *zonePlan {
+	plan := &zonePlan{Uncovered: slices.Clone(uncovered), Routing: routing}
+	plan.Warnings = uncoveredWarnings(plan.Uncovered)
+	unzoned := 0
+	if g != nil {
+		plan.Batches = []zoneBatch{{Zone: g.Zone, Targets: g.Targets}}
+		if g.Zone == nil {
+			unzoned = len(g.Targets)
 		}
 	}
-	plan.Warnings = uncoveredWarnings(plan.Uncovered)
 	plan.Summary = map[string]any{
-		"unzoned_targets":   len(routing.Unzoned),
+		"unzoned_targets":   unzoned,
 		"uncovered_targets": len(plan.Uncovered),
 	}
-	if zoneID != "" {
-		plan.Summary["zone_id"] = zoneID
+	if g != nil && g.Zone != nil {
+		plan.Summary["zone_id"] = g.Zone.ID.String()
 	}
 	if sc.ScanZoneID != nil {
 		plan.Summary["selected_zone_id"] = sc.ScanZoneID.String()
 	}
-	return plan, kept, nil
+	return plan
+}
+
+// planWorkflowSplit is the zone plan of a whole workflow trigger: one batch
+// per zone group, each the run (or child run) that covers it.
+func planWorkflowSplit(sc *scan.Scan, routing *scanzone.Plan) *zonePlan {
+	groups, uncovered := workflowZoneGroups(routing)
+	plan := planWorkflowGroup(sc, routing, nil, uncovered)
+	delete(plan.Summary, "zone_id")
+	for _, g := range groups {
+		plan.Batches = append(plan.Batches, zoneBatch{Zone: g.Zone, Targets: g.Targets})
+		if g.Zone == nil {
+			plan.Summary["unzoned_targets"] = len(g.Targets)
+		} else if len(groups) == 1 {
+			plan.Summary["zone_id"] = g.Zone.ID.String()
+		}
+	}
+	return plan
 }
 
 // admitZonedPrivateTargets moves the private targets a scan zone of the
