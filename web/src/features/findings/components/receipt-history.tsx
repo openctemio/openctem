@@ -114,6 +114,9 @@ export function ReceiptHistory() {
             </span>
             <span className="block text-xs text-muted-foreground">
               {kindLabel(row.original.source?.kind ?? '')}
+              {row.original.released_from_quarantine
+                ? `, ${t('findings.receipts.releasedFromQuarantine', 'Released from quarantine')}`
+                : ''}
             </span>
           </span>
         ),

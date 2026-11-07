@@ -45,6 +45,8 @@ var uncoveredGroups = []uncoveredGroup{
 		fix: "fix the DNS record, or scan the address instead", code: scopedom.RefusalUnresolved},
 	{kinds: []string{scanzone.KindOutsideZones, scanzone.KindPartlyCovered}, one: "is a private address outside every scan zone", many: "are private addresses outside every scan zone",
 		fix: "add the range to a scan zone", code: scopedom.RefusalZoneNone},
+	{kinds: []string{scanzone.KindAmbiguousZone}, one: "is in more than one scan zone with different sensors", many: "are in more than one scan zone with different sensors",
+		fix: "pick the scan zone (site) for this scan", code: scopedom.RefusalAmbiguousZone},
 	{kinds: []string{scanzone.KindOutsideSelected}, one: "is outside the selected scan zone", many: "are outside the selected scan zone",
 		fix: "pick Automatic routing or another zone", code: scopedom.RefusalZoneNone},
 	{kinds: []string{scanzone.KindZoneNoSensor}, one: "is in a scan zone with no sensor", many: "are in a scan zone with no sensor",

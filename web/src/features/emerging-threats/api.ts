@@ -32,6 +32,7 @@ export function listUrl(f: ListFilters): string {
   p.set('state', f.state ?? 'open')
   if (f.tier) p.set('tier', f.tier)
   if (f.internetOnly) p.set('exposure', 'internet')
+  if (f.kevOnly) p.set('kev', 'true')
   if (f.search?.trim()) p.set('search', f.search.trim())
   p.set('page', String(f.page ?? 1))
   p.set('per_page', String(f.perPage ?? DEFAULT_PER_PAGE))

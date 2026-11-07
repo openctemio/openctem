@@ -633,6 +633,7 @@ func (s *Service) dispatchStep(ctx context.Context, run *scanrun.Run, step *scan
 	if len(created) == 0 || !stepRun.IsPending() {
 		return nil // a later wave of a streamed step that is queued already
 	}
+	s.recordEffectiveConfig(ctx, run, step, resolved, stepRun, created[0])
 	// Mark step as queued
 	stepRun.Queue()
 	stepRun.CommandID = &created[0].ID
@@ -1212,6 +1213,9 @@ type Partial struct {
 	// follow-ups). They are recorded on the run, so the next scheduled run
 	// plans them first and coverage never reads them as covered.
 	Unfinished []string
+	// Sensor is what the sensor reported it ran with (untrusted, bounded);
+	// recorded on the step run for display only.
+	Sensor scanrun.SensorSettings
 }
 
 // incomplete reports whether the command left work unfinished: hosts the
@@ -1364,6 +1368,13 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, tenantID shared.ID
 	stepRun := run.GetStepRun(stepKey)
 	if s.stepAlreadyFinished(run, stepRun, "completed") {
 		return nil
+	}
+	if stepRun != nil && !p.Sensor.IsZero() {
+		if rec, ok := s.stepRunRepo.(scanrun.StepRunConfigRecorder); ok {
+			if err := rec.SetSensorSettings(ctx, run.TenantID, stepRun.ID, p.Sensor); err != nil {
+				s.logger.Warn("failed to record the sensor's settings", "step_key", logger.SanitizeValue(stepKey), "error", err)
+			}
+		}
 	}
 
 	// A zone-routed scan runs one command per batch under this step: the step
@@ -2631,4 +2642,25 @@ func outputCount(output map[string]any, key string) int {
 		return max(int(n), 0)
 	}
 	return 0
+}
+
+// recordEffectiveConfig stores what the step's first command carries (its
+// standard params and where each came from) on the step run, so a run with
+// no findings can say what it looked for. Best effort: a failure is logged
+// and never stops the step.
+func (s *Service) recordEffectiveConfig(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool, stepRun *scanrun.StepRun, cmd *command.Command) {
+	rec, ok := s.stepRunRepo.(scanrun.StepRunConfigRecorder)
+	if !ok {
+		return
+	}
+	var payload struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
+		return
+	}
+	cfg := scanapp.EffectiveConfigOf(run, step, resolved, payload.Config)
+	if err := rec.SetEffectiveConfig(ctx, run.TenantID, stepRun.ID, cfg); err != nil {
+		s.logger.Warn("failed to record the step's effective config", "step_key", logger.SanitizeValue(step.StepKey), "error", err)
+	}
 }

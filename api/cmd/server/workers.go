@@ -1086,6 +1086,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewAssetRiskReconcileController(svc.Asset, 0))
 	}
 
+	// Domain membership of assets: drain the queue that database triggers
+	// fill on every asset and edge change (docs/architecture/asset-domain-membership.md).
+	w.ControllerManager.Register(controller.NewAssetDomainMembershipController(postgres.NewAssetDomainMembershipRepository(&postgres.DB{DB: deps.DB}), 0))
+
 	// Durable jobs: ticket status sync and invitation e-mails, queued in the
 	// transaction of the change that needs them.
 	if svc != nil {
@@ -1387,6 +1391,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AssetCoverage.EnableReadiness(svc.Scan)
 			// A port scan that carried a name's addresses settles the name.
 			svc.AssetCoverage.WithAddressReader(repos.Attribution)
+			// No scope entry pauses coverage only when unclassified assets
+			// are not scanned (RFC-054 §16): otherwise the gate decides per
+			// target, low-impact for what no entry covers.
+			if svc.ActiveGate != nil {
+				svc.AssetCoverage.EnableUnclassified(svc.ActiveGate.UnclassifiedMode)
+			}
 			// Gaps, output drops and repeated failures alert the tenant's
 			// administrators (in-app and integrations) at most once a day.
 			svc.AssetCoverage.EnableAlerts(repos.AssetCoverage, repos.MemberLifecycle, svc.Notification, svc.Outbox)
