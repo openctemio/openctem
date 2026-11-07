@@ -11,10 +11,12 @@ package easm
 // caller's data scope (an address of another tenant, one outside the
 // caller's data scope, one a scope entry already covers or one nobody's
 // in-scope name resolves to is refused, and the whole request with it). A
-// shared, CDN or provider address is never part of a bulk add: only one at a
-// time, explicitly (include_shared). A range is only the organization's own
-// prefix the card offers, inside the platform guardrails, never a computed
-// one. Additions go through the scope service as the person (guardrails,
+// shared, CDN or provider address is part of an add only when the person
+// includes third-party addresses explicitly (include_shared); otherwise the
+// request is refused. A range is the organization's own prefix the card
+// offers, or the exact cover of the chosen addresses (a block whose every
+// address was chosen), inside the platform guardrails: never a computed
+// supernet, never an address nobody chose. Additions go through the scope service as the person (guardrails,
 // deny list, step-up, the approval policy, the signer ledger, audit per
 // entry); rejections through the review service (data scope, audit); a
 // network answer is a network seed (yes) or a declined network (no), both
@@ -40,9 +42,9 @@ import (
 // Refusals of a whole decision.
 var (
 	ErrDecisionEmpty      = shared.NewDomainError("DECISION_EMPTY", "Choose at least one address", shared.ErrValidation)
-	ErrDecisionTooMany    = shared.NewDomainError("DECISION_TOO_MANY", fmt.Sprintf("Decide at most %d addresses at once", scope.MaxBulkTargets), shared.ErrValidation)
+	ErrDecisionTooMany    = shared.NewDomainError("DECISION_TOO_MANY", fmt.Sprintf("Decide at most %d addresses at once", maxSuggestionScan), shared.ErrValidation)
 	ErrDecisionNotPending = shared.NewDomainError("DECISION_NOT_PENDING", "Some of these addresses or ranges no longer wait for a decision: reload the card", shared.ErrValidation)
-	ErrDecisionShared     = shared.NewDomainError("DECISION_SHARED", "A shared or provider address can only be added on its own", shared.ErrValidation)
+	ErrDecisionShared     = shared.NewDomainError("DECISION_SHARED", "Shared or provider addresses are chosen: include third-party addresses explicitly to add them", shared.ErrValidation)
 	ErrNetworkNotAsked    = shared.NewDomainError("NETWORK_NOT_ASKED", "This network is not waiting for an answer: reload the card", shared.ErrValidation)
 )
 
@@ -75,6 +77,8 @@ type AddressDecisions struct {
 	// autoAdd adds the addresses a "yes" made strong at once; nil leaves
 	// them to the next controller run.
 	autoAdd *AddressAutoAdd
+	// lookups re-queues network lookups; nil refuses a retry.
+	lookups NetworkLookupQueue
 }
 
 // NewAddressDecisions creates it; a nil dependency refuses what needs it.
@@ -86,12 +90,23 @@ func NewAddressDecisions(cards *SuggestionService, targets ConfirmScopeTargets, 
 // errDecisionsUnavailable: a dependency is not wired.
 var errDecisionsUnavailable = errors.New("address decisions are not configured")
 
+// AddressSelection is what a person chose on the card: addresses, whole
+// groups (by key) and/or every waiting address, also those past the card's
+// list ("select all N").
+type AddressSelection struct {
+	Addresses  []string
+	Groups     []string
+	AllWaiting bool
+}
+
 // AddressAddInput is a bulk add from the card.
 type AddressAddInput struct {
-	Addresses []string
+	AddressSelection
 	// Ranges: the organization's own prefixes the card offers.
 	Ranges []string
-	// IncludeShared allows one shared address, alone ("add anyway").
+	// IncludeShared adds the chosen shared, provider and declined addresses
+	// too (the person opted in, seeing the providers); each becomes an
+	// exact entry of its own.
 	IncludeShared bool
 }
 
@@ -124,7 +139,8 @@ type AddressAddResult struct {
 	Names []string `json:"names"`
 }
 
-// callerCard is the addresses card as the caller sees it.
+// callerCard is the addresses card as the caller sees it, with every
+// address (not only the card's first page).
 func (d *AddressDecisions) callerCard(ctx context.Context, tenantID shared.ID) (*SuggestionCard, error) {
 	s := d.cards
 	if s == nil || s.store == nil || s.coverage == nil {
@@ -141,7 +157,7 @@ func (d *AddressDecisions) callerCard(ctx context.Context, tenantID shared.ID) (
 	if s.addressModeOf(ctx, tenantID) == tenant.AddressNever {
 		return &SuggestionCard{}, nil
 	}
-	card, err := s.addressCard(ctx, tenantID, view)
+	card, err := s.addressCard(ctx, tenantID, view, maxSuggestionScan)
 	if err != nil {
 		return nil, err
 	}
@@ -192,23 +208,85 @@ func canonicalPrefix(s string) string {
 	return p.Masked().String()
 }
 
+// expand resolves a selection against the caller's card: the offered
+// (waiting or already checked) and the shared addresses chosen, and the own
+// prefixes of the chosen groups. Anything not on the card refuses the whole
+// selection.
+func expand(card *SuggestionCard, ix cardIndex, sel AddressSelection) (offered, sharedItems []SuggestionAddress, ranges []string, err error) {
+	addrs := dedupe(sel.Addresses, canonicalAddress)
+	if len(addrs) != len(nonEmpty(sel.Addresses)) {
+		return nil, nil, nil, ErrDecisionNotPending // a value that is not an address
+	}
+	if len(addrs)+len(sel.Groups) > maxSuggestionScan {
+		return nil, nil, nil, ErrDecisionTooMany
+	}
+	seen := map[string]bool{}
+	take := func(a string) error {
+		if seen[a] {
+			return nil
+		}
+		seen[a] = true
+		if it, ok := ix.offered[a]; ok {
+			offered = append(offered, it)
+			return nil
+		}
+		if it, ok := ix.shared[a]; ok {
+			sharedItems = append(sharedItems, it)
+			return nil
+		}
+		return ErrDecisionNotPending
+	}
+	for _, a := range addrs {
+		if err := take(a); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	byKey := map[string]SuggestionGroup{}
+	for _, g := range card.Groups {
+		byKey[g.Key] = g
+	}
+	for _, k := range dedupe(sel.Groups, strings.TrimSpace) {
+		g, ok := byKey[k]
+		if !ok {
+			return nil, nil, nil, ErrDecisionNotPending
+		}
+		if g.Range != "" && !g.Shared {
+			ranges = append(ranges, g.Range)
+		}
+		for _, a := range g.Addresses {
+			if err := take(a); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+	}
+	if sel.AllWaiting {
+		for _, it := range card.Addresses {
+			if err := take(it.Address); err != nil {
+				return nil, nil, nil, err
+			}
+		}
+	}
+	return offered, sharedItems, ranges, nil
+}
+
 // planAdd validates a bulk add against the caller's card and returns the
 // entries and the addresses they cover.
 func (d *AddressDecisions) planAdd(card *SuggestionCard, in AddressAddInput) ([]scope.BulkTargetItem, []SuggestionAddress, error) {
-	addrs := dedupe(in.Addresses, canonicalAddress)
-	ranges := dedupe(in.Ranges, canonicalPrefix)
-	switch {
-	case len(addrs) == 0 && len(ranges) == 0:
-		return nil, nil, ErrDecisionEmpty
-	case len(addrs)+len(ranges) > scope.MaxBulkTargets:
-		return nil, nil, ErrDecisionTooMany
-	}
-	if len(addrs) != len(nonEmpty(in.Addresses)) || len(ranges) != len(nonEmpty(in.Ranges)) {
-		return nil, nil, ErrDecisionNotPending // a value that is not an address or prefix
-	}
 	ix := indexCard(card)
-	var covered []SuggestionAddress
-	items := make([]scope.BulkTargetItem, 0, len(addrs)+len(ranges))
+	offered, sharedItems, groupRanges, err := expand(card, ix, in.AddressSelection)
+	if err != nil {
+		return nil, nil, err
+	}
+	ranges := dedupe(append(dedupe(in.Ranges, canonicalPrefix), groupRanges...), canonicalPrefix)
+	switch {
+	case len(offered) == 0 && len(sharedItems) == 0 && len(ranges) == 0:
+		return nil, nil, ErrDecisionEmpty
+	case len(ranges) != len(dedupe(append(nonEmpty(in.Ranges), groupRanges...), strings.TrimSpace)):
+		return nil, nil, ErrDecisionNotPending // a value that is not a prefix
+	case len(sharedItems) > 0 && !in.IncludeShared:
+		return nil, nil, ErrDecisionShared
+	}
+	items := make([]scope.BulkTargetItem, 0, len(ranges)+len(offered)+len(sharedItems))
 	prefixes := make([]netip.Prefix, 0, len(ranges))
 	for _, r := range ranges {
 		if !ix.ranges[r] {
@@ -220,32 +298,44 @@ func (d *AddressDecisions) planAdd(card *SuggestionCard, in AddressAddInput) ([]
 		prefixes = append(prefixes, netip.MustParsePrefix(r))
 		items = append(items, scope.BulkTargetItem{TargetType: string(scopedom.TargetTypeCIDR), Pattern: r})
 	}
-	for _, a := range addrs {
-		item, ok := ix.offered[a]
-		if !ok {
-			sh, isShared := ix.shared[a]
-			if !isShared {
-				return nil, nil, ErrDecisionNotPending
-			}
-			if !in.IncludeShared || len(addrs) != 1 || len(ranges) != 0 {
-				return nil, nil, ErrDecisionShared
-			}
-			item = sh
-		}
-		covered = append(covered, item)
+	inRanges := func(a string) bool {
 		ip := netip.MustParseAddr(a)
-		inRange := false
 		for _, p := range prefixes {
 			if p.Contains(ip) {
-				inRange = true
-				break
+				return true
 			}
 		}
-		if !inRange {
-			items = append(items, scope.BulkTargetItem{TargetType: string(scopedom.TargetTypeIPAddress), Pattern: a})
+		return false
+	}
+	covered := make([]SuggestionAddress, 0, len(offered)+len(sharedItems))
+	var exact []netip.Addr
+	for _, it := range offered {
+		covered = append(covered, it)
+		if !inRanges(it.Address) {
+			exact = append(exact, netip.MustParseAddr(it.Address))
 		}
 	}
-	// The addresses a range covers count as decided too.
+	// The chosen addresses as ranges: each block every address of which
+	// was chosen becomes one entry (never wider than the choice).
+	for _, p := range ExactCover(exact) {
+		if p.IsSingleIP() {
+			items = append(items, scope.BulkTargetItem{TargetType: string(scopedom.TargetTypeIPAddress), Pattern: p.Addr().String()})
+			continue
+		}
+		if g := d.cards.guardrails; g != nil && g.CheckPattern(scopedom.TargetTypeCIDR, p.String()) != nil {
+			for a := p.Addr(); p.Contains(a); a = a.Next() {
+				items = append(items, scope.BulkTargetItem{TargetType: string(scopedom.TargetTypeIPAddress), Pattern: a.String()})
+			}
+			continue
+		}
+		items = append(items, scope.BulkTargetItem{TargetType: string(scopedom.TargetTypeCIDR), Pattern: p.String()})
+	}
+	// A third party's address is never merged into a range.
+	for _, it := range sharedItems {
+		covered = append(covered, it)
+		items = append(items, scope.BulkTargetItem{TargetType: string(scopedom.TargetTypeIPAddress), Pattern: it.Address})
+	}
+	// The addresses an own prefix covers count as decided too.
 	for _, p := range prefixes {
 		for a, item := range ix.offered {
 			if ip, err := netip.ParseAddr(a); err == nil && p.Contains(ip) && !containsAddr(covered, a) {
@@ -274,12 +364,20 @@ func (d *AddressDecisions) Add(ctx context.Context, tenantID shared.ID, actor Sc
 	if len(names) > 0 {
 		reason += " (" + strings.Join(names[:min(len(names), 5)], ", ") + ")"
 	}
-	outcomes, err := d.targets.CreateTargets(ctx, scope.BulkTargetsInput{
-		TenantID: tenantID.String(), Items: items, Reason: reason,
-		CreatedBy: actor.UserID, Actor: actor.Actor, Origin: scopedom.OriginConfirmed,
-	})
-	if err != nil {
-		return nil, err
+	var outcomes []scope.BulkTargetOutcome
+	for start := 0; start < len(items); start += scope.MaxBulkTargets {
+		chunk := items[start:min(start+scope.MaxBulkTargets, len(items))]
+		out, err := d.targets.CreateTargets(ctx, scope.BulkTargetsInput{
+			TenantID: tenantID.String(), Items: chunk, Reason: reason,
+			CreatedBy: actor.UserID, Actor: actor.Actor, Origin: scopedom.OriginConfirmed,
+		})
+		if err != nil {
+			if len(outcomes) == 0 {
+				return nil, err
+			}
+			break // report what was written; the rest stays on the card
+		}
+		outcomes = append(outcomes, out...)
 	}
 	res := &AddressAddResult{Items: make([]AddressAddItem, 0, len(outcomes)), Names: names}
 	for _, o := range outcomes {
@@ -316,33 +414,22 @@ type AddressRejectResult struct {
 }
 
 // Reject marks addresses of the caller's card as not the organization's.
-func (d *AddressDecisions) Reject(ctx context.Context, tenantID shared.ID, actor ScopeActor, addresses []string) (*AddressRejectResult, error) {
+func (d *AddressDecisions) Reject(ctx context.Context, tenantID shared.ID, actor ScopeActor, sel AddressSelection) (*AddressRejectResult, error) {
 	if d == nil || d.review == nil {
 		return nil, errDecisionsUnavailable
-	}
-	addrs := dedupe(addresses, canonicalAddress)
-	switch {
-	case len(addrs) == 0:
-		return nil, ErrDecisionEmpty
-	case len(addrs) > scope.MaxBulkTargets:
-		return nil, ErrDecisionTooMany
-	case len(addrs) != len(nonEmpty(addresses)):
-		return nil, ErrDecisionNotPending
 	}
 	card, err := d.callerCard(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	ix := indexCard(card)
-	items := make([]SuggestionAddress, 0, len(addrs))
-	for _, a := range addrs {
-		it, ok := ix.offered[a]
-		if !ok {
-			if it, ok = ix.shared[a]; !ok {
-				return nil, ErrDecisionNotPending
-			}
-		}
-		items = append(items, it)
+	offered, sharedItems, _, err := expand(card, indexCard(card), sel)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]SuggestionAddress, 0, len(offered)+len(sharedItems))
+	items = append(append(items, offered...), sharedItems...)
+	if len(items) == 0 {
+		return nil, ErrDecisionEmpty
 	}
 	return d.reject(ctx, tenantID, actor, items)
 }

@@ -17,6 +17,10 @@ entries and replaces its published ranges with the providers' own lists:
   - Cloudflare ips-v4 / ips-v6, Fastly public-ip-list, Gcore public-ip-list,
     bunny.net edge server lists, Imperva integration ip list (edge);
   - Microsoft service tags, AzureFrontDoor.Frontend (edge);
+  - Microsoft 365 endpoints (worldwide instance), service area Exchange: the
+    shared mail front ends (Exchange Online, autodiscover, inbound and
+    outbound mail protection) every customer's mail names point at
+    (cloud_shared);
   - Google goog.json minus cloud.json: Google's own front ends, never a
     customer's address (cloud_shared);
   - Sucuri firewall ranges from its documentation (edge, listed below).
@@ -44,6 +48,7 @@ SOURCES = {
     "imperva.json": ("POST", "https://my.imperva.com/api/integration/v1/ips"),
     "goog.json": ("GET", "https://www.gstatic.com/ipranges/goog.json"),
     "cloud.json": ("GET", "https://www.gstatic.com/ipranges/cloud.json"),
+    "m365.json": ("GET", "https://endpoints.office.com/endpoints/worldwide?clientrequestid=b10c5ed1-bad1-445f-b386-b919946339a7"),
 }
 # Microsoft publishes the service tags under a dated file name: download it
 # from https://www.microsoft.com/en-us/download/details.aspx?id=56519 and
@@ -65,6 +70,18 @@ EXTRA_ORGS = [
     {"match": "g-core", "provider": "Gcore", "class": "edge"},
     {"match": "edgio", "provider": "Edgio", "class": "edge"},
     {"match": "cdnetworks", "provider": "CDNetworks", "class": "edge"},
+    # Shared mail and SaaS providers: their networks serve every customer.
+    {"match": "zoho", "provider": "Zoho", "class": "cloud_shared"},
+    {"match": "proofpoint", "provider": "Proofpoint", "class": "cloud_shared"},
+    {"match": "mimecast", "provider": "Mimecast", "class": "cloud_shared"},
+    {"match": "barracuda", "provider": "Barracuda", "class": "cloud_shared"},
+    {"match": "sendgrid", "provider": "SendGrid", "class": "cloud_shared"},
+    {"match": "mailgun", "provider": "Mailgun", "class": "cloud_shared"},
+    {"match": "sparkpost", "provider": "SparkPost", "class": "cloud_shared"},
+    {"match": "salesforce", "provider": "Salesforce", "class": "cloud_shared"},
+    {"match": "zendesk", "provider": "Zendesk", "class": "cloud_shared"},
+    {"match": "atlassian", "provider": "Atlassian", "class": "cloud_shared"},
+    {"match": "hubspot", "provider": "HubSpot", "class": "cloud_shared"},
 ]
 
 
@@ -145,6 +162,9 @@ def build(src: pathlib.Path, out: pathlib.Path) -> None:
     for v in azure["values"]:
         if v["name"] == "AzureFrontDoor.Frontend":
             add("Azure Front Door", "edge", nets(v["properties"]["addressPrefixes"]))
+
+    m365 = json.loads((src / "m365.json").read_text())
+    add("Microsoft 365", "cloud_shared", nets([ip for e in m365 if e.get("serviceArea") == "Exchange" for ip in e.get("ips", [])]))
 
     goog = json.loads((src / "goog.json").read_text())
     cloud = json.loads((src / "cloud.json").read_text())
