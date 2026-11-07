@@ -90,9 +90,7 @@ func (r *FindingRepository) storeSightingChunk(ctx context.Context, tenantID sha
 	if iArgs == nil {
 		iArgs = emptyInteropArgs()
 	}
-	args := make([]any, 0, 1+len(iArgs)+len(recArgs))
-	args = append(args, tenantID.String())
-	args = append(args, iArgs...)
+	args := append([]any{tenantID.String()}, iArgs...)
 	args = append(args, recArgs...)
 	combined := retryWriteConflict(ctx, func() error {
 		_, execErr := r.db.ExecContext(ctx, interopAndSourceRecordsSQL, args...)
