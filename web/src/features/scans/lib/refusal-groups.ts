@@ -38,6 +38,7 @@ const KIND_OF_CODE: Record<string, RefusalGroupKind> = {
   web_ports_only: 'scope',
   excluded: 'ownership',
   rejected: 'ownership',
+  vantage_out_of_scope: 'ownership',
   needs_review: 'ownership',
   candidate: 'ownership',
   dependency: 'ownership',

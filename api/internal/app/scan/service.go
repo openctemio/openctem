@@ -226,6 +226,7 @@ type Service struct {
 	activeScan          FeatureAllower                                                    // active_scanning (active_scanning.go); nil: allowed
 	sharedLimits        SharedScanLimits                                                  // platform_scans_per_day (shared_limits.go); nil: never shared
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
+	vantage             scanzone.VantageReader                                            // the sensors' own DNS answers (vantage.go)
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
 	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
 	namePorts           NamePortReader                                                    // optional; nil = a coverage probe of a name tries its default ports only (coverage_named_ports.go)

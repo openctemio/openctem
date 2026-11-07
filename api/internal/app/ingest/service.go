@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -140,7 +141,9 @@ type Service struct {
 	// (name_probe.go).
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
-	results         sensorresult.Repository
+	// vantage records the sensors' own DNS answers (vantage.go).
+	vantage scanzone.VantageWriter
+	results sensorresult.Repository
 	// release is the progress of the out-of-contract release sweeps
 	// (quarantine_release.go).
 	release releaseState
@@ -620,6 +623,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	output.AssetMap = assetMap
+	s.recordVantage(ctx, agt, tenantID, binding, report, observedAt)
 	s.recordCollectorSightings(ctx, collector, scope, observedAt, assetMap)
 
 	// The tracked values this report states (RFC-069), before findings are
