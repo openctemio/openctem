@@ -56,11 +56,11 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
 			created_at, scheduled_for, deadline_at, deadline_reason, refusal_code, kind, subject,
-			scan_workflow_version, spec_digest
+			scan_workflow_version, spec_digest, parent_run_id
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
 		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `,
-		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
+		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''), $28)
 		RETURNING deadline_at
 	`
 
@@ -95,6 +95,7 @@ func (r *ScanRunRepository) Create(ctx context.Context, run *scanrun.Run) error 
 		nullJSONObject(run.Subject),
 		run.ScanWorkflowVersion,
 		run.SpecDigest,
+		nullID(run.ParentRunID),
 	).Scan(&deadline)
 
 	if isOccurrenceConflict(err) {
@@ -416,7 +417,7 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 	lockQuery := `SELECT id FROM scans WHERE id = $1 FOR UPDATE`
 	countQuery := `
 		SELECT COUNT(*) FROM scan_runs
-		WHERE scan_id = $1 AND status IN ('pending', 'running')
+		WHERE scan_id = $1 AND status IN ('pending', 'running') AND parent_run_id IS NULL
 	`
 	lockID, limitMsg := "", "maximum concurrent runs (%d) reached for this scan config"
 	if run.ScanID != nil {
@@ -425,7 +426,7 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 		lockQuery = `SELECT id FROM scan_workflows WHERE id = $1 FOR UPDATE`
 		countQuery = `
 			SELECT COUNT(*) FROM scan_runs
-			WHERE scan_workflow_id = $1 AND scan_id IS NULL AND status IN ('pending', 'running')
+			WHERE scan_workflow_id = $1 AND scan_id IS NULL AND status IN ('pending', 'running') AND parent_run_id IS NULL
 		`
 		lockID, limitMsg = run.ScanWorkflowID.String(), "maximum concurrent runs (%d) reached for this scan workflow"
 	}
@@ -460,7 +461,11 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 	if run.ScanID != nil && run.ScheduledFor != nil && ownerActiveCount > 0 {
 		return scanrun.ErrScanRunActive
 	}
-	if ownerActiveCount >= maxPerScan {
+	// A zone child of a split run (parent_run_id) was admitted with its
+	// parent: the parent counts once against both limits, its children
+	// never.
+	child := run.ParentRunID != nil
+	if !child && ownerActiveCount >= maxPerScan {
 		return shared.NewDomainError(
 			"MAX_CONCURRENT_RUNS",
 			fmt.Sprintf(limitMsg, maxPerScan),
@@ -472,12 +477,12 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 	var tenantActiveCount int
 	tenantCountQuery := `
 		SELECT COUNT(*) FROM scan_runs
-		WHERE tenant_id = $1 AND status IN ('pending', 'running')
+		WHERE tenant_id = $1 AND status IN ('pending', 'running') AND parent_run_id IS NULL
 	`
 	if err := tx.QueryRowContext(ctx, tenantCountQuery, run.TenantID.String()).Scan(&tenantActiveCount); err != nil {
 		return fmt.Errorf("failed to count active runs for tenant: %w", err)
 	}
-	if tenantActiveCount >= maxPerTenant {
+	if !child && tenantActiveCount >= maxPerTenant {
 		return shared.NewDomainError(
 			"MAX_CONCURRENT_RUNS",
 			fmt.Sprintf("maximum concurrent runs (%d) reached for this tenant", maxPerTenant),
@@ -508,11 +513,11 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 			scan_profile_id, quality_gate_result,
 			retry_attempt,
 			created_at, scheduled_for, deadline_at, deadline_reason, refusal_code, kind, subject,
-			scan_workflow_version, spec_digest
+			scan_workflow_version, spec_digest, parent_run_id
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
 		        ` + runDeadlineSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `,
-		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''))
+		        ` + runDeadlineReasonSQL("$15::timestamptz", "$5::uuid", "$2::uuid") + `, NULLIF($23, ''), $24, $25, NULLIF($26, 0), NULLIF($27, ''), $28)
 		RETURNING deadline_at
 	`
 
@@ -545,6 +550,7 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 		nullJSONObject(run.Subject),
 		run.ScanWorkflowVersion,
 		run.SpecDigest,
+		nullID(run.ParentRunID),
 	).Scan(&deadline)
 	if isOccurrenceConflict(err) {
 		return scanrun.ErrOccurrenceAlreadyRun
@@ -1133,6 +1139,8 @@ func (r *ScanRunRepository) ListPendingRetries(ctx context.Context, limit int) (
 			WHERE pr.status IN ('failed', 'timeout')
 			  AND pr.retry_dispatched_at IS NULL
 			  AND pr.completed_at IS NOT NULL
+			  -- A zone child is retried with its parent, never alone.
+			  AND pr.parent_run_id IS NULL
 			  AND s.max_retries > 0
 			  -- A timeout (the sensor died, or never reported) is retried at
 			  -- most twice; other failures use the scan's own budget.
@@ -1215,7 +1223,7 @@ func (r *ScanRunRepository) ReleaseFailedRetryDispatch(ctx context.Context, tena
 // ListByScanID lists runs for a specific scan with pagination.
 func (r *ScanRunRepository) ListByScanID(ctx context.Context, scanID shared.ID, page, perPage int) ([]*scanrun.Run, int64, error) {
 	// Get total count
-	countQuery := "SELECT COUNT(*) FROM scan_runs WHERE scan_id = $1"
+	countQuery := "SELECT COUNT(*) FROM scan_runs WHERE scan_id = $1 AND parent_run_id IS NULL"
 	var total int64
 	err := r.db.QueryRowContext(ctx, countQuery, scanID.String()).Scan(&total)
 	if err != nil {
@@ -1227,7 +1235,7 @@ func (r *ScanRunRepository) ListByScanID(ctx context.Context, scanID shared.ID, 
 	if offset < 0 {
 		offset = 0
 	}
-	query := r.selectQuery() + fmt.Sprintf(" WHERE scan_id = $1 ORDER BY created_at DESC LIMIT %d OFFSET %d", perPage, offset)
+	query := r.selectQuery() + fmt.Sprintf(" WHERE scan_id = $1 AND parent_run_id IS NULL ORDER BY created_at DESC LIMIT %d OFFSET %d", perPage, offset)
 
 	rows, err := r.db.QueryContext(ctx, query, scanID.String())
 	if err != nil {
@@ -1260,7 +1268,7 @@ func (r *ScanRunRepository) selectQuery() string {
 		       created_at, scheduled_for,
 		       deadline_at, COALESCE(deadline_reason, ''), COALESCE(jsonb_array_length(unfinished_targets), 0),
 		       COALESCE(refusal_code, ''), kind, subject,
-		       COALESCE(scan_workflow_version, 0), COALESCE(spec_digest, '')
+		       COALESCE(scan_workflow_version, 0), COALESCE(spec_digest, ''), parent_run_id
 		FROM scan_runs
 	`
 }
@@ -1418,6 +1426,7 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 		retryAttempt      sql.NullInt64
 		scheduledFor      sql.NullTime
 		deadlineAt        sql.NullTime
+		parentRunID       sql.NullString
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -1452,6 +1461,7 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 		&subject,
 		&run.ScanWorkflowVersion,
 		&run.SpecDigest,
+		&parentRunID,
 	)
 	_ = retryAttempt // populated below
 
@@ -1463,6 +1473,11 @@ func (r *ScanRunRepository) scanRun(row *sql.Row) (*scanrun.Run, error) {
 	}
 
 	run.ID, _ = shared.IDFromString(id)
+	if parentRunID.Valid {
+		if pid, err := shared.IDFromString(parentRunID.String); err == nil {
+			run.ParentRunID = &pid
+		}
+	}
 	if scanWorkflowID.Valid {
 		run.ScanWorkflowID, _ = shared.IDFromString(scanWorkflowID.String)
 	}
@@ -1544,6 +1559,7 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 		retryAttempt      sql.NullInt64
 		scheduledFor      sql.NullTime
 		deadlineAt        sql.NullTime
+		parentRunID       sql.NullString
 	)
 
 	var triggeredBy, errorMessage sql.NullString
@@ -1578,6 +1594,7 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 		&subject,
 		&run.ScanWorkflowVersion,
 		&run.SpecDigest,
+		&parentRunID,
 	)
 
 	if err != nil {
@@ -1585,6 +1602,11 @@ func (r *ScanRunRepository) scanRunFromRows(rows *sql.Rows) (*scanrun.Run, error
 	}
 
 	run.ID, _ = shared.IDFromString(id)
+	if parentRunID.Valid {
+		if pid, err := shared.IDFromString(parentRunID.String); err == nil {
+			run.ParentRunID = &pid
+		}
+	}
 	if scanWorkflowID.Valid {
 		run.ScanWorkflowID, _ = shared.IDFromString(scanWorkflowID.String)
 	}

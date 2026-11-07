@@ -824,7 +824,13 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 		out.Allowed = kept
 		return nil
 	}
-	plan := scanzone.NewRouter(zones, s.zoneResolver).LookupOnly(in.lookupOnly()).Plan(ctx, kept)
+	plan := s.zoneRouter(ctx, in.TenantID, zones, kept).LookupOnly(in.lookupOnly()).Plan(ctx, kept)
+	// A sensor's private answer is never a scope grant: the address must not
+	// be excluded nor rejected (vantage.go). Fail closed.
+	vantageRefused, err := s.vantageScopeRefusals(ctx, in.TenantID, plan.Routes)
+	if err != nil {
+		return fmt.Errorf("nothing dispatched: %w", err)
+	}
 	var states map[shared.ID][]scanzone.ZoneSensorState
 	if in.ZoneSensorTier != nil {
 		if states, err = s.zoneSensorStates(ctx, in.TenantID, plan.ZoneOrder); err != nil {
@@ -833,6 +839,14 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 	}
 	out.ZoneOf = make(map[string]*scanzone.Zone, len(kept))
 	for _, r := range plan.Routes {
+		if reason, no := vantageRefused[r.Target]; no {
+			out.Refused = append(out.Refused, vantageRefusal(r.Target, reason))
+			continue
+		}
+		if note := vantageNote(r); note != "" && !in.DryRun {
+			s.logger.Info("target routed by a sensor's DNS answer", "tenant_id", in.TenantID.String(),
+				"target", logger.SanitizeValue(r.Target), "note", note)
+		}
 		switch {
 		case r.Zone == nil && !r.Unzoned:
 			reason := r.Reason

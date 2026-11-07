@@ -47,6 +47,7 @@ import {
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
+import { RunZoneSplitPanel } from './run-zone-split'
 import { WindowWaits } from '@/features/scan-windows'
 import { RunStageLanes } from './run-stage-lanes'
 import { RunTimeline } from './run-timeline'
@@ -289,6 +290,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                       : 'incomplete'
                 }
               />
+              {run.zone_split && (
+                <DetailSection title={t('scans.runZoneSplit.title')}>
+                  <RunZoneSplitPanel split={run.zone_split} parentRunId={run.parent_run_id} />
+                </DetailSection>
+              )}
               {(run.scan_run_steps?.length ?? 0) > 0 && (
                 <DetailSection title={t('scans.runDetail.runMap')}>
                   <RunMap

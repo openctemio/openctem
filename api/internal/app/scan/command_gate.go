@@ -13,7 +13,6 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -237,7 +236,7 @@ func (s *Service) commandZone(ctx context.Context, tenantID shared.ID, sensorID 
 	if len(zones) == 0 {
 		return nil, nil
 	}
-	plan := scanzone.NewRouter(zones, s.zoneResolver).Plan(ctx, targets)
+	plan := s.zoneRouter(ctx, tenantID, zones, targets).Plan(ctx, targets)
 	if len(plan.Uncovered) > 0 {
 		u := plan.Uncovered[0]
 		return nil, refused(fmt.Sprintf("target %q cannot be scanned: %s", u.Target, u.Reason))
