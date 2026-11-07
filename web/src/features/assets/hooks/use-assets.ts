@@ -136,6 +136,7 @@ export interface AssetSearchFilters {
   isPrimary?: boolean
   discoveredBy?: string[]
   firstSeenAfter?: string
+  firstSeenBefore?: string
   /** Ask each row's triage (attribution and the scan gate's answer). */
   withTriage?: boolean
 
@@ -587,6 +588,7 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.liveness?.length) params.liveness = filters.liveness.join(',')
   if (filters.discoveredBy?.length) params.discovered_by = filters.discoveredBy.join(',')
   if (filters.firstSeenAfter) params.first_seen_after = filters.firstSeenAfter
+  if (filters.firstSeenBefore) params.first_seen_before = filters.firstSeenBefore
   if (filters.withTriage) params.with_triage = 'true'
 
   // Sorting

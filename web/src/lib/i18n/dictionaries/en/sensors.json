@@ -766,6 +766,7 @@
   "sensors.keyGuard.desc": "The key is shown once. If you close this window without copying it, you must rotate the key again.",
   "sensors.keyGuard.title": "Did you copy the key?",
   "sensors.list.addZone": "Add zone",
+  "sensors.list.approve": "Approve a sensor",
   "sensors.list.count.one": "{count} sensor",
   "sensors.list.count.other": "{count} sensors",
   "sensors.list.csv.currentJobs": "Current jobs",
