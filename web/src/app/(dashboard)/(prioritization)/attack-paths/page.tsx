@@ -11,6 +11,7 @@
  * chains.
  */
 
+import { PossiblePathLabel } from '@/components/ui/possible-path-label'
 import { useCallback, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowRight, Crown, GitBranch, List, Network, Route } from 'lucide-react'
@@ -184,12 +185,18 @@ export default function AttackPathsPage() {
             'The product of the step weights, so every step is traceable.'
           )}
         </span>
+        <PossiblePathLabel />
       </span>
     ) : (
-      t(
-        'prioritization.attackPath.description',
-        'How the internet reaches your assets, and which fix cuts the most paths.'
-      )
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>
+          {t(
+            'prioritization.attackPath.description',
+            'How the internet could reach your assets, and which fix cuts the most paths.'
+          )}
+        </span>
+        <PossiblePathLabel />
+      </span>
     )
 
   const header = (

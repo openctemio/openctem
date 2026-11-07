@@ -45,6 +45,13 @@ const (
 	// TypeTime is an instant (RFC 3339, a date, or a negative ISO 8601
 	// duration relative to now).
 	TypeTime
+	// TypeInet is an IP address or a CIDR range ("10.0.0.0/8"), parsed and
+	// canonicalised with net/netip and bound as inet. An address matches
+	// itself, a range every address inside it. An inet field takes only
+	// the in operator and needs an in template that binds one value (an
+	// index range scan, see inetTemplate); several values compile to an OR
+	// of that template.
+	TypeInet
 )
 
 func (t Type) String() string {
@@ -63,6 +70,8 @@ func (t Type) String() string {
 		return "boolean"
 	case TypeTime:
 		return "date-time"
+	case TypeInet:
+		return "inet"
 	}
 	return "unknown"
 }
@@ -199,6 +208,49 @@ type Field struct {
 	// pattern match, a join through another table). A filter takes at most
 	// MaxExpensiveLeaves of them, contains leaves included.
 	Expensive bool
+	// Ordered, for a TypeEnum field, says Enum lists the values from the
+	// highest to the lowest (severity: critical first), so an editor may
+	// offer "at least high" (OrderedValues). The stored filter is still an
+	// in list of the values.
+	Ordered bool
+	// Glob, for a TypeString field, says its values are name patterns ('*'
+	// any run, '?' one character; NormalizeGlob) or keys with a leading
+	// "*." (domain membership), so an editor does not refuse them.
+	Glob bool
+}
+
+// OrderedValues returns the values of an Ordered enum field that compare
+// to v as op does: OpGte "at least v" (v and every higher value), OpGt,
+// OpLte and OpLt likewise. ok is false when the field is not ordered, the
+// operator is not a range or v is not one of its values (any case).
+func (f *Field) OrderedValues(op Op, v string) ([]string, bool) {
+	if !f.Ordered || f.Type != TypeEnum {
+		return nil, false
+	}
+	idx := -1
+	for i, e := range f.Enum {
+		if strings.EqualFold(e, v) {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil, false
+	}
+	var lo, hi int // Enum[lo:hi], highest first
+	switch op {
+	case OpGte:
+		lo, hi = 0, idx+1
+	case OpGt:
+		lo, hi = 0, idx
+	case OpLte:
+		lo, hi = idx, len(f.Enum)
+	case OpLt:
+		lo, hi = idx+1, len(f.Enum)
+	default:
+		return nil, false
+	}
+	return append([]string(nil), f.Enum[lo:hi]...), true
 }
 
 func (f *Field) allows(op Op) bool {
@@ -347,6 +399,17 @@ func validateField(f *Field) error {
 	}
 	if f.Type == TypeEnum && len(f.Enum) == 0 {
 		return fmt.Errorf("field %q: enum field without Enum", f.Name)
+	}
+	if f.Ordered && f.Type != TypeEnum {
+		return fmt.Errorf("field %q: Ordered needs an enum field", f.Name)
+	}
+	if f.Glob && f.Type != TypeString {
+		return fmt.Errorf("field %q: Glob needs a string field", f.Name)
+	}
+	if f.Type == TypeInet {
+		if len(f.Ops) != 1 || f.Ops[0] != OpIn || !strings.Contains(f.Templates[OpIn], ArgToken) || f.Sortable {
+			return fmt.Errorf("field %q: an inet field takes only in, with an in template, and does not sort", f.Name)
+		}
 	}
 	if f.MaxValues <= 0 {
 		f.MaxValues = MaxValues
