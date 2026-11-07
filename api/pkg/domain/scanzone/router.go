@@ -32,7 +32,10 @@ const (
 //   - an address or CIDR goes to the zone with the narrowest range that holds
 //     all of it;
 //   - a hostname is routed by the addresses it resolves to from the platform
-//     (RFC-023 §12 Q2): the narrowest zone holding any of them;
+//     (RFC-023 §12 Q2): the narrowest zone holding any of them; a sensor's
+//     own answer (WithVantage) places a name whose private address lies in
+//     that sensor's zone (split-horizon DNS), and a name the platform cannot
+//     resolve by a sensor's public answer;
 //   - zones tied at the narrowest width with different sensors are sites
 //     that reuse the same range (two offices, an office and a cloud
 //     network): the target is uncovered (KindAmbiguousZone) until the scan
@@ -50,6 +53,8 @@ type Router struct {
 	// lookupOnly routes a hostname with no DNS answer as a public target
 	// (LookupOnly).
 	lookupOnly bool
+	// vantage are the sensors' own answers (WithVantage).
+	vantage VantageAnswers
 }
 
 // LookupOnly makes the router place a hostname with no DNS answer as a
@@ -104,6 +109,9 @@ type Route struct {
 	// Kind is why an uncovered target is not scanned (Kind* constants);
 	// empty when the target is routed.
 	Kind string
+	// Vantage is set when a sensor's answer, not the platform's, placed a
+	// hostname (vantage.go).
+	Vantage *VantageRoute
 }
 
 // Why a target is not scanned. A caller groups uncovered targets by kind to
@@ -222,6 +230,9 @@ func (r *Router) routeTarget(ctx context.Context, target string, pt Target) Rout
 		return rt
 	}
 	addrs := r.resolve(ctx, pt.Host)
+	if r.routeByVantage(&rt, pt.Host, addrs) {
+		return rt
+	}
 	if len(addrs) == 0 {
 		// Said as a fact about the name: zones are not the reason, even
 		// though they are why an unresolved name cannot be placed.
@@ -231,7 +242,7 @@ func (r *Router) routeTarget(ctx context.Context, target string, pt Target) Rout
 			return rt
 		}
 		rt.Kind = KindUnresolved
-		rt.Reason = "does not resolve in DNS; fix its DNS record, or scan its address"
+		rt.Reason = "does not resolve in DNS, from the platform or from any sensor of the organization; fix its DNS record, run a resolve step on a sensor that can resolve it, or scan its address"
 		return rt
 	}
 	rt.Addrs = addrs

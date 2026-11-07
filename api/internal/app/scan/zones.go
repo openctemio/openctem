@@ -140,9 +140,9 @@ func (s *Service) routeForScan(ctx context.Context, sc *scan.Scan, zones []*scan
 	}
 	lookupOnly := sc.ScannerName != "" && scopedom.JobShape{Tool: sc.ScannerName}.LookupOnly()
 	if sel != nil {
-		return scanzone.NewRouter([]*scanzone.Zone{sel}, s.zoneResolver).LookupOnly(lookupOnly).Plan(ctx, targets).RestrictTo(sel), nil
+		return s.zoneRouter(ctx, sc.TenantID, []*scanzone.Zone{sel}, targets).LookupOnly(lookupOnly).Plan(ctx, targets).RestrictTo(sel), nil
 	}
-	return scanzone.NewRouter(zones, s.zoneResolver).LookupOnly(lookupOnly).Plan(ctx, targets), nil
+	return s.zoneRouter(ctx, sc.TenantID, zones, targets).LookupOnly(lookupOnly).Plan(ctx, targets), nil
 }
 
 // planZoneDispatch routes targets to zones, batches them, and picks the least
