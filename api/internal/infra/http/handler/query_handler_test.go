@@ -109,3 +109,55 @@ func TestQueryFromFilters(t *testing.T) {
 		t.Fatalf("bad value = %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestQueryHandler_Parse(t *testing.T) {
+	h := NewQueryHandler(queryapp.NewService(fakeQueryExec{}, nil, logger.NewNop()), logger.NewNop())
+
+	rec := queryRequest(t, h.Parse, `{"entity":"findings","text":"severity>=high 10.0.0.0/8 log4j"}`, true)
+	var res queryapp.ParseResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil || rec.Code != http.StatusOK || !res.Valid ||
+		res.Text != "severity>=high asset.ip=10.0.0.0/8 log4j" || res.Params["asset_ip"] != "10.0.0.0/8" {
+		t.Fatalf("parse = %d %s", rec.Code, rec.Body)
+	}
+	// A problem is 200 with valid false and a code.
+	rec = queryRequest(t, h.Parse, `{"entity":"findings","text":"severty=high"}`, true)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"code":"unknown_field"`) ||
+		!strings.Contains(rec.Body.String(), `"suggestions":["severity"]`) {
+		t.Fatalf("problem = %d %s", rec.Code, rec.Body)
+	}
+	// A member without findings:read is refused; bad bodies are 400.
+	rec = queryRequest(t, h.Parse, `{"entity":"findings","text":"x"}`, false)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("no permission = %d %s", rec.Code, rec.Body)
+	}
+	for _, body := range []string{`{"entity":"findings","text":"x","params":"q=x"}`, `{"entity":"findings","sql":"x"}`, `[`} {
+		if rec := queryRequest(t, h.Parse, body, true); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s = %d %s", body, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestQueryHandler_Values(t *testing.T) {
+	h := NewQueryHandler(queryapp.NewService(fakeQueryExec{}, nil, logger.NewNop()), logger.NewNop())
+	get := func(query string, admin bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/query/values?"+query, nil)
+		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, "11111111-1111-1111-1111-111111111111")
+		ctx = context.WithValue(ctx, middleware.UserIDKey, "22222222-2222-2222-2222-222222222222")
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
+		rec := httptest.NewRecorder()
+		h.Values(rec, req.WithContext(ctx))
+		return rec
+	}
+	if rec := get("entity=findings&field=severity&fq=kev%3Dtrue", true); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"counted":true`) {
+		t.Fatalf("values = %d %s", rec.Code, rec.Body)
+	}
+	if rec := get("entity=findings&field=nope", true); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown field = %d %s", rec.Code, rec.Body)
+	}
+	if rec := get("entity=findings&field=severity&fq=severty%3Dhigh", true); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "unknown_field") {
+		t.Fatalf("bad filter = %d %s", rec.Code, rec.Body)
+	}
+	if rec := get("entity=findings&field=severity", false); rec.Code != http.StatusForbidden {
+		t.Fatalf("no permission = %d %s", rec.Code, rec.Body)
+	}
+}

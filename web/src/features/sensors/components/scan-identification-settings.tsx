@@ -8,7 +8,13 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PageHeader, PageStack, ReadOnlyNotice, SettingsSaveBar } from '@/features/shared'
+import {
+  DetailDisclosure,
+  PageHeader,
+  PageStack,
+  ReadOnlyNotice,
+  SettingsSaveBar,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -28,22 +34,61 @@ import {
   headerListErrors,
   mergeIdentity,
   normalizeHeaders,
+  normalizeQuery,
+  parseUserAgentList,
+  queryError,
+  requiredWithoutMarker,
+  userAgentBothError,
   userAgentError,
+  userAgentListErrors,
   type IdentHeader,
+  type IdentQuery,
 } from '../lib/scan-identification'
-import { HeaderListEditor, IdentityPreview } from './scan-identification-parts'
+import {
+  HeaderListEditor,
+  IdentityPreview,
+  QueryParamFields,
+  RequireIdentificationSwitch,
+  RequiredMissingAlert,
+  UserAgentRotationField,
+  useIdentSourceLabel,
+} from './scan-identification-parts'
 
-export const SCAN_IDENT_FIELDS = ['tool_http_user_agent', 'tool_http_headers'] as const
+export const SCAN_IDENT_FIELDS = [
+  'tool_http_user_agent',
+  'tool_http_user_agents',
+  'tool_http_headers',
+  'tool_http_query',
+  'tool_http_identification_required',
+] as const
 
 interface Form {
   userAgent: string
+  /** The rotation list as typed: one value per line. */
+  userAgents: string
   headers: IdentHeader[]
+  query: IdentQuery
+  required: boolean
+}
+
+const EMPTY_QUERY: IdentQuery = { name: '', value: '' }
+
+/** What the form saves, normalized as the API stores it. */
+function normalizedForm(f: Form) {
+  return {
+    userAgent: f.userAgent.trim(),
+    userAgents: parseUserAgentList(f.userAgents),
+    headers: normalizeHeaders(f.headers),
+    query: normalizeQuery(f.query),
+    required: f.required,
+  }
 }
 
 /**
- * Settings › Scanning › Scan identification: the User-Agent and request
- * headers the organization's scan tools send, so the scanned systems' WAF,
- * SIEM and logs recognize its scans. Part of the security settings section
+ * Settings › Scanning › Scan identification: the User-Agent (or a rotation
+ * list), request headers and query parameter the organization's scan tools
+ * send, so the scanned systems' WAF, SIEM and logs recognize its scans, and
+ * the one main switch: require identification on every request. Part of the security settings section
  * (owner only, recent sign-in). The platform's layer is shown read-only; the
  * preview is the merge the platform makes for every job.
  */
@@ -55,10 +100,14 @@ export function ScanIdentificationSettings() {
   const { settings, isLoading, isError, error, mutate } = useTenantSettings(tenantId)
   const { updateSecuritySettings, isUpdating } = useUpdateSecuritySettings(tenantId)
 
+  const sourceLabel = useIdentSourceLabel()
   const saved = useMemo<Form>(
     () => ({
       userAgent: settings?.security?.tool_http_user_agent ?? '',
+      userAgents: (settings?.security?.tool_http_user_agents ?? []).join('\n'),
       headers: settings?.security?.tool_http_headers ?? [],
+      query: settings?.security?.tool_http_query ?? EMPTY_QUERY,
+      required: !!settings?.security?.tool_http_identification_required,
     }),
     [settings]
   )
@@ -69,18 +118,41 @@ export function ScanIdentificationSettings() {
     reset()
   }, [reset])
 
-  const uaError = userAgentError(form.userAgent, t)
+  const next = normalizedForm(form)
+  const uaError =
+    userAgentError(form.userAgent, t) ?? userAgentBothError(form.userAgent, next.userAgents, t)
+  const rotationInvalid = userAgentListErrors(form.userAgents, t).length > 0
+  const qError = queryError(form.query, t)
   const listInvalid = Object.keys(headerListErrors(form.headers, t)).length > 0
-  const next = { userAgent: form.userAgent.trim(), headers: normalizeHeaders(form.headers) }
-  const dirty = JSON.stringify(next) !== JSON.stringify(saved)
-  const identity = mergeIdentity(platform, form.userAgent, form.headers)
+  const invalid = !!uaError || rotationInvalid || !!qError || listInvalid
+  const dirty = JSON.stringify(next) !== JSON.stringify(normalizedForm(saved))
+  const identity = mergeIdentity(platform, {
+    userAgent: next.userAgent,
+    userAgents: next.userAgents,
+    headers: form.headers,
+    query: next.query,
+    required: form.required,
+  })
+  const missingMarker = requiredWithoutMarker(identity)
+  const uaLocked = !!platform?.user_agent_enforced
+  const queryLocked = !!platform?.query_enforced && !!platform?.query
+
+  const addHeader = () => {
+    setForm((f) => ({ ...f, headers: [...f.headers, { name: '', value: '' }] }))
+    const idx = form.headers.length
+    requestAnimationFrame(() => document.getElementById(`scan-ident-name-${idx}`)?.focus())
+  }
 
   const save = async () => {
-    if (uaError || listInvalid) return
+    if (invalid) return
     try {
       const result = await updateSecuritySettings({
         tool_http_user_agent: next.userAgent,
+        tool_http_user_agents: next.userAgents,
         tool_http_headers: next.headers,
+        // A blank name and value clear the parameter.
+        tool_http_query: next.query ?? EMPTY_QUERY,
+        tool_http_identification_required: next.required,
       })
       if (result) await mutate(result, { revalidate: false })
       toast.success(t('sensors.scanIdent.saved', 'Scan identification saved'))
@@ -123,6 +195,24 @@ export function ScanIdentificationSettings() {
           />
         )}
         <Card>
+          <CardContent className="space-y-4 pt-6">
+            <RequireIdentificationSwitch
+              id="scan-ident-required"
+              checked={form.required}
+              onChange={(required) => setForm((f) => ({ ...f, required }))}
+              disabled={disabled}
+              lockedBy={
+                platform?.identification_required
+                  ? t('sensors.scanIdent.required.byPlatform', 'the platform')
+                  : undefined
+              }
+            />
+            {missingMarker && (
+              <RequiredMissingAlert onAddHeader={disabled ? undefined : addHeader} />
+            )}
+          </CardContent>
+        </Card>
+        <Card>
           <CardHeader>
             <CardTitle>{t('sensors.scanIdent.markers', 'What your scans send')}</CardTitle>
             <CardDescription>
@@ -148,7 +238,7 @@ export function ScanIdentificationSettings() {
                 value={form.userAgent}
                 maxLength={MAX_USER_AGENT}
                 onChange={(e) => setForm((f) => ({ ...f, userAgent: e.target.value }))}
-                disabled={disabled || !!platform?.user_agent_enforced}
+                disabled={disabled || uaLocked}
               />
               {uaError && <p className="text-sm text-destructive">{uaError}</p>}
               {platform?.user_agent && (
@@ -160,6 +250,21 @@ export function ScanIdentificationSettings() {
                         'Platform default, used while this is empty:'
                       )}{' '}
                   <span className="font-mono">{platform.user_agent}</span>
+                </p>
+              )}
+              {(platform?.user_agents?.length ?? 0) > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {platform?.user_agent_enforced
+                    ? t(
+                        'sensors.scanIdent.listEnforced',
+                        'The platform enforces a rotation list of {n} User-Agents.',
+                        { n: platform?.user_agents?.length ?? 0 }
+                      )
+                    : t(
+                        'sensors.scanIdent.listDefault',
+                        'Platform default: a rotation list of {n} User-Agents, used while yours is empty.',
+                        { n: platform?.user_agents?.length ?? 0 }
+                      )}
                 </p>
               )}
             </div>
@@ -181,6 +286,35 @@ export function ScanIdentificationSettings() {
                 disabled={disabled}
               />
             </div>
+            <DetailDisclosure
+              summary={t(
+                'sensors.scanIdent.advanced',
+                'Advanced: User-Agent rotation and query parameter'
+              )}
+            >
+              <div className="mt-4 space-y-6">
+                <UserAgentRotationField
+                  id="scan-ident-rotation"
+                  text={form.userAgents}
+                  onChange={(userAgents) => setForm((f) => ({ ...f, userAgents }))}
+                  disabled={disabled || uaLocked}
+                />
+                <QueryParamFields
+                  idPrefix="scan-ident"
+                  value={form.query}
+                  onChange={(query) => setForm((f) => ({ ...f, query }))}
+                  disabled={disabled || queryLocked}
+                />
+                {platform?.query && (
+                  <p className="text-sm text-muted-foreground">
+                    {sourceLabel(platform.query_enforced ? 'platform_enforced' : 'platform')}:{' '}
+                    <span className="font-mono">
+                      ?{platform.query.name}={platform.query.value}
+                    </span>
+                  </p>
+                )}
+              </div>
+            </DetailDisclosure>
             {platformHeaders.length > 0 && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">
@@ -238,7 +372,7 @@ export function ScanIdentificationSettings() {
           saving={isUpdating}
           onSave={() => void save()}
           onDiscard={reset}
-          saveDisabled={!!uaError || listInvalid}
+          saveDisabled={invalid}
         />
       </PageStack>
     </Main>
