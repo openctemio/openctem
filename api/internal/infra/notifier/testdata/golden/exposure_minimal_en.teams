@@ -1,0 +1,53 @@
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": [
+          {
+            "type": "Container",
+            "style": "warning",
+            "items": [
+              {
+                "type": "TextBlock",
+                "text": "🟠 New exposure",
+                "weight": "Bolder",
+                "size": "Medium",
+                "wrap": true
+              }
+            ]
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Severity",
+                "value": "High"
+              },
+              {
+                "title": "Next step",
+                "value": "Open it in the console to triage."
+              },
+              {
+                "title": "Organization",
+                "value": "Example Corp"
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "type": "Action.OpenUrl",
+            "title": "Open exposure",
+            "url": "https://ctem.example.com/exposures"
+          }
+        ]
+      }
+    }
+  ]
+}

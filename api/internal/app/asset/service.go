@@ -1458,6 +1458,7 @@ type ListAssetsInput struct {
 	MinConfidence      *int     `validate:"omitempty,min=0,max=100"`
 	MaxConfidence      *int     `validate:"omitempty,min=0,max=100"`
 	FirstSeenAfter     *time.Time
+	FirstSeenBefore    *time.Time
 	// ProgramAssets: only (bug-bounty program assets) or exclude (leave
 	// out program-only assets), RFC-065 §16.5.
 	ProgramAssets string `validate:"omitempty,oneof=only exclude"`
@@ -1678,6 +1679,9 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	filter.MinConfidence, filter.MaxConfidence = input.MinConfidence, input.MaxConfidence
 	if input.FirstSeenAfter != nil {
 		filter.CreatedAfter = input.FirstSeenAfter
+	}
+	if input.FirstSeenBefore != nil {
+		filter.CreatedBefore = input.FirstSeenBefore
 	}
 	filter.ProgramAssets = input.ProgramAssets
 	filter.Freshness = input.Freshness

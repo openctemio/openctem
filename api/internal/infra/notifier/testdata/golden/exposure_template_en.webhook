@@ -1,0 +1,33 @@
+{
+  "event_type": "new_exposure",
+  "event_version": 1,
+  "idempotency_key": "outbox-test",
+  "occurred_at": "\u003cnow\u003e",
+  "timestamp": "\u003cnow\u003e",
+  "title": "New exposure",
+  "body": "admin.example.com needs a look: Admin panel reachable on port 8443 (web interface exposed)\nOwner team: platform",
+  "severity": "high",
+  "url": "https://ctem.example.com/exposures",
+  "color": "#ea580c",
+  "source": "openctem.io",
+  "notification": {
+    "schema": "openctem.notification/v1",
+    "detail_level": "standard",
+    "locale": "en",
+    "headline": "New exposure",
+    "severity": "high",
+    "organization": "Example Corp",
+    "subject": {
+      "name": "admin.example.com",
+      "type": "subdomain"
+    },
+    "what": "Admin panel reachable on port 8443 (web interface exposed)",
+    "why": "An admin or login page is reachable from the internet",
+    "next_step": "Restrict access to the interface, or confirm it is meant to be public.",
+    "text": "admin.example.com needs a look: Admin panel reachable on port 8443 (web interface exposed)\nOwner team: platform",
+    "action": {
+      "label": "Open exposure",
+      "url": "https://ctem.example.com/exposures"
+    }
+  }
+}
