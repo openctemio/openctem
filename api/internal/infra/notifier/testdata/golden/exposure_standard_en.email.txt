@@ -1,0 +1,10 @@
+New exposure
+
+Severity: High
+Asset: admin.example.com (subdomain)
+What: Admin panel reachable on port 8443 (web interface exposed)
+Why it matters: An admin or login page is reachable from the internet
+Next step: Restrict access to the interface, or confirm it is meant to be public.
+Organization: Example Corp
+
+Open exposure: https://ctem.example.com/exposures

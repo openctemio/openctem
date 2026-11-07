@@ -15,6 +15,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/api/pkg/domain/outbox"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/notifymsg"
 )
 
 // The alert reads a counter: dead entries are archived and removed at once,
@@ -71,68 +72,36 @@ func TestFailEntry_CountsWhenRetriesAreSpent(t *testing.T) {
 }
 
 // The names of private programs are scrubbed from the message for an
-// integration not attached to them, before the template (RFC-065 §15.4).
+// integration not attached to them, the template output included (RFC-065 §15.4).
 func TestBuildMessageScrubsPrivateProgramNames(t *testing.T) {
 	program := shared.NewID()
 	orgWide := integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "org", "",
 		integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
-		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), withDetails())
+		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), withLevel(notifymsg.LevelFull))
 	attached := integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "prog", "",
 		integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
-		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), withDetails())
+		"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), withLevel(notifymsg.LevelFull))
 	d := bountyprogram.Delivery{
 		Programs: []bountyprogram.DeliveryProgram{{ID: program, Name: "Hush Corp", Tag: "program:h1:hush"}},
 		Channels: map[shared.ID]map[shared.ID]bool{attached.Integration.ID(): {program: true}},
 	}
-	entry := outboxdom.Reconstitute(outboxdom.NewID(), shared.NewID(), "new_finding", "finding", nil,
+	entry := outboxdom.Reconstitute(outboxdom.NewID(), shared.NewID(), "sla_breach", "sla", nil,
 		"Hush Corp: XSS on shop", "tags: program:h1:hush", outboxdom.SeverityHigh, "",
 		nil, outboxdom.OutboxStatusPending, 0, 3, "", time.Time{}, nil, "", time.Time{}, time.Time{}, nil)
 	s := &Service{}
-	m := s.buildMessage(orgWide, entry, d)
+	m := s.buildMessage(context.Background(), orgWide, entry, d)
 	if strings.Contains(m.Title+m.Body, "Hush") || strings.Contains(m.Body, "program:h1") {
 		t.Fatalf("org-wide message leaks the program: %q / %q", m.Title, m.Body)
 	}
-	if m := s.buildMessage(attached, entry, d); m.Title != "Hush Corp: XSS on shop" {
-		t.Fatalf("program channel message scrubbed: %q", m.Title)
+	if m := s.buildMessage(context.Background(), attached, entry, d); !strings.Contains(m.Body, "Hush Corp: XSS on shop") {
+		t.Fatalf("program channel message scrubbed: %q", m.Body)
 	}
 }
 
-func withDetails() *integration.NotificationExtension {
+func withLevel(l notifymsg.Level) *integration.NotificationExtension {
 	ext := integration.NewNotificationExtension(shared.NewID())
-	ext.SetIncludeDetails(true)
+	_ = ext.SetDetailLevel(l)
 	return ext
-}
-
-// Minimal by default (A9): a channel that did not opt in to details gets the
-// event type, severity and link, never the finding title or body.
-func TestBuildMessage_MinimalUnlessChannelOptsIn(t *testing.T) {
-	mk := func(ext *integration.NotificationExtension) *integration.IntegrationWithNotification {
-		return integration.NewIntegrationWithNotification(integration.Reconstruct(shared.NewID(), shared.NewID(), "c", "",
-			integration.CategoryNotification, integration.ProviderSlack, integration.StatusConnected, "", integration.AuthTypeToken,
-			"", "", nil, nil, 60, "", nil, nil, integration.Stats{}, time.Now(), time.Now(), nil), ext)
-	}
-	entry := outboxdom.Reconstitute(outboxdom.NewID(), shared.NewID(), "new_finding", "finding", nil,
-		"SQL injection on payroll.example.com", "asset payroll.example.com, CVE-2026-1", outboxdom.SeverityHigh, "https://app.example/findings/1",
-		nil, outboxdom.OutboxStatusPending, 0, 3, "", time.Time{}, nil, "", time.Time{}, time.Time{}, nil)
-	s := &Service{}
-
-	for name, ext := range map[string]*integration.NotificationExtension{
-		"new channel default": integration.NewNotificationExtension(shared.NewID()),
-		"no extension":        nil,
-	} {
-		m := s.buildMessage(mk(ext), entry, bountyprogram.Delivery{})
-		if strings.Contains(m.Title+m.Body, "payroll") || strings.Contains(m.Title+m.Body, "SQL") || strings.Contains(m.Body, "CVE") {
-			t.Errorf("%s leaks details: %q / %q", name, m.Title, m.Body)
-		}
-		if m.Title != "New finding (high)" || m.URL != "https://app.example/findings/1" {
-			t.Errorf("%s: title %q url %q", name, m.Title, m.URL)
-		}
-	}
-
-	m := s.buildMessage(mk(withDetails()), entry, bountyprogram.Delivery{})
-	if m.Title != "SQL injection on payroll.example.com" || !strings.Contains(m.Body, "CVE-2026-1") {
-		t.Errorf("opted-in channel lost details: %q / %q", m.Title, m.Body)
-	}
 }
 
 // A delivered link is absolute and names the event's organization, so a
@@ -158,12 +127,12 @@ func TestBuildMessage_LinkIsAbsoluteAndNamesOrg(t *testing.T) {
 		"":                                  "",
 	}
 	for in, want := range cases {
-		if got := s.buildMessage(intg, mk(in), bountyprogram.Delivery{}).URL; got != want {
+		if got := s.buildMessage(context.Background(), intg, mk(in), bountyprogram.Delivery{}).URL; got != want {
 			t.Errorf("link %q delivered as %q, want %q", in, got, want)
 		}
 	}
 	// Without a base the link stays relative but still names the organization.
-	if got := (&Service{}).buildMessage(intg, mk("/findings/1"), bountyprogram.Delivery{}).URL; got != "/findings/1?org="+tenant.String() {
+	if got := (&Service{}).buildMessage(context.Background(), intg, mk("/findings/1"), bountyprogram.Delivery{}).URL; got != "/findings/1?org="+tenant.String() {
 		t.Errorf("no base: %q", got)
 	}
 }

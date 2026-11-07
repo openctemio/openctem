@@ -1,0 +1,6 @@
+New exposure
+
+admin.example.com needs a look: Admin panel reachable on port 8443 (web interface exposed)
+Owner team: platform
+
+Open exposure: https://ctem.example.com/exposures
