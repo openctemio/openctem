@@ -32,6 +32,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"FindingPriorityController":          SQLLong, // priority queue enqueue and batch writes
 	"FindingPriorityReconcileController": SQLLong, // per-tenant reconcile enqueue over all open findings
 	"DashboardFactsController":           SQLLong, // dirty-queue processing
+	"AssetDomainMembershipController":    SQLLong, // queue batch: SET LOCAL statement_timeout 60s in ProcessQueue
 	"DashboardFactReconcileController":   SQLLong, // full run steps, partition upkeep
 
 	"VulnFeedImportController":            SQLLong,  // CVE corpus chunks and bundle finish

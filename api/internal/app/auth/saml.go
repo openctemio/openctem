@@ -348,7 +348,7 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 	if err != nil {
 		return nil, err
 	}
-	strict, err := checkSAMLResponseStrict(raw, certs, saml.Clock)
+	strict, err := checkSAMLResponseStrict(raw, certs, saml.Clock, sp.EntityID)
 	if err != nil {
 		return nil, err
 	}

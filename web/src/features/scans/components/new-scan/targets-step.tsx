@@ -75,6 +75,7 @@ import { ReadinessLine, RefusalGroups } from './refusal-groups'
 import { TargetList } from './target-list'
 import { InvalidTargetsNote } from './invalid-targets-note'
 import { BulkTargetsPanel } from './bulk-targets-panel'
+import { CoreInfraWarning } from './core-infra-warning'
 
 /** Typed targets shown as chips; past this they move to the list. */
 export const CHIP_LIMIT = 20
@@ -555,6 +556,7 @@ export function TargetsStep({
             groupCount={targets.assetGroupIds.length}
           />
         )}
+        <CoreInfraWarning targets={sent} />
         {readiness.state === 'partial' && (
           <p className="text-xs text-muted-foreground">
             {t('scans.targetsStep.partial', undefined, {
