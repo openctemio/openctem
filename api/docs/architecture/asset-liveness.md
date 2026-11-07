@@ -49,8 +49,9 @@ Each settled coverage run hands its per-target verdicts to the recorder. Only th
 | failed `edge_blocked` / `edge_challenged` | same | answered (something answered for the name) |
 | failed `unreachable` / `timeout` | same | no answer |
 | covered | `resolve.dns` | resolved |
-| unresolved, no answer (sensor refusal `unresolvable`, `name_gone`) | any | NXDOMAIN |
+| unresolved, no answer (sensor refusal `unresolvable` with `dns: name_gone`, or outcome `name_gone`) | any | NXDOMAIN |
 | unresolved, `resolver_failed` | any | resolver failed |
+| unresolved, DNS kind not stated (`dns_unknown`: a refusal `unresolvable` without `dns`, sent by sensors before sdk-go v0.38.0) | any | none: no evidence, neither advances nor resets a streak |
 
 Everything else says nothing about the target: a tool or platform failure, a stalled run, a target no task carried,
 an unfinished target, a policy block, a passive lookup, and a task whose every target failed the same target-side

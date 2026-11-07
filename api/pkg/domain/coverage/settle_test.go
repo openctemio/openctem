@@ -179,7 +179,7 @@ func TestVerdicts_DeadNamesAreUnresolved(t *testing.T) {
 	want := map[string]Verdict{
 		"gone.example.test":       {Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer},
 		"flaky.example.test":      {Kind: VerdictUnresolved, Outcome: ReasonResolverFailed},
-		"old.example.test":        {Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer},
+		"old.example.test":        {Kind: VerdictUnresolved, Outcome: OutcomeDNSUnknown},
 		"denied.example.test":     {Kind: VerdictBlocked},
 		"ok.example.test":         {Kind: VerdictCovered, Outcome: OutcomeOK},
 		"rev2.example.test":       {Kind: VerdictUnresolved, Outcome: OutcomeNoAnswer},
