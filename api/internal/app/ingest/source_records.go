@@ -16,11 +16,13 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
-// sourceRecordWriter stores per-source records (postgres.FindingRepository).
-// Optional: a repository without it keeps none.
-type sourceRecordWriter interface {
-	UpsertSourceRecords(ctx context.Context, tenantID shared.ID, src vulnerability.SourceIdentity,
-		values []vulnerability.SourceRecordValues) (int64, error)
+// sightingDataWriter stores a batch's interop data and its source's
+// per-finding records in one statement (postgres.FindingRepository).
+// Optional: a repository without it stores the interop data alone
+// (interopWriter) and keeps no source records.
+type sightingDataWriter interface {
+	StoreSightingData(ctx context.Context, tenantID shared.ID, interop []vulnerability.InteropUpdate,
+		src vulnerability.SourceIdentity, records []vulnerability.SourceRecordValues) error
 }
 
 // sourceIdentity is the source of an ingest, the same one its sightings
@@ -44,21 +46,20 @@ func sourceIdentity(agt *sensor.Sensor, binding Binding, opts Options, report *c
 	return id
 }
 
-// storeSourceRecords writes what this ingest's source reported for each
-// stored or re-sighted finding. Best effort: the findings are stored, so a
-// failure is logged and never fails the ingest.
-func (s *Service) storeSourceRecords(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
-	opts Options, report *ctis.Report, output *Output) {
-	if output == nil || len(output.SourceRecords) == 0 || s.findingProcessor == nil {
+// storeSightingData writes the batch's interop data and what this ingest's
+// source reported for each stored or re-sighted finding. Best effort: the
+// findings are stored, so a failure is logged and never fails the ingest.
+// A source without a channel (ProcessBatch outside an ingest) keeps no
+// records.
+func (p *FindingProcessor) storeSightingData(ctx context.Context, tenantID shared.ID,
+	interop []vulnerability.InteropUpdate, src vulnerability.SourceIdentity, records []vulnerability.SourceRecordValues) {
+	w, ok := p.repo.(sightingDataWriter)
+	if !ok || src.Channel == "" || len(records) == 0 {
+		p.storeInterop(ctx, tenantID, interop)
 		return
 	}
-	w, ok := s.findingProcessor.repo.(sourceRecordWriter)
-	if !ok {
-		return
-	}
-	src := sourceIdentity(agt, binding, opts, report)
-	if _, err := w.UpsertSourceRecords(ctx, tenantID, src, output.SourceRecords); err != nil {
-		s.logger.Warn("finding source records not stored", "tenant_id", tenantID.String(),
-			"channel", src.Channel, "count", len(output.SourceRecords), "error", logger.SanitizeError(err))
+	if err := w.StoreSightingData(ctx, tenantID, interop, src, records); err != nil {
+		p.logger.Warn("finding interop data or source records not stored", "tenant_id", tenantID.String(),
+			"channel", src.Channel, "interop", len(interop), "records", len(records), "error", logger.SanitizeError(err))
 	}
 }
