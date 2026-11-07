@@ -8,10 +8,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
-import { ErrorState } from '@/features/shared'
+import { DetailDisclosure, ErrorState } from '@/features/shared'
 import {
   HeaderListEditor,
   IdentityPreview,
+  QueryParamFields,
+  RequireIdentificationSwitch,
+  RequiredMissingAlert,
+  UserAgentRotationField,
 } from '@/features/sensors/components/scan-identification-parts'
 import {
   MAX_PLATFORM_HEADERS,
@@ -19,8 +23,15 @@ import {
   headerListErrors,
   mergeIdentity,
   normalizeHeaders,
+  normalizeQuery,
+  parseUserAgentList,
+  queryError,
+  requiredWithoutMarker,
+  userAgentBothError,
   userAgentError,
+  userAgentListErrors,
   type IdentHeader,
+  type IdentQuery,
 } from '@/features/sensors/lib/scan-identification'
 import { saveScanIdentification, useScanIdentification } from '../api/use-platform-settings'
 import {
@@ -30,27 +41,40 @@ import {
 } from './console-setting-parts'
 
 /**
- * System > Scan identification: the User-Agent and headers every
- * organization's scan jobs carry, each optionally enforced (no organization,
- * program or sensor-local layer replaces it). Organizations add their own
- * over them. A change needs the step-up and a reason.
+ * System > Scan identification: the User-Agent (or a rotation list), headers
+ * and query parameter every organization's scan jobs carry, each optionally
+ * enforced (no organization, program or sensor-local layer replaces it), and
+ * the main switch: require identification on every request (no organization
+ * can turn it off). Organizations add their own over them. A change needs
+ * the step-up and a reason.
  */
 export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
   const { t } = useTranslation()
   const uaId = useId()
   const uaEnfId = useId()
+  const qEnfId = useId()
+  const reqId = useId()
+  const rotId = useId()
   const { data, error, isLoading, mutate } = useScanIdentification()
   const [ua, setUa] = useState('')
+  const [uaList, setUaList] = useState('')
   const [uaEnforced, setUaEnforced] = useState(false)
   const [headers, setHeaders] = useState<IdentHeader[]>([])
+  const [query, setQuery] = useState<IdentQuery>({ name: '', value: '' })
+  const [queryEnforced, setQueryEnforced] = useState(false)
+  const [required, setRequired] = useState(false)
   const [confirm, setConfirm] = useState(false)
 
   // The saved values: on load, after a save and on Discard.
   const reset = useCallback(() => {
     if (data) {
       setUa(data.user_agent)
+      setUaList((data.user_agents ?? []).join('\n'))
       setUaEnforced(data.user_agent_enforced)
       setHeaders(data.headers)
+      setQuery(data.query ?? { name: '', value: '' })
+      setQueryEnforced(!!data.query_enforced)
+      setRequired(!!data.identification_required)
     }
   }, [data])
   useEffect(reset, [reset])
@@ -66,29 +90,38 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
   }
   if (isLoading || !data) return <Skeleton className="h-64 w-full" />
 
-  const uaError = userAgentError(ua, t)
-  const invalid = !!uaError || Object.keys(headerListErrors(headers, t)).length > 0
+  const userAgents = parseUserAgentList(uaList)
+  const uaError = userAgentError(ua, t) ?? userAgentBothError(ua, userAgents, t)
+  const qError = queryError(query, t)
+  const invalid =
+    !!uaError ||
+    !!qError ||
+    userAgentListErrors(uaList, t).length > 0 ||
+    Object.keys(headerListErrors(headers, t)).length > 0
+  const hasUA = ua.trim() !== '' || userAgents.length > 0
+  const q = normalizeQuery(query)
   const next = {
     user_agent: ua.trim(),
-    user_agent_enforced: ua.trim() !== '' && uaEnforced,
+    user_agents: userAgents,
+    user_agent_enforced: hasUA && uaEnforced,
     headers: normalizeHeaders(headers).map((h) => ({ ...h, enforced: !!h.enforced })),
+    query: q,
+    query_enforced: !!q && queryEnforced,
+    identification_required: required,
   }
   const dirty =
     JSON.stringify(next) !==
     JSON.stringify({
       user_agent: data.user_agent,
+      user_agents: data.user_agents ?? [],
       user_agent_enforced: data.user_agent_enforced,
       headers: data.headers,
+      query: data.query ?? null,
+      query_enforced: !!data.query_enforced,
+      identification_required: !!data.identification_required,
     })
-  const identity = mergeIdentity(
-    {
-      user_agent: next.user_agent,
-      user_agent_enforced: next.user_agent_enforced,
-      headers: next.headers,
-    },
-    '',
-    []
-  )
+  const identity = mergeIdentity(next, { userAgent: '', headers: [] })
+  const missingMarker = requiredWithoutMarker(identity)
 
   const save = async (reason: string) => {
     try {
@@ -122,6 +155,27 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <RequireIdentificationSwitch
+          id={reqId}
+          checked={required}
+          onChange={setRequired}
+          disabled={!canEdit}
+        />
+        {missingMarker && (
+          <RequiredMissingAlert
+            onAddHeader={
+              canEdit && headers.length < MAX_PLATFORM_HEADERS
+                ? () => {
+                    const idx = headers.length
+                    setHeaders([...headers, { name: '', value: '' }])
+                    requestAnimationFrame(() =>
+                      document.getElementById(`platform-scan-ident-name-${idx}`)?.focus()
+                    )
+                  }
+                : undefined
+            }
+          />
+        )}
         <div className="space-y-2">
           <Label htmlFor={uaId}>{t('admin.scanIdent.ua', 'User-Agent')}</Label>
           <Input
@@ -142,10 +196,13 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
               id={uaEnfId}
               checked={uaEnforced}
               onCheckedChange={setUaEnforced}
-              disabled={!canEdit || ua.trim() === ''}
+              disabled={!canEdit || !hasUA}
             />
             <Label htmlFor={uaEnfId} className="font-normal">
-              {t('admin.scanIdent.uaEnforced', 'Enforce: organizations cannot replace it')}
+              {t(
+                'admin.scanIdent.uaEnforced',
+                'Enforce: organizations cannot replace it (the User-Agent or the rotation list)'
+              )}
             </Label>
           </div>
         </div>
@@ -160,6 +217,40 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
             withEnforced
           />
         </div>
+        <DetailDisclosure
+          summary={t(
+            'sensors.scanIdent.advanced',
+            'Advanced: User-Agent rotation and query parameter'
+          )}
+        >
+          <div className="mt-4 space-y-6">
+            <UserAgentRotationField
+              id={rotId}
+              text={uaList}
+              onChange={setUaList}
+              disabled={!canEdit}
+            />
+            <div className="space-y-2">
+              <QueryParamFields
+                idPrefix="platform-scan-ident"
+                value={query}
+                onChange={setQuery}
+                disabled={!canEdit}
+              />
+              <div className="flex items-center gap-3">
+                <Switch
+                  id={qEnfId}
+                  checked={queryEnforced}
+                  onCheckedChange={setQueryEnforced}
+                  disabled={!canEdit || !q}
+                />
+                <Label htmlFor={qEnfId} className="font-normal">
+                  {t('admin.scanIdent.queryEnforced', 'Enforce: organizations cannot replace it')}
+                </Label>
+              </div>
+            </div>
+          </div>
+        </DetailDisclosure>
         <IdentityPreview identity={identity} />
         <SettingChangedLine change={data} />
         {canEdit && (
