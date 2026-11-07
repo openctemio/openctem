@@ -128,6 +128,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     ...unclassifiedOf(s),
     ...addressAutoAddOf(s),
     ...autoCoverageOf(s),
+    ...infoCoverageOf(s),
     ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
     max_range_prefix: s.max_range_prefix || 16,
   }
@@ -137,6 +138,17 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
 function autoCoverageOf(s: ApiScopeSettings): { auto_coverage?: boolean } {
   const v = (s as { auto_coverage?: boolean | null }).auto_coverage
   return typeof v === 'boolean' ? { auto_coverage: v } : {}
+}
+
+/** The info pass setting (on and its interval in days), when the API has it. */
+function infoCoverageOf(s: ApiScopeSettings): {
+  info_coverage?: boolean
+  info_coverage_days?: number
+} {
+  const o = s as { info_coverage?: boolean; info_coverage_days?: number }
+  return typeof o.info_coverage === 'boolean' && typeof o.info_coverage_days === 'number'
+    ? { info_coverage: o.info_coverage, info_coverage_days: o.info_coverage_days }
+    : {}
 }
 
 /** Whether automatic coverage runs now (undefined when the API predates it). */
@@ -207,6 +219,9 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
       const out = await updateScopeSettings({
         ...form,
         one_off_max_days: Math.min(30, Math.max(1, Math.round(form.one_off_max_days) || 1)),
+        ...(form.info_coverage_days !== undefined && {
+          info_coverage_days: Math.min(90, Math.max(7, Math.round(form.info_coverage_days) || 30)),
+        }),
       })
       if (out) {
         setSaved(out)
@@ -580,6 +595,53 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   onCheckedChange={(v) => setForm({ ...form, auto_coverage: v })}
                   disabled={disabled}
                 />
+              </Row>
+            )}
+
+            {form.info_coverage !== undefined && (
+              <Row
+                label={t('scope.settings.infoCoverage', 'Info checks')}
+                htmlFor={`${id}-infocoverage`}
+                hint={t(
+                  'scope.settings.infoCoverageHint',
+                  'On (default): web services also get the info-level template checks (technologies, panels, TLS and header posture) on a slower schedule: on the first coverage, when the technologies or web surface change, and otherwise every interval below. Matches are filed as info exposures, not findings. The regular checks keep their own schedule.'
+                )}
+              >
+                <Switch
+                  id={`${id}-infocoverage`}
+                  checked={form.info_coverage}
+                  onCheckedChange={(v) => setForm({ ...form, info_coverage: v })}
+                  disabled={disabled}
+                />
+              </Row>
+            )}
+
+            {form.info_coverage_days !== undefined && (
+              <Row
+                label={t('scope.settings.infoCoverageDays', 'Info checks interval')}
+                htmlFor={`${id}-infodays`}
+                hint={t(
+                  'scope.settings.infoCoverageDaysHint',
+                  'Days between info checks of an asset, 7 to 90. Longer saves sensor time.'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    id={`${id}-infodays`}
+                    type="number"
+                    min={7}
+                    max={90}
+                    className="w-24"
+                    value={form.info_coverage_days}
+                    onChange={(e) =>
+                      setForm({ ...form, info_coverage_days: Number(e.target.value) })
+                    }
+                    disabled={disabled || form.info_coverage === false}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {t('scope.settings.days', 'days')}
+                  </span>
+                </div>
               </Row>
             )}
 
