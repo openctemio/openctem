@@ -95,6 +95,7 @@ import {
 } from '@/lib/api/scan-types'
 import { useAssetGroup } from '@/lib/api/security-hooks'
 import { Can, Permission } from '@/lib/permissions'
+import { ScheduleMissedNote } from '@/features/scans/components/schedule-missed-note'
 import { SchedulePreview } from '@/features/scans/components/schedule-preview'
 import { schedulePreviewRequestFromConfig } from '@/features/scans/lib/schedule-preview'
 
@@ -542,6 +543,11 @@ export default function ScanDetailPage() {
                     ? ` (${t('scanDetail.metric.manualOnly')})`
                     : ''}
               </span>
+              <ScheduleMissedNote
+                config={config}
+                onViewRun={setOpenRunId}
+                onChanged={() => void refetchAll()}
+              />
               <span>
                 {t('scans.list.successRate')}:{' '}
                 {rate === null ? t('scans.list.notAvailable') : `${rate}%`}

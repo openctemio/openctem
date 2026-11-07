@@ -35,6 +35,8 @@ import type { ScanConfig } from '@/lib/api/scan-types'
 import { scanTypeName, scheduleTypeName } from '../lib/labels'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { ScheduleMissedNote } from './schedule-missed-note'
+import { hasScheduleMissed } from '../lib/schedule-missed'
 import { formatScanDate, scanSuccessRate } from '../lib/format'
 import { schedulePreviewRequestFromConfig } from '../lib/schedule-preview'
 import { SchedulePreview } from './schedule-preview'
@@ -189,6 +191,11 @@ function Overview({ config }: { config: ScanConfig }) {
             {config.next_run_at && (
               <DetailField label={t('scans.sheet.nextScheduled')}>
                 {formatScanDate(config.next_run_at)}
+              </DetailField>
+            )}
+            {hasScheduleMissed(config) && (
+              <DetailField label={t('scans.missed.label')} full>
+                <ScheduleMissedNote config={config} />
               </DetailField>
             )}
           </DetailFieldGrid>
