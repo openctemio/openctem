@@ -407,6 +407,7 @@
   "sensors.detail.overCapacityHint": "The sensor sizes its slots from the CPU and memory free on its host. The host got busier after these jobs started, so it now fits {capacity}. It takes no new jobs until running ones finish.",
   "sensors.detail.platformNotReported": "Platform not reported",
   "sensors.detail.problems": "{count} problems need attention",
+  "sensors.detail.reportedFindings": "Findings this sensor reported",
   "sensors.detail.role.collector": "Collector",
   "sensors.detail.role.scanner": "Scanner",
   "sensors.detail.scansToDate": "Scans to date",
