@@ -1721,7 +1721,7 @@ func TestCreateNotificationIntegration_WithConfig(t *testing.T) {
 			"security_alert",
 			"new_finding",
 		},
-		IncludeDetails:     true,
+		DetailLevel:        "full",
 		MinIntervalMinutes: 10,
 	}
 
@@ -2067,35 +2067,6 @@ func TestNotificationExtension_BooleanSeveritySetters(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("expected exactly 1 high severity entry, got %d", count)
-	}
-}
-
-func TestReconstructNotificationExtensionFromBooleans(t *testing.T) {
-	ext := integration.ReconstructNotificationExtensionFromBooleans(
-		shared.NewID(),
-		"",    // channelID - deprecated
-		"",    // channelName - deprecated
-		true,  // notifyOnCritical
-		true,  // notifyOnHigh
-		false, // notifyOnMedium
-		true,  // notifyOnLow
-		nil,   // enabledEventTypes
-		"",    // messageTemplate
-		true,  // includeDetails
-		10,    // minIntervalMinutes
-	)
-
-	if !ext.IsSeverityEnabled(integration.SeverityCritical) {
-		t.Error("expected critical enabled")
-	}
-	if !ext.IsSeverityEnabled(integration.SeverityHigh) {
-		t.Error("expected high enabled")
-	}
-	if ext.IsSeverityEnabled(integration.SeverityMedium) {
-		t.Error("expected medium disabled")
-	}
-	if !ext.IsSeverityEnabled(integration.SeverityLow) {
-		t.Error("expected low enabled")
 	}
 }
 
@@ -2506,13 +2477,13 @@ func TestNotificationExtension_MinIntervalDefaults(t *testing.T) {
 func TestReconstructNotificationExtension_EmptySeverities_UsesDefaults(t *testing.T) {
 	ext := integration.ReconstructNotificationExtension(
 		shared.NewID(),
-		"",   // channelID - deprecated
-		"",   // channelName - deprecated
-		nil,  // empty severities -> defaults
-		nil,  // empty event types -> defaults
-		"",   // messageTemplate
-		true, // includeDetails
-		0,    // minIntervalMinutes (0 -> default 5)
+		"",     // channelID - deprecated
+		"",     // channelName - deprecated
+		nil,    // empty severities -> defaults
+		nil,    // empty event types -> defaults
+		"",     // messageTemplate
+		"full", // detailLevel
+		0,      // minIntervalMinutes (0 -> default 5)
 	)
 
 	if !ext.IsSeverityEnabled(integration.SeverityCritical) {
@@ -2533,7 +2504,7 @@ func TestReconstructNotificationExtension_CustomSeverities(t *testing.T) {
 		[]integration.Severity{integration.SeverityLow, integration.SeverityInfo},
 		[]integration.EventType{integration.EventTypeScanCompleted},
 		"custom template",
-		false,
+		"minimal",
 		30,
 	)
 
@@ -2549,8 +2520,8 @@ func TestReconstructNotificationExtension_CustomSeverities(t *testing.T) {
 	if ext.MessageTemplate() != "custom template" {
 		t.Errorf("expected message template %q, got %q", "custom template", ext.MessageTemplate())
 	}
-	if ext.IncludeDetails() {
-		t.Error("expected include details false")
+	if ext.DetailLevel() != "minimal" {
+		t.Errorf("expected detail level minimal, got %q", ext.DetailLevel())
 	}
 	if ext.MinIntervalMinutes() != 30 {
 		t.Errorf("expected min interval 30, got %d", ext.MinIntervalMinutes())
@@ -3090,5 +3061,51 @@ func TestUpdateIntegration_Tenable_Connector(t *testing.T) {
 	if _, err := svc.UpdateIntegration(ctx, id, otherTenant, integrationapp.UpdateIntegrationInput{
 		Config: map[string]any{"sensor_id": foreign}}); err == nil {
 		t.Fatal("cross-tenant update must fail")
+	}
+}
+
+// A message template is validated on save against the closed variable set:
+// an unknown variable is refused with a validation error naming it, and
+// nothing is written. A new channel gets the standard detail level.
+func TestNotificationIntegration_TemplateAndLevelValidatedOnSave(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	notifRepo := newMockNotificationExtRepo()
+	notifRepo.integrationRepo = repo
+	svc := newTestIntegrationServiceWithNotification(repo, newMockSCMExtRepo(), notifRepo, newMockEncryptor())
+	base := integrationapp.CreateNotificationIntegrationInput{
+		TenantID: shared.NewID().String(), Name: "chat", Provider: "slack", AuthType: "token",
+		Credentials: "https://hooks.slack.com/services/xxx",
+	}
+
+	bad := base
+	bad.MessageTemplate = "{severity_emoji} [{severity}] {title}\n{url}"
+	_, err := svc.CreateNotificationIntegration(context.Background(), bad)
+	if !errors.Is(err, shared.ErrValidation) || !strings.Contains(err.Error(), "severity_emoji") || !strings.Contains(err.Error(), "url") {
+		t.Fatalf("unknown variables not refused: %v", err)
+	}
+	if len(repo.integrations) != 0 {
+		t.Fatalf("a refused template wrote %d integrations", len(repo.integrations))
+	}
+
+	badLevel := base
+	badLevel.DetailLevel = "everything"
+	if _, err := svc.CreateNotificationIntegration(context.Background(), badLevel); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("unknown level not refused: %v", err)
+	}
+
+	ok := base
+	ok.MessageTemplate = "{title} on {asset}"
+	got, err := svc.CreateNotificationIntegration(context.Background(), ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Notification.DetailLevel() != "standard" || got.Notification.MessageTemplate() != "{title} on {asset}" {
+		t.Fatalf("level %q template %q", got.Notification.DetailLevel(), got.Notification.MessageTemplate())
+	}
+
+	tpl := "{timestamp}"
+	if _, err := svc.UpdateNotificationIntegration(context.Background(), got.Integration.ID().String(), base.TenantID,
+		integrationapp.UpdateNotificationIntegrationInput{MessageTemplate: &tpl}); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("update with unknown variable not refused: %v", err)
 	}
 }

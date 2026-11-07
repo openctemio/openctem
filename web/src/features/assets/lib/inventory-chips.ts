@@ -261,8 +261,12 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
     filters.expiresBefore,
     ['expiresAfter', 'expiresBefore']
   )
-  range('firstSeen', t('assets.chip.firstSeen', 'First seen'), filters.firstSeenAfter, undefined, [
-    'firstSeenAfter',
-  ])
+  range(
+    'firstSeen',
+    t('assets.chip.firstSeen', 'First seen'),
+    filters.firstSeenAfter,
+    filters.firstSeenBefore,
+    ['firstSeenAfter', 'firstSeenBefore']
+  )
   return chips
 }

@@ -1,0 +1,47 @@
+{
+  "text": "New exposure (High)",
+  "attachments": [
+    {
+      "color": "#ea580c",
+      "blocks": [
+        {
+          "type": "header",
+          "text": {
+            "type": "plain_text",
+            "text": "🟠 New exposure",
+            "emoji": true
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Severity:* High\n*Asset:* admin.example.com (subdomain)\n*What:* Admin panel reachable on port 8443 (web interface exposed)\n*Why it matters:* An admin or login page is reachable from the internet\n*Next step:* Restrict access to the interface, or confirm it is meant to be public."
+          }
+        },
+        {
+          "type": "context",
+          "elements": [
+            {
+              "type": "mrkdwn",
+              "text": "Example Corp"
+            }
+          ]
+        },
+        {
+          "type": "actions",
+          "elements": [
+            {
+              "type": "button",
+              "text": {
+                "type": "plain_text",
+                "text": "Open exposure"
+              },
+              "url": "https://ctem.example.com/exposures"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

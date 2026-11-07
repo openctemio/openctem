@@ -255,3 +255,42 @@ func TestPackagesChanged(t *testing.T) {
 		}
 	}
 }
+
+// A dependency that names its asset goes to that asset only. When that
+// asset was not persisted, the dependency is skipped, never moved to
+// another host (also in a single-asset report).
+func TestComponentProcessor_ProcessBatch_AssetRef(t *testing.T) {
+	w := &fakePackageWriter{}
+	p := NewComponentProcessor(w, slog.Default())
+	a1, a2 := shared.NewID(), shared.NewID()
+	report := &ctis.Report{
+		Assets: []ctis.Asset{{ID: "host-a", Value: "192.0.2.1"}, {ID: "host-b", Value: "192.0.2.2"}, {ID: "host-c", Value: "192.0.2.3"}},
+		Dependencies: []ctis.Dependency{
+			{Name: "pkga", Version: "1", PURL: "pkg:deb/ubuntu/pkga@1", AssetRef: "host-b"},
+			{Name: "pkgb", Version: "1", PURL: "pkg:deb/ubuntu/pkgb@1", AssetRef: "host-a", Locations: []ctis.DependencyLocation{{Path: "192.0.2.2/x"}}},
+			{Name: "pkgc", Version: "1", PURL: "pkg:deb/ubuntu/pkgc@1", AssetRef: "host-c"}, // not persisted
+		},
+	}
+	if err := p.ProcessBatch(context.Background(), shared.NewID(), report, map[string]shared.ID{"host-a": a1, "host-b": a2}, software.ChannelFindingImport, &Output{}); err != nil {
+		t.Fatal(err)
+	}
+	got := map[shared.ID][]string{}
+	for _, s := range w.snaps {
+		for _, n := range s.Packages {
+			got[s.AssetID] = append(got[s.AssetID], n.PURL.Name)
+		}
+	}
+	if len(got) != 2 || len(got[a1]) != 1 || got[a1][0] != "pkgb" || len(got[a2]) != 1 || got[a2][0] != "pkga" {
+		t.Fatalf("attribution %v", got)
+	}
+
+	w = &fakePackageWriter{}
+	p = NewComponentProcessor(w, slog.Default())
+	report.Dependencies = report.Dependencies[2:]
+	if err := p.ProcessBatch(context.Background(), shared.NewID(), report, map[string]shared.ID{"host-a": a1}, software.ChannelFindingImport, &Output{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(w.snaps) != 0 {
+		t.Fatalf("a package of a host not persisted was moved to another: %+v", w.snaps)
+	}
+}

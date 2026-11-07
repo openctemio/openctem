@@ -2263,6 +2263,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Outbox.SetBrand(cfg.Brand)
 	// Delivered links are absolute and name their organization (pkg/weblink).
 	s.Outbox.SetLinkBase(cfg.SMTP.BaseURL)
+	// Channel messages name the asset, what it is and why it matters, read
+	// at send time inside the event's tenant (notification-system.md).
+	s.Outbox.SetFactsSource(postgres.NewNotificationFactsRepository(&postgres.DB{DB: deps.DB}))
 	// An e-mail channel whose relay the managed service rules refuse is
 	// stopped with a visible status and its owners are told.
 	s.Outbox.SetRelayRefusedHandler(s.Integration)

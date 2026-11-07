@@ -1,0 +1,69 @@
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": [
+          {
+            "type": "Container",
+            "style": "attention",
+            "items": [
+              {
+                "type": "TextBlock",
+                "text": "🔴 Phát hiện mới",
+                "weight": "Bolder",
+                "size": "Medium",
+                "wrap": true
+              }
+            ]
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Mức độ",
+                "value": "Nghiêm trọng"
+              },
+              {
+                "title": "Tài sản",
+                "value": "shop.example.com (domain)"
+              },
+              {
+                "title": "Nội dung",
+                "value": "CVE-2026-12345: Remote code execution in the file upload handler"
+              },
+              {
+                "title": "Vì sao quan trọng",
+                "value": "Đã bị khai thác thực tế (CISA KEV); EPSS 42%: có khả năng sớm bị khai thác"
+              },
+              {
+                "title": "Bước tiếp theo",
+                "value": "Vá hoặc giảm thiểu trước tiên: lỗ hổng đang bị khai thác."
+              },
+              {
+                "title": "Chi tiết",
+                "value": "The upload endpoint accepts a crafted archive that writes outside the upload directory."
+              },
+              {
+                "title": "Tổ chức",
+                "value": "Example Corp"
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "type": "Action.OpenUrl",
+            "title": "Mở phát hiện",
+            "url": "https://ctem.example.com/findings"
+          }
+        ]
+      }
+    }
+  ]
+}
