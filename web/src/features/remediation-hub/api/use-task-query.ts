@@ -116,22 +116,6 @@ export interface QueryExplanation {
   entity: string
 }
 
-/** One problem of a query, with its place in the text. */
-export interface QueryProblem {
-  start: number
-  end: number
-  line: number
-  column: number
-  message: string
-}
-
-export interface QuerySchemaField {
-  path: string
-  type: string
-  operators: string[]
-  enum?: string[]
-}
-
 export const taskQueryApi = {
   preview: (query: string) => post<QueryTaskPreview>(`${TASKS}/query/preview`, { query }),
   create: (body: CreateQueryTaskBody) => post<CreateQueryTaskResult>(`${TASKS}/query`, body),
@@ -162,31 +146,4 @@ export function useTaskQuery(taskId: string | undefined) {
     },
     { revalidateOnFocus: false }
   )
-}
-
-/** The findings fields the caller may query (names for autocomplete). */
-export function useFindingQuerySchema(enabled: boolean) {
-  return useSWR<{ fields?: QuerySchemaField[] }>(
-    enabled ? '/api/v1/query/schema?entity=findings' : null,
-    get,
-    { revalidateOnFocus: false }
-  )
-}
-
-/** The problems of an INVALID_QUERY answer, or an empty list. */
-export function queryProblems(err: unknown): QueryProblem[] {
-  if (!(err instanceof ApiClientError)) return []
-  const raw: unknown = Array.isArray(err.details)
-    ? err.details
-    : (err.details as { details?: unknown } | undefined)?.details
-  if (!Array.isArray(raw)) return []
-  return raw
-    .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
-    .map((d) => ({
-      start: Number(d.start ?? 0),
-      end: Number(d.end ?? 0),
-      line: Number(d.line ?? 0),
-      column: Number(d.column ?? 0),
-      message: typeof d.message === 'string' ? d.message : '',
-    }))
 }
