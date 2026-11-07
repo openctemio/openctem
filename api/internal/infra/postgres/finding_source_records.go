@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ import (
 const maxSourceRecordBatch = 500
 
 // sourceRecordValueCols are the value columns of finding_source_records, in
-// the order of the upsert's input arrays ($11 onward), with their casts.
+// the order of the upsert's input arrays (after clipped), with their casts.
 var sourceRecordValueCols = func() []struct{ name, cast string } {
 	jsonCols := map[string]bool{}
 	for _, n := range strings.Fields(`type_details source_meta scores vulnerability_ids source_extra`) {
@@ -53,18 +54,23 @@ const (
 	sqlNumericArray = "numeric[]"
 )
 
-// upsertSourceRecordsSQL writes what one source reported.
+// sourceRecordsUpsert writes what one source reported. Its parameters are
+// numbered after $1 (the tenant) from off+2, so the upsert can share one
+// statement with another write (interopAndSourceRecordsSQL):
 //
-//	$1 tenant, $2 channel, $3 sensor id (nullable), $4 sender, $5 tool,
-//	$6 whether the sender is a sensor, $7 the per-finding cap,
-//	$8 fingerprints, $9 observed at, $10 clipped, then one array per
-//	value column (sourceRecordValueCols).
+//	$1 tenant, then from off+2: channel, sensor id (nullable), sender,
+//	tool, whether the sender is a sensor, the per-finding cap,
+//	fingerprints, observed at, clipped, then one array per value column
+//	(sourceRecordValueCols).
 //
-// A repeat of the source replaces each value it carries when its
-// observation is not older than the stored one; an empty value never
-// erases. Rows are written in finding id order.
-var upsertSourceRecordsSQL = func() string {
-	inArrays := "$8::text[], $9::timestamptz[], $10::boolean[]"
+// It returns the CTEs (sen, src, rec_in) and the INSERT apart, so the
+// caller can embed the INSERT as a data-modifying CTE. A repeat of the
+// source replaces each value it carries when its observation is not older
+// than the stored one; an empty value never erases. Rows are written in
+// finding id order.
+func sourceRecordsUpsert(off int) (ctes, insert string) {
+	a := func(n int) string { return fmt.Sprintf("$%d", n+off) }
+	inArrays := a(8) + "::text[], " + a(9) + "::timestamptz[], " + a(10) + "::boolean[]"
 	inNames := "fingerprint, observed_at, clipped"
 	insCols, insVals, sets := "", "", ""
 	for i, c := range sourceRecordValueCols {
@@ -72,58 +78,67 @@ var upsertSourceRecordsSQL = func() string {
 		if c.name == "cvss_score" {
 			typ = sqlNumericArray
 		}
-		inArrays += fmt.Sprintf(", $%d::%s", 11+i, typ)
+		inArrays += ", " + a(11+i) + "::" + typ
 		inNames += ", " + c.name
 		insCols += ", " + c.name
-		insVals += ", d." + c.name + c.cast
+		insVals += ", rec_in." + c.name + c.cast
 		sets += fmt.Sprintf(`,
 	%[1]s = CASE WHEN EXCLUDED.last_seen_at >= r.last_seen_at
 		THEN COALESCE(EXCLUDED.%[1]s, r.%[1]s) ELSE COALESCE(r.%[1]s, EXCLUDED.%[1]s) END`, c.name)
 	}
-	return `
-WITH sen AS (
-	SELECT s.id FROM sensors s WHERE s.tenant_id = $1 AND s.id = $3::uuid
+	channel, sensor, sender, tool, isSensor, maxPer := a(2), a(3), a(4), a(5), a(6), a(7)
+	ctes = `sen AS (
+	SELECT s.id FROM sensors s WHERE s.tenant_id = $1 AND s.id = ` + sensor + `::uuid
 ), src AS (
 	SELECT (SELECT id FROM sen) AS sensor_id,
-		CASE WHEN $6::boolean AND (SELECT id FROM sen) IS NULL THEN '` + ingestreceipt.SharedSensorSender + `' ELSE $4::text END AS sender
-), d AS (
+		CASE WHEN ` + isSensor + `::boolean AND (SELECT id FROM sen) IS NULL THEN '` + ingestreceipt.SharedSensorSender + `' ELSE ` + sender + `::text END AS sender
+), rec_in AS (
 	SELECT f.id AS finding_id, i.*
 	FROM unnest(` + inArrays + `) AS i(` + inNames + `)
 	JOIN findings f ON f.tenant_id = $1 AND f.fingerprint = i.fingerprint
-)
-INSERT INTO finding_source_records AS r (tenant_id, finding_id, channel, sensor_id, sender, tool,
+)`
+	insert = `INSERT INTO finding_source_records AS r (tenant_id, finding_id, channel, sensor_id, sender, tool,
 	first_seen_at, last_seen_at, clipped` + insCols + `)
-SELECT $1::uuid, d.finding_id, $2::text, src.sensor_id, src.sender, $5::text,
-	d.observed_at, d.observed_at, d.clipped` + insVals + `
-FROM d CROSS JOIN src
-WHERE (SELECT count(*) FROM finding_source_records x WHERE x.tenant_id = $1 AND x.finding_id = d.finding_id) < $7::integer
+SELECT $1::uuid, rec_in.finding_id, ` + channel + `::text, src.sensor_id, src.sender, ` + tool + `::text,
+	rec_in.observed_at, rec_in.observed_at, rec_in.clipped` + insVals + `
+FROM rec_in CROSS JOIN src
+WHERE (SELECT count(*) FROM finding_source_records x WHERE x.tenant_id = $1 AND x.finding_id = rec_in.finding_id) < ` + maxPer + `::integer
    OR EXISTS (SELECT 1 FROM finding_source_records x
-		WHERE x.tenant_id = $1 AND x.finding_id = d.finding_id AND x.channel = $2::text
-		  AND x.sensor_id IS NOT DISTINCT FROM src.sensor_id AND x.sender = src.sender AND x.tool = $5::text)
-ORDER BY d.finding_id
+		WHERE x.tenant_id = $1 AND x.finding_id = rec_in.finding_id AND x.channel = ` + channel + `::text
+		  AND x.sensor_id IS NOT DISTINCT FROM src.sensor_id AND x.sender = src.sender AND x.tool = ` + tool + `::text)
+ORDER BY rec_in.finding_id
 ON CONFLICT (tenant_id, finding_id, channel, sensor_id, sender, tool) DO UPDATE SET
 	first_seen_at = LEAST(r.first_seen_at, EXCLUDED.first_seen_at),
 	last_seen_at  = GREATEST(r.last_seen_at, EXCLUDED.last_seen_at),
 	clipped     = r.clipped OR EXCLUDED.clipped,
 	backfilled    = false,
 	updated_at    = now()` + sets
+	return ctes, insert
+}
+
+// upsertSourceRecordsSQL is the source-record upsert on its own.
+var upsertSourceRecordsSQL = func() string {
+	ctes, insert := sourceRecordsUpsert(0)
+	return "\nWITH " + ctes + "\n" + insert
 }()
 
-// UpsertSourceRecords stores what src reported for the tenant's findings
-// with the given fingerprints (vulnerability.SourceRecordRepository). Values
-// are sanitized here; a fingerprint the tenant has no finding for writes
-// nothing. Returns the rows inserted or updated.
-func (r *FindingRepository) UpsertSourceRecords(ctx context.Context, tenantID shared.ID, src vulnerability.SourceIdentity,
-	values []vulnerability.SourceRecordValues) (int64, error) {
-	if len(values) == 0 {
-		return 0, nil
-	}
+// sourceRecordBatch is one UpsertSourceRecords call made ready to write:
+// one row per fingerprint, in fingerprint order, and the source's
+// parameters.
+type sourceRecordBatch struct {
+	fps    []string
+	byFP   map[string]vulnerability.SourceRecordValues
+	params []any // channel, sensor id, sender, tool, is sensor, per-finding cap
+}
+
+// newSourceRecordBatch checks the source and keeps one row per fingerprint
+// (a repeat within a batch would hit the same row twice): the newest
+// observation wins. Values are sanitized here.
+func newSourceRecordBatch(src vulnerability.SourceIdentity, values []vulnerability.SourceRecordValues) (sourceRecordBatch, error) {
 	channel := src.Channel
 	if channel == "" || channel == string(ingestreceipt.ChannelUnknown) {
-		return 0, fmt.Errorf("source records: channel %q is not a sighting channel", channel)
+		return sourceRecordBatch{}, fmt.Errorf("source records: channel %q is not a sighting channel", channel)
 	}
-	// One row per fingerprint (a repeat within a batch would hit the same
-	// row twice): the newest observation wins, in fingerprint order.
 	now := time.Now().UTC()
 	byFP := make(map[string]vulnerability.SourceRecordValues, len(values))
 	for _, v := range values {
@@ -156,27 +171,67 @@ func (r *FindingRepository) UpsertSourceRecords(ctx context.Context, tenantID sh
 	if tool == unknownTool {
 		tool = ""
 	}
+	return sourceRecordBatch{fps: fps, byFP: byFP,
+		params: []any{channel, sensorID, sender, tool, src.IsSensor, vulnerability.MaxSourceRecordsPerFinding}}, nil
+}
 
+// chunks is how many statements of maxSourceRecordBatch rows the batch needs.
+func (b sourceRecordBatch) chunks() int {
+	return (len(b.fps) + maxSourceRecordBatch - 1) / maxSourceRecordBatch
+}
+
+// args are the upsert's parameters after $1 for chunk i (none past the
+// last chunk: empty input arrays, so the upsert writes nothing).
+func (b sourceRecordBatch) args(i int) ([]any, error) {
+	start := min(i*maxSourceRecordBatch, len(b.fps))
+	chunk := b.fps[start:min(start+maxSourceRecordBatch, len(b.fps))]
+	arrays, err := sourceRecordArgs(chunk, b.byFP)
+	if err != nil {
+		return nil, err
+	}
+	return append(slices.Clone(b.params), arrays...), nil
+}
+
+// UpsertSourceRecords stores what src reported for the tenant's findings
+// with the given fingerprints (vulnerability.SourceRecordRepository). Values
+// are sanitized here; a fingerprint the tenant has no finding for writes
+// nothing. Returns the rows inserted or updated. Ingest writes the records
+// together with the interop data instead (StoreSightingData).
+func (r *FindingRepository) UpsertSourceRecords(ctx context.Context, tenantID shared.ID, src vulnerability.SourceIdentity,
+	values []vulnerability.SourceRecordValues) (int64, error) {
+	if len(values) == 0 {
+		return 0, nil
+	}
+	b, err := newSourceRecordBatch(src, values)
+	if err != nil {
+		return 0, err
+	}
 	var total int64
-	for start := 0; start < len(fps); start += maxSourceRecordBatch {
-		chunk := fps[start:min(start+maxSourceRecordBatch, len(fps))]
-		args, err := sourceRecordArgs(chunk, byFP)
+	for i := range b.chunks() {
+		n, err := r.upsertSourceRecordChunk(ctx, tenantID, b, i)
+		total += n
 		if err != nil {
 			return total, err
 		}
-		args = append([]any{tenantID.String(), channel, sensorID, sender, tool, src.IsSensor,
-			vulnerability.MaxSourceRecordsPerFinding}, args...)
-		res, err := r.db.ExecContext(ctx, upsertSourceRecordsSQL, args...)
-		if err != nil {
-			return total, fmt.Errorf("upsert finding source records: %w", err)
-		}
-		n, _ := res.RowsAffected()
-		total += n
 	}
 	return total, nil
 }
 
-// sourceRecordArgs builds the input arrays of one upsert chunk ($8 on).
+func (r *FindingRepository) upsertSourceRecordChunk(ctx context.Context, tenantID shared.ID, b sourceRecordBatch, i int) (int64, error) {
+	args, err := b.args(i)
+	if err != nil {
+		return 0, err
+	}
+	res, err := r.db.ExecContext(ctx, upsertSourceRecordsSQL, append([]any{tenantID.String()}, args...)...)
+	if err != nil {
+		return 0, fmt.Errorf("upsert finding source records: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// sourceRecordArgs builds the input arrays of one upsert chunk (fingerprints
+// onward).
 func sourceRecordArgs(fps []string, byFP map[string]vulnerability.SourceRecordValues) ([]any, error) {
 	n := len(fps)
 	observed := make([]string, n)

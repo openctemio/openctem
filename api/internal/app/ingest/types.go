@@ -9,7 +9,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // =============================================================================
@@ -220,11 +219,6 @@ func (i Input) IsFullCoverage() bool {
 
 // Output represents the result of ingestion.
 type Output struct {
-	// SourceRecords are what this ingest's source reported for each stored
-	// or re-sighted finding; the service stores them with the source
-	// (storeSourceRecords). Not serialized.
-	SourceRecords []vulnerability.SourceRecordValues `json:"-"`
-
 	ReportID string `json:"report_id"`
 	// ReceiptID is the receipt the ingest was recorded on ("" when the
 	// receipt could not be written; the ingest itself stands).
