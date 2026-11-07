@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "f59b17dd6da3d90d"
+const RegistryVersion = "1ec5699a535411a1"
 
 // Lenses.
 const (
@@ -396,6 +396,7 @@ var registryTypes = []TypeDefinition{
 		ScannableBy: []string{"url", "service", "port"},
 		Coverage: []CoverageRule{
 			{Capability: "vuln.templates", EverySeconds: 604800, Requires: []string{"no_named_twin"}},
+			{Capability: "vuln.templates_info", EverySeconds: 2592000, Requires: []string{"no_named_twin"}},
 			{Capability: "enumerate.web_paths", EverySeconds: 2592000, Requires: []string{"origin_scope_entry", "inventory_changed", "edge_clear"}},
 			{Capability: "capture.screenshot", EverySeconds: 2592000, Requires: []string{"no_named_twin"}},
 		},
