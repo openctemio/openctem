@@ -11,7 +11,15 @@ import { useSettleSignal } from '@/features/shared/components/settle-group'
 import { useState } from 'react'
 import { useSWRConfig } from 'swr'
 import { toast } from 'sonner'
-import { CheckCircle2, ClipboardCheck, Loader2, ShieldCheck, Star, XCircle } from 'lucide-react'
+import {
+  CheckCircle2,
+  ClipboardCheck,
+  FileUp,
+  Loader2,
+  ShieldCheck,
+  Star,
+  XCircle,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -33,6 +41,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
 import { SectionLoadError, isLoadFailure } from './section-load-error'
+import { ImportResultsDialog } from '../import-results-dialog'
 import {
   findingVerificationKey,
   saveVerificationChecklist,
@@ -82,6 +91,8 @@ const REASON: Record<string, string> = {
   no_automatic_retest:
     'A person reported this finding, so nothing re-checks it automatically. Attach a retest check to retest it.',
   imported_no_retest: 'Imported from a tool that no sensor of your organization runs',
+  reimport_to_verify:
+    'Imported from a scan report: import a newer report of the same scan to re-check it, or attach a retest check.',
   version_evidence_missing: 'The software version this finding was matched on is no longer known',
   version_source_not_rescannable:
     'The version came from a package list or the operating system, which no network scan reads again',
@@ -225,6 +236,8 @@ export function VerificationPanel({ findingId, className }: VerificationPanelPro
   const { data: plan, error, mutate, isLoading } = useFindingVerificationPlan(findingId)
   useSettleSignal(isLoading)
   const [open, setOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const { mutate: mutateKey } = useSWRConfig()
 
   // A refusal stays hidden (no oracle); a real failure must not read as "no verification".
   if (isLoadFailure(error)) {
@@ -243,6 +256,13 @@ export function VerificationPanel({ findingId, className }: VerificationPanelPro
   const checklistMethod = plan.methods.find(
     (m) => (m.kind === 'evidence_review' || m.kind === 'rotation_proof') && m.available
   )
+  // An imported scanner report is re-checked by importing a newer report.
+  // The gate of POST /findings/imports (the API stays authoritative).
+  const canReimport =
+    plan.methods.some((m) => m.reason === 'reimport_to_verify') &&
+    hasPermission('findings:write') &&
+    hasPermission('assets:write') &&
+    hasPermission('assets:import')
 
   return (
     <DetailSection
@@ -250,11 +270,26 @@ export function VerificationPanel({ findingId, className }: VerificationPanelPro
       icon={ShieldCheck}
       className={className}
       actions={
-        canEdit && checklistMethod ? (
-          <Button variant="outline" size="sm" className="h-7" onClick={() => setOpen(true)}>
-            <ClipboardCheck className="h-3.5 w-3.5" />
-            {t('findings.verification.openChecklist', 'Checklist')}
-          </Button>
+        (canEdit && checklistMethod) || canReimport ? (
+          <>
+            {canReimport && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                onClick={() => setImportOpen(true)}
+              >
+                <FileUp className="h-3.5 w-3.5" aria-hidden />
+                {t('findings.verification.reimport', 'Import newer results')}
+              </Button>
+            )}
+            {canEdit && checklistMethod && (
+              <Button variant="outline" size="sm" className="h-7" onClick={() => setOpen(true)}>
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                {t('findings.verification.openChecklist', 'Checklist')}
+              </Button>
+            )}
+          </>
         ) : undefined
       }
     >
@@ -280,6 +315,16 @@ export function VerificationPanel({ findingId, className }: VerificationPanelPro
         ))}
       </ul>
       <EvidenceSummary plan={plan} t={t} />
+      {canReimport && (
+        <ImportResultsDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onImported={() => {
+            void mutate()
+            void mutateKey(findingTransitionsKey(findingId))
+          }}
+        />
+      )}
       {open && (
         <ChecklistDialog
           findingId={findingId}
