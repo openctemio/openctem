@@ -66,6 +66,7 @@ caller gets: pentest findings only for members of their campaign.
 |---|---|---|
 | `asset_type`, `asset_type_not` | the stored type of the finding's asset (`domain`, `subdomain`, `ip_address`, `service`, `repository`, ...) | `(tenant_id, asset_type, ...)` index on assets |
 | `asset_domain`, `asset_domain_not` | `example.com`: the name and every asset that belongs under it; `*.example.com`: only under it. Upper case, a trailing dot and Unicode labels are normalised; a bare public suffix (`com.vn`) is refused; up to 20 values | the `(tenant_id, key)` primary key of `asset_domain_memberships` ([asset-domain-membership.md](asset-domain-membership.md)) |
+| `asset_ip` | the finding's asset is an `ip_address` asset inside an address or CIDR range (`10.0.0.0/8`, `2001:db8::/32`); up to 20 values; needs `assets:read` | `idx_assets_ip_addr (tenant_id, parse_asset_ip(name))`, one btree range per value ([database-notes.md](database-notes.md)) |
 | `asset_name`, `asset_name_not` | a name pattern: `*` any characters, `?` one, everything else literal (`%`, `_` and `\` too); at most 3 wildcards, 200 characters, and a run of 3 literal characters; up to 10 values. Expensive | the trigram index on `assets.name` |
 
 Every one is a tenant-pinned subquery that only narrows: the data scope, the
@@ -192,6 +193,19 @@ A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the
   lists the accepted names.
 - Old names (`severities`, `search`, …) are aliases: they work, answer with
   `Deprecation`/`Sunset` and count in `deprecated_query_param_requests_total`.
+
+## Text query (search boxes)
+
+A search box may hold the short form of the query language
+(`severity>=high kev=true -status:accepted`, [query-language.md](query-language.md#short-form-search-boxes)).
+The list endpoints never receive the text: the page sends it to
+`POST /api/v1/query/parse`, which answers the version 1 filter document (and,
+when every condition is a chip, the flat params). A filter chips can show
+stays in today's flat params, so links keep their form; one they cannot (an
+OR across fields, a group) is `fq=<canonical text>` in the page URL, and the
+page sends its document to `POST /findings/search`. Requests that cannot
+carry it (stats, export, bulk by filter) fail closed: an `fq` param is an
+unknown param (400), never a wider read.
 
 ## Findings search (`q`)
 

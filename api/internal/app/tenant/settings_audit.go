@@ -27,7 +27,8 @@ import (
 //     target local-policy requirement turned off, the administrators'
 //     two-factor requirement turned off (while 2FA is not required of
 //     everyone), the personal-account policy made less strict, JIT approval
-//     turned off, a sign-in exception added.
+//     turned off, a sign-in exception added, required scan identification
+//     turned off.
 func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Severity {
 	switch {
 	case before.MFARequired && !after.MFARequired,
@@ -41,6 +42,8 @@ func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Seve
 		before.EmailVerificationMode != tenantdom.EmailVerificationNever && after.EmailVerificationMode == tenantdom.EmailVerificationNever,
 		before.RequireSensorLocalPolicyForPrivateTargets && !after.RequireSensorLocalPolicyForPrivateTargets,
 		before.ForbidToolInsecureTLS && !after.ForbidToolInsecureTLS,
+		// Scans no longer have to identify themselves on every request.
+		before.ToolHTTPIdentificationRequired && !after.ToolHTTPIdentificationRequired,
 		// Opening who may be invited, or dropping the required end of access.
 		before.EffectiveInvitees() != tenantdom.InviteesAny && after.EffectiveInvitees() == tenantdom.InviteesAny,
 		before.ExternalAccessEndRequired && !after.ExternalAccessEndRequired,
