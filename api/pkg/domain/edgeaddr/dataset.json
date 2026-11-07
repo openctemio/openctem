@@ -1,5 +1,5 @@
 {
- "version": "2026-11-04.1",
+ "version": "2026-11-07.1",
  "ranges": [
   {
    "provider": "Amazon CloudFront",
@@ -3727,6 +3727,41 @@
    ]
   },
   {
+   "provider": "Microsoft 365",
+   "class": "cloud_shared",
+   "prefixes": [
+    "13.107.6.152/31",
+    "13.107.18.10/31",
+    "13.107.128.0/22",
+    "23.103.160.0/20",
+    "40.92.0.0/15",
+    "40.96.0.0/13",
+    "40.104.0.0/15",
+    "40.107.0.0/16",
+    "52.96.0.0/13",
+    "52.238.78.88/32",
+    "104.47.0.0/17",
+    "131.253.33.215/32",
+    "132.245.0.0/16",
+    "150.171.32.0/22",
+    "204.79.197.215/32",
+    "2603:1006::/40",
+    "2603:1016::/36",
+    "2603:1026::/36",
+    "2603:1036::/36",
+    "2603:1046::/36",
+    "2603:1056::/36",
+    "2620:1ec:4::152/127",
+    "2620:1ec:c::10/127",
+    "2620:1ec:d::10/127",
+    "2620:1ec:8f0::/46",
+    "2620:1ec:900::/46",
+    "2620:1ec:a92::152/127",
+    "2a01:111:f400::/48",
+    "2a01:111:f403::/48"
+   ]
+  },
+  {
    "provider": "AWS Global Accelerator",
    "class": "dedicated",
    "prefixes": [
@@ -3920,6 +3955,61 @@
    "match": "shopify",
    "provider": "Shopify",
    "class": "saas_hosting"
+  },
+  {
+   "match": "zoho",
+   "provider": "Zoho",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "proofpoint",
+   "provider": "Proofpoint",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "mimecast",
+   "provider": "Mimecast",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "barracuda",
+   "provider": "Barracuda",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "sendgrid",
+   "provider": "SendGrid",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "mailgun",
+   "provider": "Mailgun",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "sparkpost",
+   "provider": "SparkPost",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "salesforce",
+   "provider": "Salesforce",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "zendesk",
+   "provider": "Zendesk",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "atlassian",
+   "provider": "Atlassian",
+   "class": "cloud_shared"
+  },
+  {
+   "match": "hubspot",
+   "provider": "HubSpot",
+   "class": "cloud_shared"
   },
   {
    "match": "amazon",
@@ -4152,6 +4242,51 @@
    "suffix": "squarespace.com",
    "provider": "Squarespace",
    "class": "saas_hosting"
+  },
+  {
+   "suffix": "outlook.com",
+   "provider": "Microsoft 365",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "office365.com",
+   "provider": "Microsoft 365",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "mx.microsoft",
+   "provider": "Microsoft 365",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "google.com",
+   "provider": "Google",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "googlemail.com",
+   "provider": "Google",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "pphosted.com",
+   "provider": "Proofpoint",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "mimecast.com",
+   "provider": "Mimecast",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "zoho.com",
+   "provider": "Zoho",
+   "class": "cloud_shared"
+  },
+  {
+   "suffix": "zohomail.com",
+   "provider": "Zoho",
+   "class": "cloud_shared"
   }
  ]
 }
