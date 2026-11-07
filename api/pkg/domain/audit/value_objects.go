@@ -71,7 +71,12 @@ const (
 	// Asset lifecycle transitions. Emitted per batch run (worker)
 	// rather than per asset so the audit log stays scannable.
 	// Metadata carries counts + bounded lists of affected asset IDs.
-	ActionAssetLifecycleRun       Action = "asset.lifecycle_run"
+	ActionAssetLifecycleRun Action = "asset.lifecycle_run"
+	// ActionAssetLivenessApplied: a liveness pass changed asset liveness
+	// states, or closed or reopened findings of gone assets
+	// (docs/architecture/asset-liveness.md). Each finding move also has its
+	// own finding.status_changed row.
+	ActionAssetLivenessApplied    Action = "asset.liveness_applied"
 	ActionAssetMarkedStale        Action = "asset.marked_stale"
 	ActionAssetReactivated        Action = "asset.reactivated"
 	ActionAssetLifecycleSnoozed   Action = "asset.lifecycle_snoozed"
@@ -142,6 +147,11 @@ const (
 	// /assets no longer merges (a duplicate is a 409); older rows from it
 	// keep this action. Metadata lists the changed field names.
 	ActionAssetCreateMerged Action = "asset.create_merged"
+	// ActionAssetGovernedTagsChanged: a person changed a tag that a team
+	// access rule, scan approval rule, scan window or assignment rule reads.
+	// A refused attempt is recorded with the result "denied". Metadata names
+	// the tags and the kinds of rule.
+	ActionAssetGovernedTagsChanged Action = "asset.governed_tags_changed"
 
 	// Human changes to assets (API/UI). Metadata carries the names of the
 	// changed fields, counts and ids, never field values.
@@ -898,7 +908,7 @@ func (a Action) IsValid() bool {
 		ActionTenantIdleDeletionDue, ActionTenantIdleReactivated, ActionTenantIdlePolicyChanged,
 		ActionTenantSuspended, ActionTenantUnsuspended,
 		ActionTenantDeletionScheduled, ActionTenantDeletionCancelled,
-		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
+		ActionAssetLifecycleRun, ActionAssetLivenessApplied, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked, ActionScopeSettingsUpdated,
 		ActionScopeTargetApproved, ActionScopeTargetRejected,
@@ -909,7 +919,7 @@ func (a Action) IsValid() bool {
 		ActionScopeLetterUploaded, ActionScopeLetterRevoked,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
-		ActionAssetCreateMerged,
+		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged, ActionOwnerRoleDriftRemoved,
@@ -1416,10 +1426,10 @@ func SeverityForAction(a Action) Severity {
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantModulesUpdated,
 		ActionTenantRiskScoringUpdated, ActionTenantRiskScoresRecalculated, ActionTenantAssetSourceUpdated,
 		ActionTenantAssetLifecycleUpdated, ActionTenantRetestUpdated, ActionTenantClosureUpdated, ActionTenantEvidenceUpdated, ActionTenantVulnMatchingUpdated, ActionTenantCyclePolicyUpdated,
-		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
+		ActionAssetLifecycleRun, ActionAssetLivenessApplied, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged, ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
+		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged, ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,

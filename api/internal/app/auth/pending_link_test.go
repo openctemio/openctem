@@ -383,3 +383,7 @@ func TestPendingLink_RevokeFailureLinksNothing(t *testing.T) {
 		t.Fatal("mailbox told of a link that did not happen")
 	}
 }
+
+func (*authAtSessions) SpendRecentAuth(context.Context, shared.ID, shared.ID, time.Time) (bool, error) {
+	return false, nil
+}

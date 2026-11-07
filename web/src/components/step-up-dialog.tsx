@@ -29,6 +29,7 @@ import {
   STEP_UP_UNAVAILABLE_CODE,
   type StepUpMethod,
   type StepUpProof,
+  type StepUpPrompt,
   type StepUpState,
 } from '@/lib/api/step-up'
 import { endSessionAndSignIn } from '@/stores/auth-store'
@@ -82,6 +83,7 @@ export function StepUpDialogHost() {
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<StepUpState | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [prompt, setPrompt] = useState<StepUpPrompt>({})
   const resolver = useRef<((ok: boolean) => void) | null>(null)
 
   const loadState = useCallback(() => {
@@ -95,9 +97,10 @@ export function StepUpDialogHost() {
   useEffect(
     () =>
       registerStepUpHandler(
-        () =>
+        (p) =>
           new Promise<boolean>((resolve) => {
             resolver.current = resolve
+            setPrompt(p ?? {})
             setOpen(true)
             loadState()
           })
@@ -128,7 +131,23 @@ export function StepUpDialogHost() {
     finish(true)
   }
 
-  const minutes = Math.max(1, Math.round((state?.window_seconds ?? 600) / 60))
+  const windowSeconds = prompt.window_seconds ?? state?.window_seconds ?? 600
+  const minutes = Math.max(1, Math.round(windowSeconds / 60))
+  const rememberNote =
+    prompt.mode === 'every_time'
+      ? t(
+          'components.stepUp.rememberEveryTime',
+          'You will be asked again for the next action like this.'
+        )
+      : prompt.window === 'session'
+        ? t('components.stepUp.rememberSession', 'You will not be asked again until you sign out.')
+        : minutes >= 60 && minutes % 60 === 0
+          ? t('components.stepUp.rememberHours', 'You will not be asked again for {hours} hours.', {
+              hours: minutes / 60,
+            })
+          : t('components.stepUp.remember', 'You will not be asked again for {minutes} minutes.', {
+              minutes,
+            })
 
   const notice = loadFailed
     ? {
@@ -186,11 +205,7 @@ export function StepUpDialogHost() {
         'components.stepUp.description',
         'This action changes how your organization is secured. Confirm your identity to continue.'
       )}
-      rememberNote={t(
-        'components.stepUp.remember',
-        'You will not be asked again for {minutes} minutes.',
-        { minutes }
-      )}
+      rememberNote={rememberNote}
       factor={method === 'password' ? 'password' : 'totp'}
       loading={!loadFailed && !method}
       notice={notice}

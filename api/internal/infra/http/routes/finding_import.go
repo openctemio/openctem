@@ -55,6 +55,11 @@ func registerFindingImportRoutes(router Router, h *handler.FindingImportHandler,
 		router.Group("/api/v1/findings/{id}/imports", func(r Router) {
 			r.GET("/", receipts.FindingReceipts, middleware.Require(permission.FindingsRead))
 		}, tenantMiddlewares...)
+		// Who reported the finding (finding_sightings); the sensor and the
+		// scan name are shown per sensors:read and scans:read (handler).
+		router.Group("/api/v1/findings/{id}/sightings", func(r Router) {
+			r.GET("/", receipts.FindingSightings, middleware.Require(permission.FindingsRead))
+		}, tenantMiddlewares...)
 	}
 }
 
@@ -63,7 +68,7 @@ func registerFindingImportRoutes(router Router, h *handler.FindingImportHandler,
 // which closes nothing, needs no re-authentication. The query is read the
 // way the handler reads it (the first coverage value).
 func requireStepUpWhenFullCoverage() Middleware {
-	gate := requireStepUp()
+	gate := requireStepUpSensitive()
 	return func(next http.Handler) http.Handler {
 		gated := gate(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

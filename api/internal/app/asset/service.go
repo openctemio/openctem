@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	tagdom "github.com/openctemio/openctem/api/pkg/domain/tag"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -494,7 +496,11 @@ func (s *AssetService) CreateAsset(ctx context.Context, input CreateAssetInput) 
 	if input.Description != "" {
 		a.UpdateDescription(input.Description)
 	}
-	for _, tag := range input.Tags {
+	tags, tagErr := tagdom.ValidateNew(nil, input.Tags)
+	if tagErr != nil {
+		return nil, tagdom.Refusal(tagErr)
+	}
+	for _, tag := range tags {
 		a.AddTag(tag)
 	}
 
@@ -1167,11 +1173,21 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 		oldTags = make([]string, len(a.Tags()))
 		copy(oldTags, a.Tags())
 
-		for _, tag := range a.Tags() {
-			a.RemoveTag(tag)
+		// Only the tags a person adds are checked: a tag the asset already
+		// carries (a scanner's, an older limit's) never blocks a save.
+		next, tagErr := tagdom.ValidateNew(oldTags, input.Tags)
+		if tagErr != nil {
+			return nil, nil, tagdom.Refusal(tagErr)
 		}
-		for _, tag := range input.Tags {
-			a.AddTag(tag)
+		for _, tag := range oldTags {
+			if !slices.Contains(next, tag) {
+				a.RemoveTag(tag)
+			}
+		}
+		for _, tag := range next {
+			if !slices.Contains(oldTags, tag) {
+				a.AddTag(tag)
+			}
 		}
 	}
 
@@ -1433,6 +1449,8 @@ type ListAssetsInput struct {
 	// UnclassifiedScanned is the tenant's input to it, resolved by the caller.
 	MonitoringState     []string `validate:"max=7,dive,oneof=irrelevant out_of_scope inactive pending_decision unvalidated not_monitored monitored"`
 	UnclassifiedScanned bool
+	// Liveness: the asset's liveness state (docs/architecture/asset-liveness.md).
+	Liveness []string `validate:"max=5,dive,oneof=unknown alive unreachable unresolvable gone"`
 	// Primary: only the organization's root domains (asset.PrimarySQL).
 	Primary            bool
 	DiscoveredBy       []string `validate:"max=10,dive,max=40"`
@@ -1652,6 +1670,7 @@ func withTriageFilters(filter assetdom.Filter, input ListAssetsInput) (assetdom.
 	}
 	filter.ScopeStatuses = input.ScopeStatus
 	filter.MonitoringStates = input.MonitoringState
+	filter.LivenessStates = input.Liveness
 	filter.UnclassifiedScanned = input.UnclassifiedScanned
 	filter.Primary = input.Primary
 	filter.DiscoveredBy = input.DiscoveredBy
@@ -2184,7 +2203,11 @@ func (s *AssetService) CreateRepositoryAssetWithOutcome(ctx context.Context, inp
 	if input.Description != "" {
 		a.UpdateDescription(input.Description)
 	}
-	for _, tag := range input.Tags {
+	repoTags, tagErr := tagdom.ValidateNew(nil, input.Tags)
+	if tagErr != nil {
+		return nil, nil, none, tagdom.Refusal(tagErr)
+	}
+	for _, tag := range repoTags {
 		a.AddTag(tag)
 	}
 
@@ -2754,8 +2777,12 @@ func (s *AssetService) updateExistingRepositoryAsset(
 		existingAsset.SetClassification(classification)
 	}
 
-	// Add new tags
-	for _, tag := range input.Tags {
+	// Add new tags (checked like a create; a tag the asset carries stays)
+	addTags, tagErr := tagdom.ValidateNew(existingAsset.Tags(), input.Tags)
+	if tagErr != nil {
+		return nil, nil, tagdom.Refusal(tagErr)
+	}
+	for _, tag := range addTags {
 		existingAsset.AddTag(tag)
 	}
 

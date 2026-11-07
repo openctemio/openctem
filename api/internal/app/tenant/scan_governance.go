@@ -44,6 +44,7 @@ func (s *TenantService) UpdateScanGovernanceSettings(
 	reason string,
 	actx auditapp.AuditContext,
 ) (*tenantdom.ScanGovernanceSettings, error) {
+	defer s.tagRulesChanged(tenantID)
 	reason = strings.TrimSpace(reason)
 	if reason == "" || len(reason) > scangov.MaxNoteLen {
 		return nil, fmt.Errorf("%w: a reason (at most %d characters) is required", shared.ErrValidation, scangov.MaxNoteLen)
@@ -114,4 +115,20 @@ func scanGovernanceLoosened(before, after tenantdom.ScanGovernanceSettings) (mod
 		}
 	}
 	return modeLowered, false
+}
+
+// TagRulesInvalidator is told when the scan approval rules were saved, so the
+// governing-tag set is not stale (taggov).
+type TagRulesInvalidator interface{ Invalidate(tenantID shared.ID) }
+
+// SetTagRulesInvalidator wires it.
+func (s *TenantService) SetTagRulesInvalidator(i TagRulesInvalidator) { s.tagRules = i }
+
+func (s *TenantService) tagRulesChanged(tenantID string) {
+	if s.tagRules == nil {
+		return
+	}
+	if id, err := shared.IDFromString(tenantID); err == nil {
+		s.tagRules.Invalidate(id)
+	}
 }
