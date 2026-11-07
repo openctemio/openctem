@@ -75,6 +75,11 @@ type Match struct {
 	// HostedBy is the provider whose shared front end serves the asset
 	// (hosting.go); empty when the asset may be the organization's own.
 	HostedBy string
+	// AssetName, AssetType and AssetCreatedAt place the asset among the
+	// services of its host (locations.go).
+	AssetName      string
+	AssetType      string
+	AssetCreatedAt time.Time
 }
 
 // CVEInfo is the corpus data a finding carries.
@@ -104,6 +109,7 @@ type MatcherFinding struct {
 	VersionID   *shared.ID
 	Location    string
 	CVERejected bool
+	CreatedAt   time.Time
 }
 
 // Rekey moves a matcher finding to a new identity key.
