@@ -36,6 +36,7 @@ type Repositories struct {
 	AssetTechnologyBackfill *postgres.AssetTechnologyBackfillRepository // Technology backfill (RFC-112)
 	AssetCoverage           *postgres.AssetCoverageRepository           // Coverage ledger (RFC-093)
 	AssetResolution         *postgres.AssetResolutionRepository         // Whether host names resolve (not_resolving names are skipped by active stages)
+	NameResolution          *postgres.NameResolutionRepository          // What each sensor resolves a name to (split-horizon routing)
 	AssetWildcardDNS        *postgres.AssetWildcardDNSRepository        // Names that resolve only through a wildcard (RFC-088 A4)
 	AssetEnrichmentRequests *postgres.AssetEnrichmentRequestRepository  // Automatic enrichment requests (RFC-075)
 	AssetChangeEvents       *postgres.AssetChangeEventRepository        // Asset change timeline (RFC-069)
@@ -436,6 +437,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		AssetTechnologyBackfill: postgres.NewAssetTechnologyBackfillRepository(db),
 		AssetCoverage:           postgres.NewAssetCoverageRepository(db),
 		AssetResolution:         postgres.NewAssetResolutionRepository(db),
+		NameResolution:          postgres.NewNameResolutionRepository(db),
 		AssetWildcardDNS:        postgres.NewAssetWildcardDNSRepository(db),
 		AssetEnrichmentRequests: postgres.NewAssetEnrichmentRequestRepository(db),
 		AssetChangeEvents:       postgres.NewAssetChangeEventRepository(db),

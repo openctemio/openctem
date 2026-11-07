@@ -1,6 +1,7 @@
 'use client'
 
 import { RunReceiptSection } from '@/features/findings/components/receipt-summary'
+import { seenByFindingsHref } from '@/features/findings/api/receipts-api'
 import { IntensityBadge } from './intensity-badge'
 import dynamic from 'next/dynamic'
 import { useTranslation } from '@/context/i18n-provider'
@@ -46,6 +47,7 @@ import {
   runTaskProgress,
 } from '@/features/scans/lib/run-display'
 import { RunTasksTable } from './run-tasks-table'
+import { RunZoneSplitPanel } from './run-zone-split'
 import { WindowWaits } from '@/features/scan-windows'
 import { RunStageLanes } from './run-stage-lanes'
 import { RunTimeline } from './run-timeline'
@@ -261,6 +263,16 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               </p>
             )}
 
+            <p className="text-sm">
+              <Link
+                href={seenByFindingsHref('seen_in_run_id', run.id)}
+                className="font-medium underline-offset-2 hover:underline"
+                data-testid="run-reported-findings"
+              >
+                {t('scans.runDetail.reportedFindings', 'Findings this run reported')}
+              </Link>
+            </p>
+
             <DetailStatGrid aria-label={t('scans.runDetail.keyNumbers')}>
               <DetailStat label={t('scans.runDetail.findings')} value={run.total_findings} />
               {progress && <DetailStat label={t('scans.runDetail.tasks')} value={progress.label} />}
@@ -278,6 +290,11 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                       : 'incomplete'
                 }
               />
+              {run.zone_split && (
+                <DetailSection title={t('scans.runZoneSplit.title')}>
+                  <RunZoneSplitPanel split={run.zone_split} parentRunId={run.parent_run_id} />
+                </DetailSection>
+              )}
               {(run.scan_run_steps?.length ?? 0) > 0 && (
                 <DetailSection title={t('scans.runDetail.runMap')}>
                   <RunMap

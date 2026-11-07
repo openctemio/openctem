@@ -27,6 +27,7 @@ import (
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/validator"
 )
 
 // ErrDispatchGateUnavailable is returned when the target gate cannot check
@@ -144,6 +145,15 @@ type DispatchTargetsInput struct {
 	// (unresolved). Left empty, such names are refused as before.
 	Tool       string
 	Capability string
+	// ZoneSensorTier, when set, turns on the plan-time readiness check of
+	// each zone's sensors (scanzone.JudgeZoneSensors) for a job of that
+	// tier (scanzone.TierUnknown: the private check only): a target whose
+	// zone sensors are all New while the job is above T0, or all refuse
+	// private targets on their host while the target is private, is
+	// refused (zone_sensor_new, zone_sensor_no_private). The dry run sets
+	// it; the trigger checks in its own zone planning, and the claim
+	// re-check leaves it off (the grant and the sensor decide there).
+	ZoneSensorTier *int
 	// SplitRanges cuts a range target (CIDR or "a-b") around the active
 	// exclusions of an address kind and the built-in deny list: the rest
 	// is dispatched as pieces (Allowed holds the pieces, Split names them)
@@ -151,11 +161,30 @@ type DispatchTargetsInput struct {
 	// overlaps an exclusion is excluded whole: for callers that map
 	// Allowed back onto their own input list.
 	SplitRanges bool
+	// MaxRangeHostBits is the widest range target the dispatch takes, in
+	// host bits (0: 16, an IPv4 /16). Wider, up to the platform's /8, only
+	// where the caller cuts large ranges into /16 chunks and scans them live
+	// hosts first: the scan run of a liveness scan and its scope check
+	// (RFC-151). Needs SplitRanges to dispatch anything wider than a /16.
+	MaxRangeHostBits int
 }
 
 // ReasonInternalOutsideZones is the reason an internal address is refused
 // while the tenant has no scan zone (AllowNonNetworkTargets).
 const ReasonInternalOutsideZones = "internal addresses are scanned only inside a scan zone of this organization"
+
+// rangeHostBits is the widest range the dispatch validates, in host bits: a
+// range wider than a /16 is accepted only when the dispatch also cuts it.
+func (in DispatchTargetsInput) rangeHostBits() int {
+	switch {
+	case in.MaxRangeHostBits <= 0:
+		return validator.DefaultCIDRHostBits
+	case in.SplitRanges || in.DryRun:
+		return min(in.MaxRangeHostBits, validator.MaxCIDRHostBitsLimit)
+	default:
+		return min(in.MaxRangeHostBits, validator.DefaultCIDRHostBits)
+	}
+}
 
 // gatePath is the dispatch path named in refusal logs.
 func (in DispatchTargetsInput) gatePath() string {
@@ -174,6 +203,9 @@ type RefusedTarget struct {
 	// Resolved are the addresses a hostname resolved to, when zone routing
 	// refused it (shown to the tenant that owns the target only).
 	Resolved []string `json:"resolved,omitempty"`
+	// SensorID is the tenant's own zone sensor a zone_sensor_new or
+	// zone_sensor_no_private fix acts on.
+	SensorID string `json:"sensor_id,omitempty"`
 }
 
 // DispatchTargets is the gate's decision for every input target.
@@ -293,12 +325,16 @@ func (s *Service) ResolveDispatchTargets(ctx context.Context, in DispatchTargets
 	if !in.AllowNonNetworkTargets {
 		var rejected []rejectedTarget
 		var err error
-		accepted, rejected, err = s.validateTargetsEach(ctx, in.TenantID.String(), targets, limit)
+		accepted, rejected, err = s.validateTargetsEach(ctx, in.TenantID.String(), targets, limit, in.rangeHostBits())
 		if err != nil {
 			return nil, err
 		}
 		for _, r := range rejected {
-			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: scopedom.RefusalInvalidTarget})
+			code := scopedom.RefusalInvalidTarget
+			if r.Code != "" {
+				code = r.Code
+			}
+			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: r.Reason, Code: code})
 		}
 	}
 	ok := make(map[string]bool, len(accepted))
@@ -788,9 +824,29 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 		out.Allowed = kept
 		return nil
 	}
-	plan := scanzone.NewRouter(zones, s.zoneResolver).LookupOnly(in.lookupOnly()).Plan(ctx, kept)
+	plan := s.zoneRouter(ctx, in.TenantID, zones, kept).LookupOnly(in.lookupOnly()).Plan(ctx, kept)
+	// A sensor's private answer is never a scope grant: the address must not
+	// be excluded nor rejected (vantage.go). Fail closed.
+	vantageRefused, err := s.vantageScopeRefusals(ctx, in.TenantID, plan.Routes)
+	if err != nil {
+		return fmt.Errorf("nothing dispatched: %w", err)
+	}
+	var states map[shared.ID][]scanzone.ZoneSensorState
+	if in.ZoneSensorTier != nil {
+		if states, err = s.zoneSensorStates(ctx, in.TenantID, plan.ZoneOrder); err != nil {
+			return err
+		}
+	}
 	out.ZoneOf = make(map[string]*scanzone.Zone, len(kept))
 	for _, r := range plan.Routes {
+		if reason, no := vantageRefused[r.Target]; no {
+			out.Refused = append(out.Refused, vantageRefusal(r.Target, reason))
+			continue
+		}
+		if note := vantageNote(r); note != "" && !in.DryRun {
+			s.logger.Info("target routed by a sensor's DNS answer", "tenant_id", in.TenantID.String(),
+				"target", logger.SanitizeValue(r.Target), "note", note)
+		}
 		switch {
 		case r.Zone == nil && !r.Unzoned:
 			reason := r.Reason
@@ -798,8 +854,11 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 				reason = "no scan zone covers this target"
 			}
 			code := scopedom.RefusalZoneNone
-			if r.Unresolved {
+			switch {
+			case r.Unresolved:
 				code = scopedom.RefusalUnresolved
+			case r.Kind == scanzone.KindAmbiguousZone:
+				code = scopedom.RefusalAmbiguousZone
 			}
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: reason, Code: code, Resolved: s.revealedAddrs(r)})
 		case r.Zone != nil && len(r.Zone.SensorIDs) == 0:
@@ -809,11 +868,28 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target,
 				Reason: fmt.Sprintf("target is in scan zone %q and the pinned sensor is not assigned to it", r.Zone.Name), Code: scopedom.RefusalZoneSensorMismatch})
 		default:
+			if in.ZoneSensorTier != nil {
+				v := scanzone.JudgeZoneSensors(r.Zone, states[r.Zone.ID], scanzone.SensorNeed{
+					Tier: *in.ZoneSensorTier, Private: scanzone.RoutePrivate(r), SensorID: in.SensorID})
+				if v.Kind != "" {
+					out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: v.Reason,
+						Code: zoneSensorRefusalCode(v.Kind), SensorID: v.SensorID.String()})
+					continue
+				}
+			}
 			out.Allowed = append(out.Allowed, r.Target)
 			out.ZoneOf[r.Target] = r.Zone
 		}
 	}
 	return nil
+}
+
+// zoneSensorRefusalCode is the refusal code of a zone readiness kind.
+func zoneSensorRefusalCode(kind string) string {
+	if kind == scanzone.KindZoneSensorNew {
+		return scopedom.RefusalZoneSensorNew
+	}
+	return scopedom.RefusalZoneSensorNoPrivate
 }
 
 // dedupeTargets trims, drops empty entries and removes case-insensitive

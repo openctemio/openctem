@@ -189,7 +189,13 @@ posted form itself (`r.ParseForm`, body capped at 1 MB): crewjam reads
 `SAMLResponse` from `r.PostForm`, and before RFC-025 the form was never parsed,
 so no SAML sign-in could succeed. The crypto
 (XML-dsig signature verification) is handled by `github.com/crewjam/saml`, not
-hand-rolled.
+hand-rolled. The API imports it as `github.com/openctemio/saml`, a public fork
+of v0.5.1 (BSD 2-Clause licence and attribution kept) with one patch that
+binds the subject identifier and condition elements by namespace and checks
+the optional ones for nil (GO-2026-6909, sent upstream as crewjam/saml#674).
+The fork is imported directly, not through a `replace` directive, so a custom
+build that depends on the core gets the patched code too. Move back to the
+upstream module once a release carries the fix.
 
 ## Response hardening
 
@@ -203,6 +209,13 @@ The library validates the signature, conditions, audience, destination and
 | One assertion | the `samlp:Response` holds exactly one plaintext `saml:Assertion` and no `EncryptedAssertion` | the library returns the first of several, a signature-wrapping surface |
 | Signed assertion | the assertion carries its own enveloped signature, verified against the configured certificate, even when the response is signed too | the library checks either the response or the assertion signature, not both |
 | No SHA-1 | any `SignatureMethod` or `DigestMethod` based on SHA-1, anywhere in the document, refuses the response (also enforced in the library's signature hook) | SHA-1 collisions are practical |
+| Assertion shape | exactly one `saml:Issuer` (not empty), one `saml:Subject` and one `saml:Conditions` as direct children of the assertion; at least one `SubjectConfirmation`, each with exactly one `SubjectConfirmationData`; at most one subject identifier; no `NameID`, `EncryptedID`, `BaseID`, `Conditions`, `AudienceRestriction`, `Audience`, `SubjectConfirmation`, `SubjectConfirmationData` or authentication-context element outside the assertion namespace | the library dereferenced the missing elements without a nil check (a panic after the signature check), and bound those elements by local name in any namespace, so a foreign `NameID` became the subject (GO-2026-6909) |
+| Statements in the SAML namespace | `AuthnStatement`, `AttributeStatement`, `Attribute` and `AttributeValue` outside the assertion namespace refuse the response | the authentication time, the second-factor evidence and the identity attributes are read from these elements |
+| Audience | the `Conditions` hold at least one `AudienceRestriction`, and every one of them names this service provider's entity ID | the profile requires the restriction, and several restrictions apply together; the library accepts an assertion with none, or with any one that matches |
+| Bearer confirmation | every `SubjectConfirmation` uses `urn:oasis:names:tc:SAML:2.0:cm:bearer` | the Web Browser SSO profile; this service provider proves no other method |
+| Issue time | an assertion issued more than the 180 s clock skew in the future is refused | the library checks only that it is not too old |
+| One binding per prefix, no DTD | a namespace prefix declared for two different namespaces anywhere in the document, or a document type declaration, refuses the response | every reader of the response (these checks, the signature library, the SAML library) then binds each element to the same namespace; SAML has no use for a DTD |
+| No panic | a panic inside the library parse is a refusal, not a server error | defence for any other unchecked path in the library |
 | Replay cache | the assertion ID is recorded with `SET NX` under `saml:aid:{tenant}:{sha256(id)}` until the latest of `IssueInstant` + 90 s and every `NotOnOrAfter`, plus the 180 s clock skew and 2 min (capped at 24 h); a second sighting is refused | `InResponseTo` and the single-use cookie bind a response to one browser, the cache to one use |
 | HTTP-POST only | a `SAMLart` artifact is refused | resolving one makes the server call out; no artifact endpoint is advertised |
 
@@ -215,6 +228,16 @@ Signature-wrapping regression cases live in `TestSAMLXSWCorpus`
 (`internal/app/auth/saml_strict_test.go`). A comment inside a signed NameID
 (dropped by canonicalization, so the signature still verifies) never truncates
 it: the whole signed value is read (`TestSAMLNameIDCommentInjectionReadsWholeValue`).
+Assertion-shape cases (missing Issuer, Subject, Conditions or confirmation
+data; foreign-namespace identifiers and conditions) are in
+`internal/app/auth/saml_shape_test.go`: each response is signed by the IdP
+key, since only a signing-key holder can send one. The audience, bearer,
+issue-time, statement-namespace, prefix and DTD cases are in
+`internal/app/auth/saml_hardening_test.go`.
+
+The ACS binds `InResponseTo` to the AuthnRequest ID in the request-tracking
+cookie. A missing or empty ID binds nothing, so a response that answers no
+request (an unsolicited, IdP-initiated one) is refused.
 
 ## Certificate expiry
 

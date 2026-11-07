@@ -41,6 +41,19 @@ func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, reportID s
 	if opts.Receipt != nil {
 		return *opts.Receipt
 	}
+	if opts.ReleasedFromQuarantine {
+		// A released item is what the sensor sent: it counts under its
+		// sensor, never under a connector (its trusted binding is only how
+		// the platform applies it).
+		sensorID := shared.ID{}
+		if agt != nil {
+			sensorID = agt.ID
+		}
+		if reportID == "" {
+			reportID = shared.NewID().String()
+		}
+		return ingestreceipt.Source{Kind: ingestreceipt.SourceSensor, Ref: ingestreceipt.ReportRef(sensorID, reportID)}
+	}
 	switch binding.Kind {
 	case BindingCommand:
 		if binding.CommandID != nil {
@@ -77,6 +90,9 @@ func receiptSource(agt *sensor.Sensor, binding Binding, opts Options, reportID s
 func receiptInstance(agt *sensor.Sensor, binding Binding, opts Options, report *ctis.Report) ingestreceipt.Instance {
 	if opts.Receipt != nil && opts.Receipt.Kind == ingestreceipt.SourceUpload {
 		return ingestreceipt.Instance{Kind: ingestreceipt.InstanceImport, ID: ingestreceipt.InstanceImport}
+	}
+	if opts.ReleasedFromQuarantine && agt != nil && !agt.ID.IsZero() {
+		return ingestreceipt.Instance{Kind: ingestreceipt.InstanceSensor, ID: agt.ID.String(), Name: opts.SenderName}
 	}
 	switch binding.Kind {
 	case BindingCIRun:
@@ -118,17 +134,22 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		AssetsUpdated: output.AssetsUpdated,
 		Failed:        len(output.FailedFindings),
 		Suppressed:    output.FindingsSuppressed,
+		Released:      opts.ReleasedFromQuarantine,
 		Created:       output.CreatedIDs,
 		Reopened:      output.ReopenedIDs,
-		StillDetected: output.SightedFingerprints,
+		StillDetected: sightedNotFailed(output),
 		Decided:       output.Decided,
 		Items:         output.Items,
 		At:            time.Now(),
 	}
+	d.Outcomes = output.Outcomes
 	if report != nil {
-		d.Received = len(report.Findings)
+		// What the producer sent, before any filter; a caller that built
+		// the output itself falls back to the findings left.
+		d.Received = max(output.FindingsReceived, len(report.Findings))
 		if report.Tool != nil {
 			d.Tool = report.Tool.Name
+			d.ToolVersion = report.Tool.Version
 		}
 	}
 	// Skipped counts the findings not stored for a reason (scope,
@@ -142,6 +163,18 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 			break
 		}
 		d.Errors = append(d.Errors, ingestreceipt.ErrorEntry{Index: ff.Index, Code: ingestreceipt.ErrorStoreFailed})
+	}
+	// A finding of a tool that reported a type it does not declare is
+	// ingested and flagged (contract_mismatch.go).
+	if report != nil && len(output.ContractMismatchTypes) > 0 {
+		for i := range report.Findings {
+			if len(d.Errors) >= ingestreceipt.MaxErrors {
+				break
+			}
+			if output.ContractMismatchRefs[report.Findings[i].AssetRef] {
+				d.Errors = append(d.Errors, ingestreceipt.ErrorEntry{Index: i, Code: ingestreceipt.ErrorContractMismatch})
+			}
+		}
 	}
 	id, err := s.receipts.Record(ctx, d)
 	if err != nil {
@@ -196,4 +229,25 @@ func (s *Service) recordCoverageReceipt(ctx context.Context, tenantID, commandID
 		s.logger.Warn("coverage receipt not recorded", "tenant_id", tenantID.String(),
 			"command_id", commandID.String(), "error", logger.SanitizeError(err))
 	}
+}
+
+// sightedNotFailed is the reported fingerprints less the ones that failed to
+// store: a finding counts once on its receipt, as failed, even when a row
+// with its key exists (the absence decision still reads every reported
+// fingerprint from the output).
+func sightedNotFailed(output *Output) []string {
+	if len(output.FailedFindings) == 0 {
+		return output.SightedFingerprints
+	}
+	failed := make(map[string]struct{}, len(output.FailedFindings))
+	for _, ff := range output.FailedFindings {
+		failed[ff.Fingerprint] = struct{}{}
+	}
+	out := make([]string, 0, len(output.SightedFingerprints))
+	for _, fp := range output.SightedFingerprints {
+		if _, ok := failed[fp]; !ok {
+			out = append(out, fp)
+		}
+	}
+	return out
 }

@@ -1031,6 +1031,21 @@ export type ComplianceFramework =
 
 export type ComplianceResult = 'pass' | 'fail' | 'manual' | 'not_applicable'
 
+/** PASSED / FAILED / … as a benchmark audit reports it. */
+export type ComplianceOutcome = 'PASSED' | 'FAILED' | 'WARNING' | 'ERROR' | 'SKIPPED'
+
+/** One sub-check of a check that needs several conditions to pass. */
+export interface ComplianceSubCheck {
+  outcome: ComplianceOutcome
+  name: string
+  /** The file the sub-check read, when it names one. */
+  file?: string
+  /** The expression the file or the output had to match. */
+  expect?: string
+  /** What the sub-check found (the matched lines or the command output). */
+  detail: string
+}
+
 export interface ComplianceDetails {
   framework?: ComplianceFramework
   frameworkVersion?: string

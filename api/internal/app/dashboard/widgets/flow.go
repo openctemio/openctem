@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 )
 
 // Intake reasons and health states.
@@ -66,12 +67,24 @@ type IntakeSource struct {
 	Closed        int64  `json:"closed"`
 	Suppressed    int64  `json:"suppressed"`
 	// NotStored: skipped (out of scope, excluded, invalid) or failed.
-	NotStored int64     `json:"not_stored"`
-	LastAt    time.Time `json:"last_at"`
+	NotStored int64 `json:"not_stored"`
+	// Outcomes counts where the other received findings went (the receipt
+	// outcome codes: merged repeats, exposures, quarantined, split, ...).
+	Outcomes map[string]int64 `json:"outcomes,omitempty"`
+	LastAt   time.Time        `json:"last_at"`
 	// LastStatus is the latest receipt's status.
 	LastStatus    string `json:"last_status"`
 	LastReceiptID string `json:"last_receipt_id"`
 	Health        string `json:"health" enums:"ok,stale,failed"`
+	// HealthLastAt is the last receipt of whatever Health speaks about: the
+	// source's own, or the sender (a stale sensor among healthy ones) that
+	// made the source stale. A note such as "stale, last receipt 3 days ago"
+	// reads this, never the source's last_at, which belongs to the freshest
+	// sender.
+	HealthLastAt time.Time `json:"health_last_at"`
+	// Released is the reports of the source applied from the results
+	// quarantine (the sender stays the original sensor).
+	Released int64 `json:"released"`
 	// ExpectedEverySeconds is the source's usual interval (the median time
 	// between its receipts); absent with fewer than three receipts.
 	ExpectedEverySeconds *int64 `json:"expected_every_seconds,omitempty"`
@@ -99,6 +112,9 @@ type IntakeInstance struct {
 	Assets   int64     `json:"assets"`
 	Health   string    `json:"health" enums:"ok,stale,failed"`
 	LastAt   time.Time `json:"last_at"`
+	// Released is the reports of this sender that were held in the results
+	// quarantine and applied later.
+	Released int64 `json:"released"`
 	// SensorHref is the sensor's page (sensors of the organization only).
 	SensorHref string `json:"sensor_href,omitempty"`
 }
@@ -136,25 +152,28 @@ func healthRank(h string) int {
 
 // intakeInstances maps a source's senders and returns the worst health of
 // them.
-func intakeInstances(rows []dashboard.IntakeInstanceRow, now time.Time) ([]IntakeInstance, string) {
+func intakeInstances(rows []dashboard.IntakeInstanceRow, now time.Time) ([]IntakeInstance, string, time.Time) {
 	worst := HealthOK
+	var worstAt time.Time
 	if len(rows) == 0 {
-		return nil, worst
+		return nil, worst, worstAt
 	}
 	out := make([]IntakeInstance, 0, len(rows))
 	for _, r := range rows {
 		h := sourceHealth(dashboard.IntakeRow{LastAt: r.LastAt, LastStatus: r.LastStatus, MedianGap: r.MedianGap}, now)
-		if healthRank(h) > healthRank(worst) {
-			worst = h
+		// The worst sender decides; of equally bad ones, the one quiet the
+		// shortest time (the most recent receipt).
+		if healthRank(h) > healthRank(worst) || (h != HealthOK && h == worst && r.LastAt.After(worstAt)) {
+			worst, worstAt = h, r.LastAt.UTC()
 		}
 		in := IntakeInstance{ID: r.ID, Kind: r.Kind, Name: r.Name, Received: r.Received, Assets: r.Assets,
-			Health: h, LastAt: r.LastAt.UTC()}
+			Health: h, LastAt: r.LastAt.UTC(), Released: r.Released}
 		if r.Kind == "sensor" && r.Owned {
 			in.SensorHref = "/sensors/" + url.PathEscape(r.ID)
 		}
 		out = append(out, in)
 	}
-	return out, worst
+	return out, worst, worstAt
 }
 
 // IntakeNoise splits what was received in the window into new or reopened
@@ -163,12 +182,23 @@ func intakeInstances(rows []dashboard.IntakeInstanceRow, now time.Time) ([]Intak
 // three sum to Received. Suppressed is the part of New that an approved
 // rule closed on arrival (the receipt list's Suppressed); it is stored, so
 // it is already inside New and is not a fourth part.
+//
+// The full reconciliation of the receipts (docs/architecture/ingest-receipts.md,
+// "Outcomes"): SeenAgain is the findings that already existed and were
+// reported again unchanged, Repeated the repeats of a finding the same scan
+// already reported, Outcomes every other place a received finding went
+// (split adds to the received side). Unaccounted is what none of them
+// explains: 0 once every receipt of the window counts its outcomes.
 type IntakeNoise struct {
-	Received   int64 `json:"received"`
-	New        int64 `json:"new"`
-	Merged     int64 `json:"merged"`
-	Suppressed int64 `json:"suppressed"`
-	NotStored  int64 `json:"not_stored"`
+	Received    int64            `json:"received"`
+	New         int64            `json:"new"`
+	Merged      int64            `json:"merged"`
+	Suppressed  int64            `json:"suppressed"`
+	NotStored   int64            `json:"not_stored"`
+	SeenAgain   int64            `json:"seen_again"`
+	Repeated    int64            `json:"repeated"`
+	Outcomes    map[string]int64 `json:"outcomes"`
+	Unaccounted int64            `json:"unaccounted"`
 }
 
 // IntakeValue is the organization's intake in the window.
@@ -342,7 +372,7 @@ func (s *Service) intake(ctx context.Context, scope dashboard.ReadScope, since t
 	for _, r := range rows {
 		src := IntakeSource{Origin: r.Origin, Tool: r.Tool, Receipts: r.Receipts, Received: r.Received, Created: r.Created,
 			StillDetected: r.StillDetected, Reopened: r.Reopened, Closed: r.Closed, Suppressed: r.Suppressed,
-			NotStored: r.Skipped + r.Failed, LastAt: r.LastAt.UTC(), LastStatus: r.LastStatus, Health: HealthOK,
+			NotStored: r.Skipped + r.Failed, Outcomes: r.Outcomes, LastAt: r.LastAt.UTC(), LastStatus: r.LastStatus, Health: HealthOK,
 			Drill: drillReceiptList(r.Origin, r.Tool, since), Assets: r.Assets,
 			Kind: sourceKind(r.Origin, r.Received, r.Assets)}
 		if !r.LastReceiptID.IsZero() {
@@ -353,10 +383,13 @@ func (s *Service) intake(ctx context.Context, scope dashboard.ReadScope, since t
 			src.ExpectedEverySeconds = &secs
 		}
 		src.Health = sourceHealth(r, now)
+		src.HealthLastAt = src.LastAt
+		src.Released = r.Released
 		var worst string
-		src.Instances, worst = intakeInstances(r.Instances, now)
+		var worstAt time.Time
+		src.Instances, worst, worstAt = intakeInstances(r.Instances, now)
 		if healthRank(worst) > healthRank(src.Health) {
-			src.Health = worst
+			src.Health, src.HealthLastAt = worst, worstAt
 		}
 		switch src.Health {
 		case HealthFailed:
@@ -374,6 +407,12 @@ func (s *Service) intake(ctx context.Context, scope dashboard.ReadScope, since t
 		t.Closed += src.Closed
 		t.Suppressed += src.Suppressed
 		t.NotStored += src.NotStored
+		for code, v := range src.Outcomes {
+			if t.Outcomes == nil {
+				t.Outcomes = map[string]int64{}
+			}
+			t.Outcomes[code] += v
+		}
 		t.Assets += src.Assets
 		if src.LastAt.After(t.LastAt) {
 			t.LastAt, t.LastStatus, t.LastReceiptID = src.LastAt, src.LastStatus, src.LastReceiptID
@@ -408,6 +447,22 @@ func noiseOf(t IntakeSource) IntakeNoise {
 	n := IntakeNoise{Received: t.Received, Suppressed: t.Suppressed, NotStored: t.NotStored,
 		New: t.Created + t.Reopened}
 	n.Merged = max(t.Received-t.Created-t.Reopened-t.NotStored, 0)
+	n.SeenAgain = t.StillDetected
+	n.Outcomes = map[string]int64{}
+	n.Unaccounted = t.Received - n.New - t.StillDetected - t.Suppressed - t.NotStored
+	for code, v := range t.Outcomes {
+		switch code {
+		case ingestreceipt.OutcomeMerged:
+			n.Repeated = v
+			n.Unaccounted -= v
+		case ingestreceipt.OutcomeSplit:
+			n.Outcomes[code] = v
+			n.Unaccounted += v
+		default:
+			n.Outcomes[code] = v
+			n.Unaccounted -= v
+		}
+	}
 	return n
 }
 

@@ -235,7 +235,9 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rules []cov
 				continue
 			}
 			reason := covdom.ReasonUnresolvable
-			if v.Outcome == covdom.ReasonResolverFailed {
+			if v.Outcome == covdom.ReasonResolverFailed || v.Outcome == covdom.OutcomeDNSUnknown {
+				// A failed lookup, or one the sensor did not explain: never
+				// "the name has no address".
 				reason = covdom.ReasonResolverFailed
 			}
 			unresolved = append(unresolved, covdom.FailedPair{AssetID: d.AssetID, Outcome: reason, Error: v.Error})
@@ -283,6 +285,11 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rules []cov
 	}
 	if err := s.planner.MarkBlocked(ctx, tenantID, rs.Capability, blocked, BlockedRecheck); err != nil {
 		return n, parked, err
+	}
+	if s.liveness != nil && !stalled {
+		// Liveness is a reading of the settled verdicts: recorded after the
+		// ledger, and never failing the settlement.
+		s.liveness.Record(ctx, tenantID, livenessObservations(rs.Capability, queued, verdicts))
 	}
 	if !stalled {
 		if err := s.countRunClaim(ctx, tenantID, rs); err != nil {
@@ -426,7 +433,19 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID, rules []covdom.R
 			break
 		}
 		lookahead := covdom.Lookahead(ruleOf(rules, capability).Every)
-		due, err := s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead)
+		limit := min(s.cfg.Batch, left)
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			// The organization's switch and request budget.
+			n, stop, err := s.pathDiscoveryLimit(ctx, tenantID, limit)
+			if err != nil {
+				return total, err
+			}
+			if stop {
+				continue
+			}
+			limit = n
+		}
+		due, err := s.dueBatch(ctx, tenantID, capability, limit, lookahead)
 		if err != nil {
 			return total, err
 		}
@@ -447,34 +466,25 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID, rules []covdom.R
 			}
 			continue
 		}
-		if h, ok := holds[capability]; ok && h.Active() {
-			// No sensor took its last runs: wait for a fleet change or
-			// the probe instead of starting runs that cannot succeed.
-			run, err := s.heldResume(ctx, tenantID, h)
-			if err != nil {
+		var run bool
+		if due, run, err = s.resumeDue(ctx, tenantID, capability, holds[capability], paused, due, limit, lookahead); err != nil {
+			return total, err
+		}
+		if !run {
+			continue
+		}
+		if len(due) == 0 || !s.batchReady(rules, capability, due, limit) {
+			continue
+		}
+		budgetBound := false
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			budgetBound = len(due) >= limit && limit < min(s.cfg.Batch, left)
+			if due, err = s.pathDiscoveryRefuse(ctx, tenantID, due); err != nil {
 				return total, err
 			}
-			if !run {
+			if len(due) == 0 {
 				continue
 			}
-			if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
-				return total, err
-			}
-		} else if paused != "" {
-			n, err := s.planner.ResumeFromReadiness(ctx, tenantID, capability)
-			if err != nil {
-				return total, err
-			}
-			if n > 0 {
-				s.logger.Info("coverage resumed", "tenant_id", tenantID.String(), "capability", capability,
-					"pairs", n, "was", paused)
-				if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
-					return total, err
-				}
-			}
-		}
-		if len(due) == 0 || !s.batchReady(rules, capability, due, min(s.cfg.Batch, left)) {
-			continue
 		}
 		batch, depth := onboardingBatch(capability, due)
 		n, err := s.startBatch(ctx, tenantID, capability, batch, depth)
@@ -483,8 +493,45 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID, rules []covdom.R
 		if err != nil {
 			return total, err
 		}
+		if budgetBound {
+			// What the daily request budget left out waits as deferred,
+			// never as covered.
+			if err := s.pauseCapability(ctx, tenantID, capability, covdom.ReadyBudgetSpent, pathBudgetRetry); err != nil {
+				return total, err
+			}
+		}
 	}
 	return total, nil
+}
+
+// resumeDue applies a capability's hold and readiness pause to its due batch:
+// a hold waits for a fleet change or the probe; a pause that cleared resumes
+// its pairs and reads the batch again. run is false when nothing starts now.
+func (s *Service) resumeDue(ctx context.Context, tenantID shared.ID, capability string, h covdom.Hold, paused string, due []covdom.DueTarget, limit int, lookahead time.Duration) (_ []covdom.DueTarget, run bool, err error) {
+	if h.Active() {
+		// No sensor took its last runs: wait for a fleet change or the
+		// probe instead of starting runs that cannot succeed.
+		run, err := s.heldResume(ctx, tenantID, h)
+		if err != nil || !run {
+			return due, false, err
+		}
+		due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead)
+		return due, err == nil, err
+	}
+	if paused == "" {
+		return due, true, nil
+	}
+	n, err := s.planner.ResumeFromReadiness(ctx, tenantID, capability)
+	if err != nil {
+		return due, false, err
+	}
+	if n > 0 {
+		s.logger.Info("coverage resumed", "tenant_id", tenantID.String(), "capability", capability,
+			"pairs", n, "was", paused)
+		due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead)
+		return due, err == nil, err
+	}
+	return due, true, nil
 }
 
 // batchReady applies the batch rule (covdom.BatchReady) when FillBatches is
@@ -574,7 +621,15 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 		}
 		byTarget[key] = append(byTarget[key], d.AssetID)
 	}
-	res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)})
+	in := scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)}
+	if capability == covdom.CapabilityEnumerateWebPaths && s.pathGate != nil {
+		b, err := s.pathGate.PathDiscoveryBudget(ctx, tenantID)
+		if err != nil {
+			return 0, err
+		}
+		in.MaxRequestsPerOrigin = b.PerOrigin
+	}
+	res, err := s.starter.StartCoverage(ctx, in)
 	if errors.Is(err, scanapp.ErrCoverageBusy) {
 		return 0, nil // the previous batch is still running: back-pressure
 	}

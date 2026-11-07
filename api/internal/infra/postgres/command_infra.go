@@ -48,8 +48,10 @@ func (r *CommandRepository) CommandAttempts(ctx context.Context, tenantID, comma
 // RequeueFailed puts a command the fenced sensor holds back to pending,
 // unpinned with its zone kept, records the failure and excludes the sensor
 // from later claims. One more dispatch attempt is counted, as for a lease
-// re-queue; the return is counted without a delay because another sensor
-// may take it at once (the failing sensor is excluded).
+// re-queue, and the return is delayed by the re-queue back-off
+// (command_requeue_backoff_secs): an infrastructure failure often hits the
+// next sensor too (a shared network or DNS outage), so the next offer waits
+// instead of burning the remaining attempts in seconds.
 func (r *CommandRepository) RequeueFailed(ctx context.Context, tenantID, commandID shared.ID, fence command.Fence, att command.InfraAttempt, message string) (bool, error) {
 	attJSON, err := json.Marshal(att)
 	if err != nil {
@@ -61,7 +63,7 @@ func (r *CommandRepository) RequeueFailed(ctx context.Context, tenantID, command
 		    acknowledged_at = NULL, started_at = NULL,
 		    lease_expires_at = NULL,
 		    dispatch_attempts = dispatch_attempts + 1,
-		    `+requeueCountSQL("")+`,
+		    `+requeueSQL("")+`,
 		    error_message = $6,
 		    failed_on = CASE WHEN failed_on @> ARRAY[$3::uuid] THEN failed_on ELSE array_append(failed_on, $3::uuid) END,
 		    attempts = attempts || jsonb_build_array($7::jsonb)

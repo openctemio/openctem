@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
@@ -51,6 +52,10 @@ type CoverageInput struct {
 	// whose tool reads a platform wordlist takes (enumerate.subdomains: the
 	// medium pack instead of the small one). Passive is refused.
 	Depth string
+	// MaxRequestsPerOrigin is a path discovery run's per-origin request cap
+	// (0: the web job guard's default). The job's strict web scope carries
+	// it to the sensor's forwarder.
+	MaxRequestsPerOrigin int
 }
 
 // CoverageResult is what was started. RunID is nil when nothing was left.
@@ -164,7 +169,7 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	// One command per chunk of the stage's size (list tools are efficient
 	// with lists), not one per target.
 	perJob := coverageChunk(st, tool)
-	if err := sc.SetSingleScanner(tool, coverageScannerConfig(in.Capability, st, res.Kept), perJob); err != nil {
+	if err := sc.SetSingleScanner(tool, coverageScannerConfig(in.Capability, st, res.Kept, in.MaxRequestsPerOrigin), perJob); err != nil {
 		return nil, fmt.Errorf("failed to set scanner: %w", err)
 	}
 	// Standard depth picks the small wordlist pack for a tool that reads one
@@ -304,17 +309,24 @@ func (s *Service) coverageScan(ctx context.Context, tenantID shared.ID, capabili
 // vuln.templates is explicit about severity so the two passes never overlap:
 // the regular pass runs low to critical, the info pass (its own ledger key)
 // runs info only.
-func coverageScannerConfig(capability string, st stage.Stage, targets []string) map[string]any {
+func coverageScannerConfig(capability string, st stage.Stage, targets []string, maxRequests int) map[string]any {
 	cfg := map[string]any{"targets": targets}
-	if st.Key == stage.VulnTemplates {
+	switch st.Key {
+	case stage.VulnTemplates:
 		if covdom.IsInfoCapability(capability) {
 			cfg[stage.ParamSeverity] = []string{covdom.InfoSeverity}
 		} else {
 			cfg[stage.ParamSeverity] = slices.Clone(stage.StandardTemplateSeverities)
 		}
-	}
-	if st.Key == stage.EnumerateSubdomains {
+	case stage.EnumerateSubdomains:
 		cfg["method"] = "bruteforce"
+	case stage.EnumerateWebPaths:
+		// Steady coverage runs the derived list only (never a pack), with
+		// the per-origin request cap.
+		cfg["lists"] = []string{"derived"}
+		if maxRequests > 0 {
+			cfg[command.PayloadKeyDiscoveryMaxRequests] = maxRequests
+		}
 	}
 	return cfg
 }

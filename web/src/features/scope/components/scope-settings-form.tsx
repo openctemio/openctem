@@ -32,12 +32,13 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSection, PageStack } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { updateScopeSettings } from '../api/use-scope-api'
-import type {
-  AddressAutoAdd,
-  UnclassifiedScans,
-  ApiScopeSettings,
-  ScopeOneOffPolicy,
-  UpdateScopeSettingsInput,
+import {
+  RANGE_PREFIX_CHOICES,
+  type AddressAutoAdd,
+  type UnclassifiedScans,
+  type ApiScopeSettings,
+  type ScopeOneOffPolicy,
+  type UpdateScopeSettingsInput,
 } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
@@ -129,6 +130,7 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     ...autoCoverageOf(s),
     ...infoCoverageOf(s),
     ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
+    max_range_prefix: s.max_range_prefix || 16,
   }
 }
 
@@ -429,6 +431,35 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 <SelectContent>
                   <SelectItem value="t0">{t('scope.tier.label.t0', TIER_LABEL.t0)}</SelectItem>
                   <SelectItem value="t1">{t('scope.tier.label.t1', TIER_LABEL.t1)}</SelectItem>
+                </SelectContent>
+              </Select>
+            </Row>
+
+            <Row
+              label={t('scope.settings.maxRange', 'Widest range one scan target may name')}
+              htmlFor={`${id}-range`}
+              hint={t(
+                'scope.settings.maxRangeHint',
+                'A /16 by default. Choose a wider range only when you scan whole internal networks: a range wider than a /16 is scanned live hosts first, in /16 chunks, only where scope entries cover it, and each such scan asks for a confirmation. Raising it needs a recent sign-in, is audited and every administrator is told. IPv6 gets the same address count (/8 is /104).'
+              )}
+            >
+              <Select
+                value={String(form.max_range_prefix ?? 16)}
+                onValueChange={(v) => setForm({ ...form, max_range_prefix: Number(v) })}
+                disabled={disabled}
+              >
+                <SelectTrigger id={`${id}-range`} className="w-full sm:w-72">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RANGE_PREFIX_CHOICES.map((p) => (
+                    <SelectItem key={p} value={String(p)}>
+                      {t('scope.settings.maxRangeChoice', undefined, {
+                        prefix: `/${p}`,
+                        count: (2 ** (32 - p)).toLocaleString(),
+                      })}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Row>

@@ -1213,8 +1213,8 @@ profile refuses the namespaces this needs.
 - The default AppArmor profile stays: on hosts that restrict unprivileged
   user namespaces, `apparmor=unconfined` stops confinement working.
 - **Setup checklist:** the sensor reports `runtime.sandbox_network`
-  (`confined`, or the detected cause: `userns_blocked`, `userns_restricted`,
-  `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
+  (`confined`, or the detected cause: `userns_disabled_host`, `userns_restricted`,
+  `userns_blocked`, `off`, `sandbox_off`, `unavailable`); the catalog explains each code with
   its fix ([fix the setup checklist](../how-to/fix-sensor-setup-checklist.md)).
 
 ## Pairing, key-bound identity and grants (RFC-052)
@@ -1555,6 +1555,46 @@ closed set.
 it: [sensor-transport-v3.md](sensor-transport-v3.md). One proto
 (`openctem.sensor.v3.SensorService`) whose RPCs map one to one onto the v2
 resources below and are served through the same v2 handler chain; v2 stays.
+
+## Tenant isolation of jobs
+
+A job (command) carries targets, scope, a signed statement, task-secret
+references and templates, so a sensor, member or token of one organization
+must never claim, read, change or learn of another organization's jobs.
+
+- **Who the caller is.** A sensor's tenant comes from its key: the signed
+  request's key row, the bearer key's hash, or (protocol v3) the client
+  certificate's key, which must match the certificate's tenant and sensor.
+  No sensor route reads a tenant or sensor id from the request. A relayed
+  request must carry the credential of the sensor its relay route names
+  (`X-Relay-Sensor`), for a signed request and a bearer key alike.
+- **Claim.** The poll, claim-N and claim by id select `tenant_id = <the
+  sensor's tenant>`, exclude shared jobs (`is_platform_job`), and apply the
+  zone, tool, refusal and clone predicates bound to the claiming sensor. A
+  shared sensor (scope `instance`, no tenant; the database enforces
+  `(scope = 'instance') = (tenant_id IS NULL)`) claims only shared jobs,
+  only through the shared claim, and only for organizations allowed to use
+  shared sensors.
+- **Command routes** (start, complete, fail and refusal, release, logs,
+  egress report, task secrets, bound results and commit). An organization
+  sensor's command is read by `(tenant, id)` and must be held by that
+  sensor; a shared sensor's command must be a shared job it holds, under
+  the lease epoch it states, and its tenant is read from the command row.
+  Another organization's command, another sensor's command and an unknown
+  id all get the same `404 command-not-found`, so a known (time-ordered)
+  command id gives an attacker nothing.
+- **Reports.** Report ids are keyed `(tenant, sensor, report_id)`: another
+  sensor's report id reads as `report-not-found`, and reusing it makes the
+  caller's own report.
+- **Hints.** The heartbeat's pending count, cancel and stop lists, the
+  suppression rules and the fingerprint lookups are scoped to the sensor's
+  tenant (and its reach); naming another organization's command in the
+  running list is answered like naming an unknown id.
+
+The DB-backed tests that prove each of these run as a required CI gate,
+by name (`.github/scripts/cross-tenant-gate.sh`, API CI "Security Gates
+(cross-tenant job isolation)"); a renamed, removed or skipped test fails the
+build.
 
 ## Protocol v2 control plane
 
@@ -2511,8 +2551,11 @@ and narrows dispatch:
   the summary: kill switch (withholds everything), `checks.allow`,
   `tools.allow`, `allow_custom_templates`, `allow_interactsh`, `ports.allow`
   (exact lists only; named lists such as `top-100` are left to the sensor),
-  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), and the
-  tenant switch above (layer `managed`). Allow and deny ranges are reported as
+  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), the
+  report's top-level `allow_private` (the host's `SENSOR_ALLOW_PRIVATE_TARGETS`
+  switch, narrowed by an enforced policy; reported with or without a policy
+  file by an SDK that sends it, absent from older SDKs, which leaves the
+  decision to the sensor), and the tenant switch above (layer `managed`). Allow and deny ranges are reported as
   counts, so they are left to the sensor. A sensor without a report or
   without a policy accepts what the policy would decide (the absent policy
   allows both opt-ins, decision Q4 (a)). The same check runs in three
@@ -2627,6 +2670,13 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   - `policy_none`: `absent_legacy`, or `unknown` for a sensor that has
     connected (an SDK that ignores local policies);
   - `pin_none`: `platform_pin` is `none`;
+  - `tools_unconfined`: the sensor runs its tools without the sandbox
+    (`tools_unconfined` is `refused`: the sandbox is not available on its
+    host, it is Linux only, so tools of tier T1 and above are refused there
+    and passive lookups still run; or `acknowledged`: its operator set
+    `SENSOR_SANDBOX=off` and every tool runs unconfined). The sensor reports
+    it in the manifest posture (`sandbox.unconfined`) and in its config
+    report (`runtime.sandbox_unconfined`);
   - `network_unenforced`: `network_enforced` is `false`;
   - `bearer_key`: the sensor authenticates with a bearer key instead of a
     key-bound identity (and has connected).
@@ -2637,10 +2687,13 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   cards and the detail header (the title lists the fixes), and a Security
   posture block in the detail sheet with one fix per reason: install a local
   policy (the Local policy tab of the install commands), pin the platform CA
-  with `SENSOR_CA_FINGERPRINT`, run with `SENSOR_SANDBOX_NETWORK=required` and
-  the seccomp profile, pair again for a key-bound identity.
+  with `SENSOR_CA_FINGERPRINT`, run the sensor on Linux with the sandbox (or
+  acknowledge running tools unconfined with `SENSOR_SANDBOX=off`), run with
+  `SENSOR_SANDBOX_NETWORK=required` and the seccomp profile, pair again for a
+  key-bound identity. The Tool sandbox check of the install review says when
+  tools that contact their targets are refused for want of a sandbox.
 - **Alert.** Gauge `openctem_sensors_unhardened{kind}` (`policy_none`,
-  `pin_none`, `network_unenforced`, `bearer_key`): active tenant sensors by
+  `pin_none`, `tools_unconfined`, `network_unenforced`, `bearer_key`): active tenant sensors by
   reason, platform-wide, no tenant or sensor label. Alert `SensorsUnhardened`
   (warning, `for: 24h`); runbook in
   [operations/monitoring.md](../operations/monitoring.md#sensorsunhardened).

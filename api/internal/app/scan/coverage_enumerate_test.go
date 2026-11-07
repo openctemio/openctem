@@ -25,12 +25,12 @@ import (
 func TestCoverageScannerConfig_EnumerateIsBruteForce(t *testing.T) {
 	enum, ok := stage.Lookup(stage.EnumerateSubdomains)
 	require.True(t, ok, "enumerate.subdomains is a catalog stage")
-	cfg := coverageScannerConfig("enumerate.subdomains", enum, []string{"example.com"})
+	cfg := coverageScannerConfig("enumerate.subdomains", enum, []string{"example.com"}, 0)
 	assert.Equal(t, "bruteforce", cfg["method"])
 	assert.Equal(t, []string{"example.com"}, cfg["targets"])
 
 	passive, _ := stage.Lookup(stage.DiscoverSubdomains)
-	_, has := coverageScannerConfig("discover.subdomains", passive, []string{"example.com"})["method"]
+	_, has := coverageScannerConfig("discover.subdomains", passive, []string{"example.com"}, 0)["method"]
 	assert.False(t, has, "a passive discovery run names no method")
 }
 
@@ -237,8 +237,8 @@ func TestStartCoverage_DeepOnboardingRefusedOffScope(t *testing.T) {
 
 func TestCoverageScannerConfig_TemplateSeveritiesNeverOverlap(t *testing.T) {
 	st, _ := stage.Lookup(stage.VulnTemplates)
-	regular := coverageScannerConfig("vuln.templates", st, []string{"https://a.test"})["severity"].([]string)
-	info := coverageScannerConfig("vuln.templates_info", st, []string{"https://a.test"})["severity"].([]string)
+	regular := coverageScannerConfig("vuln.templates", st, []string{"https://a.test"}, 0)["severity"].([]string)
+	info := coverageScannerConfig("vuln.templates_info", st, []string{"https://a.test"}, 0)["severity"].([]string)
 	if len(info) != 1 || info[0] != "info" {
 		t.Errorf("info pass severity = %v", info)
 	}

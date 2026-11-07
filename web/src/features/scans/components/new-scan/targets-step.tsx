@@ -39,6 +39,7 @@ import {
   parsePastedTargets,
   withoutTargets,
   replaceEntryInLines,
+  targetReasonText,
   isRefusedKind,
   TARGET_KIND_LABELS,
   targetKey,
@@ -68,11 +69,16 @@ import { canFindLiveHosts } from '../../lib/liveness'
 import { intensityForTier, type ProbeTier } from '../../lib/scan-intensity'
 import { lowerIntensityAllowed } from '../../lib/targets-step'
 import { useTargetsCheck } from '../../hooks/use-targets-check'
+import { useRangeHostBits } from '../../hooks/use-range-host-bits'
 import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { TargetChipsField, type TargetChip } from './target-chips-field'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
 import { TargetList } from './target-list'
+import { InvalidTargetsNote } from './invalid-targets-note'
+import { LargeRangeConfirm } from './large-range-confirm'
+import { largeRangeSummary } from '../../lib/large-range'
 import { BulkTargetsPanel } from './bulk-targets-panel'
+import { CoreInfraWarning } from './core-infra-warning'
 
 /** Typed targets shown as chips; past this they move to the list. */
 export const CHIP_LIMIT = 20
@@ -132,7 +138,12 @@ export function TargetsStep({
       ),
     [targets.assetIds, targets.assetNames]
   )
-  const pasted = useMemo(() => parsePastedTargets(targets.customTargets), [targets.customTargets])
+  // The organization's widest range (a /16 unless it opted in to wider).
+  const maxHostBits = useRangeHostBits(canReadScope)
+  const pasted = useMemo(
+    () => parsePastedTargets(targets.customTargets, { maxHostBits }),
+    [targets.customTargets, maxHostBits]
+  )
 
   const setAssets = (assets: PickedAsset[], picked: boolean) => {
     const names = { ...targets.assetNames }
@@ -176,6 +187,10 @@ export function TargetsStep({
     setTyped(withoutTargets(targets.customTargets, [targetKey(entry)]))
   const replaceTyped = (entry: ClassifiedTarget, next: string) =>
     setTyped(replaceEntryInLines(targets.customTargets, entry.input, next))
+  // Editing a chip in place: the typed text is replaced and classified again
+  // like a new entry; empty removes it.
+  const editTyped = (entry: ClassifiedTarget, next: string) =>
+    next.trim() === '' ? removeTyped(entry.input) : replaceTyped(entry, next.trim())
   // One row per target (repeats folded), the entries that are not added after.
   const listEntries = useMemo(() => {
     const seen = new Set<string>()
@@ -193,6 +208,7 @@ export function TargetsStep({
     return [...bad, ...valid]
   }, [pasted.lines])
   const asList = listEntries.length > CHIP_LIMIT
+  const largeRanges = useMemo(() => largeRangeSummary(pasted.targets), [pasted.targets])
   // Remove targets the scope check refused: typed lines, and picked assets by name.
   const removeTargets = (names: string[]) => {
     const drop = new Set(names.map((n) => n.trim().toLowerCase()))
@@ -264,14 +280,18 @@ export function TargetsStep({
                 key: `i:${i}:${entry.input}`,
                 label: entry.input,
                 kind: 'invalid' as const,
-                title: entry.reasonKey ? t(entry.reasonKey, entry.reason) : entry.reason,
+                title: targetReasonText(t, entry),
                 onRemove: () => removeTyped(entry.input),
+                editValue: entry.input,
+                onEdit: (next: string) => editTyped(entry, next),
               }
             : {
                 key: `t:${entry.value}`,
                 label: entry.value,
                 kind: 'typed' as const,
                 onRemove: () => removeTyped(entry.input),
+                editValue: entry.input,
+                onEdit: (next: string) => editTyped(entry, next),
               }
         )),
     // The *.domain targets the coverage level made of typed or picked
@@ -431,16 +451,16 @@ export function TargetsStep({
         <p id={`${fieldId}-help`} className="text-xs text-muted-foreground">
           {t('scans.targetsStep.help')}
         </p>
-        {pasted.invalid.length > 0 && (
-          <p role="alert" className="text-xs text-destructive">
-            {t(
-              pasted.invalid.length === 1
-                ? 'scans.summary.invalidOne'
-                : 'scans.summary.invalidMany',
-              undefined,
-              { count: pasted.invalid.length }
-            )}
-          </p>
+        <InvalidTargetsNote
+          entries={pasted.invalid}
+          onSplit={(entry, pieces) => replaceTyped(entry, pieces.join(', '))}
+        />
+        {largeRanges && (
+          <LargeRangeConfirm
+            summary={largeRanges}
+            confirmed={targets.largeRangeConfirmed}
+            onConfirm={(key) => onChange({ targets: { ...targets, largeRangeConfirmed: key } })}
+          />
         )}
         {over && (
           <p role="alert" className="text-xs text-destructive">
@@ -514,6 +534,7 @@ export function TargetsStep({
             id={`${fieldId}-bulk`}
             present={pasted.lines.map((l) => targetKey(l.input))}
             capacity={Math.max(0, MAX_DIRECT_TARGETS - sent.length)}
+            maxHostBits={maxHostBits}
             onAdd={(added) => {
               addTyped(added)
               setBulkOpen(false)
@@ -560,6 +581,7 @@ export function TargetsStep({
             groupCount={targets.assetGroupIds.length}
           />
         )}
+        <CoreInfraWarning targets={sent} />
         {readiness.state === 'partial' && (
           <p className="text-xs text-muted-foreground">
             {t('scans.targetsStep.partial', undefined, {

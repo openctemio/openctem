@@ -19,7 +19,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -139,10 +141,14 @@ type Service struct {
 	// (name_probe.go).
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
-	results         sensorresult.Repository
+	// vantage records the sensors' own DNS answers (vantage.go).
+	vantage scanzone.VantageWriter
+	results sensorresult.Repository
 	// release is the progress of the out-of-contract release sweeps
 	// (quarantine_release.go).
 	release releaseState
+	// mismatch tells the administrators of undeclared types (contract_mismatch.go).
+	mismatch mismatchNotices
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
@@ -522,8 +528,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
+	sentFindings := len(report.Findings)
 	sent := report
-	report, findingsHeld, findingsLost, holds := s.bindOutputTypesHolds(ctx, agt, tenantID, binding, report, opts)
+	report, findingsHeld, findingsLost, holds, mismatched := s.bindOutputTypesFlagged(ctx, agt, tenantID, binding, report, opts)
+	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
 	// never file its findings as a person's or an integration's.
@@ -545,17 +553,24 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	output := &Output{
+		FindingsReceived:  sentFindings + max(opts.FindingsRefusedBeforeIngest, 0),
 		ReportID:          reportID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 		policy:            policy,
 		FindingsHeld:      findingsHeld,
 		FindingsLost:      findingsLost,
+		fileObserved:      opts.Receipt != nil && opts.Receipt.Kind == ingestreceipt.SourceUpload,
 	}
+	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
+	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)
 	if holds != nil {
 		output.HeldAssetRefs, output.HeldFindings, output.HoldLost = holds.assetRefs, holds.findings, holds.lost
 	}
 	addRefusedItems(output, sent, holds, opts.RefusedItems)
+	if mismatched != nil {
+		output.ContractMismatchTypes, output.ContractMismatchRefs = mismatched.Types, mismatched.AssetRefs
+	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored
@@ -609,6 +624,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	output.AssetMap = assetMap
+	s.recordVantage(ctx, agt, tenantID, binding, report, observedAt)
 	s.recordCollectorSightings(ctx, collector, scope, observedAt, assetMap)
 
 	// The tracked values this report states (RFC-069), before findings are
@@ -702,6 +718,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// closed when software changes. A report claiming it is refused.
 	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
 		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		output.addOutcome(ingestreceipt.OutcomeReservedTool, len(report.Findings))
 		report.Findings = nil
 	}
 
@@ -749,9 +766,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// rows, never the finding's headline status. Best-effort.
 	// Skipped when this ingest could not record its occurrences: the sweep
 	// would mark the findings it did see as gone from the branch.
+	// A report bound to a command sweeps only when that command already
+	// completed by itself: a run that exited non-zero, was killed or that
+	// the sensor stopped proves nothing about what it did not report
+	// (research/467 F6), and a report that lists an unfinished target is
+	// not full.
 	if !opts.DeferAutoResolve && unsolicitedMayResolve && !output.BranchOccurrencesFailed && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil &&
-		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
+		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" &&
+		s.v1RunMaySweepBranch(ctx, tenantID, binding, report.Metadata) {
 		toolName := report.Tool.Name
 		scanID := reportID
 		branchName := report.Metadata.Branch.Name
@@ -1267,3 +1290,7 @@ func (s *Service) loadTenantIngestConfig(ctx context.Context, tenantID shared.ID
 	}
 	return tenantRules, assetIdentityCfg, reconcilePolicy
 }
+
+// SetTagGovernor wires the check that keeps a report from setting a tag that
+// a team access rule, approval rule, scan window or assignment rule reads.
+func (s *Service) SetTagGovernor(g TagGovernor) { s.assetProcessor.SetTagGovernor(g) }

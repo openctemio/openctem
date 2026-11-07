@@ -146,6 +146,9 @@ func compileWith(spec *Spec, reg *Registry, actor Actor, first int) (*Where, *co
 		if s := c.node(spec.Root); s != "" {
 			parts = append(parts, s)
 		}
+		if c.expensive > MaxExpensiveLeaves {
+			c.e.param("filter", "too many pattern, contains or related-asset filters (max "+strconv.Itoa(MaxExpensiveLeaves)+"); narrow the filter", "", true)
+		}
 	}
 	if spec.Q != "" && reg.Search != nil {
 		parts = append(parts, "("+c.search(spec.Q)+")")
@@ -304,6 +307,9 @@ type compiler struct {
 	e        errs
 	tenantPH string
 	userPH   string
+	// expensive counts the leaves of Field.Expensive fields and contains
+	// leaves (MaxExpensiveLeaves).
+	expensive int
 }
 
 // render substitutes the template tokens: ArgToken with argPH, TenantToken
@@ -384,8 +390,14 @@ func (c *compiler) leaf(l *Leaf) string {
 		}
 		return "(" + c.render(tpl, "") + ")"
 	}
+	if f.Expensive || l.Op == OpContains {
+		c.expensive++
+	}
 	if len(f.EnumExpand) > 0 {
 		l = expandEnumLeaf(f, l)
+	}
+	if f.Expand != nil {
+		l = expandValueLeaf(f, l)
 	}
 	if tpl, ok := f.Templates[l.Op]; ok {
 		if strings.Contains(tpl, UserToken) && (c.actor.system || c.actor.userID.IsZero()) {
@@ -462,6 +474,37 @@ func expandEnumLeaf(f *Field, l *Leaf) *Leaf {
 	}
 	if len(vals) == len(l.Values) {
 		return l
+	}
+	out := *l
+	out.Values = vals
+	switch l.Op {
+	case OpEq:
+		out.Op = OpIn
+	case OpNe:
+		out.Op = OpNotIn
+	}
+	return &out
+}
+
+// expandValueLeaf returns l with every string value replaced by the values
+// Field.Expand binds for it; eq becomes in and ne becomes not_in. l itself is
+// not changed.
+func expandValueLeaf(f *Field, l *Leaf) *Leaf {
+	switch l.Op {
+	case OpEq, OpNe, OpIn, OpNotIn:
+	default:
+		return l
+	}
+	vals := make([]any, 0, 2*len(l.Values))
+	seen := make(map[string]bool, 2*len(l.Values))
+	for _, v := range l.Values {
+		s, _ := v.(string)
+		for _, x := range f.Expand(s) {
+			if !seen[x] {
+				seen[x] = true
+				vals = append(vals, x)
+			}
+		}
 	}
 	out := *l
 	out.Values = vals

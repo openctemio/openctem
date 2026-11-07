@@ -9,7 +9,7 @@
  * and labels for compile-time checks and for rendering before it loads.
  */
 
-export const ASSET_REGISTRY_VERSION = '59ad53db447ed143'
+export const ASSET_REGISTRY_VERSION = '1ec5699a535411a1'
 
 export type AssetLens =
   | 'external_surface'
@@ -393,6 +393,7 @@ export type AssetPropertyKey =
   | 'backup_retention_days'
   | 'banner'
   | 'base_url'
+  | 'bind_address'
   | 'bucket_name'
   | 'business_impact_notes'
   | 'business_impact_score'
@@ -523,6 +524,7 @@ export type AssetPropertyKey =
   | 'node_count'
   | 'not_after'
   | 'not_before'
+  | 'observed_from'
   | 'open_port_count'
   | 'organization_id'
   | 'os_family'
@@ -539,6 +541,7 @@ export type AssetPropertyKey =
   | 'ports'
   | 'principal_id'
   | 'private_ip'
+  | 'process'
   | 'product'
   | 'protocol'
   | 'provider'
@@ -618,6 +621,11 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   },
   banner: { label: 'Banner', labelVi: 'Banner', format: 'code', classes: ['service'] },
   base_url: { label: 'Base URL', labelVi: 'URL gốc', format: 'url' },
+  bind_address: {
+    label: 'Bind address',
+    labelVi: 'Địa chỉ lắng nghe',
+    classes: ['service'],
+  },
   bucket_name: { label: 'Bucket', labelVi: 'Bucket' },
   business_impact_notes: {
     label: 'Business impact notes',
@@ -846,6 +854,7 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   node_count: { label: 'Nodes', labelVi: 'Số node' },
   not_after: { label: 'Valid until', labelVi: 'Hiệu lực đến', format: 'expiry' },
   not_before: { label: 'Valid from', labelVi: 'Hiệu lực từ' },
+  observed_from: { label: 'Observed from', labelVi: 'Quan sát từ', classes: ['service'] },
   open_port_count: { label: 'Open ports', labelVi: 'Số cổng mở' },
   organization_id: { label: 'Organization ID', labelVi: 'ID tổ chức', format: 'code' },
   os_family: { label: 'OS family', labelVi: 'Họ hệ điều hành' },
@@ -866,6 +875,11 @@ export const ASSET_PROPERTIES: Readonly<Record<AssetPropertyKey, AssetPropertyDe
   ports: { label: 'Ports', labelVi: 'Các cổng' },
   principal_id: { label: 'Principal ID', labelVi: 'ID principal', format: 'code' },
   private_ip: { label: 'Private IP', labelVi: 'IP nội bộ', format: 'ip' },
+  process: {
+    label: 'Listening process',
+    labelVi: 'Tiến trình lắng nghe',
+    classes: ['service'],
+  },
   product: { label: 'Product', labelVi: 'Sản phẩm' },
   protocol: { label: 'Protocol', labelVi: 'Giao thức' },
   provider: { label: 'Provider', labelVi: 'Nhà cung cấp' },
@@ -1048,6 +1062,9 @@ export const ASSET_TYPE_PROPERTIES: Readonly<Record<RegistryAssetType, readonly 
     'is_auth_required',
     'has_anonymous_access',
     'response_time_ms',
+    'observed_from',
+    'bind_address',
+    'process',
   ],
   http_service: [
     'service_kind',

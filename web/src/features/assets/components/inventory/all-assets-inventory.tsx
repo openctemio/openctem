@@ -138,8 +138,10 @@ function toSearchFilters(f: InventoryFilters): AssetSearchFilters {
     attribution: attributionQuery(f),
     scopeStatus: f.scopeStatus,
     monitoringState: f.monitoringState,
+    liveness: f.liveness,
     discoveredBy: f.discoveredBy,
     firstSeenAfter: f.firstSeenAfter,
+    firstSeenBefore: f.firstSeenBefore,
     // Each row's attribution and the scan gate's answer (the scope badge).
     withTriage: true,
     sort: f.sort,

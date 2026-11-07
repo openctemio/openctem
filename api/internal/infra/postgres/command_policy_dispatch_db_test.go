@@ -61,14 +61,15 @@ func TestDispatch_SensorPolicyRefusesJob_OtherSensorClaimsIt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// strict enforces a policy without interactsh; open runs without a
+	// strict enforces a policy without custom templates (and without
+	// interactsh, which no longer keeps a job away); open runs without a
 	// policy (legacy: both opt-ins on).
 	setLocalPolicy(ctx, t, sensors, tenant, strict, &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced,
 		Summary: &sensor.LocalPolicySummary{TargetsAllow: -1, AllowPrivate: true, Tools: []string{"nuclei"}}})
 	setLocalPolicy(ctx, t, sensors, tenant, open, &sensor.LocalPolicyReport{State: sensor.LocalPolicyAbsent})
 
 	oast := createPayloadCommand(ctx, t, cmds, tenant, &zone.ID, map[string]any{
-		"scanner": "nuclei", "targets": []string{"10.40.0.5"}, "config": map[string]any{"allow_interactsh": true}})
+		"scanner": "nuclei", "targets": []string{"10.40.0.5"}, "custom_templates": []map[string]any{{"name": "t", "content": "id: t"}}})
 	plain := createPayloadCommand(ctx, t, cmds, tenant, &zone.ID, map[string]any{
 		"scanner": "nuclei", "targets": []string{"10.40.0.6"}})
 
@@ -100,7 +101,7 @@ func TestDispatch_SensorPolicyRefusesJob_OtherSensorClaimsIt(t *testing.T) {
 	}
 	// The other sensor of the zone gets it.
 	if got := claim(open); !got[oast] {
-		t.Fatalf("open sensor claimed %v, want the interactsh job", got)
+		t.Fatalf("open sensor claimed %v, want the custom-templates job", got)
 	}
 
 	// The kill switch withholds everything, even from a sensor that would

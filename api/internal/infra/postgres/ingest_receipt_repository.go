@@ -73,8 +73,21 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 			return fmt.Errorf("receipt id: %w", err)
 		}
 
+		// A finding an earlier delta of this receipt already acted on is a
+		// repeat (another report of the same run): merged, not counted again.
+		merged, err := countAlreadyOnReceipt(ctx, tx, d, id)
+		if err != nil {
+			return err
+		}
+		outcomes, err := outcomesJSON(d.Outcomes, merged)
+		if err != nil {
+			return err
+		}
 		applied, err := insertReceiptActions(ctx, tx, d, id, at, recorded)
 		if err != nil {
+			return err
+		}
+		if err := recordSightings(ctx, tx, d, kind, ref, id, at); err != nil {
 			return err
 		}
 		errs, err := json.Marshal(clipErrors(d.Errors))
@@ -97,11 +110,13 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 				actions_recorded = actions_recorded + $14,
 				actions_truncated = actions_truncated OR $15,
 				errors = `+mergeErrorsHead+`$16`+mergeErrorsTail+`,
-				updated_at = GREATEST(updated_at, $17)
+				updated_at = GREATEST(updated_at, $17),
+				outcomes = `+addOutcomesSQL("outcomes", "$18")+`,
+				released_from_quarantine = released_from_quarantine OR $19
 			WHERE tenant_id = $1 AND id = $2`,
 			d.TenantID.String(), id.String(), d.Reports, d.Received, d.AssetsCreated, d.AssetsUpdated,
 			applied.created, applied.still, applied.reopened, applied.closed, d.Skipped, d.Failed, d.Suppressed,
-			applied.rows, applied.truncated, string(errs), at)
+			applied.rows, applied.truncated, string(errs), at, outcomes, d.Released)
 		if err != nil {
 			return fmt.Errorf("update receipt counts: %w", err)
 		}
@@ -113,6 +128,7 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 			reports: d.Reports, received: d.Received, created: applied.created, still: applied.still,
 			reopened: applied.reopened, closed: applied.closed, skipped: d.Skipped, failed: d.Failed,
 			suppressed: d.Suppressed, assetsCreated: d.AssetsCreated, assetsUpdated: d.AssetsUpdated,
+			outcomes: outcomes, released: releasedReports(d),
 		}, at); err != nil {
 			return err
 		}
@@ -144,10 +160,91 @@ type receiptToolCounts struct {
 	reports, received, created, still, reopened, closed int
 	skipped, failed, suppressed                         int
 	assetsCreated, assetsUpdated                        int
+	// outcomes is the delta's outcome map as JSON ("{}" when none).
+	outcomes string
+	// released is the reports applied from the results quarantine.
+	released int
+}
+
+// releasedReports is the number of reports a delta applied from the
+// quarantine (its reports when it is marked released).
+func releasedReports(d *ingestreceipt.Delta) int {
+	if d.Released {
+		return max(d.Reports, 1)
+	}
+	return 0
 }
 
 func (c receiptToolCounts) empty() bool {
-	return c == receiptToolCounts{}
+	return c == receiptToolCounts{} || c == receiptToolCounts{outcomes: emptyOutcomes}
+}
+
+// outcomesOrEmpty is o, or the empty map when o is unset.
+func outcomesOrEmpty(o string) string {
+	if o == "" {
+		return emptyOutcomes
+	}
+	return o
+}
+
+// emptyOutcomes is the JSON of no outcomes.
+const emptyOutcomes = "{}"
+
+// outcomesJSON is a delta's outcome map with the repeats the repository
+// found added to OutcomeMerged, as JSON. Unknown codes are refused, so a
+// receipt only ever holds the fixed vocabulary.
+func outcomesJSON(in map[string]int, merged int) (string, error) {
+	out := make(map[string]int, len(in)+1)
+	for k, v := range in {
+		if !ingestreceipt.IsOutcome(k) {
+			return "", fmt.Errorf("%w: unknown receipt outcome %q", shared.ErrValidation, k)
+		}
+		if v > 0 {
+			out[k] = v
+		}
+	}
+	if merged > 0 {
+		out[ingestreceipt.OutcomeMerged] += merged
+	}
+	if len(out) == 0 {
+		return emptyOutcomes, nil
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", fmt.Errorf("receipt outcomes: %w", err)
+	}
+	return string(b), nil
+}
+
+// addOutcomesSQL adds the outcome map in the parameter to the jsonb column,
+// code by code.
+func addOutcomesSQL(col, param string) string {
+	return `(SELECT COALESCE(jsonb_object_agg(k, n), '{}'::jsonb) FROM (
+		SELECT k, SUM(n)::int AS n FROM (
+			SELECT key AS k, value::int AS n FROM jsonb_each_text(` + col + `)
+			UNION ALL SELECT key, value::int FROM jsonb_each_text(` + param + `::jsonb)
+		) parts GROUP BY k) sums)`
+}
+
+// countAlreadyOnReceipt counts the findings the delta names (created,
+// reopened, still detected) that an earlier delta of the receipt already
+// recorded: the same finding seen again by another report of the run.
+func countAlreadyOnReceipt(ctx context.Context, tx *sql.Tx, d *ingestreceipt.Delta, receiptID shared.ID) (int, error) {
+	ids := uniqueIDs(append(append([]shared.ID{}, d.Created...), d.Reopened...))
+	fps := nonEmptyUnique(d.StillDetected)
+	if len(ids) == 0 && len(fps) == 0 {
+		return 0, nil
+	}
+	var n int
+	err := tx.QueryRowContext(ctx, `
+		SELECT count(DISTINCT f.id) FROM findings f
+		JOIN finding_ingest_actions a ON a.receipt_id = $2 AND a.finding_id = f.id
+		WHERE f.tenant_id = $1 AND (f.id = ANY($3::uuid[]) OR f.fingerprint = ANY($4::text[]))`,
+		d.TenantID.String(), receiptID.String(), idArray(ids), pq.Array(fps)).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count repeats on receipt: %w", err)
+	}
+	return n, nil
 }
 
 // upsertReceiptTool adds a delta's counts to the row of its tool and sender
@@ -180,8 +277,8 @@ func upsertReceiptTool(ctx context.Context, tx *sql.Tx, tenantID, receiptID shar
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, instance_name,
 			reports, received, created, still_detected, reopened, closed, skipped, failed, suppressed,
-			assets_created, assets_updated, first_at, last_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18)
+			assets_created, assets_updated, first_at, last_at, outcomes, released_reports)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $18, $19::jsonb, $20)
 		ON CONFLICT (receipt_id, tool, instance_kind, instance_id) DO UPDATE SET
 			instance_name = COALESCE(NULLIF(EXCLUDED.instance_name, ''), ingest_receipt_tools.instance_name),
 			reports = ingest_receipt_tools.reports + EXCLUDED.reports,
@@ -195,10 +292,12 @@ func upsertReceiptTool(ctx context.Context, tx *sql.Tx, tenantID, receiptID shar
 			suppressed = ingest_receipt_tools.suppressed + EXCLUDED.suppressed,
 			assets_created = ingest_receipt_tools.assets_created + EXCLUDED.assets_created,
 			assets_updated = ingest_receipt_tools.assets_updated + EXCLUDED.assets_updated,
-			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at)`,
+			released_reports = ingest_receipt_tools.released_reports + EXCLUDED.released_reports,
+			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at),
+			outcomes = `+addOutcomesSQL("ingest_receipt_tools.outcomes", "EXCLUDED.outcomes")+``,
 		tenantID.String(), receiptID.String(), tool, kind, iid, name,
 		c.reports, c.received, c.created, c.still, c.reopened, c.closed, c.skipped, c.failed, c.suppressed,
-		c.assetsCreated, c.assetsUpdated, at)
+		c.assetsCreated, c.assetsUpdated, at, outcomesOrEmpty(c.outcomes), c.released)
 	if err != nil {
 		return fmt.Errorf("upsert receipt tool: %w", err)
 	}
@@ -561,6 +660,14 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 	if res.Untouched != nil {
 		untouched = *res.Untouched
 	}
+	var closing any
+	if res.Closing != nil {
+		b, err := json.Marshal(res.Closing)
+		if err != nil {
+			return fmt.Errorf("receipt closing: %w", err)
+		}
+		closing = string(b)
+	}
 	status := res.Status
 	if status == "" {
 		status = ingestreceipt.StatusCompleted
@@ -570,6 +677,7 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 			status = $3,
 			format = COALESCE(NULLIF($4, ''), format),
 			skipped = skipped + $5,
+			findings_received = findings_received + $5,
 			components = components + $6,
 			statements = statements + $7,
 			vex_stored = vex_stored + $8,
@@ -578,11 +686,12 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 			coverage_note = COALESCE(NULLIF($11, ''), coverage_note),
 			findings_untouched = CASE WHEN $12::integer IS NULL THEN findings_untouched ELSE $12::integer END,
 			errors = `+mergeErrorsHead+`$13`+mergeErrorsTail+`,
+			closing = COALESCE($14::jsonb, closing),
 			finished_at = now(),
 			updated_at = now()
 		WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload'`,
 		tenantID.String(), id.String(), status, res.Format, res.Skipped, res.Components, res.Statements,
-		res.VEXStored, res.VEXRequested, res.Coverage, res.CoverageNote, untouched, string(errs))
+		res.VEXStored, res.VEXRequested, res.Coverage, res.CoverageNote, untouched, string(errs), closing)
 	if err != nil {
 		return fmt.Errorf("finish upload receipt: %w", err)
 	}
@@ -593,12 +702,15 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 		return nil
 	}
 	// The file-level skipped count joins the upload's tool row, so the tool
-	// rows still sum to the receipt.
+	// rows still sum to the receipt. What the parser skipped was received
+	// (it was in the upload) and not imported: it counts on both sides, so
+	// the receipt reconciles.
 	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, skipped, first_at, last_at)
-		SELECT tenant_id, id, `+receiptToolSQL+`, '`+ingestreceipt.InstanceImport+`', '`+ingestreceipt.InstanceImport+`', $3, now(), now()
+		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, received, skipped, first_at, last_at)
+		SELECT tenant_id, id, `+receiptToolSQL+`, '`+ingestreceipt.InstanceImport+`', '`+ingestreceipt.InstanceImport+`', $3, $3, now(), now()
 		FROM ingest_receipts WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload'
 		ON CONFLICT (receipt_id, tool, instance_kind, instance_id) DO UPDATE SET
+			received = ingest_receipt_tools.received + EXCLUDED.received,
 			skipped = ingest_receipt_tools.skipped + EXCLUDED.skipped,
 			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at)`,
 		tenantID.String(), id.String(), res.Skipped)
@@ -629,7 +741,7 @@ const receiptColumns = `id::text, tenant_id::text, source_kind, source_ref, acto
 	reports, findings_received, assets_created, assets_updated, components, statements, vex_stored, vex_closed,
 	findings_created, findings_updated, findings_reopened, findings_closed, findings_untouched,
 	skipped, findings_failed, findings_suppressed, actions_recorded, actions_truncated, errors,
-	created_at, updated_at, finished_at`
+	created_at, updated_at, finished_at, outcomes, released_from_quarantine, closing`
 
 type receiptScanner interface{ Scan(...any) error }
 
@@ -641,13 +753,15 @@ func scanReceipt(s receiptScanner) (*ingestreceipt.Receipt, error) {
 		untouched        sql.NullInt64
 		errs             []byte
 		finished         sql.NullTime
+		outcomes         []byte
+		closing          []byte
 	)
 	err := s.Scan(&id, &tenant, &kind, &rec.SourceRef, &actor, &rec.ToolName, &rec.Format, &rec.FilenameSHA256, &rec.Coverage,
 		&rec.CoverageNote, &rec.Status, &rec.Reports, &rec.Received, &rec.AssetsCreated, &rec.AssetsUpdated,
 		&rec.Components, &rec.Statements, &rec.VEXStored, &rec.VEXRequested,
 		&rec.Counts.Created, &rec.Counts.StillDetected, &rec.Counts.Reopened, &rec.Counts.Closed, &untouched,
 		&rec.Counts.Skipped, &rec.Counts.Failed, &rec.Counts.Suppressed, &rec.ActionsRecorded, &rec.ActionsTruncated,
-		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished)
+		&errs, &rec.CreatedAt, &rec.UpdatedAt, &finished, &outcomes, &rec.ReleasedFromQuarantine, &closing)
 	if err != nil {
 		return nil, err
 	}
@@ -671,6 +785,18 @@ func scanReceipt(s receiptScanner) (*ingestreceipt.Receipt, error) {
 		if err := json.Unmarshal(errs, &rec.Errors); err != nil {
 			return nil, fmt.Errorf("receipt errors: %w", err)
 		}
+	}
+	if len(outcomes) > 0 {
+		if err := json.Unmarshal(outcomes, &rec.Outcomes); err != nil {
+			return nil, fmt.Errorf("receipt outcomes: %w", err)
+		}
+	}
+	if len(closing) > 0 {
+		c := ingestreceipt.NewClosing()
+		if err := json.Unmarshal(closing, c); err != nil {
+			return nil, fmt.Errorf("receipt closing: %w", err)
+		}
+		rec.Closing = c
 	}
 	return &rec, nil
 }

@@ -95,6 +95,11 @@ type Input struct {
 // docs/rfcs/RFC-026-sensor-results-ingest.md). Each is off in the zero value,
 // so v1 ingest is unchanged.
 type Options struct {
+	// FindingsRefusedBeforeIngest counts the producer's findings a caller
+	// refused before calling Ingest (protocol v2: a finding that names no
+	// asset of its segment). They count as received, with the outcome
+	// unresolved_ref, so the receipt reconciles with what the producer sent.
+	FindingsRefusedBeforeIngest int
 	// RefusedItems are findings the caller refused before ingest (protocol
 	// v2: a finding that names no asset of its segment). They are booked on
 	// the receipt's item log with the rest of the report.
@@ -145,6 +150,14 @@ type Options struct {
 	// own). Nil derives it from the binding: the command's scan run or the
 	// command, the CI run, the connector run, or the sensor's report.
 	Receipt *ingestreceipt.Source
+	// ReleasedFromQuarantine: the report was held in the results quarantine
+	// and is applied now (by the platform or a person). The ingest keeps its
+	// trusted binding; only the receipt differs: it names the original
+	// sensor as sender, not a connector, and carries the release marker.
+	ReleasedFromQuarantine bool
+	// SenderName is the display name of the sender sensor for the receipt
+	// (the applying path has only the stored item, not a live session).
+	SenderName string
 	// NoExposureProjection: the report lists targets someone published, not
 	// what was observed (program targets, RFC-065 §16.8), so its service
 	// assets open no exposure.
@@ -250,9 +263,15 @@ type Output struct {
 	OverCapAssetRefs map[string]bool `json:"-"`
 	// OutsideTargetAssetIDs are the persisted assets of OutsideJobAssetRefs.
 	OutsideTargetAssetIDs map[shared.ID]bool `json:"-"`
-	FindingsCreated       int                `json:"findings_created"`
-	FindingsUpdated       int                `json:"findings_updated"`
-	FindingsSkipped       int                `json:"findings_skipped"`
+	// ContractMismatchTypes are the types a verified first-party tool
+	// reported without declaring them (ingested and flagged);
+	// ContractMismatchRefs are the report refs of those assets
+	// (contract_mismatch.go).
+	ContractMismatchTypes []string        `json:"contract_mismatch_types,omitempty"`
+	ContractMismatchRefs  map[string]bool `json:"-"`
+	FindingsCreated       int             `json:"findings_created"`
+	FindingsUpdated       int             `json:"findings_updated"`
+	FindingsSkipped       int             `json:"findings_skipped"`
 	// InfoObservations counts the template scanner info matches filed as
 	// exposures instead of findings (info_matches.go).
 	InfoObservations int `json:"info_observations,omitempty"`
@@ -342,6 +361,14 @@ type Output struct {
 	// report sighted (after alias resolution). Not exposed; the CI gate
 	// records them for its run (RFC-051).
 	SightedFingerprints []string `json:"-"`
+	// CompliancePassed are the compliance results the report says passed,
+	// on an existing finding of the same check (observation.go): not a
+	// sighting of it. A finding import resolves the open one with them.
+	CompliancePassed []CompliancePass `json:"-"`
+	// fileObserved: the findings carry when the file saw them
+	// (last_seen_at), and that time, not the ingest's, is their sighting
+	// time (an upload; observation.go).
+	fileObserved bool
 	// FingerprintsByIndex maps the index of a finding in the report to the
 	// stored fingerprints it became (one, or one per CVE of a split network
 	// finding). A CI job uses it to learn which of its own results carry a
@@ -371,6 +398,11 @@ type Output struct {
 	// policy and version that decided them: the receipt records both.
 	Decided []ingestreceipt.PolicyAction `json:"-"`
 	Items   []ingestreceipt.Item         `json:"-"`
+	// FindingsReceived is what the producer sent (before any filter, with
+	// Options.FindingsRefusedBeforeIngest); Outcomes counts where the
+	// findings went beyond the action counts (ingestreceipt.Outcome*).
+	FindingsReceived int            `json:"-"`
+	Outcomes         map[string]int `json:"-"`
 
 	// policy is the snapshot this ingest applies.
 	policy *PolicySnapshot
@@ -433,4 +465,15 @@ func withReportID(ctx context.Context, id string) context.Context {
 func reportIDOf(ctx context.Context) string {
 	id, _ := ctx.Value(reportIDKey{}).(string)
 	return id
+}
+
+// addOutcome counts n received findings under an outcome code.
+func (o *Output) addOutcome(code string, n int) {
+	if o == nil || n <= 0 {
+		return
+	}
+	if o.Outcomes == nil {
+		o.Outcomes = map[string]int{}
+	}
+	o.Outcomes[code] += n
 }
