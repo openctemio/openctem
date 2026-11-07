@@ -188,6 +188,7 @@ var dataSurfaceRegistry = map[string]dataSurface{
 	"GET /api/v1/findings/imports/{id}/items":             {classScoped, "receipt visible as for the detail; items on an asset filtered by the caller's data scope, items without an asset only for unrestricted callers; no evidence (RFC-122)"},
 	"GET /api/v1/findings/imports/{id}/actions":           {classScoped, "receipt visible as for the detail; rows filtered by the caller's data scope and pentest visibility (RFC-122 §4)"},
 	"GET /api/v1/findings/{id}/imports":                   {classScoped, "datascope.AssertFinding first (404 out of scope); lists receipt ids, kinds and actions, no counts"},
+	"GET /api/v1/findings/{id}/sources":                   {classScoped, "GetFindingWithScope first (404 out of scope, pentest membership); the finding's per-source records, tenant-pinned joins; sensor shown with sensors:read only"},
 	"GET /api/v1/findings/{id}/sightings":                 {classScoped, "datascope.AssertFinding first (404 out of scope); the finding's sources, tenant-pinned joins; sensor shown with sensors:read only"},
 	"POST /api/v1/findings/$":                             {classScoped, "asset_id through AssertAssetRef (tenant + caller scope), branch bound to the asset (research 21b C1)"},
 	"/api/v1/compliance/findings":                         {classScoped, "route guard on /compliance/findings/{id}/**"},
