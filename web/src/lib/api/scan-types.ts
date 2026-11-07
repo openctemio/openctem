@@ -171,6 +171,10 @@ export interface ScanConfig {
   /** The one run of a once schedule (RFC 3339, UTC). */
   schedule_run_at?: string
   next_run_at?: string
+  /** A scheduled occurrence the scheduler skipped (missed by more than one interval); cleared when a later scheduled run starts. */
+  last_missed_at?: string
+  /** Reason code of the skip (platform_unavailable, once_grace_exceeded). */
+  last_missed_reason?: string
   tags?: string[]
   run_on_tenant_runner: boolean
   sensor_preference: SensorPreference

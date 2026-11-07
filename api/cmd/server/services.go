@@ -2927,6 +2927,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	// A skipped (missed) scheduled occurrence is announced as scan.schedule_missed.
+	s.Scan.SetScheduleMissEvents(s.Outbox)
 	// Wildcard domains and inventory-mode CIDRs are expanded from the
 	// inventory at each run start (RFC-068).
 	s.Scan.SetSelectorAssets(repos.ScanSelector)

@@ -336,13 +336,18 @@ type ScanDetailResponse struct {
 	RetryBackoffSeconds int     `json:"retry_backoff_seconds"`
 	Status              string  `json:"status"`
 	// AdHoc: an unsaved quick scan (not listed as a configuration until saved).
-	AdHoc          bool    `json:"ad_hoc"`
-	LastRunID      *string `json:"last_run_id,omitempty"`
-	LastRunAt      *string `json:"last_run_at,omitempty"`
-	LastRunStatus  string  `json:"last_run_status,omitempty"`
-	TotalRuns      int     `json:"total_runs"`
-	SuccessfulRuns int     `json:"successful_runs"`
-	FailedRuns     int     `json:"failed_runs"`
+	AdHoc         bool    `json:"ad_hoc"`
+	LastRunID     *string `json:"last_run_id,omitempty"`
+	LastRunAt     *string `json:"last_run_at,omitempty"`
+	LastRunStatus string  `json:"last_run_status,omitempty"`
+	// LastMissedAt/LastMissedReason: the last scheduled occurrence that was
+	// skipped because it was missed (reason is a code the UI translates).
+	// Cleared when a later scheduled run starts.
+	LastMissedAt     *string `json:"last_missed_at,omitempty"`
+	LastMissedReason string  `json:"last_missed_reason,omitempty"`
+	TotalRuns        int     `json:"total_runs"`
+	SuccessfulRuns   int     `json:"successful_runs"`
+	FailedRuns       int     `json:"failed_runs"`
 	// PartialRuns: runs that kept results but lost some work.
 	PartialRuns int `json:"partial_runs"`
 	// BlockedRuns: triggers refused before anything was dispatched; each
@@ -1608,6 +1613,10 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 	if s.ScheduleRunAt != nil {
 		ra := s.ScheduleRunAt.UTC().Format(time.RFC3339)
 		resp.ScheduleRunAt = &ra
+	}
+	if s.LastMissedAt != nil {
+		lma := s.LastMissedAt.Format(time.RFC3339)
+		resp.LastMissedAt = &lma
 	}
 	if s.NextRunAt != nil {
 		nra := s.NextRunAt.Format(time.RFC3339)
