@@ -41,6 +41,7 @@ import {
   FORBIDDEN_TECHNIQUES,
   parseHeaderLines,
   parseWindowLines,
+  programRequiresWithoutHeader,
   rulesFromForm,
   SCOPE_FILE_FORMATS,
   csvHeaderColumns,
@@ -48,6 +49,16 @@ import {
   scopeFileTooLarge,
   shortHash,
 } from '../lib/program-form'
+import { DetailDisclosure } from '@/features/shared'
+import {
+  RequireIdentificationSwitch,
+  UserAgentRotationField,
+} from '@/features/sensors/components/scan-identification-parts'
+import {
+  parseUserAgentList,
+  userAgentBothError,
+  userAgentListErrors,
+} from '@/features/sensors/lib/scan-identification'
 import { ProgramCatalog } from './program-catalog'
 import { ProgramChoice } from './program-choice'
 import { ProgramPreviewView } from './program-preview'
@@ -69,6 +80,10 @@ export interface ProgramFormValues {
   rateLimit: string
   headers: string
   userAgent: string
+  /** A User-Agent rotation list, one value per line. */
+  userAgents: string
+  /** Require identification on every request (new programs: on). */
+  identificationRequired: boolean
   forbidden: ForbiddenTechnique[]
   notes: string
   /** Testing windows, one "mon-fri 09:00-17:00 Europe/Paris" per line. */
@@ -93,6 +108,8 @@ export const EMPTY_PROGRAM_FORM: ProgramFormValues = {
   rateLimit: '',
   headers: '',
   userAgent: '',
+  userAgents: '',
+  identificationRequired: true,
   forbidden: [],
   notes: '',
   windows: '',
@@ -138,6 +155,9 @@ export function ProgramForm({
 
   const badHeaders = useMemo(() => parseHeaderLines(v.headers).invalid, [v.headers])
   const badWindows = useMemo(() => parseWindowLines(v.windows).invalid, [v.windows])
+  const uaInvalid =
+    userAgentListErrors(v.userAgents, t).length > 0 ||
+    !!userAgentBothError(v.userAgent, parseUserAgentList(v.userAgents), t)
   const columns = useMemo(
     () => (v.fileFormat === 'generic_csv' ? csvHeaderColumns(v.fileContent) : []),
     [v.fileFormat, v.fileContent]
@@ -482,6 +502,22 @@ export function ProgramForm({
             </section>
           )}
 
+          <section className="space-y-3">
+            <RequireIdentificationSwitch
+              id={`${id}-required`}
+              checked={v.identificationRequired}
+              onChange={(on) => set('identificationRequired', on)}
+            />
+            {programRequiresWithoutHeader(v) && (
+              <p className="text-sm text-muted-foreground" data-testid="program-required-no-header">
+                {t(
+                  'programs.form.requiredNoHeader',
+                  'Add a required header below, or make sure the organization sets a header or query parameter in Settings > Scanning > Scan identification. Jobs fail without one.'
+                )}
+              </p>
+            )}
+          </section>
+
           <section className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor={`${id}-rate`}>
@@ -521,6 +557,24 @@ export function ProgramForm({
                   })}
                 </p>
               )}
+            </div>
+            <div className="sm:col-span-2">
+              <DetailDisclosure
+                summary={t('programs.form.advanced', 'Advanced: User-Agent rotation')}
+              >
+                <div className="mt-4 space-y-2">
+                  <UserAgentRotationField
+                    id={`${id}-ua-list`}
+                    text={v.userAgents}
+                    onChange={(text) => set('userAgents', text)}
+                  />
+                  {userAgentBothError(v.userAgent, parseUserAgentList(v.userAgents), t) && (
+                    <p className="text-destructive text-sm">
+                      {userAgentBothError(v.userAgent, parseUserAgentList(v.userAgents), t)}
+                    </p>
+                  )}
+                </div>
+              </DetailDisclosure>
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor={`${id}-windows`}>
@@ -585,7 +639,9 @@ export function ProgramForm({
             <Button
               variant="outline"
               onClick={runPreview}
-              disabled={busy || badHeaders.length > 0 || badWindows.length > 0 || fileMissing}
+              disabled={
+                busy || badHeaders.length > 0 || badWindows.length > 0 || uaInvalid || fileMissing
+              }
             >
               {busy && !preview && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('programs.form.preview', 'Preview')}
