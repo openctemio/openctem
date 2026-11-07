@@ -1088,6 +1088,8 @@
   "scans.failure.COVERAGE_GAPS.text": "Bước đã hoàn tất nhưng sensor không quét hết được một số máy chủ: sensor đã giảm tải để không vượt quá mức các máy chủ đó chấp nhận.",
   "scans.failure.DEADLINE_TOO_CLOSE.fix": "Các mục tiêu của bước được chuyển sang lần chạy theo lịch kế tiếp. Tăng hoặc bỏ thời lượng tối đa của lần quét nếu cần chạy xong trong một lần.",
   "scans.failure.DEADLINE_TOO_CLOSE.text": "Chưa chạy: thời gian còn lại trước hạn chót của lần chạy quá ít để bước này làm được việc gì hữu ích.",
+  "scans.failure.DEPENDENCY_FAILED.fix": "Khắc phục nguyên nhân bước trước đó thất bại (xem bước đó), rồi chạy lại lần quét.",
+  "scans.failure.DEPENDENCY_FAILED.text": "Đã dừng: bước này bắt đầu từ những kết quả đầu tiên của bước trước nó, rồi bước đó thất bại. Các tác vụ chưa chạy đã bị hủy; các tác vụ đã xong vẫn giữ kết quả.",
   "scans.failure.DEPENDENCY_SKIPPED.fix": "Làm cho bước được cần chạy được (thêm hoặc bật công cụ của nó, hoặc một sensor có công cụ đó); khi đó bước này cũng chạy.",
   "scans.failure.DEPENDENCY_SKIPPED.text": "Đã bỏ qua: một bước mà bước này cần kết quả đã bị bỏ qua.",
   "scans.failure.ENDPOINT_MISMATCH.fix": "Xác minh phát hiện thủ công.",

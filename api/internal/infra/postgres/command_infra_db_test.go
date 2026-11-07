@@ -150,6 +150,15 @@ func TestInfra_BudgetSharedWithRefusals(t *testing.T) {
 	if out := f.mustInfraFail(ids[1], job, "infra.resource.memory", "out of memory", command.FailureEvidence{}); out.Status != command.CommandStatusPending {
 		t.Fatalf("second attempt: %s, want moved", out.Status)
 	}
+	// The infrastructure re-route waits out the re-queue back-off before the
+	// next offer; the wait is not under test here.
+	var delayed bool
+	if err := f.cmds.db.QueryRowContext(f.ctx, `SELECT scheduled_at > NOW() FROM commands WHERE id = $1`, job.String()).Scan(&delayed); err != nil || !delayed {
+		t.Fatalf("infra re-route scheduled now (%v), want after the back-off", err)
+	}
+	if _, err := f.cmds.db.ExecContext(f.ctx, `UPDATE commands SET scheduled_at = NULL WHERE id = $1`, job.String()); err != nil {
+		t.Fatal(err)
+	}
 	if !f.claim(ids[2])[job] {
 		t.Fatal("C did not claim")
 	}

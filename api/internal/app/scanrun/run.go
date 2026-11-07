@@ -1070,6 +1070,14 @@ func (s *Service) skipBlockedSteps(ctx context.Context, run *scanrun.Run, templa
 		changed = false
 		for _, step := range template.Steps {
 			sr := run.GetStepRun(step.StepKey)
+			if sr != nil && (sr.IsQueued() || sr.IsRunning()) {
+				// A step that streamed from a source that then failed stops
+				// (stream.go): it never runs on its seeds alone.
+				if dep := step.BlockedByDependency(run); dep != "" && s.stopStreamOfFailedSource(ctx, run, sr, dep) {
+					changed = true
+				}
+				continue
+			}
 			if sr == nil || !sr.IsPending() {
 				continue
 			}

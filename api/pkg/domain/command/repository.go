@@ -170,6 +170,14 @@ type StepBatch struct {
 	Unreached    int
 }
 
+// StepCommandCanceler cancels the open commands of one step run (asserted,
+// not part of Repository, so its test doubles need not grow it).
+type StepCommandCanceler interface {
+	// CancelOpenByStepRun cancels every pending, acknowledged or running
+	// command of the step run, tenant-scoped, and returns how many.
+	CancelOpenByStepRun(ctx context.Context, tenantID, stepRunID shared.ID) (int64, error)
+}
+
 // ConditionalExpirer is implemented by the command repository. It is asserted
 // by the expiration checker (not part of Repository) so the many test doubles of
 // Repository do not all have to grow it.
