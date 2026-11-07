@@ -22,6 +22,7 @@ import (
 
 // The timeline actor of a scan file's closes.
 const (
+	fileCloseActivity  = "auto_resolved"
 	fileCloseSource    = "auto"
 	fileCloseActorType = "scanner"
 	fileCloseActorName = "system: scan file import"
@@ -96,7 +97,7 @@ func (r *FindingRepository) ResolveFileCoverage(ctx context.Context, tenantID sh
 		return nil, nil
 	}
 	ids, ats := timedArgs(closes)
-	return r.db.queryIDsWithTransition(ctx, findingTransition{ActivityType: "auto_resolved", Source: fileCloseSource,
+	return r.db.queryIDsWithTransition(ctx, findingTransition{ActivityType: fileCloseActivity, Source: fileCloseSource,
 		Reason: "not_in_scan_file", ActorType: fileCloseActorType, ActorName: fileCloseActorName,
 		Message: "A scan file whose host and check coverage is complete no longer reported it"}, `
 		UPDATE findings f
@@ -172,7 +173,7 @@ func (r *FindingRepository) ResolveCompliancePassed(ctx context.Context, tenantI
 		return nil, nil
 	}
 	ids, ats := timedArgs(closes)
-	return r.db.queryIDsWithTransition(ctx, findingTransition{ActivityType: "auto_resolved", Source: fileCloseSource,
+	return r.db.queryIDsWithTransition(ctx, findingTransition{ActivityType: fileCloseActivity, Source: fileCloseSource,
 		Reason: "compliance_check_passed", ActorType: fileCloseActorType, ActorName: fileCloseActorName,
 		Message: "A scan file reported this compliance check as passed"}, `
 		UPDATE findings f
