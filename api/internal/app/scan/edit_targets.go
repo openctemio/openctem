@@ -51,6 +51,9 @@ func (s *Service) applyTargetEdit(ctx context.Context, sc *scan.Scan, in UpdateS
 		if err != nil {
 			return err
 		}
+		if err := requireLargeRangeConfirmed(validated, in.ConfirmLargeRange); err != nil {
+			return err
+		}
 		if err := s.refuseOutOfActScope(ctx, tenantID, actor, validated); err != nil {
 			return err
 		}

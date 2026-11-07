@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_NEW_SCAN, type NewScanFormData } from '../../types'
 import { durationParts, largeRangeKey, largeRangeSummary } from '../large-range'
-import { targetsError } from '../scan-form'
+import { formDataToCreateRequest, targetsError } from '../scan-form'
+import { rangeHostBitsOf, classifyTarget } from '../target-format'
 
 describe('largeRangeSummary', () => {
   it('counts the addresses and /16 chunks of the ranges wider than a /16', () => {
@@ -60,5 +61,48 @@ describe('a scan with a large range', () => {
 
   it('leaves a /16 scan as before', () => {
     expect(targetsError(form({ customTargets: ['10.0.0.0/16'] }))).toBeNull()
+  })
+})
+
+describe('the server-side confirmation', () => {
+  const form = (targets: Partial<NewScanFormData['targets']>): NewScanFormData => ({
+    ...DEFAULT_NEW_SCAN,
+    name: 'net',
+    targets: { ...DEFAULT_NEW_SCAN.targets, ...targets },
+  })
+
+  it('sends confirm_large_range only for the ranges the person confirmed', () => {
+    expect(
+      formDataToCreateRequest(
+        form({ customTargets: ['10.0.0.0/8'], largeRangeConfirmed: '10.0.0.0/8' })
+      ).confirm_large_range
+    ).toBe(true)
+    expect(
+      formDataToCreateRequest(form({ customTargets: ['10.0.0.0/8'] })).confirm_large_range
+    ).toBeUndefined()
+    expect(
+      formDataToCreateRequest(
+        form({ customTargets: ['10.0.0.0/8', '172.16.0.0/12'], largeRangeConfirmed: '10.0.0.0/8' })
+      ).confirm_large_range
+    ).toBeUndefined()
+    expect(
+      formDataToCreateRequest(form({ customTargets: ['10.0.0.0/16'] })).confirm_large_range
+    ).toBeUndefined()
+  })
+})
+
+describe("the organization's widest range", () => {
+  it('is a /16 unless the organization opted in to a wider one', () => {
+    expect(rangeHostBitsOf(undefined)).toBe(16)
+    expect(rangeHostBitsOf(0)).toBe(16)
+    expect(rangeHostBitsOf(8)).toBe(24)
+    expect(rangeHostBitsOf(20)).toBe(12)
+  })
+
+  it('refuses a /8 at the default and takes it once opted in', () => {
+    expect(classifyTarget('10.0.0.0/8', { maxHostBits: rangeHostBitsOf(undefined) }).kind).toBe(
+      'invalid'
+    )
+    expect(classifyTarget('10.0.0.0/8', { maxHostBits: rangeHostBitsOf(8) }).kind).toBe('cidr')
   })
 })

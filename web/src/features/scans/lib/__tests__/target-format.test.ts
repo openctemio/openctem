@@ -13,6 +13,12 @@ import {
   isLargeRange,
 } from '../target-format'
 import { readFileSync } from 'node:fs'
+import {
+  DENY_RANGES,
+  parsePrefix,
+  prefixesOverlap,
+  PRIVATE_RANGES,
+} from '@/features/scan-zones/lib/ranges'
 import { resolve } from 'node:path'
 import { enTranslate } from '../translate'
 
@@ -268,7 +274,13 @@ describe('the CIDR bounds shared with the API', () => {
       'utf8'
     )
   ) as {
-    cases: { target: string; max_host_bits: number; valid: boolean; reason?: string }[]
+    cases: {
+      target: string
+      max_host_bits: number
+      valid: boolean
+      reason?: string
+      internal?: boolean
+    }[]
   }
 
   it('has cases', () => {
@@ -281,6 +293,18 @@ describe('the CIDR bounds shared with the API', () => {
       const got = classifyTarget(c.target, { maxHostBits: c.max_host_bits })
       expect(got.kind === 'cidr').toBe(c.valid)
       if (!c.valid) expect(got.reason).toBe(c.reason)
+    }
+  )
+
+  // Internal = overlaps a private, link-local or loopback block at all
+  // (172.0.0.0/8 holds 172.16.0.0/12), the same answer as the API.
+  it.each(fixture.cases.filter((c) => c.internal !== undefined).map((c) => [c.target, c] as const))(
+    '%s is internal as the API says',
+    (_target, c) => {
+      const p = parsePrefix(c.target)
+      expect(p).not.toBeNull()
+      const internal = [...PRIVATE_RANGES, ...DENY_RANGES].some((q) => prefixesOverlap(q, p!))
+      expect(internal).toBe(c.internal)
     }
   )
 })

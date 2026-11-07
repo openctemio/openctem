@@ -83,6 +83,9 @@ type CreateScanInput struct {
 	// scope check allows now and records the others, with their refusal
 	// codes, on the scan and its runs (skip_refused.go).
 	SkipRefusedTargets bool `json:"skip_refused_targets"`
+	// ConfirmLargeRange confirms direct targets that name a range wider than
+	// a /16; without it such a scan is refused (LARGE_RANGE_UNCONFIRMED).
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // CreateScanResult represents the result of creating a scan.
@@ -140,6 +143,10 @@ func (s *Service) CreateScan(ctx context.Context, input CreateScanInput) (*scan.
 	}
 	validatedTargets, err := s.validateScanTargets(ctx, input, rangeBits)
 	if err != nil {
+		return nil, err
+	}
+	// A range wider than a /16 only when the caller confirmed its size.
+	if err := requireLargeRangeConfirmed(validatedTargets, input.ConfirmLargeRange); err != nil {
 		return nil, err
 	}
 
@@ -896,6 +903,9 @@ type UpdateScanInput struct {
 	// ActorID is the editing user: the new targets are checked against
 	// their act scope and assets are named for them.
 	ActorID string `json:"-"`
+	// ConfirmLargeRange confirms new direct targets that name a range wider
+	// than a /16 (LARGE_RANGE_UNCONFIRMED without it).
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // UpdateScan updates a scan.
@@ -1046,14 +1056,13 @@ func (s *Service) UpdateScan(ctx context.Context, input UpdateScanInput) (*scan.
 		if err := sc.SetTargetOptions(opts); err != nil {
 			return nil, err
 		}
-		if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
-			// Live hosts first must have a host discovery step to run.
-			if err := s.applyCIDRMode(ctx, sc, true); err != nil {
-				return nil, err
-			}
-		}
-	} else if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
-		// Live hosts first must still have a host discovery step to run.
+	}
+	// The CIDR mode is settled again whenever what decides it changed (the
+	// targets, the target options, the workflow or the scanner) or the scan
+	// finds live hosts first: a range wider than a /16 must keep running
+	// live hosts first through a scan that finds hosts.
+	if input.targetsChanged() || input.TargetOptions != nil || input.ScanWorkflowID != "" ||
+		input.ScannerName != "" || sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
 		if err := s.applyCIDRMode(ctx, sc, true); err != nil {
 			return nil, err
 		}

@@ -484,6 +484,14 @@ func isInternalIP(ip net.IP) bool {
 	return false
 }
 
+// networksOverlap reports whether two CIDR ranges share an address: one
+// holds the other's first address. Checking only a's first address missed
+// a wide range that starts outside a private block but contains it
+// (172.0.0.0/8 holds 172.16.0.0/12).
+func networksOverlap(a, b *net.IPNet) bool {
+	return a.Contains(b.IP) || b.Contains(a.IP)
+}
+
 // isInternalNetwork checks if a CIDR contains internal addresses.
 func isInternalNetwork(ipNet *net.IPNet) bool {
 	privateNets := []string{
@@ -496,7 +504,7 @@ func isInternalNetwork(ipNet *net.IPNet) bool {
 
 	for _, cidr := range privateNets {
 		_, privateNet, _ := net.ParseCIDR(cidr)
-		if privateNet.Contains(ipNet.IP) {
+		if networksOverlap(privateNet, ipNet) {
 			return true
 		}
 	}
@@ -512,7 +520,7 @@ func isLocalhostNetwork(ipNet *net.IPNet) bool {
 
 	for _, cidr := range localhostNets {
 		_, loNet, _ := net.ParseCIDR(cidr)
-		if loNet.Contains(ipNet.IP) {
+		if networksOverlap(loNet, ipNet) {
 			return true
 		}
 	}

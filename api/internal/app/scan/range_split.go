@@ -164,10 +164,11 @@ func rangeTarget(t string) (ipset.Range, bool) {
 // one piece (MaxPieceBits), with the exact rest: the fewest prefixes no
 // wider than a piece that hold the range's addresses minus the excluded and
 // denied ones. A range with nothing left is excluded (or
-// refused, when only the deny list removed it). A range target that also
-// matches by other names (DispatchAsset.AlsoMatch) is left to the
-// whole-target rule: an exclusion of one of its names is not an address
-// subtraction. Pieces inherit the range's inventory asset entry.
+// refused, when only the deny list removed it). A range target of at most
+// a /16 that also matches by other names (DispatchAsset.AlsoMatch) is left
+// to the whole-target rule: an exclusion of one of its names is not an
+// address subtraction. A wider one is bounded and cut like any range.
+// Pieces inherit the range's inventory asset entry.
 //
 // Nothing is listed per address. A lookup error is returned (fail closed);
 // more than MaxRangePieces pieces is RANGE_TOO_FRAGMENTED.
@@ -178,8 +179,15 @@ func (s *Service) splitRangeTargets(ctx context.Context, in *DispatchTargetsInpu
 		if !ok {
 			continue
 		}
+		// A range that also matches by other names keeps the whole-target
+		// rule only while it is small enough to go as typed. A wider one
+		// (a group's network asset, say) is refused or cut like any other
+		// range, its pieces inheriting the asset entry, AlsoMatch included,
+		// so a name exclusion still applies to every piece.
 		if a, has := assetOf(in.Assets, t); has && len(a.AlsoMatch) > 0 {
-			continue
+			if n, full := r.Size(); !full && n <= MaxRangeAddresses {
+				continue
+			}
 		}
 		idx[i] = r
 	}

@@ -69,6 +69,7 @@ import { canFindLiveHosts } from '../../lib/liveness'
 import { intensityForTier, type ProbeTier } from '../../lib/scan-intensity'
 import { lowerIntensityAllowed } from '../../lib/targets-step'
 import { useTargetsCheck } from '../../hooks/use-targets-check'
+import { useRangeHostBits } from '../../hooks/use-range-host-bits'
 import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { TargetChipsField, type TargetChip } from './target-chips-field'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
@@ -137,7 +138,12 @@ export function TargetsStep({
       ),
     [targets.assetIds, targets.assetNames]
   )
-  const pasted = useMemo(() => parsePastedTargets(targets.customTargets), [targets.customTargets])
+  // The organization's widest range (a /16 unless it opted in to wider).
+  const maxHostBits = useRangeHostBits(canReadScope)
+  const pasted = useMemo(
+    () => parsePastedTargets(targets.customTargets, { maxHostBits }),
+    [targets.customTargets, maxHostBits]
+  )
 
   const setAssets = (assets: PickedAsset[], picked: boolean) => {
     const names = { ...targets.assetNames }
@@ -520,6 +526,7 @@ export function TargetsStep({
             id={`${fieldId}-bulk`}
             present={pasted.lines.map((l) => targetKey(l.input))}
             capacity={Math.max(0, MAX_DIRECT_TARGETS - sent.length)}
+            maxHostBits={maxHostBits}
             onAdd={(added) => {
               addTyped(added)
               setBulkOpen(false)
