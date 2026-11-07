@@ -58,9 +58,11 @@ func newPolicyScanService(dir *fakeZoneDir, lister scanservice.AvailableSensorLi
 	return svc, deps
 }
 
-func noInteractsh() *sensor.LocalPolicyReport {
+// onlyHTTPX is a local policy that allows httpx and refuses nuclei
+// (tools.allow).
+func onlyHTTPX() *sensor.LocalPolicyReport {
 	return &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced,
-		Summary: &sensor.LocalPolicySummary{TargetsAllow: -1, AllowPrivate: true, Tools: []string{"nuclei"}}}
+		Summary: &sensor.LocalPolicySummary{TargetsAllow: -1, AllowPrivate: true, Tools: []string{"httpx"}}}
 }
 
 func policyCode(err error) string {
@@ -71,19 +73,19 @@ func policyCode(err error) string {
 	return ""
 }
 
-// T-P0a: two sensors in a zone, one refuses interactsh: the scan that asks
-// for it is pinned to the other.
+// T-P0a: two sensors in a zone, one refuses nuclei: the nuclei scan is
+// pinned to the other.
 func TestPolicyPreflight_PinsToTheSensorThatAccepts(t *testing.T) {
 	tenant := shared.NewID()
 	strict, open := shared.NewID(), shared.NewID()
 	dc := zone(t, tenant, "dc", false, []shared.ID{strict, open}, "10.1.0.0/16")
 	dir := &fakeZoneDir{zones: []*scanzone.Zone{dc}, routable: map[shared.ID][]scanzone.SensorCandidate{dc.ID: {
 		// strict is the least loaded: without the pre-check it would win.
-		{ID: strict, ActiveCommands: 0, LocalPolicy: noInteractsh()},
+		{ID: strict, ActiveCommands: 0, LocalPolicy: onlyHTTPX()},
 		{ID: open, ActiveCommands: 3, LocalPolicy: &sensor.LocalPolicyReport{State: sensor.LocalPolicyAbsent}},
 	}}}
 	svc, deps := newPolicyScanService(dir, nil, nil)
-	sc := singleScan(t, deps, tenant, "nuclei", 1, map[string]any{"allow_interactsh": true}, "10.1.0.5", "10.1.0.6")
+	sc := singleScan(t, deps, tenant, "nuclei", 1, nil, "10.1.0.5", "10.1.0.6")
 	if _, err := trigger(t, svc, sc); err != nil {
 		t.Fatal(err)
 	}
@@ -92,13 +94,14 @@ func TestPolicyPreflight_PinsToTheSensorThatAccepts(t *testing.T) {
 	}
 	for _, c := range deps.commandRepo.commands {
 		if c.SensorID == nil || *c.SensorID != open {
-			t.Errorf("job pinned to %v, want the sensor that allows interactsh", c.SensorID)
+			t.Errorf("job pinned to %v, want the sensor that allows nuclei", c.SensorID)
 		}
 	}
 
-	// Without interactsh the least loaded sensor gets the work, as before.
+	// A tool both allow: the least loaded sensor gets the work, as before.
 	svc, deps = newPolicyScanService(dir, nil, nil)
-	sc = singleScan(t, deps, tenant, "nuclei", 1, nil, "10.1.0.5")
+	deps.toolRepo.tools["httpx"] = &tool.Tool{ID: shared.NewID(), Name: "httpx", IsActive: true, SupportedTargets: []string{"url", "domain", "ip"}}
+	sc = singleScan(t, deps, tenant, "httpx", 1, nil, "10.1.0.5")
 	if _, err := trigger(t, svc, sc); err != nil {
 		t.Fatal(err)
 	}
@@ -116,15 +119,15 @@ func TestPolicyPreflight_AllSensorsRefuse(t *testing.T) {
 	a, b := shared.NewID(), shared.NewID()
 	dmz := zone(t, tenant, "DMZ", false, []shared.ID{a, b}, "10.9.0.0/16")
 	dir := &fakeZoneDir{zones: []*scanzone.Zone{dmz}, routable: map[shared.ID][]scanzone.SensorCandidate{dmz.ID: {
-		{ID: a, LocalPolicy: noInteractsh()}, {ID: b, LocalPolicy: noInteractsh()},
+		{ID: a, LocalPolicy: onlyHTTPX()}, {ID: b, LocalPolicy: onlyHTTPX()},
 	}}}
 	svc, deps := newPolicyScanService(dir, nil, nil)
-	sc := singleScan(t, deps, tenant, "nuclei", 1, map[string]any{"allow_interactsh": true}, "10.9.0.1")
+	sc := singleScan(t, deps, tenant, "nuclei", 1, nil, "10.9.0.1")
 	_, err := trigger(t, svc, sc)
 	if policyCode(err) != "SENSOR_POLICY_REFUSED" {
 		t.Fatalf("err = %v, want SENSOR_POLICY_REFUSED", err)
 	}
-	for _, want := range []string{"allow_interactsh", "local policy", "2 of 2", `scan zone "DMZ"`, "network owner"} {
+	for _, want := range []string{"tools.allow", "local policy", "2 of 2", `scan zone "DMZ"`, "network owner"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not name %q", err.Error(), want)
 		}
@@ -145,11 +148,11 @@ func TestPolicyPreflight_PartialBlockWarns(t *testing.T) {
 	strictZone := zone(t, tenant, "strict", false, []shared.ID{a}, "10.1.0.0/16")
 	openZone := zone(t, tenant, "open", false, []shared.ID{b}, "10.2.0.0/16")
 	dir := &fakeZoneDir{zones: []*scanzone.Zone{strictZone, openZone}, routable: map[shared.ID][]scanzone.SensorCandidate{
-		strictZone.ID: {{ID: a, LocalPolicy: noInteractsh()}},
+		strictZone.ID: {{ID: a, LocalPolicy: onlyHTTPX()}},
 		openZone.ID:   {{ID: b}},
 	}}
 	svc, deps := newPolicyScanService(dir, nil, nil)
-	sc := singleScan(t, deps, tenant, "nuclei", 1, map[string]any{"allow_interactsh": true}, "10.1.0.1", "10.2.0.1")
+	sc := singleScan(t, deps, tenant, "nuclei", 1, nil, "10.1.0.1", "10.2.0.1")
 	run, err := trigger(t, svc, sc)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +161,7 @@ func TestPolicyPreflight_PartialBlockWarns(t *testing.T) {
 	if byTarget["10.1.0.1"] != nil || byTarget["10.2.0.1"] == nil {
 		t.Fatalf("dispatched %v, want only the open zone's target", byTarget)
 	}
-	if !hasWarning(warningsOf(run), "10.1.0.1 not scanned") || !hasWarning(warningsOf(run), "allow_interactsh") {
+	if !hasWarning(warningsOf(run), "10.1.0.1 not scanned") || !hasWarning(warningsOf(run), "tools.allow") {
 		t.Errorf("warnings %v do not explain the blocked target", warningsOf(run))
 	}
 }
