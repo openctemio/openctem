@@ -234,19 +234,30 @@ func TestInfoExposures_MovesStoredInfoFindings_DB(t *testing.T) {
 		t.Fatalf("down wrote no audit entry (%d)", n)
 	}
 
-	// Apply again, then the next scan files its matches as exposures: the
-	// two moved events are among the twelve it files (same fingerprints:
-	// bumped, not filed twice) and no moved finding reopens.
+	// Apply again, then the next scan. Its twelve info matches are not all
+	// exposures any more: eight map to asset facts (technologies, header
+	// posture; tech-detect and the missing-header matchers among them) and
+	// four the mapping does not name are filed as exposures. Nothing is
+	// dropped: twelve matches = four new exposure events + eight facts. The
+	// two moved events stay as the history of what was filed before; the
+	// next scan no longer bumps them, since their matches are facts now.
+	// No moved finding reopens.
 	if code := runInfoExposures(ctx, e.db, a.String(), true, false, true, 50); code != 0 {
 		t.Fatalf("re-apply exit %d", code)
 	}
 	e.ingestFixture(e.routed, a)
-	if n := e.count(`SELECT COUNT(*) FROM exposure_events WHERE tenant_id = $1`, a); n != 12 {
-		t.Fatalf("after the next scan %d events, want 12 (2 moved ones bumped, 10 other matchers added)", n)
+	if n := e.count(`SELECT COUNT(*) FROM exposure_events WHERE tenant_id = $1`, a); n != 6 {
+		t.Fatalf("after the next scan %d events, want 6 (2 moved ones kept, 4 unmapped matchers added)", n)
 	}
 	if n := e.count(`SELECT COUNT(*) FROM exposure_events WHERE tenant_id = $1 AND details ? 'reclassified_from_finding'
-		AND last_seen_at > first_seen_at`, a); n != 2 {
-		t.Fatalf("%d moved events bumped by the next scan, want 2", n)
+		AND last_seen_at > first_seen_at`, a); n != 0 {
+		t.Fatalf("%d moved events bumped by the next scan, want 0 (their matches are asset facts now)", n)
+	}
+	// The eight facts are on the asset: the header posture its missing-header
+	// matches prove (eight matchers become posture keys, not events).
+	if n := e.count(`SELECT COUNT(*) FROM assets WHERE tenant_id = $1 AND properties->'http_posture'->>'hsts' = 'false'
+		AND properties->'http_posture'->>'csp' = 'false'`, a); n != 1 {
+		t.Fatalf("%d assets carry the header posture of the info matches, want 1", n)
 	}
 	if n := e.count(moved, a); n != 2 {
 		t.Fatalf("after the next scan %d still moved, want 2", n)

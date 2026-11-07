@@ -56,7 +56,7 @@ func TestInstallBuiltinRulePacks_DB(t *testing.T) {
 	}
 	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
 	set, err := installPacks(ctx, svc, packs, quiet)
-	if err != nil || len(set) != 2 {
+	if err != nil || len(set) != len(packs) {
 		t.Fatalf("install: %v %v", set, err)
 	}
 	again, err := installPacks(ctx, svc, packs, quiet)
