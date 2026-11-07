@@ -553,7 +553,7 @@ func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commandd
 			if !egressBound(c.Type) {
 				continue
 			}
-			pol, err := s.jobHTTPPolicy(ctx, c.TenantID)
+			pol, err := s.jobHTTPPolicy(ctx, c)
 			if err != nil {
 				return nil, err
 			}

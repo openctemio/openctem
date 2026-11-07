@@ -110,8 +110,10 @@ func TestEnrichment_MultiToolSASTScenario(t *testing.T) {
 		if finding.RuleID() != "go.lang.security.audit.sqli" {
 			t.Error("RuleID should be preserved from Semgrep (FirstWins)")
 		}
-		if finding.Description() != "User-controlled data flows to database query without validation" {
-			t.Error("Description should be updated from CodeQL (LastWins)")
+		// Semgrep reported first: another tool never replaces its text (each
+		// tool keeps its own in its source record).
+		if finding.Description() != "User input flows directly to SQL query" {
+			t.Error("Description should stay Semgrep's (primary source)")
 		}
 
 		// CWE IDs should accumulate

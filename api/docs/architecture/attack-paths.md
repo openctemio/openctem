@@ -129,6 +129,21 @@ narrowing works on the caller's copy.
   set), so resolved, closed and dispositioned findings do not raise the score.
   Branch-only findings are still left out.
 
+## Proof
+
+Every exposure chain and attack path is a **possible** path: it is built from
+the asset graph and the open findings, and no check has shown that an
+attacker can follow it. The API says so on every result (`proof: "possible"`
+on each exposure chain and on the routes to one asset, `attack.ProofPossible`),
+the MCP tool `get_exposure_chains` describes its chains as possible and not
+proven and adds a `proof_note`, and every page that presents paths shows the
+label "Possible path, not proven" (`web/src/components/ui/possible-path-label.tsx`:
+`/exposure-chains`, `/attack-paths` and the dashboard's crown-jewel paths).
+A path becomes proven only from a recorded verdict (a deterministic check or
+a person with evidence); verdicts are designed in
+RFC-153 (exploration) and not built, so no path is proven
+today.
+
 ## Web pages
 
 - `/attack-paths` is the view of one target: a flow canvas (the graph kit in

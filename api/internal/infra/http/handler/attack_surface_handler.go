@@ -229,10 +229,11 @@ func (h *AttackSurfaceHandler) GetAttackPaths(w http.ResponseWriter, r *http.Req
 }
 
 // GetExposureChains handles GET /api/v1/attack-surface/exposure-chains.
-// It returns the concrete shortest attack chains from public entry points to
-// assets carrying open KEV or critical findings, ranked by urgency — the
-// "how the internet reaches a dangerous asset" view that plain reachability
-// scoring (GetAttackPaths) does not surface.
+// It returns the shortest possible attack chains from public entry points to
+// assets carrying open KEV or critical findings, ranked by urgency: the "how
+// the internet could reach a dangerous asset" view that plain reachability
+// scoring (GetAttackPaths) does not surface. A chain is built from the asset
+// graph and the findings and is not proven: each carries proof "possible".
 func (h *AttackSurfaceHandler) GetExposureChains(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -260,7 +261,7 @@ func (h *AttackSurfaceHandler) GetExposureChains(w http.ResponseWriter, r *http.
 // finding that enables each step, the likelihood of each route and the choke
 // points. An asset outside the tenant or the caller's data scope answers 404.
 // @Summary      Attack paths to one asset
-// @Description  Routes from entry points to the asset, step weights, route likelihood and choke points, in the caller's data scope
+// @Description  Possible routes from entry points to the asset, step weights, route likelihood and choke points, in the caller's data scope. Routes are built from asset relationships and open findings and are not proven: proof is "possible" until a verdict exists.
 // @Tags         Attack Surface
 // @Produce      json
 // @Security     BearerAuth
