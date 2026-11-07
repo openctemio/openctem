@@ -361,6 +361,14 @@ type Output struct {
 	// report sighted (after alias resolution). Not exposed; the CI gate
 	// records them for its run (RFC-051).
 	SightedFingerprints []string `json:"-"`
+	// CompliancePassed are the compliance results the report says passed,
+	// on an existing finding of the same check (observation.go): not a
+	// sighting of it. A finding import resolves the open one with them.
+	CompliancePassed []CompliancePass `json:"-"`
+	// fileObserved: the findings carry when the file saw them
+	// (last_seen_at), and that time, not the ingest's, is their sighting
+	// time (an upload; observation.go).
+	fileObserved bool
 	// FingerprintsByIndex maps the index of a finding in the report to the
 	// stored fingerprints it became (one, or one per CVE of a split network
 	// finding). A CI job uses it to learn which of its own results carry a

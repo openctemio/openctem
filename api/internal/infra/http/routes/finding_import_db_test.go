@@ -431,7 +431,10 @@ func TestFindingImport_RecordsTheProducer_DB(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rec.ActorUserID == nil || *rec.ActorUserID != user || rec.Format != "nessus" || rec.Counts.Created == 0 || rec.AssetsCreated == 0 ||
-		rec.SourceKind != "upload" || rec.Status != "completed" || rec.Reports != 1 || rec.Coverage != "partial" {
+		rec.SourceKind != "upload" || rec.Status != "completed" || rec.Reports != 1 ||
+		// A Nessus file with its scan policy proves its own coverage
+		// (finding_import_nessus_close_db_test.go).
+		rec.Coverage != "full" || rec.Closing == nil {
 		t.Fatalf("record = %+v", rec)
 	}
 	if strings.Contains(rec.FilenameSHA256, "weekly") || len(rec.FilenameSHA256) != 64 {
