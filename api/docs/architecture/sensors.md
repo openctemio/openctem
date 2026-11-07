@@ -2551,8 +2551,11 @@ and narrows dispatch:
   the summary: kill switch (withholds everything), `checks.allow`,
   `tools.allow`, `allow_custom_templates`, `allow_interactsh`, `ports.allow`
   (exact lists only; named lists such as `top-100` are left to the sensor),
-  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), and the
-  tenant switch above (layer `managed`). Allow and deny ranges are reported as
+  `targets.allow_private` (literal RFC 1918 / fc00::/7 targets only), the
+  report's top-level `allow_private` (the host's `SENSOR_ALLOW_PRIVATE_TARGETS`
+  switch, narrowed by an enforced policy; reported with or without a policy
+  file by an SDK that sends it, absent from older SDKs, which leaves the
+  decision to the sensor), and the tenant switch above (layer `managed`). Allow and deny ranges are reported as
   counts, so they are left to the sensor. A sensor without a report or
   without a policy accepts what the policy would decide (the absent policy
   allows both opt-ins, decision Q4 (a)). The same check runs in three

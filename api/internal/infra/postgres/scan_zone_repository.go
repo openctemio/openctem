@@ -10,6 +10,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -392,6 +393,57 @@ func (r *ScanZoneRepository) RoutableSensors(ctx context.Context, tenantID share
 		}
 		c.LocalPolicy, _ = scanLocalPolicy(c.ID, localPolicy, sql.NullTime{})
 		out[zid] = append(out[zid], c)
+	}
+	return out, rows.Err()
+}
+
+var _ scanzone.ZoneSensorStateReader = (*ScanZoneRepository)(nil)
+
+// ZoneSensorStates returns, per zone, the tenant's active sensors assigned
+// to it (online or not) with their trust level and last local policy
+// report, for plan-time routing (scanzone.JudgeZoneSensors). Zone and
+// sensor must both belong to tenantID.
+func (r *ScanZoneRepository) ZoneSensorStates(ctx context.Context, tenantID shared.ID, zoneIDs []shared.ID) (map[shared.ID][]scanzone.ZoneSensorState, error) {
+	out := make(map[shared.ID][]scanzone.ZoneSensorState, len(zoneIDs))
+	if len(zoneIDs) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(zoneIDs))
+	for i, id := range zoneIDs {
+		ids[i] = id.String()
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT zs.zone_id, s.id, s.name, s.trust_level, s.reported_local_policy
+		FROM scan_zone_sensors zs
+		JOIN sensors s ON s.id = zs.sensor_id AND s.tenant_id = zs.tenant_id
+		WHERE zs.tenant_id = $1
+		  AND zs.zone_id = ANY($2::uuid[])
+		  AND s.status = 'active'
+		ORDER BY zs.zone_id, s.name, s.id`,
+		tenantID.String(), pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("zone sensor states: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			zoneID, sensorID, trust string
+			st                      scanzone.ZoneSensorState
+			localPolicy             []byte
+		)
+		if err := rows.Scan(&zoneID, &sensorID, &st.Name, &trust, &localPolicy); err != nil {
+			return nil, fmt.Errorf("scan zone sensor state: %w", err)
+		}
+		zid, err := shared.IDFromString(zoneID)
+		if err != nil {
+			return nil, err
+		}
+		if st.ID, err = shared.IDFromString(sensorID); err != nil {
+			return nil, err
+		}
+		st.Trusted = sensor.TrustLevel(trust) == sensor.TrustTrusted
+		st.LocalPolicy, _ = scanLocalPolicy(st.ID, localPolicy, sql.NullTime{})
+		out[zid] = append(out[zid], st)
 	}
 	return out, rows.Err()
 }

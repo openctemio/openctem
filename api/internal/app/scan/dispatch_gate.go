@@ -144,6 +144,15 @@ type DispatchTargetsInput struct {
 	// (unresolved). Left empty, such names are refused as before.
 	Tool       string
 	Capability string
+	// ZoneSensorTier, when set, turns on the plan-time readiness check of
+	// each zone's sensors (scanzone.JudgeZoneSensors) for a job of that
+	// tier (scanzone.TierUnknown: the private check only): a target whose
+	// zone sensors are all New while the job is above T0, or all refuse
+	// private targets on their host while the target is private, is
+	// refused (zone_sensor_new, zone_sensor_no_private). The dry run sets
+	// it; the trigger checks in its own zone planning, and the claim
+	// re-check leaves it off (the grant and the sensor decide there).
+	ZoneSensorTier *int
 	// SplitRanges cuts a range target (CIDR or "a-b") around the active
 	// exclusions of an address kind and the built-in deny list: the rest
 	// is dispatched as pieces (Allowed holds the pieces, Split names them)
@@ -174,6 +183,9 @@ type RefusedTarget struct {
 	// Resolved are the addresses a hostname resolved to, when zone routing
 	// refused it (shown to the tenant that owns the target only).
 	Resolved []string `json:"resolved,omitempty"`
+	// SensorID is the tenant's own zone sensor a zone_sensor_new or
+	// zone_sensor_no_private fix acts on.
+	SensorID string `json:"sensor_id,omitempty"`
 }
 
 // DispatchTargets is the gate's decision for every input target.
@@ -793,6 +805,12 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 		return nil
 	}
 	plan := scanzone.NewRouter(zones, s.zoneResolver).LookupOnly(in.lookupOnly()).Plan(ctx, kept)
+	var states map[shared.ID][]scanzone.ZoneSensorState
+	if in.ZoneSensorTier != nil {
+		if states, err = s.zoneSensorStates(ctx, in.TenantID, plan.ZoneOrder); err != nil {
+			return err
+		}
+	}
 	out.ZoneOf = make(map[string]*scanzone.Zone, len(kept))
 	for _, r := range plan.Routes {
 		switch {
@@ -816,11 +834,28 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target,
 				Reason: fmt.Sprintf("target is in scan zone %q and the pinned sensor is not assigned to it", r.Zone.Name), Code: scopedom.RefusalZoneSensorMismatch})
 		default:
+			if in.ZoneSensorTier != nil {
+				v := scanzone.JudgeZoneSensors(r.Zone, states[r.Zone.ID], scanzone.SensorNeed{
+					Tier: *in.ZoneSensorTier, Private: scanzone.RoutePrivate(r), SensorID: in.SensorID})
+				if v.Kind != "" {
+					out.Refused = append(out.Refused, RefusedTarget{Target: r.Target, Reason: v.Reason,
+						Code: zoneSensorRefusalCode(v.Kind), SensorID: v.SensorID.String()})
+					continue
+				}
+			}
 			out.Allowed = append(out.Allowed, r.Target)
 			out.ZoneOf[r.Target] = r.Zone
 		}
 	}
 	return nil
+}
+
+// zoneSensorRefusalCode is the refusal code of a zone readiness kind.
+func zoneSensorRefusalCode(kind string) string {
+	if kind == scanzone.KindZoneSensorNew {
+		return scopedom.RefusalZoneSensorNew
+	}
+	return scopedom.RefusalZoneSensorNoPrivate
 }
 
 // dedupeTargets trims, drops empty entries and removes case-insensitive
