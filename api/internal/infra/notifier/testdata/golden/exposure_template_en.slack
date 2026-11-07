@@ -1,0 +1,38 @@
+{
+  "text": "New exposure (High)",
+  "attachments": [
+    {
+      "color": "#ea580c",
+      "blocks": [
+        {
+          "type": "header",
+          "text": {
+            "type": "plain_text",
+            "text": "🟠 New exposure",
+            "emoji": true
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "admin.example.com needs a look: Admin panel reachable on port 8443 (web interface exposed)\nOwner team: platform"
+          }
+        },
+        {
+          "type": "actions",
+          "elements": [
+            {
+              "type": "button",
+              "text": {
+                "type": "plain_text",
+                "text": "Open exposure"
+              },
+              "url": "https://ctem.example.com/exposures"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

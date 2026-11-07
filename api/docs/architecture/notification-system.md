@@ -85,7 +85,7 @@ sequenceDiagram
   W->>W: ListIntegrationsWithNotification(tenant), connected only
   W->>B: Resolve(tenant, subject). Error: MarkFailed, retried
   W->>W: first pass: shouldSendToIntegration and delivery.Allows,<br/>SetDeliveries (fixed for later passes)
-  W->>W: per due channel: decrypt credentials, configure, buildMessage<br/>(Scrub, minimal unless include_details, template, weblink)
+  W->>W: per due channel: decrypt credentials, configure, buildMessage<br/>(facts at the channel's detail level, card, template, Scrub, weblink)
   W->>N: Send (30 s context)
   N->>X: SafeHTTPClient, redirects refused, Message.Cleaned
   X-->>N: 2xx success, anything else failure
@@ -522,13 +522,34 @@ per-plan defaults. The e-mail notification channel's own alerts are not yet subj
   "idempotency_key": "outbox-0192…",
   "occurred_at": "2026-10-22T08:00:00Z",
   "timestamp": "2026-10-22T08:00:03Z",
-  "title": "New finding (high)",
-  "body": "Open the link to see the details.",
+  "title": "New finding",
+  "body": "Severity: High\nAsset: shop.example.com (domain)\n…",
   "severity": "high",
   "url": "https://console.example.com/findings/…?org=<organization id>",
-  "source": "openctem.io"
+  "source": "openctem.io",
+  "notification": {
+    "schema": "openctem.notification/v1",
+    "detail_level": "standard",
+    "locale": "en",
+    "headline": "New finding",
+    "severity": "high",
+    "organization": "Example Corp",
+    "subject": {"name": "shop.example.com", "type": "domain"},
+    "what": "CVE-2026-12345: Remote code execution in the upload handler",
+    "why": "Known exploited (CISA KEV); EPSS 42%: likely to be exploited soon",
+    "next_step": "Patch or mitigate first: it is being exploited.",
+    "text": "Severity: High\n…",
+    "action": {"label": "Open finding", "url": "https://console.example.com/findings/…?org=…"}
+  }
 }
 ```
+
+- `notification` is the message for machines (schema
+  `openctem.notification/v1`), with the same content as the chat message at
+  the channel's detail level; empty keys are left out, `description` only at
+  `full`, `items` and `more` for events about several objects. `title` is the
+  headline and `body` the plain-text body. Splunk HEC events carry the same
+  object.
 
 - `event_type` is the catalogue type (`AllEventTypes`, e.g. `new_finding`,
   `sensor.offline`, `ci.gate_failing`); a test delivery is `test`. Before
@@ -640,12 +661,13 @@ the id in the delivery history) again to that integration only:
 
 ### Severity Indicators
 
-| Severity | Color | Emoji | Teams Style |
-|----------|-------|-------|-------------|
-| Critical | `#dc2626` (Red) | :rotating_light: | attention |
-| High | `#ea580c` (Orange) | :warning: | warning |
-| Medium | `#ca8a04` (Yellow) | :large_yellow_circle: | accent |
-| Low | `#2563eb` (Blue) | :large_blue_circle: | good |
+| Severity | Color | Chat marker | Teams Style |
+|----------|-------|-------------|-------------|
+| Critical | `#dc2626` (Red) | red circle | attention |
+| High | `#ea580c` (Orange) | orange circle | warning |
+| Medium | `#ca8a04` (Yellow) | yellow circle | accent |
+| Low | `#2563eb` (Blue) | blue circle | good |
+| Info | | white circle | |
 
 ## Security
 
@@ -693,18 +715,112 @@ zero-width characters (Trojan Source: an RLO override would make a message
 display something other than what it says) and caps lengths: 300 characters
 for a title, 2,000 for a field and 20,000 for a body. Each provider then
 escapes its own markup: Slack mrkdwn (`&`, `<`, `>`, so no `<!channel>` or
-disguised links), Telegram markdown, and `html/template` for e-mail. The
+disguised links), Telegram HTML, Teams markdown links, and `html/template`
+for e-mail (see "Channel messages"). The
 generic webhook sends JSON. See RFC-040 §5.4.
 
-### Minimal message by default
+### Channel messages
 
-A channel's `include_details` switch decides what leaves the platform. Off (the
-default for a new channel): the message carries the event type, the severity
-and a link back to the object, with no finding title, asset name or body text,
-so the provider (Slack, Teams, e-mail, a webhook receiver) learns nothing about
-the finding. On: the title and body are sent as before. The switch is applied
-when the message is built (`buildMessage`), before the channel's message
-template, so a template can only use what the channel is allowed to send.
+Every delivery of an event is built as one card (`pkg/notifymsg.Card`,
+`internal/app/outbox/message.go`) and each provider renders the card
+(`internal/infra/notifier/card.go`). The layout says each thing once:
+
+```
+<severity marker> New exposure          headline: what happened, no severity, no name
+Severity: High                          the severity, once
+Asset: admin.example.com (subdomain)    standard and full
+What: Admin panel (web interface exposed)
+Why it matters: An admin or login page is reachable from the internet
+Next step: Restrict access to the interface, or confirm it is meant to be public.
+Organization: Example Corp
+[ Open exposure ]                       the one action: a button, or one plain link
+```
+
+- The severity marker is rendered output (a coloured circle in chat, the
+  colour bar or badge in Slack, Teams and e-mail), never a template variable.
+- The action is the event's console link, absolute and naming the
+  organization (below). It is a button in Telegram, Slack, Teams and HTML
+  e-mail; the text part of an e-mail writes it once; the webhook carries it
+  in `url`. It never appears in message text, so it is never defanged and
+  never duplicated. Visible text carries no internal ID: UUIDs in producer
+  text are removed, and the link is the only reference to the object.
+- The facts are read when the message is built, inside the event's tenant
+  (`postgres.NotificationFactsRepository`, every join on `tenant_id`): for a
+  finding its title, CVE, KEV flag, EPSS score and asset; for an exposure its
+  title, class and asset; for a discovery the listed assets with the name
+  each address was resolved from (`resolves_to`). An object of another
+  tenant resolves to nothing. A failed lookup never holds the alert: the
+  message is built without the facts and a warning is logged.
+- "Why it matters" comes from KEV (known exploited), EPSS (from 10 %) and
+  the exposure class; "Next step" from the class (catalog), KEV first.
+- Events about several objects list at most five ("address from name") and
+  "+N more".
+- Language: the organization's default language (General settings), `en` or
+  `vi` (`pkg/notifymsg/locales`, a test keeps the keys and placeholders of
+  both in step).
+- Field order is fixed; the private-program scrubbing runs over every text
+  value, the template's output included.
+
+Each channel then escapes for its target, labels and the template's literal
+text included: Telegram HTML (`html.EscapeString`, URLs inside values
+defanged), Slack mrkdwn (`&`, `<`, `>`), Teams markdown links (`[`, `]`,
+`\`), `html/template` for e-mail. Golden files per provider
+(`internal/infra/notifier/testdata/golden`) and an injection corpus
+(markup, mentions, disguised links, bidi overrides, braces inside values)
+cover every renderer.
+
+### Detail levels
+
+A channel's `detail_level` decides what leaves the platform:
+
+| Content | minimal | standard | full |
+|---------|---------|----------|------|
+| headline, severity, organization, the action link | yes | yes | yes |
+| asset name and type, what (title, CVE, exposure class), KEV, EPSS, why it matters, the class's next step | | yes | yes |
+| description (600 characters at most) | | | yes |
+| secrets, evidence, request and response, credentials, owner e-mail, internal IDs | never | never | never |
+
+A new channel is `standard`. Channels created before the levels keep what
+they sent: details on became `full`, details off `minimal` (migration
+`notification_detail_level`). What a level excludes is never read into the
+card, so no template can reach it.
+
+### Message templates
+
+A template is optional; empty means the layout above. It replaces the lines
+between the headline and the action: the headline, the severity marker and
+the action are always rendered by the channel.
+
+- Variables, a closed set: `title`, `severity`, `asset`, `asset_type`,
+  `what`, `why`, `next_step`, `organization`, `count`, `description`.
+  `{{` and `}}` write a literal brace.
+- Validated on save (`POST /integrations/notifications`, `PUT
+  /integrations/{id}/notification`): an unknown variable is refused with 400
+  naming it, as are a stray brace, more than 2,000 characters or more than
+  20 lines. A template stored before the set was closed (the old presets
+  used `{severity_emoji}`, `{url}`, `{body}`, `{timestamp}`) is not used:
+  the channel gets the default layout and a warning is logged, so no
+  message shows raw braces.
+- A line whose variables are all empty is dropped.
+- Preview: `POST /api/v1/integrations/notifications/preview`
+  (`integrations:manage`) renders sample data with the same code, for a
+  level, a template, an event type and a language. It reads no organization
+  data.
+
+### Asset discovery notices
+
+A notice of new internet-facing assets (`new_asset`,
+`internal/app/assetdiscovery`) links to the assets themselves: one asset
+opens that asset; several open the inventory filtered to the internet-facing
+assets added in the notice's window (`first_seen_after` and
+`first_seen_before`, never an id list); existing assets that became exposed
+open the changes view. Addresses inside a range a provider publishes for a
+front end many customers share (`edgeaddr.SharedFrontEnd`: CDN and
+front-door edges, shared cloud front ends) are labelled with the provider
+(`shared_count`, `shared_provider` and per item `edge_provider` in the
+metadata): the headline says "N new addresses on a shared provider edge",
+not "internet-facing assets", and the message says the names that resolve
+to them are the organization's assets, not the addresses.
 
 ### Rate Limiting
 

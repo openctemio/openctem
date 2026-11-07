@@ -319,6 +319,10 @@ func registerIntegrationRoutes(
 		// Create notification integration
 		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp(), requireCredentialFactor())
 
+		// Preview a channel message from sample data (reads no organization
+		// data; same permission as editing a channel).
+		r.POST("/notifications/preview", h.PreviewNotification, middleware.Require(permission.IntegrationsManage))
+
 		// Test credentials without creating (must be before /{id} routes)
 		// A probe of a caller-chosen URL answers differently for reachable and
 		// unreachable hosts, so it is rate limited per tenant.

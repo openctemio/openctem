@@ -1,0 +1,16 @@
+{
+  "chat_id": "42",
+  "text": "🔴 \u003cb\u003ePhát hiện mới\u003c/b\u003e\n\u003cb\u003eMức độ:\u003c/b\u003e Nghiêm trọng\n\u003cb\u003eTài sản:\u003c/b\u003e shop.example.com (domain)\n\u003cb\u003eNội dung:\u003c/b\u003e CVE-2026-12345: Remote code execution in the file upload handler\n\u003cb\u003eVì sao quan trọng:\u003c/b\u003e Đã bị khai thác thực tế (CISA KEV); EPSS 42%: có khả năng sớm bị khai thác\n\u003cb\u003eBước tiếp theo:\u003c/b\u003e Vá hoặc giảm thiểu trước tiên: lỗ hổng đang bị khai thác.\n\u003cb\u003eChi tiết:\u003c/b\u003e The upload endpoint accepts a crafted archive that writes outside the upload directory.\n\u003cb\u003eTổ chức:\u003c/b\u003e Example Corp",
+  "parse_mode": "HTML",
+  "disable_web_page_preview": true,
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "Mở phát hiện",
+          "url": "https://ctem.example.com/findings"
+        }
+      ]
+    ]
+  }
+}
