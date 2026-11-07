@@ -46,6 +46,7 @@ type FindingExportRow struct {
 	PriorityClass    string     `json:"priority_class"`
 	Source           string     `json:"source"`
 	FindingType      string     `json:"finding_type"`
+	Practice         string     `json:"practice"`
 	ToolName         string     `json:"tool_name"`
 	RuleID           string     `json:"rule_id"`
 	RuleName         string     `json:"rule_name"`
@@ -111,7 +112,7 @@ func toFindingExportRow(f FindingResponse) FindingExportRow {
 	}
 	row := FindingExportRow{
 		ID: f.ID, Title: title, DisplayTitle: f.DisplayTitle, Severity: f.Severity, Status: f.Status, PriorityClass: deref(f.PriorityClass),
-		Source: f.Source, FindingType: f.FindingType, ToolName: f.ToolName, RuleID: f.RuleID, RuleName: f.RuleName,
+		Source: f.Source, FindingType: f.FindingType, Practice: f.Practice, ToolName: f.ToolName, RuleID: f.RuleID, RuleName: f.RuleName,
 		CVEID: f.CVEID, CVEIDs: f.CVEIDs, CWEIDs: f.CWEIDs, CVSSScore: f.CVSSScore, CVSSVector: f.CVSSVector,
 		EPSSScore: f.EPSSScore, EPSSPercentile: f.EPSSPercentile, IsInKEV: f.IsInKEV,
 		ExploitAvailable: f.ExploitAvailable, IsReachable: f.IsReachable,
@@ -163,7 +164,7 @@ func (row FindingExportRow) csvCells() []string {
 		return ts(*t)
 	}
 	cells := []string{
-		row.ID, row.Title, row.DisplayTitle, row.Severity, row.Status, row.PriorityClass, row.Source, row.FindingType, row.ToolName,
+		row.ID, row.Title, row.DisplayTitle, row.Severity, row.Status, row.PriorityClass, row.Source, row.FindingType, row.Practice, row.ToolName,
 		row.RuleID, row.RuleName, row.CVEID, strings.Join(row.CVEIDs, ";"), strings.Join(row.CWEIDs, ";"),
 		num(row.CVSSScore), row.CVSSVector, num(row.EPSSScore), num(row.EPSSPercentile),
 		strconv.FormatBool(row.IsInKEV), strconv.FormatBool(row.ExploitAvailable), strconv.FormatBool(row.IsReachable),
@@ -247,6 +248,10 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
+// @Param  practice  query  []string  false  "practice: any of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
