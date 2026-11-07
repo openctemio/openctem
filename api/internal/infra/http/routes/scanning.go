@@ -212,7 +212,7 @@ func registerSensorManagementRoutes(
 		// Deleting removes the sensor and its history and cannot be undone:
 		// a recent sign-in. Revoking (above) stays the fast way to cut a
 		// sensor off.
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), requireStepUp(), own)
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), requireStepUpSensitive(), own)
 	}, tenantMiddlewares...)
 
 }
@@ -708,8 +708,8 @@ func registerContentPackRoutes(
 		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
 		r.GET("/{id}/download", h.Download, middleware.Require(permission.ContentPacksRead))
-		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUp())
-		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUp())
+		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUpSensitive())
+		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }
 
@@ -794,22 +794,22 @@ func registerContentSourceRoutes(
 
 	router.Group("/api/v1/content-sources", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ContentSourcesRead))
-		r.POST("/", h.Create, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
-		r.POST("/test", h.Test, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
+		r.POST("/test", h.Test, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ContentSourcesRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentSourcesDelete), requireStepUp())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentSourcesDelete), requireStepUpSensitive())
 		r.PUT("/{id}/credential", h.SetCredential, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
 		r.DELETE("/{id}/credential", h.ClearCredential, middleware.Require(permission.ContentSourcesWrite))
 		r.POST("/{id}/webhook", h.RotateWebhook, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
 		r.DELETE("/{id}/webhook", h.DisableWebhook, middleware.Require(permission.ContentSourcesWrite))
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.ContentSourcesWrite))
-		r.POST("/{id}/test", h.TestExisting, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.POST("/{id}/test", h.TestExisting, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
 		r.GET("/{id}/snapshots", h.ListSnapshots, middleware.Require(permission.ContentSourcesRead))
 		r.GET("/{id}/snapshots/{snapshot_id}", h.GetSnapshot, middleware.Require(permission.ContentSourcesRead))
-		r.POST("/{id}/snapshots/{snapshot_id}/approve", h.Promote, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
+		r.POST("/{id}/snapshots/{snapshot_id}/approve", h.Promote, middleware.Require(permission.ContentSourcesApprove), requireStepUpSensitive())
 		r.POST("/{id}/snapshots/{snapshot_id}/reject", h.Reject, middleware.Require(permission.ContentSourcesApprove))
-		r.POST("/{id}/rollback", h.Rollback, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
+		r.POST("/{id}/rollback", h.Rollback, middleware.Require(permission.ContentSourcesApprove), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }
 
