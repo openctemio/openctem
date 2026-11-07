@@ -1816,6 +1816,16 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 	return effects
 }
 
+// ctUnavailableReason is why the CT monitor cannot run: "disabled" when the
+// operator turned it off, the monitor's own reason (needs_platform_sensor)
+// otherwise, "" when it runs.
+func ctUnavailableReason(cfg *config.Config, svc *Services) string {
+	if !cfg.Worker.CertMonitorEnabled {
+		return "disabled"
+	}
+	return svc.CertMonitor.UnavailableReason()
+}
+
 // newEASMSettingsHandler builds the EASM settings and run-now handler
 // (research/22 P0-11).
 func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMSettingsHandler {
@@ -1828,7 +1838,8 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		sweeper = svc.EASMSweep
 	}
 	platform := handler.EASMPlatform{
-		CTAvailable:         cfg.Worker.CertMonitorEnabled,
+		CTAvailable:         cfg.Worker.CertMonitorEnabled && svc.CertMonitor.Available(),
+		CTUnavailableReason: ctUnavailableReason(cfg, svc),
 		DNSAvailable:        svc.EASMDNS != nil,
 		EnrichmentAvailable: cfg.Worker.AssetEnrichmentEnabled,
 		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),

@@ -43,8 +43,11 @@ type EASMSweeper interface {
 
 // EASMPlatform is what the platform runs at all, and its default cadence.
 type EASMPlatform struct {
-	CTAvailable  bool
-	DNSAvailable bool
+	CTAvailable bool
+	// CTUnavailableReason: why CT monitoring cannot run ("disabled",
+	// "needs_platform_sensor"; "" when it runs).
+	CTUnavailableReason string
+	DNSAvailable        bool
 	// EnrichmentAvailable: ASSET_ENRICHMENT_ENABLED.
 	EnrichmentAvailable bool
 	CTDefaultHrs        int
@@ -84,7 +87,8 @@ func NewEASMSettingsHandler(store EASMSettingsStore, freshness EASMFreshness, sw
 // EASMSettingsResponse is the organization's attack-surface monitoring.
 type EASMSettingsResponse struct {
 	// CTEnabled: the Certificate Transparency monitor runs for the
-	// organization (its domain names are sent to crt.sh and Cert Spotter).
+	// organization (its domain names are sent to crt.sh and Cert Spotter,
+	// only through a platform sensor).
 	CTEnabled bool `json:"ct_enabled"`
 	// DNSChecksEnabled: dangling CNAME/NS, lame delegation and email posture.
 	DNSChecksEnabled bool `json:"dns_checks_enabled"`
@@ -106,6 +110,10 @@ type EASMSettingsResponse struct {
 	// off for the whole platform; the switch then has no effect.
 	CTAvailable  bool `json:"ct_available"`
 	DNSAvailable bool `json:"dns_available"`
+	// CTUnavailableReason: why ct_available is false: "disabled" (the
+	// operator turned it off) or "needs_platform_sensor" (the platform makes
+	// no CT request itself and no platform sensor carries them).
+	CTUnavailableReason string `json:"ct_unavailable_reason,omitempty"`
 	// Freshness.
 	LastCTSweepAt     *time.Time `json:"last_ct_sweep_at,omitempty"`
 	LastDNSCheckAt    *time.Time `json:"last_dns_check_at,omitempty"`
@@ -191,6 +199,7 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
 		MinIntervalHours:          tenant.MinEASMIntervalHours, MaxIntervalHours: tenant.MaxEASMIntervalHours,
 		CTAvailable: h.platform.CTAvailable, DNSAvailable: h.platform.DNSAvailable,
+		CTUnavailableReason:   h.platform.CTUnavailableReason,
 		LookalikeCTEnabled:    !es.LookalikeCTDisabled,
 		WeeklyDigestEnabled:   !es.WeeklyDigestDisabled,
 		DigestWeekday:         isoWeekday(easmchange.Weekday(es.DigestWeekday)),
