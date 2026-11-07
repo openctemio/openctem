@@ -677,6 +677,7 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 			status = $3,
 			format = COALESCE(NULLIF($4, ''), format),
 			skipped = skipped + $5,
+			findings_received = findings_received + $5,
 			components = components + $6,
 			statements = statements + $7,
 			vex_stored = vex_stored + $8,
@@ -701,12 +702,15 @@ func (r *IngestReceiptRepository) FinishUpload(ctx context.Context, tenantID, id
 		return nil
 	}
 	// The file-level skipped count joins the upload's tool row, so the tool
-	// rows still sum to the receipt.
+	// rows still sum to the receipt. What the parser skipped was received
+	// (it was in the upload) and not imported: it counts on both sides, so
+	// the receipt reconciles.
 	_, err = r.db.ExecContext(ctx, `
-		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, skipped, first_at, last_at)
-		SELECT tenant_id, id, `+receiptToolSQL+`, '`+ingestreceipt.InstanceImport+`', '`+ingestreceipt.InstanceImport+`', $3, now(), now()
+		INSERT INTO ingest_receipt_tools (tenant_id, receipt_id, tool, instance_kind, instance_id, received, skipped, first_at, last_at)
+		SELECT tenant_id, id, `+receiptToolSQL+`, '`+ingestreceipt.InstanceImport+`', '`+ingestreceipt.InstanceImport+`', $3, $3, now(), now()
 		FROM ingest_receipts WHERE tenant_id = $1 AND id = $2 AND source_kind = 'upload'
 		ON CONFLICT (receipt_id, tool, instance_kind, instance_id) DO UPDATE SET
+			received = ingest_receipt_tools.received + EXCLUDED.received,
 			skipped = ingest_receipt_tools.skipped + EXCLUDED.skipped,
 			last_at = GREATEST(ingest_receipt_tools.last_at, EXCLUDED.last_at)`,
 		tenantID.String(), id.String(), res.Skipped)
