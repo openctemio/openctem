@@ -75,31 +75,6 @@ export function stepUpLooser(saved: StepUpPolicy, next: StepUpPolicy): boolean {
   )
 }
 
-const CHOICE_TEXT: Record<StepUpChoice, string> = {
-  every_time: 'Every time',
-  '10m': 'Once per 10 minutes',
-  '1h': 'Once per hour',
-  '4h': 'Once per 4 hours',
-  '8h': 'Once per 8 hours',
-  session: 'Once per sign-in',
-  off: 'Never',
-}
-
-const TIER_TEXT: Record<StepUpTier, { label: string; hint: string }> = {
-  critical: {
-    label: 'Critical actions',
-    hint: 'Roles and owners, sign-in and SSO, API keys and other credentials, secrets, deleting the organization or erasing data, approving active scanning, exporting. Always asked: every time or once per 10 minutes.',
-  },
-  sensitive: {
-    label: 'Sensitive actions',
-    hint: 'Governance settings (priority rules, lifecycles, modules, risk scoring), approving false positives, accepted risk and severity changes, and closing several findings at once.',
-  },
-  routine: {
-    label: 'Routine actions',
-    hint: 'Closing or changing the status of one finding. API keys and connected apps are never asked.',
-  },
-}
-
 export interface StepUpPolicyCardProps {
   policy: StepUpPolicy
   onChange: (p: StepUpPolicy) => void
@@ -125,10 +100,8 @@ export function StepUpPolicyCard({ policy, onChange, disabled }: StepUpPolicyCar
           return (
             <div key={tier} className="grid gap-2 sm:grid-cols-[1fr_14rem] sm:items-start">
               <div className="space-y-1">
-                <Label htmlFor={id}>{t(`org.auth.stepUp.${tier}`, TIER_TEXT[tier].label)}</Label>
-                <p className="text-sm text-muted-foreground">
-                  {t(`org.auth.stepUp.${tier}Hint`, TIER_TEXT[tier].hint)}
-                </p>
+                <Label htmlFor={id}>{t(`org.auth.stepUp.${tier}`)}</Label>
+                <p className="text-sm text-muted-foreground">{t(`org.auth.stepUp.${tier}Hint`)}</p>
               </div>
               <Select
                 value={choiceOf(policy[tier])}
@@ -145,7 +118,7 @@ export function StepUpPolicyCard({ policy, onChange, disabled }: StepUpPolicyCar
                       value={choice}
                       disabled={!isChoiceAllowed(tier, choice)}
                     >
-                      {t(`org.auth.stepUp.choice.${choice}`, CHOICE_TEXT[choice])}
+                      {t(`org.auth.stepUp.choice.${choice}`)}
                     </SelectItem>
                   ))}
                 </SelectContent>

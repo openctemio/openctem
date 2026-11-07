@@ -57,40 +57,22 @@ import { useTranslation } from '@/context/i18n-provider'
 import { CatalogSelect } from './catalog-select'
 
 const SEVERITIES = [
-  { value: 0, key: 'tenableSc.dialog.severity.info', label: 'Info and above' },
-  { value: 1, key: 'tenableSc.dialog.severity.low', label: 'Low and above' },
-  { value: 2, key: 'tenableSc.dialog.severity.medium', label: 'Medium and above' },
-  { value: 3, key: 'tenableSc.dialog.severity.high', label: 'High and above' },
-  { value: 4, key: 'tenableSc.dialog.severity.critical', label: 'Critical only' },
+  { value: 0, key: 'tenableSc.dialog.severity.info' },
+  { value: 1, key: 'tenableSc.dialog.severity.low' },
+  { value: 2, key: 'tenableSc.dialog.severity.medium' },
+  { value: 3, key: 'tenableSc.dialog.severity.high' },
+  { value: 4, key: 'tenableSc.dialog.severity.critical' },
 ]
 
 /**
- * Each license rotation mode, with what it does and what it needs
- * (translated at render).
+ * The license rotation modes that state what they need besides the hint.
+ * The label, hint and need texts are the tenableSc.dialog.rotationMode,
+ * rotationHint and rotationNeeds catalog entries.
  */
-const ROTATION_TEXT: Record<CoverageRotation, { label: string; hint: string; needs?: string }> = {
-  off: {
-    label: 'Off',
-    hint: 'Covers what the license holds. Assets Tenable.sc already counts are rescanned; new ones only while the license has room.',
-  },
-  aging: {
-    label: 'Aging (recommended)',
-    hint: "Tenable.sc's nightly cleanup removes the rotation repository's aged data and frees the license. About one batch a day; the connector deletes nothing.",
-    needs:
-      'Needs a dedicated universal rotation repository, picked as the coverage repository, with every vulnerability lifetime set to 1 day. The cleanup runs nightly, so the wait is at least 24 hours.',
-  },
-  purge: {
-    label: 'Purge (Beta, unverified)',
-    hint: "Before each batch the connector removes the previous batch's addresses from its rotation repository by importing an empty result, once those results are ingested. Faster than aging; removed data cannot be recovered.",
-    needs:
-      'Needs operation purge and a dedicated purge rotation repository in the connector configuration. No administrator key. If the connector cannot confirm the license dropped, rotation stalls.',
-  },
-  recycle: {
-    label: 'Recycle (Beta, unverified)',
-    hint: 'Before each batch the connector creates a verified copy of its rotation repository and only then deletes the old one, once the previous results are ingested.',
-    needs:
-      'Needs a Tenable.sc Administrator API key configured on the connector (recycle block with two rotation repository names). The administrator key is used only for the rotation repositories.',
-  },
+const ROTATION_NEEDS: Partial<Record<CoverageRotation, true>> = {
+  aging: true,
+  purge: true,
+  recycle: true,
 }
 
 /** The connector image an administrator runs next to Tenable.sc. */
@@ -308,7 +290,7 @@ export function TenableConnectorDialog({
                   <SelectContent>
                     {SEVERITIES.map((s) => (
                       <SelectItem key={s.value} value={String(s.value)}>
-                        {t(s.key, s.label)}
+                        {t(s.key)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -475,17 +457,17 @@ export function RotationFields({
           <SelectContent>
             {COVERAGE_ROTATIONS.map((r) => (
               <SelectItem key={r} value={r}>
-                {t(`tenableSc.dialog.rotationMode.${r}`, ROTATION_TEXT[r].label)}
+                {t(`tenableSc.dialog.rotationMode.${r}`)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <p className="text-muted-foreground text-xs" data-testid="tsc-rotation-hint">
-          {t(`tenableSc.dialog.rotationHint.${rotation}`, ROTATION_TEXT[rotation].hint)}
+          {t(`tenableSc.dialog.rotationHint.${rotation}`)}
         </p>
-        {ROTATION_TEXT[rotation].needs && (
+        {ROTATION_NEEDS[rotation] && (
           <p className="text-muted-foreground text-xs" data-testid="tsc-rotation-needs">
-            {t(`tenableSc.dialog.rotationNeeds.${rotation}`, ROTATION_TEXT[rotation].needs ?? '')}
+            {t(`tenableSc.dialog.rotationNeeds.${rotation}`)}
           </p>
         )}
       </div>
