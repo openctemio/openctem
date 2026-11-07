@@ -97,6 +97,18 @@ type ReceiptCounts struct {
 	Suppressed int  `json:"suppressed"`
 }
 
+// ReceiptClosing is what a scan file's own coverage closed (reason codes in
+// docs/architecture/finding-import.md, "What a Nessus import closes").
+type ReceiptClosing struct {
+	Considered             int            `json:"considered"`
+	Closed                 map[string]int `json:"closed"`
+	Proposed               int            `json:"proposed"`
+	Kept                   map[string]int `json:"kept"`
+	Hosts                  int            `json:"hosts"`
+	HostsUnfinished        int            `json:"hosts_unfinished"`
+	HostsLocalChecksFailed int            `json:"hosts_local_checks_failed"`
+}
+
 // ReceiptError is one problem: an index and a fixed code.
 type ReceiptError struct {
 	Index int    `json:"index"`
@@ -137,6 +149,12 @@ type ReceiptResponse struct {
 	// updated + reactivated + suppressed + failed + skipped + the other
 	// outcomes. Aggregate counts like Received, never per finding.
 	Outcomes map[string]int `json:"outcomes"`
+	// Closing (an upload whose scan file carries its own coverage) counts
+	// what the file closed, by reason, and why the other open findings it
+	// considered stayed open: considered = closed + proposed + kept. Hosts
+	// that were not logged in to, or whose scan did not finish, are counted
+	// so the import can say which findings it could not close.
+	Closing *ReceiptClosing `json:"closing,omitempty"`
 	// Dispositions (detail only) counts the items that did not become
 	// findings per disposition (filtered, out_of_scope, rejected,
 	// quarantined), over the items the caller may see.
@@ -208,6 +226,16 @@ func toReceiptResponse(rec *ingestreceipt.Receipt) ReceiptResponse {
 	}
 	if out.Outcomes == nil {
 		out.Outcomes = map[string]int{}
+	}
+	if c := rec.Closing; c != nil {
+		out.Closing = &ReceiptClosing{Considered: c.Considered, Closed: c.Closed, Proposed: c.Proposed, Kept: c.Kept,
+			Hosts: c.Hosts, HostsUnfinished: c.HostsUnfinished, HostsLocalChecksFailed: c.HostsLocalChecksFailed}
+		if out.Closing.Closed == nil {
+			out.Closing.Closed = map[string]int{}
+		}
+		if out.Closing.Kept == nil {
+			out.Closing.Kept = map[string]int{}
+		}
 	}
 	if rec.ActorUserID != nil {
 		out.CreatedBy = rec.ActorUserID.String()
