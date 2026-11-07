@@ -96,7 +96,7 @@ func writeExpr(b *strings.Builder, e Expr, parent int) {
 
 func writeValue(b *strings.Builder, v Value) {
 	switch v.Kind {
-	case ValString:
+	case ValString, ValWord, ValAge:
 		b.WriteString(Quote(v.Text))
 	default:
 		b.WriteString(v.Text)
