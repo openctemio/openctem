@@ -41,6 +41,12 @@ The repository resolves a command to its scan run inside the writing
 transaction (`commands.scan_run_step_id` → `scan_run_steps.scan_run_id`); a
 command of another tenant is refused.
 
+A finding the version matcher builds and the store refuses is counted as
+failed with the code `store_failed`, like an ingested one. It is held for
+retry by the match it came from: the next reconcile of the organization (its
+next software change, the daily sweep at the latest) builds it again and
+stores it once the cause is gone. The API log names the CVE and the reason.
+
 ## How a receipt is written
 
 `ingest.Service.Ingest` builds one delta per report at its end
