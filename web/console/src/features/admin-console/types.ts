@@ -943,9 +943,16 @@ export interface SettingChange {
 /** The platform layer of the scan identification markers. */
 export interface ScanIdentificationSettings extends SettingChange {
   user_agent: string
+  /** A rotation list instead of user_agent. */
+  user_agents: string[]
+  /** Locks the User-Agent or the list. */
   user_agent_enforced: boolean
   headers: { name: string; value: string; enforced: boolean }[]
+  query?: { name: string; value: string } | null
+  query_enforced: boolean
+  identification_required: boolean
   max_headers: number
+  max_user_agents: number
   stored: boolean
   version: number
 }
