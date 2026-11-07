@@ -1,8 +1,12 @@
 /**
- * Finds user-visible text written straight into the scans components instead
- * of going through `t()`: JSX text, text-bearing JSX attributes, string
- * literals shown through JSX expressions, and toast messages.
- * Used by no-literal-ui-text.test.ts.
+ * Finds user-visible text written straight into components instead of going
+ * through `t()`: JSX text, text-bearing JSX attributes, string literals shown
+ * through JSX expressions, object properties that become labels, and toast
+ * messages. Used by literal-ui-text-ratchet.test.ts (whole app, counts can only
+ * go down) and features/scans no-literal-ui-text.test.ts (zero).
+ *
+ * A real exception (a product name, a code sample) carries `i18n-ok: <reason>`
+ * in a comment on the same line or the line above.
  */
 import ts from 'typescript'
 
@@ -52,8 +56,10 @@ const hasWords = (raw: string) => {
 export function findLiteralUiText(fileName: string, source: string): LiteralFinding[] {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const out: LiteralFinding[] = []
+  const lines = source.split('\n')
   const add = (node: ts.Node, kind: LiteralFinding['kind'], text: string) => {
     const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf))
+    if (/i18n-ok:/.test(lines[line] ?? '') || /i18n-ok:/.test(lines[line - 1] ?? '')) return
     out.push({ line: line + 1, kind, text: text.trim().slice(0, 80) })
   }
   // String literals that reach the screen through a JSX expression:
