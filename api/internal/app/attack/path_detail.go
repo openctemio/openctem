@@ -131,6 +131,8 @@ type PathDetail struct {
 	TotalPaths int       `json:"total_paths"`
 	Capped     bool      `json:"capped"`
 	ComputedAt time.Time `json:"computed_at"`
+	// Proof is "possible": the routes are not proven (ProofPossible).
+	Proof string `json:"proof"`
 }
 
 // PathDetailForCaller returns the attack paths to targetID, narrowed to the
@@ -420,7 +422,8 @@ func assemblePathDetail(
 	}
 
 	keys := map[string]string{}
-	d := &PathDetail{Nodes: []PathNode{}, Edges: []PathEdge{}, Paths: []AttackPath{}, ChokePoints: []ChokePoint{}}
+	d := &PathDetail{Nodes: []PathNode{}, Edges: []PathEdge{}, Paths: []AttackPath{}, ChokePoints: []ChokePoint{},
+		Proof: ProofPossible}
 	key := func(id string, role string) string {
 		if k, ok := keys[id]; ok {
 			return k
