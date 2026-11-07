@@ -126,11 +126,16 @@ function ScoreRow({ score }: { score: FindingSourceScore }) {
 export function SourceDataSection({
   data,
   ruleName,
+  hideExtraKeys,
 }: {
   data: FindingSourceData
   ruleName?: string
+  /** Source fields another section already shows (a configuration check's values). */
+  hideExtraKeys?: string[]
 }) {
   const { t, locale } = useTranslation()
+  const hidden = new Set((hideExtraKeys ?? []).map((k) => k.toLowerCase()))
+  const extra = data.sourceExtra.filter(([k]) => !hidden.has(k.toLowerCase()))
   const n = data.native
   const l = data.lifecycle
   const sol = data.solution
@@ -184,7 +189,7 @@ export function SourceDataSection({
         </DetailSection>
       )}
 
-      {(hasRecord || sol || data.sourceExtra.length > 0) && (
+      {(hasRecord || sol || extra.length > 0) && (
         <DetailSection
           title={t('findings.sourceData.sourceRecord', 'Source record')}
           icon={Database}
@@ -329,17 +334,17 @@ export function SourceDataSection({
               {n?.rawRef ? <Mono>{n.rawRef}</Mono> : null}
             </DetailField>
           </DetailFieldGrid>
-          {data.sourceExtra.length > 0 && (
+          {extra.length > 0 && (
             <DetailDisclosure
               summary={t('findings.sourceData.otherFields', 'Other source fields ({count})', {
-                count: data.sourceExtra.length,
+                count: extra.length,
               })}
             >
               <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-                {data.sourceExtra.map(([k, v]) => (
+                {extra.map(([k, v]) => (
                   <div key={k} className="min-w-0">
                     <dt className="text-xs break-all text-muted-foreground">{k}</dt>
-                    <dd className="text-sm break-words whitespace-pre-wrap">{v}</dd>
+                    <dd className="text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{v}</dd>
                   </div>
                 ))}
               </dl>
