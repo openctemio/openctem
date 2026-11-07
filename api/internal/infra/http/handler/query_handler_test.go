@@ -136,3 +136,28 @@ func TestQueryHandler_Parse(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryHandler_Values(t *testing.T) {
+	h := NewQueryHandler(queryapp.NewService(fakeQueryExec{}, nil, logger.NewNop()), logger.NewNop())
+	get := func(query string, admin bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/query/values?"+query, nil)
+		ctx := context.WithValue(req.Context(), middleware.TenantIDKey, "11111111-1111-1111-1111-111111111111")
+		ctx = context.WithValue(ctx, middleware.UserIDKey, "22222222-2222-2222-2222-222222222222")
+		ctx = context.WithValue(ctx, middleware.IsAdminKey, admin)
+		rec := httptest.NewRecorder()
+		h.Values(rec, req.WithContext(ctx))
+		return rec
+	}
+	if rec := get("entity=findings&field=severity&fq=kev%3Dtrue", true); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"counted":true`) {
+		t.Fatalf("values = %d %s", rec.Code, rec.Body)
+	}
+	if rec := get("entity=findings&field=nope", true); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown field = %d %s", rec.Code, rec.Body)
+	}
+	if rec := get("entity=findings&field=severity&fq=severty%3Dhigh", true); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "unknown_field") {
+		t.Fatalf("bad filter = %d %s", rec.Code, rec.Body)
+	}
+	if rec := get("entity=findings&field=severity", false); rec.Code != http.StatusForbidden {
+		t.Fatalf("no permission = %d %s", rec.Code, rec.Body)
+	}
+}
