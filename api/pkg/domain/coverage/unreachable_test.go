@@ -20,8 +20,8 @@ func TestObserverKey(t *testing.T) {
 	}
 }
 
-// A target-side failure carries the task's observer; a covered target
-// does not (nothing to key).
+// Every verdict carries the task's observer: the target-side streak keys on
+// it, and asset liveness counts who saw an answer or a dead name.
 func TestVerdicts_CarryObserver(t *testing.T) {
 	res := json.RawMessage(`{"target_outcomes":[{"target":"down.example.com","state":"failed","class":"unreachable"},{"target":"up.example.com","state":"done"}]}`)
 	v := Verdicts([]TaskResult{{Status: "completed", Targets: []string{"down.example.com", "up.example.com"},
@@ -30,7 +30,7 @@ func TestVerdicts_CarryObserver(t *testing.T) {
 	if down.Outcome != "unreachable" || down.Observer != "zone:z1" {
 		t.Fatalf("down = %+v, want unreachable observed by zone:z1", down)
 	}
-	if up := v[TargetKey("up.example.com")]; up.Kind != VerdictCovered || up.Observer != "" {
+	if up := v[TargetKey("up.example.com")]; up.Kind != VerdictCovered || up.Observer != "zone:z1" {
 		t.Fatalf("up = %+v", up)
 	}
 }
