@@ -275,6 +275,13 @@ type Output struct {
 	// InfoObservations counts the template scanner info matches filed as
 	// exposures instead of findings (info_matches.go).
 	InfoObservations int `json:"info_observations,omitempty"`
+	// InfoFacts counts the info matches of InfoObservations the template
+	// facts mapping stored as asset facts or discarded, not as exposures
+	// (docs/architecture/template-facts.md).
+	InfoFacts int `json:"info_facts,omitempty"`
+	// InfoUnmapped counts the info matches the mapping does not name, filed
+	// as generic exposures so the templates get reviewed.
+	InfoUnmapped int `json:"info_unmapped,omitempty"`
 	// FindingsHeld counts findings held for review in the results quarantine
 	// (output_binding.go), not applied.
 	FindingsHeld int `json:"findings_held,omitempty"`

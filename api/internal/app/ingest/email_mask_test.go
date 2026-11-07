@@ -12,6 +12,9 @@ import (
 	"github.com/openctemio/ctis/v2/importer"
 
 	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
 // fullAddress matches an e-mail address with a visible local part.
@@ -171,4 +174,99 @@ func TestMaskReportEmails_NilAndEmpty(t *testing.T) {
 	if maskReportEmails(nil) != 0 || maskReportEmails(&ctis.Report{}) != 0 {
 		t.Fatal("nil or empty report")
 	}
+}
+
+// Owner rule (research/446): the e-mail extractor's match is kept, never
+// dropped, and its addresses are masked ("***@example.com") on every path:
+// filed as an info exposure (the default), kept as a finding because the
+// organization files info matches as findings, and kept as a finding
+// because its asset is out of scope.
+func TestEmailExtractorKeptMaskedOnEveryPath(t *testing.T) {
+	load := func(t *testing.T) (*ctis.Report, map[string]shared.ID) {
+		t.Helper()
+		f, err := os.Open("testdata/nuclei_email_extractor.jsonl")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		res, err := importer.Parse(context.Background(), f, importer.Options{Format: importer.FormatNuclei})
+		if err != nil {
+			t.Fatal(err)
+		}
+		id := shared.NewID()
+		m := map[string]shared.ID{}
+		for _, a := range res.Report.Assets {
+			m[a.ID] = id
+		}
+		maskReportEmails(res.Report)
+		return res.Report, m
+	}
+	hasExtractor := func(r *ctis.Report) bool {
+		for i := range r.Findings {
+			if r.Findings[i].RuleID == "email-extractor" {
+				return true
+			}
+		}
+		return false
+	}
+	facts := builtinFacts(t)
+
+	t.Run("info exposure", func(t *testing.T) {
+		report, assetMap := load(t)
+		total := len(report.Findings)
+		proj := &fakeTemplateMatches{}
+		s := &Service{logger: logger.NewNop(), templateMatches: proj}
+		out := &Output{}
+		s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, facts, nil)
+		if len(proj.got) == 0 || hasExtractor(report) {
+			t.Fatalf("the extractor match is not an exposure: %d filed, findings %d", len(proj.got), len(report.Findings))
+		}
+		if len(report.Findings)+len(proj.got)+out.InfoFacts != total || out.InfoObservations != len(proj.got)+out.InfoFacts {
+			t.Fatalf("counts do not reconcile: findings %d + exposures %d of %d, facts %d, observed %d",
+				len(report.Findings), len(proj.got), total, out.InfoFacts, out.InfoObservations)
+		}
+		requireNoAddress(t, "exposures", proj.got)
+		requireNoAddress(t, "findings", report.Findings)
+	})
+
+	keptAsFinding := func(t *testing.T, s *Service, mutate func(*Output)) {
+		report, assetMap := load(t)
+		total := len(report.Findings)
+		out := &Output{}
+		mutate(out)
+		s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, facts, nil)
+		if len(report.Findings) != total || !hasExtractor(report) {
+			t.Fatalf("the extractor finding was dropped: %d of %d", len(report.Findings), total)
+		}
+		raw, _ := json.Marshal(report.Findings)
+		if !strings.Contains(string(raw), "***@example.com") {
+			t.Fatalf("masked addresses missing: %s", raw)
+		}
+		requireNoAddress(t, "kept findings", report.Findings)
+	}
+
+	t.Run("info matches as findings", func(t *testing.T) {
+		tn, err := tenant.NewTenant("Org", "org", "u")
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := tn.TypedSettings()
+		st.EASM.InfoMatchesAsFindings = true
+		if err := tn.UpdateSettings(st); err != nil {
+			t.Fatal(err)
+		}
+		s := &Service{logger: logger.NewNop(), templateMatches: &fakeTemplateMatches{}, tenantRepo: settingsTenantRepo{t: tn}}
+		keptAsFinding(t, s, func(*Output) {})
+	})
+
+	t.Run("out of scope asset", func(t *testing.T) {
+		s := &Service{logger: logger.NewNop(), templateMatches: &fakeTemplateMatches{}}
+		keptAsFinding(t, s, func(o *Output) {
+			o.OutOfScopeAssetRefs = map[string]bool{}
+			report, _ := load(t)
+			for _, a := range report.Assets {
+				o.OutOfScopeAssetRefs[a.ID] = true
+			}
+		})
+	})
 }

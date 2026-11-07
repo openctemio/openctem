@@ -336,7 +336,11 @@ workflow preview). Every step reacts to it:
   ineligible). `vuln.templates`: severity low to critical at `standard`,
   info to critical at `deep` (research 426 decision OD-1). Info matches are
   filed as info exposures, not findings (exposure-taxonomy.md, "Template
-  scanner info matches"). The built-in recon workflows' template steps carry
+  scanner info matches"). Continuous coverage runs the two severity sets as
+  two passes with their own ledger keys, so no template runs twice: the
+  regular `vuln.templates` pass at severity low to critical, and the info pass
+  (`vuln.templates_info`, the same stage at severity info only) on a slower,
+  configurable cadence (asset-coverage.md, "Info pass"). The built-in recon workflows' template steps carry
   the same values in their depth params (migration 20261104164815, which also
   updated tenant copies still holding the earlier built-in values). The
   workflow preview shows the defaults with the depth's params.

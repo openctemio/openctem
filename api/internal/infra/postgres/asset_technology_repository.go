@@ -44,7 +44,9 @@ func (r *AssetTechnologyRepository) Enrich(ctx context.Context, tenantID shared.
 	vendors, cpes := make([]string, 0, n), make([]string, 0, n)
 	confs := make([]int64, 0, n)
 	lasts := make([]time.Time, 0, n)
+	secondary := make([]bool, 0, n)
 	for _, t := range techs {
+		secondary = append(secondary, t.Secondary)
 		ids = append(ids, t.AssetID.String())
 		keys = append(keys, t.Key)
 		cats = append(cats, string(t.Category))
@@ -56,18 +58,18 @@ func (r *AssetTechnologyRepository) Enrich(ctx context.Context, tenantID shared.
 	}
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE asset_technologies t SET
-		       category   = CASE WHEN v.category <> 'other' THEN v.category ELSE t.category END,
-		       confidence = CASE WHEN v.confidence > 0 THEN v.confidence ELSE t.confidence END,
-		       source     = CASE WHEN v.source <> '' THEN v.source ELSE t.source END,
-		       vendor     = COALESCE(NULLIF(v.vendor, ''), t.vendor),
-		       cpe        = COALESCE(NULLIF(v.cpe, ''), t.cpe),
+		       category   = CASE WHEN v.category <> 'other' AND (NOT v.secondary OR t.category = 'other') THEN v.category ELSE t.category END,
+		       confidence = CASE WHEN v.confidence > 0 AND (NOT v.secondary OR v.source = t.source OR t.source = '') THEN v.confidence ELSE t.confidence END,
+		       source     = CASE WHEN v.source <> '' AND (NOT v.secondary OR t.source = '') THEN v.source ELSE t.source END,
+		       vendor     = CASE WHEN v.secondary AND COALESCE(t.vendor, '') <> '' THEN t.vendor ELSE COALESCE(NULLIF(v.vendor, ''), t.vendor) END,
+		       cpe        = CASE WHEN v.secondary AND COALESCE(t.cpe, '') <> '' THEN t.cpe ELSE COALESCE(NULLIF(v.cpe, ''), t.cpe) END,
 		       last_seen  = GREATEST(t.last_seen, v.last_seen),
 		       updated_at = now()
-		  FROM unnest($2::uuid[], $3::text[], $4::text[], $5::int[], $6::text[], $7::timestamptz[], $8::text[], $9::text[])
-		       AS v(asset_id, name_key, category, confidence, source, last_seen, vendor, cpe)
+		  FROM unnest($2::uuid[], $3::text[], $4::text[], $5::int[], $6::text[], $7::timestamptz[], $8::text[], $9::text[], $10::bool[])
+		       AS v(asset_id, name_key, category, confidence, source, last_seen, vendor, cpe, secondary)
 		 WHERE t.tenant_id = $1 AND t.asset_id = v.asset_id AND t.name_key = v.name_key`,
 		tenantID.String(), pq.Array(ids), pq.Array(keys), pq.Array(cats), pq.Array(confs), pq.Array(sources), pq.Array(lasts),
-		pq.Array(vendors), pq.Array(cpes))
+		pq.Array(vendors), pq.Array(cpes), pq.Array(secondary))
 	if err != nil {
 		return fmt.Errorf("enrich asset technologies: %w", err)
 	}

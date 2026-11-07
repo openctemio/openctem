@@ -400,3 +400,45 @@ func retryOnDeadlock(ctx context.Context, fn func() error) error {
 }
 
 var _ coverage.Repository = (*AssetCoverageRepository)(nil)
+
+// SetCapabilityEnabled parks or revives the rows of an optional capability
+// for one tenant (see coverage.Repository). Tenant-scoped; rows the ledger
+// keeps for other states (queued, a run in flight) are left to settle.
+func (r *AssetCoverageRepository) SetCapabilityEnabled(ctx context.Context, tenantID shared.ID, capability string, on bool, every time.Duration) (int, error) {
+	if !coverage.ValidCapability(capability) {
+		return 0, fmt.Errorf("%w: invalid coverage capability", shared.ErrValidation)
+	}
+	if !on {
+		res, err := r.db.ExecContext(ctx, `
+			UPDATE asset_coverage SET state = 'not_applicable', reason = $3, updated_at = now()
+			WHERE tenant_id = $1 AND capability = $2 AND vantage = ''
+			  AND state IN ('due', 'failed', 'covered', 'blocked', 'paused')`,
+			tenantID.String(), capability, coverage.ReasonInfoPassOff)
+		if err != nil {
+			return 0, fmt.Errorf("park coverage capability: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		return int(n), nil
+	}
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		WITH revived AS (
+			UPDATE asset_coverage SET state = 'due', reason = '', updated_at = now(),
+			       next_due_at = COALESCE(last_success_at + make_interval(secs => $3::float8), now())
+			WHERE tenant_id = $1 AND capability = $2 AND vantage = ''
+			  AND state = 'not_applicable' AND reason = $4
+			RETURNING 1
+		), pulled AS (
+			UPDATE asset_coverage SET next_due_at = last_success_at + make_interval(secs => $3::float8), updated_at = now()
+			WHERE tenant_id = $1 AND capability = $2 AND vantage = ''
+			  AND state = 'covered' AND last_success_at IS NOT NULL
+			  AND next_due_at > last_success_at + make_interval(secs => $3::float8 * 1.11)
+			RETURNING 1
+		)
+		SELECT (SELECT count(*) FROM revived) + (SELECT count(*) FROM pulled)`,
+		tenantID.String(), capability, every.Seconds(), coverage.ReasonInfoPassOff).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("revive coverage capability: %w", err)
+	}
+	return n, nil
+}
