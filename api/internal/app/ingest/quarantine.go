@@ -228,6 +228,7 @@ func (s *Service) bindingFromCommandID(ctx context.Context, tenantID shared.ID, 
 			b.Tool = commandTool(cmd)
 			b.CommandType = cmd.Type
 			b.StepRunID = cmd.StepRunID
+			b.ScanZoneID = cmd.ScanZoneID
 		}
 	}
 	return b

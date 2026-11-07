@@ -70,6 +70,7 @@ describe('scope code catalogs', () => {
       'guardrailed',
       'low_impact',
       'unresolved',
+      'vantage_out_of_scope',
       'web_ports_only',
     ]
     expect([...SCOPE_REFUSAL_CODES].sort()).toEqual([...server].sort())

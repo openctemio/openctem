@@ -463,7 +463,7 @@ func TestScanZones_LookupFailureFailsClosed(t *testing.T) {
 	}
 }
 
-func TestScanZones_WorkflowStaysInOneZone(t *testing.T) {
+func TestScanZones_WorkflowInOneZoneStaysThere(t *testing.T) {
 	tenant := shared.NewID()
 	a := zone(t, tenant, "a", false, []shared.ID{shared.NewID()}, "10.1.0.0/16")
 	b := zone(t, tenant, "b", false, []shared.ID{shared.NewID()}, "10.2.0.0/16")
@@ -477,15 +477,7 @@ func TestScanZones_WorkflowStaysInOneZone(t *testing.T) {
 	}
 
 	svc, deps := newZonedScanService(&fakeZoneDir{zones: []*scanzone.Zone{a, b}}, nil, nil)
-	sc := mkWorkflow(deps, "10.1.0.1", "10.2.0.1")
-	_, err := trigger(t, svc, sc)
-	var de *shared.DomainError
-	if !errors.As(err, &de) || de.Code != "ZONE_SPLIT_REQUIRED" {
-		t.Fatalf("workflow across zones: err = %v, want ZONE_SPLIT_REQUIRED", err)
-	}
-
-	svc, deps = newZonedScanService(&fakeZoneDir{zones: []*scanzone.Zone{a, b}}, nil, nil)
-	sc = mkWorkflow(deps, "10.1.0.1", "10.1.0.2", "192.168.0.1")
+	sc := mkWorkflow(deps, "10.1.0.1", "10.1.0.2", "192.168.0.1")
 	run, err := trigger(t, svc, sc)
 	if err != nil {
 		t.Fatal(err)

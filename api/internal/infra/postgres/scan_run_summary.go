@@ -36,12 +36,12 @@ const scanRunSummaryUpdateSQL = `
 			       (COUNT(*) FILTER (WHERE pr.status = 'partial'))::int AS partial,
 			       (COUNT(*) FILTER (WHERE pr.status = 'blocked'))::int AS blocked
 			FROM scan_runs pr
-			WHERE pr.tenant_id = s.tenant_id AND pr.scan_id = s.id
+			WHERE pr.tenant_id = s.tenant_id AND pr.scan_id = s.id AND pr.parent_run_id IS NULL
 		) a
 		LEFT JOIN LATERAL (
 			SELECT pr.id, pr.created_at, pr.status
 			FROM scan_runs pr
-			WHERE pr.tenant_id = s.tenant_id AND pr.scan_id = s.id
+			WHERE pr.tenant_id = s.tenant_id AND pr.scan_id = s.id AND pr.parent_run_id IS NULL
 			ORDER BY pr.created_at DESC, pr.id DESC
 			LIMIT 1
 		) l ON true
