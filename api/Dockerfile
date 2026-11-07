@@ -119,6 +119,8 @@ ARG BUILD_TIME=""
 #                          to scope (read-only)
 #     asset-canonical      moves stored asset names to the CTIS 2.0 canonical
 #                          form (a dry run by default; -revert undoes renames)
+#     receipt-reattribute  moves the receipts of auto-released quarantine items
+#                          back to their sensor (a dry run by default)
 #   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
 #                    from this image, see deploy/docker-compose.job-signer.yml.
 #                    A binary of its own: it holds the signing key and links
@@ -168,7 +170,7 @@ RUN echo 'openctem:x:1000:1000:openctem:/app:/sbin/nologin' >> /out/etc/passwd \
  && chmod 0770 /out/signer-run \
  && chmod 0755 /out/signer-pub \
  && mkdir -p /out/tool-links \
- && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical; do ln -s server /out/tool-links/$t; done
+ && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute; do ln -s server /out/tool-links/$t; done
 
 # -----------------------------------------------------------------------------
 # Production stage

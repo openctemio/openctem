@@ -36,6 +36,7 @@ import {
   useFlowFocus,
   useWireAnchors,
   FlowWire,
+  FlowWireLayer,
   wirePath,
   type FlowTipContent,
 } from './flow-parts'
@@ -46,6 +47,7 @@ import {
   sourceName,
   sourceRankRows,
   sourceViewFor,
+  sourceWires,
   useSourceView,
 } from './source-view'
 import { StackedBar } from './stacked-bar'
@@ -159,7 +161,12 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
     // their figure: any change of the data re-measures.
     `${band}:${m}:${g}:${rows.map((r) => `${r.key}=${r.value}/${r.health ?? 'ok'}`).join(',')}`
   )
-  const max = Math.max(1, ...rows.map((r) => r.value))
+  // The wires carry the findings each row sent into the summary, whatever the
+  // bars rank by (assets never enter the findings figures).
+  const { wires, max } = useMemo(
+    () => sourceWires(data.sources, instances, g),
+    [data.sources, instances, g]
+  )
   const periodLabel = t('dashboardKit.flow.period', '{days} days', { days: data.days })
   const lit = (k: string) => !!active && (k === active || k === 'summary' || k === `w:${active}`)
   const activeSource = data.sources.find((s) => `s:${s.id}` === active)
@@ -250,6 +257,7 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
           hasInstances={hasInstances}
           setMeasure={setMeasure}
           setGroup={setGroup}
+          wired={band !== 'narrow'}
         />
       </header>
       <div className="@container">
@@ -266,13 +274,8 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
           {...containerProps}
         >
           {layout && band !== 'narrow' && (
-            <svg
-              aria-hidden
-              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-              width={layout.width}
-              height={layout.height}
-            >
-              {rows.map((r) => {
+            <FlowWireLayer width={layout.width} height={layout.height}>
+              {wires.map((r) => {
                 const from = layout.out[r.key]
                 const to = layout.in.summary
                 if (!from || !to) return null
@@ -282,15 +285,15 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
                     key={k}
                     wireKey={k}
                     d={wirePath(from.x + FRAME_INSET, from.y, to.x, to.y)}
-                    value={r.value}
+                    value={r.received}
                     max={max}
-                    health={r.health ?? 'ok'}
+                    health={r.health}
                     focused={lit(k)}
                     className={dimClass(active, lit(k))}
                   />
                 )
               })}
-            </svg>
+            </FlowWireLayer>
           )}
 
           <div

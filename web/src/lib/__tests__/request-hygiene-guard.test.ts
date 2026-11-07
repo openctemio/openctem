@@ -126,6 +126,10 @@ const POLLING_BASELINE: Record<string, number> = {
   'lib/api/security-hooks.ts': 1,
   'lib/api/sensor-hooks.ts': 6,
   'lib/api/sensor-pairing-hooks.ts': 1,
+  // A sensor's readiness checklist is computed at read time from its grant,
+  // zones, scope and last reports; re-read every 10 s only while something
+  // is not ready and the checklist is on screen, 0 once it is ready.
+  'lib/api/sensor-readiness-hooks.ts': 1,
   // Sensors waiting for approval: an enrollment token's sensor arrives with
   // no event to the page; polled only while the Enrollment tokens tab is open.
   'lib/api/sensor-enrollment-hooks.ts': 1,

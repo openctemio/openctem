@@ -251,3 +251,45 @@ func TestProgramRules_OverTheOrganizationLayer(t *testing.T) {
 		})
 	}
 }
+
+// SECURITY: a program that forbids brute force or automated scanning gets
+// no enumeration job on its targets, on every hand-out path, with the
+// reason; a job that does not enumerate, and a program forbidding something
+// else, are unaffected.
+func TestProgramRules_ForbiddenEnumerationFailsTheJob(t *testing.T) {
+	jobs := []string{
+		`{"scanner":"webguess","capability":"enumerate.web_paths@1","targets":["https://app.bounty.test"]}`,
+		`{"scanner":"dnsx-enum","targets":["app.bounty.test"]}`,
+		`{"scanner":"dnsx","targets":["app.bounty.test"],"config":{"method":"bruteforce"}}`,
+	}
+	for _, technique := range []string{bp.ForbidBruteforce, bp.ForbidAutomatedScanning} {
+		for _, job := range jobs {
+			for _, path := range handOutPaths {
+				t.Run(technique+"/"+path.name, func(t *testing.T) {
+					f := newProgramFixture(&programRuleSource{rules: &bp.JobRules{Programs: []string{"Acme"}, Forbidden: []string{technique}}}, false)
+					c := f.repo.add(f.tenant, commanddom.CommandTypeScan, job, nil)
+					if got, _ := path.run(f, c); got != nil {
+						t.Fatalf("an enumeration job was handed out under a program forbidding %s", technique)
+					}
+					stored := f.repo.commands[c.ID.String()]
+					if stored.Status != commanddom.CommandStatusFailed || !strings.HasPrefix(stored.ErrorMessage, command.FailureProgramForbids) ||
+						!strings.Contains(stored.ErrorMessage, "Acme") {
+						t.Fatalf("stored %s %q", stored.Status, stored.ErrorMessage)
+					}
+				})
+			}
+		}
+	}
+	// Not an enumeration job, or another forbidden technique: handed out.
+	for _, c := range []struct{ job, forbid string }{
+		{`{"scanner":"httpx","targets":["https://app.bounty.test"]}`, bp.ForbidBruteforce},
+		{jobs[0], bp.ForbidDoS},
+	} {
+		f := newProgramFixture(&programRuleSource{rules: &bp.JobRules{Programs: []string{"Acme"}, Forbidden: []string{c.forbid}}}, false)
+		cmd := f.repo.add(f.tenant, commanddom.CommandTypeScan, c.job, nil)
+		got, err := handOutPaths[0].run(f, cmd)
+		if err != nil || got == nil {
+			t.Fatalf("%s under %s: not handed out (%v)", c.job, c.forbid, err)
+		}
+	}
+}

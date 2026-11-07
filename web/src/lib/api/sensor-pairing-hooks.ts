@@ -62,6 +62,17 @@ export interface ApprovePairingRequest {
    * grant, so name, type, zone_ids and grant_profile are ignored.
    */
   repair_sensor_id?: string
+  /**
+   * Make the new sensor Trusted for active scanning at once. Only when
+   * view.trust_eligible, for a profile without credentials or push ingest,
+   * with sensors:grant:widen; the API refuses anything else.
+   */
+  trusted?: boolean
+  /**
+   * Private networks the sensor scans: it joins the zone with exactly these
+   * ranges, or a new one, in the approval (sensors:zones:write).
+   */
+  ranges?: string[]
 }
 
 /** Why an administrator re-pairs a sensor (required with repair_sensor_id). */
@@ -208,19 +219,48 @@ export function setSensorIdentityPolicy(
 
 export const SENSOR_INSTALL_TEMPLATES_PATH = '/api/v1/sensors/install-templates'
 
+/** What a new sensor will scan (the Add sensor dialog's first question). */
+export type InstallPurpose = 'internet' | 'internal' | 'both'
+
+/**
+ * The answer that shapes the install command. internal and both add
+ * SENSOR_ALLOW_PRIVATE_TARGETS=1 (the host owner's consent, visible in the
+ * command); allowed_ranges (internal only) also pins the host to those
+ * private networks.
+ */
+export interface InstallIntent {
+  purpose: InstallPurpose
+  allowed_ranges?: string[]
+}
+
 /**
  * Install commands for a sensor that pairs. Without a code they are a read
  * (GET /sensors/install-templates), so a page can load them; with a code the
  * console created they come from POST, so the code goes in the body, never
  * the URL, and only after the user asked for a code. No key in them; with a
  * code they pass it as SENSOR_PAIRING_CODE. Same answer shape as a sensor's
- * own config templates (docker, compose, kubernetes, cli, policy).
+ * own config templates (docker, compose, kubernetes, cli, policy). An
+ * intent other than internet adds the private-target switch.
  */
-export function useSensorInstallTemplates<T>(pairingCode: string | null, enabled = true) {
+export function useSensorInstallTemplates<T>(
+  pairingCode: string | null,
+  enabled = true,
+  intent?: InstallIntent
+) {
   const { currentTenant } = useTenant()
+  const purpose = intent && intent.purpose !== 'internet' ? intent.purpose : ''
+  const ranges = purpose === 'internal' ? (intent?.allowed_ranges ?? []).join(',') : ''
   return useSWR<T>(
-    currentTenant && enabled ? [SENSOR_INSTALL_TEMPLATES_PATH, pairingCode ?? ''] : null,
-    ([url, code]: [string, string]) => (code ? post<T>(url, { pairing_code: code }) : get<T>(url)),
+    currentTenant && enabled
+      ? [SENSOR_INSTALL_TEMPLATES_PATH, pairingCode ?? '', purpose, ranges]
+      : null,
+    ([url, code, p, r]: [string, string, string, string]) => {
+      if (!code) return get<T>(p ? `${url}?purpose=${encodeURIComponent(p)}` : url)
+      const body: Record<string, unknown> = { pairing_code: code }
+      if (p) body.purpose = p
+      if (r) body.allowed_ranges = r.split(',')
+      return post<T>(url, body)
+    },
     { revalidateOnFocus: false, shouldRetryOnError: false }
   )
 }

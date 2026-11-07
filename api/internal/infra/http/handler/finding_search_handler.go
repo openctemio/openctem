@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -92,7 +93,7 @@ func (h *VulnerabilityHandler) FindingFilterMeta(w http.ResponseWriter, r *http.
 func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec) {
 	result, dupCounts, err := h.service.ListFindingsWithDuplicatesBySpec(r.Context(), filterCaller(r), spec)
 	if err != nil {
-		if writeFindingQueryTimeout(w, err) {
+		if h.specTimedOut(w, spec, err) {
 			return
 		}
 		if _, isFilter := filterspec.AsError(err); isFilter {
@@ -126,6 +127,23 @@ func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// specTimedOut logs a findings read that ran past its statement timeout with
+// the names of the filter's fields (never their values), then answers it
+// like writeFindingQueryTimeout.
+func (h *VulnerabilityHandler) specTimedOut(w http.ResponseWriter, spec *filterspec.Spec, err error) bool {
+	if !errors.Is(err, vulnerability.ErrFindingQueryTimeout) {
+		return false
+	}
+	if h.logger != nil && spec != nil {
+		fields := make([]string, 0, 8)
+		for _, l := range spec.Leaves() {
+			fields = append(fields, l.Field)
+		}
+		h.logger.Warn("findings query timed out", "fields", strings.Join(fields, ","), "search", spec.Q != "")
+	}
+	return writeFindingQueryTimeout(w, err)
 }
 
 // writeFindingQueryTimeout answers a findings read that ran past its

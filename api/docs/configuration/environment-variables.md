@@ -354,6 +354,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `ASSET_ENRICHMENT_ENABLED` | bool | `true` |  |  | Automatic passive enrichment of new assets, platform-wide. Each organization can still turn it off. |
 | `ASSET_COVERAGE_ENABLED` | bool | `true` |  |  | The asset coverage loop, platform-wide: every asset gets the capabilities its type needs. |
 | `ASSET_COVERAGE_DAILY_BUDGET` | int | `5000` |  |  | Most asset and capability pairs one organization's automatic coverage attempts per 24 hours. |
+| `PATH_DISCOVERY_REQUESTS_PER_ORIGIN` | int | `300` |  |  | Request cap of one origin's path discovery job (50 to 100000), signed into the job and enforced by the sensor; at most one run per origin per 30 days. |
+| `PATH_DISCOVERY_DAILY_REQUESTS` | int | `50000` |  |  | Path discovery requests one organization may plan per 24 hours; origins that do not fit are deferred, never marked covered. |
 | `ASSET_COVERAGE_INTERVAL` | duration | `1m` |  |  | How often the asset coverage loop runs. |
 | `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports, and the feed relay's local working copy of its spool (`relay/`; pod-local, rebuilt from the database). |
 | `PROGRAMFEED_DIR` | path | empty |  |  | Directory holding the newest signed public program feed bundle (a mirror or an upload). Needs `PROGRAMFEED_ROOT_KEY_ID`. |

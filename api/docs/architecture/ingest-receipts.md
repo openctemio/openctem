@@ -52,9 +52,9 @@ command of another tenant is refused.
 - `StillDetected`: the stored fingerprints the report sighted;
 - `Closed`: the ids a source's own mitigation statement resolved, in enforce
   mode only;
-- `Received`, `Skipped` (not stored for a reason: scope, exclusion,
-  invalid), `Failed` (storing failed), `Suppressed`, assets created and
-  updated;
+- `Received` (what the producer sent), `Skipped` (not stored for a reason:
+  scope, exclusion, invalid), `Failed` (storing failed), `Suppressed`,
+  `Outcomes` (below), assets created and updated;
 - errors as `{index, code}` with the code `store_failed`.
 
 `IngestReceiptRepository.Record` applies it in one transaction:
@@ -84,6 +84,38 @@ A failed write is logged and counted in
 output says so (`Output.ReceiptFailed`). A segment of a command's run is
 retried instead (`IngestV2Segment`), because that run's receipt decides absence
 (below), and re-ingesting a segment is idempotent.
+
+## Sightings
+
+In the same transaction, `Record` upserts the delta's sightings: who reported
+each created, reopened, decided or still-detected finding (channel, the
+tenant's sensor, sender, tool, scan), one row per finding and source. See
+[finding-sightings.md](finding-sightings.md).
+## Outcomes: every received finding is accounted for
+
+`findings_received` counts what the producer sent, before any filter: the
+protocol v2 pre-check, the tool's output contract, the info-match routing and
+the split of a finding naming several CVEs. `outcomes` (jsonb, migration
+`receipt_outcomes`, on `ingest_receipts` and `ingest_receipt_tools`) counts
+where a received finding went when it is none of the action counts:
+
+| Outcome | Meaning |
+|---|---|
+| `merged` | a repeat of a finding the same report named, or one an earlier report of the receipt already acted on (another segment, another task of the run): one observation |
+| `exposure` | a template scanner's info match, filed as an exposure |
+| `source_mitigated` | the source said it is mitigated: it resolves a finding instead of sighting one |
+| `unresolved_ref` | it named no asset of its segment (refused before ingest) |
+| `out_of_contract` | held for review with its asset by the tool's output contract |
+| `reserved_tool` | refused: the report claimed the platform matcher's tool name |
+| `split` | the extra findings a finding naming several CVEs became (adds to received) |
+
+A receipt and each of its tool rows reconcile:
+`received + split = created + still detected + reopened + suppressed + failed + skipped + the other outcomes`
+(test `TestReceiptOutcomes_EveryFindingReconciles`). The repository adds
+`merged` for the findings an earlier delta already recorded, inside the
+writing transaction; an unknown outcome code is refused. The receipts API
+returns `outcomes` on every receipt; the run page lists them under "Where the
+other findings went". They are counts only, like `received`.
 
 ## The run's findings figure
 

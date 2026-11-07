@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crewjam/saml"
+	"github.com/openctemio/saml"
 
 	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"

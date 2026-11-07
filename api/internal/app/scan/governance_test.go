@@ -105,3 +105,28 @@ func TestGovernanceSubjectOf_DeclaredIntensity(t *testing.T) {
 		t.Fatalf("zap under a passive declaration: tier %d, want 2", f3.IntensityTier)
 	}
 }
+
+// Approve, then edit the scan's step params: the definition the approval
+// covers changes, so the approved digest no longer matches.
+func TestGovernanceSubjectOf_StepParamsChangeTheDefinition(t *testing.T) {
+	s := &Service{}
+	s.SetApprovalGate(nil, &stubApprovalAssets{})
+	sc := &scan.Scan{TenantID: shared.NewID(), ScanType: scan.ScanTypeSingle, ScannerName: "nuclei",
+		Targets: []string{"app.example.com"}, ScheduleType: scan.ScheduleManual}
+	approved, _, err := s.GovernanceSubjectOf(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := approved.Digest()
+	sc.StepParams = scan.StepParams{"*:vuln.templates": {"severity": []any{"info"}}}
+	edited, _, err := s.GovernanceSubjectOf(context.Background(), sc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.Digest() == digest {
+		t.Fatal("editing step params after approval must need a new approval")
+	}
+	if _, ok := edited.StepParams["*:vuln.templates"]; !ok {
+		t.Fatalf("definition lacks the step params: %+v", edited)
+	}
+}

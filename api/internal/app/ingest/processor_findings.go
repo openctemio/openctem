@@ -340,7 +340,9 @@ func (p *FindingProcessor) processBatch(
 	for i, reported := range report.Findings {
 		// A network or SCA finding that names several CVEs is one finding
 		// per CVE (RFC-043 decisions D3, D20).
-		for _, ctisFinding := range splitMultiCVEFinding(reported) {
+		parts := splitMultiCVEFinding(reported)
+		output.addOutcome(ingestreceipt.OutcomeSplit, len(parts)-1)
+		for _, ctisFinding := range parts {
 			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
 				// Its asset matches a scope exclusion and was not added.
 				output.FindingsSkipped++
@@ -494,6 +496,15 @@ func (p *FindingProcessor) processBatch(
 				AssetID:     fm.assetID,
 				MitigatedAt: mitigatedAt(&fm.finding, mitigatedNow),
 			})
+			output.addOutcome(ingestreceipt.OutcomeSourceMitigated, 1)
+			continue
+		}
+		// A compliance check that passed is no finding and no sighting of
+		// the failure of the same check (observation.go).
+		if isCompliancePass(&fm.finding) {
+			output.CompliancePassed = append(output.CompliancePassed, CompliancePass{Fingerprint: fm.fingerprint,
+				AssetID: fm.assetID, ObservedAt: findingObservedAt(&fm.finding, reportObservedAt(report, mitigatedNow), mitigatedNow)})
+			output.addOutcome(ingestreceipt.OutcomeCompliancePassed, 1)
 			continue
 		}
 		// One report naming the same finding twice (the same package in two
@@ -503,6 +514,7 @@ func (p *FindingProcessor) processBatch(
 		// findings (RFC-043 B2).
 		if _, dup := seenFingerprints[fm.fingerprint]; dup {
 			duplicatesInReport++
+			output.addOutcome(ingestreceipt.OutcomeMerged, 1)
 			continue
 		}
 		seenFingerprints[fm.fingerprint] = struct{}{}
@@ -539,6 +551,11 @@ func (p *FindingProcessor) processBatch(
 	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
 	existingSnippets := make(map[string]string)          // Track snippets for existing findings
 
+	// When the file saw each finding (an upload; observation.go).
+	observed := validFindingTimes(validFindings, func(fm findingMeta) (string, *ctis.Finding) {
+		return fm.fingerprint, &fm.finding
+	}, output.fileObserved)
+
 	// Fingerprints on assets the report may not change (RFC-040 §5.3): a
 	// finding a person resolved there stays resolved.
 	var guardedFingerprints []string
@@ -556,6 +573,7 @@ func (p *FindingProcessor) processBatch(
 			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				applyIdentityToFinding(newData, fm.identity, &fm.finding)
+				newData.ObservedAt(observed[fm.fingerprint])
 				existingNewData = append(existingNewData, newData)
 			} else {
 				// buildFinding failed — fall back to scan-id-only update for this fingerprint
@@ -565,6 +583,7 @@ func (p *FindingProcessor) processBatch(
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				applyIdentityToFinding(f, fm.identity, &fm.finding)
+				f.ObservedAt(observed[fm.fingerprint])
 			}
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
@@ -601,7 +620,7 @@ func (p *FindingProcessor) processBatch(
 		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, reportIDOf(ctx), scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
 		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": reportIDOf(ctx)}) //nolint:goconst // evidence key, as in the other transition evidence maps
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints, reportObservedAt(report, time.Now()))
+		reopenedMap, err := p.autoReopen(reopenCtx, tenantID, report, existingFingerprints, observed)
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {

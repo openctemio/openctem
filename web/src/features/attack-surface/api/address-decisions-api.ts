@@ -2,6 +2,7 @@ import { del, post } from '@/lib/api/client'
 import type {
   EASMAddressAddResult,
   EASMAddressRejectResult,
+  EASMLookupRetryResult,
   EASMNetworkAnswerResult,
 } from '@/lib/api/generated'
 
@@ -13,23 +14,35 @@ import type {
  */
 const BASE = '/api/v1/easm/suggestions'
 
-/** Most items one decision takes (the server's limit). */
-export const MAX_DECISION_ITEMS = 200
+/** What a person chose on the card: addresses, whole groups (their keys), or
+ * every waiting address, also past the card's list. */
+export interface CardSelection {
+  addresses: string[]
+  groups: string[]
+  allWaiting: boolean
+}
 
-export function addCardAddresses(
-  addresses: string[],
-  ranges: string[] = [],
-  includeShared = false
-) {
+function selectionBody(sel: CardSelection) {
+  return { addresses: sel.addresses, groups: sel.groups, all_waiting: sel.allWaiting }
+}
+
+/** Adds the selection; chosen addresses next to each other become ranges
+ * that hold only them. Third-party addresses go only with includeShared. */
+export function addCardAddresses(sel: CardSelection, ranges: string[] = [], includeShared = false) {
   return post<EASMAddressAddResult>(`${BASE}/addresses/add`, {
-    addresses,
+    ...selectionBody(sel),
     ranges,
     include_shared: includeShared,
   })
 }
 
-export function rejectCardAddresses(addresses: string[]) {
-  return post<EASMAddressRejectResult>(`${BASE}/addresses/reject`, { addresses })
+export function rejectCardAddresses(sel: CardSelection) {
+  return post<EASMAddressRejectResult>(`${BASE}/addresses/reject`, selectionBody(sel))
+}
+
+/** Asks the sensors again for the network of addresses whose lookup failed. */
+export function retryAddressLookup(sel: CardSelection) {
+  return post<EASMLookupRetryResult>(`${BASE}/addresses/lookup`, selectionBody(sel))
 }
 
 export function answerNetwork(key: string, ours: boolean) {

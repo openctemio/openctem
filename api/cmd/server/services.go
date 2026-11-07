@@ -67,6 +67,7 @@ import (
 	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
 	dashwidgets "github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
+	livenessapp "github.com/openctemio/openctem/api/internal/app/liveness"
 	"github.com/openctemio/openctem/api/internal/app/participation"
 	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
 	"github.com/openctemio/openctem/api/internal/app/remediation"
@@ -131,6 +132,7 @@ import (
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	"github.com/openctemio/openctem/api/internal/app/taggov"
 	tasksecretapp "github.com/openctemio/openctem/api/internal/app/tasksecret"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -665,6 +667,7 @@ type Services struct {
 	AuditArchive audit.ArchiveStore
 	User         *tenantapp.UserService
 	Tenant       *tenantapp.TenantService
+	TagGovernor  *taggov.Governor
 	// UserProvisioning creates accounts on behalf of administrators.
 	UserProvisioning *tenantapp.UserProvisioningService
 
@@ -684,11 +687,17 @@ type Services struct {
 	Scope                  *scope.Service
 	// BountyProgram imports and runs bug-bounty programs (RFC-065).
 	BountyProgram *bountyprogramapp.Service
+	// PathDiscovery is the one gate of path discovery (workflow steps, the
+	// coverage planner, the web job guard).
+	PathDiscovery coverageapp.PathDiscoveryPolicy
 	// ScopeSnapshots stores the scope each scan run relied on (RFC-065 §9).
 	ScopeSnapshots *postgres.ScopeSnapshotRepository
 	// ScopeEffects closes and reopens findings as assets go out of scope
 	// for good and come back (research/320).
 	ScopeEffects *scope.Effects
+	// AssetLiveness records liveness evidence from the coverage loop and
+	// applies it (docs/architecture/asset-liveness.md).
+	AssetLiveness *livenessapp.Service
 	// ProgramAssigner keeps program group assignments current (the
 	// periodic pass, RFC-065 §7).
 	ProgramAssigner controller.ProgramAssignments
@@ -1282,7 +1291,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Every web job carries the path exclusions of its hosts, whatever path
 	// creates it (RFC-056 §5): the command repository's create guard. A
 	// web-scoped nuclei job needs a confined sensor (NO_CONFINED_SENSOR).
-	repos.Command.SetCreateGuard(scope.NewWebJobGuard(s.Scope, repos.Sensor))
+	webJobGuard := scope.NewWebJobGuard(s.Scope, repos.Sensor)
+	repos.Command.SetCreateGuard(webJobGuard)
 	// The platform's scope guardrails (RFC-054 §8): public suffixes, the deny
 	// list and CIDR caps on every new entry; the deny list and the proof mode
 	// at dispatch (the ownership gate below).
@@ -1292,6 +1302,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	scopeGuardrails = scopeGuardrails.WithPublicCodeHosts(cfg.Scope.PublicCodeHostsExtra)
 	s.Scope.SetGuardrails(scopeGuardrails)
+	s.Scope.SetZones(repos.ScanZone) // the scan zones a pattern replacement reports on
 	s.ScopeGuardrails = scopeGuardrails
 	scopeCoverage := postgres.NewScopeCoverageRepository(&postgres.DB{DB: deps.DB})
 	s.Scope.SetCoverage(scopeCoverage, s.DataScope)
@@ -1301,6 +1312,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// them (research/320); every exclusion change kicks a pass.
 	s.ScopeEffects = scope.NewEffects(postgres.NewScopeEffectsRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
 	s.Scope.SetEffects(s.ScopeEffects)
+	s.AssetLiveness = livenessapp.NewService(postgres.NewAssetLivenessRepository(&postgres.DB{DB: deps.DB}), s.Tenant, s.Audit, log)
+	if s.AssetCoverage != nil {
+		s.AssetCoverage.WithLiveness(s.AssetLiveness)
+	}
 	// Program entries (RFC-065) cover nothing a program lists as out of
 	// scope: the authority check reads the program exclusions.
 	programRepo := postgres.NewBountyProgramRepository(&postgres.DB{DB: deps.DB})
@@ -2249,6 +2264,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Outbox.SetBrand(cfg.Brand)
 	// Delivered links are absolute and name their organization (pkg/weblink).
 	s.Outbox.SetLinkBase(cfg.SMTP.BaseURL)
+	// Channel messages name the asset, what it is and why it matters, read
+	// at send time inside the event's tenant (notification-system.md).
+	s.Outbox.SetFactsSource(postgres.NewNotificationFactsRepository(&postgres.DB{DB: deps.DB}))
 	// An e-mail channel whose relay the managed service rules refuse is
 	// stopped with a visible status and its owners are told.
 	s.Outbox.SetRelayRefusedHandler(s.Integration)
@@ -2337,6 +2355,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.SensorGrant.SetZoneChecker(repos.SensorGrant)
 	if s.SensorPairing != nil {
 		s.SensorPairing.SetApprovalHook(s.SensorGrant)
+		s.SensorPairing.SetZones(repos.ScanZone)
 	}
 	// Optional short-lived sensor credentials (RFC-014 Phase 1b). Zero =
 	// disabled (renewed keys never expire), preserving today's behavior.
@@ -2442,6 +2461,12 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	wordlistRepo := postgres.NewTenantWordlistRepository(&postgres.DB{DB: deps.DB})
 	s.ContentPlanner = contentPlanner
 	s.ContentPlanner.SetOrganizationLists(wordlistRepo)
+	// Path discovery jobs carry a candidate list derived from the
+	// organization's own web inventory, filtered by its path exclusions
+	// (docs/architecture/web-discovery.md).
+	s.ContentPlanner.SetWebPaths(postgres.NewWebDiscoveryRepository(&postgres.DB{DB: deps.DB}), s.Scope)
+	// A wordlist pack runs only on origins an active scope entry names.
+	s.ContentPlanner.SetPackOrigins(postgres.NewWebPathLedgerRepository(&postgres.DB{DB: deps.DB}))
 	s.Wordlists = wordlistapp.NewService(wordlistRepo, s.Audit, log)
 	if contentSigner != nil {
 		// The curated wordlist packs embedded in this build become the
@@ -2529,6 +2554,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// checks the platform's signer against it (research/191 A-1).
 		if s.SensorPairing != nil {
 			s.SensorPairing.SetJobSigningRoot(s.JobSigner.RootKeyID)
+			// The signed pairing grant states the hello's signer block, so
+			// nothing between a sensor and the platform can swap the
+			// keys it pins at pairing (research 452 N3).
+			s.SensorPairing.SetSignedJobs(s.JobSigner.Hello)
 		}
 	} else if !cfg.IsDevelopment() {
 		log.Warn("SECURITY: sensor jobs are NOT signed (SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS); a compromised API or database can hand any sensor any job, and sensors paired from now on refuse to start")
@@ -2571,7 +2600,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		ingVuln, ingComp = postgres.NewVulnerabilityRepository(deps.IngestDB), postgres.NewComponentRepository(deps.IngestDB)
 		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
 	}
+	// Tags that rules read (team access, scan approval, scan windows,
+	// assignment) are changed only by people holding the rule's permission,
+	// and never by an import.
+	s.TagGovernor = taggov.NewGovernor(15*time.Second,
+		taggov.ScopeRuleSource(repos.AccessControl),
+		taggov.AssignmentRuleSource(repos.AccessControl),
+		taggov.ScanWindowSource(repos.ScanWindowPolicy),
+		taggov.ApprovalRuleSource(s.Tenant),
+	)
 	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
+	s.Ingest.SetTagGovernor(s.TagGovernor)
+	s.Tenant.SetTagRulesInvalidator(s.TagGovernor)
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
@@ -2855,6 +2895,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		// The widest range one scan target may name: the organization's scope
+		// setting, a /8 at most; wider than a /16 runs live hosts first in
+		// /16 chunks (RFC-151).
+		scan.WithRangeLimits(s.Tenant),
 		// Shared-sensor scans per day (RFC-100 §10): generic limits by key;
 		// unset means unlimited.
 		scan.WithSharedScanLimits(s.Entitlement),
@@ -2891,6 +2935,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A scheduled run acts as the scan owner: refused without one, paused
 	// when the owner is no longer an active member (RFC-050 W2).
 	s.Scan.SetOwnerActivity(repos.AccessControl)
+	// A skipped (missed) scheduled occurrence is announced as scan.schedule_missed.
+	s.Scan.SetScheduleMissEvents(s.Outbox)
 	// Wildcard domains and inventory-mode CIDRs are expanded from the
 	// inventory at each run start (RFC-068).
 	s.Scan.SetSelectorAssets(repos.ScanSelector)
@@ -2900,6 +2946,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	if s.ScanWindowResolver != nil {
 		s.ScanWindow = scanwindowapp.NewService(repos.ScanWindowPolicy, repos.ScanWindowPolicy, repos.ScanWindowOverride, s.ScanWindowResolver, log)
+		s.ScanWindow.SetTagRulesInvalidator(s.TagGovernor)
 		s.ScanWindow.SetAudit(s.Audit)
 		s.ScanWindow.SetAssets(repos.ScanWindowAsset, s.DataScope)
 		s.ScanWindow.SetHoldReleaser(repos.Command)
@@ -3203,6 +3250,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
+	// A saved rule changes which tags are governing at once, not after the cache TTL.
+	s.AssignmentRule.SetTagRulesInvalidator(s.TagGovernor)
+	s.ScopeRule.SetTagRulesInvalidator(s.TagGovernor)
 	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
 	s.ScopeRule.SetScopeDelegationCap(s.DataScope)
 
@@ -3391,6 +3441,21 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Copies of system templates keep their lineage and are offered the
 	// template's later changes (applied only by a person).
 	s.ScanRun.SetTemplateLineage(repos.ScanWorkflow)
+	// Path discovery has one gate for every caller: the organization's
+	// switch, the daily request budget, the origin and target refusals and
+	// the ledger of the last run per origin. The coverage planner, the
+	// workflow steps and the web job guard (every job's dispatch claim) read
+	// the same policy (docs/architecture/web-discovery.md).
+	s.PathDiscovery = coverageapp.PathDiscoveryPolicy{Settings: s.Tenant,
+		Ledger: postgres.NewWebPathLedgerRepository(&postgres.DB{DB: deps.DB}), Log: log,
+		Budget: coverageapp.PathBudget{PerOrigin: cfg.Worker.PathDiscoveryRequestsPerOrigin, Daily: cfg.Worker.PathDiscoveryDailyRequests}}
+	if s.BountyProgram != nil {
+		s.PathDiscovery.Programs = s.BountyProgram
+	}
+	s.ScanRun.SetPathDiscoveryGate(s.PathDiscovery)
+	webJobGuard.SetDiscoveryGate(s.PathDiscovery)
+	s.Command.SetPathClaimReleaser(s.PathDiscovery)
+	s.Scan.SetPathDiscoveryGate(s.PathDiscovery)
 	// A role assigned, removed or redefined, or a membership removed or
 	// suspended, closes the user's live sockets in that tenant; the client
 	// reconnects through every upgrade gate again (RFC-045).

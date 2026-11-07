@@ -172,6 +172,7 @@ export type AuditAction =
   | 'scope_target.deleted'
   | 'scope_target.activated'
   | 'scope_target.deactivated'
+  | 'scope_target.replaced'
   | 'scope_exclusion.created'
   | 'scope_exclusion.updated'
   | 'scope_exclusion.deleted'

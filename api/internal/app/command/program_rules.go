@@ -44,6 +44,15 @@ func WithProgramRules(src ProgramRuleSource) Option {
 // conflict.
 const FailureProgramRules = "PROGRAM_RULES_CONFLICT"
 
+// FailureProgramForbids is the failure code of an enumeration job on
+// targets a program forbids brute force or automated scanning on.
+const FailureProgramForbids = "PROGRAM_FORBIDS_ENUMERATION"
+
+// ErrProgramForbidsEnumeration: the job enumerates and a program covering
+// its targets forbids it; the job is failed with the reason.
+var ErrProgramForbidsEnumeration = shared.NewDomainError(FailureProgramForbids,
+	"a bug bounty program covering these targets forbids brute force or automated scanning", shared.ErrValidation)
+
 // jsonNull is a JSON null value.
 const jsonNull = "null"
 
@@ -99,6 +108,12 @@ func (s *Service) programDecide(ctx context.Context, c *commanddom.Command, now 
 		s.logger.Warn("program rules could not be read; withholding the job",
 			"command_id", c.ID.String(), "error", err)
 		return nil, ErrScopeRecheckUnavailable
+	}
+	if why := r.EnumerationRefusal(); why != "" && commanddom.PayloadEnumerates(c.Payload) {
+		// A program forbids brute force or automated scanning: an
+		// enumeration job never runs on its targets.
+		s.failAtClaim(ctx, c, FailureProgramForbids+": "+why, FailureProgramForbids)
+		return nil, ErrProgramForbidsEnumeration
 	}
 	if r != nil && (len(r.Headers) > 0 || r.UserAgent != "") && !honors() {
 		s.logger.Warn("the sensor does not report "+sensordom.CapabilityHTTPIdentity+" (it cannot send the program's headers); withholding the job",
