@@ -1088,6 +1088,8 @@
   "scans.failure.COVERAGE_GAPS.text": "The step completed, but the sensor could not fully cover some hosts: it backed off from them to stay within what they accept.",
   "scans.failure.DEADLINE_TOO_CLOSE.fix": "Its targets roll over to the next scheduled run. Raise or clear the scan's max duration if the run should finish in one go.",
   "scans.failure.DEADLINE_TOO_CLOSE.text": "Not started: too little time was left before the run's deadline for this step to do anything useful.",
+  "scans.failure.DEPENDENCY_FAILED.fix": "Fix why the step before it failed (see that step), then run the scan again.",
+  "scans.failure.DEPENDENCY_FAILED.text": "Stopped: this step started on the first results of the step before it, and that step then failed. Its tasks that had not run were canceled; finished tasks keep their results.",
   "scans.failure.DEPENDENCY_SKIPPED.fix": "Make the step it needs runnable (add or enable its tool, or a sensor with it); this step then runs too.",
   "scans.failure.DEPENDENCY_SKIPPED.text": "Skipped: a step this one needs the results of was skipped.",
   "scans.failure.ENDPOINT_MISMATCH.fix": "Verify the finding by hand.",
