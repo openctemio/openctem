@@ -62,7 +62,7 @@ const cards = (canAdd: boolean) => ({
           address: '203.0.113.12',
           resolved_from: ['api.acme.example'],
           network: { known: false },
-          lookup: { state: 'failed', reason: 'tool_error' },
+          lookup: { state: 'failed', reason: 'source_unavailable' },
           ownership: { band: 'low', score: 20, signals: [] },
         },
       ],
@@ -186,7 +186,7 @@ describe('EASMDecidePanel', () => {
     expect(groups[0]).toHaveTextContent('In your own prefix')
     expect(groups[1]).toHaveTextContent('198.51.100.0/24, network not known yet')
     // The lookup failed: said so, with a retry (not a bare "unknown").
-    expect(groups[1]).toHaveTextContent('Network unknown: the lookup failed')
+    expect(groups[1]).toHaveTextContent('Network lookup failed (source unavailable)')
     expect(groups[1]).not.toHaveTextContent('No network data yet')
     expect(screen.getByTestId('decide-summary')).toHaveTextContent(
       '41 added automatically (yours), 12 third-party (never scanned), 2 need you'

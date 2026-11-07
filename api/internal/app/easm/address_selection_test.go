@@ -234,6 +234,24 @@ func (f fakeAutoPatterns) Seen(_ context.Context, _ shared.ID, ps []string) (map
 	return out, nil
 }
 
+func TestNetworkLookup_SourceUnavailable(t *testing.T) {
+	cases := []struct {
+		in   LedgerLookup
+		want string
+	}{
+		{LedgerLookup{State: "failed", Reason: "tool_error", LastError: `asn: routing dataset: fetch iptoasn.com: Bad Gateway`}, LookupSourceUnavailable},
+		{LedgerLookup{State: "failed", Reason: LookupSourceUnavailable}, LookupSourceUnavailable},
+		{LedgerLookup{State: "failed", Reason: "tool_error", LastError: "asn: bad input"}, "tool_error"},
+		{LedgerLookup{State: "blocked", Reason: "no_entry"}, "no_entry"},
+	}
+	for _, tc := range cases {
+		got := networkLookup(tc.in)
+		if got.State != LookupFailed || got.Reason != tc.want {
+			t.Errorf("%+v: %+v, want reason %s", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestAddressCard_LookupStatesAndSummary(t *testing.T) {
 	at := time.Date(2026, 11, 6, 8, 0, 0, 0, time.UTC)
 	rows := []AddressBehindNames{
