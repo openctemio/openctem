@@ -12,3 +12,12 @@
   the small policy table) and `20261107134605_dashboard_facts_without_compliance` (function replacement).
 - **Upgrade note:** no figure moves at deploy: existing findings read as practice `other` until the `finding-practice`
   command is applied.
+
+### Added: compliance SLA re-baseline in the `finding-practice` command
+
+- `finding-practice -sla` reports, per tenant, the open compliance findings whose deadline would move to the
+  compliance window from first detection (count, days in all, overdue before and after); `-sla -apply -undo <file>`
+  writes them (later only), with an undo file and an `sla_rebaselined` timeline entry per finding.
+- Migrations `20261107135618_finding_activity_sla_rebaselined` (timeline entry type, CHECK re-added NOT VALID) and
+  `20261107135619_finding_activity_sla_rebaselined_validate`.
+- **Upgrade note:** run the dry run first; the apply on production is the owner's decision.

@@ -3,6 +3,8 @@ package findingpractice
 import (
 	"context"
 	"database/sql"
+	"os"
+	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -138,5 +140,89 @@ func TestRun_TenantIsolation_DB(t *testing.T) {
 	}
 	if p, r := practiceOf(t, db, b.cisOpen); p != "other" || r.Valid {
 		t.Fatalf("tenant B changed by tenant A's run: %s %v", p, r)
+	}
+}
+
+// The compliance SLA re-baseline: a dry run reports aggregates only; -apply
+// moves an open compliance finding's deadline to its compliance window from
+// first detection (never earlier), records the timeline entry and the undo
+// file, and a rerun changes nothing. Vulnerabilities and closed findings are
+// never touched.
+func TestRun_ComplianceSLARebaseline_DB(t *testing.T) {
+	ctx := context.Background()
+	db := openDB(t)
+	f := seed(t, db)
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	// Detected 20 days ago, P2: the vulnerability window (15 days) made it
+	// overdue; the compliance window (90 days) does not.
+	for _, id := range []string{f.cisOpen, f.cisClosed, f.vaOpen} {
+		exec(`UPDATE findings SET priority_class = 'P2', first_detected_at = now() - interval '20 days',
+			sla_deadline = now() - interval '5 days' WHERE id = $1`, id)
+	}
+
+	rep, err := Run(ctx, db, Options{Tenant: &f.tenant, SLA: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := rep.Tenants[0].SLA
+	if s == nil || s.Considered != 1 || s.Extended != 1 || s.OverdueBefore != 1 || s.OverdueAfter != 0 || s.ExtensionDays != 75 {
+		t.Fatalf("dry run SLA = %+v", s)
+	}
+	var overdue string
+	if err := db.QueryRowContext(ctx, `SELECT sla_status FROM findings WHERE id = $1`, f.cisOpen).Scan(&overdue); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Run(ctx, db, Options{Tenant: &f.tenant, SLA: true, Apply: true}); err == nil {
+		t.Fatal("-sla -apply without an undo file must be refused")
+	}
+	undo := t.TempDir() + "/undo.csv"
+	rep, err = Run(ctx, db, Options{Tenant: &f.tenant, SLA: true, Apply: true, UndoPath: undo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Tenants[0].SLA.Applied != 1 {
+		t.Fatalf("applied = %+v", rep.Tenants[0].SLA)
+	}
+	var days int
+	var status string
+	if err := db.QueryRowContext(ctx, `SELECT round(extract(epoch FROM sla_deadline - first_detected_at) / 86400)::int, sla_status FROM findings WHERE id = $1`, f.cisOpen).Scan(&days, &status); err != nil {
+		t.Fatal(err)
+	}
+	if days != 90 || status == overdue {
+		t.Fatalf("compliance deadline = first detection + %d days, status %s (was %s)", days, status, overdue)
+	}
+	for _, id := range []string{f.cisClosed, f.vaOpen} {
+		var d int
+		if err := db.QueryRowContext(ctx, `SELECT round(extract(epoch FROM sla_deadline - first_detected_at) / 86400)::int FROM findings WHERE id = $1`, id).Scan(&d); err != nil {
+			t.Fatal(err)
+		}
+		if d != 15 {
+			t.Fatalf("%s moved to %d days: only open compliance findings move", id, d)
+		}
+	}
+	var entries int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM finding_activities WHERE finding_id = $1 AND activity_type = 'sla_rebaselined'`, f.cisOpen).Scan(&entries); err != nil {
+		t.Fatal(err)
+	}
+	if entries != 1 {
+		t.Fatalf("timeline entries = %d", entries)
+	}
+	raw, err := os.ReadFile(undo) //nolint:gosec // test temp file
+	if err != nil || !strings.Contains(string(raw), f.cisOpen) {
+		t.Fatalf("undo file = %q, %v", raw, err)
+	}
+
+	rep, err = Run(ctx, db, Options{Tenant: &f.tenant, SLA: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Tenants[0].SLA.Extended != 0 {
+		t.Fatalf("rerun would extend %d", rep.Tenants[0].SLA.Extended)
 	}
 }
