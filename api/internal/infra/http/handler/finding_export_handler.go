@@ -282,6 +282,7 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  asset_domain_not  query  []string  false  "asset domain (example.com: the name and every asset under it; *.example.com: only under it): none of (comma list)"  collectionFormat(csv)
 // @Param  asset_name  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): any of (comma list)"  collectionFormat(csv)
 // @Param  asset_name_not  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): none of (comma list)"  collectionFormat(csv)
+// @Param  asset_ip  query  []string  false  "asset IP address or CIDR range (10.0.0.0/8): any of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
 // @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"

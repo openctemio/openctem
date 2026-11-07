@@ -118,6 +118,16 @@ const CapabilityProxyTest = "proxy.test@1"
 // identification is claimable only by a sensor that reported it.
 const CapabilityHTTPIdentity = "http.identity@1"
 
+// CapabilityHTTPIdentityRequired is the capability of a sensor that honors a
+// job's identification_required (sdk-go toolhost.CapabilityHTTPIdentityRequired):
+// a task whose tool cannot carry the identification headers and query
+// parameter, on a sensor that cannot add them at its forwarder, is refused
+// before it sends a request. A job that requires identification is
+// claimable only by a sensor that reported it: an older sensor would drop
+// the requirement silently. Decided by what the sensor reports, never by
+// its version.
+const CapabilityHTTPIdentityRequired = "http.identity.required@1"
+
 // CapabilityReachProbe is the capability of a sensor that serves the
 // polite reach probe (docs/rfcs/RFC-089-reachability-aware-routing.md
 // §4.3): one TCP connect per admitted address and port, no payload,
@@ -158,6 +168,7 @@ var sensorWideCapabilities = []string{
 	CapabilityEgressHostDirect,
 	CapabilityProxyTest,
 	CapabilityHTTPIdentity,
+	CapabilityHTTPIdentityRequired,
 	CapabilityReachProbe,
 	CapabilityRuleSources,
 }

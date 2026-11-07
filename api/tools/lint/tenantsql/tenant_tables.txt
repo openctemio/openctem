@@ -158,6 +158,8 @@ finding_ingest_actions
 finding_injection_points
 finding_issue_links
 finding_link_keys
+finding_location_merges
+finding_locations
 finding_priority_queue
 finding_rekey_runs
 finding_remediation_keys
@@ -166,6 +168,7 @@ finding_retest_cursors
 finding_retests
 finding_severity_requests
 finding_sightings
+finding_source_records
 finding_status_approvals
 finding_verification_checklists
 findings

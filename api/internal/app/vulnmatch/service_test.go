@@ -669,3 +669,64 @@ func TestReconcile_VersionFlappingClosesOnlyOnEvaluatedFix(t *testing.T) {
 		t.Fatalf("closed %v reopened %v", store.closed, store.reopened)
 	}
 }
+
+// failingWriter refuses every finding while fail is set, the way the store
+// reports a row it could not insert (an error per index, no Go error).
+type failingWriter struct {
+	fail    bool
+	created []*vulnerability.Finding
+}
+
+func (w *failingWriter) CreateBatchWithResult(_ context.Context, fs []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
+	if w.fail {
+		errs := make(map[int]string, len(fs))
+		for i := range fs {
+			errs[i] = "failed to insert finding: value too long"
+		}
+		return &vulnerability.BatchCreateResult{Skipped: len(fs), Errors: errs}, nil
+	}
+	w.created = append(w.created, fs...)
+	return &vulnerability.BatchCreateResult{Created: len(fs)}, nil
+}
+
+// A finding the store refuses is booked on the receipt as failed with the
+// fixed store_failed code (never the database's text), and is held for
+// retry: the next reconcile builds it again from the same match and stores
+// it once the cause is gone.
+func TestReconcile_StoreFailureIsBookedAndRetried(t *testing.T) {
+	store := newFakeStore()
+	m := match(shared.NewID(), "CVE-2021-23017", 80)
+	store.matches = []softwarematch.Match{m}
+	w := &failingWriter{fail: true}
+	svc := NewService(store, fakePolicy{tenant.VulnMatchingSettings{Enabled: true}}, w, logger.NewNop())
+	svc.SetClosureSettings(fixedClosing{Mode: tenant.ClosingModeAuto})
+	rec := &fakeReceipts{}
+	svc.SetReceiptRecorder(rec)
+	tenantID := shared.NewID()
+
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), tenantID, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Created != 0 || st.Failed != 1 || len(rec.deltas) != 1 {
+		t.Fatalf("first pass: created %d failed %d deltas %d", st.Created, st.Failed, len(rec.deltas))
+	}
+	d := rec.deltas[0]
+	if d.Received != 1 || d.Failed != 1 || len(d.Created) != 0 || len(d.StillDetected) != 0 ||
+		len(d.Errors) != 1 || d.Errors[0] != (ingestreceipt.ErrorEntry{Index: 0, Code: ingestreceipt.ErrorStoreFailed}) {
+		t.Fatalf("failed delta %+v", d)
+	}
+
+	// The cause is fixed: the next reconcile stores the same finding.
+	w.fail = false
+	var st2 Stats
+	if err := svc.ReconcileTenant(context.Background(), tenantID, &st2); err != nil {
+		t.Fatal(err)
+	}
+	if st2.Created != 1 || st2.Failed != 0 || len(w.created) != 1 || w.created[0].Fingerprint() != fp(m) {
+		t.Fatalf("retry: created %d failed %d stored %d", st2.Created, st2.Failed, len(w.created))
+	}
+	if d := rec.deltas[1]; d.Failed != 0 || len(d.Errors) != 0 || len(d.Created) != 1 {
+		t.Fatalf("retry delta %+v", d)
+	}
+}

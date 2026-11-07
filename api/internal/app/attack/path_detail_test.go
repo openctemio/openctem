@@ -93,6 +93,9 @@ func TestPathDetail_RoutesLikelihoodAndChokePoints(t *testing.T) {
 	if len(d.Paths) != 2 || d.TotalPaths != 2 || d.Capped {
 		t.Fatalf("paths = %d total = %d capped = %v, want 2, 2, false", len(d.Paths), d.TotalPaths, d.Capped)
 	}
+	if d.Proof != ProofPossible {
+		t.Fatalf("proof = %q, want %q", d.Proof, ProofPossible)
+	}
 	// The most likely route of the shortest length comes first.
 	first := d.Paths[0]
 	names := []string{}

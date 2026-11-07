@@ -2111,6 +2111,12 @@ type UpdateSecuritySettingsInput struct {
 	// ToolHTTPHeaders replaces the organization's scan identification
 	// headers (nil: unchanged; empty: none).
 	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers"`
+	// ToolHTTPUserAgents replaces the rotation list (nil: unchanged; empty:
+	// none); ToolHTTPQuery the query parameter (nil: unchanged; a blank name
+	// and value: none); ToolHTTPIdentificationRequired the requirement.
+	ToolHTTPUserAgents             *[]string        `json:"tool_http_user_agents"`
+	ToolHTTPQuery                  *scanident.Query `json:"tool_http_query"`
+	ToolHTTPIdentificationRequired *bool            `json:"tool_http_identification_required"`
 	// PersonalAccounts and SSOExceptions: see tenantdom.SecuritySettings
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
@@ -2166,7 +2172,8 @@ func (s *TenantService) ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) 
 	}
 	sec := t.TypedSettings().Security
 	p := sec.ToolHTTPPolicy()
-	out := sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}
+	out := sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, UserAgents: p.UserAgents, AllowInsecureTLS: p.AllowInsecureTLS,
+		Query: p.Query, IdentificationRequired: p.IdentificationRequired}
 	if len(p.Headers) > 0 {
 		out.Headers = make(map[string]string, len(p.Headers))
 		for _, h := range p.Headers {
@@ -2262,6 +2269,15 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 			if len(security.ToolHTTPHeaders) == 0 {
 				security.ToolHTTPHeaders = nil
 			}
+		}
+		if input.ToolHTTPUserAgents != nil {
+			security.ToolHTTPUserAgents = scanident.NormalizeUserAgents(*input.ToolHTTPUserAgents)
+		}
+		if input.ToolHTTPQuery != nil {
+			security.ToolHTTPQuery = scanident.NormalizeQuery(input.ToolHTTPQuery)
+		}
+		if input.ToolHTTPIdentificationRequired != nil {
+			security.ToolHTTPIdentificationRequired = *input.ToolHTTPIdentificationRequired
 		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)
