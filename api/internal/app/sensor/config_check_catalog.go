@@ -61,6 +61,9 @@ type checkCatalogEntry struct {
 // Fix snippets shared by several entries.
 // sandboxDocs is the troubleshooting anchor of the network-confinement
 // check.
+// checkSandboxUnconfined is the check of tools run without the sandbox.
+const checkSandboxUnconfined = "runtime.sandbox_unconfined"
+
 const sandboxDocs = "https://docs.openctem.io/sensors/troubleshooting/#runtime-sandbox-network"
 
 // The control channel's DNS (sdk-go httpsec last-known-good addresses).
@@ -334,6 +337,14 @@ docker pull ghcr.io/openctemio/sensor:latest`,
 	{ID: "runtime.sandbox_network", Code: "unavailable", Group: "runtime", Title: "Tool runs are not network-confined",
 		Why:  "The sensor could not confine its tools' network; the summary below is its message. Jobs that need confinement (a web scope) go to other sensors.",
 		Docs: sandboxDocs, Fix: sandboxSeccompFix},
+
+	{ID: checkSandboxUnconfined, Code: "sandboxed", Group: "runtime", Title: "Tools run in the sandbox",
+		Why: "Every tool task runs in the sensor's sandbox.", Docs: sandboxDocs},
+	{ID: checkSandboxUnconfined, Code: "active_refused", Group: "runtime", Title: "Tools that contact their targets are refused: no sandbox on this host",
+		Why:  "The tool sandbox is Linux only, and this sensor's host has none (macOS, Windows). Tools that contact their targets (tier T1 and above) are refused so they never run unconfined; passive lookups still run. Run the sensor on Linux (or in its container), or set SENSOR_SANDBOX=off to acknowledge running every tool unconfined.",
+		Docs: sandboxDocs},
+	{ID: checkSandboxUnconfined, Code: "acknowledged", Group: "runtime", Title: "Tools run unconfined (the sandbox is turned off)",
+		Why: "SENSOR_SANDBOX=off: the operator acknowledged that every tool, those that contact their targets included, runs as a plain process without the sandbox. Remove the setting on a Linux host (the default is auto).", Docs: sandboxDocs},
 
 	// --- config --------------------------------------------------------------
 	{ID: "config.alias_deprecated", Code: "legacy_name", Group: "config", Title: "Setting {name} has a new name",

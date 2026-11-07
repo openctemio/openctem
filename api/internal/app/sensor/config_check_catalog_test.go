@@ -35,6 +35,7 @@ var contractChecks = map[string][]string{
 	"runtime.control_dns":        {"resolving", "address_literal", "via_proxy", "plain_http", "cached_address", "lookup_failed", "recovered"},
 	"network.core_addresses":     {"listed", "not_reported", "none_known"},
 	"runtime.sandbox_network":    {"confined", "userns_disabled_host", "userns_blocked", "userns_restricted", "off", "sandbox_off", "unavailable"},
+	"runtime.sandbox_unconfined": {"sandboxed", "active_refused", "acknowledged"},
 	// openctemio/sensor
 	"config.file_unknown_key":  {"unknown_key"},
 	"config.file_unset_var":    {"unset_var"},
