@@ -218,7 +218,7 @@
   "dashboardKit.paths.entryPoints": "Entry points reaching it",
   "dashboardKit.paths.isEntryPoint": "Entry point itself",
   "dashboardKit.paths.noneDesignated": "No crown jewels designated",
-  "dashboardKit.paths.noneDesignatedHint": "Mark your high-value assets as crown jewels to see which ones an attacker can reach.",
+  "dashboardKit.paths.noneDesignatedHint": "Mark your high-value assets as crown jewels to see which ones an attacker could reach.",
   "dashboardKit.paths.noneReachable": "No attack path reaches a crown jewel in your scope.",
   "dashboardKit.paths.ofDesignated": "of {n} crown jewels reachable from an entry point",
   "dashboardKit.paths.reachableLabel": "{n} crown jewels reachable",
