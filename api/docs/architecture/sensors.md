@@ -2670,6 +2670,13 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   - `policy_none`: `absent_legacy`, or `unknown` for a sensor that has
     connected (an SDK that ignores local policies);
   - `pin_none`: `platform_pin` is `none`;
+  - `tools_unconfined`: the sensor runs its tools without the sandbox
+    (`tools_unconfined` is `refused`: the sandbox is not available on its
+    host, it is Linux only, so tools of tier T1 and above are refused there
+    and passive lookups still run; or `acknowledged`: its operator set
+    `SENSOR_SANDBOX=off` and every tool runs unconfined). The sensor reports
+    it in the manifest posture (`sandbox.unconfined`) and in its config
+    report (`runtime.sandbox_unconfined`);
   - `network_unenforced`: `network_enforced` is `false`;
   - `bearer_key`: the sensor authenticates with a bearer key instead of a
     key-bound identity (and has connected).
@@ -2680,10 +2687,13 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   cards and the detail header (the title lists the fixes), and a Security
   posture block in the detail sheet with one fix per reason: install a local
   policy (the Local policy tab of the install commands), pin the platform CA
-  with `SENSOR_CA_FINGERPRINT`, run with `SENSOR_SANDBOX_NETWORK=required` and
-  the seccomp profile, pair again for a key-bound identity.
+  with `SENSOR_CA_FINGERPRINT`, run the sensor on Linux with the sandbox (or
+  acknowledge running tools unconfined with `SENSOR_SANDBOX=off`), run with
+  `SENSOR_SANDBOX_NETWORK=required` and the seccomp profile, pair again for a
+  key-bound identity. The Tool sandbox check of the install review says when
+  tools that contact their targets are refused for want of a sandbox.
 - **Alert.** Gauge `openctem_sensors_unhardened{kind}` (`policy_none`,
-  `pin_none`, `network_unenforced`, `bearer_key`): active tenant sensors by
+  `pin_none`, `tools_unconfined`, `network_unenforced`, `bearer_key`): active tenant sensors by
   reason, platform-wide, no tenant or sensor label. Alert `SensorsUnhardened`
   (warning, `for: 24h`); runbook in
   [operations/monitoring.md](../operations/monitoring.md#sensorsunhardened).
