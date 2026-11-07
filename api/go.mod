@@ -145,7 +145,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/lib/pq v1.12.3
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/contract v1.5.1
+	github.com/openctemio/contract v1.6.0
 	github.com/openctemio/contract/transfer v1.0.1
 	github.com/openctemio/ctis/v2 v2.0.2
 	github.com/openctemio/ctis/v2/interop/csaf v0.1.0
@@ -172,7 +172,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
 	golang.org/x/mod v0.42.0
-	golang.org/x/net v0.61.0
+	golang.org/x/net v0.62.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/text v0.43.0
 	golang.org/x/time v0.16.0

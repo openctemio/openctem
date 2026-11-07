@@ -135,8 +135,14 @@ func (h *TenantHandler) SetScanIdentity(src PlatformScanIdentitySource) { h.scan
 // organization sees it: the values its jobs carry under its own.
 type PlatformScanIdentificationResponse struct {
 	UserAgent         string             `json:"user_agent"`
+	UserAgents        []string           `json:"user_agents"`
 	UserAgentEnforced bool               `json:"user_agent_enforced"`
 	Headers           []scanident.Header `json:"headers"`
+	Query             *scanident.Query   `json:"query,omitempty"`
+	QueryEnforced     bool               `json:"query_enforced"`
+	// IdentificationRequired: the platform requires identification on
+	// every organization's scans; the organization cannot turn it off.
+	IdentificationRequired bool `json:"identification_required"`
 }
 
 // platformScanIdentification reads the platform layer (nil: none wired, or
@@ -150,7 +156,9 @@ func (h *TenantHandler) platformScanIdentification(ctx context.Context) *Platfor
 		h.logger.Warn("platform scan identification not read", "error", logger.SanitizeError(err))
 		return nil
 	}
-	return &PlatformScanIdentificationResponse{UserAgent: l.UserAgent, UserAgentEnforced: l.UserAgentEnforced, Headers: nonNilHeaders(l.Headers)}
+	return &PlatformScanIdentificationResponse{UserAgent: l.UserAgent, UserAgents: nonNilStrings(l.UserAgents),
+		UserAgentEnforced: l.UserAgentEnforced, Headers: nonNilHeaders(l.Headers), Query: l.Query, QueryEnforced: l.QueryEnforced,
+		IdentificationRequired: l.IdentificationRequired}
 }
 
 func nonNilHeaders(hs []scanident.Header) []scanident.Header {
@@ -2219,6 +2227,14 @@ type SecuritySettingsResponse struct {
 	// ToolHTTPHeaders are the organization's scan identification headers
 	// (free names and values, at most 6), merged over the platform's.
 	ToolHTTPHeaders []scanident.Header `json:"tool_http_headers"`
+	// ToolHTTPUserAgents is the organization's User-Agent rotation list
+	// (instead of tool_http_user_agent; at most 200).
+	ToolHTTPUserAgents []string `json:"tool_http_user_agents"`
+	// ToolHTTPQuery is the organization's identification query parameter.
+	ToolHTTPQuery *scanident.Query `json:"tool_http_query,omitempty"`
+	// ToolHTTPIdentificationRequired: every request of the organization's
+	// scans must carry a header or the query parameter.
+	ToolHTTPIdentificationRequired bool `json:"tool_http_identification_required"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts string `json:"personal_accounts"`
 	// Invitees: who may be invited: any, verified_domains or allow_list.
@@ -2279,6 +2295,9 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			ToolHTTPUserAgent:                         s.Security.ToolHTTPUserAgent,
 			ForbidToolInsecureTLS:                     s.Security.ForbidToolInsecureTLS,
 			ToolHTTPHeaders:                           nonNilHeaders(s.Security.ToolHTTPHeaders),
+			ToolHTTPUserAgents:                        nonNilStrings(s.Security.ToolHTTPUserAgents),
+			ToolHTTPQuery:                             s.Security.ToolHTTPQuery,
+			ToolHTTPIdentificationRequired:            s.Security.ToolHTTPIdentificationRequired,
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
 			Invitees:                                  string(s.Security.EffectiveInvitees()),
 			ExternalAccessEndRequired:                 s.Security.ExternalAccessEndRequired,
@@ -2423,6 +2442,16 @@ type UpdateSecuritySettingsRequest struct {
 	// (at most 200 characters); connection, proxy and credential headers are
 	// refused.
 	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers" validate:"omitempty,max=6"`
+	// ToolHTTPUserAgents replaces the User-Agent rotation list (omitted:
+	// unchanged; []: none). At most 200 distinct values of 1-256 printable
+	// ASCII characters; not together with tool_http_user_agent.
+	ToolHTTPUserAgents *[]string `json:"tool_http_user_agents" validate:"omitempty,max=200"`
+	// ToolHTTPQuery replaces the identification query parameter (omitted:
+	// unchanged; a blank name and value: none). Name and value are 1-64 of
+	// letters, digits and . _ ~ -.
+	ToolHTTPQuery *scanident.Query `json:"tool_http_query"`
+	// ToolHTTPIdentificationRequired: see SecuritySettingsResponse.
+	ToolHTTPIdentificationRequired *bool `json:"tool_http_identification_required"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
 	// Invitees: any, verified_domains or allow_list.
@@ -2475,6 +2504,9 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		ToolHTTPUserAgent:                         req.ToolHTTPUserAgent,
 		ForbidToolInsecureTLS:                     req.ForbidToolInsecureTLS,
 		ToolHTTPHeaders:                           req.ToolHTTPHeaders,
+		ToolHTTPUserAgents:                        req.ToolHTTPUserAgents,
+		ToolHTTPQuery:                             req.ToolHTTPQuery,
+		ToolHTTPIdentificationRequired:            req.ToolHTTPIdentificationRequired,
 		PersonalAccounts:                          req.PersonalAccounts,
 		Invitees:                                  req.Invitees,
 		ExternalAccessEndRequired:                 req.ExternalAccessEndRequired,
