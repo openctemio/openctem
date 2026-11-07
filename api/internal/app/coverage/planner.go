@@ -284,6 +284,11 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 	if err := s.planner.MarkBlocked(ctx, tenantID, rs.Capability, blocked, BlockedRecheck); err != nil {
 		return n, parked, err
 	}
+	if s.liveness != nil && !stalled {
+		// Liveness is a reading of the settled verdicts: recorded after the
+		// ledger, and never failing the settlement.
+		s.liveness.Record(ctx, tenantID, livenessObservations(rs.Capability, queued, verdicts))
+	}
 	if !stalled {
 		if err := s.countRunClaim(ctx, tenantID, rs); err != nil {
 			return n, parked, err

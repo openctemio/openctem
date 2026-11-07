@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
 )
 
@@ -278,7 +279,7 @@ func (s *WorkflowService) requireStepUp(ctx context.Context, userID shared.ID) e
 	if s.stepUp == nil {
 		return fmt.Errorf("%w: step-up re-authentication is not configured", shared.ErrForbidden)
 	}
-	return s.stepUp.RequireRecentAuth(ctx, userID.String())
+	return stepup.Require(ctx, s.stepUp, userID.String(), stepup.TierSensitive)
 }
 
 func (s *WorkflowService) publishDefinition(ctx context.Context, in PublishInput, w *automationdom.Workflow, action audit.Action, verb string) (*PublishResult, error) {

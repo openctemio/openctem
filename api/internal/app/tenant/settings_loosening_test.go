@@ -33,6 +33,12 @@ func TestLifecycleLoosened(t *testing.T) {
 			s.ExcludedSourceTypes = []string{"manual", "import", "scanner"}
 		}), false},
 		{"default written out", on, with(func(s *tenantdom.AssetLifecycleSettings) { s.StaleThresholdDays = 14 }), false},
+		// Closing findings of gone assets loosens even with stale demotion off.
+		{"close gone findings on, lifecycle off", tenantdom.DefaultAssetLifecycleSettings(), func() tenantdom.AssetLifecycleSettings {
+			s := tenantdom.DefaultAssetLifecycleSettings()
+			s.Liveness = &tenantdom.AssetLivenessSettings{CloseFindingsWhenGone: true}
+			return s
+		}(), true},
 	}
 	for _, c := range cases {
 		if got := lifecycleLoosened(c.before, c.after); got != c.want {

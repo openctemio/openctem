@@ -28,6 +28,7 @@ type Service struct {
 	cfg          Config
 	alerts       *alerting
 	operator     *operatorAlerts
+	liveness     LivenessRecorder
 	now          func() time.Time
 	logger       *logger.Logger
 }

@@ -30,6 +30,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -64,6 +65,8 @@ type TeamInvitationJobPayload struct {
 // TenantService handles tenant-related business operations.
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
+	// tagRules drops the cached governing-tag set when approval rules change.
+	tagRules TagRulesInvalidator
 	// signups reports organizations created to the sign-up feed (optional).
 	signups signupevent.Recorder
 	repo    tenantdom.Repository
@@ -2086,6 +2089,9 @@ type UpdateSecuritySettingsInput struct {
 	// yes: keys and grants made from a later SSO session keep working.
 	RevokeCredentialsOnSSOEnforce *bool `json:"revoke_credentials_on_sso_enforce"`
 	MFARequired                   *bool `json:"mfa_required"`
+	// StepUp replaces the re-verification policy (all three tiers). Owner
+	// only (route gate), with step-up; critical cannot go below the floor.
+	StepUp *stepup.Policy `json:"step_up"`
 	// MFARequiredForAdmins: see tenantdom.SecuritySettings.
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -2266,6 +2272,13 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		if input.ExternalAccessEndRequired != nil {
 			security.ExternalAccessEndRequired = *input.ExternalAccessEndRequired
 		}
+		if input.StepUp != nil {
+			p := *input.StepUp
+			if err := p.Validate(); err != nil {
+				return err
+			}
+			security.StepUp = &p
+		}
 		if input.SSOExceptions != nil {
 			if err := s.validateSSOExceptions(ctx, t.ID(), *input.SSOExceptions); err != nil {
 				return err
@@ -2363,6 +2376,7 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	after := t.TypedSettings().Security
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_interactsh", before.AllowSensorInteractsh, after.AllowSensorInteractsh)
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_custom_templates", before.AllowSensorCustomTemplates, after.AllowSensorCustomTemplates)
+	s.auditStepUpPolicy(ctx, actx, before.EffectiveStepUp(), after.EffectiveStepUp())
 	s.notifySecurityLoosened(ctx, tenantID, actx, before, after)
 	if enforcedNow {
 		s.revokeCredentialsAtSSOEnforce(ctx, t.ID(), actx, input.RevokeCredentialsOnSSOEnforce)
@@ -2491,7 +2505,7 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 		// Letting more sensitive findings reach trackers, or starting
 		// campaigns without a recorded authorization, loosens the policy.
 		if pentestLoosened(before, ps) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -2690,11 +2704,15 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		// "must run dry-run before enabling" gate by submitting a
 		// fabricated timestamp in the PUT body.
 		al.DryRunCompletedAt = before.DryRunCompletedAt
+		// A body without liveness keeps the stored liveness settings.
+		if al.Liveness == nil {
+			al.Liveness = before.Liveness
+		}
 
 		// Demoting more assets, sooner or with fewer guards hides them from
 		// monitoring: it needs a recent re-authentication.
 		if lifecycleLoosened(before, al) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -2721,7 +2739,9 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		WithMetadata("grace_period_days_before", before.GracePeriodDays).
 		WithMetadata("grace_period_days_after", al.GracePeriodDays).
 		WithMetadata("excluded_source_types_before", before.ExcludedSourceTypes).
-		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes)
+		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes).
+		WithMetadata("close_findings_when_gone_before", before.LivenessSettings().CloseFindingsWhenGone).
+		WithMetadata("close_findings_when_gone_after", al.LivenessSettings().CloseFindingsWhenGone)
 	if lifecycleLoosened(before, t.TypedSettings().AssetLifecycle) {
 		event = event.WithSeverity(audit.SeverityHigh)
 		s.notifyPolicyLoosened(ctx, tenantID, actx, "Asset lifecycle loosened",
@@ -2762,7 +2782,7 @@ func (s *TenantService) UpdateRetestSettings(
 		// Auto-resolve closes findings without a person: turning it on needs
 		// a recent sign-in.
 		if rs.AutoResolve && !before.AutoResolve {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -2910,7 +2930,7 @@ func (s *TenantService) UpdateCycleSettings(
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionCycles, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Cycles
 		if cycleLoosened(before, cs) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -3233,7 +3253,7 @@ func (s *TenantService) UpdateEASMSettings(
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionEASM, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().EASM
 		if easmLoosened(before, es) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}

@@ -2034,6 +2034,7 @@
   "scans.runDetail.noDispatch": "This run recorded no dispatch details (runs from before target routing).",
   "scans.runDetail.noTasks": "This run has not dispatched any task.",
   "scans.runDetail.partial": "Some work did not finish; the results that came back are kept",
+  "scans.runDetail.reportedFindings": "Findings this run reported",
   "scans.runDetail.runId": "Run ID",
   "scans.runDetail.runMap": "Run map",
   "scans.runDetail.runNoun": "run",

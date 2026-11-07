@@ -280,6 +280,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
+	assetHandler.SetTagGovernor(svc.TagGovernor)
 	assetHandler.SetRiskGovernance(svc.AssetRiskGovernance)
 
 	// Command handler with scan run service wired
@@ -988,6 +989,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
 	// Program asset flags on asset responses (RFC-065 §16.5).
 	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
+	handlers.Asset.SetLiveness(postgres.NewAssetLivenessRepository(deps.DB))
 	if svc.ActiveGate != nil {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
@@ -1346,7 +1348,7 @@ func InitLocalAuthHandler(
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
 			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
-				Checker: handlers.LocalAuth.RecentAuthChecker(), Window: authapp.StepUpWindow,
+				Checker: handlers.LocalAuth.RecentAuthChecker(), Policies: routes.NewStepUpPolicyProvider(repos.Tenant),
 			})
 		}
 	}
@@ -1358,12 +1360,12 @@ func InitLocalAuthHandler(
 // (docs/architecture/step-up-reauth.md). Without local auth there is no
 // session store: platform sessions then cannot step up (fail closed) and
 // external provider tokens are judged by their auth_time.
-func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
+func wireStepUpGate(handlers *routes.Handlers, svc *Services, policies middleware.StepUpPolicyProvider) {
 	var checker middleware.RecentAuthChecker
 	if handlers.LocalAuth != nil {
 		checker = handlers.LocalAuth.RecentAuthChecker()
 	}
-	gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+	gate := middleware.RecentAuthGate{Checker: checker, Policies: policies}
 	if svc.Role != nil {
 		svc.Role.SetStepUpGate(gate)
 	}
@@ -1885,6 +1887,7 @@ func newConfirmScope(repos *Repositories, svc *Services) *easmapp.ConfirmScope {
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
 	h := handler.NewAssetImportHandler(svc.AssetImport, log)
 	h.SetAuditService(svc.Audit)
+	h.SetTagGovernor(svc.TagGovernor)
 	return h
 }
 
