@@ -299,6 +299,16 @@ type SecuritySettings struct {
 	// free names and values its sensors' tools send to targets, merged with
 	// the platform's layer (docs/architecture/scan-identification.md).
 	ToolHTTPHeaders []scanident.Header `json:"tool_http_headers,omitempty"`
+	// ToolHTTPUserAgents is a User-Agent rotation list (instead of
+	// ToolHTTPUserAgent): each target host of a run gets one value of it.
+	ToolHTTPUserAgents []string `json:"tool_http_user_agents,omitempty"`
+	// ToolHTTPQuery is the identification query parameter added to every
+	// request URL of the organization's scans.
+	ToolHTTPQuery *scanident.Query `json:"tool_http_query,omitempty"`
+	// ToolHTTPIdentificationRequired: every request of the organization's
+	// scans must carry a header or the query parameter; a tool that cannot
+	// is skipped with a reason. It cannot clear a platform requirement.
+	ToolHTTPIdentificationRequired bool `json:"tool_http_identification_required,omitempty"`
 
 	// StepUp is the organization's re-verification policy: how often a
 	// person confirms their identity again before critical, sensitive and
@@ -310,7 +320,8 @@ type SecuritySettings struct {
 
 // ToolHTTPPolicy is the organization's tool HTTP layer for sensor jobs.
 func (s *SecuritySettings) ToolHTTPPolicy() sensorHTTPPolicy {
-	p := sensorHTTPPolicy{UserAgent: s.ToolHTTPUserAgent, Headers: s.ToolHTTPHeaders}
+	p := sensorHTTPPolicy{UserAgent: s.ToolHTTPUserAgent, UserAgents: s.ToolHTTPUserAgents, Headers: s.ToolHTTPHeaders,
+		Query: s.ToolHTTPQuery, IdentificationRequired: s.ToolHTTPIdentificationRequired}
 	if s.ForbidToolInsecureTLS {
 		f := false
 		p.AllowInsecureTLS = &f
@@ -321,9 +332,12 @@ func (s *SecuritySettings) ToolHTTPPolicy() sensorHTTPPolicy {
 // sensorHTTPPolicy mirrors sensor.ToolHTTPPolicy (the tenant domain does not
 // import the sensor domain); the tenant service converts it.
 type sensorHTTPPolicy struct {
-	UserAgent        string
-	AllowInsecureTLS *bool
-	Headers          []scanident.Header
+	UserAgent              string
+	UserAgents             []string
+	AllowInsecureTLS       *bool
+	Headers                []scanident.Header
+	Query                  *scanident.Query
+	IdentificationRequired bool
 }
 
 // MFARequiredFor reports whether a member with this role must use two-factor
@@ -904,8 +918,11 @@ func (s *GeneralSettings) Validate() error {
 
 // Validate validates security settings.
 func (s *SecuritySettings) Validate() error {
-	if ua := s.ToolHTTPUserAgent; ua != "" && (len(ua) > 256 || strings.IndexFunc(ua, func(r rune) bool { return r < 0x20 || r > 0x7e }) >= 0) {
-		return fmt.Errorf("%w: tool_http_user_agent must be at most 256 printable ASCII characters", shared.ErrValidation)
+	if err := scanident.CheckUserAgents(s.ToolHTTPUserAgent, s.ToolHTTPUserAgents); err != nil {
+		return fmt.Errorf("tool_http_user_agent: %w", err)
+	}
+	if err := scanident.CheckQuery(s.ToolHTTPQuery); err != nil {
+		return fmt.Errorf("tool_http_query: %w", err)
 	}
 	if err := scanident.CheckHeaders(s.ToolHTTPHeaders, scanident.MaxOrganizationHeaders, false); err != nil {
 		return fmt.Errorf("tool_http_headers: %w", err)
