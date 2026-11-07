@@ -30,7 +30,7 @@ horizon the engine uses.
 
 | Kind | Available when | Counts as proof |
 |---|---|---|
-| `retest` | the retest service would accept one now (`Availability`); reason codes: `status_not_eligible`, `secret_needs_rotation`, `check_cannot_run`, `no_tool_rule`, `template_not_rerun`, `no_asset`, `asset_inactive`, `asset_not_network_addressable`, `asset_no_address`, `target_refused`, `no_sensor`, `no_check_sensor` | yes |
+| `retest` | the retest service would accept one now (`Availability`); reason codes: `status_not_eligible`, `secret_needs_rotation`, `check_cannot_run`, `no_tool_rule`, `template_not_rerun`, `no_asset`, `asset_inactive`, `asset_not_network_addressable`, `asset_no_address`, `target_refused`, `no_sensor`, `no_check_sensor`, `no_automatic_retest` (a person's finding), `imported_no_retest` (an integration's tool no sensor runs), `reimport_to_verify` (a scanner's report imported from a file: the panel offers **Import newer results** to members who may import) | yes |
 | `covered_scan` (automatic) | a repository asset (a full default-branch scan closes it), or another asset while coverage auto-resolve enforces and the organization's [closing mode](#closing-mode) lets a covered scan close this finding (`coverage_auto_resolve_review` when it would propose, `_off` when the mode is off); never secrets (`absence_not_proof_for_secrets`), pentest/manual/bug bounty/red team (`source_not_scanned`); `coverage_auto_resolve_review` / `_off` otherwise | yes (the platform closes it) |
 | `safe_check` | an active network-addressable asset; not for secrets | no (reachability only) |
 | `rotation_proof` | secrets only; recorded through the verification checklist | yes |

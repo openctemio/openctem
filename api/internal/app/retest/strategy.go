@@ -51,6 +51,10 @@ const (
 	// ReasonImportedNoRetest: the finding was imported from a tool no
 	// sensor of the organization can re-run.
 	ReasonImportedNoRetest = "imported_no_retest"
+	// ReasonReimportToVerify: a scanner's report a person brought in (a file
+	// import or the REST API): a newer report of the same scan re-checks
+	// it, or a retest check attached to it.
+	ReasonReimportToVerify = "reimport_to_verify"
 	// ReasonVersionEvidenceMissing: a version-match finding whose software
 	// link (product, version, location) is no longer known.
 	ReasonVersionEvidenceMissing = "version_evidence_missing"
@@ -162,9 +166,17 @@ var humanSources = map[vulnerability.FindingSource]bool{
 	vulnerability.FindingSourceBugBounty: true, vulnerability.FindingSourceRedTeam: true,
 }
 
-// isHumanFinding: a person reported the finding.
+// isHumanFinding: a person reported the finding (its source is a person's
+// work). The ingest channel alone does not say so: a scanner's report a
+// person imports from a file also arrives on the manual channel.
 func isHumanFinding(f *vulnerability.Finding) bool {
-	return humanSources[f.Source()] || f.IngestChannel() == vulnerability.IngestChannelManual
+	return humanSources[f.Source()]
+}
+
+// isBroughtIn: a scanner's report a person brought in (a file import, the
+// REST API): the manual channel with a scanner's source.
+func isBroughtIn(f *vulnerability.Finding) bool {
+	return f.IngestChannel() == vulnerability.IngestChannelManual && !humanSources[f.Source()]
 }
 
 // isImported: the finding came from an integration or a collector, not a
