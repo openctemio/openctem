@@ -100,7 +100,7 @@ func TestMerge(t *testing.T) {
 func TestOverlay(t *testing.T) {
 	e := Merge(PlatformLayer{Headers: []Header{{Name: "X-Operator", Value: "saas", Enforced: true}}},
 		OrganizationLayer{UserAgent: "corp", Headers: []Header{{Name: "X-Research", Value: "org"}}})
-	got, err := e.Overlay(map[string]string{"x-research": "alice", "X-Operator": "prog"}, "prog-ua", SourceProgram)
+	got, err := e.Overlay(OverlayLayer{Headers: map[string]string{"x-research": "alice", "X-Operator": "prog"}, UserAgents: []string{"prog-ua"}}, SourceProgram)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,10 +122,10 @@ func TestOverlay(t *testing.T) {
 	for i := 0; i < MaxHeaders; i++ {
 		big["X-P"+string(rune('a'+i))] = "v"
 	}
-	if _, err := e.Overlay(big, "", SourceProgram); !errors.Is(err, shared.ErrValidation) {
+	if _, err := e.Overlay(OverlayLayer{Headers: big}, SourceProgram); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("overflow accepted: %v", err)
 	}
-	if got, _ := Merge(PlatformLayer{UserAgent: "op", UserAgentEnforced: true}, OrganizationLayer{}).Overlay(nil, "prog", SourceProgram); got.UserAgent != "op" {
+	if got, _ := Merge(PlatformLayer{UserAgent: "op", UserAgentEnforced: true}, OrganizationLayer{}).Overlay(OverlayLayer{UserAgents: []string{"prog"}}, SourceProgram); got.UserAgent != "op" {
 		t.Fatalf("program replaced an enforced UA: %+v", got)
 	}
 }
