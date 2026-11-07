@@ -131,10 +131,13 @@ type ZoneRoutingPreview struct {
 	UnzonedTargets   int              `json:"unzoned_targets"`
 	UncoveredTargets int              `json:"uncovered_targets"`
 	Jobs             int              `json:"jobs"`
-	TargetsPerJob    int              `json:"targets_per_job"`
-	SelectedZoneID   string           `json:"selected_zone_id,omitempty"`
-	Warnings         []string         `json:"warnings"`
-	Error            *PreviewError    `json:"error,omitempty"`
+	// ZoneRuns is how many per-zone runs a workflow scan starts when its
+	// targets fall in several zone groups (0: one run).
+	ZoneRuns       int           `json:"zone_runs,omitempty"`
+	TargetsPerJob  int           `json:"targets_per_job"`
+	SelectedZoneID string        `json:"selected_zone_id,omitempty"`
+	Warnings       []string      `json:"warnings"`
+	Error          *PreviewError `json:"error,omitempty"`
 	// Windows: what the scan windows mean for the targets now (nil: none
 	// applies).
 	Windows *WindowPreview `json:"windows,omitempty"`
@@ -304,7 +307,11 @@ func (s *Service) previewPlan(ctx context.Context, sc *scan.Scan, zones []*scanz
 	}
 	var plan *zonePlan
 	if sc.ScanType == scan.ScanTypeWorkflow {
-		plan, _, err = planWorkflowZone(sc, routing)
+		plan = planWorkflowSplit(sc, routing)
+		if n := len(plan.Batches); n > 1 {
+			// Several zone groups: one child run per zone (zone_split.go).
+			out.ZoneRuns = n
+		}
 	} else {
 		out.TargetsPerJob = zoneBatchSize(sc)
 		plan, err = s.planZoneBatches(ctx, sc, routing)
