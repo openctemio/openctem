@@ -64,6 +64,9 @@ type Binding struct {
 	// StepRunID is the workflow step run the bound command belongs to (nil
 	// for a command outside a scan run): the scan run its results came from.
 	StepRunID *shared.ID
+	// ScanZoneID is the scan zone the bound command was routed to (nil:
+	// none): the vantage point of the sensor's DNS answers.
+	ScanZoneID *shared.ID
 	// CIRunID is the CI run the report belongs to (BindingCIRun only).
 	CIRunID *shared.ID
 	// DispatchedAt is when the bound command was handed to the sensor
@@ -96,7 +99,7 @@ func CommandBinding(cmd *command.Command) Binding {
 	}
 	ports, top := command.PayloadPortSettings(cmd.Payload)
 	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd),
-		CommandType: cmd.Type, Capability: command.PayloadCapability(cmd.Payload), StepRunID: cmd.StepRunID,
+		CommandType: cmd.Type, Capability: command.PayloadCapability(cmd.Payload), StepRunID: cmd.StepRunID, ScanZoneID: cmd.ScanZoneID,
 		DispatchedAt: dispatched, JobPorts: ports, JobTopPorts: top}
 }
 

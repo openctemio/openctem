@@ -76,7 +76,10 @@ failing closed, as in api#555).
    - hostname → resolved with `SCAN_ZONE_RESOLVER` (the platform's own resolver,
      or a public recursive resolver on self-service installs so that tenants
      never resolve names through the platform's internal DNS; 3 s per
-     lookup, 8 concurrent); the narrowest zone holding any resolved address;
+     lookup, 8 concurrent); the narrowest zone holding any resolved address.
+     The sensors' own answers count too ("Vantage resolution" below): a name
+     only an internal sensor resolves, to a private address of that sensor's
+     zone, routes to that zone;
    - public and in no range → the **default zone**; with no default zone it is
      *unzoned* and dispatched as before zones (any tenant sensor);
    - private (RFC 1918, CGNAT, ULA) and in no range, a CIDR only partly inside
@@ -172,6 +175,58 @@ resolved at preview time, as a trigger would, so the answer can change with DNS
 and sensor health. What a trigger would refuse is returned in `error` rather
 than as an HTTP error.
 
+## Vantage resolution (split-horizon DNS)
+
+A company network often answers names differently inside and outside
+(split-horizon DNS): `intranet.example.com` has no public answer, or a public
+one, while the internal resolver answers `10.20.0.5`. The platform's resolver
+sees only the outside view, so such a name used to be refused as "does not
+resolve".
+
+- **Stored per sensor.** Every report bound to a command of one of the
+  organization's own sensors records, per host name it carries, the
+  addresses the report gives for it (`ip_addresses` and its synonyms) in
+  `name_resolutions` (tenant, name, sensor, the command's zone, at most 16
+  addresses, observed time; one row per name and sensor, newest wins). The
+  observer is the authenticated sensor and the zone is the command's
+  routing, never a value from the report. Shared sensors, unbound and
+  trusted reports record nothing. A sensor of another tenant cannot write
+  under a tenant (the insert checks the sensor's tenant).
+- **Read by the router.** Trigger routing, the dispatch gate and the command
+  gate read the answers of the names they route, observed within the resolve
+  TTL (7 days), for the tenant only. For each name:
+  1. a sensor's answer with a private address that routes to that sensor's
+     own zone (the command's zone, else a zone the sensor is assigned to)
+     routes the name there. A private answer from a sensor of another site,
+     or of no zone, places nothing;
+  2. else the platform's answer, as before;
+  3. else, when the platform has none, a sensor's public answer places the
+     name as a public target (default zone, else unzoned);
+  4. else the name is `unresolved`: neither the platform nor any sensor of
+     the organization resolves it.
+  When the platform's answer differs from the sensor's (split horizon) the
+  route follows the sensor's view and the gate logs both. A failed read of
+  the answers routes by the platform's answer only, which never sends a
+  target anywhere it would not have gone.
+- **Never a scope grant.** Private space is in scope only inside the
+  tenant's zones, and step 1 already requires the address to be in the
+  observing sensor's zone. The dispatch gate also checks every such address
+  against the scope exclusions and the ownership gate: an excluded or
+  rejected address refuses the name (`vantage_out_of_scope`). A failed check
+  stops the dispatch (fail closed). Private targets never go to shared or
+  platform sensors: a name placed by step 1 is in a zone, and only the
+  zone's sensors claim it.
+- **What the sensor dials.** The platform sends the name, never an address.
+  The sensor resolves it when the task starts and its local policy checks
+  every address (`targets.allow`, the job's zone rule on a shared sensor);
+  a confined task's forwarder dials only those admitted addresses, so a
+  name that rebinds afterwards reaches nothing new. A sensor running its
+  tools without confinement (no user namespaces) checks the addresses
+  before the run, but the tool resolves again by itself.
+- Public addresses of such a name may go to any eligible sensor of the
+  organization, the internal one included: one internal sensor can run a
+  whole workflow over public and internal names.
+
 ## Claim predicate (layer 2)
 
 `GetPendingForSensor` (poll) and `ClaimForSensor` (acknowledge) share
@@ -224,8 +279,10 @@ Warnings: `no_sensors_assigned`, `private_ranges_without_healthy_sensor`,
 
 ## Known limits (Phase 1)
 
-- Hostnames are resolved once, at trigger time, from the platform's DNS; the
-  sensor resolves again when it scans (pinning is layer 3, Phase 3).
+- Hostnames are resolved at trigger time from the platform's DNS and from
+  the sensors' stored answers (vantage resolution); the sensor resolves
+  again when it scans. The run's routing view does not yet show which
+  sensor's answer placed a name (the gate logs it).
 - A range spanning two zones is not split; it is reported uncovered.
 - Routing covers `scan/trigger.go`. The Tenable coverage dispatcher and
   validation jobs do not use zones yet.

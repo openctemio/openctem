@@ -113,7 +113,12 @@ export const SCOPE_REFUSAL_TEXT = {
   unresolved: {
     label: 'Does not resolve',
     message:
-      'This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.',
+      'This name does not resolve in DNS from the platform or from any of your sensors. Fix its DNS record, run a resolve step on a sensor that can resolve it, or scan its address.',
+  },
+  vantage_out_of_scope: {
+    label: 'Internal address not allowed',
+    message:
+      'A sensor resolves this name to a private address your organization excluded or rejected; it is not scanned.',
   },
   zone_no_sensor: {
     label: 'Zone has no sensor',

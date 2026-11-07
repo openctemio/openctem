@@ -2755,6 +2755,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// A name the resolver left out is told apart (no DNS answer, or a probed
 	// wildcard record) by asking DNS through the scan-zone resolver.
 	s.Ingest.SetNameResolution(ingest.NewDNSNameProber(zoneResolver(cfg.Scope.ZoneResolver)), repos.AssetResolution)
+	s.Ingest.SetVantageResolution(repos.NameResolution)
 	s.Ingest.SetResultQuarantine(repos.SensorResult, sensorresult.DefaultLimits())
 	// RFC-052 §5.3: results without a job need push ingest in the sensor's
 	// effective grant (off by default, always off while New).
@@ -2894,6 +2895,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Hostnames route by the address they resolve to, through
 		// SCAN_ZONE_RESOLVER (a public resolver on self-service installs).
 		scan.WithScanZones(repos.ScanZone, zoneResolver(cfg.Scope.ZoneResolver)),
+		scan.WithVantageAnswers(repos.NameResolution),
 		// The widest range one scan target may name: the organization's scope
 		// setting, a /8 at most; wider than a /16 runs live hosts first in
 		// /16 chunks (RFC-151).
