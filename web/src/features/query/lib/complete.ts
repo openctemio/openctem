@@ -37,7 +37,7 @@ export interface CaretContext {
   rest: string
 }
 
-const CONDITION = /^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)\s*(>=|<=|!=|=|:|>|<|~)([\s\S]*)$/
+const CONDITION = /^([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)?)\s*(>=|<=|!=|=|:|>|<|~)([\s\S]*)$/ // separator-ok: regex alternation, not a text separator
 const NAME = /^[A-Za-z_][\w.]*$/
 
 /** Where the caret is: in a field name, in a value, or neither. */
