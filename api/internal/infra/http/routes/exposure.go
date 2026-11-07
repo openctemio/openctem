@@ -324,7 +324,7 @@ func registerVulnerabilityRoutes(
 		r.GET("/{id}/identity", h.GetFindingIdentity, middleware.Require(permission.FindingsRead))
 		// What each source reported (per-source records), side by side where
 		// they disagree; same scope as the detail, the sensor per sensors:read.
-		r.GET("/{id}/sources", h.GetFindingSources, middleware.Require(permission.FindingsRead))
+		r.GET("/{id}/source-records", h.GetFindingSources, middleware.Require(permission.FindingsRead))
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
