@@ -62,6 +62,9 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
     params.set('acceptance_expires_at_lte', filters.acceptance_expires_at_lte)
   if (filters.asset_crown_jewel) params.set('asset_crown_jewel', 'true')
   if (filters.view) params.set('view', filters.view)
+  // A filter chips cannot show: only the list resolves it (advanced-fetch.ts);
+  // any other GET answers 400 for it, never a wider read.
+  if (filters.fq) params.set('fq', filters.fq)
   if (filters.sort) params.set('sort', filters.sort)
   // Filters the page carries as they are (the filter contract names them).
   for (const [name, value] of Object.entries(filters.extra ?? {})) {
