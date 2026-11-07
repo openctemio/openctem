@@ -143,6 +143,8 @@ describe('PathsViz', () => {
     expect(screen.getByRole('link', { name: /payroll-db/ })).toHaveAttribute('href', '/assets/a1')
     expect(screen.getByText('from 3 entry points')).toBeInTheDocument()
     expect(screen.getByText('Entry point itself')).toBeInTheDocument()
+    // Paths are presented as possible, never as proven.
+    expect(screen.getByText('Possible path, not proven')).toBeInTheDocument()
   })
 
   it('none designated and none reachable are different empty states', () => {
@@ -158,5 +160,6 @@ describe('PathsViz', () => {
     expect(
       screen.getByText('No attack path reaches a crown jewel in your scope.')
     ).toBeInTheDocument()
+    expect(screen.queryByText('Possible path, not proven')).toBeNull()
   })
 })

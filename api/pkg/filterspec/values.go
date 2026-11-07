@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,8 +71,41 @@ func parseScalar(f *Field, raw string, now time.Time, endOfDay bool) (any, error
 		return nil, errors.New("must be true or false")
 	case TypeTime:
 		return parseTime(strings.TrimSpace(raw), now, endOfDay)
+	case TypeInet:
+		return ParseInet(raw)
 	}
 	return nil, errors.New("unsupported type")
+}
+
+var errInet = errors.New("must be an IP address or a CIDR range, e.g. 10.0.0.0/8")
+
+// ParseInet parses an IP address or a CIDR range and returns its canonical
+// text: an address as net/netip prints it (IPv4-mapped IPv6 unmapped, no
+// zone), a range as its masked prefix ("10.1.2.3/8" is "10.0.0.0/8"). A
+// bracketed IPv6 address ("[::1]") is accepted.
+func ParseInet(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]") {
+		s = s[1 : len(s)-1]
+	}
+	if s == "" || len(s) > 64 || strings.Contains(s, "%") {
+		return "", errInet
+	}
+	if strings.Contains(s, "/") {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return "", errInet
+		}
+		if p.Addr().Is4In6() {
+			p = netip.PrefixFrom(p.Addr().Unmap(), max(0, p.Bits()-96))
+		}
+		return p.Masked().String(), nil
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return "", errInet
+	}
+	return a.Unmap().String(), nil
 }
 
 func parseTime(s string, now time.Time, endOfDay bool) (time.Time, error) {

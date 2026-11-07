@@ -299,6 +299,11 @@ const (
 	// ActionFindingDuplicateMarked records a user folding a finding into the
 	// one it duplicates (RFC-043 §9): which finding, into which, both statuses.
 	ActionFindingDuplicateMarked Action = "finding.duplicate_marked"
+	// ActionFindingLocationChanged records the software vulnerability
+	// matcher adding a service to a finding or moving the state of one of
+	// its services (affected, fixed, not affected), and the location merge
+	// command folding or restoring a per-service duplicate.
+	ActionFindingLocationChanged Action = "finding.location_changed"
 	// ActionFindingIssueUnlinked records a user taking a finding out of a
 	// same-issue group.
 	ActionFindingIssueUnlinked Action = "finding.issue_unlinked"
@@ -942,7 +947,7 @@ func (a Action) IsValid() bool {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
-		ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
+		ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingLocationChanged, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
@@ -1088,7 +1093,7 @@ func (a Action) Category() string {
 		ActionFindingClosureConfirmed, ActionFindingClosureDismissed, ActionFindingAutoCloseReopened,
 		ActionFindingEvidenceAdded, ActionFindingEvidenceDeleted, ActionFindingEvidenceUpdated, ActionFindingProofOverridden, ActionFindingRemediationStepAdded,
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
-		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
+		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingLocationChanged, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingsRefingerprinted, ActionFindingsReclassified,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
