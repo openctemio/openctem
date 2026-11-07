@@ -54,7 +54,12 @@ SENSOR_PAIRING_CODE={{.PairingCode}}
 SENSOR_JOB_SIGNING_ROOT={{.JobSigningRoot}}
 {{- end}}
 {{- if .Policy.AllowPrivate}}
+# SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
 SENSOR_ALLOW_PRIVATE_TARGETS=1
+{{- end}}
+{{- if .HostAllowedRanges}}
+# SENSOR_ALLOWED_RANGES pins this host to the networks you listed: the sensor refuses every target outside them.
+SENSOR_ALLOWED_RANGES={{.HostAllowedRanges}}
 {{- end}}
 {{- if .CACert}}
 SSL_CERT_DIR=/etc/openctem/certs

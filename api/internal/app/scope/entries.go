@@ -400,12 +400,9 @@ func (s *Service) ApproveTarget(ctx context.Context, targetID, tenantID string, 
 	if err != nil {
 		return nil, false, err
 	}
-	if err := s.commitEntry(ctx, before, t, false, func() error {
-		if err := s.targetRepo.Update(ctx, t); err != nil {
-			return fmt.Errorf("failed to approve scope target: %w", err)
-		}
-		return nil
-	}); err != nil {
+	// An approved replacement retires the entry it replaces in the same
+	// transaction (replace.go).
+	if err := s.commitEntryUpdate(ctx, before, t); err != nil {
 		return nil, false, err
 	}
 	if effective {

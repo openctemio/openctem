@@ -4,7 +4,7 @@
 |---|---|
 | Status | Accepted (decisions S1–S6, 2026-10-07; S3 and S6 revised by A1–A5, 2026-10-09, §12; approvals limited to Strict scan governance by RFC-073, 2026-10-10, §13; flexible scope amendment 2026-10-11, §14: bulk add implemented; attack-surface decisions 2026-10-13, §14.5: R3 and R4 adopted and implemented, connector assets in scope by default, children follow their host; R5 awaiting owner decision; inventory first, scope later 2026-10-13, §15: state `discovered` and the review-gate setting implemented, triage and metrics toggle in progress; unclassified assets get low-impact checks behind platform guardrails 2026-10-14, §16: implemented; repository entries and CI trusts 2026-10-15, §17: implemented; ownership confirmation only on managed platform sensors 2026-10-26, §20: implemented; everything a scan sees is recorded 2026-11-05, §22: results outside a job's targets recorded, the rest planned); P0 implemented |
 | Scope | api (`pkg/domain/scope`, `internal/app/scope`, `internal/app/actscope`, `internal/app/easm`, `internal/app/scan`, `internal/app/certmonitor`, handlers, migrations), web (Scoping, scan dialog), sensor-local policy (follow-up) |
-| Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md) |
+| Architecture | [active-probe-gate.md](../architecture/active-probe-gate.md), [scope-entry-replace.md](../architecture/scope-entry-replace.md) (replacing an entry's pattern) |
 | Related | RFC-023 (zones), RFC-036 §6.3/§6.4 (ownership gate, attribution), RFC-040 §5.6 (widening approvals, amended here), RFC-042 §6.13 (wildcard semantics, superseded here), RFC-050 (data scope) |
 
 ## 1. Summary
@@ -557,6 +557,7 @@ saved or scanned; with no target left the create is refused
 | `out_of_data_scope` | asset outside the actor's data scope | — |
 | `not_an_asset` | a restricted member typed free text | `request_access` |
 | `zone_none`, `zone_no_sensor`, `zone_sensor_mismatch` | scan-zone routing | `add_zone` |
+| `ambiguous_zone` | zones with different sensors hold the target at the same width (sites reusing a range) | `pick_zone` (the scan's zone picker; no permission) |
 | `unresolved` | a hostname with no DNS answer from the platform, so zone routing cannot place it | — (fix the DNS record or scan its address) |
 
 Fix objects: `{"action", "pattern"?, "target_type"?, "days"?, "id"?,
@@ -1419,6 +1420,11 @@ omitted keeps the stored value):
 
 The Strict scan approval mode forces `off` (`unclassified_scans_effective`).
 An unreadable setting is `off`.
+
+Continuous coverage (RFC-093) follows the same setting: an organization with
+no scope entry at all is paused as `no_scope` only when the setting in force
+is `off` (or unreadable). With `low_impact` or `full` its coverage runs, and
+the gate decides each target as above.
 
 ### 16.6 Job signer ledger
 

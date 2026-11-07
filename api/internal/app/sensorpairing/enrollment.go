@@ -380,7 +380,7 @@ func (s *Service) approveEnrollment(ctx context.Context, p *sensordom.Pairing) e
 	}
 	var grant func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, repair bool) error
 	if s.hook != nil {
-		grant = s.hook.OnApproved(t.TenantID, profile, t.ZoneIDs, *t.CreatedBy)
+		grant = s.hook.OnApproved(t.TenantID, profile, t.ZoneIDs, *t.CreatedBy, false)
 	}
 	approval.OnApproved = withLabels(grant, t.TenantID, t.Labels)
 	res, err := s.repo.Approve(ctx, approval, nil)

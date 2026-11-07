@@ -301,11 +301,11 @@ const (
 	// command re-keying a tenant's findings to the current identity recipe:
 	// counts re-keyed and merged, and the run id. One entry per tenant per run.
 	ActionFindingsRefingerprinted Action = "findings.refingerprinted"
-	// ActionFindingsEmailsMasked records one run of `refingerprint
-	// -mask-emails` masking the e-mail addresses left in a tenant's stored
-	// findings and evidence: counts and the run id, never a value. One entry
-	// per tenant per run.
-	ActionFindingsEmailsMasked Action = "findings.emails_masked"
+	// ActionFindingsReclassified records one run of the refingerprint
+	// command moving a tenant's informational template-scan findings to
+	// exposures (closure reason reclassified_exposure, never fixed): the
+	// counts and the run id. One entry per tenant per run.
+	ActionFindingsReclassified Action = "findings.reclassified"
 	// ActionAssetsMerged records one run of the repomerge command folding a
 	// tenant's duplicate repository assets together: counts, and the run id.
 	// One entry per tenant per run.
@@ -445,6 +445,10 @@ const (
 	// command that lie outside the command's targets: recorded as
 	// discoveries that grant nothing, and refused past the per-report cap.
 	ActionSensorResultsOutsideJob Action = "sensor.results_outside_job"
+	// ActionSensorResultContractMismatch records a verified first-party
+	// tool reporting a type its signed descriptor does not declare: the
+	// in-scope part was ingested and flagged.
+	ActionSensorResultContractMismatch Action = "sensor_result.contract_mismatch"
 
 	// Pairing and key-bound identity (RFC-052). Expected: an administrator
 	// created a reverse-mode code. Approved: a key was bound to the
@@ -610,11 +614,14 @@ const (
 	// Scope actions: what may be scanned (targets) and what must not be
 	// (exclusions). Every change is audited with before/after (RFC-040
 	// §5.11); a change that widens what is scanned is high severity.
-	ActionScopeTargetCreated        Action = "scope_target.created"
-	ActionScopeTargetUpdated        Action = "scope_target.updated"
-	ActionScopeTargetDeleted        Action = "scope_target.deleted"
-	ActionScopeTargetActivated      Action = "scope_target.activated"
-	ActionScopeTargetDeactivated    Action = "scope_target.deactivated"
+	ActionScopeTargetCreated     Action = "scope_target.created"
+	ActionScopeTargetUpdated     Action = "scope_target.updated"
+	ActionScopeTargetDeleted     Action = "scope_target.deleted"
+	ActionScopeTargetActivated   Action = "scope_target.activated"
+	ActionScopeTargetDeactivated Action = "scope_target.deactivated"
+	// ActionScopeTargetReplaced: an entry's pattern was replaced by a new
+	// entry (both patterns and the reason in the metadata).
+	ActionScopeTargetReplaced       Action = "scope_target.replaced"
 	ActionScopeExclusionCreated     Action = "scope_exclusion.created"
 	ActionScopeExclusionUpdated     Action = "scope_exclusion.updated"
 	ActionScopeExclusionDeleted     Action = "scope_exclusion.deleted"
@@ -926,7 +933,7 @@ func (a Action) IsValid() bool {
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
 		ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
-		ActionFindingsRefingerprinted, ActionFindingsEmailsMasked, ActionAssetsMerged,
+		ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed,
 		ActionBranchCreated, ActionBranchUpdated, ActionBranchDeleted, ActionBranchScanned, ActionBranchSetDefault,
 		ActionSLAPolicyCreated, ActionSLAPolicyUpdated, ActionSLAPolicyDeleted,
@@ -944,6 +951,7 @@ func (a Action) IsValid() bool {
 		ActionSensorContentRefreshRequested, ActionSensorContentPolicyUpdated, ActionSensorCommandsReleased,
 		ActionSensorResultsQuarantined, ActionSensorResultsAccepted, ActionSensorResultsDiscarded,
 		ActionSensorResultPolicyUpdated, ActionSensorResultsOutsideJob, ActionSensorResultAutoAccepted,
+		ActionSensorResultContractMismatch,
 		ActionSensorPairingExpected, ActionSensorPairingApproved, ActionSensorPairingDenied, ActionSensorPairingCompleted, ActionSensorPairingSuperseded, ActionSensorPairingLookupLocked,
 		ActionSensorRepaired, ActionSensorKeyRevoked, ActionSensorIdentityPolicySet, ActionSensorKeyBound, ActionSensorKeyBindRefused,
 		ActionSensorEnrollmentTokenCreated, ActionSensorEnrollmentTokenRevoked, ActionSensorEnrolled, ActionSensorEnrollmentRefused,
@@ -975,7 +983,7 @@ func (a Action) IsValid() bool {
 		ActionToolCreated, ActionToolUpdated, ActionToolDeleted, ActionToolCapabilitiesSet,
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted,
 		ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
 		ActionScopeExclusionActivated, ActionScopeExclusionDeactivated,
 		ActionScopeExclusionApproved, ActionScopeExclusionRejected,
@@ -1072,7 +1080,7 @@ func (a Action) Category() string {
 		ActionFindingTicketLinked, ActionFindingTicketUnlinked,
 		ActionFindingRetestRequested, ActionFindingEvidenceRevealed, ActionFindingVerificationChecklistUpdated, ActionFindingClassified, ActionFindingCommentReactionRemoved, ActionFindingCommentEdited, ActionFindingCommentDeleted, ActionFindingDuplicateMarked, ActionFindingIssueUnlinked, ActionFindingBountyReportChanged,
 		ActionFindingRetestCheckSaved, ActionFindingRetestCheckRemoved, ActionFindingRetestCheckApproved,
-		ActionFindingsRefingerprinted, ActionFindingsEmailsMasked,
+		ActionFindingsRefingerprinted, ActionFindingsReclassified,
 		ActionFindingSeverityChanged, ActionFindingSeverityRequested, ActionFindingSeverityRequestClosed:
 		return "finding"
 	case ActionSavedViewCreated, ActionSavedViewUpdated, ActionSavedViewDeleted:
@@ -1125,7 +1133,7 @@ func (a Action) Category() string {
 		ActionToolActivated, ActionToolDeactivated, ActionToolConfigUpdated, ActionToolConfigDeleted:
 		return "tool"
 	case ActionScopeTargetCreated, ActionScopeTargetUpdated, ActionScopeTargetDeleted,
-		ActionScopeTargetActivated, ActionScopeTargetDeactivated,
+		ActionScopeTargetActivated, ActionScopeTargetDeactivated, ActionScopeTargetReplaced,
 		ActionScopeTargetSelfApproved, ActionScopeTargetApproversReminded,
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionScopeExclusionCreated, ActionScopeExclusionUpdated, ActionScopeExclusionDeleted,
@@ -1381,7 +1389,7 @@ func SeverityForAction(a Action) Severity {
 		ActionTemplateSourceCredentialAttached,
 		ActionScanWorkflowDeleted, ActionScanRunFailed, ActionScanRunCanceled,
 		// Widening what sensors scan, and the code they run.
-		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionEASMSeedCreated,
+		ActionScopeTargetCreated, ActionScopeTargetActivated, ActionScopeTargetReplaced, ActionEASMSeedCreated,
 		ActionScopeTargetApproved, ActionScopeSettingsUpdated, ActionScopeTargetSelfApproved, ActionScopeTargetT2Downgraded,
 		ActionBountyProgramImported, ActionBountyProgramTermsAccepted, ActionBountyProgramScopeReplaced,
 		ActionBountyProgramResumed, ActionScopeLetterUploaded, ActionScopeLetterRevoked,
@@ -1408,7 +1416,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleRun, ActionAssetMarkedStale, ActionAssetReactivated,
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
-		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged, ActionFindingsRefingerprinted, ActionFindingsEmailsMasked, ActionAssetsMerged,
+		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged, ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
 		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,

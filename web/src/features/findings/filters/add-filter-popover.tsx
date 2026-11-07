@@ -222,6 +222,32 @@ interface FieldEditorProps {
   onApply: (op: FilterOp, values: string[]) => void
 }
 
+/** How to write a value for fields with their own syntax (a domain, a name pattern). */
+function valueHint(
+  name: string,
+  t: ReturnType<typeof useTranslation>['t']
+): { placeholder: string; text: string } | undefined {
+  switch (name) {
+    case 'asset_domain':
+      return {
+        placeholder: t('findings.filter.placeholder.asset_domain', 'example.com, *.example.com'),
+        text: t(
+          'findings.filter.hint.asset_domain',
+          'example.com covers the domain and every asset under it: its names, the addresses they resolve to, services on them, certificates and web applications. *.example.com leaves the domain itself out. Shared CDN addresses never count.'
+        ),
+      }
+    case 'asset_name':
+      return {
+        placeholder: t('findings.filter.placeholder.asset_name', 'api-*, *.example.com'),
+        text: t(
+          'findings.filter.hint.asset_name',
+          '* matches any characters and ? one character. At most 3 wildcards, and at least 3 other characters in a row.'
+        ),
+      }
+  }
+  return undefined
+}
+
 function FieldEditor({ field, labels, onBack, onApply }: FieldEditorProps) {
   const { t } = useTranslation()
   const ops = editableOps(field)
@@ -379,6 +405,7 @@ function FieldEditor({ field, labels, onBack, onApply }: FieldEditorProps) {
     )
   } else {
     const numeric = field.type === 'number' || field.type === 'integer'
+    const hint = valueHint(field.name, t)
     const parsed = list
       ? text
           .split(',')
@@ -406,8 +433,15 @@ function FieldEditor({ field, labels, onBack, onApply }: FieldEditorProps) {
             maxLength={200}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            placeholder={hint ? hint.placeholder : undefined}
+            aria-describedby={hint ? 'filter-value-hint' : undefined}
             autoFocus
           />
+          {hint && (
+            <p id="filter-value-hint" className="text-xs text-muted-foreground">
+              {hint.text}
+            </p>
+          )}
         </div>
         <Button size="sm" type="submit" disabled={!validValues(field, op, parsed.filter(Boolean))}>
           {t('findings.filter.apply', 'Apply')}

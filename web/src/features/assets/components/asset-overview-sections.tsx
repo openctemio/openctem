@@ -73,13 +73,27 @@ interface RiskSummarySectionProps {
   asset: Asset
   /** Switches the sheet to its Findings tab. Omit to hide the link. */
   onViewFindings?: () => void
+  /**
+   * False when the subject is not an inventory asset (a credential leak row):
+   * there is no per-asset risk explanation to fetch, so "Why this score?" is
+   * not offered. Default true.
+   */
+  assetBacked?: boolean
 }
 
 /** Risk score plus the open-finding breakdown by severity. */
-export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySectionProps) {
+export function RiskSummarySection({
+  asset,
+  onViewFindings,
+  assetBacked = true,
+}: RiskSummarySectionProps) {
   const { t } = useTranslation()
   const counts = asset.findingSeverityCounts ?? {}
   const hasFindings = asset.findingCount > 0
+  // The strip and the count are one number: findings the breakdown does not
+  // place in a severity are named, never left as a silent gap.
+  const classified = Object.values(counts).reduce((sum, n) => sum + (n ?? 0), 0)
+  const unclassified = Math.max(0, asset.findingCount - classified)
   const state = riskScoreState(asset)
   const [showWhy, setShowWhy] = React.useState(false)
 
@@ -116,13 +130,24 @@ export function RiskSummarySection({ asset, onViewFindings }: RiskSummarySection
         </div>
       </div>
       {hasFindings ? (
-        <SeverityStrip counts={counts} className="mt-4" />
+        <>
+          <SeverityStrip counts={counts} className="mt-4" />
+          {unclassified > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t(
+                'assets.overview2.unclassified',
+                '{count} open without a severity in this breakdown.',
+                { count: unclassified }
+              )}
+            </p>
+          )}
+        </>
       ) : (
         <p className="mt-3 text-sm text-muted-foreground">
           {t('assets.overview2.noOpen', 'No open findings on this asset.')}
         </p>
       )}
-      {state !== 'unscored' && state !== 'calculating' && (
+      {assetBacked && state !== 'unscored' && state !== 'calculating' && (
         <div className="mt-3">
           <Button
             variant="link"

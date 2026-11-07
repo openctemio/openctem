@@ -125,8 +125,11 @@ const (
 	MaxQLen           = 255
 	MaxBodyBytes      = 32 << 10
 	MaxSortKeys       = 5
-	MaxErrorDetails   = 20
-	DefaultMaxOffset  = 10000
+	// MaxExpensiveLeaves caps the pattern and contains leaves of one filter
+	// (Field.Expensive): more is refused with a reason, not run slowly.
+	MaxExpensiveLeaves = 2
+	MaxErrorDetails    = 20
+	DefaultMaxOffset   = 10000
 )
 
 // Field is one filterable (and optionally sortable) field of a resource.
@@ -181,6 +184,21 @@ type Field struct {
 	// FreeText marks a value that is user free text (contains): never
 	// echoed in errors and never split on commas.
 	FreeText bool
+	// Normalize, for a TypeString field, validates and canonicalises each
+	// value when it is parsed (lower case, IDNA, a syntax check). Its error
+	// text is the reason the request is refused; it must not quote the value.
+	Normalize func(v string) (string, error)
+	// Expand, for a TypeString field with in or not_in, maps one parsed value
+	// to the values bound for it (a domain "x" binds the keys "x" and "*.x").
+	// Constants derived from the value only; the result is still bound.
+	Expand func(v string) []string
+	// Doc, when set, replaces the field name in the generated OpenAPI
+	// parameter description ("asset domain (x: x and names under it)").
+	Doc string
+	// Expensive marks a field whose leaf costs more than an index lookup (a
+	// pattern match, a join through another table). A filter takes at most
+	// MaxExpensiveLeaves of them, contains leaves included.
+	Expensive bool
 }
 
 func (f *Field) allows(op Op) bool {
@@ -323,6 +341,9 @@ func validateField(f *Field) error {
 	}
 	if len(f.Ops) == 0 && !f.Sortable {
 		return fmt.Errorf("field %q: no operators and not sortable", f.Name)
+	}
+	if (f.Normalize != nil || f.Expand != nil) && f.Type != TypeString {
+		return fmt.Errorf("field %q: Normalize and Expand need a string field", f.Name)
 	}
 	if f.Type == TypeEnum && len(f.Enum) == 0 {
 		return fmt.Errorf("field %q: enum field without Enum", f.Name)
@@ -591,7 +612,7 @@ func (r *Registry) Describe(has func(permission string) bool) Description {
 			"leaves": MaxLeaves, "depth": MaxDepth, "values": MaxValues,
 			"values_document": MaxValuesDocument, "value_length": MaxValueLen,
 			"q_length": MaxQLen, "body_bytes": MaxBodyBytes, "sort_keys": MaxSortKeys,
-			"max_offset": DefaultMaxOffset,
+			"max_offset": DefaultMaxOffset, "expensive_leaves": MaxExpensiveLeaves,
 		},
 	}
 	if r.Search != nil {

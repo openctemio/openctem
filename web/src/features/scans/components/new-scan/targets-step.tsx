@@ -39,6 +39,7 @@ import {
   parsePastedTargets,
   withoutTargets,
   replaceEntryInLines,
+  targetReasonText,
   isRefusedKind,
   TARGET_KIND_LABELS,
   targetKey,
@@ -72,7 +73,9 @@ import { useScanWorkflow } from '@/lib/api/scan-workflow-hooks'
 import { TargetChipsField, type TargetChip } from './target-chips-field'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
 import { TargetList } from './target-list'
+import { InvalidTargetsNote } from './invalid-targets-note'
 import { BulkTargetsPanel } from './bulk-targets-panel'
+import { CoreInfraWarning } from './core-infra-warning'
 
 /** Typed targets shown as chips; past this they move to the list. */
 export const CHIP_LIMIT = 20
@@ -264,7 +267,7 @@ export function TargetsStep({
                 key: `i:${i}:${entry.input}`,
                 label: entry.input,
                 kind: 'invalid' as const,
-                title: entry.reasonKey ? t(entry.reasonKey, entry.reason) : entry.reason,
+                title: targetReasonText(t, entry),
                 onRemove: () => removeTyped(entry.input),
               }
             : {
@@ -431,17 +434,10 @@ export function TargetsStep({
         <p id={`${fieldId}-help`} className="text-xs text-muted-foreground">
           {t('scans.targetsStep.help')}
         </p>
-        {pasted.invalid.length > 0 && (
-          <p role="alert" className="text-xs text-destructive">
-            {t(
-              pasted.invalid.length === 1
-                ? 'scans.summary.invalidOne'
-                : 'scans.summary.invalidMany',
-              undefined,
-              { count: pasted.invalid.length }
-            )}
-          </p>
-        )}
+        <InvalidTargetsNote
+          entries={pasted.invalid}
+          onSplit={(entry, pieces) => replaceTyped(entry, pieces.join(', '))}
+        />
         {over && (
           <p role="alert" className="text-xs text-destructive">
             {t('scans.summary.tooMany', undefined, {
@@ -560,6 +556,7 @@ export function TargetsStep({
             groupCount={targets.assetGroupIds.length}
           />
         )}
+        <CoreInfraWarning targets={sent} />
         {readiness.state === 'partial' && (
           <p className="text-xs text-muted-foreground">
             {t('scans.targetsStep.partial', undefined, {

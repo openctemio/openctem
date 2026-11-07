@@ -22,6 +22,7 @@
     - AssetPurgeController
     - AssetRiskScoreController
     - AssetRiskReconcileController
+    - AssetDomainMembershipController
     - OwnerResolutionController
     - DataExpirationController
     - DomainReverifyController
