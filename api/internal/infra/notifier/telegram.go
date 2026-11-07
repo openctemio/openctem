@@ -142,6 +142,17 @@ func (c *TelegramClient) TestConnection(ctx context.Context) (*SendResult, error
 
 // buildMessage builds a Telegram message from the notification message.
 func (c *TelegramClient) buildMessage(msg Message) telegramSendMessageRequest {
+	if msg.Card != nil {
+		req := telegramSendMessageRequest{
+			ChatID: c.chatID, Text: telegramCard(*msg.Card), ParseMode: "HTML", DisableWebPagePreview: true,
+		}
+		if msg.Card.Action.URL != "" {
+			req.ReplyMarkup = &telegramInlineKeyboardMarkup{InlineKeyboard: [][]telegramInlineKeyboardButton{
+				{{Text: msg.Card.Action.Label, URL: msg.Card.Action.URL}},
+			}}
+		}
+		return req
+	}
 	emoji := GetSeverityEmoji(msg.Severity)
 
 	var sb strings.Builder
