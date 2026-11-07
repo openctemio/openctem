@@ -7,7 +7,7 @@ package asset
 
 // RegistryVersion identifies this registry. It changes whenever the
 // registry content changes.
-const RegistryVersion = "76a92d92598bc027"
+const RegistryVersion = "f59b17dd6da3d90d"
 
 // Lenses.
 const (
@@ -306,8 +306,11 @@ var registryTypes = []TypeDefinition{
 			{Name: "is_auth_required", Kind: "bool", Facet: true},
 			{Name: "has_anonymous_access", Kind: "bool", Facet: true},
 			{Name: "response_time_ms", Kind: "int"},
+			{Name: "observed_from", Kind: "enum", Values: []string{"host", "network"}, Facet: true},
+			{Name: "bind_address", Kind: "string"},
+			{Name: "process", Kind: "string"},
 		},
-		Facets:   []string{"service.service_kind", "service.service_category", "service.kind_source", "service.port", "service.protocol", "service.transport", "service.product", "service.state", "service.has_tls", "service.tls_version", "service.is_auth_required", "service.has_anonymous_access"},
+		Facets:   []string{"service.service_kind", "service.service_category", "service.kind_source", "service.port", "service.protocol", "service.transport", "service.product", "service.state", "service.has_tls", "service.tls_version", "service.is_auth_required", "service.has_anonymous_access", "service.observed_from"},
 		GroupBy:  []string{"service.service_kind", "service.service_category", "service.port", "service.protocol", "service.product"},
 		Columns:  []string{"name", "port", "service_kind", "product", "findings.open", "last_seen"},
 		Card:     "service",
@@ -393,6 +396,7 @@ var registryTypes = []TypeDefinition{
 		ScannableBy: []string{"url", "service", "port"},
 		Coverage: []CoverageRule{
 			{Capability: "vuln.templates", EverySeconds: 604800, Requires: []string{"no_named_twin"}},
+			{Capability: "enumerate.web_paths", EverySeconds: 2592000, Requires: []string{"origin_scope_entry", "inventory_changed", "edge_clear"}},
 			{Capability: "capture.screenshot", EverySeconds: 2592000, Requires: []string{"no_named_twin"}},
 		},
 	},
@@ -1602,6 +1606,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "backup_retention_days", Label: "Backup retention (days)", LabelVI: "Lưu bản sao lưu (ngày)"},
 	{Key: "banner", Label: "Banner", LabelVI: "Banner", Format: "code", Classes: []Class{ClassService}},
 	{Key: "base_url", Label: "Base URL", LabelVI: "URL gốc", Format: "url"},
+	{Key: "bind_address", Label: "Bind address", LabelVI: "Địa chỉ lắng nghe", Classes: []Class{ClassService}},
 	{Key: "bucket_name", Label: "Bucket", LabelVI: "Bucket"},
 	{Key: "business_impact_notes", Label: "Business impact notes", LabelVI: "Ghi chú tác động nghiệp vụ"},
 	{Key: "business_impact_score", Label: "Business impact score", LabelVI: "Điểm tác động nghiệp vụ"},
@@ -1732,6 +1737,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "node_count", Label: "Nodes", LabelVI: "Số node"},
 	{Key: "not_after", Label: "Valid until", LabelVI: "Hiệu lực đến", Format: "expiry"},
 	{Key: "not_before", Label: "Valid from", LabelVI: "Hiệu lực từ"},
+	{Key: "observed_from", Label: "Observed from", LabelVI: "Quan sát từ", Classes: []Class{ClassService}},
 	{Key: "open_port_count", Label: "Open ports", LabelVI: "Số cổng mở"},
 	{Key: "organization_id", Label: "Organization ID", LabelVI: "ID tổ chức", Format: "code"},
 	{Key: "os_family", Label: "OS family", LabelVI: "Họ hệ điều hành"},
@@ -1748,6 +1754,7 @@ var registryProperties = []PropertyDefinition{
 	{Key: "ports", Label: "Ports", LabelVI: "Các cổng"},
 	{Key: "principal_id", Label: "Principal ID", LabelVI: "ID principal", Format: "code"},
 	{Key: "private_ip", Label: "Private IP", LabelVI: "IP nội bộ", Format: "ip"},
+	{Key: "process", Label: "Listening process", LabelVI: "Tiến trình lắng nghe", Classes: []Class{ClassService}},
 	{Key: "product", Label: "Product", LabelVI: "Sản phẩm"},
 	{Key: "protocol", Label: "Protocol", LabelVI: "Giao thức"},
 	{Key: "provider", Label: "Provider", LabelVI: "Nhà cung cấp"},

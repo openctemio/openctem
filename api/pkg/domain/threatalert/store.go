@@ -138,14 +138,18 @@ type ListFilter struct {
 	States       []State
 	Tier         Tier
 	InternetOnly bool
-	Search       string
-	Page         int
-	PerPage      int
+	// KEVOnly keeps the alerts whose vulnerability is known exploited.
+	KEVOnly bool
+	Search  string
+	Page    int
+	PerPage int
 }
 
 // Summary counts the open alerts a viewer sees.
 type Summary struct {
-	Open           int `json:"open"`
+	Open int `json:"open"`
+	// New counts the open alerts nobody triaged yet (state new).
+	New            int `json:"new"`
 	Immediate      int `json:"immediate"`
 	Digest         int `json:"digest"`
 	Listed         int `json:"listed"`

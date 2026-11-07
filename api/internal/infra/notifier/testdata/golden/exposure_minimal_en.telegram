@@ -1,0 +1,16 @@
+{
+  "chat_id": "42",
+  "text": "🟠 \u003cb\u003eNew exposure\u003c/b\u003e\n\u003cb\u003eSeverity:\u003c/b\u003e High\n\u003cb\u003eNext step:\u003c/b\u003e Open it in the console to triage.\n\u003cb\u003eOrganization:\u003c/b\u003e Example Corp",
+  "parse_mode": "HTML",
+  "disable_web_page_preview": true,
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "Open exposure",
+          "url": "https://ctem.example.com/exposures"
+        }
+      ]
+    ]
+  }
+}

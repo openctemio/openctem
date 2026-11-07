@@ -2,7 +2,8 @@
 
 /**
  * Edit a scope entry (RFC-054 §6.1, PUT /scope/targets/{id}). Type and
- * pattern identify the entry and never change. A later or removed expiry, or
+ * pattern identify the entry and are never edited in place: "Replace pattern"
+ * (scope-replace-pattern.tsx) puts a new entry in its place. A later or removed expiry, or
  * a higher tier, widens it: that needs a scope approver and step-up, and the
  * entry may go back to "pending" until it is approved again, authorizing
  * nothing meanwhile. The dialog says so before the click.
@@ -49,6 +50,7 @@ import {
   type DurationPolicy,
 } from '../lib/scope-entry'
 import { ScopeDurationField } from './scope-duration-field'
+import { canReplacePattern, ScopeReplacePattern } from './scope-replace-pattern'
 
 const TIER_RANK: Record<string, number> = { t0: 0, t1: 1, t2: 2 }
 
@@ -155,10 +157,15 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
           <DialogTitle>{t('scope.edit.title', 'Edit scope entry')}</DialogTitle>
           <DialogDescription>
             <code className="break-all">{entry.pattern}</code>: {coversText(entry)}.{' '}
-            {t(
-              'scope.edit.desc',
-              'Type and pattern cannot change; remove the entry and add a new one instead.'
-            )}
+            {canReplacePattern(entry)
+              ? t(
+                  'scope.edit.descReplace',
+                  'The type stays. To correct the pattern, use Replace pattern below.'
+                )
+              : t(
+                  'scope.edit.desc',
+                  'Type and pattern cannot change; remove the entry and add a new one instead.'
+                )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -259,6 +266,15 @@ export function ScopeEntryEditDialog({ entry, onOpenChange }: ScopeEntryEditDial
               </p>
             )}
           </form>
+          {canReplacePattern(entry) && (
+            <div className="mt-4">
+              <ScopeReplacePattern
+                entry={entry}
+                disabled={saving}
+                onReplaced={() => onOpenChange(false)}
+              />
+            </div>
+          )}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>

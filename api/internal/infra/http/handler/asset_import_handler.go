@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,7 @@ type AssetImportHandler struct {
 	service      *asset.AssetImportService
 	logger       *logger.Logger
 	auditService *auditapp.AuditService
+	tagGovernor  TagGovernor
 }
 
 // SetAuditService wires the audit logger: every import records who imported
@@ -75,7 +77,14 @@ func (h *AssetImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, MaxAssetCSVImportBody)
 
-	result, err := h.service.ImportCSVAssets(r.Context(), tenantID, r.Body)
+	// A row that sets a tag a rule reads needs the permission of that rule.
+	guard := func(tags []string) error {
+		if _, refusal := checkTagChange(r.Context(), h.tagGovernor, tenantID, nil, tags); refusal != nil {
+			return fmt.Errorf("%s", refusal.message)
+		}
+		return nil
+	}
+	result, err := h.service.ImportCSVAssetsGuarded(r.Context(), tenantID, r.Body, guard)
 	if err != nil {
 		if strings.Contains(err.Error(), "validation") {
 			apierror.BadRequest(err.Error()).WriteJSON(w)

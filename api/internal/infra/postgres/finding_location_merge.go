@@ -698,8 +698,10 @@ func journalRef(ctx context.Context, tx *sql.Tx, ref mergeRef, tenant, survivorI
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(pk) == 0 {
-		return nil, nil, fmt.Errorf("location merge: %s has no primary key", ref.table)
+	// A table without a primary key is identified by its whole row (less the
+	// moved column), which its unique merge key keeps distinct.
+	if len(pk) == 0 && len(ref.keys) == 0 {
+		return nil, nil, fmt.Errorf("location merge: %s has no primary key and no unique key", ref.table)
 	}
 	scope, kScope := "", ""
 	args := []any{loserID, survivorID}

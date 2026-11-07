@@ -13,6 +13,7 @@ import (
 	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -125,6 +126,12 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 	}
 	for k, v := range event.Metadata {
 		log.WithMetadata(k, v)
+	}
+	// The re-verification rule that admitted the action in this request
+	// (tier, mode, window), the strictest when several gates ran. Stamped
+	// after the event metadata so it cannot be overwritten.
+	if applied, ok := stepup.StateFrom(ctx).Strictest(); ok {
+		log.WithMetadata("step_up", applied)
 	}
 	// Attribute the action to the API key that performed it (the actor is the
 	// key's user). Stamped after the event metadata so it cannot be overwritten.

@@ -237,16 +237,18 @@ func TestImportFile_RealFixtures(t *testing.T) {
 			}
 			svc, ing, _ := newSvc(ingest.SourceResolveDryRun)
 			req := Request{TenantID: shared.NewID(), SessionID: "s"}
-			// A CSV is read only when the format is named (it has no
-			// signature to detect).
-			if strings.HasSuffix(base, ".csv") {
+			// A CSV or a line list is read only when the format is named
+			// (it has no signature to detect).
+			if strings.HasSuffix(base, ".csv") || strings.HasSuffix(base, ".txt") {
 				req.Format = importer.Format(filepath.Base(filepath.Dir(p)))
 			}
 			fr := svc.ImportFile(context.Background(), req, 0, base, f, kb)
 			if fr.Error != nil {
 				t.Fatalf("%+v", fr.Error)
 			}
-			if fr.Stats.Findings+fr.Stats.Components+fr.Stats.Statements == 0 {
+			// An inventory format (nmap, ffuf, arjun, lines) imports
+			// assets and endpoints only.
+			if fr.Stats.Findings+fr.Stats.Components+fr.Stats.Statements+fr.Stats.Assets+fr.Stats.Endpoints == 0 {
 				t.Fatal("fixture imported nothing")
 			}
 			for _, in := range ing.calls {

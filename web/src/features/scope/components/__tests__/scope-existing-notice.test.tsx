@@ -250,3 +250,31 @@ describe('ScopeExclusionDialog on a duplicate', () => {
     )
   })
 })
+
+describe('ScopeExclusionDialog closing critical findings', () => {
+  it('a 409 for critical, P0 or KEV findings asks for the confirm and resends with it', async () => {
+    serve(open)
+    api.post.mockRejectedValueOnce(
+      Object.assign(new Error('closes critical'), {
+        code: 'EXCLUSION_CLOSES_CRITICAL_FINDINGS',
+        statusCode: 409,
+        details: { critical_findings: 2 },
+      })
+    )
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ScopeExclusionDialog open onOpenChange={onOpenChange} />)
+    await user.type(await screen.findByLabelText('What'), 'sold.example.com')
+    await user.type(screen.getByLabelText(/Reason/), 'sold')
+    const submit = screen.getByRole('button', { name: /exclusion|out of scope/i })
+    await user.click(submit)
+    expect(await screen.findByTestId('exclusion-critical')).toHaveTextContent('This closes 2 open')
+    expect(submit).toBeDisabled()
+    await user.click(screen.getByTestId('exclusion-critical-confirm'))
+    api.post.mockResolvedValueOnce({ id: 'x9', status: 'active' })
+    await user.click(submit)
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+    expect(api.post.mock.calls.at(-1)?.[1]).toMatchObject({ confirm_critical: true })
+    expect(api.post.mock.calls[0]?.[1]).not.toHaveProperty('confirm_critical')
+  })
+})

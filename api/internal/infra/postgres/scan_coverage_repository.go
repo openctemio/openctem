@@ -64,7 +64,9 @@ func (r *ScanCoverageRepository) ListCandidates(ctx context.Context, tenantID sh
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1
 		  AND a.status = 'active'
 		  AND a.asset_type = ANY($2)
-		ORDER BY c.last_attempt_at ASC NULLS FIRST, a.criticality DESC
+		ORDER BY c.last_attempt_at ASC NULLS FIRST,
+		         CASE lower(a.criticality) WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2
+		              WHEN 'low' THEN 1 ELSE 0 END DESC
 		LIMIT $3`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(coverageAssetTypes), limit)

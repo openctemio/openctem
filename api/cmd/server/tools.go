@@ -6,6 +6,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/tools/assetcanoncmd"
 	"github.com/openctemio/openctem/api/internal/tools/bootstrapadmin"
 	"github.com/openctemio/openctem/api/internal/tools/citrustscopeplan"
+	"github.com/openctemio/openctem/api/internal/tools/receiptreattribute"
 	"github.com/openctemio/openctem/api/internal/tools/refingerprintcmd"
 	"github.com/openctemio/openctem/api/internal/tools/repomerge"
 )
@@ -23,6 +24,7 @@ var tools = map[string]func(){
 	"refingerprint":       refingerprintcmd.Main,
 	"repomerge":           repomerge.Main,
 	"ci-trust-scope-plan": citrustscopeplan.Main,
+	"receipt-reattribute": receiptreattribute.Main,
 }
 
 // toolFor returns the command named by argv0, or nil for the server.

@@ -178,6 +178,13 @@ export const SCOPE_ERROR_TEXT = {
   ENTRY_NOT_PENDING: 'This entry is not waiting for approval any more.',
   ENTRY_EXPIRED: 'This entry expired. Renew it with a new expiry instead.',
   ENTRY_REJECTED: 'This entry was rejected. Create a new one if it is still needed.',
+  ENTRY_SUPERSEDED: 'This entry was replaced by a new entry. Change the new entry instead.',
+  ENTRY_NOT_REPLACEABLE:
+    'Only an entry in effect can have its pattern replaced. Remove this one and add a new entry instead.',
+  REPLACEMENT_PENDING:
+    'A replacement of this entry is already waiting for approval. Approve, reject or delete it first.',
+  REPLACE_SAME_PATTERN: 'The new pattern is the same as the current one.',
+  REPLACE_REASON_REQUIRED: 'Say why the pattern changes. The reason is kept in the audit log.',
   STEP_UP_REQUIRED: 'Confirm your identity to make this change.',
   STEP_UP_UNAVAILABLE:
     'This change needs you to confirm your identity, and your account has no way to do that here. Sign out and sign in again, then retry.',

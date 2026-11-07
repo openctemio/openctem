@@ -20,7 +20,7 @@ func registerFindingLifecycleRoutes(router Router, h *handler.FindingLifecycleHa
 		r.GET("/", h.ListSubStatuses, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.CreateSubStatus, middleware.Require(permission.FindingsLifecyclesWrite))
 		r.PATCH("/{id}", h.UpdateSubStatus, middleware.Require(permission.FindingsLifecyclesWrite))
-		r.DELETE("/{id}", h.ArchiveSubStatus, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUp())
+		r.DELETE("/{id}", h.ArchiveSubStatus, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUpSensitive())
 		r.POST("/{id}/reactivate", h.ReactivateSubStatus, middleware.Require(permission.FindingsLifecyclesWrite))
 	}, tenantMiddlewares...)
 
@@ -30,12 +30,12 @@ func registerFindingLifecycleRoutes(router Router, h *handler.FindingLifecycleHa
 		r.GET("/{id}/versions", h.ListLifecycleVersions, middleware.Require(permission.FindingsRead))
 		r.GET("/{id}/versions/{version_id}", h.GetLifecycleVersion, middleware.Require(permission.FindingsRead))
 		r.POST("/", h.CreateLifecycle, middleware.Require(permission.FindingsLifecyclesWrite))
-		r.PATCH("/{id}", h.UpdateLifecycle, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUp())
-		r.DELETE("/{id}", h.ArchiveLifecycle, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUp())
+		r.PATCH("/{id}", h.UpdateLifecycle, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUpSensitive())
+		r.DELETE("/{id}", h.ArchiveLifecycle, middleware.Require(permission.FindingsLifecyclesWrite), requireStepUpSensitive())
 		r.POST("/{id}/versions", h.CreateLifecycleDraft, middleware.Require(permission.FindingsLifecyclesWrite))
 		r.PUT("/{id}/versions/{version_id}", h.UpdateLifecycleDraft, middleware.Require(permission.FindingsLifecyclesWrite))
 		r.POST("/{id}/versions/{version_id}/test", h.TestLifecycleVersion, middleware.Require(permission.FindingsLifecyclesWrite))
 		r.POST("/{id}/versions/{version_id}/publish", h.PublishLifecycleVersion,
-			middleware.Require(permission.FindingsLifecyclesWrite), requireStepUp())
+			middleware.Require(permission.FindingsLifecyclesWrite), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }

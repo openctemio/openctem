@@ -135,6 +135,11 @@ var assetMergeRefs = []mergeRef{
 	// asset themselves (asset_id trigger).
 	{table: "finding_priority_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// The path discovery ledger (one row per web origin): the kept origin's
+	// row wins; a merged origin's row moves when the kept one has none, so
+	// the per-origin request cap survives the merge.
+	{table: "web_path_discovery_runs", column: "origin_asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
 	{table: "asset_group_members", column: "asset_id", idCol: "ctid",
@@ -198,6 +203,11 @@ var assetMergeRefs = []mergeRef{
 	// moves.
 	{table: "asset_coverage", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"capability", "vantage"}}}},
+	// Asset liveness (docs/architecture/asset-liveness.md): one row per
+	// asset; the kept asset's evidence wins, a merged asset's row moves only
+	// when the kept one has none.
+	{table: "asset_liveness", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	// Scan stage chaining (research/27 P0-3): what a step produced follows
 	// the asset (one row per step run and asset), and a run's target
 	// provenance names the kept asset.
@@ -228,6 +238,8 @@ var assetMergeSpecialRefs = map[string]string{
 	"asset_dedup_review.keep_asset_id":         "other pending reviews about a merged asset are dropped",
 	"asset_dedup_review.merge_asset_ids":       "other pending reviews about a merged asset are dropped",
 	"asset_attributions.asset_id":              "the kept asset keeps the most recent human decision of any merged asset; automatic records of merged assets are dropped (the moved evidence re-derives them)",
+	"asset_domain_memberships.asset_id":        "derived: the merged asset's rows are deleted and the kept asset is queued so the worker recomputes its rows",
+	"asset_domain_queue.asset_id":              "the merged asset's queue rows are deleted and the kept asset is queued",
 	"asset_attributions.follows_host_id":       "children of a merged host follow the kept asset (the kept asset itself follows nobody it absorbed)",
 }
 
@@ -289,7 +301,28 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	if err := repointNonFKRefs(ctx, tx, tenantID, reviewID, keepID, mergeIDs); err != nil {
 		return err
 	}
+	if err := mergeDomainMembership(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
 	return mergeDashboardFacts(ctx, tx, tenantID, keepID, mergeIDs)
+}
+
+// mergeDomainMembership drops the merged assets' domain memberships and queue
+// rows (derived data, recomputed by the asset-domain-membership worker) and
+// queues the kept asset, which now holds the merged assets' edges.
+func mergeDomainMembership(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	for _, table := range []string{"asset_domain_memberships", "asset_domain_queue"} {
+		//nolint:gosec // G201: table names come from the fixed list above.
+		q := fmt.Sprintf(`DELETE FROM %s WHERE tenant_id = $1 AND asset_id = ANY($2)`, table)
+		if _, err := tx.ExecContext(ctx, q, tenantID, pq.Array(mergeIDs)); err != nil {
+			return fmt.Errorf("merge domain membership (%s): %w", table, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_domain_queue (asset_id, tenant_id) VALUES ($1, $2)
+		ON CONFLICT (asset_id) DO NOTHING`, keepID, tenantID); err != nil {
+		return fmt.Errorf("queue kept asset for domain membership: %w", err)
+	}
+	return nil
 }
 
 // mergeDashboardFacts drops the merged assets' dashboard facts and change

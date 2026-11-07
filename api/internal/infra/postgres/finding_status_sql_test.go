@@ -63,6 +63,7 @@ var findingStatusWriters = map[string]int{
 	"finding_coverage_autoresolve.go":        2, // autoResolveFromSQL
 	"finding_closure_proposal_repository.go": 2, // confirm: open -> resolved (proposalEligibleSQL, under lock); reopen of an auto-closed finding (auto_fixed only)
 	"finding_import_coverage.go":             1, // autoResolveFromSQL (full-coverage upload)
+	"finding_import_file_coverage.go":        2, // autoResolveFromSQL (a scan file's own coverage; a passed compliance check)
 	"finding_group_repository.go":            1, // UserFromStatuses($6)
 	"finding_location_merge.go":              4, // location merge: fixed survivor reopens (guarded by status), survivor raised to the strongest open status of the group, loser -> duplicate, -down restores the journaled status
 	"finding_material_change.go":             1, // false_positive -> confirmed when the approved fields changed (guarded by status under lock)
@@ -71,10 +72,12 @@ var findingStatusWriters = map[string]int{
 	"finding_repository.go":                  3, // entity Update; UpdateStatusBatch ($7); scan reopen batch
 	"finding_retest_repository.go":           2, // moveFindingInTx checks the lifecycle
 	"scope_effects_repository.go":            2, // out-of-scope close (scopeEffectsOpenStatuses: published, still needing action) and the reopen back in scope (resolved -> the status it had; guarded by closure_reason); both record a transition
+	"asset_liveness_repository.go":           2, // gone close (livenessOpenStatuses: published, still needing action) and the reopen when no longer gone (resolved -> the status it had; guarded by closure_reason and the last close being the pass's); both record a transition
 	"softwarematch_repository.go":            1, // regressionReopenFromSQL (reopen); the matcher close builds its SET from autoResolveFromSQL, vexFalsePositiveFromSQL (stale is observation_state)
 	"suppression_apply.go":                   1, // suppressionApplyFrom (SuppressionApplyFromStatuses)
 	"suppression_repository.go":              2, // suppressionRelinkFromSQL, suppressionLiftFromSQL
 	"license_policy_repository.go":           2, // autoResolveFromSQL (policy no longer flags), fixedReopenFromSQL (flags again)
+	"info_reclassify_repository.go":          2, // move an informational template match to an exposure: open -> resolved(reclassified_exposure) guarded by autoResolveFromSQL; undo: resolved(reclassified_exposure) -> the timeline status, guarded by the closure reason
 	"vex_statement_repository.go":            1, // per-row move decided by vex.Decide (lifecycle edges, TestDecideFollowsLifecycle), guarded by the old status
 }
 

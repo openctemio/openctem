@@ -1,6 +1,7 @@
 'use client'
 
 import { RunReceiptSection } from '@/features/findings/components/receipt-summary'
+import { seenByFindingsHref } from '@/features/findings/api/receipts-api'
 import { IntensityBadge } from './intensity-badge'
 import dynamic from 'next/dynamic'
 import { useTranslation } from '@/context/i18n-provider'
@@ -260,6 +261,16 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                 </Link>
               </p>
             )}
+
+            <p className="text-sm">
+              <Link
+                href={seenByFindingsHref('seen_in_run_id', run.id)}
+                className="font-medium underline-offset-2 hover:underline"
+                data-testid="run-reported-findings"
+              >
+                {t('scans.runDetail.reportedFindings', 'Findings this run reported')}
+              </Link>
+            </p>
 
             <DetailStatGrid aria-label={t('scans.runDetail.keyNumbers')}>
               <DetailStat label={t('scans.runDetail.findings')} value={run.total_findings} />

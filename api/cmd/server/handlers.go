@@ -280,6 +280,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
+	assetHandler.SetTagGovernor(svc.TagGovernor)
 	assetHandler.SetRiskGovernance(svc.AssetRiskGovernance)
 
 	// Command handler with scan run service wired
@@ -287,11 +288,24 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	platformCA := newPlatformCASource(cfg, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetPlatformCA(platformCA)
+	if svc.SensorPairing != nil && platformCA.Configured() {
+		// The signed pairing grant names the platform's TLS roots, so a
+		// sensor refuses a pairing connection that verified another one.
+		svc.SensorPairing.SetTLSAnchors(func() []string {
+			ca, err := platformCA.Get()
+			if err != nil {
+				return nil
+			}
+			return ca.TLSAnchors(time.Now())
+		})
+	}
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
 		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
 	})
 	sensorHandler.SetGrantService(svc.SensorGrant)
+	sensorHandler.SetReadiness(sensor.NewReadinessService(svc.Sensor, repos.SensorGrant, repos.ScanZone,
+		sensor.ScopeByStatus{Repo: repos.ScopeTarget}))
 	if svc.JobSigner != nil {
 		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
 	}
@@ -922,7 +936,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant).WithAudit(svc.Audit),
 		VerificationChecklist: newVerificationChecklistHandler(deps.DB.DB, log, svc),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
@@ -975,6 +989,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
 	// Program asset flags on asset responses (RFC-065 §16.5).
 	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
+	handlers.Asset.SetLiveness(postgres.NewAssetLivenessRepository(deps.DB))
 	if svc.ActiveGate != nil {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
@@ -1333,7 +1348,7 @@ func InitLocalAuthHandler(
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
 			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
-				Checker: handlers.LocalAuth.RecentAuthChecker(), Window: authapp.StepUpWindow,
+				Checker: handlers.LocalAuth.RecentAuthChecker(), Policies: routes.NewStepUpPolicyProvider(repos.Tenant),
 			})
 		}
 	}
@@ -1345,12 +1360,12 @@ func InitLocalAuthHandler(
 // (docs/architecture/step-up-reauth.md). Without local auth there is no
 // session store: platform sessions then cannot step up (fail closed) and
 // external provider tokens are judged by their auth_time.
-func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
+func wireStepUpGate(handlers *routes.Handlers, svc *Services, policies middleware.StepUpPolicyProvider) {
 	var checker middleware.RecentAuthChecker
 	if handlers.LocalAuth != nil {
 		checker = handlers.LocalAuth.RecentAuthChecker()
 	}
-	gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+	gate := middleware.RecentAuthGate{Checker: checker, Policies: policies}
 	if svc.Role != nil {
 		svc.Role.SetStepUpGate(gate)
 	}
@@ -1699,8 +1714,12 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 		// against the caller's own card, applied through the scope, review
 		// and network seed services.
 		if svc.Scope != nil && svc.EASMNetworkSeeds != nil && repos.EASMDeclinedNetwork != nil {
-			h.SetAddressDecisions(easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
-				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log)))
+			decisions := easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
+				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log))
+			// "Retry" makes an address's network lookup due again; a
+			// sensor runs it (the platform looks nothing up).
+			decisions.SetLookupQueue(repos.Attribution)
+			h.SetAddressDecisions(decisions)
 		}
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
@@ -1736,6 +1755,10 @@ func newEASMSuggestions(repos *Repositories, svc *Services) *easmapp.SuggestionS
 	// Networks the organization answered "not ours" are not offered again.
 	if repos.EASMDeclinedNetwork != nil {
 		suggestions.SetDeclined(repos.EASMDeclinedNetwork)
+	}
+	// The summary counts the addresses that joined scope automatically.
+	if repos.EASMAddressAutoAdd != nil {
+		suggestions.SetAutoAdded(repos.EASMAddressAutoAdd)
 	}
 	// The organization's address setting in force (never hides the card;
 	// Strict scan approval turns automatic adds into ask).
@@ -1872,6 +1895,7 @@ func newConfirmScope(repos *Repositories, svc *Services) *easmapp.ConfirmScope {
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
 	h := handler.NewAssetImportHandler(svc.AssetImport, log)
 	h.SetAuditService(svc.Audit)
+	h.SetTagGovernor(svc.TagGovernor)
 	return h
 }
 

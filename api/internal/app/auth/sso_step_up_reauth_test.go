@@ -165,3 +165,7 @@ func TestSSOReauth_FlagIsSigned(t *testing.T) {
 		t.Fatal("an ordinary state reads as a re-authentication")
 	}
 }
+
+func (*stampSessionRepo) SpendRecentAuth(context.Context, shared.ID, shared.ID, time.Time) (bool, error) {
+	return false, nil
+}

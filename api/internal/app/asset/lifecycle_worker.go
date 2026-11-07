@@ -9,6 +9,7 @@ import (
 	"github.com/lib/pq"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	livenessapp "github.com/openctemio/openctem/api/internal/app/liveness"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
@@ -28,6 +29,7 @@ type AssetLifecycleWorker struct {
 	tenantRepo   tenant.Repository
 	auditService *auditapp.AuditService
 	stateHistory assetdom.StateHistoryRepository
+	liveness     LivenessPreviewer
 	logger       *logger.Logger
 }
 
@@ -48,6 +50,15 @@ func NewAssetLifecycleWorker(db *sql.DB, tenantRepo tenant.Repository, log *logg
 // can trace exactly when and how many assets the automation demoted.
 // Optional: leave nil in tests that don't want to assert audit side
 // effects.
+// LivenessPreviewer is the asset liveness dry run (*liveness.Service).
+type LivenessPreviewer interface {
+	Preview(ctx context.Context, tenantID shared.ID) (livenessapp.DryRun, error)
+}
+
+// SetLivenessPreview adds the asset liveness dry run to every dry-run
+// report.
+func (w *AssetLifecycleWorker) SetLivenessPreview(p LivenessPreviewer) { w.liveness = p }
+
 func (w *AssetLifecycleWorker) SetAuditService(svc *auditapp.AuditService) {
 	w.auditService = svc
 }
@@ -116,6 +127,10 @@ type LifecycleRunReport struct {
 	// Capped list of asset IDs that transitioned. Bounded so the
 	// audit row does not blow up under first-enable mass transitions.
 	AffectedAssetIDs []string `json:"affected_asset_ids,omitempty"`
+	// Liveness is what the asset liveness pass would do now (dry run only):
+	// assets per liveness state, findings it would close as obsolete and
+	// reopen (docs/architecture/asset-liveness.md).
+	Liveness *livenessapp.DryRun `json:"liveness,omitempty"`
 }
 
 // maxAffectedIDsInReport caps the per-run list of asset IDs that
@@ -187,6 +202,13 @@ func (w *AssetLifecycleWorker) Run(ctx context.Context, tenantID shared.ID, dryR
 	if dryRun {
 		if err := w.countCandidates(ctx, tenantID, settings, report); err != nil {
 			return nil, err
+		}
+		if w.liveness != nil {
+			lv, err := w.liveness.Preview(ctx, tenantID)
+			if err != nil {
+				return nil, fmt.Errorf("liveness dry run: %w", err)
+			}
+			report.Liveness = &lv
 		}
 	} else {
 		if err := w.applyTransitions(ctx, tenantID, settings, report); err != nil {

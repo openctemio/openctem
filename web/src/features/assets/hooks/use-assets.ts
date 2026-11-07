@@ -26,6 +26,8 @@ import type {
   RepoVisibility,
   AssetTechnologyBrief,
   AssetEdge,
+  AssetLiveness,
+  AssetLivenessState,
 } from '../types'
 
 /**
@@ -128,10 +130,13 @@ export interface AssetSearchFilters {
   scopeStatus?: string[]
   /** The derived monitoring state (monitored, not_monitored, pending_decision, ...). */
   monitoringState?: string[]
+  /** Liveness states (unknown, alive, unreachable, unresolvable, gone). */
+  liveness?: string[]
   /** Only primary assets: the organization's root domains (the API reads primary=true only). */
   isPrimary?: boolean
   discoveredBy?: string[]
   firstSeenAfter?: string
+  firstSeenBefore?: string
   /** Ask each row's triage (attribution and the scan gate's answer). */
   withTriage?: boolean
 
@@ -206,6 +211,16 @@ interface BackendAsset {
   first_seen: string
   last_seen: string
   lifecycle_paused_until?: string | null
+  liveness?: {
+    state: string
+    reason?: string
+    since?: string
+    last_checked_at?: string
+    last_checked_by?: string
+    last_capability?: string
+    last_outcome?: string
+    last_alive_at?: string
+  }
   manual_status_override?: boolean
   created_at: string
   updated_at: string
@@ -213,6 +228,32 @@ interface BackendAsset {
 }
 
 // Transform backend asset to frontend format
+const LIVENESS_STATES: readonly AssetLivenessState[] = [
+  'unknown',
+  'alive',
+  'unreachable',
+  'unresolvable',
+  'gone',
+]
+
+/** The API liveness block, camelCased; an unknown state reads as unknown. */
+export function transformLiveness(l: BackendAsset['liveness']): AssetLiveness | undefined {
+  if (!l) return undefined
+  const state = (LIVENESS_STATES as readonly string[]).includes(l.state)
+    ? (l.state as AssetLivenessState)
+    : 'unknown'
+  return {
+    state,
+    reason: l.reason || undefined,
+    since: l.since,
+    lastCheckedAt: l.last_checked_at,
+    lastCheckedBy: l.last_checked_by || undefined,
+    lastCapability: l.last_capability,
+    lastOutcome: l.last_outcome,
+    lastAliveAt: l.last_alive_at,
+  }
+}
+
 function transformAsset(backend: BackendAsset): Asset {
   return {
     id: backend.id,
@@ -295,6 +336,7 @@ function transformAsset(backend: BackendAsset): Asset {
     createdAt: backend.created_at,
     updatedAt: backend.updated_at,
     lifecyclePausedUntil: backend.lifecycle_paused_until ?? null,
+    liveness: transformLiveness(backend.liveness),
     manualStatusOverride: backend.manual_status_override ?? false,
     repository: backend.repository ? transformRepositoryExtension(backend.repository) : undefined,
     pendingRiskRequest: backend.pending_risk_request,
@@ -543,8 +585,10 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
   if (filters.scopeStatus?.length) params.scope_status = filters.scopeStatus.join(',')
   if (filters.monitoringState?.length) params.monitoring_state = filters.monitoringState.join(',')
+  if (filters.liveness?.length) params.liveness = filters.liveness.join(',')
   if (filters.discoveredBy?.length) params.discovered_by = filters.discoveredBy.join(',')
   if (filters.firstSeenAfter) params.first_seen_after = filters.firstSeenAfter
+  if (filters.firstSeenBefore) params.first_seen_before = filters.firstSeenBefore
   if (filters.withTriage) params.with_triage = 'true'
 
   // Sorting

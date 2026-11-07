@@ -49,6 +49,60 @@ const receipt = (over: Partial<ReceiptResponse> = {}): ReceiptResponse =>
 beforeEach(() => getMock.mockReset())
 
 describe('ReceiptSummary', () => {
+  it('says what a scan file closed, why the rest stayed open, and where authentication failed', () => {
+    render(
+      <ReceiptSummary
+        receipt={receipt({
+          closing: {
+            considered: 6,
+            closed: { not_in_scan: 2, compliance_passed: 1 },
+            proposed: 0,
+            kept: { local_checks_not_run: 2, seen_later: 1 },
+            hosts: 3,
+            hosts_unfinished: 0,
+            hosts_local_checks_failed: 2,
+          },
+        } as Partial<ReceiptResponse>)}
+      />
+    )
+    expect(screen.getByTestId('receipt-closing-not_in_scan')).toHaveTextContent('2')
+    expect(screen.getByTestId('receipt-closing-compliance_passed')).toHaveTextContent('1')
+    expect(screen.getByTestId('receipt-closing-local_checks_not_run')).toHaveTextContent('2')
+    expect(screen.getByTestId('receipt-closing-seen_later')).toHaveTextContent('1')
+    expect(screen.queryByTestId('receipt-closing-proposed')).toBeNull()
+    expect(screen.getByTestId('receipt-closing-auth')).toHaveTextContent(
+      'Authentication failed on 2 hosts'
+    )
+    expect(screen.queryByTestId('receipt-closing-unfinished')).toBeNull()
+  })
+
+  it('shows no closing section when no file carried its coverage', () => {
+    render(<ReceiptSummary receipt={receipt()} />)
+    expect(screen.queryByTestId('receipt-closing')).toBeNull()
+  })
+
+  it('says where the other received findings went, and nothing when none', () => {
+    const { unmount } = render(
+      <ReceiptSummary
+        receipt={receipt({
+          outcomes: { merged: 2, exposure: 12, unresolved_ref: 1, unknown_code: 9 },
+        } as Partial<ReceiptResponse>)}
+      />
+    )
+    const box = screen.getByTestId('receipt-outcomes')
+    expect(box).toHaveTextContent('Where the other findings went')
+    expect(screen.getByTestId('receipt-outcome-merged')).toHaveTextContent('2')
+    expect(box).toHaveTextContent('Repeats merged')
+    expect(screen.getByTestId('receipt-outcome-exposure')).toHaveTextContent('12')
+    expect(box).toHaveTextContent('Filed as exposures')
+    expect(screen.getByTestId('receipt-outcome-unresolved_ref')).toHaveTextContent('1')
+    expect(box).not.toHaveTextContent('unknown_code')
+    expect(screen.queryByTestId('receipt-outcome-split')).toBeNull()
+    unmount()
+    render(<ReceiptSummary receipt={receipt({ outcomes: {} } as Partial<ReceiptResponse>)} />)
+    expect(screen.queryByTestId('receipt-outcomes')).toBeNull()
+  })
+
   it('shows every count and that full coverage could close', () => {
     render(<ReceiptSummary receipt={receipt()} />)
     const box = screen.getByTestId('receipt-summary')

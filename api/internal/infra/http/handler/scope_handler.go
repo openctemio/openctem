@@ -366,7 +366,8 @@ type ScopeTargetResponse struct {
 	Description string     `json:"description,omitempty"`
 	Reason      string     `json:"reason,omitempty"`
 	Priority    int        `json:"priority"`
-	// Status: active, pending, inactive, rejected or expired.
+	// Status: active, pending, inactive, rejected, expired or superseded
+	// (its pattern was replaced, see SupersededByID).
 	Status string `json:"status"`
 	// InEffect: the entry authorizes probes now (active, not expired).
 	InEffect          bool                    `json:"in_effect"`
@@ -400,6 +401,10 @@ type ScopeTargetResponse struct {
 	Discovery bool      `json:"discovery"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	// SupersedesID is the entry this one replaces (a pattern replacement);
+	// SupersededByID the entry that replaced this one.
+	SupersedesID   *string `json:"supersedes_id,omitempty"`
+	SupersededByID *string `json:"superseded_by_id,omitempty"`
 	// Join is set on a change that came into effect or changed an entry in
 	// effect: the names waiting for review the entry confirmed.
 	Join *ScopeJoinResponse `json:"join,omitempty"`
@@ -547,6 +552,9 @@ type CreateScopeExclusionRequest struct {
 	Methods    []string `json:"methods,omitempty" validate:"omitempty,max=7"`
 	// Kind: why it is out of scope (default do_not_scan).
 	Kind string `json:"kind,omitempty" validate:"omitempty,oneof=do_not_scan not_ours retired"`
+	// ConfirmCritical confirms closing open critical, P0 or KEV findings
+	// (else 409 EXCLUSION_CLOSES_CRITICAL_FINDINGS).
+	ConfirmCritical bool `json:"confirm_critical,omitempty"`
 }
 
 // SetExclusionTestingRequest sets how a path exclusion may be tested.
@@ -560,6 +568,9 @@ type UpdateScopeExclusionRequest struct {
 	Reason    *string    `json:"reason" validate:"omitempty,max=1000"`
 	ExpiresAt *time.Time `json:"expires_at"`
 	Kind      *string    `json:"kind,omitempty" validate:"omitempty,oneof=do_not_scan not_ours retired"`
+	// ConfirmCritical confirms closing open critical, P0 or KEV findings
+	// when the change makes the exclusion close findings.
+	ConfirmCritical bool `json:"confirm_critical,omitempty"`
 }
 
 // BulkDeleteTargetsRequest represents bulk delete targets request.
@@ -626,7 +637,17 @@ func toScopeTargetResponse(t *scopedom.Target) ScopeTargetResponse {
 		Discovery:           t.Discovery(),
 		CreatedAt:           t.CreatedAt(),
 		UpdatedAt:           t.UpdatedAt(),
+		SupersedesID:        idStringPtr(t.Supersedes()),
+		SupersededByID:      idStringPtr(t.SupersededBy()),
 	}
+}
+
+func idStringPtr(id *shared.ID) *string {
+	if id == nil {
+		return nil
+	}
+	v := id.String()
+	return &v
 }
 
 func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
@@ -636,6 +657,13 @@ func approvalsResponse(list []scopedom.Approval) []ScopeApprovalResponse {
 			SelfApproved: a.Self, Reason: a.Reason})
 	}
 	return out
+}
+
+// ScopeCriticalClosuresDetails is the details of a 409
+// EXCLUSION_CLOSES_CRITICAL_FINDINGS: how many open critical, P0 or KEV
+// findings the exclusion would close; resend with confirm_critical.
+type ScopeCriticalClosuresDetails struct {
+	CriticalFindings int `json:"critical_findings"`
 }
 
 // writeScopeEntryError answers the errors of the scope entry path (step-up
@@ -651,6 +679,16 @@ func writeScopeEntryError(w http.ResponseWriter, err error) bool {
 	if errors.As(err, &dup) {
 		apierror.New(http.StatusConflict, apierror.Code(dup.Code()), dup.Message()).
 			WithDetails(ScopeDuplicateDetails{ID: dup.Existing.ID.String(), Status: dup.Existing.Status.String()}).
+			WriteJSON(w)
+		return true
+	}
+	// Closing critical-tier findings needs the caller's confirm: the count
+	// lets the client ask for it (research/438).
+	var crit *scope.CriticalClosuresError
+	if errors.As(err, &crit) {
+		apierror.New(http.StatusConflict, apierror.Code(scope.CodeClosesCriticalFindings),
+			"This would close critical, P0 or KEV findings as out of scope; confirm to continue").
+			WithDetails(ScopeCriticalClosuresDetails{CriticalFindings: crit.Count}).
 			WriteJSON(w)
 		return true
 	}
@@ -1231,15 +1269,16 @@ func (h *ScopeHandler) CreateExclusion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.CreateExclusionInput{
-		TenantID:      tenantID,
-		ExclusionType: req.ExclusionType,
-		Pattern:       req.Pattern,
-		Reason:        req.Reason,
-		ExpiresAt:     req.ExpiresAt,
-		CreatedBy:     userID,
-		PathPrefix:    req.PathPrefix,
-		Methods:       req.Methods,
-		Kind:          req.Kind,
+		TenantID:        tenantID,
+		ExclusionType:   req.ExclusionType,
+		Pattern:         req.Pattern,
+		Reason:          req.Reason,
+		ExpiresAt:       req.ExpiresAt,
+		CreatedBy:       userID,
+		PathPrefix:      req.PathPrefix,
+		Methods:         req.Methods,
+		Kind:            req.Kind,
+		ConfirmCritical: req.ConfirmCritical,
 	}
 
 	exclusion, err := h.service.CreateExclusion(r.Context(), input)
@@ -1312,10 +1351,11 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := scope.UpdateExclusionInput{
-		Reason:    req.Reason,
-		ExpiresAt: req.ExpiresAt,
-		Kind:      req.Kind,
-		Reviewer:  exclusionReviewer(r),
+		Reason:          req.Reason,
+		ExpiresAt:       req.ExpiresAt,
+		Kind:            req.Kind,
+		Reviewer:        exclusionReviewer(r),
+		ConfirmCritical: req.ConfirmCritical,
 	}
 
 	before, ok := h.exclusionBefore(w, r, tenantID, exclusionID)
@@ -1771,7 +1811,7 @@ func (h *ScopeHandler) CheckScope(w http.ResponseWriter, r *http.Request) {
 		case scopedom.RefusalTierExceeds:
 			rule = explain.Ceiling(res.Target)
 		}
-		ref := scopedom.NewRefusal(res.Target, code, rule, explain.OneOffDays())
+		ref := scopedom.NewRefusal(res.Target, code, rule, explain.OneOffDays()).WithSensor(res.SensorID)
 		if code == scopedom.RefusalTierExceeds {
 			ref = scopedom.NewTierRefusal(res.Target, rule, scopedom.Tier(min(max(tier, 0), int(scopedom.TierIntrusive))), explain.OneOffDays())
 		}

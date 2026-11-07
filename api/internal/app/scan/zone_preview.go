@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/actscope"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -332,6 +333,9 @@ type rejectedTarget struct {
 	// ActScope: refused by the act-scope check (the caller may not scan
 	// it), not by target validation.
 	ActScope bool
+	// Code is the refusal code when it is more specific than invalid_target
+	// (a private target no scan zone covers is zone_none).
+	Code string
 }
 
 // previewValidateTargets applies scan creation's target validation, including
@@ -342,7 +346,11 @@ type rejectedTarget struct {
 // must not let a member resolve arbitrary names through the platform's
 // resolver.
 func (s *Service) previewValidateTargets(ctx context.Context, tenantID string, targets []string) ([]string, []rejectedTarget, error) {
-	accepted, rejected, err := s.validateTargetsEach(ctx, tenantID, targets, maxPreviewDirectTargets)
+	rangeBits, err := s.tenantRangeHostBitsOf(ctx, tenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+	accepted, rejected, err := s.validateTargetsEach(ctx, tenantID, targets, maxPreviewDirectTargets, rangeBits)
 	if err != nil || len(accepted) == 0 {
 		return accepted, rejected, err
 	}
@@ -375,7 +383,7 @@ func (s *Service) previewValidateTargets(ctx context.Context, tenantID string, t
 // it returns the accepted targets (private ones only when a scan zone covers
 // them) and the rejected ones with the reason, instead of failing on the
 // first rejection.
-func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targets []string, maxTargets int) ([]string, []rejectedTarget, error) {
+func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targets []string, maxTargets, maxHostBits int) ([]string, []rejectedTarget, error) {
 	if len(targets) == 0 {
 		return nil, nil, nil
 	}
@@ -383,18 +391,23 @@ func (s *Service) validateTargetsEach(ctx context.Context, tenantID string, targ
 		validator.WithAllowInternalIPs(false),
 		validator.WithAllowLocalhost(false),
 		validator.WithMaxTargets(maxTargets),
+		validator.WithMaxCIDRHostBits(maxHostBits),
 	)
 	result := v.ValidateTargets(targets)
 	var admitted []string
 	if result.HasErrors && len(result.BlockedIPs) > 0 {
 		var err error
-		if admitted, err = s.admitZonedPrivateTargets(ctx, tenantID, result); err != nil {
+		if admitted, err = s.admitZonedPrivateTargets(ctx, tenantID, result, maxHostBits); err != nil {
 			return nil, nil, err
 		}
 	}
 	rejected := make([]rejectedTarget, 0, len(result.Invalid))
 	for _, inv := range result.Invalid {
-		rejected = append(rejected, rejectedTarget{Target: inv.Original, Reason: inv.Error})
+		rt := rejectedTarget{Target: inv.Original, Reason: inv.Error}
+		if isPrivateOutsideZones(inv) {
+			rt.Code = scopedom.RefusalZoneNone
+		}
+		rejected = append(rejected, rt)
 	}
 	return append(result.GetValidTargetStrings(), admitted...), rejected, nil
 }
