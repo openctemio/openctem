@@ -264,10 +264,16 @@ func (s *Service) dryRunResults(ctx context.Context, in DryRunInput, routing *Dr
 	tier := scopedom.Tier(min(max(in.Tier, 0), int(scopedom.TierIntrusive)))
 	// Where the job would run decides whether ownership confirmation applies.
 	place := s.placementFor(ctx, in.TenantID, scan.SensorPreference(dryRunPreference(in.SensorPreference)), false, false, scannerTools(in.Tool)...)
+	// A range up to the organization's widest range, as scan create takes it
+	// (RFC-151); the whole range must still sit in one scope entry here.
+	rangeBits, err := s.tenantRangeHostBits(ctx, in.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	// The zone sensors' readiness at the tier the grant gives the job: the
 	// tool's when the platform knows it, else the asked tier.
 	sensorTier := toolTier(in.Tool, int(tier))
-	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier, Placement: place,
+	res, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{TenantID: in.TenantID, Targets: remaining, Assets: dispatchAssets, DryRun: true, Tier: &tier, Placement: place, MaxRangeHostBits: rangeBits,
 		ZoneSensorTier: &sensorTier})
 	if err != nil {
 		return nil, err

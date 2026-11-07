@@ -107,6 +107,12 @@ type ScopeSettings struct {
 	WideningApprovals *int `json:"widening_approvals,omitempty"`
 	// DefaultMaxTier is t0 or t1 ("" = t1). t2 is never a default.
 	DefaultMaxTier string `json:"default_max_tier,omitempty"`
+	// MaxRangePrefix is the widest address range one scan target may name,
+	// as an IPv4 prefix length from 8 to 24 (0 = 16, a /16). IPv6 gets the
+	// same address count (/16 -> /112). A range wider than a /16 is opt-in:
+	// raising it (a lower prefix) widens what one scan may sweep and is
+	// audited at high severity with the administrators told (RFC-151).
+	MaxRangePrefix int `json:"max_range_prefix,omitempty"`
 
 	// Owner-only fields (IntrusiveScopeSettings): PUT /scope/settings keeps
 	// them; only PUT /scope/settings/intrusive changes them.
@@ -117,6 +123,34 @@ type ScopeSettings struct {
 	// T2AttestationDays: how often a long t2 entry is confirmed, 30..180
 	// (0 = 90).
 	T2AttestationDays int `json:"t2_attestation_days,omitempty"`
+}
+
+// Range target bounds (RFC-151): the IPv4 prefix length of the widest
+// range one scan target may name. A /8 is the platform limit; a /16 is the
+// default of every organization, and anything wider is opt-in.
+const (
+	MinRangePrefix     = 8
+	MaxRangePrefix     = 24
+	DefaultRangePrefix = 16
+)
+
+// RangePrefix returns the widest range prefix with its default (/16).
+func (s ScopeSettings) RangePrefix() int {
+	if s.MaxRangePrefix <= 0 {
+		return DefaultRangePrefix
+	}
+	return s.MaxRangePrefix
+}
+
+// RangeHostBits is the widest range in host bits (32 - RangePrefix): 16 by
+// default, 24 for a /8, the same address count for both families.
+func (s ScopeSettings) RangeHostBits() int { return 32 - s.RangePrefix() }
+
+// RangeWidened reports whether a scope settings change raised the widest
+// range one scan target may name (a lower max_range_prefix). Lowering it
+// narrows and needs nothing more.
+func RangeWidened(before, after ScopeSettings) bool {
+	return after.RangePrefix() < before.RangePrefix()
 }
 
 // Attestation bounds (RFC-054 §12.5).
@@ -194,6 +228,9 @@ func (s ScopeSettings) Validate() error {
 	case "", AddressAutoStrong, AddressAsk, AddressNever:
 	default:
 		return fmt.Errorf("%w: address_auto_add must be auto_strong, ask or never", shared.ErrValidation)
+	}
+	if s.MaxRangePrefix != 0 && (s.MaxRangePrefix < MinRangePrefix || s.MaxRangePrefix > MaxRangePrefix) {
+		return fmt.Errorf("%w: max_range_prefix must be between %d and %d", shared.ErrValidation, MinRangePrefix, MaxRangePrefix)
 	}
 	switch s.DefaultMaxTier {
 	case "", "t0", "t1":
