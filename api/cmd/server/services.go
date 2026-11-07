@@ -132,6 +132,7 @@ import (
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
+	"github.com/openctemio/openctem/api/internal/app/taggov"
 	tasksecretapp "github.com/openctemio/openctem/api/internal/app/tasksecret"
 	"github.com/openctemio/openctem/api/internal/app/template"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -666,6 +667,7 @@ type Services struct {
 	AuditArchive audit.ArchiveStore
 	User         *tenantapp.UserService
 	Tenant       *tenantapp.TenantService
+	TagGovernor  *taggov.Governor
 	// UserProvisioning creates accounts on behalf of administrators.
 	UserProvisioning *tenantapp.UserProvisioningService
 
@@ -2584,7 +2586,18 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		ingVuln, ingComp = postgres.NewVulnerabilityRepository(deps.IngestDB), postgres.NewComponentRepository(deps.IngestDB)
 		ingBranch = postgres.NewBranchRepository(deps.IngestDB)
 	}
+	// Tags that rules read (team access, scan approval, scan windows,
+	// assignment) are changed only by people holding the rule's permission,
+	// and never by an import.
+	s.TagGovernor = taggov.NewGovernor(15*time.Second,
+		taggov.ScopeRuleSource(repos.AccessControl),
+		taggov.AssignmentRuleSource(repos.AccessControl),
+		taggov.ScanWindowSource(repos.ScanWindowPolicy),
+		taggov.ApprovalRuleSource(s.Tenant),
+	)
 	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
+	s.Ingest.SetTagGovernor(s.TagGovernor)
+	s.Tenant.SetTagRulesInvalidator(s.TagGovernor)
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
@@ -2913,6 +2926,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.ScanZone = scanzoneapp.NewService(repos.ScanZone, s.Audit, log)
 	if s.ScanWindowResolver != nil {
 		s.ScanWindow = scanwindowapp.NewService(repos.ScanWindowPolicy, repos.ScanWindowPolicy, repos.ScanWindowOverride, s.ScanWindowResolver, log)
+		s.ScanWindow.SetTagRulesInvalidator(s.TagGovernor)
 		s.ScanWindow.SetAudit(s.Audit)
 		s.ScanWindow.SetAssets(repos.ScanWindowAsset, s.DataScope)
 		s.ScanWindow.SetHoldReleaser(repos.Command)
@@ -3216,6 +3230,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 
 	s.AssignmentRule = assignment.NewRuleService(repos.AccessControl, repos.Group, log)
 	s.ScopeRule = scope.NewRuleService(repos.AccessControl, repos.Group, log)
+	// A saved rule changes which tags are governing at once, not after the cache TTL.
+	s.AssignmentRule.SetTagRulesInvalidator(s.TagGovernor)
+	s.ScopeRule.SetTagRulesInvalidator(s.TagGovernor)
 	s.ScopeRule.SetAssetGroupValidator(repos.AccessControl)
 	s.ScopeRule.SetScopeDelegationCap(s.DataScope)
 

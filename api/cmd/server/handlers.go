@@ -280,6 +280,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
+	assetHandler.SetTagGovernor(svc.TagGovernor)
 	assetHandler.SetRiskGovernance(svc.AssetRiskGovernance)
 
 	// Command handler with scan run service wired
@@ -1886,6 +1887,7 @@ func newConfirmScope(repos *Repositories, svc *Services) *easmapp.ConfirmScope {
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
 	h := handler.NewAssetImportHandler(svc.AssetImport, log)
 	h.SetAuditService(svc.Audit)
+	h.SetTagGovernor(svc.TagGovernor)
 	return h
 }
 

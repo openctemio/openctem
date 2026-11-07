@@ -65,6 +65,8 @@ type TeamInvitationJobPayload struct {
 // TenantService handles tenant-related business operations.
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
+	// tagRules drops the cached governing-tag set when approval rules change.
+	tagRules TagRulesInvalidator
 	// signups reports organizations created to the sign-up feed (optional).
 	signups signupevent.Recorder
 	repo    tenantdom.Repository
