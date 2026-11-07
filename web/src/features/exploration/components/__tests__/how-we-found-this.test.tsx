@@ -5,20 +5,20 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
-import { SWRConfig } from 'swr'
-import type { ReactNode } from 'react'
-import { FindingHowWeFoundThis } from '../how-we-found-this'
+import { ApiClientError } from '@/lib/api/error-handler'
 import type { Story } from '../../lib/story'
 
-const api = vi.hoisted(() => ({ get: vi.fn() }))
-vi.mock('@/lib/api/client', () => api)
-vi.mock('@/lib/permissions', async (orig) => {
-  const actual = await orig<typeof import('@/lib/permissions')>()
-  return { ...actual, usePermissions: () => ({ can: () => true }) }
-})
+let mockStory: Story | undefined
+let mockError: unknown
+const useStory = vi.fn()
+vi.mock('../../hooks/use-story', () => ({
+  useStory: (kind: string, id: string) => {
+    useStory(kind, id)
+    return { story: mockStory, error: mockError, isLoading: false, mutate: vi.fn() }
+  },
+}))
 
-const wrap = (ui: ReactNode) =>
-  render(<SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{ui}</SWRConfig>)
+const { FindingHowWeFoundThis } = await import('../how-we-found-this')
 
 const story: Story = {
   subject: { kind: 'finding', id: 'f1' },
@@ -56,12 +56,16 @@ const story: Story = {
 }
 
 describe('FindingHowWeFoundThis', () => {
-  beforeEach(() => api.get.mockReset())
+  beforeEach(() => {
+    mockStory = undefined
+    mockError = undefined
+    useStory.mockReset()
+  })
 
   it('renders the chain in order with links and a hidden step', async () => {
-    api.get.mockResolvedValue(story)
-    wrap(<FindingHowWeFoundThis findingId="f1" />)
-    const list = await screen.findByRole('list', { name: 'How we found this' })
+    mockStory = story
+    render(<FindingHowWeFoundThis findingId="f1" />)
+    const list = screen.getByRole('list', { name: 'How we found this' })
     const items = within(list).getAllByRole('listitem')
     expect(items.map((i) => i.getAttribute('data-kind'))).toEqual([
       'asset',
@@ -81,22 +85,18 @@ describe('FindingHowWeFoundThis', () => {
     expect(within(items[3]).getByText('nuclei')).toBeInTheDocument()
     expect(within(items[4]).getByText('Exposed admin panel')).toBeInTheDocument()
     expect(screen.getByText(/2 more sources reported it/)).toBeInTheDocument()
-    expect(api.get).toHaveBeenCalledWith('/api/v1/findings/f1/story')
+    expect(useStory).toHaveBeenCalledWith('finding', 'f1')
   })
 
   it('shows nothing for a story with only the finding', async () => {
-    api.get.mockResolvedValue({ ...story, steps: [story.steps[4]], hidden: 0 })
-    const { container } = wrap(<FindingHowWeFoundThis findingId="f1" />)
-    await vi.waitFor(() => expect(api.get).toHaveBeenCalled())
-    await new Promise((r) => setTimeout(r, 0))
+    mockStory = { ...story, steps: [story.steps[4]], hidden: 0 }
+    const { container } = render(<FindingHowWeFoundThis findingId="f1" />)
     expect(container.querySelector('[data-testid="story-timeline"]')).toBeNull()
   })
 
   it('hides on a 404 (no oracle)', async () => {
-    api.get.mockRejectedValue(Object.assign(new Error('nf'), { statusCode: 404 }))
-    const { container } = wrap(<FindingHowWeFoundThis findingId="f1" />)
-    await vi.waitFor(() => expect(api.get).toHaveBeenCalled())
-    await new Promise((r) => setTimeout(r, 0))
-    expect(container.textContent).not.toMatch(/How we found this/)
+    mockError = new ApiClientError('not found', 'NOT_FOUND', 404)
+    const { container } = render(<FindingHowWeFoundThis findingId="f1" />)
+    expect(container.textContent).toBe('')
   })
 })
