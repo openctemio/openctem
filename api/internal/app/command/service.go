@@ -41,6 +41,9 @@ type Service struct {
 	// (duration_learning.go); nil: nothing is learned.
 	durations toolbudget.StatsStore
 	logger    *logger.Logger
+	// pathClaims gives back the ledger claim of a path discovery job that
+	// sent no request (path_claim_release.go); nil: the claim stands.
+	pathClaims PathClaimReleaser
 	// refusals hears about failed commands (local_policy.go); nil: none.
 	refusals RefusalObserver
 	// privatePolicy keeps private targets from sensors without a local
@@ -825,6 +828,7 @@ func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddo
 	}
 	s.learnDuration(ctx, cmd)
 	s.observeEgressVerdict(ctx, cmd, proxypool.CompletedVerdict(cmd.Result))
+	s.releaseEmptyPathDiscovery(ctx, cmd)
 
 	return cmd, nil
 }

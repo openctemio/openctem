@@ -1400,6 +1400,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AssetCoverage.EnableReadiness(svc.Scan)
 			// A port scan that carried a name's addresses settles the name.
 			svc.AssetCoverage.WithAddressReader(repos.Attribution)
+			// Path discovery (enumerate.web_paths): the organization's
+			// switch, the daily request budget and the per-target program
+			// and shared-edge refusals (docs/architecture/web-discovery.md).
+			svc.AssetCoverage.SetPathDiscovery(svc.PathDiscovery)
 			// No scope entry pauses coverage only when unclassified assets
 			// are not scanned (RFC-054 §16): otherwise the gate decides per
 			// target, low-impact for what no entry covers.

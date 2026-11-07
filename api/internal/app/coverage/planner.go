@@ -431,7 +431,19 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			break
 		}
 		lookahead := covdom.Lookahead(s.ruleOf(capability).Every)
-		due, err := s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead)
+		limit := min(s.cfg.Batch, left)
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			// The organization's switch and request budget.
+			n, stop, err := s.pathDiscoveryLimit(ctx, tenantID, limit)
+			if err != nil {
+				return total, err
+			}
+			if stop {
+				continue
+			}
+			limit = n
+		}
+		due, err := s.dueBatch(ctx, tenantID, capability, limit, lookahead)
 		if err != nil {
 			return total, err
 		}
@@ -462,7 +474,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			if !run {
 				continue
 			}
-			if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
+			if due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead); err != nil {
 				return total, err
 			}
 		} else if paused != "" {
@@ -473,13 +485,23 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			if n > 0 {
 				s.logger.Info("coverage resumed", "tenant_id", tenantID.String(), "capability", capability,
 					"pairs", n, "was", paused)
-				if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
+				if due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead); err != nil {
 					return total, err
 				}
 			}
 		}
-		if len(due) == 0 || !s.batchReady(capability, due, min(s.cfg.Batch, left)) {
+		if len(due) == 0 || !s.batchReady(capability, due, limit) {
 			continue
+		}
+		budgetBound := false
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			budgetBound = len(due) >= limit && limit < min(s.cfg.Batch, left)
+			if due, err = s.pathDiscoveryRefuse(ctx, tenantID, due); err != nil {
+				return total, err
+			}
+			if len(due) == 0 {
+				continue
+			}
 		}
 		batch, depth := onboardingBatch(capability, due)
 		n, err := s.startBatch(ctx, tenantID, capability, batch, depth)
@@ -487,6 +509,13 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		left -= n
 		if err != nil {
 			return total, err
+		}
+		if budgetBound {
+			// What the daily request budget left out waits as deferred,
+			// never as covered.
+			if err := s.pauseCapability(ctx, tenantID, capability, covdom.ReadyBudgetSpent, pathBudgetRetry); err != nil {
+				return total, err
+			}
 		}
 	}
 	return total, nil
@@ -579,7 +608,15 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 		}
 		byTarget[key] = append(byTarget[key], d.AssetID)
 	}
-	res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)})
+	in := scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)}
+	if capability == covdom.CapabilityEnumerateWebPaths && s.pathGate != nil {
+		b, err := s.pathGate.PathDiscoveryBudget(ctx, tenantID)
+		if err != nil {
+			return 0, err
+		}
+		in.MaxRequestsPerOrigin = b.PerOrigin
+	}
+	res, err := s.starter.StartCoverage(ctx, in)
 	if errors.Is(err, scanapp.ErrCoverageBusy) {
 		return 0, nil // the previous batch is still running: back-pressure
 	}
