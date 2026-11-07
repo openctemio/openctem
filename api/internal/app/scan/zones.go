@@ -693,7 +693,7 @@ func planWorkflowZone(sc *scan.Scan, routing *scanzone.Plan) (*zonePlan, []strin
 // other rejection stays: loopback, link-local, the deny list, private space
 // no zone covers, and anything invalid for another reason. Without zones it
 // admits nothing.
-func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr string, result *validator.TargetValidationResult) ([]string, error) {
+func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr string, result *validator.TargetValidationResult, maxHostBits int) ([]string, error) {
 	tenantID, err := shared.IDFromString(tenantIDStr)
 	if err != nil {
 		return nil, nil //nolint:nilerr // no tenant, no zones: the strict result stands
@@ -705,6 +705,7 @@ func (s *Service) admitZonedPrivateTargets(ctx context.Context, tenantIDStr stri
 	lenient := validator.NewTargetValidator(
 		validator.WithAllowInternalIPs(true),
 		validator.WithAllowLocalhost(false),
+		validator.WithMaxCIDRHostBits(maxHostBits),
 	)
 	router := scanzone.NewRouter(zones, nil)
 

@@ -99,12 +99,17 @@ type Scan struct {
 	Status Status
 
 	// Execution Statistics
-	LastRunID      *shared.ID
-	LastRunAt      *time.Time
-	LastRunStatus  string
-	TotalRuns      int
-	SuccessfulRuns int
-	FailedRuns     int
+	LastRunID     *shared.ID
+	LastRunAt     *time.Time
+	LastRunStatus string
+	// LastMissedAt is the scheduled occurrence the scheduler skipped because
+	// it was missed by more than one interval; LastMissedReason is a short
+	// code (MissReason*). Both clear when a later scheduled run starts.
+	LastMissedAt     *time.Time
+	LastMissedReason string
+	TotalRuns        int
+	SuccessfulRuns   int
+	FailedRuns       int
 	// PartialRuns counts runs that kept results but lost some work; neither a success nor a failure.
 	PartialRuns int
 	// BlockedRuns counts triggers that were refused before anything was
@@ -760,6 +765,12 @@ func (s *Scan) Disable() error {
 	s.UpdatedAt = time.Now()
 	return nil
 }
+
+// Reason codes of a missed scheduled occurrence (scans.last_missed_reason).
+const (
+	MissReasonPlatformUnavailable = "platform_unavailable"
+	MissReasonOnceGraceExceeded   = "once_grace_exceeded"
+)
 
 // RecordRun records the result of a scan run.
 func (s *Scan) RecordRun(runID shared.ID, status string) {

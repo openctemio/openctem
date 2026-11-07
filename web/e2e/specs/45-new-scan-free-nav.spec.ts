@@ -86,12 +86,12 @@ for (const width of [390, 1440]) {
             'b.acme-e2e.example, c.acme-e2e.example',
             'A.acme-e2e.example.',
             '203.0.113.0/24',
-            '10.0.0.0/8',
+            '10.0.0.0/7',
             '# a comment',
           ].join('\n')
         )
       await expect(panel.getByTestId('paste-counts')).toContainText('4 targets')
-      await expect(panel.getByTestId('paste-invalid-list')).toContainText('10.0.0.0/8')
+      await expect(panel.getByTestId('paste-invalid-list')).toContainText('10.0.0.0/7')
       await panel.getByRole('button', { name: 'Remove all' }).click()
       await panel.getByTestId('bulk-add').click()
       await expect(dialog.getByTestId('kind-counts')).toContainText('4 typed targets')

@@ -39,7 +39,7 @@ describe('scanStepIssues', () => {
   it('an invalid typed entry is a Targets problem', () => {
     const issues = scanStepIssues({
       ...valid,
-      targets: { ...valid.targets, customTargets: ['app.example.com', '10.0.0.0/8'] },
+      targets: { ...valid.targets, customTargets: ['app.example.com', '10.0.0.0/7'] },
     })
     expect(issues.targets[0]).toMatch(/not a target/i)
     expect(firstIssue(issues, STEPS)).toEqual({ step: 'targets', message: issues.targets[0] })
