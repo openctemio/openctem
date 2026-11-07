@@ -822,12 +822,14 @@ func findingUpsertConflictSQL() string {
 			-- sighting by another tool must not pair its version with it.
 			tool_version = CASE WHEN findings.tool_name = EXCLUDED.tool_name
 				THEN EXCLUDED.tool_version ELSE findings.tool_version END,
-			snippet = COALESCE(EXCLUDED.snippet, findings.snippet),
+			-- Text: the primary (first reporting) tool refreshes it, another
+			-- tool only fills an empty value (finding-source-records.md).
+			snippet = ` + primaryTextSQL("snippet") + `,
 			context_snippet = COALESCE(EXCLUDED.context_snippet, findings.context_snippet),
 			context_start_line = COALESCE(EXCLUDED.context_start_line, findings.context_start_line),
-			title = COALESCE(EXCLUDED.title, findings.title),
-			description = COALESCE(EXCLUDED.description, findings.description),
-			message = EXCLUDED.message,
+			title = ` + primaryTextSQL("title") + `,
+			description = ` + primaryTextSQL("description") + `,
+			message = ` + primaryTextSQL("message") + `,
 			-- An agent's severity override stands: the reported severity
 			-- then moves source_severity only.
 			` + reportedSeveritySetSQL("findings.", "EXCLUDED.severity") + `,
@@ -899,7 +901,7 @@ func findingUpsertConflictSQL() string {
 			asvs_control_id = COALESCE(EXCLUDED.asvs_control_id, findings.asvs_control_id),
 			asvs_control_url = COALESCE(EXCLUDED.asvs_control_url, findings.asvs_control_url),
 			asvs_level = COALESCE(EXCLUDED.asvs_level, findings.asvs_level),
-			remediation = COALESCE(EXCLUDED.remediation, findings.remediation),
+			remediation = ` + primaryJSONSQL("remediation") + `,
 			-- Denormalized classification columns: refresh on re-ingest, mirroring
 			-- severity/epss/kev above. This is what backfills the NULLs a first
 			-- sighting left, and lets a re-classified CVE/CVSS overwrite the stale
@@ -933,6 +935,24 @@ func findingUpsertConflictSQL() string {
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
 		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + findingSLAKEVConflictSQL() + "\n\t"
+}
+
+// primaryToolSQL is true when the incoming row comes from the stored
+// finding's primary source, its first reporting tool
+// (vulnerability.IsPrimaryTool).
+const primaryToolSQL = `(btrim(findings.tool_name) <> '' AND lower(btrim(findings.tool_name)) = lower(btrim(EXCLUDED.tool_name)))`
+
+// primaryTextSQL merges a text column of a re-sighting: the primary tool
+// replaces it with a non-empty value, another tool only fills an empty one.
+func primaryTextSQL(col string) string {
+	return `CASE WHEN ` + primaryToolSQL + ` THEN COALESCE(NULLIF(EXCLUDED.` + col + `, ''), findings.` + col + `)
+				ELSE COALESCE(NULLIF(findings.` + col + `, ''), EXCLUDED.` + col + `) END`
+}
+
+// primaryJSONSQL is primaryTextSQL for a jsonb column (NULL is empty).
+func primaryJSONSQL(col string) string {
+	return `CASE WHEN ` + primaryToolSQL + ` THEN COALESCE(EXCLUDED.` + col + `, findings.` + col + `)
+				ELSE COALESCE(findings.` + col + `, EXCLUDED.` + col + `) END`
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
