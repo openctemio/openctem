@@ -125,3 +125,4 @@ kept asset's row for a name. `asset_technology_backfill` records the tenants the
 | 3 | one store: rows are the reconciled set, property retired, responses embed technologies | #2425 |
 | 4 | console: Technologies section and tab, Software tab wording and empty state, tab overflow, default zone hidden | #2427 |
 | 5 | filters: API (`technology`, `technology_category`, facets endpoint) and the inventory filter section | open |
+| 6 | template scanner info matches add technologies as secondary readings ([template-facts.md](../architecture/template-facts.md)), the source label in the console | open |
