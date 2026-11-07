@@ -826,7 +826,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	recordWithheld(output)
 
-	// Step 5b: the receipt of the upload or run this report belongs to.
+	// Step 5b: what this source reported for each finding, then the
+	// receipt of the upload or run this report belongs to.
+	s.storeSourceRecords(ctx, agt, tenantID, binding, opts, report, output)
 	s.recordReceipt(ctx, agt, tenantID, binding, opts, report, output)
 
 	// Step 6: Create audit log for ingestion

@@ -29,7 +29,10 @@ and read only by the finding detail (`GET /api/v1/findings/{id}`, field
 | `location_key` | derived (`ctis.LocationKey`) | Never taken from the report |
 | `vex_status`, `vex_justification`, `vex_statement`, `vex_source`, `vex_at` | `vex` | Latest statement, replaced as a whole |
 
-A later sighting replaces each member it carries and keeps the others.
+A later sighting by the finding's primary (first reporting) tool replaces each
+member it carries and keeps the others; a sighting by another tool only fills
+members that are empty. Every source's own values are kept in its
+[source record](finding-source-records.md).
 
 ## Identity and correlation
 

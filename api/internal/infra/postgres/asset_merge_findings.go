@@ -93,6 +93,11 @@ var findingMergeRefs = []mergeRef{
 	// already has keeps the survivor's row (one row per finding and source).
 	{table: "finding_sightings", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"channel", "sender", "tool"}, nullSafe: []string{"sensor_id", "scan_id"}}}}, //nolint:goconst // column names of the key
+	// What each source reported: a source the survivor already has was
+	// folded into the survivor's record first (foldLoserSourceRecords), so
+	// dropping the loser's copy loses nothing; the others move.
+	{table: "finding_source_records", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"channel", "sender", "tool"}, nullSafe: []string{"sensor_id"}}}},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
@@ -390,6 +395,9 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 		return err
 	}
 
+	if err := foldLoserSourceRecords(ctx, tx, tenantID, survivorID, loserID); err != nil {
+		return err
+	}
 	for _, ref := range findingMergeRefs {
 		if err := repointRef(ctx, tx, ref, survivorID, []string{loserID}, tenantID); err != nil {
 			return fmt.Errorf("finding merge: %w", err)

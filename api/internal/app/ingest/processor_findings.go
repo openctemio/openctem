@@ -898,10 +898,30 @@ func (p *FindingProcessor) processBatch(
 	// VEX not_affected statements. Best-effort.
 	interop := make([]vulnerability.InteropUpdate, 0, len(validFindings))
 	vexSightings := make([]vexSighting, 0)
+	// Step 7d (written by the service with the ingest's source): what this
+	// source reported for each finding, kept per source so another source
+	// never overwrites it (finding-source-records.md).
+	built := make(map[string]*vulnerability.Finding, len(newFindings)+len(existingNewData))
+	for _, f := range newFindings {
+		built[f.Fingerprint()] = f
+	}
+	for _, f := range existingNewData {
+		built[f.Fingerprint()] = f
+	}
+	reportTool := ""
+	if report.Tool != nil {
+		reportTool = report.Tool.Name
+	}
 	for i := range validFindings {
 		fm := &validFindings[i]
-		if u := interopUpdate(fm.fingerprint, &fm.finding); !u.Data.IsEmpty() {
+		u := interopUpdate(fm.fingerprint, &fm.finding)
+		u.Tool = reportTool
+		if !u.Data.IsEmpty() {
 			interop = append(interop, u)
+		}
+		if f, ok := built[fm.fingerprint]; ok {
+			output.SourceRecords = append(output.SourceRecords,
+				vulnerability.SourceRecordValuesFrom(f, u.Data, observed[fm.fingerprint]))
 		}
 		if fm.finding.VEX != nil {
 			vexSightings = append(vexSightings, vexSighting{fingerprint: fm.fingerprint, assetID: fm.assetID, finding: &fm.finding})
