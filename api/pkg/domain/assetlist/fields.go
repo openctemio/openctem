@@ -36,6 +36,14 @@ const (
 	ProgramAssetsExclude   = "exclude"
 )
 
+// Field names and columns used more than once.
+const (
+	fieldTag      = "tag"
+	fieldProvider = "provider"
+	colID         = "a.id"
+	colName       = "a.name"
+)
+
 // Limits of the list's own fields.
 const (
 	maxDomainValues    = 20
@@ -197,7 +205,7 @@ func build(scanned bool) *filterspec.Registry {
 	fields := make([]filterspec.Field, 0, 64)
 	for _, f := range base.Fields() {
 		switch f.Name {
-		case "deleted", "program_only", "tag", "provider":
+		case "deleted", "program_only", fieldTag, fieldProvider:
 			continue // server-side only, or replaced below
 		}
 		nf := *f
@@ -230,14 +238,14 @@ func build(scanned bool) *filterspec.Registry {
 	}
 	fields = append(fields,
 		filterspec.Field{Name: "lens", Type: filterspec.TypeEnum, Enum: lensNames(), Ops: inNotIn, SQL: "a.asset_lens"},
-		filterspec.Field{Name: "tag", Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.tags", UserOptional: true,
+		filterspec.Field{Name: fieldTag, Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.tags", UserOptional: true,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn:    tagSQL,
 				filterspec.OpNotIn: "NOT COALESCE(" + tagSQL + ", FALSE)",
 			}},
 		filterspec.Field{Name: "tag_all", Type: filterspec.TypeString, Ops: onlyIn, SQL: "a.tags", UserOptional: true, Doc: "carries every one of these tags",
 			Templates: map[filterspec.Op]string{filterspec.OpIn: tagAllSQL}},
-		filterspec.Field{Name: "provider", Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.provider", Sortable: true,
+		filterspec.Field{Name: fieldProvider, Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.provider", Sortable: true,
 			Doc: "provider (unset: none recorded)",
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn:    "COALESCE(a.provider, 'unset') = ANY({arg})",
@@ -246,88 +254,88 @@ func build(scanned bool) *filterspec.Registry {
 		filterspec.Field{Name: "updated_at", Type: filterspec.TypeTime, Ops: ranges, SQL: "a.updated_at", Sortable: true},
 		filterspec.Field{Name: "last_synced", Type: filterspec.TypeTime, Ops: ranges, SQL: "a.last_synced_at", Nullable: true, Sortable: true},
 		filterspec.Field{Name: "sync_status", Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.sync_status", Sortable: true},
-		filterspec.Field{Name: "has_findings", Type: filterspec.TypeBool, Ops: onlyEq, SQL: "a.id", BoolTemplate: openFindingsSQL},
+		filterspec.Field{Name: "has_findings", Type: filterspec.TypeBool, Ops: onlyEq, SQL: colID, BoolTemplate: openFindingsSQL},
 		filterspec.Field{Name: "finding_count", Type: filterspec.TypeInt, Ops: rangesEq, SQL: openFindingCountSQL, Expensive: true,
 			Doc: "open findings", Sortable: true, SortSQL: "COALESCE(fc.finding_count, 0)"},
-		filterspec.Field{Name: "coverage", Type: filterspec.TypeEnum, Enum: []string{CoverageCovered, CoverageUncovered}, Ops: onlyEq, SQL: "a.id",
+		filterspec.Field{Name: "coverage", Type: filterspec.TypeEnum, Enum: []string{CoverageCovered, CoverageUncovered}, Ops: onlyEq, SQL: colID,
 			EnumTemplates: map[string]string{
 				CoverageCovered:   CoverageCondition(CoverageCovered, coverageSince),
 				CoverageUncovered: CoverageCondition(CoverageUncovered, coverageSince),
 			}},
-		filterspec.Field{Name: "coverage_cause", Type: filterspec.TypeEnum, Enum: dashboard.CoverageCauses(), Ops: onlyIn, SQL: "a.id",
+		filterspec.Field{Name: "coverage_cause", Type: filterspec.TypeEnum, Enum: dashboard.CoverageCauses(), Ops: onlyIn, SQL: colID,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: CoverageCondition(CoverageUncovered, coverageSince) + " AND " + CoverageCauseExpr(coverageSince) + " = ANY({arg})",
 			}},
-		filterspec.Field{Name: "freshness", Type: filterspec.TypeEnum, Enum: []string{assetfreshness.FilterStale, assetfreshness.FilterNever}, Ops: onlyEq, SQL: "a.id",
+		filterspec.Field{Name: "freshness", Type: filterspec.TypeEnum, Enum: []string{assetfreshness.FilterStale, assetfreshness.FilterNever}, Ops: onlyEq, SQL: colID,
 			EnumTemplates: map[string]string{
 				assetfreshness.FilterStale: FreshnessSQL(assetfreshness.FilterStale),
 				assetfreshness.FilterNever: FreshnessSQL(assetfreshness.FilterNever),
 			}},
-		filterspec.Field{Name: "resolution", Type: filterspec.TypeEnum, Enum: []string{ResolutionResolving, ResolutionNotResolving}, Ops: onlyEq, SQL: "a.id",
+		filterspec.Field{Name: "resolution", Type: filterspec.TypeEnum, Enum: []string{ResolutionResolving, ResolutionNotResolving}, Ops: onlyEq, SQL: colID,
 			EnumTemplates: map[string]string{
 				ResolutionResolving:    ResolutionSQL(ResolutionResolving),
 				ResolutionNotResolving: ResolutionSQL(ResolutionNotResolving),
 			}},
-		filterspec.Field{Name: "technology", Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.id", MaxValues: assettech.MaxFilterValues,
+		filterspec.Field{Name: "technology", Type: filterspec.TypeString, Ops: inNotIn, SQL: colID, MaxValues: assettech.MaxFilterValues,
 			Normalize: normalizeTechnology, Doc: "technology name, or name@version",
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn:    technologySQL,
 				filterspec.OpNotIn: "NOT " + technologySQL,
 			}},
-		filterspec.Field{Name: "technology_version", Type: filterspec.TypeString, Ops: onlyIn, SQL: "a.id", MaxValues: assettech.MaxFilterValues,
+		filterspec.Field{Name: "technology_version", Type: filterspec.TypeString, Ops: onlyIn, SQL: colID, MaxValues: assettech.MaxFilterValues,
 			Doc: "a technology of this exact version",
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: "EXISTS (SELECT 1 FROM asset_technologies t WHERE t.tenant_id = {tenant} AND t.asset_id = a.id AND t.version = ANY({arg}))",
 			}},
-		filterspec.Field{Name: "technology_category", Type: filterspec.TypeEnum, Enum: technologyCategoryNames(), Ops: onlyIn, SQL: "a.id",
+		filterspec.Field{Name: "technology_category", Type: filterspec.TypeEnum, Enum: technologyCategoryNames(), Ops: onlyIn, SQL: colID,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: "EXISTS (SELECT 1 FROM asset_technologies t WHERE t.tenant_id = {tenant} AND t.asset_id = a.id AND t.category = ANY({arg}))",
 			}},
-		filterspec.Field{Name: "business_unit", Type: filterspec.TypeID, Ops: onlyIn, SQL: "a.id",
+		filterspec.Field{Name: "business_unit", Type: filterspec.TypeID, Ops: onlyIn, SQL: colID,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: `EXISTS (SELECT 1 FROM business_unit_assets ba JOIN business_units bu ON bu.id = ba.business_unit_id AND bu.tenant_id = {tenant}
 					WHERE ba.asset_id = a.id AND ba.business_unit_id = ANY({arg}))`,
 			}},
-		filterspec.Field{Name: "asset_group", Type: filterspec.TypeID, Ops: onlyIn, SQL: "a.id", MaxValues: 20,
+		filterspec.Field{Name: "asset_group", Type: filterspec.TypeID, Ops: onlyIn, SQL: colID, MaxValues: 20,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: `EXISTS (SELECT 1 FROM asset_group_members agm JOIN asset_groups fg ON fg.id = agm.asset_group_id AND fg.tenant_id = {tenant}
 					WHERE agm.asset_id = a.id AND agm.asset_group_id = ANY({arg}))`,
 			}},
 		// asset_owners has no tenant column: the owner is pinned to the
 		// tenant's members and groups.
-		filterspec.Field{Name: "owner", Type: filterspec.TypeID, Ops: onlyIn, SQL: "a.id", MaxValues: 20,
+		filterspec.Field{Name: "owner", Type: filterspec.TypeID, Ops: onlyIn, SQL: colID, MaxValues: 20,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: `EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id AND (
 					(ao.user_id = ANY({arg}) AND ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = {tenant}))
 					OR (ao.group_id = ANY({arg}) AND ao.group_id IN (SELECT id FROM groups WHERE tenant_id = {tenant}))))`,
 			}},
-		filterspec.Field{Name: "has_owner", Type: filterspec.TypeBool, Ops: onlyEq, SQL: "a.id",
+		filterspec.Field{Name: "has_owner", Type: filterspec.TypeBool, Ops: onlyEq, SQL: colID,
 			BoolTemplate: `EXISTS (SELECT 1 FROM asset_owners ao WHERE ao.asset_id = a.id
 				AND (ao.group_id IS NULL OR ao.group_id IN (SELECT id FROM groups WHERE tenant_id = {tenant}))
 				AND (ao.user_id IS NULL OR ao.user_id IN (SELECT user_id FROM tenant_members WHERE tenant_id = {tenant})))`},
-		filterspec.Field{Name: "under", Type: filterspec.TypeString, Ops: onlyIn, SQL: "a.name", MaxValues: maxUnderValues,
+		filterspec.Field{Name: "under", Type: filterspec.TypeString, Ops: onlyIn, SQL: colName, MaxValues: maxUnderValues,
 			Normalize: normalizeUnder, Doc: "names equal to or below these DNS names",
 			Templates: map[filterspec.Op]string{filterspec.OpIn: underSQL}},
 		// Domain membership (docs/architecture/asset-domain-membership.md):
 		// names, the addresses they resolve to, services on them and
 		// certificates naming the domain; one index lookup.
-		filterspec.Field{Name: "domain", Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.id", MaxValues: maxDomainValues,
+		filterspec.Field{Name: "domain", Type: filterspec.TypeString, Ops: inNotIn, SQL: colID, MaxValues: maxDomainValues,
 			Doc: "domain (x: x and everything that belongs to it; *.x: only below x)", Glob: true,
 			Normalize: assetdomain.NormalizeDomainFilter, Expand: assetdomain.DomainFilterKeys,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn:    "a.id IN (SELECT m.asset_id FROM asset_domain_memberships m WHERE m.tenant_id = {tenant} AND m.key = ANY({arg}))",
 				filterspec.OpNotIn: "a.id NOT IN (SELECT m.asset_id FROM asset_domain_memberships m WHERE m.tenant_id = {tenant} AND m.key = ANY({arg}))",
 			}},
-		filterspec.Field{Name: "ip", Type: filterspec.TypeInet, Ops: onlyIn, SQL: "a.name", MaxValues: maxIPValues,
+		filterspec.Field{Name: "ip", Type: filterspec.TypeInet, Ops: onlyIn, SQL: colName, MaxValues: maxIPValues,
 			Doc:       "IP address or CIDR range (10.0.0.0/8)",
 			Templates: map[filterspec.Op]string{filterspec.OpIn: ipRangeSQL}},
-		filterspec.Field{Name: "control_plane", Type: filterspec.TypeBool, Ops: onlyEq, SQL: "a.id",
+		filterspec.Field{Name: "control_plane", Type: filterspec.TypeBool, Ops: onlyEq, SQL: colID,
 			BoolTemplate: "EXISTS (SELECT 1 FROM asset_relationships ar WHERE ar.target_asset_id = a.id AND ar.is_control_plane = true AND ar.tenant_id = a.tenant_id)"},
 		filterspec.Field{Name: "expires", Type: filterspec.TypeTime, Ops: ranges, SQL: ExpirySQL, Nullable: true,
 			Doc: "expiry (a certificate's not after, a domain's expiry)"},
 		filterspec.Field{Name: "attribution", Type: filterspec.TypeEnum, Enum: attributionFilterNames(), EnumExpand: attributionExpand(),
 			Ops: inNotIn, SQL: attributionStateSQL},
-		filterspec.Field{Name: "covered_by", Type: filterspec.TypeID, Ops: onlyIn, SQL: "a.id", MaxValues: 20, Doc: "scope entry that confirmed the asset",
+		filterspec.Field{Name: "covered_by", Type: filterspec.TypeID, Ops: onlyIn, SQL: colID, MaxValues: 20, Doc: "scope entry that confirmed the asset",
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: `EXISTS (SELECT 1 FROM easm_evidence sje WHERE sje.asset_id = a.id AND sje.tenant_id = {tenant}
 					AND sje.rule = 'matches_scope_target' AND sje.source = ANY (ARRAY(SELECT 'scope_target:' || x FROM unnest({arg}) AS x)))`,
@@ -338,18 +346,18 @@ func build(scanned bool) *filterspec.Registry {
 			SQL: MonitoringStateSQL("a", fmt.Sprint(scanned)), Expensive: true},
 		filterspec.Field{Name: "liveness", Type: filterspec.TypeEnum, Enum: livenessNames(), Ops: onlyIn,
 			SQL: "COALESCE((SELECT lv.state FROM asset_liveness lv WHERE lv.tenant_id = a.tenant_id AND lv.asset_id = a.id), 'unknown')"},
-		filterspec.Field{Name: "primary", Type: filterspec.TypeBool, Ops: onlyEq, SQL: "a.id", BoolTemplate: asset.PrimarySQL("a"),
+		filterspec.Field{Name: "primary", Type: filterspec.TypeBool, Ops: onlyEq, SQL: colID, BoolTemplate: asset.PrimarySQL("a"),
 			Doc: "the organization's root domains"},
-		filterspec.Field{Name: "discovered_by", Type: filterspec.TypeEnum, Enum: discoveryRuleNames(), Ops: onlyIn, SQL: "a.id",
+		filterspec.Field{Name: "discovered_by", Type: filterspec.TypeEnum, Enum: discoveryRuleNames(), Ops: onlyIn, SQL: colID,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: "EXISTS (SELECT 1 FROM easm_evidence dbe WHERE dbe.asset_id = a.id AND dbe.tenant_id = a.tenant_id AND dbe.rule = ANY({arg}))",
 			}},
-		filterspec.Field{Name: "discovery_technique", Type: filterspec.TypeString, Ops: onlyIn, SQL: "a.id", MaxValues: maxTechniqueValues,
+		filterspec.Field{Name: "discovery_technique", Type: filterspec.TypeString, Ops: onlyIn, SQL: colID, MaxValues: maxTechniqueValues,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn: "EXISTS (SELECT 1 FROM easm_evidence dte WHERE dte.asset_id = a.id AND dte.tenant_id = a.tenant_id AND dte.technique = ANY({arg}))",
 			}},
 		filterspec.Field{Name: "confidence", Type: filterspec.TypeInt, Ops: ranges, SQL: confidenceSQL, Doc: "attribution confidence (0-100)"},
-		filterspec.Field{Name: "program_assets", Type: filterspec.TypeEnum, Enum: []string{ProgramAssetsOnly, ProgramAssetsExclude}, Ops: onlyEq, SQL: "a.id", UserOptional: true,
+		filterspec.Field{Name: "program_assets", Type: filterspec.TypeEnum, Enum: []string{ProgramAssetsOnly, ProgramAssetsExclude}, Ops: onlyEq, SQL: colID, UserOptional: true,
 			Doc: "bug-bounty program assets",
 			EnumTemplates: map[string]string{
 				ProgramAssetsOnly: `('bug-bounty' = ANY(a.system_tags) AND (` + ownerSQL + ` OR ` +
@@ -360,7 +368,7 @@ func build(scanned bool) *filterspec.Registry {
 	return filterspec.MustRegistry(filterspec.Registry{
 		Name:          "assets",
 		TenantSQL:     "a.tenant_id",
-		ScopeAssetSQL: "a.id",
+		ScopeAssetSQL: colID,
 		IDSQL:         "a.id",
 		DefaultSort:   []filterspec.SortKey{{Field: "created_at", Desc: true}},
 		Search: &filterspec.Search{

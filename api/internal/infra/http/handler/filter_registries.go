@@ -16,7 +16,7 @@ import (
 func FilterRegistries() map[string]*filterspec.Registry {
 	return map[string]*filterspec.Registry{
 		"findings":               vulnerability.FindingFields,
-		"assets":                 assetlist.Fields,
+		assetlist.Fields.Name:    assetlist.Fields,
 		"web_endpoints":          webendpoint.Fields,
 		"certificates":           certificate.Fields,
 		"technologies":           technology.Fields,

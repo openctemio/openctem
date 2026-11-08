@@ -6,6 +6,7 @@ package routes
 // with an OR across fields never reaches outside the caller's data scope.
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ import (
 func TestAssetsList_LegacyParamsDeprecated(t *testing.T) {
 	h := newDSHarness(t)
 	path := "/api/v1/assets?types=" + "host,domain,subdomain,ip_address,service,application" + "&per_page=100"
-	req, err := http.NewRequest(http.MethodGet, h.srv.URL+path, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, h.srv.URL+path, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
