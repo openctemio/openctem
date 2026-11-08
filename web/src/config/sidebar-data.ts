@@ -64,6 +64,7 @@ import {
   Fence,
   ListChecks,
   Stamp,
+  Compass,
 } from 'lucide-react'
 import { type SidebarData } from '@/components/types'
 import { webExtension } from '@/lib/extension'
@@ -261,6 +262,15 @@ const coreSidebarData: SidebarData = {
           url: '/ci-cd',
           icon: Workflow,
           permission: Permission.CIRead,
+          module: 'scans',
+        },
+        // The next steps the platform plans to learn more about the surface
+        // (api docs/architecture/exploration.md): approve, dismiss, follow.
+        {
+          title: 'Exploration',
+          url: '/exploration',
+          icon: Compass,
+          permission: Permission.AssetsRead,
           module: 'scans',
         },
         // What is exposed, summarised from the inventory below (moved from
