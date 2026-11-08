@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Partly implemented (2026-11-07): practice column, derivation, filters, backfill command, compliance SLA policy; findings switch in progress |
+| Status | Partly implemented (2026-11-07): practice column, derivation, filters, backfill command, compliance SLA policy, findings practice switch |
 | Scope | api (findings column, derivation, filters, query language, MCP, SLA policy, dashboards, backfill command), web (findings practice switch, SLA policy form) |
 | Architecture | [finding-practices.md](../architecture/finding-practices.md) |
 | Related | RFC-048 (list query contract), RFC-115 (query language), RFC-017 (CTEM priority) |

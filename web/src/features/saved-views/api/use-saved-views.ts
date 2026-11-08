@@ -107,6 +107,8 @@ export function viewQueryFromSearch(search: string): string {
   params.forEach((value, key) => {
     if (PAGE_ONLY.has(key)) return
     if (key === 'view' && !savedViewId(value)) return
+    // The findings practice switch's "All" is no practice condition.
+    if (key === 'practice' && value.trim().toLowerCase() === 'all') return
     out.append(key, value)
   })
   return out.toString()
