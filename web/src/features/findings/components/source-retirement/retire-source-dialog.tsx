@@ -26,6 +26,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Label } from '@/components/ui/label'
 import { SeverityBadge } from '@/components/ui/severity-badge'
+import { SEVERITY_LEVELS } from '@/lib/severity'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
@@ -39,7 +40,7 @@ import {
   type SourceSelector,
 } from '../../api/source-retirement-api'
 
-export const RETIRE_SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'] as const
+export const RETIRE_SEVERITIES = SEVERITY_LEVELS
 const MIN_REASON = 10
 const MAX_REASON = 500
 
