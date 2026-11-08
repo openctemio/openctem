@@ -40,7 +40,7 @@ func registerQueryRoutes(router Router, h *handler.QueryHandler, authMiddleware,
 	valuesLimiter := middleware.NewRateLimiter(&config.RateLimitConfig{
 		Enabled: true, RequestsPerSec: valuesRPS, Burst: valuesBurst, CleanupInterval: time.Minute,
 	}, log)
-	read := middleware.RequireAny(permission.FindingsRead, permission.AssetsRead)
+	read := middleware.RequireAny(permission.FindingsRead, permission.AssetsRead, permission.ScansRead)
 	router.Group("/api/v1/query", func(r Router) {
 		r.GET("/schema", h.Schema, read)
 		r.POST("/explain", h.Explain, read, limiter.UserMiddleware())
