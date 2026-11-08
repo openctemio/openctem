@@ -18,6 +18,8 @@ export function buildSlaPolicyPayload(
     // An empty string clears the description (absent would keep the old one).
     description: data.description ?? '',
     ...(isEdit ? {} : { is_default: false }),
+    // What the policy governs is fixed at create.
+    ...(isEdit || !data.practice ? {} : { practice: data.practice }),
     p0_days: data.p0_days,
     p1_days: data.p1_days,
     p2_days: data.p2_days,

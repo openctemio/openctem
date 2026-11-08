@@ -615,6 +615,15 @@ export interface ApiFindingListResponse {
   per_page: number
   total_pages: number
   links?: PaginationLinks
+  /** Present with include=practice_counts (use-practice-counts.ts). */
+  practice_counts?: ApiPracticeCounts
+}
+
+/** practice_counts of GET /findings: the list's filter without its practice condition, per practice. */
+export interface ApiPracticeCounts {
+  total: number
+  vulnerabilities: number
+  practices: { practice: string; count: number }[]
 }
 
 // ============================================
@@ -779,6 +788,11 @@ export interface FindingApiFilters {
   families?: string[]
   /** Filters the page URL carries that the typed fields above do not: param name to value, sent as they are. */
   extra?: Record<string, string>
+  /** The practice switch (lib/practice.ts): practices to show, or to leave out. */
+  practice?: string
+  practice_not?: string
+  /** Response options of the list: `practice_counts` adds the practice switch's counts. */
+  include?: string
   /** An approval request for the finding is pending (or, with false, is not). Sent as `pending_approval`. */
   pending_approval?: boolean
   /** Informational findings (info and none) only, or (false) none of them. Sent as `informational`. */

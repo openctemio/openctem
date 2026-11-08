@@ -19,6 +19,14 @@ import {
   lensLabelKey,
   parseFindingLens,
 } from '@/features/findings/lib/state-lens'
+import {
+  DEFAULT_PRACTICE_VIEW,
+  PRACTICE_PARAM,
+  parsePracticeView,
+  practiceViewParams,
+} from '@/features/findings/lib/practice'
+import { PracticeSwitch } from '@/features/findings/components/practice-switch'
+import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   readFindingHash,
@@ -582,6 +590,13 @@ function FindingsContent() {
   const rawLens = useUrlParam('state')
   const [, setLensParam] = useUrlFilter('state', DEFAULT_FINDING_LENS)
   const lens = parseFindingLens(rawLens)
+  // The practice switch (Vulnerabilities, the default: every practice but
+  // compliance · Compliance · one practice · All). Like the lens, a saved view
+  // carries its own scope, so the default is not laid on top of one; a
+  // practice picked explicitly still is.
+  const rawPractice = useUrlParam(PRACTICE_PARAM)
+  const [, setPracticeParam] = useUrlFilter(PRACTICE_PARAM, DEFAULT_PRACTICE_VIEW)
+  const practiceView = parsePracticeView(rawPractice)
   // "Assigned to me" / My Work: findings the current user is the assignee of,
   // owns the asset of, or is a member of an assigned group. Independent, stackable
   // with the CTEM signals; the backend resolves the user from the token.
@@ -905,6 +920,7 @@ function FindingsContent() {
     groupParam,
     viewParam,
     lens,
+    practiceView,
     severities.join(),
     hideInfo,
     statuses.join(),
@@ -993,6 +1009,7 @@ function FindingsContent() {
     if (teamActive) filters.related_to = 'my_team'
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
     if (pendingApprovalFilter !== undefined) filters.pending_approval = pendingApprovalFilter
+    if (!savedId || rawPractice) Object.assign(filters, practiceViewParams(practiceView))
     if (Object.keys(extraParams).length > 0) filters.extra = extraParams
     if (acceptanceExpiresParam) filters.acceptance_expires_at_lte = acceptanceExpiresParam
     if (fqParam) filters.fq = fqParam
@@ -1032,7 +1049,17 @@ function FindingsContent() {
     savedId,
     lens,
     rawLens,
+    practiceView,
+    rawPractice,
   ])
+
+  // The practice switch's counts come with the list (include=practice_counts):
+  // the list's filters with the practice condition left out, in the caller's
+  // scope, at no extra request.
+  const practiceCountsList = usePracticeCountsList(apiFilters, {
+    enabled: urlSettled && !verifyView,
+    grouped: !!groupBy,
+  })
 
   // The stats describe the page's scope: every finding the caller may see
   // (their data scope applies server-side), narrowed only by the context
@@ -1091,7 +1118,7 @@ function FindingsContent() {
     isLoading: findingsLoading,
     isValidating: findingsValidating,
     mutate: mutateFindingsList,
-  } = useFindingsApi(apiFilters, {
+  } = useFindingsApi(practiceCountsList.listFilters, {
     keepPreviousData: true,
     enabled: urlSettled && !groupBy && !verifyView,
     // The failure shows inline in the table area (with Retry); the default
@@ -1103,6 +1130,8 @@ function FindingsContent() {
     setGroupsReloadKey((k) => k + 1)
     return mutateFindingsList()
   }, [mutateFindingsList])
+
+  const practiceCounts = practiceCountsList.countsFor(findingsResponse)
 
   // Transform API data to UI format
   const findings = useMemo(() => {
@@ -2493,6 +2522,13 @@ function FindingsContent() {
               </FilterPanelSlot>
 
               <div className="min-w-0 flex-1 space-y-3">
+                {urlSettled && !verifyView && (
+                  <PracticeSwitch
+                    value={practiceView}
+                    counts={practiceCounts}
+                    onChange={setPracticeParam}
+                  />
+                )}
                 {!urlSettled ? (
                   <Skeleton className="h-9 w-80 max-w-full" />
                 ) : !verifyView ? (
