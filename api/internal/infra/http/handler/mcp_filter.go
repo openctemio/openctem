@@ -20,6 +20,12 @@ import (
 	"github.com/openctemio/openctem/api/pkg/querylang"
 )
 
+// The list params a tool's page and limit become.
+const (
+	mcpParamPage    = "page"
+	mcpParamPerPage = "per_page"
+)
+
 // mcpFilterHint is the filter param's description in the tool schemas.
 const mcpFilterHint = "the search box syntax, ANDed with the other params: field=value, field:a,b (any of), " +
 	"-field:value (not), field>=value, field<7d (age), field=pre* (pattern), quoted phrases, OR and (...)"

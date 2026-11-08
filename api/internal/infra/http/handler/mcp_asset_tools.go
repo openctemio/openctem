@@ -164,7 +164,7 @@ func (h *MCPHandler) toolSearchAssets(ctx context.Context, tenantID string, raw 
 	page, limit := pageOf(a.Page, a.Limit)
 	// The arguments as the inventory list's params, so the list's own
 	// registry validates them.
-	q := url.Values{"sort": {"-risk_score"}, "page": {fmt.Sprint(page)}, "per_page": {fmt.Sprint(limit)}}
+	q := url.Values{"sort": {"-risk_score"}, mcpParamPage: {fmt.Sprint(page)}, mcpParamPerPage: {fmt.Sprint(limit)}}
 	set := func(k, v string) {
 		if l := splitLowerList(v); len(l) > 0 {
 			q.Set(k, strings.Join(l, ","))
