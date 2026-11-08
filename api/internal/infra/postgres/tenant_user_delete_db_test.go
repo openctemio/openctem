@@ -215,6 +215,16 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	// A connector source (chk_source_retirements_shape), live
+	// (chk_source_retirements_restored); its journal row has a prior open
+	// status (chk_source_retirement_findings_prior).
+	"source_retirements": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "connector", "sender": "seed", "tool": "", "mode": "archive",
+			"state": "active", "sensor_id": nil, "restored_at": nil}
+	},
+	"source_retirement_findings": func(*schemaSeeder) map[string]any {
+		return map[string]any{"prior_status": "new", "restored_at": nil, "restore_outcome": nil}
+	},
 	// An instance scan zone (global) needs at least one private range.
 	"instance_scan_zones": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "seed zone", "ranges": "{10.0.0.0/8}"}
