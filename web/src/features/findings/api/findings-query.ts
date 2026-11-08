@@ -64,6 +64,9 @@ export function buildFindingsQuery(filters: FindingApiFilters): URLSearchParams 
   if (filters.practice) params.set('practice', filters.practice)
   if (filters.practice_not) params.set('practice_not', filters.practice_not)
   if (filters.view) params.set('view', filters.view)
+  // A filter chips cannot show: only the list resolves it (advanced-fetch.ts);
+  // any other GET answers 400 for it, never a wider read.
+  if (filters.fq) params.set('fq', filters.fq)
   if (filters.sort) params.set('sort', filters.sort)
   // Filters the page carries as they are (the filter contract names them).
   for (const [name, value] of Object.entries(filters.extra ?? {})) {
