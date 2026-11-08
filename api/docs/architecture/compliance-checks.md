@@ -110,6 +110,21 @@ its asset, never from the scanner (`vulnerability.ComplianceSeverity`,
 - Filter: `compliance_level` (1, 2, 3; in, not in, at least, at most, empty)
   on every findings list, saved view and export.
 
+## Reads (shipped)
+
+All need `findings:read` and run in the caller's data scope (resolved fail
+closed: a member with no scope row sees nothing), pinned to the tenant.
+
+| Route | Answers |
+|---|---|
+| `GET /api/v1/findings/compliance/benchmarks[?asset_id=]` | per benchmark over the caller's assets (or one asset): assets checked, assets failing, controls per result, pass rate; from the precomputed posture, at most 200 benchmarks, failing first |
+| `GET /api/v1/findings/compliance/benchmarks/{key}/controls?result=&q=` | a benchmark's controls, failed first, with assets per result and the pass rate; paged (100 per page at most) |
+| `GET /api/v1/findings/compliance/benchmarks/{key}/assets?control=&result=` | one control's state on each asset: result, evidence, the scanner's severity, the finding and its status, last checked and last changed; failed first, paged |
+| `GET /api/v1/findings/{id}/compliance-history` | the control a finding fails, its current result and every change, newest first (at most 200); the finding is read with the detail's access check first (404 outside scope) |
+
+Evidence in responses has secrets redacted (`safetext.RedactSecrets`). An
+asset outside the caller's scope reads as no benchmark, never as an error.
+
 ## Remediation per control (shipped)
 
 A compliance finding's remediation key is
@@ -126,7 +141,10 @@ key reads the control from the finding's check state.
   fingerprint (`TestComplianceCheckRecord_TenantPinned_DB`).
 - Evidence is bounded and stored as the importer gives it; the Nessus importer
   redacts credentials from the actual value before it reaches the platform.
-- No new route or permission in this slice.
+- Reads: tenant-pinned SQL with the caller's data scope on the state's
+  asset; DB tests with an owner, a member scoped to one asset, a member
+  without scope and another tenant's checks of the same benchmark
+  (`TestComplianceChecks_ReadsWithinScope_DB`). No new permission.
 
 ## Key files
 
