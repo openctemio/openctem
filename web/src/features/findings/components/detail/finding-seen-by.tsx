@@ -27,6 +27,8 @@ import {
   useFindingSightings,
   type FindingSighting,
 } from '../../api/receipts-api'
+import { sightingSource } from '../../api/source-retirement-api'
+import { RetireSourceButton } from '../source-retirement'
 import { SectionLoadError, isLoadFailure } from './section-load-error'
 
 type T = ReturnType<typeof useTranslation>['t']
@@ -76,6 +78,7 @@ function SightingRow({ s }: { s: FindingSighting }) {
     )
   }
   const meta: ReactNode[] = []
+  const source = sightingSource(s)
   if (s.tool) {
     meta.push(
       <Link
@@ -137,6 +140,13 @@ function SightingRow({ s }: { s: FindingSighting }) {
               count: s.seen_count ?? 1,
             })}
           </Badge>
+          {source ? (
+            <RetireSourceButton
+              compact
+              source={source}
+              label={[s.sensor?.name, s.sender, s.tool].filter(Boolean).join(' ')}
+            />
+          ) : null}
         </span>
       }
       meta={meta}
