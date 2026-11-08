@@ -26,7 +26,7 @@ import {
   practiceViewParams,
 } from '@/features/findings/lib/practice'
 import { PracticeSwitch } from '@/features/findings/components/practice-switch'
-import { usePracticeCounts } from '@/features/findings/api/use-practice-counts'
+import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   readFindingHash,
@@ -1053,9 +1053,13 @@ function FindingsContent() {
     rawPractice,
   ])
 
-  // The practice switch's counts: the list's filters with the practice
-  // condition left out (the server drops it), in the caller's scope.
-  const practiceCounts = usePracticeCounts(apiFilters, urlSettled && !verifyView)
+  // The practice switch's counts come with the list (include=practice_counts):
+  // the list's filters with the practice condition left out, in the caller's
+  // scope, at no extra request.
+  const practiceCountsList = usePracticeCountsList(apiFilters, {
+    enabled: urlSettled && !verifyView,
+    grouped: !!groupBy,
+  })
 
   // The stats describe the page's scope: every finding the caller may see
   // (their data scope applies server-side), narrowed only by the context
@@ -1114,7 +1118,7 @@ function FindingsContent() {
     isLoading: findingsLoading,
     isValidating: findingsValidating,
     mutate: mutateFindingsList,
-  } = useFindingsApi(apiFilters, {
+  } = useFindingsApi(practiceCountsList.listFilters, {
     keepPreviousData: true,
     enabled: urlSettled && !groupBy && !verifyView,
     // The failure shows inline in the table area (with Retry); the default
@@ -1126,6 +1130,8 @@ function FindingsContent() {
     setGroupsReloadKey((k) => k + 1)
     return mutateFindingsList()
   }, [mutateFindingsList])
+
+  const practiceCounts = practiceCountsList.countsFor(findingsResponse)
 
   // Transform API data to UI format
   const findings = useMemo(() => {

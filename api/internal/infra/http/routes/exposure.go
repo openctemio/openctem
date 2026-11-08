@@ -264,8 +264,6 @@ func registerVulnerabilityRoutes(
 		r.GET("/stats", h.GetFindingStats, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 		// The list's quick views with the caller's counts (one scoped statement).
 		r.GET("/quick-views", h.FindingQuickViews, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
-		// The practice switch's counts: the list's filter, one scoped statement.
-		r.GET("/practice-counts", h.FindingPracticeCounts, middleware.Require(permission.FindingsRead), heavyReads.Middleware())
 
 		// The FilterDocument form of the list (RFC-048): read-only, same
 		// permission and scope as GET /findings.

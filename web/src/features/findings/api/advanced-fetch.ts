@@ -11,7 +11,7 @@ import { queryApi } from '@/features/query/api/query-api'
 import type { ApiFindingListResponse } from './finding-api.types'
 
 /** Params of the list URL that are not part of the filter. */
-const PAGE_PARAMS = new Set(['page', 'per_page', 'sort', 'fq'])
+const PAGE_PARAMS = new Set(['page', 'per_page', 'sort', 'fq', 'include'])
 
 /** An fq filter the server refused: the list shows its problem. */
 export class AdvancedFilterError extends Error {

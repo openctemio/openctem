@@ -1280,7 +1280,7 @@
   "findings.people.youAreNotWatching": "Bạn chưa theo dõi.",
   "findings.practice.all.description": "Mọi phát hiện",
   "findings.practice.all.label": "Tất cả",
-  "findings.practice.aspm.description": "Mã nguồn, thư viện phụ thuộc, image và pipeline",
+  "findings.practice.aspm.description": "Mã nguồn, thư viện phụ thuộc, image và bản dựng CI",
   "findings.practice.aspm.label": "Bảo mật ứng dụng",
   "findings.practice.cloud.description": "Phát hiện về cấu hình đám mây",
   "findings.practice.cloud.label": "Cấu hình đám mây",
