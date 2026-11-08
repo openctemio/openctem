@@ -7,6 +7,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -68,8 +69,8 @@ type practiceAssetQuerier interface {
 // practiceAssetFactsSQL reads the facts DerivePractice needs of a tenant's
 // assets. Pinned to the tenant: an asset id of another tenant reads as no
 // asset.
-const practiceAssetFactsSQL = `SELECT id, asset_type,
-		(COALESCE(is_internet_accessible, false) OR exposure = 'public') AS internet_facing
+var practiceAssetFactsSQL = `SELECT id, asset_type,
+		` + asset.InternetFacingSQL("assets") + ` AS internet_facing
 	FROM assets WHERE tenant_id = $1 AND id = ANY($2::uuid[])`
 
 // LoadPracticeAssetFacts returns the practice facts of the tenant's assets
@@ -98,13 +99,18 @@ func LoadPracticeAssetFacts(ctx context.Context, q practiceAssetQuerier, tenantI
 	return out, nil
 }
 
-// derivePractices sets the practice of findings about to be inserted, with
-// one asset query per tenant in the batch.
+// derivePractices sets the practice of findings about to be inserted. A
+// finding whose caller attached its asset's facts (ingest, which holds the
+// assets of the report) is derived from those; the others share one asset
+// query per tenant in the batch, and a batch with none sends no query.
 func derivePractices(ctx context.Context, q practiceAssetQuerier, findings []*vulnerability.Finding) error {
 	byTenant := make(map[shared.ID][]string)
 	seen := make(map[string]bool)
 	for _, f := range findings {
 		if f == nil || f.AssetID().IsZero() {
+			continue
+		}
+		if _, ok := f.AttachedPracticeAssetFacts(); ok {
 			continue
 		}
 		key := f.TenantID().String() + "/" + f.AssetID().String()
@@ -125,8 +131,8 @@ func derivePractices(ctx context.Context, q practiceAssetQuerier, findings []*vu
 		if f == nil {
 			continue
 		}
-		var af vulnerability.PracticeAssetFacts
-		if !f.AssetID().IsZero() {
+		af, ok := f.AttachedPracticeAssetFacts()
+		if !ok && !f.AssetID().IsZero() {
 			af = facts[f.TenantID()][f.AssetID().String()]
 		}
 		f.ApplyPractice(af)

@@ -94,7 +94,9 @@ simple views and the existing filters and query language.
   shared view or a practice count never reaches rows outside the caller's
   scope. Tests: a scoped member filtering on compliance sees only in-scope
   rows; another tenant's rows never appear.
-- The asset facts the derivation reads are pinned to the finding's tenant.
+- The asset facts the derivation reads are pinned to the finding's tenant:
+  the repository reads them by tenant, and ingest attaches only the facts of
+  the batch tenant's own stored assets to the batch tenant's findings.
 - Compliance is fixed to the finding type (decision 3).
 - The backfill command changes nothing without `-apply`, reads only
   aggregates in its report, and opens its connection read-only for a dry run.

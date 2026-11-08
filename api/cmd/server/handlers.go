@@ -51,6 +51,7 @@ import (
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	explorationapp "github.com/openctemio/openctem/api/internal/app/exploration"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -68,6 +69,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
@@ -685,6 +687,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
 		IngestReceipt:          newIngestReceiptHandler(cfg, repos, svc, log),
+		Story:                  newStoryHandler(deps.DB, repos, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -1920,6 +1923,26 @@ func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Servi
 		h.SetMappingResolver(svc.ImportMapping)
 	}
 	return h
+}
+
+// newStoryHandler builds "how we found this" for findings and assets
+// (docs/architecture/exploration.md).
+func newStoryHandler(db *postgres.DB, repos *Repositories, svc *Services, log *logger.Logger) *handler.StoryHandler {
+	if svc.Vulnerability == nil || svc.Asset == nil {
+		return nil
+	}
+	var scope explorationapp.ScopeMatchers
+	if svc.Scope != nil {
+		scope = func(ctx context.Context, tenantID string) (explorationapp.ScopeMatcher, error) {
+			return svc.Scope.NewExplainer(ctx, tenantID)
+		}
+	}
+	var sightings ingestreceipt.SightingReader
+	if repos.IngestReceipt != nil {
+		sightings = repos.IngestReceipt
+	}
+	return handler.NewStoryHandler(explorationapp.NewStoryService(svc.Vulnerability, svc.Asset, sightings,
+		postgres.NewStoryRepository(db), scope), log)
 }
 
 // newIngestReceiptHandler builds the receipt reads, with the per-file
