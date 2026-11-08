@@ -44,6 +44,7 @@ import en_findings from './en/findings.json'
 import en_findingApprovals from './en/findingApprovals.json'
 import en_findingLifecycle from './en/findingLifecycle.json'
 import en_exceptions from './en/exceptions.json'
+import en_exploration from './en/exploration.json'
 import en_exposures from './en/exposures.json'
 import en_help from './en/help.json'
 import en_insights from './en/insights.json'
@@ -148,6 +149,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   findingApprovals: en_findingApprovals,
   findingLifecycle: en_findingLifecycle,
   exceptions: en_exceptions,
+  exploration: en_exploration,
   exposures: en_exposures,
   help: en_help,
   insights: en_insights,

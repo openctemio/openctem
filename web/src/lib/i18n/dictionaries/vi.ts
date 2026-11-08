@@ -44,6 +44,7 @@ import vi_findings from './vi/findings.json'
 import vi_findingApprovals from './vi/findingApprovals.json'
 import vi_findingLifecycle from './vi/findingLifecycle.json'
 import vi_exceptions from './vi/exceptions.json'
+import vi_exploration from './vi/exploration.json'
 import vi_exposures from './vi/exposures.json'
 import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
@@ -148,6 +149,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   findingApprovals: vi_findingApprovals,
   findingLifecycle: vi_findingLifecycle,
   exceptions: vi_exceptions,
+  exploration: vi_exploration,
   exposures: vi_exposures,
   help: vi_help,
   insights: vi_insights,
