@@ -103,6 +103,8 @@ type mcpComplianceReader interface {
 
 type mcpAssetReader interface {
 	ListAssets(ctx context.Context, in asset.ListAssetsInput) (pagination.Result[*assetdom.Asset], error)
+	// ListAssetsWhere is the inventory list on its registry, as the caller.
+	ListAssetsWhere(ctx context.Context, c asset.ListCaller, q asset.ListQuery) (assetdom.WhereResult, error)
 	GetAsset(ctx context.Context, tenantID, assetID string) (*assetdom.Asset, error)
 }
 
