@@ -18,6 +18,7 @@ export const RECEIPT_OUTCOME_CODES = [
   'reserved_tool',
   'compliance_passed',
   'quarantined',
+  'source_retired',
   'split',
 ] as const
 
@@ -44,6 +45,8 @@ export function receiptOutcomeLabel(t: T, code: ReceiptOutcomeCode): string {
       return t('findings.receipts.outcome.compliance_passed', 'Compliance checks that passed')
     case 'quarantined':
       return t('findings.receipts.outcome.quarantined', 'Held in the results quarantine')
+    case 'source_retired':
+      return t('findings.receipts.outcome.source_retired', 'Refused, the source was stopped')
     case 'split':
       return t('findings.receipts.outcome.split', 'Added by splitting findings with several CVEs')
   }
