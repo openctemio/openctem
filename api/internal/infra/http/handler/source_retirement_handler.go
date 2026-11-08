@@ -353,7 +353,7 @@ func (h *SourceRetirementHandler) Get(w http.ResponseWriter, r *http.Request) {
 	ciWriteJSON(w, http.StatusOK, toSourceRetirementResponse(ret))
 }
 
-// Restore handles POST /api/v1/findings/sources/retirements/{id}/restore
+// Restore handles POST /api/v1/findings/sources/retirements/{id}/reactivate
 // @Summary      Use a retired import source again
 // @Description  The source's reports are accepted again at once, and the findings its retirement archived return to the status they had, unless someone changed them since (counted as changed, left as they are). 200 when done, 202 while batches remain. Re-authentication as the organization's sensitive rule says; audited.
 // @Tags         Findings
@@ -367,7 +367,7 @@ func (h *SourceRetirementHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Failure      403  {object}  apierror.Error
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
-// @Router       /findings/sources/retirements/{id}/restore [post]
+// @Router       /findings/sources/retirements/{id}/reactivate [post]
 func (h *SourceRetirementHandler) Restore(w http.ResponseWriter, r *http.Request) {
 	tenantID, ok := h.tenant(w, r)
 	if !ok {
