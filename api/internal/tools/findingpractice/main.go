@@ -35,6 +35,7 @@ package findingpractice
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -58,6 +59,11 @@ type Options struct {
 	Tenant    *shared.ID // nil: every tenant
 	Apply     bool
 	BatchSize int
+	// SLA adds the compliance SLA re-baseline (sla.go).
+	SLA bool
+	// UndoPath is the undo file a re-baseline apply writes first (required
+	// with SLA and Apply; never overwritten).
+	UndoPath string
 }
 
 // Move counts the findings that move from one practice to another.
@@ -84,6 +90,8 @@ type TenantReport struct {
 	Moves map[string]Move `json:"moves"`
 	// Reasons counts the derivation reason of the changed rows.
 	Reasons map[string]int `json:"reasons"`
+	// SLA is the compliance SLA re-baseline (with -sla).
+	SLA *SLAReport `json:"sla,omitempty"`
 }
 
 // Report is what a run found and, with Apply, did.
@@ -100,10 +108,12 @@ func Main() {
 	apply := flag.Bool("apply", false, "make the changes (default: a dry run)")
 	asJSON := flag.Bool("json", false, "print the report as JSON")
 	batch := flag.Int("batch", DefaultBatchSize, "rows per page")
+	withSLA := flag.Bool("sla", false, "also re-baseline open compliance findings to the compliance SLA (from first detection)")
+	undoPath := flag.String("undo", "", "with -sla -apply: the undo file to create (previous deadlines), never overwritten")
 	timeout := flag.Duration("timeout", 2*time.Hour, "overall time limit")
 	flag.Parse()
 
-	opts := Options{Apply: *apply, BatchSize: *batch}
+	opts := Options{Apply: *apply, BatchSize: *batch, SLA: *withSLA, UndoPath: *undoPath}
 	if *tenantFlag != "" {
 		id, err := shared.IDFromString(*tenantFlag)
 		if err != nil {
@@ -147,6 +157,18 @@ func Run(ctx context.Context, db *sql.DB, opts Options) (*Report, error) {
 	if opts.BatchSize <= 0 {
 		opts.BatchSize = DefaultBatchSize
 	}
+	var undo *csv.Writer
+	if opts.SLA && opts.Apply {
+		if opts.UndoPath == "" {
+			return nil, errUndoRequired
+		}
+		f, w, err := openUndo(opts.UndoPath)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = f.Close() }()
+		undo = w
+	}
 	tenants, err := listTenants(ctx, db, opts.Tenant)
 	if err != nil {
 		return nil, err
@@ -156,6 +178,11 @@ func Run(ctx context.Context, db *sql.DB, opts Options) (*Report, error) {
 		tr, err := runTenant(ctx, db, tid, opts)
 		if err != nil {
 			return nil, fmt.Errorf("tenant %s: %w", tid, err)
+		}
+		if opts.SLA {
+			if tr.SLA, err = rebaselineTenant(ctx, db, tid, opts, undo); err != nil {
+				return nil, fmt.Errorf("tenant %s: sla: %w", tid, err)
+			}
 		}
 		rep.Tenants = append(rep.Tenants, *tr)
 	}
@@ -385,6 +412,10 @@ func Render(r *Report) string {
 		for _, k := range keys {
 			m := t.Moves[k]
 			fmt.Fprintf(&b, "  move %-24s open %d, closed %d\n", strings.Replace(k, ">", " -> ", 1), m.Open, m.Closed)
+		}
+		if s := t.SLA; s != nil {
+			fmt.Fprintf(&b, "  compliance sla: %d open with a deadline, %d to extend (%d days in all), %d unchanged, overdue %d -> %d, %d written\n",
+				s.Considered, s.Extended, s.ExtensionDays, s.Unchanged, s.OverdueBefore, s.OverdueAfter, s.Applied)
 		}
 	}
 	return b.String()

@@ -35,9 +35,9 @@ func (r *SLAPolicyRepository) Create(ctx context.Context, policy *sla.Policy) er
 			critical_days, high_days, medium_days, low_days, info_days,
 			warning_threshold_percent, escalation_enabled, escalation_config,
 			is_active, created_at, updated_at,
-			p0_days, p1_days, p2_days, p3_days, kev_cap_days
+			p0_days, p1_days, p2_days, p3_days, kev_cap_days, practice
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
 	`
 
 	_, err = r.db.ExecContext(ctx, query,
@@ -63,6 +63,7 @@ func (r *SLAPolicyRepository) Create(ctx context.Context, policy *sla.Policy) er
 		policy.P2Days(),
 		policy.P3Days(),
 		policy.KEVCapDays(),
+		nullString(policy.Practice()),
 	)
 
 	if err != nil {
@@ -88,7 +89,7 @@ func (r *SLAPolicyRepository) GetByAsset(ctx context.Context, tenantID, assetID 
 	query := r.selectQuery() + `
 		WHERE tenant_id = $1
 		AND (asset_id = $2 OR (asset_id IS NULL AND is_default = true))
-		AND is_active = true
+		AND is_active = true AND practice IS NULL
 		ORDER BY asset_id NULLS LAST
 		LIMIT 1
 	`
@@ -103,6 +104,7 @@ func (r *SLAPolicyRepository) GetByAsset(ctx context.Context, tenantID, assetID 
 // an inactive asset policy in GetByAsset.
 func (r *SLAPolicyRepository) GetTenantDefault(ctx context.Context, tenantID shared.ID) (*sla.Policy, error) {
 	query := r.selectQuery() + ` WHERE tenant_id = $1 AND is_default = true AND is_active = true AND asset_id IS NULL
+		AND practice IS NULL
 		ORDER BY created_at ASC LIMIT 1`
 	row := r.db.QueryRowContext(ctx, query, tenantID.String())
 	return r.scanPolicy(row)
@@ -137,12 +139,14 @@ func (r *SLAPolicyRepository) UpdateMakingDefault(ctx context.Context, policy *s
 		return fmt.Errorf("failed to lock tenant default: %w", err)
 	}
 	if _, err = tx.ExecContext(ctx, `SELECT id FROM sla_policies
-		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true FOR UPDATE`, tenant); err != nil {
+		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true AND practice IS NOT DISTINCT FROM $2 FOR UPDATE`,
+		tenant, nullString(policy.Practice())); err != nil {
 		return fmt.Errorf("failed to lock current default SLA policy: %w", err)
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE sla_policies SET is_default = false, updated_at = now()
-		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true AND id <> $2`,
-		tenant, policy.ID().String()); err != nil {
+		WHERE tenant_id = $1 AND asset_id IS NULL AND is_default = true AND id <> $2
+		  AND practice IS NOT DISTINCT FROM $3`,
+		tenant, policy.ID().String(), nullString(policy.Practice())); err != nil {
 		return fmt.Errorf("failed to unset existing default SLA policies: %w", err)
 	}
 	if err := r.updateExec(ctx, tx, policy); err != nil {
@@ -275,7 +279,7 @@ func (r *SLAPolicyRepository) selectQuery() string {
 			critical_days, high_days, medium_days, low_days, info_days,
 			warning_threshold_percent, escalation_enabled, escalation_config,
 			is_active, created_at, updated_at,
-			p0_days, p1_days, p2_days, p3_days, kev_cap_days
+			p0_days, p1_days, p2_days, p3_days, kev_cap_days, practice
 		FROM sla_policies
 	`
 }
@@ -316,6 +320,7 @@ func (r *SLAPolicyRepository) doScan(scan func(dest ...any) error) (*sla.Policy,
 		updatedAt           time.Time
 		p0, p1, p2, p3      sql.NullInt64
 		kevCapDays          int
+		practice            sql.NullString
 	)
 
 	err := scan(
@@ -323,7 +328,7 @@ func (r *SLAPolicyRepository) doScan(scan func(dest ...any) error) (*sla.Policy,
 		&criticalDays, &highDays, &mediumDays, &lowDays, &infoDays,
 		&warningThresholdPct, &escalationEnabled, &escalationConfig,
 		&isActive, &createdAt, &updatedAt,
-		&p0, &p1, &p2, &p3, &kevCapDays,
+		&p0, &p1, &p2, &p3, &kevCapDays, &practice,
 	)
 	if err != nil {
 		return nil, err
@@ -372,7 +377,7 @@ func (r *SLAPolicyRepository) doScan(scan func(dest ...any) error) (*sla.Policy,
 		isActive,
 		createdAt,
 		updatedAt,
-	).WithPriorityDays(nullDays(p0), nullDays(p1), nullDays(p2), nullDays(p3)).WithKEVCapDays(kevCapDays), nil
+	).WithPriorityDays(nullDays(p0), nullDays(p1), nullDays(p2), nullDays(p3)).WithKEVCapDays(kevCapDays).WithPractice(practice.String), nil
 }
 
 // nullDays maps a NULL priority-days column to 0, which WithPriorityDays
