@@ -497,6 +497,10 @@ func (p *AssetProcessor) processBatch(
 	observedAt := reportObservedAt(report, time.Now())
 	isNew := map[string]bool{}
 	queued := map[string]bool{}
+	// Every asset entity a report asset landed on, and the ids the upsert
+	// stored (practice_facts.go).
+	var held []*asset.Asset
+	var persisted map[string]shared.ID
 	var renames []pendingRename
 
 	for i := range report.Assets {
@@ -543,6 +547,7 @@ func (p *AssetProcessor) processBatch(
 				skipOutOfScope(output, ctisAsset.ID)
 				return
 			}
+			held = append(held, existing)
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
@@ -603,6 +608,7 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			newAssets = append(newAssets, newAsset)
+			held = append(held, newAsset)
 			assetMap[ctisAsset.ID] = newAsset.ID()
 			alterRefs[ctisAsset.ID] = true
 			existingMap[normalizedName] = newAsset
@@ -794,6 +800,7 @@ func (p *AssetProcessor) processBatch(
 		}
 		output.AssetsCreated = created
 		output.AssetsUpdated = updated
+		persisted = persistedIDs
 
 		// A new asset the database refused (the repository skips just that
 		// row) was never stored: unmap it so its findings are not linked to
@@ -922,6 +929,8 @@ func (p *AssetProcessor) processBatch(
 	if p.relRepo != nil {
 		p.createReportRelationships(ctx, tenantID, report, existingMap, assetMap, mayChange)
 	}
+
+	notePracticeFacts(output, tenantID, held, persisted, isNew, assetMap)
 
 	// What this ingest wrote, for attribution (scan_attribution.go): every
 	// asset it created (report assets, root domains, resolved addresses) and

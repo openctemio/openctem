@@ -37,6 +37,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/attack"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
+	explorationapp "github.com/openctemio/openctem/api/internal/app/exploration"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/finding"
 	"github.com/openctemio/openctem/api/internal/app/integration"
@@ -228,6 +229,8 @@ func newDSHarness(t *testing.T) *dsHarness {
 	vulnHandler := handler.NewVulnerabilityHandler(vulnSvc, v, log)
 	vulnHandler.SetFindingCorrelations(postgres.NewFindingCorrelationRepository(db))
 	registerVulnerabilityRoutes(router, vulnHandler, nil, nil, nil, auth, nil)
+	registerStoryRoutes(router, handler.NewStoryHandler(explorationapp.NewStoryService(vulnSvc, assetSvc,
+		postgres.NewIngestReceiptRepository(db), postgres.NewStoryRepository(db), nil), log), auth, nil)
 	registerAssetGroupRoutes(router, handler.NewAssetGroupHandler(groupSvc, v, log), auth, nil)
 	registerAttackSurfaceRoutes(router, handler.NewAttackSurfaceHandler(surfaceSvc, log), auth, nil, passthrough)
 	exposureHandler := handler.NewExposureHandler(expSvc, nil, v, log)
