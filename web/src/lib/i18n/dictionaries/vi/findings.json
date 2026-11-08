@@ -1447,6 +1447,7 @@
   "findings.receipts.lastSeenIn": "Thấy lần cuối trong",
   "findings.receipts.noFindingsYet": "Chưa có phát hiện nào",
   "findings.receipts.outcome.compliance_passed": "Kiểm tra tuân thủ đạt",
+  "findings.receipts.outcome.compliance_state": "Kiểm tra tuân thủ không áp dụng hoặc không chạy được, lưu thành trạng thái kiểm soát",
   "findings.receipts.outcome.exposure": "Ghi thành điểm phơi nhiễm",
   "findings.receipts.outcome.merged": "Lặp lại trong cùng lần quét",
   "findings.receipts.outcome.out_of_contract": "Giữ lại để xem xét, ngoài phạm vi đầu ra của công cụ",

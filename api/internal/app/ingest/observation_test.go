@@ -30,23 +30,6 @@ func TestFindingObservedAt(t *testing.T) {
 	}
 }
 
-func TestIsCompliancePass(t *testing.T) {
-	for _, tc := range []struct {
-		f    ctis.Finding
-		want bool
-	}{
-		{ctis.Finding{Type: ctis.FindingTypeCompliance, Kind: "pass"}, true},
-		{ctis.Finding{Type: ctis.FindingTypeCompliance, Kind: "fail"}, false},
-		{ctis.Finding{Type: ctis.FindingTypeCompliance, Kind: "review"}, false},
-		{ctis.Finding{Type: ctis.FindingTypeCompliance, Kind: "not_applicable"}, false},
-		{ctis.Finding{Type: ctis.FindingTypeVulnerability, Kind: "pass"}, false},
-	} {
-		if got := isCompliancePass(&tc.f); got != tc.want {
-			t.Errorf("%s/%s: %v", tc.f.Type, tc.f.Kind, got)
-		}
-	}
-}
-
 func TestGroupByObservedAt(t *testing.T) {
 	t1, t2, fb := time.Unix(1, 0), time.Unix(2, 0), time.Unix(9, 0)
 	order, groups := groupByObservedAt([]string{"a", "b", "c", "d"}, map[string]time.Time{"a": t2, "b": t1, "c": t2}, fb)

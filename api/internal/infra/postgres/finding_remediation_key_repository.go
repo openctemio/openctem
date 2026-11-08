@@ -208,13 +208,20 @@ var keySourceSelect = `
 	       COALESCE(f.metadata->'version_match'->>'product', ''),
 	       COALESCE(f.metadata->'version_match'->>'version', ''),
 	       COALESCE(f.metadata->'version_match'->>'range', ''),
-	       ` + vulnerability.FindingLensSQLOn(vulnerability.FindingLensOpen, "f.status") + `
+	       ` + vulnerability.FindingLensSQLOn(vulnerability.FindingLensOpen, "f.status") + `,
+	       COALESCE(cs.benchmark_key, ''), COALESCE(cs.benchmark_name, ''),
+	       COALESCE(cs.control_id, ''), COALESCE(cs.control_name, '')
 	FROM findings f
 	LEFT JOIN software_versions sv ON sv.id = f.component_id AND (sv.tenant_id IS NULL OR sv.tenant_id = f.tenant_id)
 	LEFT JOIN software_products p ON p.id = sv.product_id AND p.purl_type IS NOT NULL
 	          AND (p.tenant_id IS NULL OR p.tenant_id = f.tenant_id)
 	LEFT JOIN vulnerabilities v ON v.id = f.vulnerability_id
 	LEFT JOIN finding_remediation_keys frk ON frk.finding_id = f.id AND frk.tenant_id = f.tenant_id
+	-- The benchmark control of a compliance finding (its check state).
+	LEFT JOIN LATERAL (SELECT s.benchmark_key, s.benchmark_name, s.control_id, s.control_name
+	                   FROM compliance_check_states s
+	                   WHERE s.tenant_id = f.tenant_id AND s.finding_id = f.id AND f.finding_type = 'compliance'
+	                   ORDER BY s.last_checked_at DESC LIMIT 1) cs ON TRUE
 	WHERE f.tenant_id = $1`
 
 // KeySources reads the key inputs of the tenant's findings with these ids.
@@ -273,7 +280,8 @@ func (r *FindingRemediationKeyRepository) keySources(ctx context.Context, q stri
 		in := &ks.Input
 		if err := rows.Scan(&id, &in.Source, &in.FindingType, &in.Ecosystem, &in.PackageName, &in.InstalledVersion,
 			&metaFixed, &catalogFixed, &in.SecretFingerprint, &in.SecretType, &in.SolutionText,
-			&ks.CurrentKey, &ks.CurrentTitle, &ks.CurrentVersion, &in.RuleID, &vmProduct, &vmVersion, &vmRange, &ks.Open); err != nil {
+			&ks.CurrentKey, &ks.CurrentTitle, &ks.CurrentVersion, &in.RuleID, &vmProduct, &vmVersion, &vmRange, &ks.Open,
+			&in.BenchmarkKey, &in.BenchmarkName, &in.ControlID, &in.ControlName); err != nil {
 			return nil, fmt.Errorf("scan remediation key source: %w", err)
 		}
 		if in.Ecosystem != "" {
