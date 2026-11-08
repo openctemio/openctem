@@ -192,7 +192,7 @@ bucketed).
 
 | Entity | Permission | Registry | Group by | Aggregate | Bucket |
 |---|---|---|---|---|---|
-| `findings` | `findings:read` | `vulnerability.FindingFields` + relation fields | severity, status, source, sla_status, priority_class, finding_type, observation, validation, tool_name, family, cve_id, rule_id, is_in_kev, is_reachable, network_transport, network_service, asset.type, asset.criticality, asset.environment, asset.exposure, asset.internet_facing, asset.crown_jewel | cvss_score, epss_score | first_detected_at, last_seen_at, resolved_at, created_at |
+| `findings` | `findings:read` | `vulnerability.FindingFields` + relation fields | severity, status, source, sla_status, priority_class, finding_type, practice, compliance_result, observation, validation, tool_name, family, cve_id, rule_id, is_in_kev, is_reachable, network_transport, network_service, asset.type, asset.criticality, asset.environment, asset.exposure, asset.internet_facing, asset.crown_jewel | cvss_score, epss_score | first_detected_at, last_seen_at, resolved_at, created_at |
 | `assets` | `assets:read` | `asset.AssetFields` | type, sub_type, criticality, status, scope, exposure, environment, data_classification, internet_facing, crown_jewel, discovery_source, provider | risk_score | first_seen, last_seen, discovered_at, created_at |
 
 **Curated relation (findings → asset):** `asset.type`, `asset.criticality`,

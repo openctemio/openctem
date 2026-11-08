@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // =============================================================================
@@ -263,6 +264,10 @@ type Output struct {
 	OverCapAssetRefs map[string]bool `json:"-"`
 	// OutsideTargetAssetIDs are the persisted assets of OutsideJobAssetRefs.
 	OutsideTargetAssetIDs map[shared.ID]bool `json:"-"`
+	// practiceFacts are the practice facts of the assets this ingest
+	// persisted, by id (practice_facts.go). The finding insert derives the
+	// practice from them instead of reading the assets again.
+	practiceFacts map[shared.ID]vulnerability.PracticeAssetFacts
 	// ContractMismatchTypes are the types a verified first-party tool
 	// reported without declaring them (ingested and flagged);
 	// ContractMismatchRefs are the report refs of those assets
