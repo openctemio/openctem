@@ -47,6 +47,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
   },
   { path: /^src\/features\/shared\/components\/tone-pill\.tsx$/, why: 'a CI pipeline status' },
   {
+    path: /^src\/features\/query\/components\/query-input\.tsx$/,
+    why: "the query API's problem code pipeline_not_allowed (a | pipe in a query)",
+  },
+  {
     path: /^src\/features\/assets\/types\/asset\.types\.ts$/,
     why: 'repositories and their CI pipelines',
   },

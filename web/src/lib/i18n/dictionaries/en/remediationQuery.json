@@ -1,10 +1,5 @@
 {
   "remediationQuery.box.checking": "Checking the query…",
-  "remediationQuery.box.hint": "Write a findings filter, e.g. findings where severity = critical and asset.internet_facing = true. Suggestions appear as you type.",
-  "remediationQuery.box.invalid": "The query is not valid.",
-  "remediationQuery.box.placeholder": "findings where severity in (critical, high)",
-  "remediationQuery.box.problemAt": "Line {line}, column {column}: {message}",
-  "remediationQuery.box.suggestions": "Query suggestions",
   "remediationQuery.create.cancel": "Cancel",
   "remediationQuery.create.conflictsChanged": "Some findings were claimed by another task since the preview. Review them and create again.",
   "remediationQuery.create.created": "Task \"{task}\" created with {count} findings",

@@ -29,6 +29,12 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
   derives the practice right before the insert, reading the facts of the
   findings' assets with one query per tenant, pinned to the tenant
   (`internal/infra/postgres/finding_practice_columns.go`).
+- Ingest sends no extra statement for it: the asset processor already holds
+  every asset the report's findings land on, after its own upsert, and
+  records their facts (stored type, internet-facing) for the batch tenant;
+  the findings processor attaches them to the new findings
+  (`internal/app/ingest/practice_facts.go`). A finding without attached facts
+  (an asset that lost a concurrent create, another path) is read as above.
 - A re-sighting (the upsert) keeps the stored practice, except for a row never
   derived and a row whose type changed; a closed finding keeps its practice.
   `SetFindingType(compliance)` moves the entity to compliance at once (that

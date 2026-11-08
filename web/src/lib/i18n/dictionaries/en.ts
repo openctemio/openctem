@@ -44,6 +44,7 @@ import en_findings from './en/findings.json'
 import en_findingApprovals from './en/findingApprovals.json'
 import en_findingLifecycle from './en/findingLifecycle.json'
 import en_exceptions from './en/exceptions.json'
+import en_exploration from './en/exploration.json'
 import en_exposures from './en/exposures.json'
 import en_help from './en/help.json'
 import en_insights from './en/insights.json'
@@ -97,6 +98,7 @@ import en_workflowStages from './en/workflowStages.json'
 import en_remediationHub from './en/remediationHub.json'
 import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
+import en_queryInput from './en/queryInput.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
 import en_threatModel from './en/threatModel.json'
@@ -147,6 +149,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   findingApprovals: en_findingApprovals,
   findingLifecycle: en_findingLifecycle,
   exceptions: en_exceptions,
+  exploration: en_exploration,
   exposures: en_exposures,
   help: en_help,
   insights: en_insights,
@@ -200,6 +203,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   remediationHub: en_remediationHub,
   remediationClaim: en_remediationClaim,
   remediationCampaigns: en_remediationCampaigns,
+  queryInput: en_queryInput,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,
   threatModel: en_threatModel,

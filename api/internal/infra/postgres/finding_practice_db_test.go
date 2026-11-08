@@ -161,3 +161,30 @@ func TestLoadPracticeAssetFacts_TenantPinned_DB(t *testing.T) {
 		t.Fatalf("own tenant facts = %v, %v", got, err)
 	}
 }
+
+// A finding with its asset's facts attached (ingest) is derived from them;
+// the others of the same batch still read their asset's facts, pinned to
+// the tenant.
+func TestFindingPractice_AttachedFacts_DB(t *testing.T) {
+	ctx := context.Background()
+	db := openGroupsDB(t)
+	repo := NewFindingRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	host := seedPracticeAsset(ctx, t, db, tenant, "host", false)
+	app := seedPracticeAsset(ctx, t, db, tenant, "application", false)
+
+	// The stored row says not internet-facing; the attached facts (what the
+	// ingest holds after its own upsert) say facing, and win.
+	attached := newPracticeFinding(t, tenant, app, vulnerability.FindingSourceDAST, "nuclei", "")
+	attached.AttachPracticeAssetFacts(vulnerability.PracticeAssetFacts{AssetType: "application", AssetInternetFacing: true})
+	looked := newPracticeFinding(t, tenant, host, vulnerability.FindingSourceDAST, "nuclei", "")
+	if _, err := repo.CreateBatchWithResult(ctx, []*vulnerability.Finding{attached, looked}); err != nil {
+		t.Fatal(err)
+	}
+	if p, r := storedPractice(ctx, t, db, tenant, attached.ID()); p != "external" || r.String != vulnerability.PracticeReasonOutsideInCheck {
+		t.Fatalf("attached facts: practice %s (%s), want external", p, r.String)
+	}
+	if p, r := storedPractice(ctx, t, db, tenant, looked.ID()); p != "infra" || r.String != vulnerability.PracticeReasonInternalCheck {
+		t.Fatalf("looked-up facts: practice %s (%s), want infra", p, r.String)
+	}
+}
