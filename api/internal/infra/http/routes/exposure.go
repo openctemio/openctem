@@ -314,6 +314,13 @@ func registerVulnerabilityRoutes(
 		r.POST("/closure/proposals/decide", h.DecideClosureProposals, middleware.Require(permission.FindingsVerify), requireStepUpWhenConfirming())
 		r.GET("/closure/auto-closed", h.ListRecentlyAutoClosed, middleware.Require(permission.FindingsRead))
 
+		// Compliance check state (must be before /{id}): the posture per
+		// benchmark, a benchmark's controls and a control's assets, in the
+		// caller's data scope.
+		r.GET("/compliance/benchmarks", h.ListComplianceBenchmarks, middleware.Require(permission.FindingsRead))
+		r.GET("/compliance/benchmarks/{key}/controls", h.ListComplianceControls, middleware.Require(permission.FindingsRead))
+		r.GET("/compliance/benchmarks/{key}/assets", h.ListComplianceControlAssets, middleware.Require(permission.FindingsRead))
+
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
 		r.GET("/{id}/view", findingView.View, middleware.Require(permission.FindingsRead))
@@ -325,6 +332,9 @@ func registerVulnerabilityRoutes(
 		// What each source reported (per-source records), side by side where
 		// they disagree; same scope as the detail, the sensor per sensors:read.
 		r.GET("/{id}/source-records", h.GetFindingSources, middleware.Require(permission.FindingsRead))
+		// The history of the benchmark control a compliance finding fails;
+		// same scope as the detail.
+		r.GET("/{id}/compliance-history", h.GetFindingComplianceHistory, middleware.Require(permission.FindingsRead))
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
