@@ -29,6 +29,7 @@ import (
 	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
 	"github.com/openctemio/openctem/api/internal/app/defectdojo"
 	easmdnsapp "github.com/openctemio/openctem/api/internal/app/easmdns"
+	explorationapp "github.com/openctemio/openctem/api/internal/app/exploration"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
 	"github.com/openctemio/openctem/api/internal/app/reclassify"
@@ -1427,6 +1428,20 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			svc.AssetCoverage.EnableOperatorAlerts(repos.AssetCoverage, newAdminNotifier(cfg, repos, svc, log))
 		}
 		w.ControllerManager.Register(controller.NewAssetCoverageController(svc.AssetCoverage, cfg.Worker.AssetCoverageInterval))
+
+		// Exploration (docs/architecture/exploration.md): rules open leads and
+		// the best open leads are dispatched through the same coverage run
+		// path and daily budget, as the system, behind the dispatch gate.
+		if svc.Scan != nil && svc.ScanPolicy != nil {
+			db := &postgres.DB{DB: deps.DB}
+			sw := coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant}
+			leads := postgres.NewExplorationRepository(db)
+			rules := explorationapp.NewRules(leads, postgres.NewExplorationTriggerRepository(db), sw, svc.Audit, log)
+			w.ControllerManager.Register(controller.NewExplorationController(
+				explorationapp.NewController(leads, postgres.NewExplorationControllerRepository(db), rules, svc.Scan,
+					repos.AssetCoverage, sw, svc.Audit, log,
+					explorationapp.ControllerConfig{DailyBudget: cfg.Worker.AssetCoverageDailyBudget}), 0))
+		}
 	}
 
 	// Automatic passive enrichment of new assets (RFC-075).

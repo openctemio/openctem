@@ -99,6 +99,7 @@ seeded table):
 - `internal/infra/http/handler/exploration_story_handler.go`, `internal/infra/http/routes/exploration.go`.
 - `pkg/domain/exploration/lead.go`, `repository.go`: leads, links, verdicts.
 - `configs/lead-types.yaml`, `cmd/gen-lead-types`, `pkg/domain/exploration/catalog.go`: the lead type catalog.
+- `internal/app/exploration/rules.go`, `controller.go`; `pkg/domain/exploration/score.go`; `internal/infra/controller/exploration.go`.
 - `internal/infra/postgres/exploration_lead_repository.go`; migration `exploration_layer`.
 
 ## Leads, links and verdicts: storage
@@ -218,8 +219,97 @@ audit), `internal/infra/postgres/exploration_trigger_repository_db_test.go`
 asked subjects are left out, version-match thresholds, gone with open
 findings only).
 
+## Scoring and dispatch
+
+`ExplorationController` (`internal/infra/controller/exploration.go`, module
+Scans, every 2 minutes, one replica at a time) runs
+`internal/app/exploration/controller.go` for every tenant with assets:
+
+1. the rules open leads;
+2. blocked leads whose recheck time came reopen;
+3. running leads settle from their run;
+4. open leads are scored and the best are dispatched.
+
+**Score** (`pkg/domain/exploration/score.go`, code only):
+
+```
+score = P(useful) x value / cost
+P     = (prior x 4 + useful) / (4 + tried)       prior: low .1, medium .3, high .6
+value = criticality (critical 4, high 3, medium 2, else 1) x public 2 x open KEV or critical finding 3
+        x crown jewel 2 x the lead type's value weight
+cost  = the tool's learned mean duration for the tenant (tool_duration_stats), 60 s when unknown
+```
+
+`tried` and `useful` are the tenant's settled verdicts of the same (lead
+type, capability) cell (useful = proven). A cell whose last 10 outcomes were
+all useless is demoted (score x 0.2). The inputs are stored with the lead
+(`score_inputs`), so a person can see why it ranks where it does.
+
+**Selection.** 20 % of each pass's slots (at least one) go first to leads of
+cells the tenant never settled, so new kinds of step get tried; the rest go by
+score. At most one lead per subject and capability is picked, and none whose
+(subject, capability) is already running.
+
+**Caps.** 4 running leads per tenant; one running per subject and capability;
+every dispatch counts against the tenant's coverage daily budget
+(`ASSET_COVERAGE_DAILY_BUDGET`): the ledger's attempts and the leads' own
+dispatches of the last 24 hours share it.
+
+**Dispatch** goes only through the coverage planner's run path,
+`scan.Service.StartCoverage`, as the coverage policy's system authority:
+
+- the dispatch gate (`ResolveDispatchTargets`, fail closed): scope entries,
+  exclusions, guardrails, the active-scan ownership gate, zone routing;
+- the signed job and the sensor's local policy;
+- the target is always the subject asset's own stored name (the ledger's
+  target form), never anything a lead carries;
+- the subject's ledger pair, if the ledger holds one, is marked queued on the
+  run, so the ledger settles it too.
+
+Outcomes of a dispatch:
+
+| Gate answer | Lead |
+|---|---|
+| run started | `running`, `dispatched_as` link, attempts + 1 |
+| target refused (out of scope, excluded, guardrail...) | `blocked` with the gate's code, rechecked after 6 hours; nothing runs |
+| the capability cannot run now (readiness) | `blocked` with the readiness reason, retried after 30 minutes |
+| the capability's coverage run is still active | stays `open` (next pass) |
+
+Before dispatch the lead is checked again: an intrusive (T2) step is blocked
+(`intrusive_needs_person`) and never started by the system; an active (T1)
+step that no person approved moves back to `awaiting_approval` when automatic
+coverage is off (or unreadable); a subject removed or archived supersedes
+the lead; a lead at its type's attempt limit is exhausted; a catalog action
+that no longer applies to the subject's type blocks it.
+
+**Settlement.** When the run finishes, the lead type's settle mode answers:
+
+| Mode | Proven | Refuted | Otherwise |
+|---|---|---|---|
+| `finding` | the run reported a finding on the subject (`yields` links to it, `created` or `confirmed`) | the run completed without one (`yields` the subject, `not_found`) | |
+| `liveness` | the liveness ledger, checked after the run, holds the subject gone, unreachable or unresolvable | it answered (alive) | not checked since the run: inconclusive |
+| `match` | a cited version-match finding is now likely or was reported by a scanner | every cited finding closed | inconclusive |
+
+A failed, cancelled, timed-out or blocked run, a run that stalls past 24
+hours and an inconclusive answer are `inconclusive`: the lead waits 30
+minutes (`blocked`, then reopened) and is dispatched again until the type's
+attempt limit, then it is `exhausted`. Every verdict is `deterministic` with
+the run (and the findings) as evidence references.
+
+**Audit.** Every state change (`exploration.lead_state_changed`, with from,
+to and reason) and every verdict (`exploration.lead_verdict`) is audited with
+the controller as the actor and the lead's action hash.
+
+Tests: `internal/app/exploration/controller_test.go` (the subject's own name
+in the lead's tenant is the only target, a refused target never runs and is
+rechecked, gate errors block, approval tiers at dispatch, the daily budget
+and the running cap, busy capability, settlement by finding and liveness,
+failed runs exhaust, archived subjects supersede, tenant-bound passes),
+`pkg/domain/exploration/score_test.go`,
+`internal/infra/postgres/exploration_controller_repository_db_test.go`.
+
 ## Not yet built
 
 - Retest outcomes and evidence items as steps.
-- Scoring and dispatch, approvals, leads opened by people and the
-  Exploration page: designed in RFC-153, not built.
+- Approvals by people, leads opened by people and the Exploration page:
+  designed in RFC-153, not built.
