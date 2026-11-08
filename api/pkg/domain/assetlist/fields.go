@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetdomain"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
@@ -23,6 +25,16 @@ import (
 // ({tenant}) or to the asset's own row, and binds values only through
 // {arg}. Left out on purpose: free-form properties, descriptions, owner
 // contact data, sync errors, integration references and soft deletion.
+
+// Values of the list's derived-state fields.
+const (
+	CoverageCovered        = "covered"
+	CoverageUncovered      = "uncovered"
+	ResolutionResolving    = "resolving"
+	ResolutionNotResolving = "not_resolving"
+	ProgramAssetsOnly      = "only"
+	ProgramAssetsExclude   = "exclude"
+)
 
 // Limits of the list's own fields.
 const (
@@ -237,19 +249,25 @@ func build(scanned bool) *filterspec.Registry {
 		filterspec.Field{Name: "has_findings", Type: filterspec.TypeBool, Ops: onlyEq, SQL: "a.id", BoolTemplate: openFindingsSQL},
 		filterspec.Field{Name: "finding_count", Type: filterspec.TypeInt, Ops: rangesEq, SQL: openFindingCountSQL, Expensive: true,
 			Doc: "open findings", Sortable: true, SortSQL: "COALESCE(fc.finding_count, 0)"},
-		filterspec.Field{Name: "coverage", Type: filterspec.TypeEnum, Enum: []string{"covered", "uncovered"}, Ops: onlyEq, SQL: "a.id",
+		filterspec.Field{Name: "coverage", Type: filterspec.TypeEnum, Enum: []string{CoverageCovered, CoverageUncovered}, Ops: onlyEq, SQL: "a.id",
 			EnumTemplates: map[string]string{
-				"covered":   CoverageCondition("covered", coverageSince),
-				"uncovered": CoverageCondition("uncovered", coverageSince),
+				CoverageCovered:   CoverageCondition(CoverageCovered, coverageSince),
+				CoverageUncovered: CoverageCondition(CoverageUncovered, coverageSince),
 			}},
 		filterspec.Field{Name: "coverage_cause", Type: filterspec.TypeEnum, Enum: dashboard.CoverageCauses(), Ops: onlyIn, SQL: "a.id",
 			Templates: map[filterspec.Op]string{
-				filterspec.OpIn: CoverageCondition("uncovered", coverageSince) + " AND " + CoverageCauseExpr(coverageSince) + " = ANY({arg})",
+				filterspec.OpIn: CoverageCondition(CoverageUncovered, coverageSince) + " AND " + CoverageCauseExpr(coverageSince) + " = ANY({arg})",
 			}},
-		filterspec.Field{Name: "freshness", Type: filterspec.TypeEnum, Enum: []string{"stale", "never"}, Ops: onlyEq, SQL: "a.id",
-			EnumTemplates: map[string]string{"stale": FreshnessSQL("stale"), "never": FreshnessSQL("never")}},
-		filterspec.Field{Name: "resolution", Type: filterspec.TypeEnum, Enum: []string{"resolving", "not_resolving"}, Ops: onlyEq, SQL: "a.id",
-			EnumTemplates: map[string]string{"resolving": ResolutionSQL("resolving"), "not_resolving": ResolutionSQL("not_resolving")}},
+		filterspec.Field{Name: "freshness", Type: filterspec.TypeEnum, Enum: []string{assetfreshness.FilterStale, assetfreshness.FilterNever}, Ops: onlyEq, SQL: "a.id",
+			EnumTemplates: map[string]string{
+				assetfreshness.FilterStale: FreshnessSQL(assetfreshness.FilterStale),
+				assetfreshness.FilterNever: FreshnessSQL(assetfreshness.FilterNever),
+			}},
+		filterspec.Field{Name: "resolution", Type: filterspec.TypeEnum, Enum: []string{ResolutionResolving, ResolutionNotResolving}, Ops: onlyEq, SQL: "a.id",
+			EnumTemplates: map[string]string{
+				ResolutionResolving:    ResolutionSQL(ResolutionResolving),
+				ResolutionNotResolving: ResolutionSQL(ResolutionNotResolving),
+			}},
 		filterspec.Field{Name: "technology", Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.id", MaxValues: assettech.MaxFilterValues,
 			Normalize: normalizeTechnology, Doc: "technology name, or name@version",
 			Templates: map[filterspec.Op]string{
@@ -331,12 +349,12 @@ func build(scanned bool) *filterspec.Registry {
 				filterspec.OpIn: "EXISTS (SELECT 1 FROM easm_evidence dte WHERE dte.asset_id = a.id AND dte.tenant_id = a.tenant_id AND dte.technique = ANY({arg}))",
 			}},
 		filterspec.Field{Name: "confidence", Type: filterspec.TypeInt, Ops: ranges, SQL: confidenceSQL, Doc: "attribution confidence (0-100)"},
-		filterspec.Field{Name: "program_assets", Type: filterspec.TypeEnum, Enum: []string{"only", "exclude"}, Ops: onlyEq, SQL: "a.id", UserOptional: true,
+		filterspec.Field{Name: "program_assets", Type: filterspec.TypeEnum, Enum: []string{ProgramAssetsOnly, ProgramAssetsExclude}, Ops: onlyEq, SQL: "a.id", UserOptional: true,
 			Doc: "bug-bounty program assets",
 			EnumTemplates: map[string]string{
-				"only": `('bug-bounty' = ANY(a.system_tags) AND (` + ownerSQL + ` OR ` +
+				ProgramAssetsOnly: `('bug-bounty' = ANY(a.system_tags) AND (` + ownerSQL + ` OR ` +
 					VisibleProgramLinkSQL("a.id", "a.tenant_id", "{user}", "") + `))`,
-				"exclude": "NOT a.program_only",
+				ProgramAssetsExclude: "NOT a.program_only",
 			}},
 	)
 	return filterspec.MustRegistry(filterspec.Registry{
@@ -402,9 +420,11 @@ func discoveryRuleNames() []string {
 // attributionFilterNames are the stored states plus the filter words of
 // attribution.ParseFilter.
 func attributionFilterNames() []string {
-	out := []string{attribution.FilterAll, attribution.FilterUnrecorded, attribution.FilterUnconfirmed,
-		attribution.FilterApproved, attribution.FilterAttributed}
-	for _, s := range storedAttributionStates() {
+	stored := storedAttributionStates()
+	out := make([]string, 0, 5+len(stored))
+	out = append(out, attribution.FilterAll, attribution.FilterUnrecorded, attribution.FilterUnconfirmed,
+		attribution.FilterApproved, attribution.FilterAttributed)
+	for _, s := range stored {
 		out = append(out, string(s))
 	}
 	return out
