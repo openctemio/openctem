@@ -189,7 +189,6 @@
   "features/secret-store/components/edit-credential-dialog.tsx": 43,
   "features/secret-store/components/secret-store-section.tsx": 19,
   "features/sensors/components/enrollment-tokens-panel.tsx": 2,
-  "features/sensors/components/scan-identification-parts.tsx": 1,
   "features/sensors/components/scan-identification-settings.tsx": 1,
   "features/sensors/components/sensor-cells.tsx": 8,
   "features/sensors/components/sensor-grant-edit-dialog.tsx": 1,

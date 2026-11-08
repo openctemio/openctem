@@ -60,7 +60,8 @@ func runTenable(t *testing.T, mode SourceResolveMode, scope *alterScope, report 
 	p.sourceResolveMode = mode
 	out := &Output{}
 	err := p.processBatch(context.Background(), newTestSensor(t, tenantID), tenantID, report,
-		map[string]shared.ID{"host-10.0.0.5": shared.NewID()}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope)
+		map[string]shared.ID{"host-10.0.0.5": shared.NewID()}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope,
+		vulnerability.SourceIdentity{})
 	require.NoError(t, err)
 	return out
 }
