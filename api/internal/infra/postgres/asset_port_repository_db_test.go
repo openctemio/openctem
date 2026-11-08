@@ -82,6 +82,9 @@ func portRows(ctx context.Context, t *testing.T, db *sql.DB, tenant shared.ID, a
 		}
 		out = append(out, s)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	sort.Strings(out)
 	return strings.Join(out, ",")
 }

@@ -44,31 +44,12 @@ func (r *AssetPortRepository) ProcessQueue(ctx context.Context, limit int) (asse
 	if _, err := tx.ExecContext(ctx, "SET LOCAL statement_timeout = '"+assetPortTimeout+"'"); err != nil {
 		return res, fmt.Errorf("set asset ports timeout: %w", err)
 	}
-	rows, err := tx.QueryContext(ctx, `
-		DELETE FROM asset_port_queue q
-		USING (SELECT asset_id FROM asset_port_queue ORDER BY enqueued_at LIMIT $1 FOR UPDATE SKIP LOCKED) due
-		WHERE q.asset_id = due.asset_id
-		RETURNING q.tenant_id::text, q.asset_id::text`, limit)
+	byTenant, order, err := claimAssetPortQueue(ctx, tx, limit)
 	if err != nil {
-		return res, fmt.Errorf("claim asset ports queue: %w", err)
+		return res, err
 	}
-	byTenant := map[string][]string{}
-	var order []string
-	for rows.Next() {
-		var tid, aid string
-		if err := rows.Scan(&tid, &aid); err != nil {
-			_ = rows.Close()
-			return res, fmt.Errorf("scan asset ports queue: %w", err)
-		}
-		if _, ok := byTenant[tid]; !ok {
-			order = append(order, tid)
-		}
-		byTenant[tid] = append(byTenant[tid], aid)
-		res.Claimed++
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return res, fmt.Errorf("iterate asset ports queue: %w", err)
+	for _, ids := range byTenant {
+		res.Claimed += len(ids)
 	}
 	for _, tid := range order {
 		n, err := refreshAssetPorts(ctx, tx, tid, byTenant[tid])
@@ -81,6 +62,36 @@ func (r *AssetPortRepository) ProcessQueue(ctx context.Context, limit int) (asse
 		return res, fmt.Errorf("commit asset ports batch: %w", err)
 	}
 	return res, nil
+}
+
+// claimAssetPortQueue removes up to limit queued assets, oldest first,
+// grouped by tenant in claim order.
+func claimAssetPortQueue(ctx context.Context, tx *sql.Tx, limit int) (map[string][]string, []string, error) {
+	rows, err := tx.QueryContext(ctx, `
+		DELETE FROM asset_port_queue q
+		USING (SELECT asset_id FROM asset_port_queue ORDER BY enqueued_at LIMIT $1 FOR UPDATE SKIP LOCKED) due
+		WHERE q.asset_id = due.asset_id
+		RETURNING q.tenant_id::text, q.asset_id::text`, limit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("claim asset ports queue: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	byTenant := map[string][]string{}
+	var order []string
+	for rows.Next() {
+		var tid, aid string
+		if err := rows.Scan(&tid, &aid); err != nil {
+			return nil, nil, fmt.Errorf("scan asset ports queue: %w", err)
+		}
+		if _, ok := byTenant[tid]; !ok {
+			order = append(order, tid)
+		}
+		byTenant[tid] = append(byTenant[tid], aid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate asset ports queue: %w", err)
+	}
+	return byTenant, order, nil
 }
 
 // QueueDepth is the number of queued assets.
@@ -144,22 +155,9 @@ const assetPortRowsSQL = `
 // and of the assets that depend on them, in chunks of
 // assetport.RefreshChunk assets.
 func refreshAssetPorts(ctx context.Context, tx *sql.Tx, tenantID string, ids []string) (int, error) {
-	rows, err := tx.QueryContext(ctx, assetPortSubjectsSQL, tenantID, pq.Array(ids))
+	subjects, err := assetPortSubjects(ctx, tx, tenantID, ids)
 	if err != nil {
-		return 0, fmt.Errorf("asset ports subjects: %w", err)
-	}
-	subjects := make([]string, 0, len(ids))
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return 0, fmt.Errorf("scan asset ports subject: %w", err)
-		}
-		subjects = append(subjects, id)
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("asset ports subjects: %w", err)
+		return 0, err
 	}
 	for start := 0; start < len(subjects); start += assetport.RefreshChunk {
 		chunk := subjects[start:min(start+assetport.RefreshChunk, len(subjects))]
@@ -172,4 +170,25 @@ func refreshAssetPorts(ctx context.Context, tx *sql.Tx, tenantID string, ids []s
 		}
 	}
 	return len(subjects), nil
+}
+
+// assetPortSubjects lists the assets whose rows a change of ids touches.
+func assetPortSubjects(ctx context.Context, tx *sql.Tx, tenantID string, ids []string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, assetPortSubjectsSQL, tenantID, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("asset ports subjects: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	subjects := make([]string, 0, len(ids))
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan asset ports subject: %w", err)
+		}
+		subjects = append(subjects, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("asset ports subjects: %w", err)
+	}
+	return subjects, nil
 }
