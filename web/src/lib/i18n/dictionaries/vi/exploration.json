@@ -1,0 +1,21 @@
+{
+  "exploration.story.chainLabel": "Cách chúng tôi tìm thấy",
+  "exploration.story.excludedBy": "Bị loại trừ bởi {pattern}",
+  "exploration.story.hidden": "Một bước bạn không xem được",
+  "exploration.story.hiddenAsset": "Một tài sản nằm ngoài phạm vi dữ liệu của bạn.",
+  "exploration.story.hiddenScan": "Một lượt quét: bạn cần quyền xem bản quét.",
+  "exploration.story.loadTitle": "cách tìm thấy mục này",
+  "exploration.story.moreReports": "{count, plural, other {Thêm # nguồn đã báo cáo}}: xem mục Được phát hiện bởi.",
+  "exploration.story.role.asset": "Tìm thấy dưới",
+  "exploration.story.role.discovered": "Phát hiện bởi",
+  "exploration.story.role.finding": "Phát hiện",
+  "exploration.story.role.reported": "Báo cáo bởi",
+  "exploration.story.role.scanReported": "Quét bởi",
+  "exploration.story.role.scanned": "Quét gần nhất bởi",
+  "exploration.story.role.scope": "Trong phạm vi theo",
+  "exploration.story.role.subjectAsset": "Tài sản này",
+  "exploration.story.scanRun": "Lượt quét",
+  "exploration.story.seenCount": "{count, plural, other {# lần}}",
+  "exploration.story.title": "Cách chúng tôi tìm thấy",
+  "exploration.story.truncated": "Các bước trước đó không được hiển thị."
+}
