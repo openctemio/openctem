@@ -97,8 +97,61 @@ seeded table):
 - `internal/app/exploration/story.go`: composition and redaction.
 - `internal/infra/postgres/exploration_story_repository.go`: runs, asset runs, asset receipt.
 - `internal/infra/http/handler/exploration_story_handler.go`, `internal/infra/http/routes/exploration.go`.
+- `pkg/domain/exploration/lead.go`, `repository.go`: leads, links, verdicts.
+- `internal/infra/postgres/exploration_lead_repository.go`; migration `exploration_layer`.
+
+## Leads, links and verdicts: storage
+
+A **lead** is an open question about one subject (an asset or a finding)
+with a typed next action: one capability of the stage catalog plus
+params, never a tool command line. Free text is only the rationale, which is
+shown escaped and never executed. The tier comes from the stage catalog,
+never from whoever opened the lead.
+
+| Table | Holds |
+|---|---|
+| `explorations` | one objective with its budget; one `continuous` exploration per tenant (`uq_explorations_continuous`) |
+| `exploration_leads` | the question: lead type, state, capability and params, `action_hash`, tier, subject, reason code, rationale, origin (`rule`, `user`, `ai_agent`, `system`) and its reference, likelihood band, score and its inputs, `dedup_key`, attempts, approval |
+| `exploration_links` | typed links of a lead: `derived_from` (the evidence that justified it), `dispatched_as` (the run it started), `yields` (what that run produced, `not_found` included) |
+| `exploration_verdicts` | append-only answers: `proven`, `refuted`, `inconclusive`, with the checker's tier (`deterministic`, `human`, `heuristic`, `ai`) and evidence references, never bodies |
+
+Lead states: `proposed`, `awaiting_approval`, `open`, `running`, `blocked`
+(live), then `done`, `refuted`, `exhausted`, `dismissed`, `superseded`
+(closed, `closed_at` set). A closed lead never moves again
+(`pkg/domain/exploration/lead.go`, `CanMove`), and `awaiting_approval` never
+goes straight to `running`.
+
+Invariants the database keeps:
+
+- **Tenant isolation on every reference.** Each end of a link is a typed
+  column (`asset_id`, `finding_id`, `scan_run_id`, `ref_lead_id`) with a
+  composite foreign key on `(tenant_id, id)`; a lead's exploration and
+  subject likewise. A row can only point at rows of its own tenant.
+- **One live lead per question:** `uq_exploration_leads_live_dedup` on the
+  dedup key (lead type, subject, capability) while the lead is live.
+- **One link per lead, relation and end:** the same run is never recorded
+  twice as a lead's dispatch.
+- **Nothing is lost.** A removed asset, finding or run clears only that end
+  column (`ON DELETE SET NULL (column)`); the link keeps its `end_kind`.
+  Leads and links are kept forever.
+- **Verdicts are append-only.** A trigger refuses UPDATE and DELETE; the one
+  change a row takes is clearing `decided_by` when that account is deleted,
+  and a verdict goes only with its lead. `proven` comes only from a
+  deterministic check or from a person with evidence (`Verdict.Validate`).
+- Row-level security policies in shadow mode, as on every tenant table.
+
+Reads follow the reader's data scope: a restricted member sees a lead only
+when its subject asset (or the subject finding's asset) is in scope; a member
+with no scope row sees none. Asset merges move a lead's subject and its asset
+links to the kept asset; finding merges move a lead's subject finding, while
+a link to a finding stays on the tombstone as history.
+
+Tests: `internal/infra/postgres/exploration_lead_repository_db_test.go`
+(lifecycle, dedup, compare and set, cross-tenant references refused on every
+end, data scope, append-only verdicts), `pkg/domain/exploration/lead_test.go`.
 
 ## Not yet built
 
 - Retest outcomes and evidence items as steps.
-- Leads, links and verdicts (the exploration layer): designed in RFC-153, not built.
+- Opening leads (rules and people), scoring and dispatch, approvals and the
+  Exploration page: designed in RFC-153, not built.
