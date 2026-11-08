@@ -155,6 +155,8 @@ type Service struct {
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
+	// retiredSources: the sources a tenant stopped using (policy snapshot).
+	retiredSources RetiredSourceReader
 	resultLimits   sensorresult.Limits
 	// grants and pushRefusals enforce the sensor's push-ingest grant before
 	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
@@ -573,6 +575,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	addRefusedItems(output, sent, holds, opts.RefusedItems)
 	if mismatched != nil {
 		output.ContractMismatchTypes, output.ContractMismatchRefs = mismatched.Types, mismatched.AssetRefs
+	}
+	// A source the organization stopped using: nothing of its report is
+	// applied (no asset, no finding); the receipt counts every finding it
+	// sent as source_retired, so the refusal is never silent.
+	if s.refuseRetiredSource(ctx, agt, tenantID, binding, opts, reportID, report, output) {
+		return output, nil
 	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
