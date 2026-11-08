@@ -44,4 +44,16 @@ describe('unaccountedFindings', () => {
     expect(unaccountedFindings(13, c, { merged: 4, exposure: 1, split: 2, unknown: 50 })).toBe(0)
     expect(unaccountedFindings(15, c, { merged: 4, exposure: 1, split: 2 })).toBe(2)
   })
+
+  it('names the reports a stopped source sent', () => {
+    const rows = receivedBreakdown(t, {
+      received: 5,
+      new: 0,
+      suppressed: 0,
+      not_stored: 0,
+      outcomes: { source_retired: 5 },
+      unaccounted: 0,
+    })
+    expect(rows).toContainEqual(['Refused, the source was stopped', 5])
+  })
 })
