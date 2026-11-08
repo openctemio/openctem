@@ -5,6 +5,8 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/certificate"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/posture"
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/technology"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
@@ -23,5 +25,7 @@ func FilterRegistries() map[string]*filterspec.Registry {
 		"exposure_items":         exposure.ItemFields,
 		"attack_surface_posture": posture.Fields,
 		"web_endpoint_events":    webendpoint.EventFields,
+		"scans":                  scan.Fields,
+		"scan_runs":              scanrun.RunFields,
 	}
 }
