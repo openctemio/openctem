@@ -1676,6 +1676,7 @@
   "scans.profiles.title": "Hồ sơ quét",
   "scans.profiles.updateFailed": "Không cập nhật được hồ sơ",
   "scans.profiles.updated": "Đã cập nhật hồ sơ \"{name}\"",
+  "scans.query.label": "Lọc lượt quét bằng câu truy vấn",
   "scans.quick.defaultName": "Quét {scanner}",
   "scans.quick.description": "Chạy một trình quét trên các đích ngay bây giờ. Sẽ không lưu gì trừ khi bạn chọn lưu.",
   "scans.quick.done": "Xong",

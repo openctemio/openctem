@@ -146,6 +146,55 @@ counts the same filtered set by status. Both need `assets:read`. Subjects and
 issuers are chosen by whoever issued the certificate: clients render them as
 text.
 
+## Scans (`GET /scans`, `POST /scans/search`)
+
+The scans list reads the `scans` registry (`pkg/domain/scan/scan_fields.go`).
+A scan is tenant configuration (schedule, targets, tool), not an asset row, so
+the registry is `Unscoped` (the reason is in the registry): the tenant
+predicate is first, no data scope is added, and every caller with `scans:read`
+sees the tenant's saved scans, exactly as before the migration. Fields:
+`id`, `name` (a pattern with `*` and `?`, or `name_contains`), `status`,
+`scan_type`, `schedule_type`, `sensor_preference`, `origin` (`user` or
+`system`), `tag`, `asset_group_id` (the legacy single group and the list),
+`scan_workflow_id`, `profile_id`, `scan_zone_id`, `scanner_name`,
+`last_run_status`, `created_by`, `created_at`, `last_run_at`, `next_run_at`,
+`total_runs` and `failed_runs`. `q` searches the name and the description.
+Sortable: `name` (default), `created_at`, `last_run_at`, `next_run_at`,
+`total_runs`.
+
+Two rules are added by the server to every request, through registry fields a
+request can not name (`archived`, `ad_hoc`): archived scans are never listed,
+and quick scans that were never saved (`ad_hoc`) are listed only with
+`include_ad_hoc=true` or when the request asks for `origin=system` at the top
+level of its AND (the scans a platform policy manages are ad hoc by nature). A
+`origin=system` inside an OR or a NOT lifts nothing. `include_ad_hoc` is a list
+option, not a filter: `Options.Extra` on the route, a query parameter on
+`POST /scans/search` too.
+
+Old names: `search` (now `q`) and `tags` (now `tag`) are aliases with the
+`Deprecation`, `Sunset` and `Warning` headers and the
+`deprecated_query_param_requests_total` metric; `status`, `scan_type`,
+`schedule_type`, `origin`, `asset_group_id`, `scan_workflow_id`, `sort`, `page`
+and `per_page` are canonical names and need no alias. An unknown parameter is
+now `400 INVALID_FILTER` (strict mode). `POST /scans/search` takes the
+FilterDocument body with the same registry, permission (`scans:read`) and
+rules. The query language has a matching `scans` entity
+([query-language.md](query-language.md)).
+
+## Scan runs (`GET /scan-runs`)
+
+The tenant-wide runs list reads the `scan_runs` registry
+(`pkg/domain/scanrun/run_fields.go`, `Unscoped` for the same reason). Fields:
+`id`, `status`, `kind`, `trigger_type`, `scan_id`, `scan_workflow_id`,
+`asset_id`, `origin` (`user` or `system`: the scan of the run is managed by a
+platform policy, the scan pinned to the run's tenant on both sides),
+`created_at`, `started_at`, `completed_at`, `duration` (seconds) and
+`total_findings`; sortable by the time fields, `duration` and `total_findings`
+(default `-created_at`). Rules added by the server: system runs are left out
+unless `include_system=true` or the request names a `kind`, and a caller who
+may not read findings does not see retest and validation runs. The old
+parameters keep their names; an unknown parameter is `400 INVALID_FILTER`.
+
 ## Exposure items (`GET /attack-surface/exposures`)
 
 The Exposure Items view reads `exposure_events` joined to its live asset
