@@ -106,6 +106,13 @@ var findingMergeRefs = []mergeRef{
 	// dropping the loser's copy loses nothing; the others move.
 	{table: "finding_source_records", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"channel", "sender", "tool"}, nullSafe: []string{"sensor_id"}}}},
+	// The finding of a control's latest failed result follows the merge, so
+	// the control points at the live finding. The row is keyed by asset and
+	// control, not by finding, so a move cannot collide. The history
+	// (compliance_check_results.finding_id, no foreign key) keeps the finding
+	// it was written with; the tombstone keeps its id, so the link still
+	// resolves and no history is lost.
+	{table: "compliance_check_states", column: "finding_id", tenantCol: "tenant_id"},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"action_key"}}}},
