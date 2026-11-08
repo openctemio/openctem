@@ -94,7 +94,7 @@ export function formatScoreValue(s: FindingSourceScore): string | undefined {
   return s.value.toFixed(1)
 }
 
-function ScoreRow({ score }: { score: FindingSourceScore }) {
+export function ScoreRow({ score }: { score: FindingSourceScore }) {
   const { t, locale } = useTranslation()
   const name = `${knownLabel(t, 'system', SYSTEM_LABEL, score.system)}${score.version ? ` ${score.version}` : ''}`
   const value = formatScoreValue(score)
