@@ -287,3 +287,27 @@ func TestComplianceCheck_AssetMergeKeepsHistory_DB(t *testing.T) {
 		t.Fatalf("%d posture rows of the merged asset remain", n)
 	}
 }
+
+// The compliance severity reads only the tenant's own assets.
+func TestComplianceAssetFacts_TenantPinned_DB(t *testing.T) {
+	ctx := context.Background()
+	db := openGroupsDB(t)
+	tenantA := seedTestTenant(ctx, t, db)
+	tenantB := seedTestTenant(ctx, t, db)
+	a := seedPracticeAsset(ctx, t, db, tenantA, "host", false)
+	b := seedPracticeAsset(ctx, t, db, tenantB, "host", false)
+	if _, err := db.ExecContext(ctx, `UPDATE assets SET is_crown_jewel = true, environment = 'production' WHERE id = ANY($1::uuid[])`,
+		"{"+a.String()+","+b.String()+"}"); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := NewFindingRepository(&DB{DB: db}).ComplianceAssetFacts(ctx, tenantA, []shared.ID{a, b})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f := facts[a]; !f.Critical || !f.Production {
+		t.Fatalf("own asset facts = %+v", f)
+	}
+	if _, ok := facts[b]; ok {
+		t.Fatal("another tenant's asset was read")
+	}
+}

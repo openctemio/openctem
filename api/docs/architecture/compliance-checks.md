@@ -78,6 +78,38 @@ Pass rate = passed / (passed + failed); not applicable, error and manual are
 shown beside it and never counted. Excepted failures stay in the failed count
 and are shown separately.
 
+## Priority (shipped)
+
+A compliance finding's severity and class come from the benchmark level and
+its asset, never from the scanner (`vulnerability.ComplianceSeverity`,
+`vulnerability.ClassifyCompliance`):
+
+| Result | Level 1 or unknown | Level 2 or 3 |
+|---|---|---|
+| failed | medium | low |
+| warning (manual) | low | low |
+
+- A critical asset (crown jewel, or criticality critical) or the production
+  environment raises a failure by one band; both together still one band.
+  Internet exposure changes nothing: a hardening control does not measure
+  exposure. The highest a compliance finding gets by itself is high.
+- Class: high is P2, everything else P3. Exploitation signals (KEV, a
+  reproduced validation) and the exploitation floor never apply to a
+  benchmark check; a tenant priority rule may still raise one, and the
+  attribution cap applies. With the compliance SLA windows a level 1 failure
+  on a normal server is medium, P3, 180 days.
+- Ingest sets the severity of every new or re-sighted compliance failure
+  before it is classified and written (one tenant-pinned read of the batch's
+  assets: crown jewel, criticality, environment). An analyst's severity
+  override stands. A re-sighting never lowers a stored severity (the
+  re-sighting rule keeps the higher one), so findings stored before this
+  change keep the scanner's severity until the `compliance-checks` command
+  re-classifies them.
+- The scanner's severity is kept on the check state (`scanner_severity`) and
+  in the sighting's source data.
+- Filter: `compliance_level` (1, 2, 3; in, not in, at least, at most, empty)
+  on every findings list, saved view and export.
+
 ## Remediation per control (shipped)
 
 A compliance finding's remediation key is
