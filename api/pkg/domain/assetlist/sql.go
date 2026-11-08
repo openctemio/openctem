@@ -211,7 +211,7 @@ func freshnessNeverSQL() string {
 // so another tenant's state never matches.
 func ResolutionSQL(value string) string {
 	switch value {
-	case "not_resolving", "resolving":
+	case ResolutionNotResolving, ResolutionResolving:
 		return `EXISTS (SELECT 1 FROM asset_resolution ar
 			WHERE ar.tenant_id = a.tenant_id AND ar.asset_id = a.id AND ar.state = '` + value + `')`
 	}
@@ -268,9 +268,9 @@ const (
 func CoverageCondition(value, sincePlaceholder string) string {
 	covered := fmt.Sprintf(CoverageCoveredFmt, sincePlaceholder)
 	switch value {
-	case "covered":
+	case CoverageCovered:
 		return covered
-	case "uncovered":
+	case CoverageUncovered:
 		return CoverageTrackedSQL + " AND NOT " + covered
 	}
 	return ""
@@ -324,7 +324,7 @@ func CoverageCauseCondition(cause, since, causeArg string) string {
 	if !dashboard.IsCoverageCause(cause) {
 		return ""
 	}
-	return CoverageCondition("uncovered", since) + " AND " + CoverageCauseExpr(since) + " = " + causeArg
+	return CoverageCondition(CoverageUncovered, since) + " AND " + CoverageCauseExpr(since) + " = " + causeArg
 }
 
 // ProgramLinkTagsSQL is the FROM clause that yields, as column t, the system
