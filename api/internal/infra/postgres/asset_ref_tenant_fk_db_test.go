@@ -68,8 +68,10 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// asset_domain_queue) and
 	// 1 from the liveness ledger (asset_liveness).
 	// 1 from the services a version-match finding is observed on (finding_locations).
-	if n != 60 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 60 validated", n, allValid.Bool)
+	// 2 from compliance check states and their posture (compliance_check_states,
+	// compliance_posture).
+	if n != 62 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 62 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing

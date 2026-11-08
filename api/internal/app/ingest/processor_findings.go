@@ -18,6 +18,7 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/compliancecheck"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -31,6 +32,8 @@ type FindingCreatedCallback func(ctx context.Context, tenantID shared.ID, findin
 
 // FindingProcessor handles batch finding processing.
 type FindingProcessor struct {
+	// complianceChecks stores compliance check states (compliance_checks.go).
+	complianceChecks ComplianceCheckRecorder
 	// sourceResolveMode is the source-asserted resolve mode
 	// (source_resolve.go); "" is dry_run.
 	sourceResolveMode SourceResolveMode
@@ -483,6 +486,20 @@ func (p *FindingProcessor) processBatch(
 
 	var mitigations []vulnerability.SourceMitigation
 	mitigatedNow := time.Now()
+	// The compliance results of the batch, recorded once the findings are
+	// written (a failure's state links its finding).
+	var checks []compliancecheck.Observation
+	checksRecorded := false
+	recordChecks := func() {
+		if !checksRecorded {
+			checksRecorded = true
+			p.recordComplianceChecks(ctx, tenantID, checks)
+		}
+	}
+	// Recorded before the remediation keys are derived (a failure's
+	// control key reads its state); the deferred call covers a batch that
+	// ends early (only passes).
+	defer recordChecks()
 	for _, fm := range candidates {
 		if current, ok := aliases[fm.fingerprint]; ok {
 			fm.fingerprint = current
@@ -501,13 +518,23 @@ func (p *FindingProcessor) processBatch(
 			output.addOutcome(ingestreceipt.OutcomeSourceMitigated, 1)
 			continue
 		}
-		// A compliance check that passed is no finding and no sighting of
-		// the failure of the same check (observation.go).
-		if isCompliancePass(&fm.finding) {
-			output.CompliancePassed = append(output.CompliancePassed, CompliancePass{Fingerprint: fm.fingerprint,
-				AssetID: fm.assetID, ObservedAt: findingObservedAt(&fm.finding, reportObservedAt(report, mitigatedNow), mitigatedNow)})
-			output.addOutcome(ingestreceipt.OutcomeCompliancePassed, 1)
-			continue
+		// Every compliance result is the state of its control
+		// (compliance_checks.go). A pass, a not-applicable and an error are
+		// no finding and no sighting of the failure of the same check
+		// (observation.go); a pass may resolve that failure.
+		if o, ok := complianceObservation(&fm.finding, fm.assetID, fm.fingerprint, toolNameOf(report, &fm.finding),
+			findingObservedAt(&fm.finding, reportObservedAt(report, mitigatedNow), mitigatedNow)); ok {
+			checks = append(checks, o)
+			switch {
+			case o.Result == compliancecheck.ResultPass:
+				output.CompliancePassed = append(output.CompliancePassed, CompliancePass{Fingerprint: fm.fingerprint,
+					AssetID: fm.assetID, ObservedAt: o.ObservedAt})
+				output.addOutcome(ingestreceipt.OutcomeCompliancePassed, 1)
+				continue
+			case !o.Result.OpensFinding():
+				output.addOutcome(ingestreceipt.OutcomeComplianceState, 1)
+				continue
+			}
 		}
 		// One report naming the same finding twice (the same package in two
 		// lockfiles, a template matching twice, two keys of one finding) is
@@ -741,6 +768,7 @@ func (p *FindingProcessor) processBatch(
 				}
 			}
 
+			recordChecks()
 			if len(createdFindings) > 0 {
 				p.afterCreate(ctx, tenantID, output, newFindings, createdFindings, createdIndex, suppressionDecisions)
 			}
@@ -823,6 +851,7 @@ func (p *FindingProcessor) processBatch(
 
 	// Step 5c: Re-derive the remediation keys of re-sighted findings: a new
 	// fixed version or changed advice moves the finding to the right group.
+	recordChecks()
 	resighted = append(resighted, existingFingerprints...)
 	if p.remediationKeyApplier != nil && len(resighted) > 0 {
 		if err := p.remediationKeyApplier.ApplyByFingerprints(ctx, tenantID, resighted); err != nil {
@@ -1748,13 +1777,12 @@ func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, ctisFin
 	if ctisFinding.Compliance.ControlDescription != "" {
 		f.SetComplianceControlDescription(ctisFinding.Compliance.ControlDescription)
 	}
-	// The evaluation of a control is the finding's kind in CTIS 2.0.
-	switch ctisFinding.Kind {
-	case "pass", "fail", "not_applicable":
-		f.SetComplianceResult(ctisFinding.Kind)
-	case "review":
-		f.SetComplianceResult(string(vulnerability.ComplianceResultManual))
+	// The evaluation of a control is the finding's kind in CTIS 2.0; a
+	// not-applicable result the check could not evaluate is an error.
+	if r, ok := complianceResultOf(ctisFinding); ok {
+		f.SetComplianceResult(string(r))
 	}
+	f.SetComplianceLevel(complianceLevelOf(ctisFinding))
 }
 
 // setWeb3Fields sets Web3-specific fields on a finding.

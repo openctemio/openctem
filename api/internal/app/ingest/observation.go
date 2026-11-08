@@ -14,11 +14,12 @@ package ingest
 // A compliance check that passed is not a finding: it is neither stored nor a
 // sighting of the failed result of the same check (same host, framework,
 // control and resource). It is recorded (CompliancePassed) so an upload can
-// resolve that open failure; a warning or an error result never resolves it.
+// resolve that open failure; a warning, an error or a not-applicable result
+// never resolves it. Every compliance result is also the state of its control
+// (compliance_checks.go).
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/openctemio/ctis/v2"
@@ -33,11 +34,6 @@ type CompliancePass struct {
 	Fingerprint string
 	AssetID     shared.ID
 	ObservedAt  time.Time
-}
-
-// isCompliancePass reports whether f is a compliance result that passed.
-func isCompliancePass(f *ctis.Finding) bool {
-	return f != nil && f.Type == ctis.FindingTypeCompliance && strings.EqualFold(strings.TrimSpace(f.Kind), "pass")
 }
 
 // findingObservedAt is when the producer saw f: its last_seen_at when that

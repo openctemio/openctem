@@ -3228,6 +3228,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Ingest.SetSuppressionChecker(s.Suppression)
 	// Cross-rule correlation of DAST findings (research/134 section 12).
 	s.Ingest.SetCorrelationStore(repos.FindingCorrelation)
+	// Every compliance result is the state of its control, with history.
+	s.Ingest.SetComplianceCheckRecorder(repos.ComplianceChecks)
 	s.Ingest.SetIssueLinkStore(repos.FindingIssueLinks)
 	s.Ingest.SetVulnAliasResolver(repos.CVECorpus)
 
