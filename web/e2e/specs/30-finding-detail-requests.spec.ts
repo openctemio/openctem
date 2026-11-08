@@ -12,8 +12,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   3. No request is sent twice.
  *   4. The page reads its finding and panels through one view
  *      (GET /findings/{id}/view, RFC-136): no per-panel read reaches the API,
- *      except the "Seen by" list (GET /findings/{id}/sightings), which is a
- *      list of its own and is read once.
+ *      except the "Seen by" list (GET /findings/{id}/sightings) and the
+ *      "How we found this" chain (GET /findings/{id}/story), each a resource
+ *      of its own and read once.
  */
 
 type ListedFinding = { id: string; tool_name?: string; source?: string }
@@ -49,7 +50,8 @@ test.describe('Finding detail requests', { tag: ['@findings'] }, () => {
       (s) =>
         s.startsWith(`GET /api/v1/findings/${id}`) &&
         !s.endsWith('/view') &&
-        !s.endsWith('/sightings')
+        !s.endsWith('/sightings') &&
+        !s.endsWith('/story')
     )
     expect(panelReads).toEqual([])
     expect(seen.filter((s) => s.includes('/sla-policy/'))).toEqual([])
