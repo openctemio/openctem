@@ -22,6 +22,7 @@ import (
 
 // The list params a tool's page and limit become.
 const (
+	mcpParamSort    = "sort"
 	mcpParamPage    = "page"
 	mcpParamPerPage = "per_page"
 )
