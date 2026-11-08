@@ -611,6 +611,8 @@ func registerScanRoutes(
 
 		// Read operations
 		r.GET("/", h.ListScans, middleware.Require(permission.ScansRead))
+		// The same list as a FilterDocument (OR, nesting, long id lists); must be before /{id}
+		r.POST("/search", h.SearchScans, middleware.Require(permission.ScansRead))
 		r.GET("/{id}", h.GetScan, middleware.Require(permission.ScansRead))
 
 		// Write operations

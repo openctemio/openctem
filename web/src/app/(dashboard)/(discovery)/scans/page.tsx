@@ -57,6 +57,7 @@ import {
 } from 'lucide-react'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
+import { replaceUrlSearch, useUrlParams } from '@/hooks/use-url-param'
 import { Can, Permission } from '@/lib/permissions'
 import {
   useScanConfigs,
@@ -98,6 +99,7 @@ import { ScanMobileCard } from '@/features/scans/components/scan-mobile-card'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
 import { isManagedScan, lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
+import { ScanQueryBar } from '@/features/scans/components/scan-query-bar'
 import {
   DEFAULT_SCAN_CONFIG_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -305,8 +307,19 @@ function ConfigurationsTab() {
     defaultPageSize: DEFAULT_SCAN_PAGE_SIZE,
     sortFields: SCAN_CONFIG_SORT_FIELDS,
     defaultSort: DEFAULT_SCAN_CONFIG_SORT,
-    filters: { status: 'all', type: 'all', schedule: 'all', origin: 'all', tag: '', one_off: '' },
+    filters: {
+      status: 'all',
+      type: 'all',
+      schedule: 'all',
+      origin: 'all',
+      tag: '',
+      one_off: '',
+      fq: '',
+    },
   })
+  const urlParams = useUrlParams()
+  // A filter the controls cannot show, as query text (the scans query bar).
+  const fqFilter = list.filters.fq
   const searchQuery = list.q
   const setSearchQuery = list.setSearch
   const debouncedSearch = useSearchQuery(searchQuery).term
@@ -365,8 +378,9 @@ function ConfigurationsTab() {
       scan_type: typeFilter !== 'all' ? typeFilter : undefined,
       schedule_type: scheduleFilter !== 'all' ? scheduleFilter : undefined,
       origin: originFilter !== 'all' ? originFilter : undefined,
-      tags: debouncedTag || undefined,
-      search: debouncedSearch || undefined,
+      tag: debouncedTag || undefined,
+      q: debouncedSearch || undefined,
+      fq: fqFilter || undefined,
       include_ad_hoc: showOneOff || undefined,
       sort: list.sort,
       page: pageParam,
@@ -379,6 +393,7 @@ function ConfigurationsTab() {
       originFilter,
       debouncedTag,
       debouncedSearch,
+      fqFilter,
       showOneOff,
       list.sort,
       pageParam,
@@ -448,6 +463,7 @@ function ConfigurationsTab() {
     originFilter,
     debouncedTag,
     debouncedSearch,
+    fqFilter,
     oneOffParam,
   ].join('\u0000')
   const lastFilterKey = React.useRef(filterKey)
@@ -744,6 +760,7 @@ function ConfigurationsTab() {
     scheduleFilter !== 'all',
     originFilter !== 'all',
     tagFilter !== '',
+    fqFilter !== '',
     showOneOff,
   ].filter(Boolean).length
 
@@ -754,6 +771,7 @@ function ConfigurationsTab() {
     setOriginFilter('all')
     setTagFilter('')
     setOneOffParam('')
+    list.setFilter('fq', '')
     setPageParam(1)
   }
 
@@ -882,6 +900,11 @@ function ConfigurationsTab() {
         )}
 
         <div className="min-w-0 flex-1">
+          <ScanQueryBar
+            search={urlParams}
+            resultCount={configsResponse?.total}
+            onSearchChange={replaceUrlSearch}
+          />
           {isLoadingConfigs && !configsResponse ? (
             <TableSkeleton />
           ) : (
