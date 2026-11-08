@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -21,6 +22,11 @@ func (s scopeOf) ResolveStrict(_ context.Context, t shared.ID) (*shared.DataScop
 		return nil, nil
 	}
 	return &shared.DataScope{TenantID: t, UserID: shared.NewID()}, nil
+}
+
+func (s scopeOf) ViewerScope(ctx context.Context, t shared.ID) (*shared.DataScope, bool, error) {
+	sc, err := s.ResolveStrict(ctx, t)
+	return sc, false, err
 }
 
 // assetsOf serves assets of one tenant that are in the caller's scope.
@@ -186,5 +192,66 @@ func TestLeadService_RunHiddenWithoutScansRead(t *testing.T) {
 		if k.EndKind == exploration.EndScanRun && k.EndID != nil {
 			t.Fatal("run id shown without scans:read")
 		}
+	}
+}
+
+// rollupRepo is memRepo with marker figures: org-wide 7 open, scoped 1.
+type rollupRepo struct {
+	*memRepo
+	refreshed int
+}
+
+func (r *rollupRepo) RefreshRollup(context.Context, shared.ID, shared.ID) error {
+	r.refreshed++
+	return nil
+}
+
+func (r *rollupRepo) Rollup(context.Context, shared.ID, shared.ID) (*exploration.Summary, error) {
+	return &exploration.Summary{Open: 7, ComputedAt: time.Now().Add(-2 * time.Minute)}, nil
+}
+
+func (r *rollupRepo) ScopedSummary(context.Context, shared.ID, shared.ID, *shared.DataScope) (*exploration.Summary, error) {
+	return &exploration.Summary{Open: 1, Scoped: true}, nil
+}
+
+type viewer struct {
+	restricted, orgWide bool
+}
+
+func (v viewer) ResolveStrict(_ context.Context, t shared.ID) (*shared.DataScope, error) {
+	sc, _, err := v.ViewerScope(context.Background(), t)
+	return sc, err
+}
+
+func (v viewer) ViewerScope(_ context.Context, t shared.ID) (*shared.DataScope, bool, error) {
+	if !v.restricted {
+		return nil, false, nil
+	}
+	return &shared.DataScope{TenantID: t, UserID: shared.NewID()}, v.orgWide, nil
+}
+
+// Organization-wide figures only for those who may see them; a restricted
+// member gets their own scope's counts.
+func TestLeadService_SummaryFollowsTheViewer(t *testing.T) {
+	tenant := shared.NewID()
+	for name, c := range map[string]struct {
+		v        viewer
+		wantOpen int
+	}{
+		"unrestricted":            {viewer{}, 7},
+		"organization dashboards": {viewer{restricted: true, orgWide: true}, 7},
+		"restricted member":       {viewer{restricted: true}, 1},
+	} {
+		repo := &rollupRepo{memRepo: newMemRepo()}
+		s := NewLeadService(repo, c.v, nil, nil, nil, logger.NewNop())
+		got, err := s.Summary(context.Background(), tenant, false)
+		if err != nil || got.Open != c.wantOpen {
+			t.Errorf("%s: %+v %v", name, got, err)
+		}
+	}
+	repo := &rollupRepo{memRepo: newMemRepo()}
+	s := NewLeadService(repo, viewer{}, nil, nil, nil, logger.NewNop())
+	if _, err := s.Summary(context.Background(), tenant, true); err != nil || repo.refreshed != 1 {
+		t.Fatalf("Refresh now on stale figures: refreshed %d (%v)", repo.refreshed, err)
 	}
 }

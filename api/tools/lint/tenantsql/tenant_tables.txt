@@ -142,6 +142,7 @@ easm_tombstones
 easm_weekly_digests
 exploration_leads
 exploration_links
+exploration_rollups
 exploration_verdicts
 explorations
 exposure_disposition_requests

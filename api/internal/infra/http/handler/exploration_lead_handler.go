@@ -28,6 +28,7 @@ type LeadService interface {
 	Open(ctx context.Context, tenantID shared.ID, p explorationapp.Person, in explorationapp.OpenInput) (*exploration.Lead, error)
 	Approve(ctx context.Context, tenantID shared.ID, p explorationapp.Person, ids []string) ([]explorationapp.BulkResult, error)
 	Dismiss(ctx context.Context, tenantID shared.ID, p explorationapp.Person, ids []string, reason string) ([]explorationapp.BulkResult, error)
+	Summary(ctx context.Context, tenantID shared.ID, refresh bool) (*exploration.Summary, error)
 }
 
 // ExplorationLeadHandler serves /api/v1/exploration/leads.
@@ -360,4 +361,78 @@ func (h *ExplorationLeadHandler) Dismiss(w http.ResponseWriter, r *http.Request)
 	h.bulk(w, r, func(ctx context.Context, tid shared.ID, p explorationapp.Person, req LeadBulkRequest) ([]explorationapp.BulkResult, error) {
 		return h.leads.Dismiss(ctx, tid, p, req.IDs, req.Reason)
 	})
+}
+
+// ExplorationSummaryResponse is the exploration's figures.
+type ExplorationSummaryResponse struct {
+	Open                 int        `json:"open"`
+	AwaitingApproval     int        `json:"awaiting_approval"`
+	Running              int        `json:"running"`
+	Blocked              int        `json:"blocked"`
+	Done30d              int        `json:"done_30d"`
+	Proven30d            int        `json:"proven_30d"`
+	Refuted30d           int        `json:"refuted_30d"`
+	Dispatches30d        int        `json:"dispatches_30d"`
+	RuleShare            *float64   `json:"rule_share,omitempty"`
+	MedianVerdictSeconds *int       `json:"median_verdict_seconds,omitempty"`
+	LastStepAt           *time.Time `json:"last_step_at,omitempty"`
+	// ComputedAt is the freshness of organization-wide figures (absent for
+	// scoped figures, which are counted at request time).
+	ComputedAt *time.Time `json:"computed_at,omitempty"`
+	// Scope: organization (precomputed) or mine (live, within the caller's
+	// data scope).
+	Scope string `json:"scope"`
+}
+
+// summaryScopeOrganization marks organization-wide (precomputed) figures.
+const summaryScopeOrganization = "organization"
+
+func (h *ExplorationLeadHandler) summary(w http.ResponseWriter, r *http.Request, refresh bool) {
+	tid, ok := tenantOf(r)
+	if !ok {
+		apierror.Unauthorized("").WriteJSON(w)
+		return
+	}
+	s, err := h.leads.Summary(r.Context(), tid, refresh)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	out := ExplorationSummaryResponse{Open: s.Open, AwaitingApproval: s.AwaitingApproval, Running: s.Running,
+		Blocked: s.Blocked, Done30d: s.Done30d, Proven30d: s.Proven30d, Refuted30d: s.Refuted30d,
+		Dispatches30d: s.Dispatches30d, RuleShare: s.RuleShare, MedianVerdictSeconds: s.MedianVerdictSeconds,
+		LastStepAt: s.LastStepAt, Scope: summaryScopeOrganization}
+	if s.Scoped {
+		out.Scope = "mine"
+	} else {
+		t := s.ComputedAt
+		out.ComputedAt = &t
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// Summary handles GET /api/v1/exploration/summary.
+//
+// @Summary      Exploration figures
+// @Description  Live leads by state, leads settled and verdicts of the last 30 days, dispatches, the share opened by rules, the median time to a verdict and the last step. Organization-wide figures are precomputed after each exploration pass (computed_at is their freshness) and are read by callers who see the whole organization or view organization dashboards; any other member gets live counts within their data scope (scope mine).
+// @Tags         Exploration
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  ExplorationSummaryResponse
+// @Router       /exploration/summary [get]
+func (h *ExplorationLeadHandler) Summary(w http.ResponseWriter, r *http.Request) {
+	h.summary(w, r, false)
+}
+
+// RefreshSummary handles POST /api/v1/exploration/summary/refresh.
+//
+// @Summary      Refresh the exploration figures now
+// @Description  Recomputes the organization-wide figures when they are older than a minute (otherwise returns them as they are), then answers like GET /exploration/summary.
+// @Tags         Exploration
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  ExplorationSummaryResponse
+// @Router       /exploration/summary/refresh [post]
+func (h *ExplorationLeadHandler) RefreshSummary(w http.ResponseWriter, r *http.Request) {
+	h.summary(w, r, true)
 }

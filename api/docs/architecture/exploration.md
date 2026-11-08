@@ -346,8 +346,37 @@ first state, refusals: asset outside scope or tenant, unknown type, no action
 for the asset type; approve and dismiss per lead, cross-tenant and
 out-of-scope refused, audit; a run hidden without `scans:read`).
 
+## Rollups
+
+`exploration_rollups` (migration `exploration_rollups`) holds one row per
+exploration, recomputed by the exploration job at the end of every tenant
+pass (every 2 minutes) and by Refresh now: live leads by state (open,
+awaiting approval, running, blocked), leads settled in the last 30 days and
+how many were proven or refuted, dispatches in the last 30 days, the share of
+leads opened by rules, the median time from opening to the first verdict and
+the time of the last step. It is derived data, rebuilt from the leads in one
+statement.
+
+| Route | Gate | Answers |
+|---|---|---|
+| `GET /api/v1/exploration/summary` | `assets:read` | the figures, `scope: organization` with `computed_at`, or `scope: mine` |
+| `POST /api/v1/exploration/summary/refresh` | `assets:read` | recomputes organization-wide figures older than a minute, then answers as above |
+
+The figures follow the viewer (the dashboards rule): an unrestricted caller,
+or a restricted one who may view organization dashboards
+(`Enforcer.ViewerScope`), reads the precomputed organization-wide row; any
+other member gets live counts over the leads whose subject is in their data
+scope (`ScopedSummary`, the same scope condition as the lead list), so a
+count never reveals leads on assets they cannot see.
+
+Tests: `internal/infra/postgres/exploration_rollup_repository_db_test.go`
+(figures, tenant-bound, scoped counts, no scope row counts nothing),
+`internal/app/exploration/leads_test.go` (`TestLeadService_SummaryFollowsTheViewer`).
+
 ## Not yet built
 
 - Retest outcomes and evidence items as steps.
 - The Exploration page and the asset "Next steps" card.
+- An exploration metric in the dashboard metric catalog (widgets read the
+  rollup through the catalog).
 - A person-attributed run for an approved intrusive step; four-eyes approval.
