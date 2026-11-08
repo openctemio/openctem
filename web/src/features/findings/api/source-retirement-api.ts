@@ -111,7 +111,7 @@ export function retireSource(input: {
 
 /** Use the source again: its archived findings are restored. */
 export function restoreSource(id: string, reason: string): Promise<SourceRetirement> {
-  return post<SourceRetirement>(`${BASE}/${encodeURIComponent(id)}/restore`, { reason })
+  return post<SourceRetirement>(`${BASE}/${encodeURIComponent(id)}/reactivate`, { reason })
 }
 
 /** True while batches remain (the progress moves). */
