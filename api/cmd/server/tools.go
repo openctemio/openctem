@@ -6,6 +6,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/tools/assetcanoncmd"
 	"github.com/openctemio/openctem/api/internal/tools/bootstrapadmin"
 	"github.com/openctemio/openctem/api/internal/tools/citrustscopeplan"
+	"github.com/openctemio/openctem/api/internal/tools/findingpractice"
 	"github.com/openctemio/openctem/api/internal/tools/findingsourcebackfill"
 	"github.com/openctemio/openctem/api/internal/tools/receiptreattribute"
 	"github.com/openctemio/openctem/api/internal/tools/refingerprintcmd"
@@ -26,6 +27,7 @@ var tools = map[string]func(){
 	"repomerge":               repomerge.Main,
 	"ci-trust-scope-plan":     citrustscopeplan.Main,
 	"receipt-reattribute":     receiptreattribute.Main,
+	"finding-practice":        findingpractice.Main,
 	"finding-source-backfill": findingsourcebackfill.Main,
 }
 

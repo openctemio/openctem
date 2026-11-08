@@ -55,10 +55,34 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
 - The finding response and the export carry `practice` (the reason code is in
   the response only).
 
-## Existing rows
+## Existing rows: the `finding-practice` command (shipped)
 
 Rows written before the column read as `other` with a NULL reason until the
-backfill runs; a new sighting of an open one derives it.
+backfill runs; a new sighting of an open one derives it. The operator command
+`finding-practice` (a link to the server binary in the API image,
+`api/internal/tools/findingpractice`) sets them:
+
+- It considers every finding never derived (any status) and every open
+  finding (to catch changed inputs); a closed finding that has a practice is
+  never touched.
+- It derives with the same `DerivePractice` as the write path, reading the
+  asset facts through a join pinned to the tenant.
+- **A dry run is the default**: the connection is read-only and the report
+  holds aggregates only, per tenant: findings per practice before and after,
+  the moves between practices (open and closed counts), the rows that would
+  change and their reason codes. No finding id or content is printed.
+- `-apply` writes keyset pages of 2 000 (`-batch`), one transaction each, only
+  where the stored value differs, so a rerun is a no-op; it queues a dashboard
+  fact refresh for the assets whose findings moved. A written row gets a new
+  `updated_at` and `row_version`, like every write.
+- `-tenant <id>` limits the run to one tenant; `-json` prints the report as
+  JSON.
+
+```
+finding-practice                 # dry run, every tenant
+finding-practice -tenant <id>    # dry run, one tenant
+finding-practice -apply          # write (owner's go on production)
+```
 
 ## Key files
 
@@ -66,3 +90,4 @@ backfill runs; a new sighting of an open one derives it.
 - `api/internal/infra/postgres/finding_practice_columns.go`
 - `api/migrations/*_finding_practice*.sql`
 - `api/internal/infra/http/routes/findings_practice_filter_db_test.go`
+- `api/internal/tools/findingpractice` (the backfill command)
