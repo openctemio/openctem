@@ -694,6 +694,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		IngestReceipt:          newIngestReceiptHandler(cfg, repos, svc, log),
 		SourceRetirement:       handler.NewSourceRetirementHandler(svc.SourceRetire, log),
 		Story:                  newStoryHandler(deps.DB, repos, svc, log),
+		ExplorationLeads:       newExplorationLeadHandler(deps.DB, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -1949,6 +1950,18 @@ func newStoryHandler(db *postgres.DB, repos *Repositories, svc *Services, log *l
 	}
 	return handler.NewStoryHandler(explorationapp.NewStoryService(svc.Vulnerability, svc.Asset, sightings,
 		postgres.NewStoryRepository(db), scope), log)
+}
+
+// newExplorationLeadHandler serves exploration leads to people
+// (docs/architecture/exploration.md). Without the data scope enforcer or
+// the asset service it is not mounted (fail closed).
+func newExplorationLeadHandler(db *postgres.DB, svc *Services, log *logger.Logger) *handler.ExplorationLeadHandler {
+	if svc.DataScope == nil || svc.Asset == nil || svc.ScanPolicy == nil {
+		return nil
+	}
+	sw := coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant}
+	return handler.NewExplorationLeadHandler(explorationapp.NewLeadService(postgres.NewExplorationRepository(db),
+		svc.DataScope, svc.Asset, sw, svc.Audit, log), log)
 }
 
 // newIngestReceiptHandler builds the receipt reads, with the per-file
