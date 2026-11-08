@@ -6,6 +6,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/tools/assetcanoncmd"
 	"github.com/openctemio/openctem/api/internal/tools/bootstrapadmin"
 	"github.com/openctemio/openctem/api/internal/tools/citrustscopeplan"
+	"github.com/openctemio/openctem/api/internal/tools/compliancechecks"
 	"github.com/openctemio/openctem/api/internal/tools/findingpractice"
 	"github.com/openctemio/openctem/api/internal/tools/findingsourcebackfill"
 	"github.com/openctemio/openctem/api/internal/tools/receiptreattribute"
@@ -29,6 +30,7 @@ var tools = map[string]func(){
 	"receipt-reattribute":     receiptreattribute.Main,
 	"finding-practice":        findingpractice.Main,
 	"finding-source-backfill": findingsourcebackfill.Main,
+	"compliance-checks":       compliancechecks.Main,
 }
 
 // toolFor returns the command named by argv0, or nil for the server.
