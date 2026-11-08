@@ -673,6 +673,9 @@ func (p *FindingProcessor) processBatch(
 		// in-memory computation (catalog/rule lookups), so it does not depend
 		// on the findings being persisted first.
 		p.enrichAndClassify(ctx, tenantID, newFindings)
+		// The practice is derived on insert from the facts of the assets the
+		// asset processor already holds (practice_facts.go).
+		attachPracticeFacts(newFindings, tenantID, output)
 
 		result, err := p.repo.CreateBatchWithResult(ctx, newFindings)
 		if err != nil {
