@@ -519,6 +519,8 @@ function FindingsContent() {
   // The page URL uses the API's own filter params (RFC-048), so a page link and
   // the API query are the same words. Old page links are rewritten once below.
   const assetIdFilter = searchParams.get('asset_id')
+  // A filter chips cannot show (query text mode); only the list resolves it.
+  const fqParam = searchParams.get('fq')
   const scanIdFilter = searchParams.get('scan_id')
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
@@ -1010,8 +1012,10 @@ function FindingsContent() {
     if (!savedId || rawPractice) Object.assign(filters, practiceViewParams(practiceView))
     if (Object.keys(extraParams).length > 0) filters.extra = extraParams
     if (acceptanceExpiresParam) filters.acceptance_expires_at_lte = acceptanceExpiresParam
+    if (fqParam) filters.fq = fqParam
     return filters
   }, [
+    fqParam,
     assetIdFilter,
     scanIdFilter,
     cveParam,
@@ -1089,7 +1093,12 @@ function FindingsContent() {
     data: findingStats,
     isLoading: statsLoading,
     mutate: mutateOverviewStats,
-  } = useFindingStatsApi(overviewStatsFilters, { enabled: urlSettled, keepPreviousData: true })
+  } = useFindingStatsApi(overviewStatsFilters, {
+    // The overview numbers cannot carry an fq filter: they would count a
+    // wider set, so they are not shown for it.
+    enabled: urlSettled && !fqParam,
+    keepPreviousData: true,
+  })
   const statsFailed = !findingStats && !statsLoading
   // A change moves findings between views: the sidebar counts reload with the stats.
   const mutateStats = useCallback(
@@ -2189,6 +2198,7 @@ function FindingsContent() {
       onSearchChange={replaceUrlSearch}
       viewChanged={!!openView && (changeList?.length ?? 0) > 0}
       onResetToView={() => openSavedView(openView ?? null)}
+      resultCount={findingsLoading ? null : total}
       resultLabel={
         findingsLoading
           ? undefined
