@@ -28,6 +28,7 @@ import type { Integration } from '@/features/integrations/types/integration.type
 import { RelativeTime } from '@/features/shared'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { Can, Permission } from '@/lib/permissions'
+import { RetireSourceButton } from '@/features/findings/components/source-retirement'
 import { StatusBadge } from './shared'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -152,6 +153,12 @@ export function TenableConnectorCard({
               >
                 <Pencil className="h-4 w-4" />
               </Button>
+              <RetireSourceButton
+                compact
+                source={{ integration_id: integration.id }}
+                label={integration.name}
+                onRetired={onChanged}
+              />
               <Button
                 size="sm"
                 variant="outline"
