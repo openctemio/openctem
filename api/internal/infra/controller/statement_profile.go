@@ -47,6 +47,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"IngestWorkerController":              SQLLong,  // asset and finding batch upserts, payload clearing
 	"EventRetentionController":            SQLLong,  // vuln event and sensor result prunes
 	"AssetTechnologyBackfillController":   SQLBatched,
+	"SourceRetirementController":          SQLBatched, // retired import sources: archive and restore batches of 1,000 findings
 	"DashboardSnapshotsController":        SQLBatched, // per-tenant widget reads over the fact tables, 5 s context timeout each
 	"EASMPostureController":               SQLLong,    // per-organization posture rebuild: SET LOCAL statement_timeout 2 min in Rebuild
 	"AssetIdentityBackfillController":     SQLBatched,

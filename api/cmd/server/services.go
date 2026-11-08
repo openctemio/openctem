@@ -55,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/ticketbridge"
 
 	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
+	sourceretireapp "github.com/openctemio/openctem/api/internal/app/sourceretire"
 	"github.com/openctemio/openctem/api/internal/app/tenablesc"
 
 	"github.com/openctemio/openctem/api/internal/app/datascope"
@@ -794,6 +795,8 @@ type Services struct {
 	SensorContent *sensorapp.ContentService
 	// TenableSC queues and follows Tenable.sc connector syncs (RFC-047).
 	TenableSC *tenablesc.Service
+	// SourceRetire stops and restarts the use of an import source.
+	SourceRetire *sourceretireapp.Service
 	// SensorPlatformHealth is the platform-health guard (RFC-035 D3): the
 	// heartbeat handlers feed it their latency, the sensor health controller
 	// holds offline convictions while it reports the platform degraded.
@@ -2616,6 +2619,10 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
 	s.Ingest.SetPolicyVersions(repos.IngestPolicyVersions)
+	// Retired import sources: their reports are refused (receipt outcome
+	// source_retired); the service archives and restores their findings.
+	s.Ingest.SetRetiredSources(repos.SourceRetirement)
+	s.SourceRetire = sourceretireapp.NewService(repos.SourceRetirement, repos.Sensor, s.TenableSC, s.DataScope, s.Audit, log)
 	s.Ingest.SetAssetChangeNotifier(s.AssetGroupRules)
 	// DefectDojo co-existence sync (RFC-013): pull a tenant's DefectDojo findings
 	// and ingest them as CTIS (one-way; OpenCTEM is the system of record).

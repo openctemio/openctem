@@ -68,6 +68,11 @@ var findingMergeRefs = []mergeRef{
 		keys: []mergeKey{{}}},
 	{table: "finding_remediation_keys", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// The journal of a retired source follows the finding; a restore acts
+	// only while the finding is still the closure the retirement made, so
+	// a moved row can never reopen anything else. One row per retirement.
+	{table: "source_retirement_findings", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"retirement_id"}}}},
 	// Ticket links follow the finding; a loser's link to an issue the
 	// survivor already links is dropped (one link per finding and issue).
 	{table: "ticket_links", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
