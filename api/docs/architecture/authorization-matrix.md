@@ -405,6 +405,7 @@ and SBOM import write it.
 | `POST /api/v1/exploration/leads` | `scans:execute` |
 | `POST /api/v1/exploration/leads/approve` | `scans:approve` + step-up |
 | `POST /api/v1/exploration/leads/dismiss` | `scans:approve` |
+| `GET /api/v1/exploration/summary` · `POST /api/v1/exploration/summary/refresh` | `assets:read` (organization-wide figures only with full data access or organization dashboards; otherwise scoped) |
 
 #### Exposures (`/api/v1/exposures`)
 
