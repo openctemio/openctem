@@ -4,6 +4,8 @@ import (
 	"io/fs"
 	"os"
 
+	compliancecheckapp "github.com/openctemio/openctem/api/internal/app/compliancecheck"
+
 	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
@@ -435,6 +437,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
+	// Compliance check reads (posture, controls, a control's assets, a
+	// finding's control history), in the caller's data scope.
+	vulnHandler.SetComplianceChecks(compliancecheckapp.NewService(repos.ComplianceChecks, svc.DataScope))
 	if svc.SLA != nil && repos.FindingSLARestart != nil {
 		vulnHandler.SetSLABasis(svc.SLA, repos.FindingSLARestart)
 	}
