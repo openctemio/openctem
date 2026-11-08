@@ -1,0 +1,165 @@
+# Fetches one pinned tool from its release asset, checked against the pinned
+# SHA-256: a .tar.gz archive (one binary is extracted from it) or the binary
+# itself (`extract` left empty):
+#
+#   - id: actionlint
+#     uses: ./.github/actions/fetch-tool
+#     with:
+#       name: actionlint
+#       version: ${{ env.ACTIONLINT_VERSION }}
+#       url: https://github.com/rhysd/actionlint/releases/download/v${{ env.ACTIONLINT_VERSION }}/actionlint_${{ env.ACTIONLINT_VERSION }}_linux_amd64.tar.gz
+#       sha256: ${{ env.ACTIONLINT_SHA256 }}
+#       extract: actionlint
+#   - run: '"$ACTIONLINT" -color'
+#     env:
+#       ACTIONLINT: ${{ steps.actionlint.outputs.path }}
+#
+# The download is kept in the GitHub Actions cache, so a run downloads it only
+# on a cache miss and an outage of GitHub release downloads does not fail CI
+# (api/docs/development/ci-cd.md, "Pinned tool downloads").
+#
+# Threat model: the download is executable code. It is checked against the
+# pinned SHA-256 on every run, cache hit or miss, before anything is extracted
+# from it; a download that does not match is never used (a cached copy is
+# discarded and downloaded again, a downloaded copy fails the step). The cache
+# key carries the tool, version, OS, architecture and the expected SHA-256, all
+# set by the calling workflow file, never by event data. Only pushes,
+# schedules and manual runs save to the cache: a pull request or merge group
+# only restores, so it cannot place an entry another branch would read (and
+# an entry it could place would still have to match the pinned SHA-256).
+name: Fetch tool
+description: Download (or restore from the Actions cache) a pinned release asset, verify its SHA-256 and install one binary from it.
+inputs:
+  name:
+    description: Tool name, used in the cache key and the install directory (lowercase letters, digits, dot, dash, underscore).
+    required: true
+  version:
+    description: Pinned version, as written in the calling workflow.
+    required: true
+  url:
+    description: HTTPS URL of the release asset for this version (a .tar.gz archive, or the binary itself).
+    required: true
+  sha256:
+    description: Published SHA-256 of that asset (64 lowercase hex characters).
+    required: true
+  extract:
+    description: Path of the binary inside the .tar.gz archive (relative, no `..`). Empty when the asset is the binary itself; it is then installed as `name`.
+    required: false
+    default: ''
+outputs:
+  path:
+    description: Absolute path of the extracted binary.
+    value: ${{ steps.extract.outputs.path }}
+  dir:
+    description: Directory that holds only the extracted binary (for PATH).
+    value: ${{ steps.extract.outputs.dir }}
+runs:
+  using: composite
+  steps:
+    - name: Check the pin
+      id: plan
+      shell: bash
+      env:
+        TOOL_NAME: ${{ inputs.name }}
+        TOOL_VERSION: ${{ inputs.version }}
+        TOOL_URL: ${{ inputs.url }}
+        TOOL_SHA256: ${{ inputs.sha256 }}
+        TOOL_EXTRACT: ${{ inputs.extract }}
+      run: |
+        set -euo pipefail
+        fail() { echo "::error::fetch-tool: $1"; exit 1; }
+        [[ "$TOOL_NAME" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || fail "invalid name"
+        [[ "$TOOL_VERSION" =~ ^v?[0-9][0-9A-Za-z.+-]*$ ]] || fail "$TOOL_NAME: invalid version"
+        [[ "$TOOL_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "$TOOL_NAME: sha256 must be 64 lowercase hex characters"
+        [[ "$TOOL_URL" =~ ^https://[A-Za-z0-9.-]+/[A-Za-z0-9._~%/+-]+$ ]] || fail "$TOOL_NAME: url must be an https URL"
+        if [ -n "$TOOL_EXTRACT" ]; then
+          [[ "$TOOL_URL" == *.tar.gz ]] || fail "$TOOL_NAME: extract needs a .tar.gz url"
+          [[ "$TOOL_EXTRACT" =~ ^[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*$ ]] || fail "$TOOL_NAME: invalid extract path"
+          case "/$TOOL_EXTRACT/" in */../*|*/./*) fail "$TOOL_NAME: extract path must not contain . or .. segments" ;; esac
+        fi
+        # The same path string on every runner: the cache version is derived
+        # from it, so hosted and self-hosted runs share one entry.
+        echo "rel=openctem-ci-tools/${TOOL_NAME}-${TOOL_VERSION}" >> "$GITHUB_OUTPUT"
+        echo "key=fetch-tool-${TOOL_NAME}-${TOOL_VERSION}-${RUNNER_OS}-${RUNNER_ARCH}-${TOOL_SHA256}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore from the Actions cache
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/${{ steps.plan.outputs.rel }}
+        key: ${{ steps.plan.outputs.key }}
+
+    - name: Verify, or download and verify
+      id: fetch
+      shell: bash
+      env:
+        TOOL_NAME: ${{ inputs.name }}
+        TOOL_URL: ${{ inputs.url }}
+        TOOL_SHA256: ${{ inputs.sha256 }}
+        REL: ${{ steps.plan.outputs.rel }}
+      run: |
+        set -euo pipefail
+        dir="$HOME/.cache/$REL"
+        archive="$dir/download"
+        mkdir -p "$dir"
+        if [ -f "$archive" ]; then
+          if echo "${TOOL_SHA256}  ${archive}" | sha256sum -c --status -; then
+            echo "$TOOL_NAME: cached download matches the pinned SHA-256"
+          else
+            echo "::warning::$TOOL_NAME: cached download does not match the pinned SHA-256; discarding it and downloading again"
+            rm -f "$archive"
+          fi
+        fi
+        if [ ! -f "$archive" ]; then
+          part="$archive.part.$$"
+          curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 --connect-timeout 20 -o "$part" "$TOOL_URL"
+          if ! echo "${TOOL_SHA256}  ${part}" | sha256sum -c -; then
+            rm -f "$part"
+            echo "::error::$TOOL_NAME: download does not match the pinned SHA-256"
+            exit 1
+          fi
+          mv -f "$part" "$archive"
+          echo "downloaded=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Save to the Actions cache
+      # Pushes (develop, main), schedules and manual runs only; see the threat
+      # model above. A failed save never fails the job.
+      if: steps.fetch.outputs.downloaded == 'true' && github.event_name != 'pull_request' && github.event_name != 'merge_group'
+      continue-on-error: true
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/${{ steps.plan.outputs.rel }}
+        key: ${{ steps.plan.outputs.key }}
+
+    - name: Install the binary
+      id: extract
+      shell: bash
+      env:
+        TOOL_NAME: ${{ inputs.name }}
+        TOOL_VERSION: ${{ inputs.version }}
+        TOOL_SHA256: ${{ inputs.sha256 }}
+        TOOL_EXTRACT: ${{ inputs.extract }}
+        REL: ${{ steps.plan.outputs.rel }}
+      run: |
+        set -euo pipefail
+        archive="$HOME/.cache/$REL/download"
+        # Checked again right before use: nothing unverified is extracted.
+        echo "${TOOL_SHA256}  ${archive}" | sha256sum -c --status -
+        out="$RUNNER_TEMP/fetch-tool/${TOOL_NAME}-${TOOL_VERSION}"
+        rm -rf "$out"
+        mkdir -p "$out"
+        if [ -z "$TOOL_EXTRACT" ]; then
+          bin="$out/$TOOL_NAME"
+          install -m 0755 "$archive" "$bin"
+        else
+          tmp="$RUNNER_TEMP/fetch-tool/.extract-${TOOL_NAME}-$$"
+          rm -rf "$tmp"
+          mkdir -p "$tmp"
+          tar -xzf "$archive" -C "$tmp" -- "$TOOL_EXTRACT"
+          bin="$out/$(basename "$TOOL_EXTRACT")"
+          install -m 0755 "$tmp/$TOOL_EXTRACT" "$bin"
+          rm -rf "$tmp"
+        fi
+        echo "dir=$out" >> "$GITHUB_OUTPUT"
+        echo "path=$bin" >> "$GITHUB_OUTPUT"
