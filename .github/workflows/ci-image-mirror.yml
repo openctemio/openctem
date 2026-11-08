@@ -58,14 +58,18 @@ jobs:
           persist-credentials: false
 
       - name: Install crane (checksum-verified)
-        run: |
-          dir="$RUNNER_TEMP/crane"
-          mkdir -p "$dir"
-          curl -fsSL --retry 5 --retry-all-errors -o "$dir/crane.tgz" \
-            "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz"
-          echo "${CRANE_SHA256}  $dir/crane.tgz" | sha256sum -c -
-          tar -xzf "$dir/crane.tgz" -C "$dir" crane
-          echo "$dir" >> "$GITHUB_PATH"
+        id: crane
+        uses: ./.github/actions/fetch-tool
+        with:
+          name: crane
+          version: ${{ env.CRANE_VERSION }}
+          url: https://github.com/google/go-containerregistry/releases/download/${{ env.CRANE_VERSION }}/go-containerregistry_Linux_x86_64.tar.gz
+          sha256: ${{ env.CRANE_SHA256 }}
+          extract: crane
+      - name: Put crane on PATH
+        env:
+          CRANE_DIR: ${{ steps.crane.outputs.dir }}
+        run: echo "$CRANE_DIR" >> "$GITHUB_PATH"
 
       - name: Log in to GHCR (and Docker Hub when configured)
         env:
