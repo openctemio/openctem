@@ -98,8 +98,11 @@ commands
 comment_reactions
 compensating_controls
 compliance_assessments
+compliance_check_results
+compliance_check_states
 compliance_finding_mappings
 compliance_frameworks
+compliance_posture
 content_catalog_settings
 content_install_requests
 content_installs
