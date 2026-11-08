@@ -125,6 +125,27 @@ closed: a member with no scope row sees nothing), pinned to the tenant.
 Evidence in responses has secrets redacted (`safetext.RedactSecrets`). An
 asset outside the caller's scope reads as no benchmark, never as an error.
 
+## Web (shipped)
+
+- Findings, Compliance practice: a **Benchmarks** section above the list,
+  one row per benchmark with its pass rate (a bar and a whole percentage,
+  floored), the assets failing out of the assets checked, the control checks
+  failed and passed (excepted shown beside) and when it was last checked;
+  failing benchmarks first. A row opens a side sheet with the benchmark's
+  controls, failed first: by default only the controls failing or needing
+  review on the caller's assets, a switch for every control, and a search on
+  the control id or name. A control opens to its assets: result, when checked,
+  what the check saw (expected, actual, the scanner's message; folded) and a
+  link to the finding.
+- Finding detail, configuration check panel: **Status history** (folded),
+  every change of the control's result on this asset, newest first, with the
+  previous result and the actual value; rows from the stored finding are
+  marked.
+- Files: `web/src/features/findings/api/compliance-checks-api.ts`,
+  `components/compliance-benchmarks-panel.tsx`,
+  `components/compliance-benchmark-sheet.tsx`,
+  `components/detail/compliance-history.tsx`.
+
 ## Remediation per control (shipped)
 
 A compliance finding's remediation key is
