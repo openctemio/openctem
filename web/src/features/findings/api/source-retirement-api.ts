@@ -119,6 +119,17 @@ export function isRetirementRunning(r?: Pick<SourceRetirement, 'state'>): boolea
   return r?.state === 'applying' || r?.state === 'restoring'
 }
 
+/**
+ * Poll only while a retirement runs (no event announces each batch); 0 once it
+ * is done. Declared at module scope so SWR keeps one timer across renders.
+ */
+function listRefreshInterval(data?: { items: SourceRetirement[] }): number {
+  return data?.items.some(isRetirementRunning) ? 2000 : 0
+}
+function oneRefreshInterval(data?: SourceRetirement): number {
+  return isRetirementRunning(data) ? 1500 : 0
+}
+
 /** The retired sources; refreshes while one is still running. */
 export function useSourceRetirements(enabled: boolean, includeRestored = false) {
   const tenantId = useCurrentTenantId()
@@ -128,7 +139,7 @@ export function useSourceRetirements(enabled: boolean, includeRestored = false) 
     (url: string) => get<{ items: SourceRetirement[] }>(url),
     {
       ...swrConfig,
-      refreshInterval: (data) => (data?.items.some(isRetirementRunning) ? 2000 : 0),
+      refreshInterval: listRefreshInterval,
     }
   )
 }
@@ -139,7 +150,7 @@ export function useSourceRetirement(id: string | undefined) {
   const key = tenantId && id ? `${BASE}/${encodeURIComponent(id)}` : null
   return useSWR<SourceRetirement>(key, (url: string) => get<SourceRetirement>(url), {
     ...swrConfig,
-    refreshInterval: (data) => (isRetirementRunning(data) ? 1500 : 0),
+    refreshInterval: oneRefreshInterval,
   })
 }
 
