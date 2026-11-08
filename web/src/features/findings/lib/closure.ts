@@ -15,6 +15,7 @@ export type ClosureReason =
   | 'obsolete_rule'
   | 'out_of_scope'
   | 'reclassified_exposure'
+  | 'reclassified_check_state'
   | 'component_not_present'
   | 'vulnerable_code_not_present'
   | 'vulnerable_code_not_in_execute_path'
@@ -63,6 +64,7 @@ const REASON_FALLBACK: Record<ClosureReason, string> = {
   obsolete_rule: 'Check or rule changed',
   out_of_scope: 'Asset out of scope',
   reclassified_exposure: 'Moved to exposures',
+  reclassified_check_state: 'Moved to the control check state',
   component_not_present: 'Component not present',
   vulnerable_code_not_present: 'Vulnerable code not present',
   vulnerable_code_not_in_execute_path: 'Vulnerable code not in the execution path',

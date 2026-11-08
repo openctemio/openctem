@@ -133,6 +133,51 @@ control fixes every asset that fails it. A compliance finding never gets an
 `upgrade:` or `sol:` key, and without a benchmark control it gets no key. The
 key reads the control from the finding's check state.
 
+## Existing findings: the `compliance-checks` command (shipped)
+
+Compliance findings stored before check state existed are moved by an
+operator command (a link to the server binary in the API image,
+`api/internal/tools/compliancechecks`). It considers every open compliance
+finding; closed findings are never touched.
+
+- It records the state of each finding's control (history source
+  `backfill`), reading the benchmark, profile, policy value and error from
+  the finding's source data; an error stored as not applicable is read back
+  from the scanner's own word.
+- A failure or a warning is re-classified with the write path's functions:
+  severity from the level and the asset, class from the severity, the level
+  column filled. An analyst's severity override and a manual class override
+  stand. A timeline entry (`severity_changed`, reason `compliance_policy`)
+  records each change.
+- A finding that is no failure (passed, not applicable, could not run) is
+  resolved with the closure reason `reclassified_check_state` (never counted
+  as fixed, `resolution` `compliance_<result>`), with a timeline entry and an
+  audit log entry (`finding.status_changed`, the run id) per finding, plus one
+  `findings.reclassified` entry per tenant and run with the counts.
+- **A dry run is the default**: a read-only connection and aggregates only,
+  per tenant: open findings per result, severity and class moves, closes per
+  result, control states to record, per benchmark. No finding id or content
+  is printed.
+- `-apply -undo <file>` creates the undo file (never overwritten) and writes
+  every changed row's previous status, severity, class and level before the
+  page that changes it commits. Keyset pages of 2 000 (`-batch`), one
+  transaction each; a row changed since it was read is left alone; a rerun
+  changes nothing. `-tenant <id>` limits the run to one tenant; `-json`
+  prints the report as JSON.
+
+Order on an existing installation (each a dry run first; the production apply
+is the owner's decision): `finding-practice -apply` (practices),
+`compliance-checks -apply -undo <file>`, then `finding-practice -sla -apply
+-undo <file>` (compliance deadlines from first detection with the new
+classes). The remediation key backfill derives the `control:` keys once the
+states exist.
+
+```
+compliance-checks                          # dry run, every tenant
+compliance-checks -tenant <id> -json       # dry run, one tenant, JSON
+compliance-checks -apply -undo undo.csv    # write (owner's go on production)
+```
+
 ## Security
 
 - Every read and write is pinned to the tenant: the recorder reads the
@@ -141,6 +186,9 @@ key reads the control from the finding's check state.
   fingerprint (`TestComplianceCheckRecord_TenantPinned_DB`).
 - Evidence is bounded and stored as the importer gives it; the Nessus importer
   redacts credentials from the actual value before it reaches the platform.
+- The command reads and writes one tenant at a time with every statement
+  pinned to it (`TestRun_TenantIsolation_DB`); a dry run cannot write (the
+  connection is read-only at the server); the report holds counts only.
 - Reads: tenant-pinned SQL with the caller's data scope on the state's
   asset; DB tests with an owner, a member scoped to one asset, a member
   without scope and another tenant's checks of the same benchmark
