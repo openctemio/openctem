@@ -65,12 +65,17 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
   `all` = no condition, else the practice), so it is linkable and a saved view
   keeps it (`all` is saved as no condition). Like the state lens, the default
   is not laid on top of an open saved view; a practice picked explicitly is.
-- Counts: `GET /api/v1/findings/practice-counts` takes every filter param of
-  `GET /findings` (and `view`), leaves any practice condition out, and returns
-  `total`, `vulnerabilities` and a count per practice. One facet statement
-  over the caller's scoped WHERE (`findings:read`, heavy-read limit, 5 s), so
-  each count equals that list's total for the same caller
-  (`findings_practice_counts_db_test.go`).
+- Counts: `GET /findings?include=practice_counts` answers the page with
+  `practice_counts` (`total`, `vulnerabilities` and a count per practice): the
+  list's own filter (and `view`) with any practice condition left out. One
+  facet statement over the caller's scoped WHERE (`findings:read`, heavy-read
+  limit, 5 s), so each count equals that list's total for the same caller
+  (`findings_list_practice_counts_db_test.go`). When the count runs out of
+  time the page still answers, without `practice_counts`. The web asks for
+  the counts with page 1 only; a later page reads them from page 1's cached
+  answer, the grouped view asks for one row with them, and an `fq` filter
+  (`POST /findings/search`) has none. A hard load of `/findings` therefore
+  sends no request for the switch.
 - `compliance_result` is an ordinary filter in the filter picker (pass, fail,
   manual, not_applicable, error, unknown).
 - Settings > SLA policies: a new policy is created for Vulnerabilities or
@@ -152,6 +157,6 @@ vulnerability SLA figures and vulnerability windows never reach them.
 - `api/migrations/*_finding_practice*.sql`
 - `api/internal/infra/http/routes/findings_practice_filter_db_test.go`
 - `api/internal/tools/findingpractice` (the backfill command)
-- `api/internal/infra/http/handler/finding_practice_counts_handler.go`, `web/src/features/findings/components/practice-switch.tsx`, `web/src/features/findings/lib/practice.ts`
+- `api/internal/infra/http/handler/finding_list_practice_counts.go`, `web/src/features/findings/api/use-practice-counts.ts`, `web/src/features/findings/components/practice-switch.tsx`, `web/src/features/findings/lib/practice.ts`
 - `api/pkg/domain/sla/entity.go`, `api/internal/app/sla/service.go` (compliance policy)
 - `api/migrations/*_sla_policy_practice.sql`, `*_dashboard_facts_without_compliance.sql`

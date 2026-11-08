@@ -1280,7 +1280,7 @@
   "findings.people.youAreNotWatching": "You are not watching.",
   "findings.practice.all.description": "Every finding",
   "findings.practice.all.label": "All",
-  "findings.practice.aspm.description": "Code, dependencies, images and pipelines",
+  "findings.practice.aspm.description": "Code, dependencies, images and CI builds",
   "findings.practice.aspm.label": "Application security",
   "findings.practice.cloud.description": "Cloud configuration findings",
   "findings.practice.cloud.label": "Cloud posture",

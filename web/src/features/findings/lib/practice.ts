@@ -52,7 +52,7 @@ export const PRACTICE_VIEW_TEXT: Record<PracticeView, { label: string; descripti
     label: 'Compliance',
     description: 'Benchmark check results (CIS, STIG, vendor hardening)',
   },
-  aspm: { label: 'Application security', description: 'Code, dependencies, images and pipelines' },
+  aspm: { label: 'Application security', description: 'Code, dependencies, images and CI builds' },
   infra: { label: 'Infrastructure', description: 'Network and host vulnerability assessment' },
   external: {
     label: 'External exposure',
