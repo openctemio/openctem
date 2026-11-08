@@ -845,7 +845,7 @@ func rewriteLegacyAssetParams(in url.Values) (url.Values, []string) {
 	var legacy []string
 	if q.Has("tags_mode") {
 		legacy = append(legacy, "tags_mode")
-		if q.Get("tags_mode") == "all" && q.Has("tags") {
+		if q.Get("tags_mode") == sectionAll && q.Has("tags") {
 			q["tag_all"] = q["tags"]
 			q.Del("tags")
 		}
@@ -854,8 +854,9 @@ func rewriteLegacyAssetParams(in url.Values) (url.Values, []string) {
 	if q.Has("technology_version") && q.Has("technology") {
 		legacy = append(legacy, "technology_version")
 		version := strings.TrimSpace(q.Get("technology_version"))
-		var names []string
-		for _, n := range assettech.ParseFilterValues(strings.Join(q["technology"], ",")) {
+		keys := assettech.ParseFilterValues(strings.Join(q["technology"], ","))
+		names := make([]string, 0, len(keys))
+		for _, n := range keys {
 			names = append(names, n+"@"+version)
 		}
 		q["technology"] = []string{strings.Join(names, ",")}
@@ -874,6 +875,9 @@ func usesField(spec *filterspec.Spec, field string) bool {
 	return false
 }
 
+// assetTypeField is the registry field of the asset type.
+const assetTypeField = "type"
+
 // onlyType is the one asset type a filter is limited to at its top level
 // ("" when none or several).
 func onlyType(spec *filterspec.Spec) string {
@@ -885,7 +889,7 @@ func onlyType(spec *filterspec.Spec) string {
 		nodes = spec.Root.All
 	}
 	for _, n := range nodes {
-		if l := n.Leaf; l != nil && l.Field == "type" && (l.Op == filterspec.OpIn || l.Op == filterspec.OpEq) && len(l.Values) == 1 {
+		if l := n.Leaf; l != nil && l.Field == assetTypeField && (l.Op == filterspec.OpIn || l.Op == filterspec.OpEq) && len(l.Values) == 1 {
 			v, _ := l.Values[0].(string)
 			return v
 		}
