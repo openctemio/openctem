@@ -266,9 +266,9 @@ func lockRetirement(ctx context.Context, tx *sql.Tx, tenantID, id shared.ID, sta
 
 func actorOf(id *shared.ID) (string, string) {
 	if id == nil {
-		return "system", ""
+		return string(vulnerability.ActorTypeSystem), ""
 	}
-	return "user", id.String()
+	return string(vulnerability.ActorTypeUser), id.String()
 }
 
 // ArchiveBatch archives up to BatchSize findings of an applying retirement,
@@ -300,25 +300,8 @@ func (r *SourceRetirementRepository) ArchiveBatch(ctx context.Context, tenantID,
 		args := sourceArgs(tenantID, ret.Selector, ret.Options)
 		args = append(args, sourceretire.BatchSize)
 		// Lock the batch with its current status (re-checked under the lock).
-		rows, err := tx.QueryContext(ctx, with+`
-SELECT f.id::text, f.status FROM findings f
-WHERE f.tenant_id = $1 AND f.status IN `+sourceRetireFromSQL+`
-  AND f.id IN (SELECT id FROM c WHERE cls = 'archive' ORDER BY id LIMIT $8)
-ORDER BY f.id FOR UPDATE OF f`, args...)
+		ids, prior, err := pickArchiveBatch(ctx, tx, with, args)
 		if err != nil {
-			return fmt.Errorf("pick findings to archive: %w", err)
-		}
-		var ids, prior []string
-		for rows.Next() {
-			var fid, st string
-			if err := rows.Scan(&fid, &st); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			ids, prior = append(ids, fid), append(prior, st)
-		}
-		_ = rows.Close()
-		if err := rows.Err(); err != nil {
 			return err
 		}
 		if len(ids) > 0 {
@@ -343,7 +326,10 @@ SELECT id::text FROM upd`, tenantID.String(), pq.Array(ids), at, nullableID(ret.
 			}
 			res.Moved = len(res.IDs)
 		}
-		res.Finished = len(ids) < sourceretire.BatchSize
+		// Done only when nothing is left to pick: a picked finding whose
+		// status moved before the lock is left out of ids, so a short batch
+		// does not prove the rest is done.
+		res.Finished = len(ids) == 0
 		state := sourceretire.StateApplying
 		if res.Finished {
 			state = sourceretire.StateActive
@@ -356,6 +342,28 @@ SELECT id::text FROM upd`, tenantID.String(), pq.Array(ids), at, nullableID(ret.
 		return nil, err
 	}
 	return res, nil
+}
+
+// pickArchiveBatch locks the next batch of findings to archive with their
+// current status (re-checked under the lock).
+func pickArchiveBatch(ctx context.Context, tx *sql.Tx, with string, args []any) (ids, prior []string, err error) {
+	rows, err := tx.QueryContext(ctx, with+`
+SELECT f.id::text, f.status FROM findings f
+WHERE f.tenant_id = $1 AND f.status IN `+sourceRetireFromSQL+`
+  AND f.id IN (SELECT id FROM c WHERE cls = 'archive' ORDER BY id LIMIT $8)
+ORDER BY f.id FOR UPDATE OF f`, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pick findings to archive: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var fid, st string
+		if err := rows.Scan(&fid, &st); err != nil {
+			return nil, nil, err
+		}
+		ids, prior = append(ids, fid), append(prior, st)
+	}
+	return ids, prior, rows.Err()
 }
 
 // StartRestore makes the source usable again at once (the state leaves the
