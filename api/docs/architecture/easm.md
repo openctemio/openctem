@@ -806,10 +806,12 @@ resolved addresses" section, read through the asset view
 
 ## 4o. Discovery lineage (built)
 
-The asset page and the asset sheet show "How this asset was found": the chain
-of parent assets from the root down to the asset, the asset's discovery
-source and tool (`assets.discovery_source`, `discovery_tool`), when it was
-first found, and its attribution confidence. The reasons behind the
+The asset page and the asset sheet show "How we found this": the asset's
+discovery source and tool (`assets.discovery_source`, `discovery_tool`), when
+it was first found and its attribution confidence, then the chain from the
+asset's story ([exploration.md](exploration.md)): the scope entry, the parent
+assets from the root down to the asset, the run that derived it, the upload
+that created it and the latest run that scanned it. The reasons behind the
 confidence (`easm_evidence`) stay in the Ownership and scope section above it;
 both read the same `GET /api/v1/assets/{id}/attribution` response.
 
