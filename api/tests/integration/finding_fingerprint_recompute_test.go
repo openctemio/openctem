@@ -363,13 +363,13 @@ func TestFindingMerge_ComplianceStateFollowsSurvivor(t *testing.T) {
 	old := time.Now().Add(-48 * time.Hour)
 	keepCopy := f.composite(f.keep, "base-cs", "confirmed", old)
 	awayCopy := f.composite(f.away, "base-cs", "confirmed", old.Add(time.Hour))
-	if _, err := f.db.Exec(`INSERT INTO compliance_check_states
+	if _, err := f.db.ExecContext(context.Background(), `INSERT INTO compliance_check_states
 		(tenant_id, asset_id, benchmark_key, benchmark_name, control_id, result, finding_id, first_seen_at, last_checked_at, last_changed_at)
 		VALUES ($1, $2, 'cis-test', 'CIS test', '1.1', 'fail', $3, now(), now(), now())`,
 		f.tenant.String(), f.away.String(), awayCopy.String()); err != nil {
 		t.Fatalf("seed state: %v", err)
 	}
-	if _, err := f.db.Exec(`INSERT INTO compliance_check_results
+	if _, err := f.db.ExecContext(context.Background(), `INSERT INTO compliance_check_results
 		(tenant_id, asset_id, benchmark_key, control_id, result, finding_id, observed_at)
 		VALUES ($1, $2, 'cis-test', '1.1', 'fail', $3, now())`,
 		f.tenant.String(), f.away.String(), awayCopy.String()); err != nil {

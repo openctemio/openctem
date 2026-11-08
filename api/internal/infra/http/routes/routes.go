@@ -289,9 +289,10 @@ type Handlers struct {
 	AssetImport *handler.AssetImportHandler // nil if not initialized
 
 	// Finding import (exports of other tools, VEX documents)
-	FindingImport *handler.FindingImportHandler // nil if not initialized
-	IngestReceipt *handler.IngestReceiptHandler // receipts of uploads and runs (RFC-122); nil if not initialized
-	Story         *handler.StoryHandler         // how a finding or asset was found; nil if not initialized
+	FindingImport    *handler.FindingImportHandler    // nil if not initialized
+	SourceRetirement *handler.SourceRetirementHandler // retired import sources; nil if not initialized
+	IngestReceipt    *handler.IngestReceiptHandler    // receipts of uploads and runs (RFC-122); nil if not initialized
+	Story            *handler.StoryHandler            // how a finding or asset was found; nil if not initialized
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -701,6 +702,7 @@ func Register(
 	}
 	if h.FindingImport != nil || h.IngestReceipt != nil {
 		registerFindingImportRoutes(router, h.FindingImport, h.IngestReceipt, authMiddleware, userSync)
+		registerSourceRetirementRoutes(router, h.SourceRetirement, authMiddleware, userSync)
 	}
 	if h.Story != nil {
 		registerStoryRoutes(router, h.Story, authMiddleware, userSync)
