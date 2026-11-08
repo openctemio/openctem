@@ -24,6 +24,7 @@
  * open it too). See web/docs/ui/activity-panel.md.
  */
 
+import { FindingHowWeFoundThis } from '@/features/exploration/components/how-we-found-this'
 import { useTranslation } from '@/context/i18n-provider'
 import { findingStatusesInCategory } from '@/features/findings/types/finding.types'
 import { useParams, useRouter } from 'next/navigation'
@@ -292,6 +293,10 @@ export default function FindingDetailPage() {
             />
             <FindingTenableRescanSection
               finding={finding}
+              className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
+            />
+            <FindingHowWeFoundThis
+              findingId={finding.id}
               className="mt-4 rounded-lg border bg-card p-3 lg:p-4"
             />
             <FindingSourceRecords
