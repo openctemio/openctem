@@ -116,6 +116,7 @@ where a received finding went when it is none of the action counts:
 | `compliance_passed` | a compliance check that passed: no finding, it may resolve the failure of the same check |
 | `quarantined` | the report came without a command and waits in the results quarantine (a release is a later receipt of its own) |
 | `split` | the extra findings a finding naming several CVEs became (adds to received) |
+| `source_retired` | the report came from a source the organization stopped using ([source retirement](source-retirement.md)); nothing of it is applied |
 
 Every other path a received finding takes lands in a count:
 
