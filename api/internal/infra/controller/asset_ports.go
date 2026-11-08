@@ -17,7 +17,7 @@ import (
 
 var (
 	assetPortQueueDepth = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: assetDomainMetricsNamespace, Subsystem: "asset_ports", Name: "queue_depth",
+		Namespace: assetDomainMetricsNamespace, Subsystem: "asset_ports", Name: assetDomainQueueDepthName,
 		Help: "Assets waiting for their open ports to be recomputed",
 	})
 	assetPortRefreshed = promauto.NewCounter(prometheus.CounterOpts{
