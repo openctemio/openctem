@@ -687,6 +687,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
 		IngestReceipt:          newIngestReceiptHandler(cfg, repos, svc, log),
+		SourceRetirement:       handler.NewSourceRetirementHandler(svc.SourceRetire, log),
 		Story:                  newStoryHandler(deps.DB, repos, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
