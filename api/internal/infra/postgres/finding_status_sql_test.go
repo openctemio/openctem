@@ -57,6 +57,7 @@ func TestFindingStatusSQL_IllegalListPanics(t *testing.T) {
 var findingStatusWriters = map[string]int{
 	"asset_merge_findings.go":                2, // identity merge: survivor inherits, tombstone -> duplicate
 	"ci_coverage_repository.go":              1, // sourceRetiredFromSQL (going stale is observation_state, not a status)
+	"source_retirement_repository.go":        2, // sourceRetireFromSQL (archive), restore to the journalled new or confirmed
 	"finding_acceptance_expiry.go":           1, // accepted -> confirmed when the acceptance ended (guarded by status under lock)
 	"finding_decision_review.go":             1, // ReopenResolved: resolved -> confirmed, guarded by fixedReopenFromSQL
 	"finding_correlation_repository.go":      2, // correlate: open -> duplicate (isOpenStatus checked under lock); release: duplicate -> prior open status

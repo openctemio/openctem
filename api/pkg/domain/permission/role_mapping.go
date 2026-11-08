@@ -86,6 +86,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// AI Triage
 		AITriageRead, AITriageTrigger,
 		AIKnowledgeRead, AIKnowledgeManage,
+		// Retire import sources
+		FindingsSourcesRetire,
 		// CTEM (RFC-004 + RFC-005)
 		CTEMCyclesRead, CTEMCyclesWrite,
 		AttackerProfilesRead, AttackerProfilesWrite,
@@ -169,6 +171,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 		// AI Triage
 		AITriageRead, AITriageTrigger,
 		AIKnowledgeRead, AIKnowledgeManage,
+		// Retire import sources
+		FindingsSourcesRetire,
 		// CTEM (RFC-004 + RFC-005)
 		CTEMCyclesRead, CTEMCyclesWrite,
 		AttackerProfilesRead, AttackerProfilesWrite,
