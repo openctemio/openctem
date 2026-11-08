@@ -107,13 +107,13 @@ export function QueryModeToggle({ active, onToggle }: { active: boolean; onToggl
       size="sm"
       className="size-7 gap-1 px-0 text-xs sm:w-auto sm:px-2"
       aria-pressed={active}
-      aria-label={t('findings.query.toggle')}
       onClick={onToggle}
       title={t('findings.query.toggleHint')}
     >
       <Code2 className="size-3.5" aria-hidden />
-      {/* Icon only on a phone, so the toolbar keeps its two rows. */}
-      <span className="hidden sm:inline">{t('findings.query.toggle')}</span>
+      {/* Icon only on a phone (the label stays for screen readers), so the
+          toolbar keeps its two rows. */}
+      <span className="sr-only sm:not-sr-only">{t('findings.query.toggle')}</span>
     </Button>
   )
 }
