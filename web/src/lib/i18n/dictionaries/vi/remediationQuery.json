@@ -1,10 +1,5 @@
 {
   "remediationQuery.box.checking": "Đang kiểm tra truy vấn…",
-  "remediationQuery.box.hint": "Viết bộ lọc phát hiện, ví dụ findings where severity = critical and asset.internet_facing = true. Gợi ý hiện khi bạn gõ.",
-  "remediationQuery.box.invalid": "Truy vấn không hợp lệ.",
-  "remediationQuery.box.placeholder": "findings where severity in (critical, high)",
-  "remediationQuery.box.problemAt": "Dòng {line}, cột {column}: {message}",
-  "remediationQuery.box.suggestions": "Gợi ý truy vấn",
   "remediationQuery.create.cancel": "Hủy",
   "remediationQuery.create.conflictsChanged": "Một số phát hiện đã được nhiệm vụ khác nhận kể từ lúc xem trước. Hãy xem lại rồi tạo lại.",
   "remediationQuery.create.created": "Đã tạo nhiệm vụ \"{task}\" với {count} phát hiện",
