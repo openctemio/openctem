@@ -1676,6 +1676,7 @@
   "scans.profiles.title": "Scan profiles",
   "scans.profiles.updateFailed": "Failed to update profile",
   "scans.profiles.updated": "Profile \"{name}\" updated",
+  "scans.query.label": "Filter scans as query text",
   "scans.quick.defaultName": "{scanner} scan",
   "scans.quick.description": "Run a scanner on targets now. Nothing is saved unless you choose to.",
   "scans.quick.done": "Done",
