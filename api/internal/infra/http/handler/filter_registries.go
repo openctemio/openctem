@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/certificate"
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/posture"
@@ -15,6 +16,7 @@ import (
 func FilterRegistries() map[string]*filterspec.Registry {
 	return map[string]*filterspec.Registry{
 		"findings":               vulnerability.FindingFields,
+		"assets":                 assetlist.Fields,
 		"web_endpoints":          webendpoint.Fields,
 		"certificates":           certificate.Fields,
 		"technologies":           technology.Fields,
