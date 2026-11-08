@@ -98,6 +98,7 @@ seeded table):
 - `internal/infra/postgres/exploration_story_repository.go`: runs, asset runs, asset receipt.
 - `internal/infra/http/handler/exploration_story_handler.go`, `internal/infra/http/routes/exploration.go`.
 - `pkg/domain/exploration/lead.go`, `repository.go`: leads, links, verdicts.
+- `configs/lead-types.yaml`, `cmd/gen-lead-types`, `pkg/domain/exploration/catalog.go`: the lead type catalog.
 - `internal/infra/postgres/exploration_lead_repository.go`; migration `exploration_layer`.
 
 ## Leads, links and verdicts: storage
@@ -149,6 +150,32 @@ a link to a finding stays on the tombstone as history.
 Tests: `internal/infra/postgres/exploration_lead_repository_db_test.go`
 (lifecycle, dedup, compare and set, cross-tenant references refused on every
 end, data scope, append-only verdicts), `pkg/domain/exploration/lead_test.go`.
+
+## Lead type catalog
+
+`configs/lead-types.yaml` is the single source of truth for the kinds of
+question a lead may ask. `make generate-lead-types` (`cmd/gen-lead-types`)
+checks it and writes `pkg/domain/exploration/lead_types_generated.go` and
+`web/src/features/exploration/lib/lead-types.generated.ts`; `-check` (and
+`TestGeneratedFilesUpToDate`) fails when they are stale.
+
+| Lead type | Asks | Action (tier from the stage catalog) |
+|---|---|---|
+| `dns.takeover_check` | can this dangling alias be claimed? | `check.takeover` (T1) on a domain or subdomain |
+| `version.confirm` | is the version a critical match was made on really there? | `probe.http` (T1) |
+| `asset.gone_with_findings` | is an asset reported gone really gone, while findings stay open on it? | `resolve.dns` (T0) for names, `probe.http` (T1) for web services and hosts, `discover.hosts` (T1) for addresses |
+
+Each entry has a version (rules record `<id>@<version>` as a lead's origin),
+a likelihood band (the score's prior), a value weight, a maximum number of
+dispatches, its reason codes and how a finished step answers the question
+(`settle`): `finding` (proven when the step reports a finding on the
+subject), `liveness` (the liveness ledger after the step) or `match` (the
+cited version-match findings after the step). An action names a capability, the subject
+asset types it applies to, and the params it accepts. The generator refuses
+an unknown capability, an asset type the capability does not take, and any
+field it does not know (a tier cannot be written in the YAML: it is always
+the stage catalog's). `CheckCatalog` refuses a lead whose type, reason,
+action, params or tier the catalog does not declare.
 
 ## Not yet built
 
