@@ -1447,6 +1447,7 @@
   "findings.receipts.lastSeenIn": "Last seen in",
   "findings.receipts.noFindingsYet": "No findings yet",
   "findings.receipts.outcome.compliance_passed": "Compliance checks that passed",
+  "findings.receipts.outcome.compliance_state": "Compliance checks not applicable or not run, kept as control states",
   "findings.receipts.outcome.exposure": "Filed as exposures",
   "findings.receipts.outcome.merged": "Repeated in the same scan",
   "findings.receipts.outcome.out_of_contract": "Held for review, outside the tool's contract",

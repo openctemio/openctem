@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Partly implemented (2026-11-07): practice column, derivation, filters, backfill command, compliance SLA policy, findings practice switch |
+| Status | Partly implemented (2026-11-08): practice column, derivation, filters, backfill command, compliance SLA policy, findings switch, compliance check state with history and posture, control remediation key |
 | Scope | api (findings column, derivation, filters, query language, MCP, SLA policy, dashboards, backfill command), web (findings practice switch, SLA policy form) |
 | Architecture | [finding-practices.md](../architecture/finding-practices.md) |
 | Related | RFC-048 (list query contract), RFC-115 (query language), RFC-017 (CTEM priority) |
@@ -81,11 +81,21 @@ simple views and the existing filters and query language.
   practice rules between non-compliance practices, a person's override.
 - Compliance priority from benchmark level, asset criticality and
   environment (never P0/P1 automatically), the benchmark level column.
-- Check state per asset and control (passes stop being open findings), a pass
-  rate per benchmark and framework, a remediation key per control.
+- A pass rate per framework (through control mappings), a benchmark export.
 - Practice in the dashboard fact keys, starter views, default views per user,
   team, role and tenant, team pins, view subscriptions.
 - A short search-bar form of the query language.
+
+## 4a. Compliance check state
+
+A benchmark check result is the state of one control on one asset
+([compliance-checks.md](../architecture/compliance-checks.md)): the latest
+result per (asset, benchmark, control) with its evidence, every change kept
+as history, and a finding only while the control fails (or a warning needs a
+person). A pass resolves the open failure of the same check; an error keeps
+its own state. A per-asset posture rollup, refreshed by the dashboard
+maintainer, gives the pass rate per benchmark; one remediation group per
+control (`control:<benchmark>:<control>`) covers every asset that fails it.
 
 ## 5. Security
 

@@ -390,6 +390,10 @@ const (
 	// finding and no sighting of the failed result of the same check; an
 	// upload resolves that open failure with it.
 	OutcomeCompliancePassed = "compliance_passed"
+	// OutcomeComplianceState: a compliance check that was not applicable or
+	// could not run. It is kept as the state of its control, not as a
+	// finding.
+	OutcomeComplianceState = "compliance_state"
 	// OutcomeQuarantined: the report came without a command and waits in
 	// the results quarantine; a person releases or discards it.
 	OutcomeQuarantined = "quarantined"
@@ -402,7 +406,7 @@ const (
 // AllOutcomes lists the outcome codes, in display order.
 func AllOutcomes() []string {
 	return []string{OutcomeMerged, OutcomeExposure, OutcomeSourceMitigated, OutcomeUnresolvedRef,
-		OutcomeOutOfContract, OutcomeReservedTool, OutcomeCompliancePassed, OutcomeQuarantined, OutcomeSourceRetired, OutcomeSplit}
+		OutcomeOutOfContract, OutcomeReservedTool, OutcomeCompliancePassed, OutcomeComplianceState, OutcomeQuarantined, OutcomeSourceRetired, OutcomeSplit}
 }
 
 // Unaccounted is how many received findings no count and no outcome
