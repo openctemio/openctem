@@ -20,6 +20,9 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
+// paramCount is the message parameter of a count.
+const paramCount = "count"
+
 // SourceRetirementService is the use cases the handler calls.
 type SourceRetirementService interface {
 	Preview(ctx context.Context, tenantID shared.ID, src sourceretireapp.Source, opts sourceretire.Options) (*sourceretire.Preview, string, error)
@@ -193,7 +196,7 @@ func (h *SourceRetirementHandler) writeErr(w http.ResponseWriter, err error, pre
 	case errors.Is(err, sourceretire.ErrConfirmCriticalRequired):
 		e := apierror.FromCode(apierror.CodeConfirmCriticalRequired)
 		if preview != nil {
-			e = e.WithParams(apierror.Params{"count": strconv.Itoa(preview.CriticalOrKEV)})
+			e = e.WithParams(apierror.Params{paramCount: strconv.Itoa(preview.CriticalOrKEV)})
 		}
 		e.WriteJSON(w)
 	case errors.Is(err, sourceretire.ErrFullDataAccessRequired):
@@ -310,7 +313,7 @@ func (h *SourceRetirementHandler) List(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	include := r.URL.Query().Get("include_restored") == "true"
+	include := r.URL.Query().Get("include_restored") == queryParamTrue
 	list, err := h.svc.List(r.Context(), tenantID, include)
 	if err != nil {
 		h.writeErr(w, err, nil)
