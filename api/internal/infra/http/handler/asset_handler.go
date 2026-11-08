@@ -1200,28 +1200,6 @@ func (h *AssetHandler) serveList(w http.ResponseWriter, r *http.Request, lq asse
 	writeJSON(w, http.StatusOK, AssetListResponse{ListResponse: meta, TotalCapped: result.Capped, NextCursor: result.NextCursor})
 }
 
-// technologyVersionParam reads technology_version: nil when absent, the
-// trimmed value otherwise ("" selects a version the tools could not tell).
-func technologyVersionParam(q url.Values) *string {
-	vs, ok := q["technology_version"]
-	if !ok || len(vs) == 0 {
-		return nil
-	}
-	v := strings.TrimSpace(vs[0])
-	return &v
-}
-
-// technologyCategoryStrings parses a technology_category filter, keeping
-// only valid categories.
-func technologyCategoryStrings(raw string) []string {
-	cats := assettech.ParseCategories(raw)
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		out = append(out, string(c))
-	}
-	return out
-}
-
 // Create handles POST /api/v1/assets
 // @Summary      Create asset
 // @Description  Creates a new asset for the current tenant. A name (or a correlated address) that matches an existing asset is a 409 and nothing is changed; details.existing_asset_id names the existing asset only when it is in the caller's data scope.
