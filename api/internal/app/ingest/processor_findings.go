@@ -691,6 +691,11 @@ func (p *FindingProcessor) processBatch(
 	// are re-derived after enrichment (Step 5c).
 	var resighted []string
 
+	// Step 3d: a compliance finding's severity comes from its benchmark
+	// level and its asset, never the scanner (compliance_severity.go); set
+	// before it is classified and written, new or re-sighted.
+	p.applyComplianceSeverity(ctx, tenantID, newFindings, existingNewData)
+
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
 		// Enrich BEFORE inserting so EPSS/KEV/priority/SLA are written by the

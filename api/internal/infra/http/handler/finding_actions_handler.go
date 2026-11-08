@@ -125,6 +125,11 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
 // @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
 // @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_level  query  []integer  false  "compliance level: any of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_null  query  boolean  false  "compliance level is unset (true) or set (false)"
+// @Param  compliance_level_not  query  []integer  false  "compliance level: none of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_gte  query  integer  false  "compliance level at least"
+// @Param  compliance_level_lte  query  integer  false  "compliance level at most"
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
@@ -317,6 +322,11 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
 // @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
 // @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_level  query  []integer  false  "compliance level: any of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_null  query  boolean  false  "compliance level is unset (true) or set (false)"
+// @Param  compliance_level_not  query  []integer  false  "compliance level: none of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_gte  query  integer  false  "compliance level at least"
+// @Param  compliance_level_lte  query  integer  false  "compliance level at most"
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"

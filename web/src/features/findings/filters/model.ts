@@ -327,6 +327,8 @@ const KNOWN_FINDING_FIELDS: Record<string, true> = Object.fromEntries(
     'cve_id',
     'family',
     'finding_type',
+    'compliance_result',
+    'compliance_level',
     'cvss_score',
     'first_detected_at',
     'last_seen_at',
