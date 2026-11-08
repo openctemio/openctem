@@ -164,6 +164,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/dnsprobe"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	bountyprogramdom "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
@@ -1444,6 +1445,13 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			Permission: permission.VulnerabilitiesRead.String(),
 			Extra:      append([]string{"branch_status"}, vulnerability.CVEListParams...),
 			Params:     vulnerability.CVEListPageParams,
+		},
+		// The asset inventory: its own registry, run as the viewer like
+		// every view (GET /assets?view=<id>).
+		savedview.PageAssets: {
+			Registry:   assetlist.Fields,
+			Permission: permission.AssetsRead.String(),
+			Extra:      []string{"properties", "with_triage"},
 		},
 	}, log)
 	s.SavedView.SetAuditService(s.Audit)
