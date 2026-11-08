@@ -292,6 +292,7 @@ describe('pickableFields', () => {
     expect(groupOf('severity')).toBe('finding')
     expect(groupOf('asset_tag')).toBe('asset')
     expect(groupOf('assigned_to')).toBe('work')
+    expect(groupOf('retired_source_only')).toBe('finding')
     expect(groupOf('zzz')).toBe('other')
   })
 })

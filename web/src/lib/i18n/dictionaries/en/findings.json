@@ -665,6 +665,7 @@
   "findings.filter.field.related_to": "Related to",
   "findings.filter.field.resolved_at": "Closed",
   "findings.filter.field.resolved_by": "Resolved by",
+  "findings.filter.field.retired_source_only": "Only reported by a retired source",
   "findings.filter.field.rule_id": "Rule",
   "findings.filter.field.scan_id": "Scan",
   "findings.filter.field.seen_by_channel": "Seen through",

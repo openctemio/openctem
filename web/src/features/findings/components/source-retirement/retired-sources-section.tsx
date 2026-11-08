@@ -11,6 +11,7 @@
 import { useId, useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
@@ -184,6 +185,13 @@ export function RetiredSourcesSection() {
             <RetirementRow key={r.id} r={r} onChanged={() => void mutate()} />
           ))}
         </ul>
+        <Link
+          href="/findings?retired_source_only=true"
+          className="mt-2 inline-block text-sm text-primary hover:underline"
+          data-testid="retired-only-link"
+        >
+          {t('findings.filter.field.retired_source_only', 'Only reported by a retired source')}
+        </Link>
       </DetailSection>
     </section>
   )
