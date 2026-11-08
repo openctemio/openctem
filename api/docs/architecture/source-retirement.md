@@ -109,7 +109,7 @@ stopping their dispatch is planned.
 
 ## Use this source again (exact restore)
 
-`POST /api/v1/findings/sources/retirements/{id}/restore` moves the
+`POST /api/v1/findings/sources/retirements/{id}/reactivate` moves the
 retirement to `restoring` (the source is accepted again at once) and
 restores the journal (`source_retirement_findings`) in batches: each
 finding returns to the status it had (`new` or `confirmed`) while it is
@@ -139,7 +139,7 @@ migration `source_retirements`).
 | `POST /api/v1/findings/sources/retirements` | retire (idempotent: a live retirement of the source is returned with `already_retired`) | sensitive |
 | `GET /api/v1/findings/sources/retirements` | the retired sources (`include_restored=true` for all) | no |
 | `GET /api/v1/findings/sources/retirements/{id}` | one retirement and its progress | no |
-| `POST /api/v1/findings/sources/retirements/{id}/restore` | use the source again | sensitive |
+| `POST /api/v1/findings/sources/retirements/{id}/reactivate` | use the source again | sensitive |
 
 A source is named by `kind` with `sensor_id`, `tool` or `sender`, or by
 `integration_id`.

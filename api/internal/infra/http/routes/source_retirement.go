@@ -24,6 +24,6 @@ func registerSourceRetirementRoutes(router Router, h *handler.SourceRetirementHa
 		r.POST("/preview", h.Preview, retire)
 		r.POST("/", h.Retire, retire, requireStepUpSensitive())
 		r.GET("/{id}", h.Get, retire)
-		r.POST("/{id}/restore", h.Restore, retire, requireStepUpSensitive())
+		r.POST("/{id}/reactivate", h.Restore, retire, requireStepUpSensitive())
 	}, tenant...)
 }

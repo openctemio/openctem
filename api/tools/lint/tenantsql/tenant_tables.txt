@@ -292,6 +292,8 @@ sla_policies
 software_product_aliases
 software_products
 software_versions
+source_retirement_findings
+source_retirements
 sso_pending_changes
 storage_blob_deletions
 support_grants
