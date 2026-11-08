@@ -438,6 +438,7 @@
   "confirm.saml.removeDesc": "People can no longer sign in through the identity provider. Make sure they have another way to sign in first. The stored certificate and settings are deleted; you can configure SAML again from scratch.",
   "confirm.saml.removeTitle": "Remove the SAML configuration?",
   "confirm.sampleMore": "and {count} more",
+  "confirm.savedView.builtInCount": "{count} views",
   "confirm.savedView.change.columns": "columns changed",
   "confirm.savedView.change.density": "density changed",
   "confirm.savedView.change.filters": "{count, plural, one {# filter added} other {# filters added}}",
