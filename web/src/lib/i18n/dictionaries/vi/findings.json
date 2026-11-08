@@ -221,6 +221,7 @@
   "findings.closureReason.obsolete_rule": "Quy tắc kiểm tra đã thay đổi",
   "findings.closureReason.obsolete_source": "Nguồn đã bị gỡ bỏ",
   "findings.closureReason.out_of_scope": "Tài sản ngoài phạm vi",
+  "findings.closureReason.reclassified_check_state": "Đã chuyển sang trạng thái kiểm soát",
   "findings.closureReason.reclassified_exposure": "Đã chuyển sang mức phơi nhiễm",
   "findings.closureReason.risk_accepted": "Chấp nhận rủi ro",
   "findings.closureReason.test_or_example_code": "Mã kiểm thử hoặc mã ví dụ",
