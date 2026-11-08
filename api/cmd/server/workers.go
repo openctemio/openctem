@@ -430,6 +430,12 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(ctl)
 	}
 
+	// Retired import sources: archive and restore batches a request did
+	// not finish.
+	if svc.SourceRetire != nil {
+		w.ControllerManager.Register(controller.NewSourceRetirementController(svc.SourceRetire, 0))
+	}
+
 	// Ingest queue (RFC-122): finished jobs and reports after 30 days,
 	// stored upload parts once nobody will open them.
 	if repos.IngestJob != nil {

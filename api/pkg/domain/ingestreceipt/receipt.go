@@ -397,12 +397,16 @@ const (
 	// OutcomeQuarantined: the report came without a command and waits in
 	// the results quarantine; a person releases or discards it.
 	OutcomeQuarantined = "quarantined"
+	// OutcomeSourceRetired: the report came from a source the organization
+	// stopped using (docs/architecture/source-retirement.md); nothing of
+	// it is applied.
+	OutcomeSourceRetired = "source_retired"
 )
 
 // AllOutcomes lists the outcome codes, in display order.
 func AllOutcomes() []string {
 	return []string{OutcomeMerged, OutcomeExposure, OutcomeSourceMitigated, OutcomeUnresolvedRef,
-		OutcomeOutOfContract, OutcomeReservedTool, OutcomeCompliancePassed, OutcomeComplianceState, OutcomeQuarantined, OutcomeSplit}
+		OutcomeOutOfContract, OutcomeReservedTool, OutcomeCompliancePassed, OutcomeComplianceState, OutcomeQuarantined, OutcomeSourceRetired, OutcomeSplit}
 }
 
 // Unaccounted is how many received findings no count and no outcome
