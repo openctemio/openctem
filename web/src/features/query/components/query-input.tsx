@@ -101,6 +101,11 @@ export function QueryInput({
   const [failed, setFailed] = useState(false)
   const [remote, setRemote] = useState<{ key: string; options: Completion[] } | null>(null)
   const seq = useRef(0)
+  // The latest onParsed, so the check below reruns on the text only.
+  const onParsedRef = useRef(onParsed)
+  useEffect(() => {
+    onParsedRef.current = onParsed
+  }, [onParsed])
 
   // Server check, debounced; a stale answer never replaces a newer one.
   useEffect(() => {
@@ -108,7 +113,7 @@ export function QueryInput({
     if (!text || disabled) {
       setResult(null)
       setFailed(false)
-      onParsed?.(null)
+      onParsedRef.current?.(null)
       return
     }
     const mine = ++seq.current
@@ -120,7 +125,7 @@ export function QueryInput({
           if (mine !== seq.current) return
           setResult(res)
           setFailed(false)
-          onParsed?.(res)
+          onParsedRef.current?.(res)
         })
         .catch(() => {
           if (mine !== seq.current) return
@@ -132,8 +137,6 @@ export function QueryInput({
         })
     }, CHECK_DELAY_MS)
     return () => clearTimeout(timer)
-    // onParsed is a callback prop; the check depends on the text only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, entity, disabled])
 
   const ctx: CaretContext = useMemo(() => contextAt(value, caret), [value, caret])
