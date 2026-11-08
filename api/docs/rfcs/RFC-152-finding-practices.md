@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Partly implemented (2026-11-08): practice column, derivation, filters, backfill command, compliance SLA policy, findings switch, compliance check state with history and posture, control remediation key |
+| Status | Partly implemented (2026-11-08): practice column, derivation, filters, backfill command, compliance SLA policy, findings switch, compliance check state with history and posture, control remediation key, compliance priority |
 | Scope | api (findings column, derivation, filters, query language, MCP, SLA policy, dashboards, backfill command), web (findings practice switch, SLA policy form) |
 | Architecture | [finding-practices.md](../architecture/finding-practices.md) |
 | Related | RFC-048 (list query contract), RFC-115 (query language), RFC-017 (CTEM priority) |
@@ -79,8 +79,6 @@ simple views and the existing filters and query language.
 
 - Practice of a scan definition (who ran it settles template checks), tenant
   practice rules between non-compliance practices, a person's override.
-- Compliance priority from benchmark level, asset criticality and
-  environment (never P0/P1 automatically), the benchmark level column.
 - A pass rate per framework (through control mappings), a benchmark export.
 - Practice in the dashboard fact keys, starter views, default views per user,
   team, role and tenant, team pins, view subscriptions.
@@ -96,6 +94,9 @@ person). A pass resolves the open failure of the same check; an error keeps
 its own state. A per-asset posture rollup, refreshed by the dashboard
 maintainer, gives the pass rate per benchmark; one remediation group per
 control (`control:<benchmark>:<control>`) covers every asset that fails it.
+A compliance finding's severity comes from the benchmark level (level 1
+medium, level 2 low), one band up on a critical asset or in production, and
+its class from that severity (high P2, else P3), never P0 or P1 by itself.
 
 ## 5. Security
 
