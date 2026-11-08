@@ -275,6 +275,9 @@ const mcpFindingListSchema = `{"type":"object","properties":{` +
 	`"status":{"type":"string","description":"comma list of new|confirmed|in_progress|fix_applied|resolved|false_positive|accepted|duplicate"},` +
 	`"state":{"type":"string","description":"open|fixed|dispositioned|closed (status groups)"},` +
 	`"source":{"type":"string","description":"comma list, e.g. sca,sast,dast,secret,iac,container,pentest"},` +
+	`"practice":{"type":"string","description":"comma list of aspm|infra|external|cloud|compliance|offensive|identity|runtime|other (the program that triages it); compliance = benchmark check results"},` +
+	`"exclude_practice":{"type":"string","description":"comma list of practices to leave out, e.g. compliance for vulnerabilities only"},` +
+	`"compliance_result":{"type":"string","description":"comma list of pass|fail|manual|not_applicable|error|unknown (benchmark check result)"},` +
 	`"search":{"type":"string","description":"free text over title, file, rule, CVE and asset name"},` +
 	`"asset_id":{"type":"string","description":"comma list of asset UUIDs"},` +
 	`"asset_type":{"type":"string","description":"comma list of asset types, e.g. domain,subdomain,repository"},` +
@@ -299,6 +302,9 @@ type findingListArgs struct {
 	Status        string   `json:"status"`
 	State         string   `json:"state"`
 	Source        string   `json:"source"`
+	Practice      string   `json:"practice"`
+	ExclPractice  string   `json:"exclude_practice"`
+	ComplianceRes string   `json:"compliance_result"`
 	Search        string   `json:"search"`
 	AssetID       string   `json:"asset_id"`
 	AssetType     string   `json:"asset_type"`
@@ -333,6 +339,9 @@ func (a findingListArgs) values() (url.Values, error) {
 	set("status", strings.ToLower(a.Status))
 	set("state", strings.ToLower(a.State))
 	set("source", strings.ToLower(a.Source))
+	set("practice", strings.ToLower(a.Practice))
+	set("practice_not", strings.ToLower(a.ExclPractice))
+	set("compliance_result", strings.ToLower(a.ComplianceRes))
 	set("q", a.Search)
 	set("asset_id", a.AssetID)
 	set("asset_type", strings.ToLower(a.AssetType))

@@ -58,6 +58,7 @@ var findingExportExcluded = map[string]string{
 	"reputational_impact": "detail", "compliance_impact": "detail", "branch_only": "detail",
 	"compliance_framework": "detail", "compliance_framework_version": "detail", "compliance_control_id": "detail",
 	"compliance_control_name": "detail", "compliance_control_description": "detail", "compliance_result": "detail",
+	"practice_reason":    "detail",
 	"compliance_section": "detail", "web3_chain": "detail", "web3_chain_id": "detail",
 	"web3_contract_address": "detail", "web3_swc_id": "detail", "web3_function_signature": "detail",
 	"web3_tx_hash": "detail", "web3_function_selector": "detail", "web3_bytecode_offset": "detail",
