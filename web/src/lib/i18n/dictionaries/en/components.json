@@ -126,6 +126,8 @@
   "components.pager.perPage": "Rows per page",
   "components.pager.previous": "Previous",
   "components.pager.summary": "Page {page} of {pages} ({total} rows)",
+  "components.possiblePath.hint": "Built from your asset relationships and open findings. No check has shown that an attacker can follow it.",
+  "components.possiblePath.label": "Possible path, not proven",
   "components.preset.all": "All",
   "components.preset.direct": "Direct dependencies",
   "components.preset.fixable": "Fixable",
