@@ -44,6 +44,27 @@ type SLADeadlineCalculator interface {
 		severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
 }
 
+// practiceDeadlineCalculator is implemented by *sla.Service: a compliance
+// finding takes the compliance SLA policy
+// (docs/architecture/finding-practices.md).
+type practiceDeadlineCalculator interface {
+	CalculateSLADeadlineForPractice(ctx context.Context, tenantID, assetID, practice, priorityClass string,
+		severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
+}
+
+// deadlineFor is calc's deadline for a finding of the practice, falling back
+// to the vulnerability policy for a calculator without practices.
+func deadlineFor(ctx context.Context, calc SLADeadlineCalculator, tenantID, assetID, practice, priorityClass string,
+	severity vulnerability.Severity, at time.Time) (time.Time, error) {
+	if p, ok := calc.(practiceDeadlineCalculator); ok {
+		if practice != string(vulnerability.PracticeCompliance) {
+			practice = ""
+		}
+		return p.CalculateSLADeadlineForPractice(ctx, tenantID, assetID, practice, priorityClass, severity, at)
+	}
+	return calc.CalculateSLADeadlineForPriority(ctx, tenantID, assetID, priorityClass, severity, at)
+}
+
 // ApprovalExpirationController ends risk acceptances whose end has passed.
 //
 // A finding is the unit: every accepted finding whose acceptance_expires_at
@@ -162,7 +183,7 @@ func (c *ApprovalExpirationController) newDeadline(ctx context.Context, d vulner
 	if !d.AssetID.IsZero() {
 		assetID = d.AssetID.String()
 	}
-	deadline, err := c.sla.CalculateSLADeadlineForPriority(ctx, d.TenantID.String(), assetID, d.PriorityClass, sev, now)
+	deadline, err := deadlineFor(ctx, c.sla, d.TenantID.String(), assetID, d.Practice, d.PriorityClass, sev, now)
 	if err != nil {
 		c.logger.Warn("acceptance expiry: SLA deadline not computed", "finding_id", d.FindingID, "error", err)
 		return nil

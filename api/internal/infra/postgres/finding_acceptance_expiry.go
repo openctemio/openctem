@@ -41,7 +41,7 @@ func (r *FindingAcceptanceExpiryRepository) ListDue(ctx context.Context, limit i
 	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT tenant_id, id, asset_id, COALESCE(priority_class, ''), severity,
-		       sla_deadline, COALESCE(sla_status, ''), acceptance_expires_at
+		       sla_deadline, COALESCE(sla_status, ''), acceptance_expires_at, practice
 		FROM findings
 		WHERE status = 'accepted' AND acceptance_expires_at IS NOT NULL AND acceptance_expires_at <= NOW()
 		ORDER BY acceptance_expires_at
@@ -59,7 +59,7 @@ func (r *FindingAcceptanceExpiryRepository) ListDue(ctx context.Context, limit i
 			d                vulnerability.AcceptanceDue
 		)
 		if err := rows.Scan(&tenantStr, &idStr, &assetStr, &d.PriorityClass, &d.Severity,
-			&deadline, &d.SLAStatus, &d.ExpiresAt); err != nil {
+			&deadline, &d.SLAStatus, &d.ExpiresAt, &d.Practice); err != nil {
 			return nil, fmt.Errorf("scan ended acceptance: %w", err)
 		}
 		if d.TenantID, err = shared.IDFromString(tenantStr); err != nil {

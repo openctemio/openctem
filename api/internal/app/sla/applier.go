@@ -41,6 +41,52 @@ type batchDeadlineSource interface {
 	SLABatchFuncs(ctx context.Context, tenantID string) (DeadlineFunc, KEVCapFunc, error)
 }
 
+// practiceDeadlineSource is optionally implemented by the calculator
+// (*Service) to resolve a finding's deadline by its practice: a compliance
+// finding takes the compliance policy. A calculator without it governs every
+// finding with the vulnerability policy.
+type practiceDeadlineSource interface {
+	CalculateSLADeadlineForPractice(ctx context.Context, tenantID, assetID, practice, priorityClass string,
+		severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
+}
+
+// singleDeadline returns the per-finding deadline computation of the
+// calculator, practice-aware when it can be.
+func (a *Applier) singleDeadline(ctx context.Context, tid string) DeadlineFunc {
+	if src, ok := a.calc.(practiceDeadlineSource); ok {
+		return func(assetID, practice, priorityClass string, sev vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+			return src.CalculateSLADeadlineForPractice(ctx, tid, assetID, practice, priorityClass, sev, detectedAt)
+		}
+	}
+	return func(assetID, _, priorityClass string, sev vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+		return a.calc.CalculateSLADeadlineForPriority(ctx, tid, assetID, priorityClass, sev, detectedAt)
+	}
+}
+
+// DeadlineForPractice computes a deadline with calc for a finding of the
+// given practice: practice-aware when calc can be (*Service), the
+// vulnerability policy otherwise. For callers that hold a finding's columns
+// rather than the entity (acceptance expiry, material change, regression).
+func DeadlineForPractice(ctx context.Context, calc DeadlineCalculator, tenantID, assetID, practice, priorityClass string,
+	severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+	if src, ok := calc.(practiceDeadlineSource); ok {
+		if practice != sladom.PracticeCompliance {
+			practice = ""
+		}
+		return src.CalculateSLADeadlineForPractice(ctx, tenantID, assetID, practice, priorityClass, severity, detectedAt)
+	}
+	return calc.CalculateSLADeadlineForPriority(ctx, tenantID, assetID, priorityClass, severity, detectedAt)
+}
+
+// slaPractice is the SLA practice of a finding: compliance, or "" for every
+// other practice (governed by the vulnerability policy).
+func slaPractice(f *vulnerability.Finding) string {
+	if f.Practice() == vulnerability.PracticeCompliance {
+		return sladom.PracticeCompliance
+	}
+	return ""
+}
+
 // kevCapSource is optionally implemented by the calculator (*Service) to read
 // the known exploited deadline cap of one finding's policy. A calculator
 // without it gets the platform default (DefaultKEVCapDays).
@@ -97,9 +143,7 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 	tid := tenantID.String()
 	// One policy load for the whole batch when the calculator supports it;
 	// otherwise (tests, or a failed load) one lookup per finding.
-	compute := func(assetID, priorityClass string, sev vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
-		return a.calc.CalculateSLADeadlineForPriority(ctx, tid, assetID, priorityClass, sev, detectedAt)
-	}
+	compute := a.singleDeadline(ctx, tid)
 	kevCap := a.singleKEVCap(ctx, tid)
 	if b, ok := a.calc.(batchDeadlineSource); ok {
 		if fn, capFn, err := b.SLABatchFuncs(ctx, tid); err == nil {
@@ -128,7 +172,8 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 		if old != nil {
 			start = now
 		}
-		deadline, err := compute(assetID, priorityClass, f.Severity(), start)
+		practice := slaPractice(f)
+		deadline, err := compute(assetID, practice, priorityClass, f.Severity(), start)
 		if err != nil {
 			failed++
 			continue
@@ -140,7 +185,9 @@ func (a *Applier) ApplyBatch(ctx context.Context, tenantID shared.ID, findings [
 			continue
 		}
 		capped := false
-		if f.IsInKEV() {
+		// A benchmark check has no CVE: the known exploited cap is a
+		// vulnerability rule and never shortens a compliance window.
+		if f.IsInKEV() && practice == "" {
 			if days := kevCap(assetID); days > 0 {
 				if c := start.Add(time.Duration(days) * 24 * time.Hour); c.Before(deadline) {
 					deadline, capped = c, true
@@ -198,6 +245,7 @@ func (a *Applier) RelaxForDecision(ctx context.Context, tenantID shared.ID, find
 	}
 	tid := tenantID.String()
 	kevCap := a.singleKEVCap(ctx, tid)
+	compute := a.singleDeadline(ctx, tid)
 	for _, f := range findings {
 		if f.IsClosed() {
 			continue
@@ -210,7 +258,8 @@ func (a *Applier) RelaxForDecision(ctx context.Context, tenantID shared.ID, find
 		if !f.AssetID().IsZero() {
 			assetID = f.AssetID().String()
 		}
-		deadline, err := a.calc.CalculateSLADeadlineForPriority(ctx, tid, assetID, priorityClass, f.Severity(), f.FirstDetectedAt())
+		practice := slaPractice(f)
+		deadline, err := compute(assetID, practice, priorityClass, f.Severity(), f.FirstDetectedAt())
 		if err != nil {
 			return fmt.Errorf("sla deadline: %w", err)
 		}
@@ -218,7 +267,7 @@ func (a *Applier) RelaxForDecision(ctx context.Context, tenantID shared.ID, find
 			continue
 		}
 		capped := false
-		if f.IsInKEV() {
+		if f.IsInKEV() && practice == "" {
 			if days := kevCap(assetID); days > 0 {
 				if c := f.FirstDetectedAt().Add(time.Duration(days) * 24 * time.Hour); c.Before(deadline) {
 					deadline, capped = c, true

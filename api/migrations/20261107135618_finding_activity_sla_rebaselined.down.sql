@@ -1,0 +1,1 @@
+-- The timeline entry type stays allowed: rows may use it (audit history is kept).

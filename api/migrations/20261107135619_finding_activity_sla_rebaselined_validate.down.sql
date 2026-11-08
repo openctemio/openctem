@@ -1,0 +1,1 @@
+-- Nothing to undo: a validated constraint stays valid.

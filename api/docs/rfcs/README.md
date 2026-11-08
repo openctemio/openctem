@@ -160,7 +160,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-149](RFC-149-task-secrets.md) | Task secrets | Implemented (2026-11-05): the platform side; the sensor SDK side ships in the same release |
 | [RFC-150](RFC-150-web-path-discovery.md) | Web path discovery | Partially implemented (2026-11-05): platform planning, derived list, strict job scope, budgets, program rules, coverage reasons and the workflow step |
 | [RFC-151](RFC-151-large-range-targets.md) | Large range targets | Implemented (2026-11-06) |
-| [RFC-152](RFC-152-finding-practices.md) | Finding practices | Partly implemented (2026-11-07): practice column, derivation, filters; switch, compliance policy and backfill in progress |
+| [RFC-152](RFC-152-finding-practices.md) | Finding practices | Partly implemented (2026-11-07): practice column, derivation, filters, backfill command, compliance SLA policy; findings switch in progress |
 | [RFC-153](RFC-153-exploration.md) | Exploration | Partially implemented (2026-11-07): "how we found this" for findings and assets (read only, no new tables); leads, links and verdicts are designed, not built |
 <!-- END RFC INDEX -->
 

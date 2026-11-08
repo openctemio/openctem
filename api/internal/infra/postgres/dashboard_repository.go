@@ -1068,9 +1068,17 @@ func newSeverityCounts() map[string]int {
 // role), through the one shared rule (vulnerability.FindingMemberVisibilitySQL).
 // col is the finding's asset column, alias-qualified when the findings table
 // is aliased; the tenant is $1. A context with no viewer is an internal
-// call that is not on behalf of a user.
+// call that is not on behalf of a user. Compliance findings (benchmark check
+// results) are left out as well: dashboard figures are vulnerability figures
+// (docs/architecture/finding-practices.md), so a failed hardening check never
+// counts as an open, overdue or remediated vulnerability.
 func findingExcl(ctx context.Context, col string) string {
-	return programFindingExcl(ctx, col) + pentestVisibilityExcl(ctx, findingAlias(col))
+	return programFindingExcl(ctx, col) + pentestVisibilityExcl(ctx, findingAlias(col)) + notComplianceExcl(findingAlias(col))
+}
+
+// notComplianceExcl leaves compliance findings out of a dashboard figure.
+func notComplianceExcl(alias string) string {
+	return " AND " + alias + ".practice <> '" + string(vulnerability.PracticeCompliance) + "'"
 }
 
 // findingAlias is the findings alias of an asset column ("f.asset_id" is "f";

@@ -36,7 +36,7 @@ func (r *memSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID) 
 	r.lookups++
 	var def *sladom.Policy
 	for _, p := range r.policies {
-		if p.TenantID() != tenantID || !p.IsActive() {
+		if p.TenantID() != tenantID || !p.IsActive() || p.Practice() != "" {
 			continue
 		}
 		if a := p.AssetID(); a != nil && *a == assetID {
@@ -55,7 +55,7 @@ func (r *memSLARepo) GetByAsset(_ context.Context, tenantID, assetID shared.ID) 
 func (r *memSLARepo) GetTenantDefault(_ context.Context, tenantID shared.ID) (*sladom.Policy, error) {
 	r.lookups++
 	for _, p := range r.policies {
-		if p.TenantID() == tenantID && p.AssetID() == nil && p.IsDefault() && p.IsActive() {
+		if p.TenantID() == tenantID && p.AssetID() == nil && p.IsDefault() && p.IsActive() && p.Practice() == "" {
 			return p, nil
 		}
 	}
@@ -100,7 +100,7 @@ func TestSLADeadlineFunc_MatchesPerFindingLookup(t *testing.T) {
 		{"informational", plain.String(), vulnerability.SeverityInfo, ""},
 	} {
 		want, werr := svc.CalculateSLADeadlineForPriority(ctx, tenant.String(), tc.asset, tc.class, tc.sev, detected)
-		got, gerr := fn(tc.asset, tc.class, tc.sev, detected)
+		got, gerr := fn(tc.asset, "", tc.class, tc.sev, detected)
 		if (werr != nil) != (gerr != nil) || !got.Equal(want) {
 			t.Errorf("%s: batch = %v (%v), per-finding = %v (%v)", tc.name, got, gerr, want, werr)
 		}
@@ -124,8 +124,8 @@ func TestSLADeadlineFunc_InactiveDefaultIgnored(t *testing.T) {
 	}
 	detected := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	for _, asset := range []string{"", shared.NewID().String()} {
-		got, _ := fn(asset, "", vulnerability.SeverityHigh, detected)
-		want, _ := deadlineForPriority(nil, "", vulnerability.SeverityHigh, detected)
+		got, _ := fn(asset, "", "", vulnerability.SeverityHigh, detected)
+		want, _ := deadlineForPriority(nil, "", "", vulnerability.SeverityHigh, detected)
 		if !got.Equal(want) {
 			t.Errorf("asset %q: deadline %v follows the inactive default, want platform %v", asset, got, want)
 		}
@@ -143,7 +143,7 @@ func TestSLADeadlineFunc_NoPolicies(t *testing.T) {
 	}
 	detected := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	want, _ := svc.CalculateSLADeadlineForPriority(ctx, tenant.String(), shared.NewID().String(), "", vulnerability.SeverityCritical, detected)
-	got, _ := fn(shared.NewID().String(), "", vulnerability.SeverityCritical, detected)
+	got, _ := fn(shared.NewID().String(), "", "", vulnerability.SeverityCritical, detected)
 	if !got.Equal(want) || got.IsZero() {
 		t.Fatalf("batch = %v, per-finding = %v", got, want)
 	}
@@ -156,7 +156,7 @@ type batchCalc struct {
 
 func (b *batchCalc) SLABatchFuncs(_ context.Context, _ string) (DeadlineFunc, KEVCapFunc, error) {
 	b.fnCalls++
-	return func(_, _ string, _ vulnerability.Severity, at time.Time) (time.Time, error) {
+	return func(_, _, _ string, _ vulnerability.Severity, at time.Time) (time.Time, error) {
 		return at.Add(24 * time.Hour), nil
 	}, func(string) int { return 0 }, nil
 }
