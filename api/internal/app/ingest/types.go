@@ -234,8 +234,12 @@ type Output struct {
 	// branch is then skipped: it would mark the findings this scan did see as
 	// no longer on the branch.
 	BranchOccurrencesFailed bool `json:"-"`
-	AssetsCreated           int  `json:"assets_created"`
-	AssetsUpdated           int  `json:"assets_updated"`
+	// SourceRetired is set when the report came from a source the
+	// organization stopped using: nothing of it was applied, and its
+	// receipt counts its findings as source_retired.
+	SourceRetired bool `json:"source_retired,omitempty"`
+	AssetsCreated int  `json:"assets_created"`
+	AssetsUpdated int  `json:"assets_updated"`
 	// AssetsSkippedExcluded counts new assets not added because they match
 	// an active scope exclusion (RFC-042 F16).
 	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`

@@ -171,6 +171,8 @@ type Repositories struct {
 	KEV *postgres.KEVLookup
 	// IngestPolicyVersions versions the policies ingest snapshots.
 	IngestPolicyVersions *postgres.IngestPolicyVersions
+	// SourceRetirement holds retired import sources and their journal.
+	SourceRetirement *postgres.SourceRetirementRepository
 	// IngestReport tracks sensor protocol v2 results reports (RFC-026).
 	IngestReport *postgres.IngestReportRepository
 
@@ -556,6 +558,7 @@ func newRepositories(db *postgres.DB) *Repositories {
 		IngestPayload:          postgres.NewIngestPayloadRepository(db),
 		KEV:                    postgres.NewKEVLookup(db),
 		IngestPolicyVersions:   postgres.NewIngestPolicyVersions(db),
+		SourceRetirement:       postgres.NewSourceRetirementRepository(db),
 		IngestReport:           postgres.NewIngestReportRepository(db),
 
 		// Scan coverage rotation (RFC-007)

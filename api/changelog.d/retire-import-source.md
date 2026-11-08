@@ -1,0 +1,5 @@
+### Added: stop using an import source
+
+- An administrator can stop using a source of findings (a sensor's tool, an uploaded tool, a connector source, or a Tenable.sc connector integration): `POST /api/v1/findings/sources/retirements`, with a server-side preview (`/preview`). New data from the source is refused and counted on each receipt under the new outcome `source_retired`. The open findings only that source reported are archived as source retired (resolved, closure reason `obsolete_source`: not fixed, out of metrics and SLA); findings another source also reported, findings in remediation and secrets stay open. Critical and known-exploited findings need a separate confirmation.
+- "Use this source again" (`POST /api/v1/findings/sources/retirements/{id}/reactivate`) restores exactly the archived set from a journal, leaving findings someone changed since.
+- New permission `findings:sources:retire` (owner and administrator); retire and restore need re-authentication and full data access; audited as `import_source.retired` and `import_source.restored`. Migration `source_retirements` (two new tables, no change to existing rows).
