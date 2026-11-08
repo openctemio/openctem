@@ -105,13 +105,15 @@ export function QueryModeToggle({ active, onToggle }: { active: boolean; onToggl
       type="button"
       variant={active ? 'secondary' : 'ghost'}
       size="sm"
-      className="h-7 gap-1 px-2 text-xs"
+      className="size-7 gap-1 px-0 text-xs sm:w-auto sm:px-2"
       aria-pressed={active}
+      aria-label={t('findings.query.toggle')}
       onClick={onToggle}
       title={t('findings.query.toggleHint')}
     >
       <Code2 className="size-3.5" aria-hidden />
-      {t('findings.query.toggle')}
+      {/* Icon only on a phone, so the toolbar keeps its two rows. */}
+      <span className="hidden sm:inline">{t('findings.query.toggle')}</span>
     </Button>
   )
 }
