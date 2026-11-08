@@ -1,0 +1,21 @@
+{
+  "exploration.story.chainLabel": "How we found this",
+  "exploration.story.excludedBy": "Excluded by {pattern}",
+  "exploration.story.hidden": "A step you cannot see",
+  "exploration.story.hiddenAsset": "An asset outside your data scope.",
+  "exploration.story.hiddenScan": "A scan run: you need permission to view scans.",
+  "exploration.story.loadTitle": "how this was found",
+  "exploration.story.moreReports": "{count, plural, one {# more source reported it} other {# more sources reported it}}: see Seen by.",
+  "exploration.story.role.asset": "Found under",
+  "exploration.story.role.discovered": "Discovered by",
+  "exploration.story.role.finding": "Finding",
+  "exploration.story.role.reported": "Reported by",
+  "exploration.story.role.scanReported": "Scanned by",
+  "exploration.story.role.scanned": "Last scanned by",
+  "exploration.story.role.scope": "In scope by",
+  "exploration.story.role.subjectAsset": "This asset",
+  "exploration.story.scanRun": "Scan run",
+  "exploration.story.seenCount": "{count, plural, one {# time} other {# times}}",
+  "exploration.story.title": "How we found this",
+  "exploration.story.truncated": "Earlier steps are not shown."
+}
