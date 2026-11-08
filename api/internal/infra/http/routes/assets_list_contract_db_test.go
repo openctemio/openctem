@@ -94,3 +94,16 @@ func TestAssetsList_CursorPagesAndRefusesSort(t *testing.T) {
 		t.Fatalf("bad cursor: status %d: %s", code, body)
 	}
 }
+
+// GET /assets/networks groups by network as the caller: a member without a
+// scope row gets no network, and a bad filter is a 400.
+func TestAssetsNetworks_Scoped(t *testing.T) {
+	h := newDSHarness(t)
+	code, body := h.do(h.memberStrict, false, http.MethodGet, "/api/v1/assets/networks", nil)
+	if code != http.StatusOK || !strings.Contains(body, `"data":[]`) {
+		t.Fatalf("scopeless member: status %d: %s", code, body)
+	}
+	if code, body = h.do(h.owner, true, http.MethodGet, "/api/v1/assets/networks?nonsense=1", nil); code != http.StatusBadRequest {
+		t.Fatalf("unknown param: status %d: %s", code, body)
+	}
+}
