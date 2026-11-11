@@ -611,8 +611,7 @@ function ExceptionsCard({
   const today = new Date()
   const maxDay = isoDay(new Date(today.getTime() + maxDays * DAY_MS))
   useEffect(() => {
-    if (extend) setNewExpiry(isoDay(new Date(today.getTime() + 90 * DAY_MS)))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (extend) setNewExpiry(isoDay(new Date(Date.now() + 90 * DAY_MS)))
   }, [extend])
 
   const columns = useMemo<ColumnDef<ScopeNameException>[]>(() => {
