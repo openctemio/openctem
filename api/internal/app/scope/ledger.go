@@ -406,13 +406,15 @@ func (s *Service) LedgerSnapshot(ctx context.Context, tenantID string) (jobsign.
 		return snap, err
 	}
 	now := time.Now().UTC()
+	tid, _ := shared.IDFromString(tenantID) // unparsable: no exception applies
+	guard := s.guardrailsFor(tid)
 	for _, t := range targets {
 		e, err := s.letterBound(ctx, ledgerEntryOf(t, now), t, now)
 		if err != nil {
 			return snap, err
 		}
 		if e != nil && scopedom.ValidatePattern(t.TargetType(), t.Pattern()) == nil &&
-			scopedom.DefaultGuardrails().CheckPattern(t.TargetType(), t.Pattern()) == nil {
+			guard.CheckPattern(t.TargetType(), t.Pattern()) == nil {
 			snap.Entries = append(snap.Entries, *e)
 		}
 	}

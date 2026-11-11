@@ -13,7 +13,7 @@ import { useTenantLimits } from '../api/use-limits'
 import { useAdminAuditLogs } from '../api/use-admin-audit'
 import { AdminActivityTable } from './admin-activity-table'
 import { SSOPostureBadges } from './sso-posture-badges'
-import { OwnerInvitationBadge } from './owner-invitation'
+import { OwnerInvitationAcceptAddress, OwnerInvitationBadge } from './owner-invitation'
 import type { AdminOrganization } from '../types'
 
 function SummaryCard({
@@ -91,7 +91,28 @@ export function OrganizationSummary({
               })}
             </span>
           ) : org.owner_emails.length === 0 && org.owner_invitation ? (
-            <OwnerInvitationBadge invitation={org.owner_invitation} />
+            <div className="space-y-2">
+              <OwnerInvitationBadge invitation={org.owner_invitation} />
+              {org.email_delivery === false &&
+                (org.owner_invitation.status === 'pending' ||
+                  org.owner_invitation.status === 'expired') && (
+                  <div className="space-y-1.5" data-testid="owners-card-not-sent">
+                    <p className="font-medium text-warning">
+                      {t(
+                        'admin.ownerInvitation.notSent',
+                        'Not sent: this server cannot send email'
+                      )}
+                    </p>
+                    <p className="text-muted-foreground">
+                      {t(
+                        'admin.ownerInvitation.askToOpen',
+                        'Ask them to sign in and open this address:'
+                      )}
+                    </p>
+                    <OwnerInvitationAcceptAddress url={org.owner_invitation.accept_url} />
+                  </div>
+                )}
+            </div>
           ) : org.owner_emails.length === 0 ? (
             <span className="flex items-center gap-1.5 font-medium text-warning">
               <AlertTriangle className="size-4" aria-hidden="true" />

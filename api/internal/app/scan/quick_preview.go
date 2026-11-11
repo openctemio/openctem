@@ -156,7 +156,7 @@ func (s *Service) previewQuickTarget(ctx context.Context, tenantID shared.ID, in
 	case isCIDRTarget(t):
 		p.Kind = QuickKindCIDR
 	}
-	if err := validateSelectorTargets([]string{t}); err != nil {
+	if err := validateSelectorTargets(tenantID, []string{t}); err != nil {
 		p.RefusedCode, p.RefusedDetail = QuickRefusedInvalid, err.Error()
 		return p, nil //nolint:nilerr // a refusal is the preview's answer, not a failure
 	}

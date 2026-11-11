@@ -321,7 +321,7 @@ func (s *RuleService) group(ctx context.Context, tenantID shared.ID, items []Rev
 		}
 		hints := evidenceHints(it.Evidence)
 		for _, pattern := range domainPatterns(host) {
-			if s.guardrails.CheckPattern(scopedom.TargetTypeDomain, pattern) == nil {
+			if s.guardrails.For(tenantID).CheckPattern(scopedom.TargetTypeDomain, pattern) == nil {
 				g.add("domain_wildcard", string(scopedom.TargetTypeDomain), pattern, it, hints)
 			}
 		}

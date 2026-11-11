@@ -524,7 +524,13 @@ export function deactivatePreset(filters: InventoryFilters, preset: QuickPreset)
   for (const key of Object.keys(preset.apply) as (keyof InventoryFilters)[]) {
     const presetVal = preset.apply[key]
     const currentVal = next[key]
-    if (Array.isArray(presetVal) && Array.isArray(currentVal)) {
+    if (key === 'extra') {
+      // Filters the page has no control for: take out this view's own entries.
+      const extra = { ...(filters.extra ?? {}) }
+      for (const k of Object.keys((presetVal as Record<string, string>) ?? {})) delete extra[k]
+      if (Object.keys(extra).length > 0) next.extra = extra
+      else delete next.extra
+    } else if (Array.isArray(presetVal) && Array.isArray(currentVal)) {
       const removed = new Set<string>(presetVal as string[])
       const remaining = (currentVal as string[]).filter((v) => !removed.has(v))
       if (remaining.length > 0) {
@@ -536,5 +542,76 @@ export function deactivatePreset(filters: InventoryFilters, preset: QuickPreset)
       delete next[key]
     }
   }
+  return next
+}
+
+/**
+ * The starter views of a type tab (the External surface lens): a few filters
+ * people reach for on that type, on top of the common quick views. Instants are
+ * taken when the views are built, so build them when the menu renders.
+ */
+export function tabPresets(tabId: string | undefined, now = Date.now()): QuickPreset[] {
+  const weekAgo = new Date(now - 7 * DAY_MS).toISOString()
+  switch (tabId) {
+    case 'domain':
+      return [
+        {
+          id: 'root-domains',
+          labelKey: 'assets.views.rootDomains',
+          label: 'Root domains',
+          apply: { isPrimary: true },
+          isActive: (f) => f.isPrimary === true,
+        },
+      ]
+    case 'subdomain':
+      return [
+        {
+          id: 'not-resolving',
+          labelKey: 'assets.views.notResolving',
+          label: 'Not resolving',
+          apply: { resolution: 'not_resolving' },
+          isActive: (f) => f.resolution === 'not_resolving',
+        },
+        {
+          id: 'new-this-week',
+          labelKey: 'assets.views.newThisWeek',
+          label: 'New this week',
+          apply: { firstSeenAfter: weekAgo },
+          isActive: (f) => !!f.firstSeenAfter,
+        },
+      ]
+    case 'ip_address':
+      return [
+        {
+          id: 'public-addresses',
+          labelKey: 'assets.views.publicAddresses',
+          label: 'Public addresses',
+          apply: { exposures: ['public'] },
+          isActive: (f) => f.exposures?.includes('public') === true,
+        },
+        {
+          id: 'with-open-ports',
+          labelKey: 'assets.views.withOpenPorts',
+          label: 'With open ports',
+          apply: { extra: { port_gte: '1' } },
+          isActive: (f) => f.extra?.port_gte === '1',
+        },
+        {
+          id: 'seen-7d',
+          labelKey: 'assets.views.seenLast7Days',
+          label: 'Seen in the last 7 days',
+          apply: { lastSeenAfter: weekAgo },
+          isActive: (f) => !!f.lastSeenAfter,
+        },
+      ]
+    default:
+      return []
+  }
+}
+
+/** The filters after turning a preset on: its values on top, its extra entries merged into the viewer's. */
+export function applyPreset(filters: InventoryFilters, preset: QuickPreset): InventoryFilters {
+  const next: InventoryFilters = { ...filters, ...preset.apply, page: 1 }
+  if (preset.apply.extra) next.extra = { ...(filters.extra ?? {}), ...preset.apply.extra }
   return next
 }

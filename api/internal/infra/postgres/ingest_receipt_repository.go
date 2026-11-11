@@ -135,6 +135,9 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 		if err := recordCoverageDecision(ctx, tx, d, id, at); err != nil {
 			return err
 		}
+		if err := releaseQuarantined(ctx, tx, d, id, kind); err != nil {
+			return err
+		}
 		if kind == ingestreceipt.SourceScanRun {
 			if err := syncRunFindings(ctx, tx, d.TenantID, ref); err != nil {
 				return err
@@ -146,6 +149,94 @@ func (r *IngestReceiptRepository) Record(ctx context.Context, d *ingestreceipt.D
 		return shared.ID{}, err
 	}
 	return id, nil
+}
+
+// releaseQuarantined moves the findings of a released report out of the
+// receipt's quarantined outcome and out of received. The receipt counted them
+// as received (quarantined) when the report was held; the release counts the
+// same findings again as received with their real outcomes, so without this
+// a window holding the hold and the release counts the report twice. It never
+// takes more than the receipt holds as quarantined (a release landing on a
+// receipt that did not record the hold changes nothing), keeps the rows of
+// the receipt summing to its counts, and takes the same amount off the day's
+// fact that recorded the hold.
+func releaseQuarantined(ctx context.Context, tx *sql.Tx, d *ingestreceipt.Delta, receiptID shared.ID, kind ingestreceipt.SourceKind) error {
+	if !d.Released || d.ReleasedFindings <= 0 {
+		return nil
+	}
+	held, err := heldQuarantine(ctx, tx, d.TenantID, receiptID)
+	if err != nil {
+		return err
+	}
+
+	var day time.Time
+	if err := tx.QueryRowContext(ctx, `SELECT (created_at AT TIME ZONE 'UTC')::date FROM ingest_receipts WHERE tenant_id = $1 AND id = $2`,
+		d.TenantID.String(), receiptID.String()).Scan(&day); err != nil {
+		return fmt.Errorf("read receipt day: %w", err)
+	}
+	want, total := d.ReleasedFindings, 0
+	for _, h := range held {
+		if want == 0 {
+			break
+		}
+		take := min(want, h.held)
+		want -= take
+		total += take
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE ingest_receipt_tools SET received = received - $5,
+				outcomes = CASE WHEN $6 = 0 THEN outcomes - 'quarantined'
+					ELSE jsonb_set(outcomes, '{quarantined}', to_jsonb($6::int)) END
+			WHERE tenant_id = $1 AND receipt_id = $2 AND tool = $3 AND instance_kind = $4 AND instance_id = $7`,
+			d.TenantID.String(), receiptID.String(), h.tool, h.kind, take, h.held-take, h.id); err != nil {
+			return fmt.Errorf("release held row: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE dash_ingest_day SET received = GREATEST(received - $5, 0)
+			WHERE tenant_id = $1 AND day = $2 AND source_kind = $3 AND tool = $4`,
+			d.TenantID.String(), day, kind.FactKind(), h.tool, take); err != nil {
+			return fmt.Errorf("release held fact: %w", err)
+		}
+	}
+	if total == 0 {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE ingest_receipts SET findings_received = findings_received - $3,
+			outcomes = CASE WHEN COALESCE((outcomes->>'quarantined')::int, 0) <= $3 THEN outcomes - 'quarantined'
+				ELSE jsonb_set(outcomes, '{quarantined}', to_jsonb((outcomes->>'quarantined')::int - $3)) END
+		WHERE tenant_id = $1 AND id = $2`, d.TenantID.String(), receiptID.String(), total); err != nil {
+		return fmt.Errorf("release held receipt: %w", err)
+	}
+	return nil
+}
+
+// heldRow is a sender row of a receipt that still holds quarantined findings.
+type heldRow struct {
+	tool, kind, id string
+	held           int
+}
+
+// heldQuarantine locks and returns the receipt's sender rows that hold
+// quarantined findings.
+func heldQuarantine(ctx context.Context, tx *sql.Tx, tenantID, receiptID shared.ID) ([]heldRow, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT tool, instance_kind, instance_id, (outcomes->>'quarantined')::int
+		FROM ingest_receipt_tools
+		WHERE tenant_id = $1 AND receipt_id = $2 AND COALESCE((outcomes->>'quarantined')::int, 0) > 0
+		ORDER BY last_at, tool, instance_kind, instance_id FOR UPDATE`, tenantID.String(), receiptID.String())
+	if err != nil {
+		return nil, fmt.Errorf("read held rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var held []heldRow
+	for rows.Next() {
+		var h heldRow
+		if err := rows.Scan(&h.tool, &h.kind, &h.id, &h.held); err != nil {
+			return nil, fmt.Errorf("scan held row: %w", err)
+		}
+		held = append(held, h)
+	}
+	return held, rows.Err()
 }
 
 // maxInstanceID and maxInstanceName are the widths of

@@ -105,6 +105,7 @@ export function DryRunDialog({ open, onOpenChange, onSuccess }: DryRunDialogProp
           )}
 
           {error && (
+            // submit-error-ok: the result area of a preview, not a failed submit
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>

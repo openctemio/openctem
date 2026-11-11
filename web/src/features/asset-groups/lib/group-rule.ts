@@ -179,6 +179,32 @@ const LIST_FIELDS: Record<
   coverage: { key: 'coverage', kind: 'text' },
 }
 
+/**
+ * The list's parameter names (the list query contract) and the names a rule's
+ * filter keeps them under.
+ */
+const RULE_NAMES: Record<string, string> = {
+  type: 'types',
+  lens: 'lenses',
+  criticality: 'criticalities',
+  status: 'statuses',
+  scope: 'scopes',
+  exposure: 'exposures',
+  tag: 'tags',
+  tag_not: 'exclude_tags',
+  q: 'search',
+  risk_score_gte: 'min_risk_score',
+  risk_score_lte: 'max_risk_score',
+  crown_jewel: 'is_crown_jewel',
+  business_unit: 'business_unit_ids',
+  owner: 'owner_ids',
+  ip: 'in_cidr',
+  data_classification: 'data_classifications',
+  control_plane: 'is_control_plane',
+  environment: 'environments',
+  provider: 'providers',
+}
+
 /** Query parameters that only shape the page, never the matches. */
 const PAGE_PARAMS = new Set(['page', 'per_page', 'sort', 'with_triage'])
 
@@ -196,11 +222,21 @@ export interface FilterToRuleResult {
 export function filterParamsToRule(params: Record<string, string>): FilterToRuleResult {
   const filter: Record<string, unknown> = {}
   const unsupported: string[] = []
-  for (const [name, value] of Object.entries(params)) {
-    if (PAGE_PARAMS.has(name) || value === '') continue
+  for (const [listName, value] of Object.entries(params)) {
+    if (PAGE_PARAMS.has(listName) || value === '') continue
+    // Every tag is the any-of tags with the rule's match mode.
+    if (listName === 'tag_all') {
+      filter.tags = value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean)
+      filter.tags_mode = 'all'
+      continue
+    }
+    const name = RULE_NAMES[listName] ?? listName
     const spec = LIST_FIELDS[name]
     if (!spec) {
-      unsupported.push(name)
+      unsupported.push(listName)
       continue
     }
     switch (spec.kind) {

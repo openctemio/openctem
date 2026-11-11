@@ -65,6 +65,8 @@ export interface QueryInputProps {
   className?: string
   /** Accessible name when no visible label points at the box. */
   ariaLabel?: string
+  /** Fields completion lists first (the open tab's own fields). */
+  preferFields?: string[]
 }
 
 export function QueryInput({
@@ -82,6 +84,7 @@ export function QueryInput({
   disabled,
   className,
   ariaLabel,
+  preferFields,
 }: QueryInputProps) {
   const { t, locale } = useTranslation()
   const ownId = useId()
@@ -90,7 +93,12 @@ export function QueryInput({
   const statusId = `${ownId}-status`
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const { data: schema } = useQuerySchema(entity, !disabled)
-  const fields = useMemo(() => schema?.fields ?? [], [schema])
+  const fields = useMemo(() => {
+    const all = schema?.fields ?? []
+    if (!preferFields?.length) return all
+    const first = new Set(preferFields)
+    return [...all.filter((f) => first.has(f.path)), ...all.filter((f) => !first.has(f.path))]
+  }, [schema, preferFields])
   const scope = recentScope ?? entity
 
   const [caret, setCaret] = useState(0)

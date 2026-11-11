@@ -281,7 +281,7 @@ func (s *Service) previewItems(ctx context.Context, tenantID shared.ID, programU
 		Entries: make([]PlannedEntry, 0, len(plan.Entries)), Exclusions: make([]PlannedExclusion, 0, len(plan.Exclusions))}
 	for _, e := range plan.Entries {
 		pe := PlannedEntry{TargetType: e.TargetType, Pattern: e.Pattern, Constraint: e.Constraint, Status: PlanCreate}
-		if err := s.guardrails.CheckPattern(e.TargetType, e.Pattern); err != nil {
+		if err := s.guardrails.For(tenantID).CheckPattern(e.TargetType, e.Pattern); err != nil {
 			pe.Status, pe.Code = PlanRefused, refusalCode(err)
 		} else if t := byKey[entryKey(e.TargetType, e.Pattern, e.Constraint)]; t != nil {
 			if program != nil && t.ProgramID() != nil && t.ProgramID().Equals(program.ID) {
