@@ -2,20 +2,11 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import {
-  Plus,
-  MoreHorizontal,
-  Check,
-  X,
-  Pencil,
-  Trash2,
-  Loader2,
-  RefreshCw,
-  AlertCircle,
-} from 'lucide-react'
+import { Plus, MoreHorizontal, Check, X, Pencil, Trash2, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
+import { ErrorState } from '@/features/shared/components/error-state'
 import { PageHeader } from '@/features/shared/components/page-header'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
@@ -23,7 +14,6 @@ import { DataTable } from '@/features/shared/components/data-table/data-table'
 import { DataTableColumnHeader } from '@/features/shared/components/data-table/data-table-column-header'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -502,22 +492,11 @@ export default function ExceptionsPage() {
 
           <div>
             {error && !isLoading ? (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>
-                  {t('exceptions.page.loadError', 'Failed to load suppression rules')}
-                </AlertTitle>
-                <AlertDescription className="flex flex-wrap items-center gap-3">
-                  <span>
-                    {error?.message ||
-                      t('exceptions.page.unexpectedError', 'An unexpected error occurred')}
-                  </span>
-                  <Button variant="outline" size="sm" onClick={() => mutate()}>
-                    <RefreshCw className="me-2 h-4 w-4" />
-                    {t('exceptions.page.retry', 'Retry')}
-                  </Button>
-                </AlertDescription>
-              </Alert>
+              <ErrorState
+                title={t('exceptions.page.errorTitle', 'suppression rules')}
+                error={error}
+                onRetry={() => void mutate()}
+              />
             ) : isInitialLoading ? (
               <TableSkeleton />
             ) : (
