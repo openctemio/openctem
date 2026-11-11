@@ -27,7 +27,8 @@ export const SCOPE_REFUSAL_TEXT = {
   },
   deny_list: {
     label: 'Not allowed by the platform',
-    message: 'The platform does not allow this target.',
+    message:
+      'The platform does not allow this target. For a government or military domain, your platform administrator can grant an exception.',
   },
   excluded: {
     label: 'Excluded',
@@ -150,6 +151,8 @@ export const SCOPE_ERROR_TEXT = {
   PUBLIC_SUFFIX:
     'A public suffix (such as com.vn or azurewebsites.net) cannot be a scope entry. Enter a domain your organization registered.',
   DENY_LIST: 'The platform does not allow this target as a scope entry.',
+  GOVERNMENT_NAME:
+    'Government and military domains are blocked on this installation. Your platform administrator can grant an exception.',
   CIDR_TOO_LARGE:
     'This address range is larger than the platform allows. Split it into smaller ranges.',
   SCOPE_WILDCARD_NOT_ALLOWED:
