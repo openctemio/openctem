@@ -67,6 +67,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"AssetPurgeController":                SQLBatched,
 	"OneOffScanArchiveController":         SQLBatched,
 	"CoverageScheduler":                   SQLBatched, // keyset batches per tenant and capability
+	"ExplorationController":               SQLBatched, // per tenant: rule candidates, frontier reads and run findings under LIMIT; rollup over one exploration's leads
 	"AssetCoverageController":             SQLBatched,
 	"AssetRiskScoreController":            SQLBatched,
 	"AssetRiskReconcileController":        SQLBatched,
