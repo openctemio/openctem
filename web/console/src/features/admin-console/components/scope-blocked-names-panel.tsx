@@ -84,7 +84,7 @@ function errorText(e: unknown, fallback: string): string {
  * A guarded dialog: its fields, the reason and the authenticator code; the
  * submit error shows in the footer, next to the buttons.
  */
-function GuardedDialog({
+function ReasonCodeConfirmDialog({
   open,
   onOpenChange,
   title,
@@ -346,7 +346,7 @@ function PolicyCard({
           <RoleRequiredNotice permission={SCOPE_GUARDRAILS_PERMISSION} />
         )}
       </CardContent>
-      <GuardedDialog
+      <ReasonCodeConfirmDialog
         open={open}
         onOpenChange={setOpen}
         title={
@@ -487,7 +487,7 @@ function GrantDialog({
   const ready =
     !!org && name.trim() !== '' && ref.trim() !== '' && expires !== '' && expires <= maxDay
   return (
-    <GuardedDialog
+    <ReasonCodeConfirmDialog
       open={open}
       onOpenChange={onOpenChange}
       title={t('admin.blockedNames.grantTitle', 'Grant an exception')}
@@ -571,7 +571,7 @@ function GrantDialog({
           onChange={(e) => setExpires(e.target.value)}
         />
       </div>
-    </GuardedDialog>
+    </ReasonCodeConfirmDialog>
   )
 }
 
@@ -724,7 +724,7 @@ function ExceptionsCard({
         secondApproval={secondApproval}
         onDone={onChanged}
       />
-      <GuardedDialog
+      <ReasonCodeConfirmDialog
         open={!!extend}
         onOpenChange={(o) => !o && setExtend(null)}
         title={t('admin.blockedNames.extendTitle', 'Extend the exception')}
@@ -756,8 +756,8 @@ function ExceptionsCard({
             onChange={(ev) => setNewExpiry(ev.target.value)}
           />
         </div>
-      </GuardedDialog>
-      <GuardedDialog
+      </ReasonCodeConfirmDialog>
+      <ReasonCodeConfirmDialog
         open={!!revoke}
         onOpenChange={(o) => !o && setRevoke(null)}
         title={t('admin.blockedNames.revokeTitle', 'Revoke the exception')}

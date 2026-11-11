@@ -246,7 +246,7 @@
   "admin.approvals.target.platformIdpChangeHash": "Cấu hình nhà cung cấp danh tính {hash} (mô tả trong lý do)",
   "admin.approvals.target.remove": "Gỡ nhà cung cấp danh tính",
   "admin.approvals.target.require_idp_off": "Ngừng bắt buộc nhà cung cấp danh tính",
-  "admin.approvals.target.scopeNameException": "{name} cho tổ chức {tenant} đến {expires}",
+  "admin.approvals.target.scopeNameException": "{name} cho tổ chức {organization} đến {expires}",
   "admin.approvals.target.signup": "{mode}; {accounts}",
   "admin.approvals.you": "Bạn",
   "admin.attention.accessRequests.detail": "{count} yêu cầu tạo tổ chức; yêu cầu lâu nhất đã chờ {days} ngày.",
