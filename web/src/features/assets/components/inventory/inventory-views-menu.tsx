@@ -1,41 +1,36 @@
 'use client'
 
 /**
- * The CTEM quick views as one "Views" menu in the table toolbar (it replaced a
- * row of chips above the table, which cost a line of height for six rarely
- * changed toggles). Each item toggles a small filter patch on/off, and its
- * check mark reads straight from the current filters (preset.isActive), so it
- * stays in sync when the same dimension is set from the panel, a metric or the
- * URL. The trigger names the active view when exactly one is on.
+ * The inventory's Views menu: the shared saved views (page `assets`: the
+ * person's own, those shared with a group or the organization) and, above
+ * them, the built-in starter views. A starter view is a small filter patch
+ * that turns on and off; its check mark reads straight from the current
+ * filters (preset.isActive), so it stays in sync when the same dimension is set
+ * from the panel, the query text, a metric or the URL. The trigger names the
+ * open saved view, or the starter views that are on.
  */
 
 import {
   CalendarClock,
   CalendarX,
-  ChevronDown,
   Clock,
   Flame,
   Gem,
   Globe,
   Network,
   UserX,
-  Bookmark,
   CircleSlash,
   Radar,
   ShieldOff,
   Sparkles,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/context/i18n-provider'
-import { QUICK_PRESETS, type QuickPreset } from '../../lib/inventory-facets'
+import {
+  SavedViewsMenu,
+  type BuiltInView,
+} from '@/features/saved-views/components/saved-views-menu'
+import type { SavedView } from '@/features/saved-views/api/use-saved-views'
+import type { QuickPreset } from '../../lib/inventory-facets'
 import type { InventoryFilters } from '../../lib/inventory-url'
 
 const PRESET_ICONS: Record<string, React.ElementType> = {
@@ -55,73 +50,44 @@ const PRESET_ICONS: Record<string, React.ElementType> = {
 
 interface InventoryViewsMenuProps {
   filters: InventoryFilters
+  /** The starter views: the common ones, the open tab's and those of this list only. */
+  presets: QuickPreset[]
   onToggle: (preset: QuickPreset) => void
-  /** Views that apply to this list only (the expiry views). */
-  extraPresets?: QuickPreset[]
+  /** The filter to save as a view: the list's own params, or its checked document. */
+  resolveFilter: () => Promise<{ query?: string; filter?: Record<string, unknown> }>
+  /** The open saved view differs from what is stored. */
+  modified: boolean
+  onDiscard: () => void
+  onSelect: (view: SavedView | null) => void
 }
 
 export function InventoryViewsMenu({
   filters,
+  presets,
   onToggle,
-  extraPresets = [],
+  resolveFilter,
+  modified,
+  onDiscard,
+  onSelect,
 }: InventoryViewsMenuProps) {
   const { t } = useTranslation()
-  const presets = [...QUICK_PRESETS, ...extraPresets]
-  const active = presets.filter((p) => p.isActive(filters))
-  const labelOf = (p: QuickPreset) => (p.labelKey ? t(p.labelKey, p.label) : p.label)
-  const viewsLabel = t('assets.views.trigger', 'Views')
-  const triggerLabel =
-    active.length === 0
-      ? viewsLabel
-      : active.length === 1
-        ? labelOf(active[0])
-        : t('assets.views.count', '{count} views', { count: active.length })
-
+  const builtIn: BuiltInView[] = presets.map((p) => ({
+    id: p.id,
+    label: p.labelKey ? t(p.labelKey, p.label) : p.label,
+    icon: PRESET_ICONS[p.id],
+    checked: p.isActive(filters),
+    onToggle: () => onToggle(p),
+  }))
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        {/* Styled like the Group select on Findings: an outline field showing
-            the current value, with a muted leading icon. */}
-        <Button
-          variant="outline"
-          // Icon-only below sm, so the search box keeps its room on phones.
-          className="relative h-9 w-auto justify-between gap-2 px-3 font-normal sm:min-w-36"
-          aria-label={active.length > 0 ? `${viewsLabel} (${triggerLabel})` : viewsLabel}
-        >
-          <span className="flex min-w-0 items-center gap-2">
-            <Bookmark className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="hidden max-w-40 truncate sm:inline">{triggerLabel}</span>
-          </span>
-          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-          {active.length > 0 && (
-            // The label is hidden on phones; the count says a view is on.
-            <span className="absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium tabular-nums text-primary-foreground sm:hidden">
-              {active.length}
-            </span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          {t('assets.views.quick', 'Quick views')}
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {presets.map((preset) => {
-          const Icon = PRESET_ICONS[preset.id] ?? Gem
-          return (
-            <DropdownMenuCheckboxItem
-              key={preset.id}
-              checked={preset.isActive(filters)}
-              onCheckedChange={() => onToggle(preset)}
-              // Keep the menu open so several views can be combined.
-              onSelect={(e) => e.preventDefault()}
-            >
-              <Icon className="h-4 w-4 text-muted-foreground" />
-              {labelOf(preset)}
-            </DropdownMenuCheckboxItem>
-          )
-        })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <SavedViewsMenu
+      page="assets"
+      resolveFilter={resolveFilter}
+      builtIn={builtIn}
+      builtInLabel={t('assets.views.starter', 'Starter views')}
+      activeId={filters.view}
+      modified={modified}
+      onDiscard={onDiscard}
+      onSelect={onSelect}
+    />
   )
 }

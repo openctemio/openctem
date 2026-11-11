@@ -353,6 +353,14 @@ const (
 	ActionSLAPolicyDeleted Action = "sla_policy.deleted"
 
 	// Scan actions
+	// Exploration leads (docs/architecture/exploration.md): every state
+	// change and approval of a lead is audited.
+	ActionExplorationLeadOpened    Action = "exploration.lead_opened"
+	ActionExplorationLeadApproved  Action = "exploration.lead_approved"
+	ActionExplorationLeadDismissed Action = "exploration.lead_dismissed"
+	ActionExplorationLeadState     Action = "exploration.lead_state_changed"
+	ActionExplorationLeadVerdict   Action = "exploration.lead_verdict"
+
 	ActionScanStarted   Action = "scan.started"
 	ActionScanCompleted Action = "scan.completed"
 	ActionScanFailed    Action = "scan.failed"
@@ -902,6 +910,8 @@ func (a Action) String() string {
 func (a Action) IsValid() bool {
 	switch a {
 	case ActionUserCreated, ActionUserUpdated, ActionUserDeleted,
+		ActionExplorationLeadOpened, ActionExplorationLeadApproved, ActionExplorationLeadDismissed,
+		ActionExplorationLeadState, ActionExplorationLeadVerdict,
 		ActionUserSuspended, ActionUserActivated, ActionUserDeactivated,
 		ActionUserLogin, ActionUserLogout,
 		ActionTenantCreated, ActionTenantUpdated, ActionTenantDeleted, ActionTenantSettingsUpdated, ActionTenantModulesUpdated,
@@ -1250,6 +1260,7 @@ const (
 	ResourceTypeRemediationCampaign ResourceType = "remediation_campaign"
 	ResourceTypeScanWorkflowStep    ResourceType = "scan_workflow_step"
 	ResourceTypeScanRun             ResourceType = "scan_run"
+	ResourceTypeExplorationLead     ResourceType = "exploration_lead"
 	ResourceTypeScanConfig          ResourceType = "scan_config"
 	ResourceTypeScanProfile         ResourceType = "scan_profile"
 	ResourceTypeCommand             ResourceType = "command"
@@ -1308,6 +1319,7 @@ func (r ResourceType) IsValid() bool {
 		ResourceTypeAsset, ResourceTypeCTEMCycle, ResourceTypeAssetGroup, ResourceTypeSettings, ResourceTypeToken, ResourceTypeSensor, ResourceTypeScanZone, ResourceTypeProxyPool, ResourceTypeWordlist, ResourceTypeContentRule,
 		ResourceTypeGroup, ResourceTypePermissionSet, ResourceTypeRole,
 		ResourceTypeScanWorkflow, ResourceTypeScanWorkflowStep, ResourceTypeScanRun, ResourceTypeScanConfig,
+		ResourceTypeExplorationLead,
 		ResourceTypeScanProfile, ResourceTypeCommand,
 		ResourceTypeWorkflow, ResourceTypeWorkflowRun, ResourceTypeCapability, ResourceTypeTool,
 		ResourceTypeRuleSource, ResourceTypeRuleOverride, ResourceTypeIngest, ResourceTypeAITriage, ResourceTypeAIAnalysis, ResourceTypeAIKnowledge,

@@ -55,9 +55,9 @@ describe('fetchAllAssets', () => {
 
     const url = (get as Mock).mock.calls[0][0] as string
     const params = new URLSearchParams(url.split('?')[1])
-    expect(params.get('search')).toBe('db')
-    expect(params.get('tags')).toBe('prod')
-    expect(params.get('types')).toBe('host')
+    expect(params.get('q')).toBe('db')
+    expect(params.get('tag')).toBe('prod')
+    expect(params.get('type')).toBe('host')
     expect(params.get('per_page')).toBe('100')
     expect(get).toHaveBeenCalledTimes(1) // total_pages=1 → single call
   })

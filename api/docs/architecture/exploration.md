@@ -177,8 +177,49 @@ field it does not know (a tier cannot be written in the YAML: it is always
 the stage catalog's). `CheckCatalog` refuses a lead whose type, reason,
 action, params or tier the catalog does not declare.
 
+## Rules
+
+Rules are deterministic code (`internal/app/exploration/rules.go`) that
+open leads in the tenant's continuous exploration. They re-read trigger
+states on every pass instead of consuming events: a failed pass loses
+nothing, and a repeated pass opens nothing twice (the live dedup key, and
+every trigger leaves out subjects that have a live lead of the type or one
+closed within 30 days, `exploration.ReaskAfter`).
+
+| Rule (lead type) | Trigger (`internal/infra/postgres/exploration_trigger_repository.go`) | Reason code |
+|---|---|---|
+| `dns.takeover_check` | a domain or subdomain with an active `dangling_cname` exposure from the platform's DNS check (`source = 'easm_dns'`) and no open `subdomain_takeover` | `cname_dangling` |
+| `version.confirm` | an open `version-match` finding (not since reported by a scanner) in KEV or critical, below the likely threshold (`vulnmatch.LikelyThreshold`) | `kev_on_unconfirmed_version` |
+| `asset.gone_with_findings` | the liveness ledger holds the asset `gone` while findings stay open on it | `gone_with_open_findings` |
+
+Each lead cites its evidence as `derived_from` links: the asset, and up to
+five findings. The action is the catalog's action for the subject's type;
+a subject no action applies to gets no lead.
+
+- **Trusted inputs only.** Triggers read states the platform derives itself
+  (its DNS check, its version matcher, its liveness ledger). An imported
+  exposure or an unsolicited report never opens a lead.
+- **Initial state by tier.** Passive (T0) leads open at once. Active (T1)
+  leads open at once only while the organization's automatic coverage is on
+  (`coverage.GovernanceSwitch`, the switch the coverage planner uses);
+  otherwise, or when the switch cannot be read, they wait for approval.
+  Intrusive (T2) leads always wait for a person.
+- **Caps.** At most 5 live leads per asset and 500 per exploration; each
+  rule reads at most 100 candidates per pass. Archived and soft-deleted
+  assets are never subjects.
+- **Audit.** Every opened lead is an `exploration.lead_opened` event with the
+  rule as the actor (`rule:<type>@<version>`), the lead's state, capability,
+  tier and action hash.
+
+Tests: `internal/app/exploration/rules_test.go` (catalog action per type,
+T1 waits when automatic coverage is off or unreadable, tenant-bound, caps,
+audit), `internal/infra/postgres/exploration_trigger_repository_db_test.go`
+(only the platform's DNS check counts, another tenant's triggers never show,
+asked subjects are left out, version-match thresholds, gone with open
+findings only).
+
 ## Not yet built
 
 - Retest outcomes and evidence items as steps.
-- Opening leads (rules and people), scoring and dispatch, approvals and the
+- Scoring and dispatch, approvals, leads opened by people and the
   Exploration page: designed in RFC-153, not built.

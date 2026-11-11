@@ -362,6 +362,21 @@ func (r *ExplorationRepository) Links(ctx context.Context, tenantID, leadID shar
 	return out, rows.Err()
 }
 
+// CountLive implements exploration.Repository.
+func (r *ExplorationRepository) CountLive(ctx context.Context, tenantID, explorationID shared.ID, subject *shared.ID) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM exploration_leads
+		WHERE tenant_id = $1 AND exploration_id = $2
+		  AND state IN ('proposed', 'awaiting_approval', 'open', 'running', 'blocked')
+		  AND ($3::uuid IS NULL OR subject_asset_id = $3::uuid)`,
+		tenantID.String(), explorationID.String(), nullID(subject)).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count live leads: %w", err)
+	}
+	return n, nil
+}
+
 // Verdicts implements exploration.Repository.
 func (r *ExplorationRepository) Verdicts(ctx context.Context, tenantID, leadID shared.ID) ([]exploration.Verdict, error) {
 	rows, err := r.db.QueryContext(ctx, `
