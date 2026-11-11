@@ -28,6 +28,7 @@ import {
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
+import { ComplianceHistory } from './compliance-history'
 import type {
   ComplianceCheck,
   ComplianceOutcome,
@@ -210,10 +211,17 @@ export interface ComplianceCheckSectionProps {
   check: ComplianceCheck
   /** Narrow container (the drawer): expected and actual stack. */
   compact?: boolean
+  /** The finding: shows the control's status history. */
+  findingId?: string
   className?: string
 }
 
-export function ComplianceCheckSection({ check, compact, className }: ComplianceCheckSectionProps) {
+export function ComplianceCheckSection({
+  check,
+  compact,
+  findingId,
+  className,
+}: ComplianceCheckSectionProps) {
   const { t } = useTranslation()
   const benchmark = [check.benchmark, check.benchmarkVersion && `v${check.benchmarkVersion}`]
     .filter(Boolean)
@@ -282,6 +290,7 @@ export function ComplianceCheckSection({ check, compact, className }: Compliance
       )}
 
       {check.references.length > 0 && <References groups={check.references} />}
+      {findingId && <ComplianceHistory findingId={findingId} />}
     </DetailSection>
   )
 }
