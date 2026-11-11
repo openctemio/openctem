@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -17,16 +18,21 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	appfinding "github.com/openctemio/openctem/api/internal/app/finding"
 	integrationapp "github.com/openctemio/openctem/api/internal/app/integration"
+	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
 	"github.com/openctemio/openctem/api/internal/app/taggov"
+	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/scm"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/liveness"
+	"github.com/openctemio/openctem/api/pkg/domain/savedview"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -50,7 +56,11 @@ type AssetHandler struct {
 	triageExclusions   AssetTriageExclusions
 	riskGov            *appfinding.AssetRiskGovernance
 	tagGovernor        TagGovernor
+	savedViews         *savedviewapp.Service
 }
+
+// SetSavedViews wires saved views, so GET /assets?view=<id> runs one.
+func (h *AssetHandler) SetSavedViews(svc *savedviewapp.Service) { h.savedViews = svc }
 
 // NewAssetHandler creates a new asset handler.
 func NewAssetHandler(svc *assetapp.AssetService, v *validator.Validator, log *logger.Logger) *AssetHandler {
@@ -312,6 +322,9 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
+	// IP is the IP addresses tab's columns of an address asset: its
+	// network, the names resolving to it and its open ports (list only).
+	IP *AssetIPView `json:"ip,omitempty"`
 	// Liveness is what the coverage loop observed about whether the asset
 	// is still there (alive, unreachable, unresolvable, gone), absent when
 	// no active check has looked at it.
@@ -626,213 +639,520 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 
 // List handles GET /api/v1/assets
 // @Summary      List assets
-// @Description  Retrieves a paginated list of assets for the current tenant
+// @Description  The assets the caller may see. Filters follow the list query contract
+// @Description  (docs/architecture/list-query-contract.md); the params the list took before
+// @Description  (types, criticalities, search, min_risk_score, ...) still work and answer with
+// @Description  Deprecation, Sunset and a Warning naming the new param. Unknown params are 400.
+// @Description  total is exact up to 10,000; above it total_capped is true and total is 10,000.
+// @Description  cursor (present, empty for the first page) pages in last seen order without a
+// @Description  page limit; the response carries next_cursor.
+// @Tags         Assets
+// @Produce      json
+// @Security     BearerAuth
+// @Param        properties   query  string  false  "Attribute filters key:value, comma-separated (AND across keys, OR within a key)"
+// @Param        with_triage  query  bool    false  "Add each row's attribution, triage and monitoring state"
+// @Param        view         query  string  false  "Saved view id (page assets): its filter, overridden by the request's params"
+// @Param        cursor       query  string  false  "Keyset page in last seen order (empty: the first page)"
+// filterspec-params: assets GET /assets
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  name  query  []string  false  "name or name pattern (* any characters, ? one): any of (comma list)"  collectionFormat(csv)
+// @Param  name_contains  query  string  false  "name or name pattern (* any characters, ? one) contains"
+// @Param  name_not  query  []string  false  "name or name pattern (* any characters, ? one): none of (comma list)"  collectionFormat(csv)
+// @Param  type  query  []string  false  "type: any of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  type_not  query  []string  false  "type: none of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  sub_type  query  []string  false  "sub type: any of (comma list)"  collectionFormat(csv)
+// @Param  sub_type_not  query  []string  false  "sub type: none of (comma list)"  collectionFormat(csv)
+// @Param  criticality  query  []string  false  "criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  criticality_not  query  []string  false  "criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(active, stale, inactive, archived)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(active, stale, inactive, archived)
+// @Param  scope  query  []string  false  "scope: any of (comma list)"  collectionFormat(csv)  Enums(internal, external, cloud, partner, vendor, shadow)
+// @Param  scope_not  query  []string  false  "scope: none of (comma list)"  collectionFormat(csv)  Enums(internal, external, cloud, partner, vendor, shadow)
+// @Param  exposure  query  []string  false  "exposure: any of (comma list)"  collectionFormat(csv)  Enums(public, restricted, private, isolated, unknown)
+// @Param  exposure_not  query  []string  false  "exposure: none of (comma list)"  collectionFormat(csv)  Enums(public, restricted, private, isolated, unknown)
+// @Param  environment  query  []string  false  "environment: any of (comma list)"  collectionFormat(csv)  Enums(production, staging, development, testing, dr)
+// @Param  environment_null  query  boolean  false  "environment is unset (true) or set (false)"
+// @Param  environment_not  query  []string  false  "environment: none of (comma list)"  collectionFormat(csv)  Enums(production, staging, development, testing, dr)
+// @Param  data_classification  query  []string  false  "data classification: any of (comma list)"  collectionFormat(csv)  Enums(public, internal, confidential, restricted, secret)
+// @Param  data_classification_not  query  []string  false  "data classification: none of (comma list)"  collectionFormat(csv)  Enums(public, internal, confidential, restricted, secret)
+// @Param  internet_facing  query  boolean  false  "internet facing equals"
+// @Param  crown_jewel  query  boolean  false  "crown jewel equals"
+// @Param  risk_score_gte  query  integer  false  "risk score at least"
+// @Param  risk_score_lte  query  integer  false  "risk score at most"
+// @Param  risk_score_gt  query  integer  false  "risk score greater than"
+// @Param  risk_score_lt  query  integer  false  "risk score less than"
+// @Param  discovery_source  query  []string  false  "discovery source: any of (comma list)"  collectionFormat(csv)
+// @Param  discovery_source_not  query  []string  false  "discovery source: none of (comma list)"  collectionFormat(csv)
+// @Param  first_seen_gte  query  string  false  "first seen at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_lte  query  string  false  "first seen at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_gt  query  string  false  "first seen greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_lt  query  string  false  "first seen less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_gte  query  string  false  "last seen at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_lte  query  string  false  "last seen at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_gt  query  string  false  "last seen greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_lt  query  string  false  "last seen less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_gte  query  string  false  "discovered at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_lte  query  string  false  "discovered at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_gt  query  string  false  "discovered at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_lt  query  string  false  "discovered at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  lens  query  []string  false  "lens: any of (comma list)"  collectionFormat(csv)  Enums(external_surface, applications, cloud_infra, containers_k8s, code, identities, data, network)
+// @Param  lens_not  query  []string  false  "lens: none of (comma list)"  collectionFormat(csv)  Enums(external_surface, applications, cloud_infra, containers_k8s, code, identities, data, network)
+// @Param  tag  query  []string  false  "tag: any of (comma list)"  collectionFormat(csv)
+// @Param  tag_not  query  []string  false  "tag: none of (comma list)"  collectionFormat(csv)
+// @Param  tag_all  query  []string  false  "carries every one of these tags: any of (comma list)"  collectionFormat(csv)
+// @Param  provider  query  []string  false  "provider (unset: none recorded): any of (comma list)"  collectionFormat(csv)
+// @Param  provider_not  query  []string  false  "provider (unset: none recorded): none of (comma list)"  collectionFormat(csv)
+// @Param  updated_at_gte  query  string  false  "updated at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lte  query  string  false  "updated at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_gte  query  string  false  "last synced at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_lte  query  string  false  "last synced at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_gt  query  string  false  "last synced greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_lt  query  string  false  "last synced less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  sync_status  query  []string  false  "sync status: any of (comma list)"  collectionFormat(csv)
+// @Param  sync_status_not  query  []string  false  "sync status: none of (comma list)"  collectionFormat(csv)
+// @Param  has_findings  query  boolean  false  "has findings equals"
+// @Param  finding_count  query  integer  false  "open findings equals"
+// @Param  finding_count_gte  query  integer  false  "open findings at least"
+// @Param  finding_count_lte  query  integer  false  "open findings at most"
+// @Param  finding_count_gt  query  integer  false  "open findings greater than"
+// @Param  finding_count_lt  query  integer  false  "open findings less than"
+// @Param  coverage  query  string  false  "coverage equals"  Enums(covered, uncovered)
+// @Param  coverage_cause  query  []string  false  "coverage cause: any of (comma list)"  collectionFormat(csv)  Enums(no_sensor, platform_failure, paused, target_unreachable, never_run, overdue, out_of_scope, other)
+// @Param  freshness  query  string  false  "freshness equals"  Enums(stale, never)
+// @Param  resolution  query  string  false  "resolution equals"  Enums(resolving, not_resolving)
+// @Param  technology  query  []string  false  "technology name, or name@version: any of (comma list)"  collectionFormat(csv)
+// @Param  technology_not  query  []string  false  "technology name, or name@version: none of (comma list)"  collectionFormat(csv)
+// @Param  technology_version  query  []string  false  "a technology of this exact version: any of (comma list)"  collectionFormat(csv)
+// @Param  technology_category  query  []string  false  "technology category: any of (comma list)"  collectionFormat(csv)  Enums(web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other)
+// @Param  business_unit  query  []string  false  "business unit: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_group  query  []string  false  "asset group: any of (comma list)"  collectionFormat(csv)
+// @Param  owner  query  []string  false  "owner: any of (comma list)"  collectionFormat(csv)
+// @Param  has_owner  query  boolean  false  "has owner equals"
+// @Param  under  query  []string  false  "names equal to or below these DNS names: any of (comma list)"  collectionFormat(csv)
+// @Param  domain  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): any of (comma list)"  collectionFormat(csv)
+// @Param  domain_not  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): none of (comma list)"  collectionFormat(csv)
+// @Param  ip  query  []string  false  "IP address or CIDR range (10.0.0.0/8): any of (comma list)"  collectionFormat(csv)
+// @Param  network  query  []string  false  "network (/24 of an IPv4 address, /64 of IPv6) of address assets: any of (comma list)"  collectionFormat(csv)
+// @Param  port  query  []integer  false  "open port (0-65535): any of (comma list)"  collectionFormat(csv)
+// @Param  port_not  query  []integer  false  "open port (0-65535): none of (comma list)"  collectionFormat(csv)
+// @Param  port_gte  query  integer  false  "open port (0-65535) at least"
+// @Param  port_lte  query  integer  false  "open port (0-65535) at most"
+// @Param  port_gt  query  integer  false  "open port (0-65535) greater than"
+// @Param  port_lt  query  integer  false  "open port (0-65535) less than"
+// @Param  service  query  []string  false  "service on an open port (https, ssh...): any of (comma list)"  collectionFormat(csv)
+// @Param  service_not  query  []string  false  "service on an open port (https, ssh...): none of (comma list)"  collectionFormat(csv)
+// @Param  control_plane  query  boolean  false  "control plane equals"
+// @Param  expires_gte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_lte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_gt  query  string  false  "expiry (a certificate's not after, a domain's expiry) greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_lt  query  string  false  "expiry (a certificate's not after, a domain's expiry) less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  attribution  query  []string  false  "attribution: any of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  attribution_not  query  []string  false  "attribution: none of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  covered_by  query  []string  false  "scope entry that confirmed the asset: any of (comma list)"  collectionFormat(csv)
+// @Param  scope_status  query  []string  false  "scope status: any of (comma list)"  collectionFormat(csv)  Enums(in_scope, not_covered, excluded, internal)
+// @Param  monitoring_state  query  []string  false  "monitoring state: any of (comma list)"  collectionFormat(csv)  Enums(irrelevant, out_of_scope, inactive, pending_decision, unvalidated, not_monitored, monitored)
+// @Param  liveness  query  []string  false  "liveness: any of (comma list)"  collectionFormat(csv)  Enums(alive, unreachable, unresolvable, gone, unknown)
+// @Param  primary  query  boolean  false  "the organization's root domains equals"
+// @Param  discovered_by  query  []string  false  "discovered by: any of (comma list)"  collectionFormat(csv)  Enums(fqdn_under_verified_root, fqdn_under_asserted_root, tenant_scanned, tenant_scan_discovered, matches_scope_target, certificate_san)
+// @Param  discovery_technique  query  []string  false  "discovery technique: any of (comma list)"  collectionFormat(csv)
+// @Param  confidence_gte  query  integer  false  "attribution confidence (0-100) at least"
+// @Param  confidence_lte  query  integer  false  "attribution confidence (0-100) at most"
+// @Param  confidence_gt  query  integer  false  "attribution confidence (0-100) greater than"
+// @Param  confidence_lt  query  integer  false  "attribution confidence (0-100) less than"
+// @Param  program_assets  query  string  false  "bug-bounty program assets equals"  Enums(only, exclude)
+// end filterspec-params
+// @Success      200  {object}  AssetListResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Router       /assets [get]
+func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
+	q, legacy := rewriteLegacyAssetParams(r.URL.Query())
+	spec, ok := h.listRoute("GET /assets").ParseValues(w, r, q)
+	if !ok {
+		return
+	}
+	for _, old := range legacy {
+		w.Header().Add("Warning", `299 - "query parameter `+old+` is deprecated; see the list query contract"`)
+	}
+	if spec, ok = applySavedView(h.savedViews, savedview.PageAssets, w, r, spec); !ok {
+		return
+	}
+	keyset := q.Has("cursor")
+	var after *asset.Cursor
+	if c := q.Get("cursor"); c != "" {
+		cur, err := asset.DecodeCursor(c)
+		if err != nil {
+			apierror.BadRequest("cursor is not valid; start again without it").WriteJSON(w)
+			return
+		}
+		after = &cur
+	}
+	if keyset && len(spec.Sort) > 0 {
+		apierror.BadRequest("cursor pages in last seen order; leave out sort").WriteJSON(w)
+		return
+	}
+	h.serveList(w, r, assetapp.ListQuery{Spec: spec, Properties: ParsePropertiesFilter(q.Get("properties")), Keyset: keyset, After: after})
+}
+
+// Search handles POST /api/v1/assets/search
+// @Summary      Search assets with a filter document
+// @Description  GET /assets for a FilterDocument body (the list query contract): OR groups, NOT and long
+// @Description  lists. The same registry, data scope and limits as GET /assets.
 // @Tags         Assets
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        name          query     string  false  "Filter by name (partial match)"
-// @Param        types         query     string  false  "Filter by types (comma-separated)"
-// @Param        expires_after   query   string  false  "Expiry (certificate not_after, domain expires_at) after this time (RFC 3339 or YYYY-MM-DD)"
-// @Param        expires_before  query   string  false  "Expiry before this time (RFC 3339 or YYYY-MM-DD)"
-// @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
-// @Param        criticalities query     string  false  "Filter by criticalities (comma-separated)"
-// @Param        statuses      query     string  false  "Filter by statuses (comma-separated)"
-// @Param        liveness      query     string  false  "Filter by liveness state (comma-separated: unknown, alive, unreachable, unresolvable, gone)"
-// @Param        scopes        query     string  false  "Filter by scopes (comma-separated)"
-// @Param        exposures     query     string  false  "Filter by exposures (comma-separated)"
-// @Param        tags          query     string  false  "Filter by tags, system tags included (comma-separated, at most 20)"
-// @Param        tags_mode     query     string  false  "any (default): an asset carrying any of tags; all: every one of them"  Enums(any, all)
-// @Param        exclude_tags  query     string  false  "Leave out assets carrying any of these tags (comma-separated, at most 20)"
-// @Param        search        query     string  false  "Full-text search across name and description"
-// @Param        min_risk_score  query   int     false  "Minimum risk score (0-100)"
-// @Param        max_risk_score  query   int     false  "Maximum risk score (0-100)"
-// @Param        has_findings  query     bool    false  "Filter by whether asset has findings"
-// @Param        coverage      query     string  false  "covered: a run of any capability succeeded in the last 30 days; uncovered: tracked by the coverage ledger without one"  Enums(covered, uncovered)
-// @Param        coverage_cause query    string  false  "uncovered assets whose coverage gap has this cause (implies coverage=uncovered)"  Enums(no_sensor, platform_failure, paused, target_unreachable, never_run, overdue, out_of_scope, other)
-// @Param        freshness     query     string  false  "stale: an attribute class is past its freshness TTL; never: a passive class that applies was never observed"
-// @Param        resolution    query     string  false  "not_resolving: the platform knows the host name does not resolve in DNS; resolving: it does"
-// @Param        technology    query     string  false  "Assets using any of these technologies (comma-separated names, case-insensitive, at most 20)"
-// @Param        technology_version query string false "With technology: only that exact version; present and empty = the version is unknown (at most 64 characters)"
-// @Param        technology_category query string false "Assets with a technology in any of these categories (comma-separated): web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other"
-// @Param        is_crown_jewel query    bool    false  "Filter crown-jewel assets"
-// @Param        sub_type      query     string  false  "Filter by sub_type"
-// @Param        business_unit_ids     query string false "Filter by business unit membership (comma-separated UUIDs)"
-// @Param        asset_group_ids       query string false "Members of any of these asset groups (comma-separated UUIDs, at most 20)"
-// @Param        owner_ids             query string false "Owned by any of these users or groups (comma-separated UUIDs, at most 20)"
-// @Param        under                 query string false "Names equal to or below these DNS names (comma-separated, at most 10)"
-// @Param        in_cidr               query string false "Address assets inside these ranges (comma-separated CIDRs, at most 10)"
-// @Param        ids                   query string false "Only these assets (comma-separated UUIDs, at most 100): one batch read instead of one request per asset"
-// @Param        has_owner             query bool   false "Filter assets with (true) / without (false) an assigned owner"
-// @Param        data_classifications  query string false "Filter by data classification (comma-separated: public,internal,confidential,restricted,secret)"
-// @Param        is_control_plane      query bool   false "Filter assets that are a control-plane dependency"
-// @Param        internet_facing query bool  false "Filter internet-facing assets (exposure public or reported reachable)"
-// @Param        environments          query string false "Filter by environment (comma-separated: production,staging,development,testing,dr)"
-// @Param        providers             query string false "Filter by provider/source (comma-separated)"
-// @Param        last_seen_after       query string false "Filter assets last seen at/after this time (RFC3339 or YYYY-MM-DD)"
-// @Param        last_seen_before      query string false "Filter assets last seen at/before this time (RFC3339 or YYYY-MM-DD)"
-// @Param        attribution           query string false "Filter by attribution (comma-separated): confirmed (includes assets with no record), discovered, needs_review, candidate, dependency, monitor_only, rejected, unknown (no record), unconfirmed (needs_review+candidate), approved (the inventory: confirmed+unknown+discovered+dependency+monitor_only), attributed (approved without discovered)"
-// @Param        covered_by            query string false "Scope entry id: the assets the scope join confirmed through it"
-// @Param        scope_status          query string false "Scope status (comma-separated): in_scope (an active entry covers it), not_covered (no entry: passive only), excluded (an exclusion matches or marked not ours), internal (governed by scan zones)"
-// @Param        discovered_by         query string false "Attribution rules behind the asset (comma-separated): fqdn_under_verified_root, fqdn_under_asserted_root, tenant_scanned, tenant_scan_discovered, matches_scope_target, certificate_san"
-// @Param        discovery_technique   query string false "Discovery techniques (comma-separated, at most 10), e.g. cert_transparency or a scanner name"
-// @Param        min_confidence        query int    false "Lowest attribution confidence (0-100; no record counts as 100)"
-// @Param        max_confidence        query int    false "Highest attribution confidence (0-100)"
-// @Param        first_seen_after      query string false "First seen (added to the inventory) at/after this time (RFC3339 or YYYY-MM-DD)"
-// @Param        first_seen_before     query string false "First seen (added to the inventory) at/before this time (RFC3339 or YYYY-MM-DD)"
-// @Param        with_triage           query bool   false "Add each row's attribution, what an active scan would do with it now (triage) and its monitoring state"
-// @Param        monitoring_state      query string false "Monitoring state (comma-separated): monitored, not_monitored, pending_decision, unvalidated, irrelevant, inactive, out_of_scope"
-// @Param        primary               query bool   false "Only primary assets: the organization's root domains (a domain named like a permanent domain scope entry's root or a verified domain)"
-// @Param        sort          query     string  false  "Sort field (e.g., -created_at, name, -risk_score)"
-// @Param        page          query     int     false  "Page number"  default(1)
-// @Param        per_page      query     int     false  "Items per page"  default(20)  maximum(100)
-// @Success      200  {object}  map[string]interface{}
-// @Failure      400  {object}  map[string]string
-// @Failure      401  {object}  map[string]string
-// @Failure      500  {object}  map[string]string
-// @Router       /assets [get]
-func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
-	// Get tenant ID from JWT token (RequireTenant middleware guarantees this exists)
-	tenantID := middleware.MustGetTenantID(r.Context())
-
-	query := r.URL.Query()
-
-	paging, ok := listPage(w, r, 20)
+// @Param        request  body  object  true  "FilterDocument with optional sort and page"
+// @Success      200  {object}  AssetListResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Router       /assets/search [post]
+func (h *AssetHandler) Search(w http.ResponseWriter, r *http.Request) {
+	spec, ok := h.listRoute("POST /assets/search").ParseBody(w, r)
 	if !ok {
 		return
 	}
-	input := assetapp.ListAssetsInput{
-		TenantID:         tenantID,
-		Name:             query.Get("name"),
-		Types:            parseQueryArray(query.Get("types")),
-		Lenses:           parseQueryArray(query.Get("lenses")),
-		Criticalities:    parseQueryArray(query.Get("criticalities")),
-		Statuses:         parseQueryArray(query.Get("statuses")),
-		Scopes:           parseQueryArray(query.Get("scopes")),
-		Exposures:        parseQueryArray(query.Get("exposures")),
-		Tags:             parseQueryArray(query.Get("tags")),
-		TagsMode:         query.Get("tags_mode"),
-		ExcludeTags:      parseQueryArray(query.Get("exclude_tags")),
-		Search:           query.Get("search"),
-		MinRiskScore:     parseQueryIntPtr(query.Get("min_risk_score")),
-		MaxRiskScore:     parseQueryIntPtr(query.Get("max_risk_score")),
-		HasFindings:      parseQueryBoolPtr(query.Get("has_findings")),
-		IsCrownJewel:     parseQueryBoolPtr(query.Get("is_crown_jewel")),
-		SubType:          nilIfEmpty(query.Get("sub_type")),
-		PropertiesFilter: ParsePropertiesFilter(query.Get("properties")),
-		// CTEM inventory dimensions
-		BusinessUnitIDs:      parseQueryArray(query.Get("business_unit_ids")),
-		AssetGroupIDs:        parseQueryArray(query.Get("asset_group_ids")),
-		OwnerIDs:             parseQueryArray(query.Get("owner_ids")),
-		IDs:                  parseQueryArray(query.Get("ids")),
-		UnderDomains:         parseQueryArray(query.Get("under")),
-		InCIDRs:              parseQueryArray(query.Get("in_cidr")),
-		HasOwner:             parseQueryBoolPtr(query.Get("has_owner")),
-		DataClassifications:  parseQueryArray(query.Get("data_classifications")),
-		IsControlPlane:       parseQueryBoolPtr(query.Get("is_control_plane")),
-		InternetFacing:       parseQueryBoolPtr(query.Get("internet_facing")),
-		Environments:         parseQueryArray(query.Get("environments")),
-		Providers:            parseQueryArray(query.Get("providers")),
-		LastSeenAfter:        parseQueryTimePtr(query.Get("last_seen_after")),
-		LastSeenBefore:       parseQueryTimePtr(query.Get("last_seen_before")),
-		ExpiresAfter:         parseQueryTimePtr(query.Get("expires_after")),
-		ExpiresBefore:        parseQueryTimePtr(query.Get("expires_before")),
-		Attribution:          parseQueryArray(query.Get("attribution")),
-		CoveredBy:            query.Get("covered_by"),
-		ScopeStatus:          parseQueryArray(query.Get("scope_status")),
-		MonitoringState:      parseQueryArray(query.Get("monitoring_state")),
-		Liveness:             parseQueryArray(query.Get("liveness")),
-		Primary:              query.Get("primary") == "true",
-		DiscoveredBy:         parseQueryArray(query.Get("discovered_by")),
-		DiscoveryTechnique:   parseQueryArray(query.Get("discovery_technique")),
-		MinConfidence:        parseQueryIntPtr(query.Get("min_confidence")),
-		MaxConfidence:        parseQueryIntPtr(query.Get("max_confidence")),
-		FirstSeenAfter:       parseQueryTimePtr(query.Get("first_seen_after")),
-		FirstSeenBefore:      parseQueryTimePtr(query.Get("first_seen_before")),
-		ProgramAssets:        query.Get("program_assets"),
-		Freshness:            query.Get("freshness"),
-		Resolution:           query.Get("resolution"),
-		Coverage:             query.Get("coverage"),
-		CoverageCause:        query.Get("coverage_cause"),
-		Technologies:         assettech.ParseFilterValues(query.Get("technology")),
-		TechnologyCategories: technologyCategoryStrings(query.Get("technology_category")),
-		TechnologyVersion:    technologyVersionParam(query),
-		Sort:                 query.Get("sort"),
-		Page:                 paging.Page,
-		PerPage:              paging.PerPage,
-		ActingUserID:         middleware.GetUserID(r.Context()),
-		IsAdmin:              middleware.IsAdmin(r.Context()),
-	}
+	h.serveList(w, r, assetapp.ListQuery{Spec: spec})
+}
 
-	if err := h.validator.Validate(input); err != nil {
-		h.handleValidationError(w, err)
+// Networks handles GET /api/v1/assets/networks
+// @Summary      Address assets by network
+// @Description  The address assets a GET /assets filter matches, grouped by network (the /24 of IPv4, the /64 of
+// @Description  IPv6), most addresses first, at most 500 networks (capped when there are more). Same params,
+// @Description  registry and data scope as GET /assets.
+// @Tags         Assets
+// @Produce      json
+// @Security     BearerAuth
+// filterspec-params: assets GET /assets/networks
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  name  query  []string  false  "name or name pattern (* any characters, ? one): any of (comma list)"  collectionFormat(csv)
+// @Param  name_contains  query  string  false  "name or name pattern (* any characters, ? one) contains"
+// @Param  name_not  query  []string  false  "name or name pattern (* any characters, ? one): none of (comma list)"  collectionFormat(csv)
+// @Param  type  query  []string  false  "type: any of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  type_not  query  []string  false  "type: none of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  sub_type  query  []string  false  "sub type: any of (comma list)"  collectionFormat(csv)
+// @Param  sub_type_not  query  []string  false  "sub type: none of (comma list)"  collectionFormat(csv)
+// @Param  criticality  query  []string  false  "criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  criticality_not  query  []string  false  "criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(active, stale, inactive, archived)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(active, stale, inactive, archived)
+// @Param  scope  query  []string  false  "scope: any of (comma list)"  collectionFormat(csv)  Enums(internal, external, cloud, partner, vendor, shadow)
+// @Param  scope_not  query  []string  false  "scope: none of (comma list)"  collectionFormat(csv)  Enums(internal, external, cloud, partner, vendor, shadow)
+// @Param  exposure  query  []string  false  "exposure: any of (comma list)"  collectionFormat(csv)  Enums(public, restricted, private, isolated, unknown)
+// @Param  exposure_not  query  []string  false  "exposure: none of (comma list)"  collectionFormat(csv)  Enums(public, restricted, private, isolated, unknown)
+// @Param  environment  query  []string  false  "environment: any of (comma list)"  collectionFormat(csv)  Enums(production, staging, development, testing, dr)
+// @Param  environment_null  query  boolean  false  "environment is unset (true) or set (false)"
+// @Param  environment_not  query  []string  false  "environment: none of (comma list)"  collectionFormat(csv)  Enums(production, staging, development, testing, dr)
+// @Param  data_classification  query  []string  false  "data classification: any of (comma list)"  collectionFormat(csv)  Enums(public, internal, confidential, restricted, secret)
+// @Param  data_classification_not  query  []string  false  "data classification: none of (comma list)"  collectionFormat(csv)  Enums(public, internal, confidential, restricted, secret)
+// @Param  internet_facing  query  boolean  false  "internet facing equals"
+// @Param  crown_jewel  query  boolean  false  "crown jewel equals"
+// @Param  risk_score_gte  query  integer  false  "risk score at least"
+// @Param  risk_score_lte  query  integer  false  "risk score at most"
+// @Param  risk_score_gt  query  integer  false  "risk score greater than"
+// @Param  risk_score_lt  query  integer  false  "risk score less than"
+// @Param  discovery_source  query  []string  false  "discovery source: any of (comma list)"  collectionFormat(csv)
+// @Param  discovery_source_not  query  []string  false  "discovery source: none of (comma list)"  collectionFormat(csv)
+// @Param  first_seen_gte  query  string  false  "first seen at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_lte  query  string  false  "first seen at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_gt  query  string  false  "first seen greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_lt  query  string  false  "first seen less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_gte  query  string  false  "last seen at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_lte  query  string  false  "last seen at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_gt  query  string  false  "last seen greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_lt  query  string  false  "last seen less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_gte  query  string  false  "discovered at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_lte  query  string  false  "discovered at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_gt  query  string  false  "discovered at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_lt  query  string  false  "discovered at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  lens  query  []string  false  "lens: any of (comma list)"  collectionFormat(csv)  Enums(external_surface, applications, cloud_infra, containers_k8s, code, identities, data, network)
+// @Param  lens_not  query  []string  false  "lens: none of (comma list)"  collectionFormat(csv)  Enums(external_surface, applications, cloud_infra, containers_k8s, code, identities, data, network)
+// @Param  tag  query  []string  false  "tag: any of (comma list)"  collectionFormat(csv)
+// @Param  tag_not  query  []string  false  "tag: none of (comma list)"  collectionFormat(csv)
+// @Param  tag_all  query  []string  false  "carries every one of these tags: any of (comma list)"  collectionFormat(csv)
+// @Param  provider  query  []string  false  "provider (unset: none recorded): any of (comma list)"  collectionFormat(csv)
+// @Param  provider_not  query  []string  false  "provider (unset: none recorded): none of (comma list)"  collectionFormat(csv)
+// @Param  updated_at_gte  query  string  false  "updated at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lte  query  string  false  "updated at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_gte  query  string  false  "last synced at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_lte  query  string  false  "last synced at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_gt  query  string  false  "last synced greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_lt  query  string  false  "last synced less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  sync_status  query  []string  false  "sync status: any of (comma list)"  collectionFormat(csv)
+// @Param  sync_status_not  query  []string  false  "sync status: none of (comma list)"  collectionFormat(csv)
+// @Param  has_findings  query  boolean  false  "has findings equals"
+// @Param  finding_count  query  integer  false  "open findings equals"
+// @Param  finding_count_gte  query  integer  false  "open findings at least"
+// @Param  finding_count_lte  query  integer  false  "open findings at most"
+// @Param  finding_count_gt  query  integer  false  "open findings greater than"
+// @Param  finding_count_lt  query  integer  false  "open findings less than"
+// @Param  coverage  query  string  false  "coverage equals"  Enums(covered, uncovered)
+// @Param  coverage_cause  query  []string  false  "coverage cause: any of (comma list)"  collectionFormat(csv)  Enums(no_sensor, platform_failure, paused, target_unreachable, never_run, overdue, out_of_scope, other)
+// @Param  freshness  query  string  false  "freshness equals"  Enums(stale, never)
+// @Param  resolution  query  string  false  "resolution equals"  Enums(resolving, not_resolving)
+// @Param  technology  query  []string  false  "technology name, or name@version: any of (comma list)"  collectionFormat(csv)
+// @Param  technology_not  query  []string  false  "technology name, or name@version: none of (comma list)"  collectionFormat(csv)
+// @Param  technology_version  query  []string  false  "a technology of this exact version: any of (comma list)"  collectionFormat(csv)
+// @Param  technology_category  query  []string  false  "technology category: any of (comma list)"  collectionFormat(csv)  Enums(web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other)
+// @Param  business_unit  query  []string  false  "business unit: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_group  query  []string  false  "asset group: any of (comma list)"  collectionFormat(csv)
+// @Param  owner  query  []string  false  "owner: any of (comma list)"  collectionFormat(csv)
+// @Param  has_owner  query  boolean  false  "has owner equals"
+// @Param  under  query  []string  false  "names equal to or below these DNS names: any of (comma list)"  collectionFormat(csv)
+// @Param  domain  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): any of (comma list)"  collectionFormat(csv)
+// @Param  domain_not  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): none of (comma list)"  collectionFormat(csv)
+// @Param  ip  query  []string  false  "IP address or CIDR range (10.0.0.0/8): any of (comma list)"  collectionFormat(csv)
+// @Param  network  query  []string  false  "network (/24 of an IPv4 address, /64 of IPv6) of address assets: any of (comma list)"  collectionFormat(csv)
+// @Param  port  query  []integer  false  "open port (0-65535): any of (comma list)"  collectionFormat(csv)
+// @Param  port_not  query  []integer  false  "open port (0-65535): none of (comma list)"  collectionFormat(csv)
+// @Param  port_gte  query  integer  false  "open port (0-65535) at least"
+// @Param  port_lte  query  integer  false  "open port (0-65535) at most"
+// @Param  port_gt  query  integer  false  "open port (0-65535) greater than"
+// @Param  port_lt  query  integer  false  "open port (0-65535) less than"
+// @Param  service  query  []string  false  "service on an open port (https, ssh...): any of (comma list)"  collectionFormat(csv)
+// @Param  service_not  query  []string  false  "service on an open port (https, ssh...): none of (comma list)"  collectionFormat(csv)
+// @Param  control_plane  query  boolean  false  "control plane equals"
+// @Param  expires_gte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_lte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_gt  query  string  false  "expiry (a certificate's not after, a domain's expiry) greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_lt  query  string  false  "expiry (a certificate's not after, a domain's expiry) less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  attribution  query  []string  false  "attribution: any of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  attribution_not  query  []string  false  "attribution: none of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  covered_by  query  []string  false  "scope entry that confirmed the asset: any of (comma list)"  collectionFormat(csv)
+// @Param  scope_status  query  []string  false  "scope status: any of (comma list)"  collectionFormat(csv)  Enums(in_scope, not_covered, excluded, internal)
+// @Param  monitoring_state  query  []string  false  "monitoring state: any of (comma list)"  collectionFormat(csv)  Enums(irrelevant, out_of_scope, inactive, pending_decision, unvalidated, not_monitored, monitored)
+// @Param  liveness  query  []string  false  "liveness: any of (comma list)"  collectionFormat(csv)  Enums(alive, unreachable, unresolvable, gone, unknown)
+// @Param  primary  query  boolean  false  "the organization's root domains equals"
+// @Param  discovered_by  query  []string  false  "discovered by: any of (comma list)"  collectionFormat(csv)  Enums(fqdn_under_verified_root, fqdn_under_asserted_root, tenant_scanned, tenant_scan_discovered, matches_scope_target, certificate_san)
+// @Param  discovery_technique  query  []string  false  "discovery technique: any of (comma list)"  collectionFormat(csv)
+// @Param  confidence_gte  query  integer  false  "attribution confidence (0-100) at least"
+// @Param  confidence_lte  query  integer  false  "attribution confidence (0-100) at most"
+// @Param  confidence_gt  query  integer  false  "attribution confidence (0-100) greater than"
+// @Param  confidence_lt  query  integer  false  "attribution confidence (0-100) less than"
+// @Param  program_assets  query  string  false  "bug-bounty program assets equals"  Enums(only, exclude)
+// end filterspec-params
+// @Success      200  {object}  AssetNetworksResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Router       /assets/networks [get]
+func (h *AssetHandler) Networks(w http.ResponseWriter, r *http.Request) {
+	q, _ := rewriteLegacyAssetParams(r.URL.Query())
+	spec, ok := h.listRoute("GET /assets/networks").ParseValues(w, r, q)
+	if !ok {
 		return
 	}
-	if len(input.MonitoringState) > 0 {
-		input.UnclassifiedScanned = h.unclassifiedScanned(r, input.TenantID)
-	}
-
-	result, err := h.service.ListAssets(r.Context(), input)
+	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
+	caller := assetapp.ListCaller{TenantID: tenantID, UserID: middleware.GetUserID(ctx),
+		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.ReadsOnOwnScope(ctx)}
+	scanned := usesField(spec, "monitoring_state") && h.unclassifiedScanned(r, tenantID)
+	nets, capped, err := h.service.NetworkCounts(ctx, caller, spec, scanned)
 	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			filterquery.WriteError(w, err)
+			return
+		}
+		if errors.Is(err, asset.ErrQueryTimeout) {
+			apierror.QueryTimeout("The assets query took too long; narrow the search or the filters").WriteJSON(w)
+			return
+		}
+		h.handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AssetNetworksResponse{Data: nets, Capped: capped})
+}
+
+// AssetNetworksResponse is the group by network.
+type AssetNetworksResponse struct {
+	Data   []asset.NetworkCount `json:"data"`
+	Capped bool                 `json:"capped,omitempty"`
+}
+
+// AssetIPView is what the IP addresses tab shows beside an address.
+type AssetIPView struct {
+	// Network is the /24 (IPv4) or /64 (IPv6) the address is in.
+	Network string `json:"network,omitempty"`
+	asset.IPContext
+}
+
+// addIPContexts adds the network, the names resolving to it and its open
+// ports to every address row, as the caller.
+func (h *AssetHandler) addIPContexts(r *http.Request, caller assetapp.ListCaller, out []*AssetResponse, assets []*asset.Asset) {
+	ids := make([]string, 0, len(assets))
+	for i, a := range assets {
+		if a.Type() != asset.AssetTypeIPAddress {
+			continue
+		}
+		ids = append(ids, a.ID().String())
+		out[i].IP = &AssetIPView{Network: addressNetwork(a.Name()), IPContext: asset.IPContext{Names: []string{}, Ports: []asset.IPPort{}}}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	ctxs, err := h.service.IPContexts(r.Context(), caller, ids)
+	if err != nil {
+		h.logger.Warn("asset list: ip columns unavailable", "error", err)
+		return
+	}
+	for i, a := range assets {
+		if c, ok := ctxs[a.ID().String()]; ok && out[i].IP != nil {
+			if c.Names == nil {
+				c.Names = []string{}
+			}
+			if c.Ports == nil {
+				c.Ports = []asset.IPPort{}
+			}
+			out[i].IP.IPContext = c
+		}
+	}
+}
+
+// addressNetwork is the /24 (IPv4) or /64 (IPv6) network of an address
+// name, "" when it is not one bare address (asset_ip_network in SQL).
+func addressNetwork(name string) string {
+	addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(name), "[]"))
+	if err != nil || addr.Zone() != "" {
+		return ""
+	}
+	bits := 64
+	if addr.Is4() || addr.Is4In6() {
+		addr, bits = addr.Unmap(), 24
+	}
+	p, err := addr.Prefix(bits)
+	if err != nil {
+		return ""
+	}
+	return p.String()
+}
+
+// AssetListResponse is a page of assets.
+type AssetListResponse struct {
+	ListResponse[AssetResponse]
+	// TotalCapped: more than total (10,000) assets match.
+	TotalCapped bool `json:"total_capped,omitempty"`
+	// NextCursor starts the next keyset page.
+	NextCursor string `json:"next_cursor,omitempty"`
+}
+
+// Deprecation dates of the params GET /assets took before the list query
+// contract: removed two releases later.
+var (
+	assetsListDeprecatedAt = time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	assetsListSunsetAt     = time.Date(2026, 12, 20, 0, 0, 0, 0, time.UTC)
+)
+
+func (h *AssetHandler) listRoute(name string) filterquery.Route {
+	return filterquery.Route{
+		Name: name, Registry: assetlist.Fields,
+		Options:      filterspec.Options{Unknown: filterspec.UnknownStrict, Extra: []string{"properties", "with_triage"}},
+		DeprecatedAt: assetsListDeprecatedAt, SunsetAt: assetsListSunsetAt, Logger: h.logger,
+	}
+}
+
+// rewriteLegacyAssetParams maps the old params that need two fields at once
+// onto the registry: tags with tags_mode=all is tag_all, and technology
+// with technology_version is technology=name@version. It returns the old
+// names it rewrote.
+func rewriteLegacyAssetParams(in url.Values) (url.Values, []string) {
+	q := url.Values{}
+	for k, v := range in {
+		q[k] = append([]string(nil), v...)
+	}
+	var legacy []string
+	// tags_mode other than any or all stays in the params, so the strict
+	// parse refuses it instead of silently matching any tag.
+	if mode := q.Get("tags_mode"); q.Has("tags_mode") && (mode == "" || mode == "any" || mode == sectionAll) {
+		legacy = append(legacy, "tags_mode")
+		if q.Get("tags_mode") == sectionAll && q.Has("tags") {
+			q["tag_all"] = q["tags"]
+			q.Del("tags")
+		}
+		q.Del("tags_mode")
+	}
+	if q.Has("technology_version") && q.Has("technology") {
+		legacy = append(legacy, "technology_version")
+		version := strings.TrimSpace(q.Get("technology_version"))
+		keys := assettech.ParseFilterValues(strings.Join(q["technology"], ","))
+		names := make([]string, 0, len(keys))
+		for _, n := range keys {
+			names = append(names, n+"@"+version)
+		}
+		q["technology"] = []string{strings.Join(names, ",")}
+		q.Del("technology_version")
+	}
+	return q, legacy
+}
+
+// usesField reports whether a filter has a condition on field.
+func usesField(spec *filterspec.Spec, field string) bool {
+	for _, l := range spec.Leaves() {
+		if l.Field == field {
+			return true
+		}
+	}
+	return false
+}
+
+// assetTypeField is the registry field of the asset type.
+const assetTypeField = "type"
+
+// onlyType is the one asset type a filter is limited to at its top level
+// ("" when none or several).
+func onlyType(spec *filterspec.Spec) string {
+	if spec.Root == nil {
+		return ""
+	}
+	nodes := []*filterspec.Node{spec.Root}
+	if spec.Root.All != nil {
+		nodes = spec.Root.All
+	}
+	for _, n := range nodes {
+		if l := n.Leaf; l != nil && l.Field == assetTypeField && (l.Op == filterspec.OpIn || l.Op == filterspec.OpEq) && len(l.Values) == 1 {
+			v, _ := l.Values[0].(string)
+			return v
+		}
+	}
+	return ""
+}
+
+// serveList runs a decoded asset filter as the caller and writes the page.
+func (h *AssetHandler) serveList(w http.ResponseWriter, r *http.Request, lq assetapp.ListQuery) {
+	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
+	if usesField(lq.Spec, "monitoring_state") {
+		lq.UnclassifiedScanned = h.unclassifiedScanned(r, tenantID)
+	}
+	caller := assetapp.ListCaller{TenantID: tenantID, UserID: middleware.GetUserID(ctx),
+		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.ReadsOnOwnScope(ctx)}
+	result, err := h.service.ListAssetsWhere(ctx, caller, lq)
+	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			filterquery.WriteError(w, err)
+			return
+		}
+		if errors.Is(err, asset.ErrQueryTimeout) {
+			apierror.QueryTimeout("The assets query took too long; narrow the search or the filters").WriteJSON(w)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Batch-fetch primary owners for all assets
-	owners := h.batchFetchPrimaryOwners(r.Context(), input.TenantID, result.Data)
-
-	// Check if we're filtering by repository type to include extensions
-	isRepositoryTypeFilter := len(input.Types) == 1 && input.Types[0] == "repository"
-
-	// If filtering by repository type, batch-fetch extensions and return combined response
-	if isRepositoryTypeFilter && h.service.HasRepositoryExtensionRepository() {
-		// Collect all asset IDs for batch fetch (single query instead of N+1)
-		assetIDs := make([]shared.ID, len(result.Data))
-		for i, a := range result.Data {
-			assetIDs[i] = a.ID()
-		}
-
-		extensions, err := h.service.GetRepositoryExtensionsByAssetIDs(r.Context(), assetIDs)
-		if err != nil {
-			h.logger.Error("failed to batch fetch repository extensions", "error", err)
-			extensions = make(map[shared.ID]*asset.RepositoryExtension)
-		}
-
-		data := make([]AssetWithRepositoryResponse, len(result.Data))
-		for i, a := range result.Data {
-			resp := AssetWithRepositoryResponse{
-				AssetResponse: toAssetResponse(a),
-			}
-			resp.AssetResponse.PrimaryOwner = toOwnerBriefResponse(owners[a.ID().String()])
-			if ext, ok := extensions[a.ID()]; ok {
-				resp.Repository = toRepositoryExtensionResponse(ext)
-			}
-			data[i] = resp
-		}
-		repoPtrs := make([]*AssetResponse, len(data))
-		for i := range data {
-			repoPtrs[i] = &data[i].AssetResponse
-		}
-		h.addTriage(r, input.TenantID, repoPtrs, result.Data)
-		h.addMonitoringStates(r, input.TenantID, repoPtrs)
-		h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, repoPtrs)
-
-		response := ListResponse[AssetWithRepositoryResponse]{
-			Data:       data,
-			Total:      result.Total,
-			Page:       result.Page,
-			PerPage:    result.PerPage,
-			TotalPages: result.TotalPages,
-			Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(response)
-		return
-	}
-
-	// Default response without extensions
+	owners := h.batchFetchPrimaryOwners(ctx, tenantID, result.Data)
 	data := make([]AssetResponse, len(result.Data))
 	for i, a := range result.Data {
 		resp := toAssetResponse(a)
@@ -843,46 +1163,43 @@ func (h *AssetHandler) List(w http.ResponseWriter, r *http.Request) {
 	for i := range data {
 		ptrs[i] = &data[i]
 	}
-	h.addProgramFlags(r, input.TenantID, ptrs)
-	h.addLiveness(r, input.TenantID, ptrs)
-	h.addTriage(r, input.TenantID, ptrs, result.Data)
-	h.addMonitoringStates(r, input.TenantID, ptrs)
-	h.addTechnologies(r, input.TenantID, listTechnologiesPerAsset, ptrs)
+	h.addProgramFlags(r, tenantID, ptrs)
+	h.addLiveness(r, tenantID, ptrs)
+	h.addTriage(r, tenantID, ptrs, result.Data)
+	h.addMonitoringStates(r, tenantID, ptrs)
+	h.addTechnologies(r, tenantID, listTechnologiesPerAsset, ptrs)
+	h.addIPContexts(r, caller, ptrs, result.Data)
+	meta := ListResponse[AssetResponse]{Total: result.Total, Page: result.Page, PerPage: result.PerPage,
+		TotalPages: result.TotalPages, Links: NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages)}
 
-	response := ListResponse[AssetResponse]{
-		Data:       data,
-		Total:      result.Total,
-		Page:       result.Page,
-		PerPage:    result.PerPage,
-		TotalPages: result.TotalPages,
-		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	// A list of repositories only carries each one's repository extension.
+	if onlyType(lq.Spec) == "repository" && h.service.HasRepositoryExtensionRepository() {
+		ids := make([]shared.ID, len(result.Data))
+		for i, a := range result.Data {
+			ids[i] = a.ID()
+		}
+		extensions, err := h.service.GetRepositoryExtensionsByAssetIDs(ctx, ids)
+		if err != nil {
+			h.logger.Error("failed to batch fetch repository extensions", "error", err)
+			extensions = make(map[shared.ID]*asset.RepositoryExtension)
+		}
+		repos := make([]AssetWithRepositoryResponse, len(data))
+		for i, a := range result.Data {
+			repos[i] = AssetWithRepositoryResponse{AssetResponse: data[i]}
+			if ext, ok := extensions[a.ID()]; ok {
+				repos[i].Repository = toRepositoryExtensionResponse(ext)
+			}
+		}
+		writeJSON(w, http.StatusOK, struct {
+			ListResponse[AssetWithRepositoryResponse]
+			TotalCapped bool   `json:"total_capped,omitempty"`
+			NextCursor  string `json:"next_cursor,omitempty"`
+		}{ListResponse[AssetWithRepositoryResponse]{Data: repos, Total: meta.Total, Page: meta.Page, PerPage: meta.PerPage,
+			TotalPages: meta.TotalPages, Links: meta.Links}, result.Capped, result.NextCursor})
+		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(response)
-}
-
-// technologyVersionParam reads technology_version: nil when absent, the
-// trimmed value otherwise ("" selects a version the tools could not tell).
-func technologyVersionParam(q url.Values) *string {
-	vs, ok := q["technology_version"]
-	if !ok || len(vs) == 0 {
-		return nil
-	}
-	v := strings.TrimSpace(vs[0])
-	return &v
-}
-
-// technologyCategoryStrings parses a technology_category filter, keeping
-// only valid categories.
-func technologyCategoryStrings(raw string) []string {
-	cats := assettech.ParseCategories(raw)
-	out := make([]string, 0, len(cats))
-	for _, c := range cats {
-		out = append(out, string(c))
-	}
-	return out
+	meta.Data = data
+	writeJSON(w, http.StatusOK, AssetListResponse{ListResponse: meta, TotalCapped: result.Capped, NextCursor: result.NextCursor})
 }
 
 // Create handles POST /api/v1/assets

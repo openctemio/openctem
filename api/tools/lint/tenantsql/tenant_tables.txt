@@ -35,6 +35,8 @@ asset_identifiers
 asset_identity_backfill
 asset_liveness
 asset_merge_log
+asset_port_queue
+asset_ports
 asset_program_links
 asset_relationships
 asset_resolution
@@ -275,6 +277,7 @@ scim_tokens
 scm_app_installations
 scm_gitlab_connections
 scope_exclusions
+scope_name_exceptions
 scope_snapshots
 scope_target_approvals
 scope_target_ci_trusts

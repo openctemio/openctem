@@ -141,7 +141,7 @@ Besides the Go runtime and process metrics:
 | Metric | Labels | What |
 |---|---|---|
 | `http_requests_total`, `http_request_duration_seconds`, `http_response_size_bytes` | method, path (route pattern or `unmatched`), status | Every answer, including panics (500), rate-limit refusals (429) and limit refusals. |
-| `openctem_panics_recovered_total` | where (`http` or the background task) | Panics caught by a recover(). |
+| `openctem_panics_recovered_total` | where (`http`, `controller:<name>` for a background controller run, or the background task) | Panics caught by a recover(). A recovered controller run counts as a reconcile error and runs again on its next tick; the log line `background task panicked` carries the task name and the stack. |
 | `openctem_log_records_total` | level (warn, error), component | Log records written, before sampling. |
 | `openctem_auth_login_failures_total` | reason (invalid_credentials, locked, suspended, other) | Refused password sign-ins. |
 | `openctem_signup_events_total` | kind (account_created, organization_created, access_requested), source (the sign-up path) | Sign-up events recorded for the console's sign-up feed. |

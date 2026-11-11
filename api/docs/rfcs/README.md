@@ -162,6 +162,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-151](RFC-151-large-range-targets.md) | Large range targets | Implemented (2026-11-06) |
 | [RFC-152](RFC-152-finding-practices.md) | Finding practices | Partly implemented (2026-11-08): practice column, derivation, filters, backfill command, compliance SLA policy, findings switch, compliance check state with history and posture, control remediation key, compliance priority, compliance-checks command |
 | [RFC-153](RFC-153-exploration.md) | Exploration | Partially implemented (2026-11-08): "how we found this" (P0); leads opened by rules and people, scored and dispatched through the coverage run path, approvals by tier, precomputed figures, the Exploration page (P1). |
+| [RFC-154](RFC-154-blocked-target-names.md) | Blocked target names and exceptions | Implemented (2026-11-11) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
