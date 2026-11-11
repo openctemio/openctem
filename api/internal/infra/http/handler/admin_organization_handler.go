@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -37,6 +38,48 @@ type AdminOrganizationHandler struct {
 	provisioning *tenantapp.UserProvisioningService
 	// stepUp checks a fresh console authenticator code for owner recovery.
 	stepUp StepUpVerifier
+	// emailDelivery reports whether the installation can send email. Without
+	// email the console hands the owner's set-password link over itself and
+	// tells the administrator that an invited account is not told.
+	emailDelivery func() bool
+	// appBaseURL is the web app's address (where an invited account signs in
+	// and accepts); not a secret.
+	appBaseURL string
+}
+
+// WithEmailDelivery says whether the installation can send email.
+func (h *AdminOrganizationHandler) WithEmailDelivery(f func() bool) *AdminOrganizationHandler {
+	h.emailDelivery = f
+	return h
+}
+
+// WithAppBaseURL sets the web app's address, used for the page where an
+// invited account accepts the ownership of an organization.
+func (h *AdminOrganizationHandler) WithAppBaseURL(base string) *AdminOrganizationHandler {
+	h.appBaseURL = strings.TrimSuffix(strings.TrimSpace(base), "/")
+	return h
+}
+
+func (h *AdminOrganizationHandler) emailOn() bool {
+	return h.emailDelivery != nil && h.emailDelivery()
+}
+
+// withDelivery adds what only an organization's own page and the create
+// answers carry: whether email can be sent and, for an open invitation, the
+// address where the invitee accepts.
+func (h *AdminOrganizationHandler) withDelivery(o *AdminOrganizationResponse) {
+	on := h.emailOn()
+	o.EmailDelivery = &on
+	h.withAcceptURL(o.OwnerInvitation)
+}
+
+func (h *AdminOrganizationHandler) withAcceptURL(inv *AdminOwnerInvitationResponse) {
+	if inv == nil || h.appBaseURL == "" {
+		return
+	}
+	if inv.Status == string(tenant.OwnerInvitationPending) || inv.Status == string(tenant.OwnerInvitationExpired) {
+		inv.AcceptURL = h.appBaseURL + "/ownership-invitations"
+	}
 }
 
 // WithStepUp wires the console step-up check (owner recovery needs it).
@@ -99,6 +142,11 @@ type AdminOrganizationResponse struct {
 	// any status but accepted. The invitee's address is for ops_admin and
 	// above only.
 	OwnerInvitation *AdminOwnerInvitationResponse `json:"owner_invitation,omitempty"`
+	// EmailDelivery: the installation can send email (the organization's own
+	// page and the create answer only). False: an invited account is not told
+	// by email, and a new owner's set-password link is handed over by the
+	// administrator (POST /admin/platform-users/{user_id}/setup-link).
+	EmailDelivery *bool `json:"email_delivery,omitempty"`
 }
 
 // AdminOwnerInvitationResponse is an ownership invitation of an organization
@@ -114,9 +162,16 @@ type AdminOwnerInvitationResponse struct {
 	ResendsLeft       int        `json:"resends_left"`
 	ResendAvailableAt *time.Time `json:"resend_available_at,omitempty"`
 	ExpiresAt         time.Time  `json:"expires_at"`
-	LastSentAt        time.Time  `json:"last_sent_at"`
-	CreatedAt         time.Time  `json:"created_at"`
-	RespondedAt       *time.Time `json:"responded_at,omitempty"`
+	// LastSentAt is absent when the invitee was never emailed (SendCount 0:
+	// the installation cannot send email).
+	LastSentAt  *time.Time `json:"last_sent_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	RespondedAt *time.Time `json:"responded_at,omitempty"`
+	// AcceptURL is the web app page where the invitee accepts after signing
+	// in (open invitations on the organization's own page). Not a secret:
+	// the invitation is bound to the account, so the page shows it to the
+	// invitee only.
+	AcceptURL string `json:"accept_url,omitempty"`
 }
 
 // toAdminOwnerInvitationResponse renders the summary; nil for none or an
@@ -134,7 +189,7 @@ func toAdminOwnerInvitationResponse(i *admin.OwnerInvitationSummary, personalDat
 	}
 	if i.Status == string(tenant.OwnerInvitationPending) || i.Status == string(tenant.OwnerInvitationExpired) {
 		out.ResendsLeft = max(tenant.OwnerInvitationMaxSends-i.SendCount, 0)
-		if out.ResendsLeft > 0 {
+		if out.ResendsLeft > 0 && i.LastSentAt != nil {
 			at := i.LastSentAt.Add(tenant.OwnerInvitationResendInterval)
 			out.ResendAvailableAt = &at
 		}
@@ -182,6 +237,9 @@ type AdminOwnerSetupResponse struct {
 	EmailFailed    bool       `json:"email_failed,omitempty"`
 	SetupToken     string     `json:"setup_token,omitempty"`
 	SetupExpiresAt *time.Time `json:"setup_expires_at,omitempty"`
+	// SetupURL is SetupToken as the full address on the web app: the console
+	// is another site, so it cannot build the link from its own address.
+	SetupURL string `json:"setup_url,omitempty"`
 }
 
 // AdminCreateOrganizationResponse is the created organization plus, when its
@@ -427,7 +485,9 @@ func (h *AdminOrganizationHandler) Get(w http.ResponseWriter, r *http.Request) {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAdminOrganizationResponse(o, adminSeesPersonalData(r), true))
+	resp := toAdminOrganizationResponse(o, adminSeesPersonalData(r), true)
+	h.withDelivery(&resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // Create handles POST /api/v1/admin/tenants. For a new email a password-less
@@ -491,6 +551,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		if setup.SetupToken != "" {
 			exp := setup.SetupExpiresAt
 			resp.OwnerSetup.SetupExpiresAt = &exp
+			resp.OwnerSetup.SetupURL = h.setupURL(setup.SetupToken)
 		}
 	}
 	o, err := h.orgs.GetOrganization(r.Context(), t.ID())
@@ -503,6 +564,7 @@ func (h *AdminOrganizationHandler) Create(w http.ResponseWriter, r *http.Request
 		resp.OwnerInvited = true
 		resp.OwnerInvitation = toAdminOwnerInvitationFromDomain(created.OwnerInvitation)
 	}
+	h.withDelivery(&resp.AdminOrganizationResponse)
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -633,7 +695,100 @@ func (h *AdminOrganizationHandler) CreateUser(w http.ResponseWriter, r *http.Req
 		}
 		return
 	}
-	writeProvisionedUser(w, http.StatusCreated, result)
+	h.writeOwnerProvisioned(w, http.StatusCreated, result)
+}
+
+// AdminOwnerSetupLinkRequest asks for a new hand-over link for the owner
+// account of OrganizationID.
+type AdminOwnerSetupLinkRequest struct {
+	// OrganizationID is the organization whose new owner the account is.
+	OrganizationID string `json:"organization_id"`
+	// Reason (10 to 500 characters) is kept in the admin audit row.
+	Reason string `json:"reason"`
+}
+
+// IssueOwnerSetupLink handles POST /api/v1/admin/platform-users/{user_id}/setup-link.
+// @Summary Hand over a new set-password link for an organization's new owner (platform admin)
+// @Description For an installation that cannot send email: replaces the one-time set-password link of an organization's owner account that the console created and that has never been used, and returns it once (setup_token, 24 hours, single use; the earlier link stops working). Hand it to the person over a channel you trust. 409 EMAIL_AVAILABLE when email works (the link is then only ever emailed); 409 when the account is in use or belongs to another organization too; 404 when the account is not an owner in organization_id. ops_admin+ (platform.tenants.owner_bootstrap), fresh step-up, reason required (10 to 500 characters), support rate limit. The admin audit log records who issued it, for which account and organization, never the link; the organization's audit log records it too. Never cached.
+// @Tags Admin Organizations
+// @Accept json
+// @Produce json
+// @Param user_id path string true "Owner account ID"
+// @Param request body AdminOwnerSetupLinkRequest true "Organization and reason"
+// @Success 200 {object} ProvisionedUserResponse
+// @Failure 400 {object} apierror.Error "Bad Request"
+// @Failure 404 {object} apierror.Error "Not Found"
+// @Failure 409 {object} apierror.Error "Email works, or the account is not a pending owner"
+// @Security BearerAuth
+// @Router /admin/platform-users/{user_id}/setup-link [post]
+func (h *AdminOrganizationHandler) IssueOwnerSetupLink(w http.ResponseWriter, r *http.Request) {
+	if h.provisioning == nil {
+		apierror.ServiceUnavailable("User creation is not available").WriteJSON(w)
+		return
+	}
+	userID, err := shared.IDFromString(r.PathValue("user_id"))
+	if err != nil {
+		apierror.BadRequest("invalid user id").WriteJSON(w)
+		return
+	}
+	var req AdminOwnerSetupLinkRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	orgID, err := shared.IDFromString(req.OrganizationID)
+	if err != nil {
+		apierror.BadRequest("invalid organization id").WriteJSON(w)
+		return
+	}
+	if n := len([]rune(strings.TrimSpace(req.Reason))); n < platformUserReasonMin || n > platformUserReasonMax {
+		apierror.BadRequest("Give a reason (10 to 500 characters); it is kept in the audit log.").WriteJSON(w)
+		return
+	}
+	if h.emailOn() {
+		writeSetupLinkEmailAvailable(w)
+		return
+	}
+	result, err := h.provisioning.IssueFirstOwnerHandOverLink(r.Context(), orgID, userID, adminAuditContext(r, orgID.String()))
+	if err != nil {
+		switch {
+		case errors.Is(err, tenantapp.ErrSetupLinkEmailAvailable):
+			writeSetupLinkEmailAvailable(w)
+		case errors.Is(err, tenantapp.ErrNotPendingSetup):
+			apierror.Conflict("This account is not a new owner waiting to set a password: it is in use, or it belongs to another organization too. The person uses forgot-password.").WriteJSON(w)
+		case errors.Is(err, shared.ErrNotFound):
+			apierror.NotFound("owner").WriteJSON(w)
+		default:
+			// Never log request or response bodies here: the response is a
+			// bearer secret.
+			h.logger.Error("owner setup link", "error", sanitizeLogField(err.Error()))
+			apierror.InternalError(err).WriteJSON(w)
+		}
+		return
+	}
+	h.writeOwnerProvisioned(w, http.StatusOK, result)
+}
+
+// setupURL is the web app's set-password address for token ("" without a
+// configured app address). The token is a bearer secret: never logged.
+func (h *AdminOrganizationHandler) setupURL(token string) string {
+	if token == "" || h.appBaseURL == "" {
+		return ""
+	}
+	return h.appBaseURL + "/set-password#token=" + url.QueryEscape(token)
+}
+
+// writeOwnerProvisioned is writeProvisionedUser plus the full set-password
+// address for the console (another site than the web app). no-store.
+func (h *AdminOrganizationHandler) writeOwnerProvisioned(w http.ResponseWriter, status int, p *tenantapp.ProvisionedUser) {
+	resp := toProvisionedUserResponse(p)
+	resp.SetupURL = h.setupURL(resp.SetupToken)
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, resp)
+}
+
+func writeSetupLinkEmailAvailable(w http.ResponseWriter) {
+	apierror.New(http.StatusConflict, "EMAIL_AVAILABLE", "This installation can send email: the set-password link is emailed and never shown.").WriteJSON(w)
 }
 
 // GetSSOEnforcement handles GET /api/v1/admin/tenants/{tenantId}/sso/enforcement.
@@ -744,8 +899,10 @@ func (h *AdminOrganizationHandler) inviteExistingOwner(w http.ResponseWriter, r 
 		writeOwnerInvitationError(w, err, h.logger)
 		return true
 	}
+	out := toAdminOwnerInvitationFromDomain(inv)
+	h.withAcceptURL(out)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusAccepted, AdminOwnerInvitationResult{OwnerInvitation: toAdminOwnerInvitationFromDomain(inv)})
+	writeJSON(w, http.StatusAccepted, AdminOwnerInvitationResult{OwnerInvitation: out})
 	return true
 }
 
@@ -756,6 +913,9 @@ func writeOwnerInvitationError(w http.ResponseWriter, err error, log *logger.Log
 	case errors.Is(err, tenant.ErrOwnerInvitationResendTooSoon):
 		apierror.New(http.StatusTooManyRequests, apierror.CodeRateLimitExceeded,
 			"The invitation was sent a moment ago. Try again in a few minutes.").WriteJSON(w)
+	case errors.Is(err, tenantapp.ErrOwnerInvitationEmailUnavailable):
+		apierror.New(http.StatusConflict, "EMAIL_UNAVAILABLE",
+			"This installation cannot send email, so the invitation cannot be sent again. The person accepts in the app after signing in; to renew an expired invitation, invite them again.").WriteJSON(w)
 	case errors.Is(err, tenant.ErrOwnerInvitationResendLimit):
 		apierror.Conflict("This invitation was sent the maximum number of times. Cancel it or invite again.").WriteJSON(w)
 	case errors.Is(err, tenant.ErrOwnerInvitationNotFound):
@@ -780,7 +940,7 @@ func writeOwnerInvitationError(w http.ResponseWriter, err error, log *logger.Log
 
 // ResendOwnerInvitation handles POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend.
 // @Summary Send an ownership invitation again (platform admin)
-// @Description Sends the pending (or expired) ownership invitation again and renews its seven-day expiry. At most five sends per invitation, ten minutes apart (429 when too soon). Written to the organization's audit log.
+// @Description Sends the pending (or expired) ownership invitation again and renews its seven-day expiry. At most five sends per invitation, ten minutes apart (429 when too soon). 409 EMAIL_UNAVAILABLE when the installation cannot send email (nothing would be sent; invite the account again to renew an expired invitation). Written to the organization's audit log.
 // @Tags Admin Organizations
 // @Produce json
 // @Param tenantId path string true "Organization ID"
@@ -807,7 +967,7 @@ func (h *AdminOrganizationHandler) ResendOwnerInvitation(w http.ResponseWriter, 
 
 // CancelOwnerInvitation handles DELETE /api/v1/admin/tenants/{tenantId}/owner-invitation.
 // @Summary Cancel an ownership invitation (platform admin)
-// @Description Withdraws the pending ownership invitation; the invitee is told by email. The organization stays with no owner: invite someone else or create its first owner. Written to the organization's audit log.
+// @Description Withdraws the pending ownership invitation; the invitee is told by email when the installation can send email. The organization stays with no owner: invite someone else or create its first owner. Written to the organization's audit log.
 // @Tags Admin Organizations
 // @Produce json
 // @Param tenantId path string true "Organization ID"

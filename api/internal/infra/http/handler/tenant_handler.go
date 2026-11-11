@@ -1514,6 +1514,10 @@ type ProvisionedUserResponse struct {
 	EmailSent      bool                `json:"email_sent"`
 	SetupToken     string              `json:"setup_token,omitempty"`
 	SetupExpiresAt *time.Time          `json:"setup_expires_at,omitempty"`
+	// SetupURL is the full set-password address of SetupToken on the web
+	// app, for a caller on another site (the platform console). Same secret
+	// as SetupToken, same rules: returned once, never stored or logged.
+	SetupURL string `json:"setup_url,omitempty"`
 	// EmailFailed: the organization can send email but the send failed, and
 	// the link is deliberately not returned (platform administrator's
 	// first-owner bootstrap). The person uses forgot-password.

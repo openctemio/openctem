@@ -152,6 +152,27 @@ source changed since is left as it is and counted as `changed`. The journal
 keeps the outcome of each row; the retirement keeps the counts and ends
 `restored`. The source can be retired again later.
 
+## Finding the leftovers: `retired_source_only`
+
+The findings list, its counts, facets, groups and export accept
+`retired_source_only=true` (`false` is the complement): every source that
+sighted the finding matches a live retirement of the organization (state
+`applying` or `active`; a restored or restoring retirement does not count).
+It is the classifier's "not corroborated" rule: a finding with no sighting,
+with 64 recorded sources (another may be unrecorded) or owned by a person's
+channel (pentest, manual, bug bounty, red team) is never retired-only.
+`vulnerability.SightingRetiredSQL` and `vulnerability.PersonOwnedSourcesSQL`
+are the one SQL for both, so the filter and the preview cannot disagree.
+
+It goes through the shared filter engine, so it narrows what the caller
+already sees: the sightings and retirements it reads are pinned to the
+caller's tenant, and the data scope and the pentest member visibility apply
+to every findings row (`TestFindingRetiredSourceOnlyFilter_DB`: another
+tenant's identical sources, restored retirements and out-of-scope findings).
+The predicate reads `finding_sightings` through its `(tenant_id, finding_id)`
+index (`TestFindingRetiredSourceOnlyFilterUsesIndex_DB`). The retired sources
+section on the import receipts page links to the filtered list.
+
 ## Large sources and crashes
 
 The request runs batches for up to three seconds and answers `200` when
@@ -205,4 +226,3 @@ A source is named by `kind` with `sensor_id`, `tool` or `sender`, or by
   to widen scope. Needs per-source asset sightings, which do not exist yet
   (ADR-004). A retired source already creates and widens nothing, since its
   reports are refused.
-- A findings filter "only reported by a retired source".

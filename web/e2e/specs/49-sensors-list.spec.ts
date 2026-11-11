@@ -50,6 +50,9 @@ test.describe('Sensors list', { tag: ['@sensors'] }, () => {
     await row.getByRole('button', { name: 'Open row actions' }).click()
     await expect(page.getByRole('menuitem', { name: 'Revoke', exact: true })).toBeVisible()
     await page.keyboard.press('Escape')
+    // The menu fades out for a moment: axe reads the colours of a half
+    // transparent menu as low contrast, so check once it is gone.
+    await expect(page.getByRole('menu')).toBeHidden()
 
     expect(await axeRuleViolations(page, ['color-contrast', 'aria-allowed-attr'])).toEqual([])
   })

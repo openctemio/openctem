@@ -22,7 +22,7 @@ interface AssetListResponse {
 export function useCrownJewels() {
   // The whole register (shares its cache key with the crown jewels page).
   const { data, isLoading, error } = useRegisterPages<Record<string, unknown>>(
-    '/api/v1/assets?is_crown_jewel=true&per_page=100'
+    '/api/v1/assets?crown_jewel=true&per_page=100'
   )
   const crownJewels: CrownJewelAsset[] = (data?.data ?? []).map((a) => ({
     id: String(a.id),
@@ -54,14 +54,14 @@ export function useAttackerProfileMap(enabled: boolean = true) {
 /** The most ids one batch read takes (the asset list's page size limit). */
 export const ASSET_NAME_BATCH = 100
 
-/** `GET /assets?ids=…` for one batch of ids. */
+/** `GET /assets?id=…` for one batch of ids. */
 export function assetNamesURL(ids: string[]): string {
-  return `/api/v1/assets?ids=${ids.map(encodeURIComponent).join(',')}&per_page=${ids.length}`
+  return `/api/v1/assets?id=${ids.map(encodeURIComponent).join(',')}&per_page=${ids.length}`
 }
 
 /**
  * Resolve a set of asset ids → display names, with ONE list request per 100
- * ids (`GET /assets?ids=…`) instead of one `GET /assets/{id}` per asset
+ * ids (`GET /assets?id=…`) instead of one `GET /assets/{id}` per asset
  * (research/81). The API applies the caller's data scope: an asset the caller
  * may not see, or one deleted or merged since, resolves to a short id rather
  * than failing the page.

@@ -840,13 +840,15 @@ Checked when an entry is created or widened and again at dispatch:
   embedded through `golang.org/x/net/publicsuffix`, no network call): no entry
   may be, or wildcard, a public suffix (`*.com.vn`, `com`, `*.azurewebsites.net`);
 - government and military suffixes (`gov`, `mil`, `gov.*`, `mil.*`,
-  `gouv.fr`, `gc.ca`, `go.jp`, …);
+  `gouv.fr`, `gc.ca`, `go.jp`, …): since RFC-154 a console setting, on by
+  default, with per-organization exceptions (refusal `GOVERNMENT_NAME`);
 - shared-provider apexes as wildcard roots (`*.amazonaws.com`,
   `*.cloudfront.net`, `*.herokuapp.com`, …); exact names under them stay
   allowed;
 - `0.0.0.0/0`, `::/0`, link-local and cloud metadata addresses;
 - the operator's own ranges and names, `SCOPE_DENY_EXTRA` (comma-separated
-  domains and CIDRs; an entry that is neither fails startup).
+  domains and CIDRs; an entry that is neither fails startup), and the names a
+  platform owner adds in the console (RFC-154).
 
 A new entry that hits them is refused (`400 PUBLIC_SUFFIX`, `DENY_LIST`). At
 dispatch the ownership gate refuses a deny-listed target on every path,

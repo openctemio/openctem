@@ -97,6 +97,22 @@ In the same transaction, `Record` upserts the delta's sightings: who reported
 each created, reopened, decided or still-detected finding (channel, the
 tenant's sensor, sender, tool, scan), one row per finding and source. See
 [finding-sightings.md](finding-sightings.md).
+## Released reports are received once
+
+A report held in the results quarantine counts its findings as received with
+the `quarantined` outcome. When it is released later, the release counts the
+same findings again as received with their real outcomes. To keep one report
+at one count, `Record` (`releaseQuarantined`) moves `Delta.ReleasedFindings`
+out of the receipt's `quarantined` outcome and out of `findings_received`,
+on the sender rows and the receipt, in the release's own transaction, and takes
+the same amount off the `dash_ingest_day.received` of the day the hold was
+recorded. It takes at most what the receipt holds as quarantined, so a release
+that finds no hold changes nothing. A window with both the hold and the release
+therefore counts the report once in the intake totals, the funnel and the
+receipt list, and each receipt still reconciles. Receipts written before this
+change keep the old double count (the hold and the release both counted); they
+age out of the 13-month fact window and are not rewritten.
+
 ## Outcomes: every received finding is accounted for
 
 `findings_received` counts what the producer sent, before any filter: the
@@ -114,7 +130,7 @@ where a received finding went when it is none of the action counts:
 | `out_of_contract` | held for review with its asset by the tool's output contract |
 | `reserved_tool` | refused: the report claimed the platform matcher's tool name |
 | `compliance_passed` | a compliance check that passed: no finding, it may resolve the failure of the same check |
-| `quarantined` | the report came without a command and waits in the results quarantine (a release is a later receipt of its own) |
+| `quarantined` | the report came without a command and waits in the results quarantine. The hold and the release are one receipt (both name the quarantine item's report id); the release takes the findings off `quarantined` and off `findings_received` and counts them again with their real outcomes, so the report is received once (see Released reports below) |
 | `split` | the extra findings a finding naming several CVEs became (adds to received) |
 | `source_retired` | the report came from a source the organization stopped using ([source retirement](source-retirement.md)); nothing of it is applied |
 

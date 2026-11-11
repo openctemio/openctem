@@ -280,6 +280,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
+	assetHandler.SetSavedViews(svc.SavedView) // GET /assets?view=<id>
 	assetHandler.SetIntegrationService(svc.Integration)
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)
@@ -888,8 +889,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
 
 		// Admin Auth (API Key authentication for Admin UI)
-		AdminAuth:         handler.NewAdminAuthHandler(log),
-		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning).WithStepUp(adminConsoleSvc),
+		AdminAuth: handler.NewAdminAuthHandler(log),
+		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning).WithStepUp(adminConsoleSvc).
+			WithEmailDelivery(func() bool { return svc.Email != nil && svc.Email.IsConfigured() }).
+			WithAppBaseURL(cfg.SMTP.BaseURL),
 		AdminOverview: handler.NewAdminOverviewHandler(
 			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
 				return postgres.ReadAdminOverview(ctx, deps.DB.DB, now)
@@ -1108,7 +1111,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	if svc.AccessRequest != nil {
-		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log).WithAppBaseURL(cfg.SMTP.BaseURL)
 	}
 	if svc.SignupEvents != nil {
 		handlers.AdminSignupEvents = handler.NewAdminSignupEventHandler(svc.SignupEvents, adminConsoleSvc, log)
@@ -2161,6 +2164,7 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.User != nil {
 		boot.Me = h.User.MeResponse
 		boot.MyTenants = h.User.MyTenantsResponse
+		boot.OwnershipInvitations = h.User.MyOwnerInvitationsResponse
 	}
 	if svc.Notification != nil {
 		boot.UnreadCount = svc.Notification.GetUnreadCount

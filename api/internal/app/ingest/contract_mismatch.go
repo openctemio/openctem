@@ -43,6 +43,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -219,13 +220,13 @@ func (s *Service) reportContractMismatch(ctx context.Context, agt *sensor.Sensor
 		body := fmt.Sprintf("<p>Tool <b>%s</b> (version %s) reported <b>%s</b>, which its descriptor does not declare. "+
 			"The results were ingested (they lie inside the job's targets). Fix the tool's descriptor in its next release.</p>",
 			htmlEscape(sanitizeContractLabel(tool)), htmlEscape(sanitizeContractLabel(c.Version)), htmlEscape(t))
-		go func() {
+		safego.Go(s.logger, "ingest:contract-mismatch-notice", func() {
 			nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			defer cancel()
 			if err := s.mismatch.notifier.NotifyAdmins(nctx, subject, body); err != nil {
 				s.logger.Warn("contract mismatch notice not sent", "tool", sanitizeIngestLogField(tool), "error", err.Error())
 			}
-		}()
+		})
 	}
 }
 
