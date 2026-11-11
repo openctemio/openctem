@@ -30,6 +30,7 @@ const contract: FilterContract = {
     { name: 'first_detected_at', type: 'date-time', ops: ['gte', 'lte'] },
     { name: 'acceptance_expires_at', type: 'date-time', ops: ['gte', 'lte'] },
     { name: 'exploit_available', type: 'boolean', ops: ['eq'] },
+    { name: 'retired_source_only', type: 'boolean', ops: ['eq'] },
     { name: 'file_path', type: 'string', ops: ['contains'] },
     { name: 'assigned_to', type: 'id', ops: ['in', 'not_in', 'is_null'], nullable: true },
     { name: 'asset_criticality', type: 'enum', ops: ['in', 'not_in'], enum: ['critical', 'low'] },
@@ -93,6 +94,16 @@ describe('FilterChip', () => {
         { param: 'exploit_available', field: 'exploit_available', op: 'eq', values: ['true'] },
         f('exploit_available'),
         'Exploit available: Yes',
+      ],
+      [
+        {
+          param: 'retired_source_only',
+          field: 'retired_source_only',
+          op: 'eq',
+          values: ['true'],
+        },
+        f('retired_source_only'),
+        'Only reported by a retired source: Yes',
       ],
       [
         { param: 'file_path', field: 'file_path', op: 'contains', values: ['src/auth'] },
@@ -248,6 +259,14 @@ describe('AddFilterPopover', () => {
     await userEvent.click(screen.getByRole('option', { name: 'Exploit available' }))
     await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
     expect(onApply).toHaveBeenCalledWith(f('exploit_available'), 'eq', ['true'])
+  })
+
+  it('"Only reported by a retired source" is a Yes/No filter of the shared picker', async () => {
+    const { onApply } = picker()
+    await open()
+    await userEvent.click(screen.getByRole('option', { name: 'Only reported by a retired source' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
+    expect(onApply).toHaveBeenCalledWith(f('retired_source_only'), 'eq', ['true'])
   })
 
   it('a date: quick ranges look back for a seen date and ahead for an expiry', async () => {

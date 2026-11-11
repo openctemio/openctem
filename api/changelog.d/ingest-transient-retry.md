@@ -1,0 +1,4 @@
+### Fixed: a database blip during ingest no longer rejects the report's findings
+
+- A transient store error while a report was applied (a lost connection, a lock or statement timeout, a deadlock or serialization failure, no pooled connection before the deadline) was recorded like invalid data: the findings it kept out were counted as rejected (`asset_unresolved`, `finding_not_stored`), the report completed, and the sensor deleted its copy. Those findings were lost.
+- The ingest now stops at such an error and the job is retried with back-off: nothing is counted as rejected, no receipt is written for the failed attempt, and the report stays unfinished, so the sensor keeps its copy and keeps polling. On the last attempt the report is marked `failed` and the sensor sends the same bytes again, as before. Re-applying a report is idempotent by fingerprint. A permanent error (a value the database refuses) is still recorded as a rejection.

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
@@ -333,10 +335,7 @@ func sanitizeSealError(err error) string {
 		}
 		return r
 	}, err.Error())
-	if len(msg) > maxLen {
-		msg = msg[:maxLen]
-	}
-	return msg
+	return safetext.TruncateBytes(msg, maxLen)
 }
 
 // purgeStaging bounds the staging tables: without it, every segment of a

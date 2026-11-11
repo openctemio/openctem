@@ -268,5 +268,37 @@ export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): Inv
     filters.firstSeenBefore,
     ['firstSeenAfter', 'firstSeenBefore']
   )
+  // Filters the page has no control for (ip, network, port, service...): one
+  // chip each, read from the API's own name (`port_gte` is "Port at least").
+  for (const [key, value] of Object.entries(filters.extra ?? {}).sort(([a], [b]) =>
+    a.localeCompare(b)
+  )) {
+    const m = /^(.*?)(?:_(not|gte|lte|gt|lt))?$/.exec(key)
+    const base = m?.[1] ?? key
+    const op = m?.[2] ?? ''
+    const field = t(`assets.field.${base}`, base.replace(/_/g, ' '))
+    const values = value.split(',').filter(Boolean)
+    const text =
+      op === 'not'
+        ? t('assets.chip.isNot', '{field} is not {values}', { field, values: list(values) })
+        : op === 'gte'
+          ? t('assets.chip.atLeast', '{field} at least {value}', { field, value })
+          : op === 'lte'
+            ? t('assets.chip.atMost', '{field} at most {value}', { field, value })
+            : op === 'gt'
+              ? t('assets.chip.moreThan', '{field} more than {value}', { field, value })
+              : op === 'lt'
+                ? t('assets.chip.lessThan', '{field} less than {value}', { field, value })
+                : is(field, values)
+    chips.push({
+      key: `extra:${key}`,
+      text,
+      clear: (f) => {
+        const extra = { ...(f.extra ?? {}) }
+        delete extra[key]
+        return { ...f, extra: Object.keys(extra).length > 0 ? extra : undefined, page: 1 }
+      },
+    })
+  }
   return chips
 }

@@ -95,7 +95,7 @@ const modalSurfaceClassName = cn(
 )
 
 /** Horizontal padding of every section; one value so edges line up. */
-const SECTION_X = 'px-4 sm:px-6'
+export const SECTION_X = 'px-4 sm:px-6'
 
 /** Header in sections mode: a row of [title + description][actions][close]. */
 const headerSectionClass =

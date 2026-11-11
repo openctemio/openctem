@@ -8,10 +8,9 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Alert, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -159,12 +159,6 @@ export function PolicyDialog({ open, onOpenChange, policy, sources }: PolicyDial
           <DialogBody>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
               <div className="min-w-0 space-y-5">
-                {serverError && (
-                  <Alert variant="destructive" role="alert" data-testid="policy-server-error">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>{serverError}</AlertTitle>
-                  </Alert>
-                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5 sm:col-span-2">
                     <Label htmlFor="policy-name">{t('scanWindows.form.name', 'Name')}</Label>
@@ -366,6 +360,8 @@ export function PolicyDialog({ open, onOpenChange, policy, sources }: PolicyDial
               </div>
             </div>
           </DialogBody>
+          <DialogSubmitError message={serverError} testId="policy-server-error" />
+
           <DialogFooter>
             <Button
               type="button"

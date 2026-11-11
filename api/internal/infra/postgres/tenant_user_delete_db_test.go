@@ -254,6 +254,12 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		}
 		return nil
 	},
+	"asset_port_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_port_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear asset_port_queue: %v", err)
+		}
+		return nil
+	},
 	"asset_domain_queue": func(s *schemaSeeder) map[string]any {
 		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_domain_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
 			s.t.Fatalf("clear asset_domain_queue: %v", err)
@@ -272,6 +278,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		mustExecTx(s.t, s.tx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'FK Delete Test 2')`, other, "fkdel-"+other+"@example.test")
 		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
 			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
+	},
+	// An exception names one lower-case domain (CHECK on the column).
+	"scope_name_exceptions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "portal.example.gov.xx", "expires_at": "2026-02-01T00:00:00Z"}
 	},
 	// A feature key is a lowercase identifier (CHECK on the column).
 	"tenant_feature_denies": func(*schemaSeeder) map[string]any {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
@@ -618,6 +619,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 1: Process assets using batch operations
 	assetMap, err := s.assetProcessor.processBatch(assetdiscovery.WithStepRun(ctx, binding.StepRunID), tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
+	if err != nil && noteRetryable(output, err) {
+		// A database blip, timeout or write conflict: the asset upsert is
+		// one transaction, so nothing of it was written. Stop here and let
+		// the report run again; counting its findings as rejected would
+		// let the sensor delete data the platform never stored.
+		s.logger.Warn("asset batch hit a transient store error; the report is retried",
+			"report_id", reportID, "error", logger.SanitizeError(err))
+		return nil, retryLater("assets", err)
+	}
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", logger.SanitizeError(err))
 		// Continue with partial results, but say so: the asset upsert is one
@@ -718,6 +728,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	} else {
 		cveMap, cveErr = s.cveProcessor.ProcessBatch(ctx, report, output)
 	}
+	if cveErr != nil && noteRetryable(output, cveErr) {
+		// Findings stored now would lose their catalog link for good.
+		s.logger.Warn("CVE lookup hit a transient store error; the report is retried",
+			"report_id", reportID, "error", logger.SanitizeError(cveErr))
+		return nil, retryLater("cves", cveErr)
+	}
 	if cveErr != nil {
 		s.logger.Warn("CVE upsert failed; findings will not be linked to vulnerability catalog",
 			"error", cveErr)
@@ -748,6 +764,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			opts.RequireAssetForFindings, scope, sourceIdentity(agt, binding, opts, report)); err != nil {
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
+		}
+		if output.retryErr != nil {
+			// A finding write failed for a transient reason: the findings
+			// it kept out are not rejected, the report runs again (the
+			// ones already written are re-sighted by fingerprint, not
+			// duplicated), and no receipt is recorded for this attempt.
+			s.logger.Warn("findings batch hit a transient store error; the report is retried",
+				"report_id", reportID, "error", logger.SanitizeError(output.retryErr))
+			return nil, retryLater("findings", output.retryErr)
 		}
 		if report.Tool != nil {
 			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
@@ -1045,7 +1070,7 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 	if sensorID.IsZero() {
 		return
 	}
-	go func() {
+	safego.Go(s.logger, "ingest:sensor-stats", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -1061,7 +1086,7 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 		); err != nil {
 			s.logger.Warn("failed to update sensor stats", "sensor_id", sensorID.String(), "error", err)
 		}
-	}()
+	})
 }
 
 // recordV2ReportStats adds a completed protocol v2 report to its sensor's
@@ -1210,7 +1235,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 	// tenant are serialized exactly like synchronous request-path audit
 	// events. Detached from the request context — the audit must outlive
 	// the request — but capped so a stalled DB cannot pin the goroutine.
-	go func() {
+	safego.Go(s.logger, "ingest:audit-log", func() {
 		auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -1221,7 +1246,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 				"report_id", logger.SanitizeValue(resourceID),
 			)
 		}
-	}()
+	})
 }
 
 // writeIngestAuditLog persists one ingest audit event.

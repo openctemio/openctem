@@ -74,6 +74,18 @@ export function resendOwnerInvitation(id: string) {
   )
 }
 
+/**
+ * Without email: a new one-time set-password link for the organization's new
+ * owner account, returned once (ops_admin+, fresh step-up, reason, audited).
+ * The answer is a bearer secret: it goes straight into the one-time dialog.
+ */
+export function issueOwnerSetupLink(userId: string, organizationId: string, reason: string) {
+  return adminFetch<AdminCreatedOrganizationUser>(
+    `/platform-users/${encodeURIComponent(userId)}/setup-link`,
+    { method: 'POST', body: { organization_id: organizationId, reason } }
+  )
+}
+
 /** Withdraws the pending ownership invitation (ops_admin+, step-up). */
 export function cancelOwnerInvitation(id: string) {
   return adminFetch<AdminOwnerInvitationResult>(

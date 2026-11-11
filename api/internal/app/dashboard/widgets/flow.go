@@ -177,11 +177,11 @@ func intakeInstances(rows []dashboard.IntakeInstanceRow, now time.Time) ([]Intak
 }
 
 // IntakeNoise splits what was received in the window into new or reopened
-// findings (the receipt list's New plus Reopened), merged into findings
-// that exist (seen again, or repeated in a report) and not stored; these
-// three sum to Received. Suppressed is the part of New that an approved
-// rule closed on arrival (the receipt list's Suppressed); it is stored, so
-// it is already inside New and is not a fourth part.
+// findings (the receipt list's Created plus Reopened), merged into findings
+// that exist (seen again, repeated in a report, or an outcome), suppressed
+// by an approved rule and not stored; these four sum to Received. Suppressed
+// is counted apart from created on the receipt (a suppressed new finding is
+// never also counted as created), so New does not contain it.
 //
 // The full reconciliation of the receipts (docs/architecture/ingest-receipts.md,
 // "Outcomes"): SeenAgain is the findings that already existed and were
@@ -440,13 +440,14 @@ func sourceHealth(r dashboard.IntakeRow, now time.Time) string {
 
 // noiseOf splits the received findings. Every figure is a sum the receipt
 // list shows for the same filter: New is Created plus Reopened, so a figure
-// equals the list it opens. Suppressed findings are stored (as closed), so
-// they stay inside New; Merged is the rest after new, reopened and not
-// stored, so New, Merged and NotStored sum to Received.
+// equals the list it opens. Suppressed findings are stored (as closed) but
+// the receipt counts them apart from created, so they are their own part;
+// Merged is the rest after new, suppressed and not stored, so New, Merged,
+// Suppressed and NotStored sum to Received.
 func noiseOf(t IntakeSource) IntakeNoise {
 	n := IntakeNoise{Received: t.Received, Suppressed: t.Suppressed, NotStored: t.NotStored,
 		New: t.Created + t.Reopened}
-	n.Merged = max(t.Received-t.Created-t.Reopened-t.NotStored, 0)
+	n.Merged = max(t.Received-t.Created-t.Reopened-t.Suppressed-t.NotStored, 0)
 	n.SeenAgain = t.StillDetected
 	n.Outcomes = map[string]int64{}
 	n.Unaccounted = t.Received - n.New - t.StillDetected - t.Suppressed - t.NotStored

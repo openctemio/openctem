@@ -13,6 +13,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/internal/safego"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
@@ -1775,7 +1776,7 @@ func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, 
 	if !s.keyUse.due(sensorID.String()+"|"+clientIP, usedAt) {
 		return
 	}
-	go func() {
+	safego.Go(s.logger, "sensor:key-use", func() {
 		// Redis mode: the key use is proof of life in the liveness store;
 		// Postgres records it only for a new address or a sensor without
 		// an entry (the per-key row once per checkpoint period).
@@ -1807,7 +1808,7 @@ func (s *SensorService) recordKeyUseAsync(a *sensordom.Sensor, clientIP string, 
 				fmt.Sprintf("The API key was used from %s (before: %s)", ip, prev),
 				map[string]any{"ip": ip.String(), "previous_ip": prev.String(), "sensor_name": name})})
 		}
-	}()
+	})
 }
 
 // SetOrganizationGate wires the organization access gate: a sensor of a

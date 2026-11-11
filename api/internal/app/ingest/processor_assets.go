@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/ctis/v2"
@@ -1509,7 +1511,9 @@ func (p *AssetProcessor) createAssetFromCTIS(
 				"max_length", maxDescLength,
 				"asset_id", ctisAsset.ID,
 			)
-			desc = desc[:maxDescLength]
+			// Cut on a character boundary: half a multi-byte character is
+			// invalid UTF-8, which fails the whole asset batch.
+			desc = safetext.TruncateBytes(desc, maxDescLength)
 		}
 		newAsset.UpdateDescription(desc)
 	}

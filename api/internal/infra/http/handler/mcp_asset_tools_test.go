@@ -3,7 +3,9 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -12,6 +14,7 @@ import (
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -19,7 +22,15 @@ import (
 // fakeAssetList records the asset list input and answers the given assets.
 type fakeAssetList struct {
 	got    []assetapp.ListAssetsInput
+	where  []assetapp.ListQuery
+	caller []assetapp.ListCaller
 	assets []*assetdom.Asset
+}
+
+func (f *fakeAssetList) ListAssetsWhere(_ context.Context, c assetapp.ListCaller, q assetapp.ListQuery) (assetdom.WhereResult, error) {
+	f.where = append(f.where, q)
+	f.caller = append(f.caller, c)
+	return assetdom.WhereResult{Data: f.assets, Total: int64(len(f.assets)), Page: 1, PerPage: 25}, nil
 }
 
 func (f *fakeAssetList) ListAssets(_ context.Context, in assetapp.ListAssetsInput) (pagination.Result[*assetdom.Asset], error) {
@@ -70,30 +81,48 @@ func newAsset(t *testing.T, name string) *assetdom.Asset {
 	return a
 }
 
+// leafText renders a spec's leaves as field:op:values, sorted, for checks.
+func leafText(spec *filterspec.Spec) string {
+	var out []string
+	for _, l := range spec.Leaves() {
+		vals := make([]string, 0, len(l.Values))
+		for _, v := range l.Values {
+			vals = append(vals, fmt.Sprint(v))
+		}
+		out = append(out, l.Field+":"+string(l.Op)+":"+strings.Join(vals, ","))
+	}
+	sort.Strings(out)
+	return strings.Join(out, " ")
+}
+
 func TestMCP_SearchAssets(t *testing.T) {
 	for _, c := range []struct {
-		args  string
-		check func(in assetapp.ListAssetsInput) bool
+		args, leaves, q string
 	}{
-		{`{"query":"10.0.0.5"}`, func(in assetapp.ListAssetsInput) bool {
-			return len(in.InCIDRs) == 1 && in.InCIDRs[0] == "10.0.0.5/32" && in.Search == ""
-		}},
-		{`{"query":"10.0.0.0/24"}`, func(in assetapp.ListAssetsInput) bool { return len(in.InCIDRs) == 1 && in.InCIDRs[0] == "10.0.0.0/24" }},
-		{`{"query":"api.example.com"}`, func(in assetapp.ListAssetsInput) bool { return in.Search == "api.example.com" }},
-		{`{"query":"tên miền 漢字"}`, func(in assetapp.ListAssetsInput) bool { return in.Search == "tên miền 漢字" }},
-		{`{"type":"Service, ip_address","exposure":"public","internet_facing":true,"page":2,"limit":10}`, func(in assetapp.ListAssetsInput) bool {
-			return strings.Join(in.Types, ",") == "service,ip_address" && in.Exposures[0] == "public" && *in.InternetFacing &&
-				in.Page == 2 && in.PerPage == 10
-		}},
+		{`{"query":"10.0.0.5"}`, "ip:in:10.0.0.5", ""},
+		{`{"query":"10.0.0.0/24"}`, "ip:in:10.0.0.0/24", ""},
+		{`{"query":"api.example.com"}`, "", "api.example.com"},
+		{`{"query":"tên miền 漢字"}`, "", "tên miền 漢字"},
+		{`{"type":"Service, ip_address","exposure":"public","internet_facing":true,"page":2,"limit":10}`,
+			"exposure:in:public internet_facing:eq:true type:in:service,ip_address", ""},
+		// The filter param: the search box syntax, ANDed with the params.
+		{`{"type":"subdomain","filter":"criticality:high,critical -tag:lab"}`,
+			"criticality:in:high,critical tag:not_in:lab type:in:subdomain", ""},
 	} {
 		al := &fakeAssetList{}
 		h := NewMCPHandler(&fakeFindingReader{}, nil, nil, nil, nil, al, nil, logger.NewNop())
 		if _, refused := toolPayload(t, h, "search_assets", c.args); refused != "" {
 			t.Fatalf("%s: refused %s", c.args, refused)
 		}
-		in := al.got[0]
-		if in.IsAdmin || in.ActingUserID == "" || in.Sort != "-risk_score" || !c.check(in) {
-			t.Errorf("%s: input %+v", c.args, in)
+		q, caller := al.where[0], al.caller[0]
+		if caller.IsAdmin || caller.UserID == "" || caller.TenantID == "" {
+			t.Errorf("%s: caller %+v", c.args, caller)
+		}
+		if len(q.Spec.Sort) != 1 || q.Spec.Sort[0].Field != "risk_score" || !q.Spec.Sort[0].Desc {
+			t.Errorf("%s: sort %+v", c.args, q.Spec.Sort)
+		}
+		if got := leafText(q.Spec); got != c.leaves || q.Spec.Q != c.q {
+			t.Errorf("%s: leaves %q q %q", c.args, got, q.Spec.Q)
 		}
 	}
 	// A CVE no open finding in scope names: no asset, no asset read.
@@ -103,13 +132,19 @@ func TestMCP_SearchAssets(t *testing.T) {
 	if refused != "" || out["total"] != float64(0) {
 		t.Fatalf("cve search: %v %s", out, refused)
 	}
-	for _, in := range al.got {
-		if in.PerPage != 1 { // only the scope notice's count may run
-			t.Errorf("asset list read for a CVE with no finding: %+v", in)
-		}
+	if len(al.where) != 0 {
+		t.Errorf("asset list read for a CVE with no finding: %+v", al.where)
 	}
 	if _, refused := toolPayload(t, h, "search_assets", `{"owner_id":"x"}`); refused == "" {
 		t.Error("a bad owner_id must be refused")
+	}
+	// A filter naming a field that does not exist, or one the caller may
+	// not read, is refused with the same message, without the values.
+	for _, f := range []string{`nosuchfield=zzsecretzz`, `tenant_id=zzsecretzz`, `deleted=true`} {
+		_, refused := toolPayload(t, h, "search_assets", `{"filter":"`+f+`"}`)
+		if refused == "" || strings.Contains(refused, "zzsecretzz") {
+			t.Errorf("filter %q: refused %q", f, refused)
+		}
 	}
 }
 

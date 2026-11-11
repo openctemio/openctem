@@ -86,7 +86,7 @@ jobs:
 
       - name: Chromium
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        run: ../.github/scripts/install-chromium.sh
 
       - name: Build the API, the migrations and the console
         run: |

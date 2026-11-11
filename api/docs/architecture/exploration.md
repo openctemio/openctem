@@ -326,7 +326,7 @@ AI principals hold no approve permission, so they can never approve.
 | `GET /api/v1/exploration/leads/{id}` | `assets:read` | one lead with its links and verdicts; a run is shown with `scans:read` only |
 | `POST /api/v1/exploration/leads` | `scans:execute` | opens a catalog question on an asset in the caller's data scope (`lead_type`, `asset_id`, `rationale`) |
 | `POST /api/v1/exploration/leads/approve` | `scans:approve` + step-up (critical tier: approving active scanning) | up to 100 leads waiting for approval move to `open` with the approver recorded |
-| `POST /api/v1/exploration/leads/dismiss` | `scans:approve` | up to 100 live leads close as `dismissed` (a running lead settles from its run) |
+| `POST /api/v1/exploration/leads/reject` | `scans:approve` | up to 100 live leads close as `dismissed` (a running lead settles from its run) |
 
 Object checks (`internal/app/exploration/leads.go`): the tenant comes from
 the principal; every lead is read through the caller's data scope (its

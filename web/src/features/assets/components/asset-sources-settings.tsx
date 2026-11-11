@@ -114,7 +114,7 @@ function AssetPicker({ onPick }: { onPick: (a: AssetHit | null) => void }) {
     }
     // A newer term cancels the request of the older one.
     const ctrl = new AbortController()
-    get<{ data?: AssetHit[] }>(`/api/v1/assets?search=${encodeURIComponent(term)}&per_page=8`, {
+    get<{ data?: AssetHit[] }>(`/api/v1/assets?q=${encodeURIComponent(term)}&per_page=8`, {
       signal: ctrl.signal,
     })
       .then((res) => {

@@ -163,7 +163,7 @@ func (h *MCPHandler) toolCheckScope(ctx context.Context, tenantID string, raw js
 // decideScope never returns an error: any lookup failure is a refusal.
 func (h *MCPHandler) decideScope(ctx context.Context, tenantID shared.ID, target string, tier scopedom.Tier, program shared.ID) scopeDecision {
 	hint := "Ask someone who manages Scoping in " + brand.Name() + " to review the scope entries."
-	if scopedom.DefaultGuardrails().Denies(target) {
+	if scopedom.DefaultGuardrails().For(tenantID).Denies(target) {
 		return refusedScope("The platform never allows this target to be tested.", scopeReasonDenied)
 	}
 	auth, err := scopeauth.Load(ctx, tenantID, h.scopeTargets, h.scopeRoots)
