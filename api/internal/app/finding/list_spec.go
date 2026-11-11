@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -437,6 +438,14 @@ func (s *VulnerabilityService) IncludeInformational(ctx context.Context, tenantI
 // includeInformational shapes the work views (IncludeInformational). It
 // fails closed like every filtered read.
 func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller, includeInformational bool) ([]QuickViewCount, error) {
+	return s.CountQuickViewsOf(ctx, c, includeInformational, nil)
+}
+
+// CountQuickViewsOf is CountQuickViews for the named views only (nil: every
+// view), in display order; an unknown key is ignored. The Inbox summary
+// counts its four finding queues this way: the same params and the same
+// compile path as the quick views, without the facets it does not show.
+func (s *VulnerabilityService) CountQuickViewsOf(ctx context.Context, c FilterCaller, includeInformational bool, keys []string) ([]QuickViewCount, error) {
 	repo, ok := s.findingRepo.(findingFacetRepo)
 	if !ok {
 		return nil, errNoFindingWhereRepo
@@ -446,6 +455,12 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 		return nil, err
 	}
 	views := vulnerability.FindingQuickViews(includeInformational)
+	if keys != nil {
+		views = slices.DeleteFunc(views, func(v vulnerability.FindingQuickView) bool { return !slices.Contains(keys, v.Key) })
+		if len(views) == 0 {
+			return []QuickViewCount{}, nil
+		}
+	}
 	parse := func(key, params string) (*filterspec.Spec, error) {
 		q, perr := url.ParseQuery(params)
 		if perr != nil {
