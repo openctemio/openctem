@@ -276,6 +276,7 @@ scim_tokens
 scm_app_installations
 scm_gitlab_connections
 scope_exclusions
+scope_name_exceptions
 scope_snapshots
 scope_target_approvals
 scope_target_ci_trusts

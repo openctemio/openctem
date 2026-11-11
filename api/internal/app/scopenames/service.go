@@ -135,10 +135,11 @@ type Repository interface {
 	// Create stores e; a live exception for the same organization and name
 	// is ErrDuplicate.
 	Create(ctx context.Context, e Exception) error
-	// Extend sets the expiry of an exception that is not revoked.
-	Extend(ctx context.Context, id shared.ID, expiresAt, at time.Time) error
-	// Revoke revokes an exception that is not revoked.
-	Revoke(ctx context.Context, id shared.ID, byEmail, reason string, at time.Time) error
+	// Extend sets the expiry of the organization's exception that is not
+	// revoked (the tenant predicate guards against a mismatched id).
+	Extend(ctx context.Context, tenantID, id shared.ID, expiresAt, at time.Time) error
+	// Revoke revokes the organization's exception that is not revoked.
+	Revoke(ctx context.Context, tenantID, id shared.ID, byEmail, reason string, at time.Time) error
 }
 
 // TenantNamer names an organization (ErrNotFound-like error when none).
@@ -413,7 +414,7 @@ func (s *Service) Extend(ctx context.Context, actor *admin.AdminUser, id shared.
 	}
 	before := e.ExpiresAt
 	now := s.now().UTC()
-	if err := s.repo.Extend(ctx, id, expiresAt.UTC(), now); err != nil {
+	if err := s.repo.Extend(ctx, e.TenantID, id, expiresAt.UTC(), now); err != nil {
 		return Exception{}, err
 	}
 	e.ExpiresAt, e.UpdatedAt = expiresAt.UTC(), now
@@ -441,7 +442,7 @@ func (s *Service) Revoke(ctx context.Context, actor *admin.AdminUser, id shared.
 		return Exception{}, ErrRevoked
 	}
 	now := s.now().UTC()
-	if err := s.repo.Revoke(ctx, id, actor.Email(), reason, now); err != nil {
+	if err := s.repo.Revoke(ctx, e.TenantID, id, actor.Email(), reason, now); err != nil {
 		return Exception{}, err
 	}
 	e.RevokedAt, e.RevokedByEmail, e.RevokeReason, e.UpdatedAt = &now, actor.Email(), reason, now

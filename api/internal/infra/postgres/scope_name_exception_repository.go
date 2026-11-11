@@ -143,21 +143,21 @@ func (r *ScopeNameExceptionRepository) Create(ctx context.Context, e scopenames.
 	return nil
 }
 
-// Extend sets the expiry of an exception that is not revoked.
-func (r *ScopeNameExceptionRepository) Extend(ctx context.Context, id shared.ID, expiresAt, at time.Time) error {
-	res, err := r.db.ExecContext(ctx, `UPDATE scope_name_exceptions SET expires_at = $2, updated_at = $3
-		WHERE id = $1 AND revoked_at IS NULL`, id.String(), expiresAt, at)
+// Extend sets the expiry of the organization's exception that is not revoked.
+func (r *ScopeNameExceptionRepository) Extend(ctx context.Context, tenantID, id shared.ID, expiresAt, at time.Time) error {
+	res, err := r.db.ExecContext(ctx, `UPDATE scope_name_exceptions SET expires_at = $3, updated_at = $4
+		WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL`, id.String(), tenantID.String(), expiresAt, at)
 	if err != nil {
 		return fmt.Errorf("extend scope name exception: %w", err)
 	}
 	return oneRowAffected(res, scopenames.ErrRevoked)
 }
 
-// Revoke revokes an exception that is not revoked.
-func (r *ScopeNameExceptionRepository) Revoke(ctx context.Context, id shared.ID, byEmail, reason string, at time.Time) error {
+// Revoke revokes the organization's exception that is not revoked.
+func (r *ScopeNameExceptionRepository) Revoke(ctx context.Context, tenantID, id shared.ID, byEmail, reason string, at time.Time) error {
 	res, err := r.db.ExecContext(ctx, `UPDATE scope_name_exceptions
-		SET revoked_at = $2, revoked_by_email = $3, revoke_reason = $4, updated_at = $2
-		WHERE id = $1 AND revoked_at IS NULL`, id.String(), at, byEmail, reason)
+		SET revoked_at = $3, revoked_by_email = $4, revoke_reason = $5, updated_at = $3
+		WHERE id = $1 AND tenant_id = $2 AND revoked_at IS NULL`, id.String(), tenantID.String(), at, byEmail, reason)
 	if err != nil {
 		return fmt.Errorf("revoke scope name exception: %w", err)
 	}
