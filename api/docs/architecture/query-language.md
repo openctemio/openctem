@@ -12,7 +12,7 @@ later back dashboard widgets, saved queries and alerts. Design and decisions:
 [RFC-115](../rfcs/RFC-115-custom-query-language.md).
 
 **Shipped:** the language (parser, canonical printer, query document v2), the
-short form for search boxes (below), the findings and assets entities, the
+short form for search boxes (below), the findings, assets and scans entities, the
 aggregation pipeline, the plan layer with every server-side rule, the
 PostgreSQL executor and five endpoints (`POST /api/v1/query/explain`,
 `POST /api/v1/query/run`, `GET /api/v1/query/schema`,
@@ -27,7 +27,7 @@ and cost estimator, query-bound dashboard widgets, the web editor, row lists
 
 ```
 query    := [entity] ["where" expr] ("|" stage)*      -- entity defaults to findings
-entity   := findings | assets
+entity   := findings | assets | scans
 expr     := expr "or" expr | expr "and" expr | "not" expr | "(" expr ")" | term
 term     := path ("=" | "!=" | ">" | ">=" | "<" | "<=" | "~") value
           | path ["not"] "in" "(" value ("," value)* ")"
@@ -158,7 +158,7 @@ person's own text from its own state, and translates the code.
 
 | Route | Gate | Input | Result |
 |---|---|---|---|
-| `POST /api/v1/query/parse` | `findings:read` or `assets:read`, then the entity's own; burst 30, 5/s per user | `{"entity", "text"}` or `{"entity", "document"}` or `{"entity", "params"}` (a list URL's query string) | `valid`, `form`, canonical short `text`, long `query`, the version 1 `document` (relative times kept), `chips` (top-level conditions, or one `advanced` chip that is never flattened), the list's flat `params` when every chip has one, `problems`. Reads no data; a problem is 200 with `valid: false` |
+| `POST /api/v1/query/parse` | `findings:read`, `assets:read` or `scans:read`, then the entity's own; burst 30, 5/s per user | `{"entity", "text"}` or `{"entity", "document"}` or `{"entity", "params"}` (a list URL's query string) | `valid`, `form`, canonical short `text`, long `query`, the version 1 `document` (relative times kept), `chips` (top-level conditions, or one `advanced` chip that is never flattened), the list's flat `params` when every chip has one, `problems`. Reads no data; a problem is 200 with `valid: false` |
 | `GET /api/v1/query/values?entity=&field=&prefix=&fq=` | same; burst 20, 2/s per user | a groupable field (a path or short name), a prefix, the box's filter | up to 20 values with counts, under the filter minus the field's own conditions; `counted: false` when the 1 s budget ran out (enum and boolean values are then listed without counts). Cached 60 s per tenant, user and request |
 
 Values run as `<entity> where <filter> | count by <field> | sort count desc |
@@ -194,6 +194,18 @@ bucketed).
 |---|---|---|---|---|---|
 | `findings` | `findings:read` | `vulnerability.FindingFields` + relation fields | severity, status, source, sla_status, priority_class, finding_type, practice, compliance_result, observation, validation, tool_name, family, cve_id, rule_id, is_in_kev, is_reachable, network_transport, network_service, asset.type, asset.criticality, asset.environment, asset.exposure, asset.internet_facing, asset.crown_jewel | cvss_score, epss_score | first_detected_at, last_seen_at, resolved_at, created_at |
 | `assets` | `assets:read` | `asset.AssetFields` | type, sub_type, criticality, status, scope, exposure, environment, data_classification, internet_facing, crown_jewel, discovery_source, provider | risk_score | first_seen, last_seen, discovered_at, created_at |
+| `scans` | `scans:read` | `scan.Fields` | status, scan_type, schedule_type, sensor_preference, origin, last_run_status | total_runs, failed_runs | created_at, last_run_at, next_run_at |
+
+**Scans.** A scan is tenant configuration (schedule, targets, tool), not an
+asset row, so the data scope does not narrow the entity (its registry is
+`Unscoped`, with the reason recorded): every caller with `scans:read` sees the
+tenant's saved scans, as `GET /scans` always listed them. Two server rules
+apply to every query, as mandatory internal filters the language cannot name
+or cancel: archived scans are left out, and so are quick scans that were never
+saved. The scans the platform manages (`origin=system`) are listed by
+`GET /scans?origin=system`, not by a query. `scan_type`, `schedule_type`,
+`status` and `origin` match the list endpoint's parameters exactly, and a
+document `parse` returns is checked against the list registry like findings.
 
 **Curated relation (findings → asset):** `asset.type`, `asset.criticality`,
 `asset.environment`, `asset.exposure`, `asset.internet_facing`,
@@ -280,7 +292,7 @@ injected rule, without changing the language, the API or the security model.
 
 | Route | Gate | Body / params | Result |
 |---|---|---|---|
-| `POST /api/v1/query/explain` | `findings:read` or `assets:read`, then the entity's and fields' own | `{"query": "..."}` | canonical text, description, columns, scope (kind and the rules applied), score, limit, cost class (`low`, `medium`, `high` from the planner's estimate; raw planner numbers are not returned because table statistics span tenants), document v2 |
+| `POST /api/v1/query/explain` | `findings:read`, `assets:read` or `scans:read`, then the entity's and fields' own | `{"query": "..."}` | canonical text, description, columns, scope (kind and the rules applied), score, limit, cost class (`low`, `medium`, `high` from the planner's estimate; raw planner numbers are not returned because table statistics span tenants), document v2 |
 | `POST /api/v1/query/run` | same | `{"query": "..."}` | columns, rows, truncated, elapsed_ms, scope |
 | `GET /api/v1/query/schema?entity=` | same | entity | fields the caller may use |
 | `POST /api/v1/query/parse` | same | `{"entity", "text" \| "document" \| "params"}` | search box check ("Short form", above) |
