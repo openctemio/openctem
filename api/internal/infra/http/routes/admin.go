@@ -806,6 +806,18 @@ func registerAdminRoutes(
 			// two-factor reset also needs a second super admin's approval.
 			r.POST("/{user_id}/reset-link", h.AdminPlatformUser.IssueResetLink, audited("platform_user.reset_link", supportMW)...)
 			r.POST("/{user_id}/mark-verified", h.AdminPlatformUser.MarkVerified, audited("platform_user.mark_verified", supportMW)...)
+			// Without email, the owner account the console created with an
+			// organization gets a new one-time set-password link that the
+			// administrator hands over: the owner-bootstrap permission (the
+			// same as creating that owner), a fresh step-up, a reason, the
+			// support rate limit and the admin audit log (never the link).
+			if h.AdminOrganization != nil {
+				setupLinkMW := append(cloneMW(supportMW), freshStepUp("organization.owner_setup_link"))
+				if h.AdminAuditMiddleware != nil {
+					setupLinkMW = append(setupLinkMW, h.AdminAuditMiddleware.AuditLog("organization.owner_setup_link", "user", "user_id"))
+				}
+				r.POST("/{user_id}/setup-link", h.AdminOrganization.IssueOwnerSetupLink, setupLinkMW...)
+			}
 			r.POST("/{user_id}/mfa/reset", h.AdminPlatformUser.ResetMFA, audited("platform_user.mfa_reset", supportMW)...)
 			// Block / unblock platform-wide: ops_admin+, step-up, reason; the
 			// service writes the critical admin audit row.

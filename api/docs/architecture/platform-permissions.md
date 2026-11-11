@@ -199,6 +199,7 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/platform-users/{user_id}/password-reset` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/reset-link` | `platform.users.credentials` |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions` | `platform.users.support` |
+| `POST /api/v1/admin/platform-users/{user_id}/setup-link` | `platform.tenants.owner_bootstrap` |
 | `POST /api/v1/admin/platform-users/{user_id}/unblock` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/unlock` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/verification-emails` | `platform.users.support` |
