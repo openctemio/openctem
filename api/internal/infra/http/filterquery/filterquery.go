@@ -80,6 +80,10 @@ type Route struct {
 	DeprecatedAt time.Time
 	SunsetAt     time.Time
 	Logger       *logger.Logger
+	// NoEchoValues leaves the offending values out of a 400 (the details
+	// keep the param or path and the reason). The default echoes a short,
+	// valid value of a typed field to help the caller find the typo.
+	NoEchoValues bool
 }
 
 // ParseQuery decodes the GET params. On a bad filter it writes the 400 and
@@ -93,7 +97,7 @@ func (rt Route) ParseQuery(w http.ResponseWriter, r *http.Request) (*filterspec.
 func (rt Route) ParseValues(w http.ResponseWriter, r *http.Request, q url.Values) (*filterspec.Spec, bool) {
 	spec, err := filterspec.ParseValues(q, rt.Registry, rt.Options)
 	if err != nil {
-		WriteError(w, err)
+		rt.WriteError(w, err)
 		return nil, false
 	}
 	rt.announce(w, r, spec)
@@ -115,10 +119,24 @@ func (rt Route) ParseBody(w http.ResponseWriter, r *http.Request) (*filterspec.S
 	}
 	spec, err := filterspec.ParseDocument(body, rt.Registry, rt.Options)
 	if err != nil {
-		WriteError(w, err)
+		rt.WriteError(w, err)
 		return nil, false
 	}
 	return spec, true
+}
+
+// WriteError is the package WriteError that honors NoEchoValues, for the
+// errors the route's own handler gets from compiling the filter.
+func (rt Route) WriteError(w http.ResponseWriter, err error) {
+	if fe, ok := filterspec.AsError(err); ok && rt.NoEchoValues {
+		quiet := &filterspec.Error{Details: make([]filterspec.Detail, len(fe.Details))}
+		for i, d := range fe.Details {
+			d.Value = ""
+			quiet.Details[i] = d
+		}
+		err = quiet
+	}
+	WriteError(w, err)
 }
 
 // WriteError writes a filterspec error as 400 INVALID_FILTER; any other
