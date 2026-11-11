@@ -15,7 +15,7 @@ import { RelativeTime } from '@/features/shared'
 import type { SignupPolicyResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveSignupPolicy } from '../api/use-signup-policy'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 
 type Mode = 'admin_only' | 'self_service'
 type Accounts = 'closed' | 'domain' | 'open'
@@ -66,9 +66,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   const [accounts, setAccounts] = useState<Accounts>(storedAccounts)
   const [requestAccess, setRequestAccess] = useState(!!policy.request_access)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
+  const rc = useReasonAndCode(confirmOpen)
   const [busy, setBusy] = useState(false)
   const codeId = useId()
 
@@ -90,21 +88,19 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
     mode !== policy.mode || accounts !== storedAccounts || requestAccess !== !!policy.request_access
 
   const openConfirm = () => {
-    setCode('')
-    setCodeError(null)
     setConfirmOpen(true)
   }
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
       await saveSignupPolicy({
         mode,
         accounts,
         request_access: requestAccess,
         version: policy.version ?? 0,
-        totp_code: code.trim(),
+        totp_code: rc.code.trim(),
       })
       setConfirmOpen(false)
       toast.success(t('admin.signup.saved'))
@@ -112,8 +108,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
         // Wrong, reused or missing code: stay in the dialog.
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setConfirmOpen(false)
@@ -295,7 +290,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
             <p>{t('admin.signup.confirmBody')}</p>
           </div>
         }
-        disabled={!stepUpCodeReady(code, codeOptional)}
+        disabled={!rc.codeOk}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -309,13 +304,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
           )
         }
       >
-        <StepUpCodeField
-          id={codeId}
-          value={code}
-          onChange={setCode}
-          optional={codeOptional}
-          error={codeError}
-        />
+        <ReasonAndCodeFields id={codeId} state={rc} withReason={false} />
       </ConfirmDialog>
     </>
   )
