@@ -26,6 +26,7 @@ import {
   practiceViewParams,
 } from '@/features/findings/lib/practice'
 import { PracticeSwitch } from '@/features/findings/components/practice-switch'
+import { ComplianceBenchmarksPanel } from '@/features/findings/components/compliance-benchmarks-panel'
 import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
@@ -2528,6 +2529,11 @@ function FindingsContent() {
                     counts={practiceCounts}
                     onChange={setPracticeParam}
                   />
+                )}
+                {/* Under Compliance: the pass rate per benchmark, its controls
+                    failed first and the assets of each control. */}
+                {urlSettled && !verifyView && practiceView === 'compliance' && (
+                  <ComplianceBenchmarksPanel />
                 )}
                 {!urlSettled ? (
                   <Skeleton className="h-9 w-80 max-w-full" />
