@@ -336,6 +336,11 @@ type Delta struct {
 	// Released marks a report applied from the results quarantine: the
 	// receipt and the sender's row carry the marker, nothing else changes.
 	Released bool
+	// ReleasedFindings is the findings of a released report: the receipt
+	// counted them as received (outcome quarantined) when the report was held,
+	// so the release moves them out of the quarantined outcome and out of
+	// received instead of counting them a second time. Zero for any other delta.
+	ReleasedFindings int
 
 	Created  []shared.ID
 	Reopened []shared.ID

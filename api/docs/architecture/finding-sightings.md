@@ -74,6 +74,7 @@ The findings registry (`pkg/domain/vulnerability/finding_fields.go`) has:
 | `seen_in_run_id` | the run's receipt recorded it (created, still detected, reopened, decided), kept 90 days | `ux_ingest_receipts_source` + `pk_finding_ingest_actions` |
 | `seen_by_tool` | the tool reported it, from any channel | `idx_finding_sightings_tool` |
 | `seen_by_channel` | the channel reported it | `idx_finding_sightings_channel` |
+| `retired_source_only` | every source that reported it is a retired one ([source retirement](source-retirement.md)) | `(tenant_id, finding_id)` |
 
 Each compiles to `findings.id IN (subquery)` with the tenant predicate inside
 the subquery, so the data scope and the pentest member visibility still apply

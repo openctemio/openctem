@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -118,11 +119,6 @@ function ProductDialog({
             <DialogDescription>{t('sensors.customProducts.dialogDescription')}</DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
             <div className="space-y-2">
               <Label htmlFor="custom-product-name">{t('sensors.customProducts.product')}</Label>
               <Input
@@ -163,6 +159,8 @@ function ProductDialog({
             </div>
             <p className="text-xs text-muted-foreground">{t('sensors.customProducts.emptyNote')}</p>
           </DialogBody>
+          <DialogSubmitError message={error} />
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {t('common.cancel')}

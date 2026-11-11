@@ -29,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	"github.com/openctemio/openctem/api/internal/app/scanidentity"
+	"github.com/openctemio/openctem/api/internal/app/scopenames"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -81,6 +82,8 @@ type AdminPlatformSettingsHandler struct {
 	// LeakedSecretStorage is the platform default of whether imported
 	// leaked secret values are kept.
 	LeakedSecretStorage *leakedsecretpolicy.Service
+	// ScopeNames is the blocked target names policy and its exceptions.
+	ScopeNames *scopenames.Service
 }
 
 // WithApprovals wires the four-eyes gate of the platform AI destination.

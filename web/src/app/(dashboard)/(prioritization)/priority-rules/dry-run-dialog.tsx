@@ -177,6 +177,7 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
             {state.status === 'loading' ? (
               <LoadingState />
             ) : state.status === 'error' ? (
+              // submit-error-ok: the result area of a preview, not a failed submit
               <Alert variant="destructive">
                 <AlertTriangle className="size-4" />
                 <AlertTitle>

@@ -85,7 +85,11 @@ func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, 
 	if invStatus.Valid {
 		o.OwnerInvitation = &admin.OwnerInvitationSummary{
 			Status: invStatus.String, InviteeEmail: invEmail.String, SendCount: int(invSends.Int64),
-			ExpiresAt: invExpires.Time.UTC(), LastSentAt: invSent.Time.UTC(), CreatedAt: invMade.Time.UTC(),
+			ExpiresAt: invExpires.Time.UTC(), CreatedAt: invMade.Time.UTC(),
+		}
+		if invSent.Valid {
+			sent := invSent.Time.UTC()
+			o.OwnerInvitation.LastSentAt = &sent
 		}
 		if invResponded.Valid {
 			t := invResponded.Time.UTC()
