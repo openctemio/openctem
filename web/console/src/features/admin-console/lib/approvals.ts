@@ -17,6 +17,8 @@ const ACTION_FALLBACK: Record<string, string> = {
   'audit_chain.rebaseline': "Re-sign an organization's audit chain",
   'organization.purge': 'Delete an organization now',
   'user.reset_mfa': "Reset a user's two-factor authentication",
+  'scope_names.exception': 'Let an organization scan a government or military name',
+  'scope_names.government_rule_off': 'Turn off the government and military name block',
 }
 
 /** The protected action in words. */
@@ -44,11 +46,19 @@ const SIGNUP_ACCOUNTS: Record<string, string> = {
 
 /** The exact target in words; the label comes from the server. */
 export function approvalTargetLabel(
-  a: { target: string; target_label?: string },
+  a: { target: string; target_label?: string; action?: string },
   t: Translate
 ): string {
   const { target } = a
   if (a.target_label) return a.target_label
+  if (a.action === 'scope_names.government_rule_off') {
+    return t(
+      'admin.approvals.target.governmentRuleOff',
+      'Government and military names no longer blocked'
+    )
+  }
+  const exception = scopeNameExceptionLabel(target, t)
+  if (exception) return exception
   if (target.startsWith('email:')) return target.slice('email:'.length)
   if (target === 'off') return t('admin.approvals.target.off', 'Security keys no longer required')
   if (IDP_TARGETS[target]) return t(`admin.approvals.target.${target}`, IDP_TARGETS[target])
@@ -119,6 +129,30 @@ function platformAIDestinationLabel(target: string, t: Translate): string | null
         private: c.allow_private
           ? t('admin.approvals.target.allowed', 'allowed')
           : t('admin.approvals.target.notAllowed', 'not allowed'),
+      }
+    )
+  } catch {
+    return null
+  }
+}
+
+/** A scope_names.exception target: the organization, name and expiry day. */
+function scopeNameExceptionLabel(target: string, t: Translate): string | null {
+  if (!target.startsWith('{"tenant":')) return null
+  try {
+    const c = JSON.parse(target) as {
+      tenant?: string
+      name?: string
+      subdomains?: boolean
+      expires?: string
+    }
+    return t(
+      'admin.approvals.target.scopeNameException',
+      '{name} for organization {tenant} until {expires}',
+      {
+        name: c.subdomains ? `*.${c.name ?? ''}` : (c.name ?? ''),
+        tenant: c.tenant ?? '',
+        expires: c.expires ?? '',
       }
     )
   } catch {
