@@ -11,5 +11,6 @@
 ### Behaviour change: GET /assets refuses unknown params and bad values
 
 - An unknown param or an enum value the field does not take is `400 INVALID_FILTER` (it used to be ignored), so a typo never widens a list. The value is never echoed.
+- Tag filters (`tag`, `tag_not`, `tag_all` and the old `tags`, `exclude_tags`) take at most 20 tags of at most 50 characters, and `tags_mode` takes only `any` or `all`; anything else is `400 INVALID_FILTER` (it was `422`).
 - `name=x` is now the exact name or a pattern (`*x*`); `name_contains=x` is the old partial match.
 - A user-less API key matches the system tags of private bug-bounty programs it is not a member of no more (owners and program members still do).
