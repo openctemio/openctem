@@ -348,6 +348,7 @@ const KNOWN_FINDING_FIELDS: Record<string, true> = Object.fromEntries(
     'acceptance_expires_at',
     'seen_by_tool',
     'seen_by_channel',
+    'retired_source_only',
   ].map((k) => [k, true as const])
 )
 
