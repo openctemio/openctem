@@ -22,7 +22,7 @@ import { LIMIT_KEYS, parseLimit, UNLIMITED, type LimitKey } from '@/features/lim
 import type { SelfServiceLimitsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveSelfServiceLimits } from '../api/use-limits'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 type Values = Record<LimitKey, string>
@@ -55,9 +55,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
   const initial = useMemo(() => toValues(defaults), [defaults])
   const [values, setValues] = useState<Values>(initial)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
+  const rc = useReasonAndCode(confirmOpen)
   const [busy, setBusy] = useState(false)
   const codeId = useId()
 
@@ -71,7 +69,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     const limits: Record<string, number> = {}
     for (const k of LIMIT_KEYS) {
       const v = parseLimit(values[k])
@@ -81,15 +79,14 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
       await saveSelfServiceLimits({
         limits,
         version: defaults.version ?? 0,
-        totp_code: code.trim(),
+        totp_code: rc.code.trim(),
       })
       setConfirmOpen(false)
       toast.success(t('limits.console.defaults.saved', 'Default limits saved'))
       onSaved()
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setConfirmOpen(false)
@@ -187,8 +184,6 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
                 saving={busy}
                 saveDisabled={invalid}
                 onSave={() => {
-                  setCode('')
-                  setCodeError(null)
                   setConfirmOpen(true)
                 }}
                 onDiscard={reset}
@@ -214,7 +209,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
             )}
           </p>
         }
-        disabled={!stepUpCodeReady(code, codeOptional)}
+        disabled={!rc.codeOk}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -228,13 +223,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
           )
         }
       >
-        <StepUpCodeField
-          id={codeId}
-          value={code}
-          onChange={setCode}
-          optional={codeOptional}
-          error={codeError}
-        />
+        <ReasonAndCodeFields id={codeId} state={rc} withReason={false} />
       </ConfirmDialog>
     </>
   )

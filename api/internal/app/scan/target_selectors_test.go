@@ -3,6 +3,8 @@ package scan
 import (
 	"slices"
 	"testing"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 func TestDropUnderRoots(t *testing.T) {
@@ -52,7 +54,7 @@ func TestValidateSelectorTargets(t *testing.T) {
 		"*.example.gov.vn": false,
 		"*.agency.gov":     false,
 	} {
-		if err := validateSelectorTargets([]string{target}); (err == nil) != ok {
+		if err := validateSelectorTargets(shared.NewID(), []string{target}); (err == nil) != ok {
 			t.Errorf("%q: err = %v, want ok=%v", target, err, ok)
 		}
 	}

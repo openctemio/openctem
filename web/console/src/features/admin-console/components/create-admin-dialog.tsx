@@ -3,7 +3,6 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { useState, type FormEvent } from 'react'
 import { Check, Copy, Loader2, Plus } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,6 +15,7 @@ import {
   DialogBody,
   DialogForm,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -267,13 +267,10 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                     </p>
                   </div>
                 </div>
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
               </div>
             </DialogBody>
+            <DialogSubmitError message={error} />
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={close}>
                 {t('common.cancel', 'Cancel')}

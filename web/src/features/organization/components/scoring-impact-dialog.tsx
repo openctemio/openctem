@@ -80,6 +80,7 @@ export function ScoringImpactDialog({
             </div>
           )}
           {error && (
+            // submit-error-ok: a load failure of what the dialog shows
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
