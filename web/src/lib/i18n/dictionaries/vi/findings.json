@@ -695,6 +695,7 @@
   "findings.filter.field.related_to": "Liên quan đến",
   "findings.filter.field.resolved_at": "Đã đóng lúc",
   "findings.filter.field.resolved_by": "Người xử lý",
+  "findings.filter.field.retired_source_only": "Chỉ do nguồn đã ngừng dùng báo cáo",
   "findings.filter.field.rule_id": "Quy tắc",
   "findings.filter.field.scan_id": "Lần quét",
   "findings.filter.field.seen_by_channel": "Kênh báo cáo",
