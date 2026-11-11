@@ -104,8 +104,41 @@ and the output says `source_retired`. A snapshot that cannot be loaded fails
 the ingest (the worker retries), so a retired source is never let through by
 an error.
 
-Scans that use a retired sensor tool still run (their results are refused);
-stopping their dispatch is planned.
+## Scans of a retired sensor tool are not dispatched
+
+A `sensor_tool` retirement also stops the work: the claim never hands a
+sensor a scan (or connector scan) task whose tool is retired on that sensor
+(`internal/app/command/retired_source.go`). The check runs on every claim
+path (the claim-N poll, the poll, the claim by id), so it covers scheduled,
+manual and coverage runs, and a retirement made after the run was queued.
+Tools compare as at ingest (case and the retired-name map).
+
+| The task | What happens |
+|---|---|
+| unpinned, and another sensor of the organization may run it (active, dispatchable, in the task's zone, with the tool, the tool not retired there) | stays pending for that sensor; the task records the placement code `source_retired` |
+| pinned to the sensor, or no other sensor may run it | fails at claim with `SOURCE_RETIRED` (the message says why); its step is skipped with that code, never failed |
+
+A skipped step does not stop the run: its dependents are skipped as
+`DEPENDENCY_SKIPPED`, the other steps run, and the run ends `partial`. A run
+in which nothing produced results ends `failed`, its message naming the
+step and `SOURCE_RETIRED`. The run page explains the code in the reader's
+language with a link to the retired sources.
+
+- **Tenant isolation**: the retirements are read from the task's
+  organization and matched on the claiming sensor's id. A retirement names
+  one of the organization's own sensors, so it never stops another
+  organization's work, even through a row that names a foreign sensor
+  (`TestSourceRetired_TenantIsolation`). A shared sensor cannot be retired
+  (it is not one of the organization's sensors), so the shared claim is not
+  checked.
+- **Fail closed**: retirements that cannot be read withhold the task (it
+  stays pending), as ingest refuses on an unreadable snapshot.
+- **Use this source again**: the claim reads the live retirements with no
+  cache, so a source restored (state `restoring`) is dispatched again at the
+  next claim.
+
+A task a sensor already took before the retirement runs; its results are
+refused at ingest.
 
 ## Use this source again (exact restore)
 
@@ -178,7 +211,7 @@ A source is named by `kind` with `sensor_id`, `tool` or `sender`, or by
   `integration_id` one of its connector integrations (404 otherwise); the
   journal has composite foreign keys to the tenant's retirement and finding;
   row-level security policies in shadow mode as on the other tenant tables.
-  Tests: `TestSourceRetirement_TenantIsolation_DB`,
+  Tests: `TestSourceRetirement_TenantIsolation_DB`, `TestSourceRetired_TenantIsolation` (dispatch),
   `TestSourceRetire_IngestRefusesRetiredSource` (another tenant's source of
   the same name is not blocked), `TestRetire_AnotherTenantsSensorOrIntegrationIsNotFound`.
 - **No time-of-check gap for the confirmation**: the server computes the
@@ -193,4 +226,3 @@ A source is named by `kind` with `sensor_id`, `tool` or `sender`, or by
   to widen scope. Needs per-source asset sightings, which do not exist yet
   (ADR-004). A retired source already creates and widens nothing, since its
   reports are refused.
-- Stopping the dispatch of scans that use a retired sensor tool.
