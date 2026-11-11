@@ -125,6 +125,17 @@ sensor (id and name) is in the answer only with `sensors:read`. Values are
 cleaned on read like the detail's source data (`SourceExtraValue`,
 `DisplayPath`, secrets redacted in text).
 
+The finding page does not call this endpoint on its own: `GET
+/api/v1/findings/{id}/view` carries it as one of its parts, keyed by this exact
+URL. The view dispatches each part through the API's own router with the
+caller's credentials, so the records pass the same tenant, data-scope,
+pentest-membership and `sensors:read` checks as a direct call, and the view
+requests them only after the finding itself answered 200 (a missing, other
+tenant's or out-of-scope finding yields a view with only that 404). If the
+records read fails on its own, the view stays 200 and that part carries only
+its status; the page then reads the URL itself, as every other panel does. The
+endpoint stays because the view is built from it.
+
 The answer carries `differences`: the fields whose values differ between
 sources (severity, vendor severity, CVSS score, native id, family, status,
 solution type, title), computed on the server so every client shows the same

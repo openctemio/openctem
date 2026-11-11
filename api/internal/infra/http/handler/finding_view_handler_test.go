@@ -300,3 +300,53 @@ func TestViewPartMark_IsServerOnly(t *testing.T) {
 		}
 	}
 }
+
+// The per-source records ride in the view as the part for the standalone
+// endpoint's exact URL, dispatched through the router (so with that endpoint's
+// own tenant and data-scope gate), and only after the finding itself answered
+// 200: a refused finding never reaches it. A failing records read leaves the
+// view 200 and the other parts intact.
+func TestFindingView_CarriesSourceRecordsThroughTheirOwnEndpoint(t *testing.T) {
+	part := "/api/v1/findings/" + fvID + "/source-records"
+	router := &fvRouter{}
+	rec, resp := fvServe(t, router, fvID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if _, ok := router.seen[part]; !ok {
+		t.Fatalf("%s not dispatched", part)
+	}
+	if p := resp.Parts[part]; p.Status != http.StatusOK || !strings.Contains(string(p.Body), part) {
+		t.Fatalf("source-records part %+v", p)
+	}
+
+	// Out of scope or another tenant's finding: the endpoint answers 404 for
+	// the finding, and the records are neither requested nor returned.
+	refused := &fvRouter{answer: func(w http.ResponseWriter, r *http.Request) bool {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"code":"NOT_FOUND"}`))
+		return true
+	}}
+	_, resp = fvServe(t, refused, fvID)
+	if _, ok := refused.seen[part]; ok {
+		t.Fatal("source records requested for a finding the caller may not read")
+	}
+	if _, ok := resp.Parts[part]; ok {
+		t.Fatal("source records returned for a finding the caller may not read")
+	}
+
+	// The records endpoint failing alone leaves the view whole.
+	failing := &fvRouter{answer: func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.RequestURI() != part {
+			return false
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		return true
+	}}
+	rec, resp = fvServe(t, failing, fvID)
+	if rec.Code != http.StatusOK || resp.Parts[part].Status != http.StatusInternalServerError ||
+		resp.Parts[FindingViewGate(fvID)].Status != http.StatusOK {
+		t.Fatalf("failing records broke the view: %d %+v", rec.Code, resp.Parts[part])
+	}
+}

@@ -42,6 +42,7 @@ func FindingViewParts(id string) []string {
 		f + "/issue-links",
 		f + "/identity",
 		f + "/imports",
+		f + "/source-records",
 		f + "/activities?page=1&per_page=20",
 		f + "/comments",
 		f + "/evidence-items",

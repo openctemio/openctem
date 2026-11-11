@@ -151,6 +151,25 @@ func (s Selector) Matches(r Report) bool {
 	return false
 }
 
+// RetiresSensorTool reports whether s is the sensor tool source (sensorID,
+// tool): the dispatch side of Matches, with the same tool rule (case and
+// retired names). An empty tool never matches.
+func (s Selector) RetiresSensorTool(sensorID shared.ID, tool string) bool {
+	return s.Kind == KindSensorTool && s.SensorID != nil && s.SensorID.Equals(sensorID) &&
+		strings.TrimSpace(tool) != "" && tooldom.SameTool(tool, s.Tool)
+}
+
+// SensorsRetiring returns the sensors on which sels retire tool.
+func SensorsRetiring(sels []Selector, tool string) []shared.ID {
+	var out []shared.ID
+	for _, s := range sels {
+		if s.Kind == KindSensorTool && s.SensorID != nil && s.RetiresSensorTool(*s.SensorID, tool) {
+			out = append(out, *s.SensorID)
+		}
+	}
+	return out
+}
+
 // Options are the choices of the dialog. The zero value plus Mode archive
 // is the default: every severity, findings in remediation stay open.
 type Options struct {
