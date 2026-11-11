@@ -36,6 +36,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -186,9 +188,7 @@ func sanitizeContractLabel(v string) string {
 		}
 		return r
 	}, strings.ToLower(strings.TrimSpace(v)))
-	if len(v) > 64 {
-		v = v[:64]
-	}
+	v = safetext.TruncateBytes(v, 64)
 	if v == "" {
 		return "(none)"
 	}
