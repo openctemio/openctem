@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MailCheck, RotateCw, XCircle } from 'lucide-react'
+import { Check, Copy, MailCheck, MailX, RotateCw, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { RelativeTime } from '@/features/shared'
+import { copyToClipboard } from '@/lib/clipboard'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { cancelOwnerInvitation, resendOwnerInvitation } from '../api/use-admin-organizations'
 import type { AdminOwnerInvitation, AdminOwnerInvitationStatus } from '../types'
@@ -54,15 +55,97 @@ export function OwnerInvitationBadge({ invitation }: { invitation: AdminOwnerInv
   )
 }
 
+/**
+ * The web app address where the invitee accepts, with a Copy button. Not a
+ * secret: the invitation is bound to the account, so the page shows it to
+ * the invitee only, after they sign in.
+ */
+export function OwnerInvitationAcceptAddress({ url }: { url?: string }) {
+  const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
+  if (!url) return null
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <code
+        className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 font-mono text-xs break-all select-all"
+        data-testid="owner-invitation-accept-url"
+      >
+        {url}
+      </code>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={async () => {
+          if (await copyToClipboard(url)) {
+            setCopied(true)
+            toast.success(t('admin.ownerInvitation.addressCopied', 'Address copied'))
+          }
+        }}
+      >
+        {copied ? (
+          <Check className="me-2 size-4" aria-hidden="true" />
+        ) : (
+          <Copy className="me-2 size-4" aria-hidden="true" />
+        )}
+        {t('admin.ownerInvitation.copyAddress', 'Copy address')}
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * What the administrator tells an invitee on an installation that cannot send
+ * email: nothing was sent, so they hand over the address themselves.
+ */
+export function OwnerInvitationNotSentNotice({
+  email,
+  invitation,
+}: {
+  email?: string
+  invitation?: AdminOwnerInvitation
+}) {
+  const { t } = useTranslation()
+  return (
+    <Alert data-testid="owner-invitation-not-sent">
+      <MailX className="size-4" aria-hidden="true" />
+      <AlertDescription className="space-y-2">
+        <p className="font-medium">
+          {t('admin.ownerInvitation.notSent', 'Not sent: this server cannot send email')}
+        </p>
+        <p className="text-muted-foreground">
+          {email
+            ? t(
+                'admin.ownerInvitation.notSentHelpNamed',
+                'Tell {email} yourself: ask them to sign in and open this address, where they accept or decline. Until then the organization has no owner and nobody can open it.',
+                { email }
+              )
+            : t(
+                'admin.ownerInvitation.notSentHelp',
+                'Tell the person yourself: ask them to sign in and open this address, where they accept or decline. Until then the organization has no owner and nobody can open it.'
+              )}
+        </p>
+        <OwnerInvitationAcceptAddress url={invitation?.accept_url} />
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 /** Shown after a create request invited an existing account to own the organization. */
 export function OwnerInvitationSentNotice({
   email,
   invitation,
+  emailDelivery,
 }: {
   email: string
   invitation?: AdminOwnerInvitation
+  /** False: the installation cannot send email, so nothing was sent. */
+  emailDelivery?: boolean
 }) {
   const { t } = useTranslation()
+  if (emailDelivery === false) {
+    return <OwnerInvitationNotSentNotice email={email} invitation={invitation} />
+  }
   return (
     <Alert>
       <MailCheck className="size-4" aria-hidden="true" />
@@ -102,19 +185,24 @@ export function OwnerInvitationPanel({
   canManage,
   changeInvitee,
   onChanged,
+  emailDelivery,
 }: {
   tenantId: string
   invitation: AdminOwnerInvitation
   canManage: boolean
   changeInvitee?: React.ReactNode
   onChanged: () => void
+  /** False: the installation cannot send email (no send, no sends left, the hand-over address). */
+  emailDelivery?: boolean
 }) {
   const { t } = useTranslation()
   const label = useStatusLabel()
   const [busy, setBusy] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const open = invitation.status === 'pending' || invitation.status === 'expired'
+  const noEmail = emailDelivery === false
   const resendReady =
+    !noEmail &&
     open &&
     invitation.resends_left > 0 &&
     (!invitation.resend_available_at || new Date(invitation.resend_available_at) <= new Date())
@@ -166,37 +254,53 @@ export function OwnerInvitationPanel({
         <OwnerInvitationBadge invitation={invitation} />
       </div>
       <dl className="grid gap-x-6 gap-y-1 text-muted-foreground sm:grid-cols-3">
-        <div>
-          <dt className="text-xs">{t('admin.ownerInvitation.lastSent', 'Last sent')}</dt>
-          <dd className="text-foreground">
-            <RelativeTime date={invitation.last_sent_at} />
-          </dd>
-        </div>
+        {!noEmail && (
+          <div>
+            <dt className="text-xs">{t('admin.ownerInvitation.lastSent', 'Last sent')}</dt>
+            <dd className="text-foreground">
+              {invitation.last_sent_at ? (
+                <RelativeTime date={invitation.last_sent_at} />
+              ) : (
+                t('admin.ownerInvitation.neverSent', 'Not sent')
+              )}
+            </dd>
+          </div>
+        )}
         <div>
           <dt className="text-xs">{t('admin.ownerInvitation.expires', 'Expires')}</dt>
           <dd className="text-foreground">
             <RelativeTime date={invitation.expires_at} />
           </dd>
         </div>
-        <div>
-          <dt className="text-xs">{t('admin.ownerInvitation.sends', 'Sends left')}</dt>
-          <dd className="text-foreground">{invitation.resends_left}</dd>
-        </div>
+        {!noEmail && (
+          <div>
+            <dt className="text-xs">{t('admin.ownerInvitation.sends', 'Sends left')}</dt>
+            <dd className="text-foreground">{invitation.resends_left}</dd>
+          </div>
+        )}
       </dl>
+      {noEmail && open && (
+        <OwnerInvitationNotSentNotice email={invitation.invitee_email} invitation={invitation} />
+      )}
       <p className="text-muted-foreground">
-        {open
+        {noEmail && invitation.status === 'expired'
           ? t(
-              'admin.ownerInvitation.pendingHelp',
-              'The person accepts or declines in the app after signing in again. Until then the organization has no owner and nobody can open it.'
+              'admin.ownerInvitation.expiredNoEmailHelp',
+              'This invitation expired. To give the person seven more days, use Change invitee with the same email address.'
             )
-          : t(
-              'admin.ownerInvitation.closedHelp',
-              'The organization still has no owner. Invite someone else, or create a new owner account.'
-            )}
+          : open
+            ? t(
+                'admin.ownerInvitation.pendingHelp',
+                'The person accepts or declines in the app after signing in again. Until then the organization has no owner and nobody can open it.'
+              )
+            : t(
+                'admin.ownerInvitation.closedHelp',
+                'The organization still has no owner. Invite someone else, or create a new owner account.'
+              )}
       </p>
       {canManage && (
         <div className="flex flex-wrap gap-2">
-          {open && (
+          {open && !noEmail && (
             <Button size="sm" variant="outline" disabled={busy || !resendReady} onClick={resend}>
               <RotateCw className="me-2 size-4" aria-hidden="true" />
               {t('admin.ownerInvitation.resend', 'Send again')}
@@ -215,10 +319,17 @@ export function OwnerInvitationPanel({
         open={confirmCancel}
         onOpenChange={setConfirmCancel}
         title={t('admin.ownerInvitation.cancelTitle', 'Cancel the invitation?')}
-        desc={t(
-          'admin.ownerInvitation.cancelDesc',
-          'The person is told by email. The organization stays without an owner until you invite someone else or create its first owner.'
-        )}
+        desc={
+          noEmail
+            ? t(
+                'admin.ownerInvitation.cancelDescNoEmail',
+                'No email is sent: tell the person yourself if they were expecting it. The organization stays without an owner until you invite someone else or create its first owner.'
+              )
+            : t(
+                'admin.ownerInvitation.cancelDesc',
+                'The person is told by email. The organization stays without an owner until you invite someone else or create its first owner.'
+              )
+        }
         confirmText={t('admin.ownerInvitation.cancel', 'Cancel invitation')}
         destructive
         handleConfirm={cancel}

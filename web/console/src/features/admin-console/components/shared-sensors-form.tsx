@@ -19,11 +19,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 export interface SharedSensorsFormProps {
@@ -46,11 +45,8 @@ export function SharedSensorsForm({
   const id = useId()
   const [on, setOn] = useState(enabled)
   const [orgs, setOrgs] = useState(newOrgs)
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const rc = useReasonAndCode(open)
   const [busy, setBusy] = useState(false)
 
   // The saved values: on load, after a save and on Discard.
@@ -66,17 +62,14 @@ export function SharedSensorsForm({
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
-      await onSave(on, orgs, reason.trim(), code.trim())
+      await onSave(on, orgs, rc.reason.trim(), rc.code.trim())
       setOpen(false)
-      setReason('')
-      setCode('')
       toast.success(t('admin.sharedSensors.saved'))
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setOpen(false)
@@ -188,7 +181,7 @@ export function SharedSensorsForm({
             <p>{t('admin.sharedSensors.confirmDesc')}</p>
           </>
         }
-        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim() || needsChoice}
+        disabled={!rc.codeOk || !rc.reasonOk || needsChoice}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -202,25 +195,7 @@ export function SharedSensorsForm({
           )
         }
       >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-reason`}>{t('admin.scanPolicy.reason')}</Label>
-            <Textarea
-              id={`${id}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <StepUpCodeField
-            id={`${id}-code`}
-            value={code}
-            onChange={setCode}
-            optional={codeOptional}
-            error={codeError}
-          />
-        </div>
+        <ReasonAndCodeFields id={id} state={rc} />
       </ConfirmDialog>
     </>
   )

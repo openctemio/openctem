@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -165,7 +166,7 @@ func (s *ScanScheduler) checkAndTrigger() {
 		}
 
 		// Trigger scan in goroutine
-		go s.triggerScan(sc)
+		safego.Go(s.logger, "scan-scheduler:trigger", func() { s.triggerScan(sc) })
 		processed++
 	}
 

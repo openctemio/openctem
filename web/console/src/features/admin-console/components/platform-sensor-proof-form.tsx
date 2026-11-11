@@ -24,11 +24,10 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 export interface PlatformSensorProofFormProps {
@@ -58,11 +57,8 @@ export function PlatformSensorProofForm({
   const k = (name: string) => `${prefix}.${name}`
   const id = useId()
   const [value, setValue] = useState(required)
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const rc = useReasonAndCode(open)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => setValue(required), [required])
@@ -71,17 +67,14 @@ export function PlatformSensorProofForm({
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
-      await onSave(value, reason.trim(), code.trim())
+      await onSave(value, rc.reason.trim(), rc.code.trim())
       setOpen(false)
-      setReason('')
-      setCode('')
       toast.success(t(k('saved')))
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setOpen(false)
@@ -151,7 +144,7 @@ export function PlatformSensorProofForm({
         }}
         title={value ? t(k('confirmOnTitle')) : t(k('confirmOffTitle'))}
         desc={<p>{value ? t(k('confirmOnDesc')) : t(k('confirmOffDesc'))}</p>}
-        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
+        disabled={!rc.codeOk || !rc.reasonOk}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -165,25 +158,7 @@ export function PlatformSensorProofForm({
           )
         }
       >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-reason`}>{t('admin.scanPolicy.reason')}</Label>
-            <Textarea
-              id={`${id}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <StepUpCodeField
-            id={`${id}-code`}
-            value={code}
-            onChange={setCode}
-            optional={codeOptional}
-            error={codeError}
-          />
-        </div>
+        <ReasonAndCodeFields id={id} state={rc} />
       </ConfirmDialog>
     </>
   )

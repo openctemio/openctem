@@ -1071,6 +1071,9 @@ func (a fakeTotalAssets) ListAssets(_ context.Context, in assetapp.ListAssetsInp
 	}
 	return pagination.NewResult([]*assetdom.Asset{}, n, pagination.Pagination{Page: 1, PerPage: 1}), nil
 }
+func (a fakeTotalAssets) ListAssetsWhere(context.Context, assetapp.ListCaller, assetapp.ListQuery) (assetdom.WhereResult, error) {
+	return assetdom.WhereResult{Total: a.total}, nil
+}
 func (a fakeTotalAssets) GetAsset(context.Context, string, string) (*assetdom.Asset, error) {
 	return nil, shared.ErrNotFound
 }

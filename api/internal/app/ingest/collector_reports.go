@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -107,9 +109,7 @@ func collectorSourceOf(tenantID, sensorID shared.ID, tool *ctis.Tool, md ctis.Re
 	if len(md.SourceRefs) > 0 {
 		ref = strings.TrimSpace(md.SourceRefs[0].System + ":" + md.SourceRefs[0].ID)
 	}
-	if len(ref) > maxCollectorSourceRef {
-		ref = ref[:maxCollectorSourceRef]
-	}
+	ref = safetext.TruncateBytes(ref, maxCollectorSourceRef)
 	return &CollectorSource{TenantID: tenantID, SensorID: sensorID, Tool: strings.ToLower(strings.TrimSpace(tool.Name)), SourceRef: ref}
 }
 

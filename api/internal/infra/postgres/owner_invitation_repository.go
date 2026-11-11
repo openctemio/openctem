@@ -27,12 +27,12 @@ const ownerInvitationColumns = `id, tenant_id, invitee_user_id, invitee_email, i
 
 func scanOwnerInvitation(sc interface{ Scan(...any) error }) (*tenant.OwnerInvitation, error) {
 	var (
-		inv                         tenant.OwnerInvitation
-		id, tenantID, invitee       string
-		invitedBy                   sql.NullString
-		status                      string
-		respondedAt                 sql.NullTime
-		expiresAt, lastSent, create time.Time
+		inv                   tenant.OwnerInvitation
+		id, tenantID, invitee string
+		invitedBy             sql.NullString
+		status                string
+		respondedAt, lastSent sql.NullTime
+		expiresAt, create     time.Time
 	)
 	if err := sc.Scan(&id, &tenantID, &invitee, &inv.InviteeEmail, &invitedBy, &status,
 		&expiresAt, &inv.SendCount, &lastSent, &respondedAt, &create); err != nil {
@@ -52,7 +52,11 @@ func scanOwnerInvitation(sc interface{ Scan(...any) error }) (*tenant.OwnerInvit
 		inv.InvitedBy, _ = shared.IDFromString(invitedBy.String)
 	}
 	inv.Status = tenant.OwnerInvitationStatus(status)
-	inv.ExpiresAt, inv.LastSentAt, inv.CreatedAt = expiresAt.UTC(), lastSent.UTC(), create.UTC()
+	inv.ExpiresAt, inv.CreatedAt = expiresAt.UTC(), create.UTC()
+	if lastSent.Valid {
+		t := lastSent.Time.UTC()
+		inv.LastSentAt = &t
+	}
 	if respondedAt.Valid {
 		t := respondedAt.Time.UTC()
 		inv.RespondedAt = &t

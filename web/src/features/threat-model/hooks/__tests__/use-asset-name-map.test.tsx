@@ -1,6 +1,6 @@
 /**
  * Asset names on the threat-model page come from one list request per 100 ids
- * (GET /assets?ids=…), not one GET /assets/{id} per asset (research/81).
+ * (GET /assets?id=…), not one GET /assets/{id} per asset (research/81).
  */
 import * as React from 'react'
 import { renderHook, waitFor } from '@testing-library/react'

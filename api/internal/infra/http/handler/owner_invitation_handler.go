@@ -7,6 +7,7 @@ package handler
 // answers 404 whatever the caller knows about it.
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -97,20 +98,31 @@ func (h *UserHandler) ListMyOwnerInvitations(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	offers, err := h.tenantService.ListMyOwnerInvitations(r.Context(), u.ID())
+	resp, err := h.MyOwnerInvitationsResponse(r.Context(), u.ID())
 	if err != nil {
 		h.writeInviteeError(w, err)
 		return
 	}
-	resp := OwnerInvitationListResponse{Data: make([]OwnerInvitationOfferResponse, 0, len(offers))}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// MyOwnerInvitationsResponse is the GET /me/ownership-invitations body for
+// userID (also carried by the session bootstrap, so the app shell's banner
+// needs no request of its own).
+func (h *UserHandler) MyOwnerInvitationsResponse(ctx context.Context, userID shared.ID) (*OwnerInvitationListResponse, error) {
+	offers, err := h.tenantService.ListMyOwnerInvitations(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	resp := &OwnerInvitationListResponse{Data: make([]OwnerInvitationOfferResponse, 0, len(offers))}
 	for _, o := range offers {
 		resp.Data = append(resp.Data, OwnerInvitationOfferResponse{
 			ID: o.ID.String(), OrganizationID: o.TenantID.String(), OrganizationName: o.OrganizationName,
 			OrganizationSlug: o.OrganizationSlug, InvitedAt: o.CreatedAt, ExpiresAt: o.ExpiresAt,
 		})
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, resp)
+	return resp, nil
 }
 
 // AcceptOwnerInvitation handles POST /api/v1/me/ownership-invitations/{id}/accept.

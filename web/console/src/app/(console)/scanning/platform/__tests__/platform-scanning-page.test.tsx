@@ -36,6 +36,22 @@ vi.mock('@console/features/admin-console/api/use-scan-policy', () => ({
   saveSharedSensorsSetting: vi.fn(),
   createSharedSensorEnrollmentToken: vi.fn(),
 }))
+vi.mock('@console/features/admin-console/api/use-scope-blocked-names', () => ({
+  useScopeBlockedNames: () =>
+    swr({
+      government_rule: true,
+      names: [],
+      env_names: [],
+      max_exception_days: 365,
+      second_approval: false,
+      version: 0,
+    }),
+  useScopeNameExceptions: () => swr({ items: [] }),
+  saveScopeBlockedNames: vi.fn(),
+  grantScopeNameException: vi.fn(),
+  extendScopeNameException: vi.fn(),
+  revokeScopeNameException: vi.fn(),
+}))
 vi.mock('@console/features/admin-console/api/use-instance-scan-zones', () => ({
   useInstanceScanZones: () => swr({ items: [] }),
 }))
@@ -136,12 +152,15 @@ describe('Platform scanning console page', () => {
     )
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByText('shared-eu-1')).not.toBeInTheDocument()
+    // The blocked names policy does not depend on shared sensors.
+    expect(screen.getByText('Blocked target names')).toBeInTheDocument()
   })
 
-  it('offers the five tabs once shared sensors are available', () => {
+  it('offers the six tabs once shared sensors are available', () => {
     render(<PlatformScanningPage />)
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
       'Policy',
+      'Blocked names',
       'Fleet',
       'Queue',
       'Egress',

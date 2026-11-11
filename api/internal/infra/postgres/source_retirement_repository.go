@@ -82,8 +82,7 @@ func sourceClassifySQL(kind sourceretire.Kind) (string, error) {
 		WHEN f.source IN ` + coverageProtectedSources + `
 			OR EXISTS (SELECT 1 FROM finding_sightings o WHERE o.tenant_id = $1 AND o.finding_id = f.id
 				AND NOT source_retirement_matches($2, $3::uuid, $4, $5, o.channel, o.sensor_id, o.sender, o.tool)
-				AND NOT EXISTS (SELECT 1 FROM source_retirements r WHERE r.tenant_id = $1 AND r.state IN ('applying', 'active')
-					AND source_retirement_matches(r.kind, r.sensor_id, r.sender, r.tool, o.channel, o.sensor_id, o.sender, o.tool)))
+				AND NOT ` + vulnerability.SightingRetiredSQL("$1", "o") + `)
 			OR (SELECT count(*) FROM finding_sightings o WHERE o.tenant_id = $1 AND o.finding_id = f.id) >= ` + fmt.Sprint(sourceretire.MaxSightingCap) + `
 			THEN 'corroborated'
 		WHEN NOT is_open_finding_status(f.status) THEN 'closed'
