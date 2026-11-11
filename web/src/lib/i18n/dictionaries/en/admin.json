@@ -1492,6 +1492,8 @@
   "admin.quota.sourceConsole": "Set in this console. The server default ({env}) is {mb} MiB.",
   "admin.quota.sourceEnv": "From the server default ({env}) until you save a value here.",
   "admin.quota.title": "Default storage quota",
+  "admin.reasonAndCode.reason": "Reason",
+  "admin.reasonAndCode.reasonHint": "Required: say why you make this change. It is kept in the audit log.",
   "admin.region.confirmButton": "Set region",
   "admin.region.confirmDesc": "Every organization created from now on gets this region, and it can never be changed. Recorded in the admin audit log and sent to every administrator.",
   "admin.region.confirmTitle": "Set the region to {region}? This cannot be undone.",

@@ -1492,6 +1492,8 @@
   "admin.quota.sourceConsole": "Đặt trong console này. Mặc định của máy chủ ({env}) là {mb} MiB.",
   "admin.quota.sourceEnv": "Lấy từ mặc định của máy chủ ({env}) cho đến khi bạn lưu giá trị tại đây.",
   "admin.quota.title": "Hạn mức lưu trữ mặc định",
+  "admin.reasonAndCode.reason": "Lý do",
+  "admin.reasonAndCode.reasonHint": "Bắt buộc: nêu lý do bạn thực hiện thay đổi này. Lý do được lưu trong nhật ký kiểm toán.",
   "admin.region.confirmButton": "Đặt vùng",
   "admin.region.confirmDesc": "Mọi tổ chức tạo từ giờ đều nhận vùng này và không bao giờ thay đổi được. Ghi vào nhật ký kiểm toán quản trị và gửi tới mọi quản trị viên.",
   "admin.region.confirmTitle": "Đặt vùng thành {region}? Không thể hoàn tác.",
