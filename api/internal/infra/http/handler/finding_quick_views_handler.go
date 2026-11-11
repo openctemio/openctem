@@ -17,7 +17,9 @@ import (
 // FindingQuickViewResponse is one quick view with the caller's count.
 type FindingQuickViewResponse struct {
 	// Key: active, needs_triage, my_queue, sla_breached, pending_approval,
-	// accepted_expiring or closed.
+	// accepted_expiring, closed, my_team, my_due_soon, my_accepted_expiring,
+	// actionable (open P0 and P1) or known_exploited (open, on the known
+	// exploited list).
 	Key string `json:"key"`
 	// Count is the total GET /findings?<params> returns to the same caller.
 	Count int64 `json:"count"`
@@ -43,7 +45,9 @@ type FindingQuickViewsResponse struct {
 // FindingQuickViews handles GET /api/v1/findings/quick-views
 // @Summary      Findings quick-view counts
 // @Description  The built-in quick views of the findings list with the caller's count of each, in display order:
-// @Description  active, needs_triage, my_queue, sla_breached, pending_approval, accepted_expiring, closed. Each view
+// @Description  active, needs_triage, my_queue, sla_breached, pending_approval, accepted_expiring, closed, my_team,
+// @Description  my_due_soon, my_accepted_expiring, actionable (open P0 and P1), known_exploited (open, on the known
+// @Description  exploited list). Each view
 // @Description  carries the GET /findings query string (params) that lists it; its count is that list's total for
 // @Description  the same caller (tenant, data scope and pentest membership applied). One statement, 5 s limit
 // @Description  (503 when it runs out). Responses may be cached privately for 60 s. The work views (active, my_queue,
