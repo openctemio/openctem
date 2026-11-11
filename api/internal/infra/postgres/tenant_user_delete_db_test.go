@@ -215,6 +215,23 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	// A live lead on one subject (chk_exploration_leads_subject, _closed,
+	// _action); a link has one typed end of its kind; a verdict by a checker.
+	"exploration_leads": func(*schemaSeeder) map[string]any {
+		return map[string]any{"subject_finding_id": nil, "lead_type": "dns.takeover_check", "state": "open",
+			"capability": "check.takeover", "tier": 1, "action_hash": strings.Repeat("a", 64), "origin": "rule",
+			"likelihood": "medium", "closed_at": nil}
+	},
+	"exploration_links": func(*schemaSeeder) map[string]any {
+		return map[string]any{"rel": "derived_from", "end_kind": "asset", "finding_id": nil, "scan_run_id": nil,
+			"ref_lead_id": nil, "effect": nil}
+	},
+	"exploration_verdicts": func(*schemaSeeder) map[string]any {
+		return map[string]any{"verdict": "refuted", "tier": "deterministic", "checker": "scan_run"}
+	},
+	"explorations": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "continuous", "status": "open"}
+	},
 	// A connector source (chk_source_retirements_shape), live
 	// (chk_source_retirements_restored); its journal row has a prior open
 	// status (chk_source_retirement_findings_prior).
