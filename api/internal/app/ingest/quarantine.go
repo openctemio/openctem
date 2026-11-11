@@ -16,6 +16,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -347,13 +348,13 @@ func (s *Service) auditAsync(actx auditapp.AuditContext, event auditapp.AuditEve
 	if s.auditSvc == nil && s.auditRepo == nil {
 		return
 	}
-	go func() {
+	safego.Go(s.logger, "ingest:quarantine-audit-log", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := s.writeIngestAuditLog(ctx, actx, event); err != nil {
 			s.logger.Warn("failed to persist audit log", "action", event.Action.String(), "error", err)
 		}
-	}()
+	})
 }
 
 // recordWithheld counts the changes an ingest was not allowed to make.
