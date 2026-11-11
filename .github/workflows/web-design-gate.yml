@@ -89,9 +89,28 @@ jobs:
       - name: Generate the contract files
         uses: ./.github/actions/generate-contract
 
-      - name: Chromium
+      - name: Playwright version
+        id: pw
+        working-directory: web
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # The same browser cache as Web E2E (keyed by the Playwright version).
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: web
         run: npx playwright install --with-deps --only-shell chromium
+
+      - name: Install Chromium system libraries
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        working-directory: web
+        run: npx playwright install-deps chromium
 
       - name: Compare with the design boards and check the layout
         working-directory: web
