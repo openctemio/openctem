@@ -147,6 +147,8 @@ interface DataTableProps<TData, TValue> {
   manualPagination?: boolean
   pageCount?: number
   rowCount?: number
+  /** The server stopped counting at `rowCount`: the footer says "10,000+" instead of the exact-looking number. */
+  rowCountCapped?: boolean
   pagination?: { pageIndex: number; pageSize: number }
   onPaginationChange?: (pagination: { pageIndex: number; pageSize: number }) => void
   /**
@@ -459,6 +461,7 @@ export function DataTable<TData, TValue>({
   manualPagination = false,
   pageCount,
   rowCount,
+  rowCountCapped,
   pagination,
   onPaginationChange,
   getRowId,
@@ -1198,7 +1201,9 @@ export function DataTable<TData, TValue>({
                 {t('common.table.showing', 'Showing {start} - {end} of {total} {noun}', {
                   start,
                   end,
-                  total,
+                  total: rowCountCapped
+                    ? t('common.table.cappedCount', '{count}+', { count: total.toLocaleString() })
+                    : total,
                   noun: paginationNoun,
                 })}
               </div>

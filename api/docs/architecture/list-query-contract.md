@@ -266,6 +266,21 @@ that reads another table pins the caller's tenant.
   caller's scope. `GET /assets/networks` groups the matching addresses by
   network (at most 500).
 - `?view=<id>` runs a saved view of the `assets` page as the caller.
+- The asset inventory page (web) sends only these names. Its own URL keeps
+  the page's older params (`types`, `criticalities`, `tags`...) so no link
+  breaks, and carries the fields it has no control for (`ip`, `network`,
+  `port_gte`...) under the names above. Inside the External surface lens
+  (`?lens=external_surface`) the type is a tab (`?tab=ip_address`): a locked
+  `type` condition that is not part of the editable query text; an old
+  `types=<one type>` link opens the matching tab. The Query toggle edits the
+  same filter as text: a filter the chips can show is written back as flat
+  params, any other (an OR across fields, a group) is kept whole as `fq` and
+  runs as the document `POST /query/parse` made of it, through
+  `POST /assets/search`; the page never sends the text to a list endpoint.
+  Saved views of the `assets` page store the list's params, or the checked
+  document of an `fq` filter, with the tab's type. "Group by network" lists
+  `GET /assets/networks` for the same params (not for an `fq` filter), and
+  every total shows "10,000+" when `total_capped` is true.
 - List and count run in one read-only transaction under a 5 s statement
   timeout.
 
