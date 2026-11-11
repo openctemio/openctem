@@ -88,6 +88,7 @@ var adminWriteInventory = map[string]struct {
 	"POST /api/v1/admin/tenants/":                                            {stepUpRoute, "creates an organization"},
 	"POST /api/v1/admin/access-requests/{id}/approve":                        {stepUpRoute, "creates an organization and its owner"},
 	"POST /api/v1/admin/tenants/{tenantId}/users":                            {stepUpRoute, "creates or recovers an organization owner"},
+	"POST /api/v1/admin/platform-users/{user_id}/setup-link":                 {stepUpRoute, "hands over a new owner's set-password link"},
 	"POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend":          {stepUpRoute, "sends an ownership invitation again"},
 	"DELETE /api/v1/admin/tenants/{tenantId}/owner-invitation":               {stepUpRoute, "withdraws an ownership invitation"},
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/enforcement":                   {stepUpRoute, "organization sign-in trust"},

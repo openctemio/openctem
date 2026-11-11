@@ -102,6 +102,7 @@ reason, a step-up and an admin audit row:
 |---|---|---|
 | Copy reset link | `POST /api/v1/admin/platform-users/{id}/reset-link` | local accounts only; refused (`EMAIL_AVAILABLE`) while email works; one-hour link, returned once with `Cache-Control: no-store`, stored only as a hash, never written to the audit row or the logs; a new link replaces the old one; following it does not bypass the account's second factor |
 | Mark email verified | `POST .../mark-verified` | unverified local accounts, only while email does not work |
+| New setup link (organization Users tab) | `POST /api/v1/admin/platform-users/{id}/setup-link` with `organization_id` | ops_admin and up (`platform.tenants.owner_bootstrap`, the permission that created that owner), fresh step-up; only an organization's new owner who never set a password and belongs to no other organization (404 for another organization's account); 24-hour set-password link returned once as `setup_url`, `no-store`, stored only as a hash, never in the audit row or the logs; a new link replaces the old one; refused (`EMAIL_AVAILABLE`) while email works ([ownership invitations](organization-ownership-invitations.md#running-without-email)) |
 | Reset two-factor | `POST .../mfa/reset` | needs a second super admin's approval of that exact account (four-eyes, `user.reset_mfa`); removes the factor and recovery codes, ends every session, tells the user by email when email works; platform administrator accounts are refused |
 
 The link is a bearer secret: hand it over on a channel you trust. Organization
