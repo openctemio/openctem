@@ -148,6 +148,7 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
+// @Param  retired_source_only  query  boolean  false  "retired source only equals"
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  description  query  string  false  "description contains"
@@ -345,6 +346,7 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
 // @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
+// @Param  retired_source_only  query  boolean  false  "retired source only equals"
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  description  query  string  false  "description contains"
