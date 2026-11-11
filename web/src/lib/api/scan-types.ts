@@ -440,8 +440,15 @@ export interface ScanConfigListFilters {
   scan_type?: ScanType
   schedule_type?: ScheduleType
   status?: ScanConfigStatus
-  tags?: string
-  search?: string
+  /** Scans with any of these tags (comma-separated). */
+  tag?: string
+  /** Search the name and the description. */
+  q?: string
+  /**
+   * A filter the page's controls cannot show (an OR across fields, a group), as query
+   * text. The list is fetched through POST /scans/search (features/scans/api).
+   */
+  fq?: string
   /** Also list one-off (ad-hoc quick) scans; hidden by default. */
   include_ad_hoc?: boolean
   /** Who owns the scan: people's scans (`user`) or the platform's managed scans (`system`). */

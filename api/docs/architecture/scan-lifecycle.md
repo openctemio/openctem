@@ -56,7 +56,10 @@ created `skipped` with `NO_MATCHING_TOOL`, `TOOL_NOT_INSTALLED`,
 trigger where no step can run is refused with `NO_RUNNABLE_STEPS`. A single
 scanner still refuses. During the run, `noToolSkip`
 (`api/internal/app/scanrun/step_policy.go`) skips instead of failing, and a
-run with an unsupported skip ends `partial`.
+run with an unsupported skip ends `partial`. At claim time a task whose
+tool is retired as a source on the claiming sensor goes to another sensor or
+is refused, and its step is skipped with `SOURCE_RETIRED`
+(`api/internal/app/command/retired_source.go`, [source retirement](source-retirement.md)).
 
 ### Run: steps, tasks, settling
 

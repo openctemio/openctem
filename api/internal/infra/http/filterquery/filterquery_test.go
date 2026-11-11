@@ -1,6 +1,7 @@
 package filterquery
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -87,7 +88,7 @@ func TestParseBodyLimit(t *testing.T) {
 	rt := testRoute(filterspec.UnknownWarn)
 	w := httptest.NewRecorder()
 	body := `{"q":"` + strings.Repeat("a", filterspec.MaxBodyBytes+10) + `"}`
-	if _, ok := rt.ParseBody(w, httptest.NewRequest(http.MethodPost, "/things/search", strings.NewReader(body))); ok {
+	if _, ok := rt.ParseBody(w, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/things/search", strings.NewReader(body))); ok {
 		t.Fatal("an oversized body must be rejected")
 	}
 	if w.Code != http.StatusBadRequest {
@@ -126,5 +127,37 @@ func assertInvalidFilter(t *testing.T, w *httptest.ResponseRecorder, param strin
 	}
 	if body.Code != "INVALID_FILTER" || len(body.Details) == 0 || body.Details[0].Param != param {
 		t.Fatalf("body: %s", w.Body.String())
+	}
+}
+
+// A route that sets NoEchoValues answers a bad value with the param and the
+// reason only; the default route quotes the (short) value of a typed field.
+func TestNoEchoValues(t *testing.T) {
+	const probe = "VALUE-PROBE-1"
+	for _, quiet := range []bool{false, true} {
+		rt := testRoute(filterspec.UnknownStrict)
+		rt.NoEchoValues = quiet
+		w := httptest.NewRecorder()
+		if _, ok := rt.ParseQuery(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/things?severity="+probe, nil)); ok {
+			t.Fatal("a bad enum value was accepted")
+		}
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status %d", w.Code)
+		}
+		if echoed := strings.Contains(w.Body.String(), probe); echoed == quiet {
+			t.Errorf("NoEchoValues=%v but the body quotes the value = %v: %s", quiet, echoed, w.Body)
+		}
+		if !strings.Contains(w.Body.String(), "severity") {
+			t.Errorf("the body lost the param name: %s", w.Body)
+		}
+		// the same through a document
+		body := `{"filter":{"field":"severity","op":"in","value":["` + probe + `"]}}`
+		w = httptest.NewRecorder()
+		if _, ok := rt.ParseBody(w, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/things/search", strings.NewReader(body))); ok {
+			t.Fatal("a bad document value was accepted")
+		}
+		if echoed := strings.Contains(w.Body.String(), probe); echoed == quiet {
+			t.Errorf("document: NoEchoValues=%v but the body quotes the value = %v: %s", quiet, echoed, w.Body)
+		}
 	}
 }

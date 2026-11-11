@@ -28,6 +28,8 @@ var filterOperations = []struct {
 	{"/findings/groups", "get", "findings", []string{"q", "sort", "page", "per_page", "group_by", "view"}},
 	{"/findings/export", "get", "findings", []string{"q", "format", "view", "sort"}},
 	{"/findings/related-cves/{cveId}", "get", "findings", []string{"q"}},
+	{"/scans", "get", "scans", []string{"q", "sort", "page", "per_page", "include_ad_hoc"}},
+	{"/scan-runs", "get", "scan_runs", []string{"sort", "page", "per_page", "include_system"}},
 }
 
 func TestFilterParamBlocksAreGenerated(t *testing.T) {
