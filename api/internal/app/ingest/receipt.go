@@ -147,6 +147,9 @@ func (s *Service) recordReceipt(ctx context.Context, agt *sensor.Sensor, tenantI
 		// What the producer sent, before any filter; a caller that built
 		// the output itself falls back to the findings left.
 		d.Received = max(output.FindingsReceived, len(report.Findings))
+		if opts.ReleasedFromQuarantine {
+			d.ReleasedFindings = len(report.Findings)
+		}
 		if report.Tool != nil {
 			d.Tool = report.Tool.Name
 			d.ToolVersion = report.Tool.Version
