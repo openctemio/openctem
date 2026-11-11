@@ -94,7 +94,7 @@ jobs:
 
       - name: Install Chromium
         working-directory: web
-        run: npx playwright install --with-deps --only-shell chromium
+        run: ../.github/scripts/install-chromium.sh --only-shell
 
       - name: Take or compare screenshots
         working-directory: web

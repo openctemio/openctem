@@ -511,12 +511,12 @@ jobs:
       - name: Install Chromium
         if: steps.pw-cache.outputs.cache-hit != 'true'
         working-directory: web
-        run: npx playwright install --with-deps --only-shell chromium
+        run: ../.github/scripts/install-chromium.sh --only-shell
 
       - name: Install Chromium system libraries
         if: steps.pw-cache.outputs.cache-hit == 'true'
         working-directory: web
-        run: npx playwright install-deps chromium
+        run: ../.github/scripts/install-chromium.sh --only-shell
 
       - name: Run the suite
         working-directory: web
