@@ -6,19 +6,11 @@
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import {
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
-  CheckCircle2,
-  CircleMinus,
-  Table2,
-  BarChart3,
-  TriangleAlert,
-  XCircle,
-} from 'lucide-react'
+import { CheckCircle2, CircleMinus, Table2, BarChart3, TriangleAlert, XCircle } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
+import { Delta } from '@/components/ui/delta'
+import { Sparkline as SparklineGraphic } from '@/components/ui/sparkline'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatBucket, formatDelta, formatMetric, type MetricUnit } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
@@ -91,7 +83,6 @@ export function DeltaText({
   const toneVerdict = useToneVerdict()
   if (delta == null || !Number.isFinite(delta)) return null
   const tone = deltaTone(delta, polarity)
-  const Icon = delta > 0 ? ArrowUpRight : delta < 0 ? ArrowDownRight : ArrowRight
   const against =
     comparedTo ??
     (previous != null && Number.isFinite(previous)
@@ -99,14 +90,15 @@ export function DeltaText({
           value: formatMetric(previous, unit, locale),
         })
       : t('dashboardKit.delta.vsPrevious', 'vs previous period'))
-  const verdict = toneVerdict(tone)
   return (
-    <p className={cn('flex items-center gap-1 text-xs', TONE_CLASS[tone])} data-tone={tone}>
-      <Icon className="size-3.5 shrink-0" aria-hidden />
-      <span className="tabular-nums">{formatDelta(delta, unit, locale)}</span>
-      <span className="text-muted-foreground">{against}</span>
-      {verdict && <span className="sr-only">({verdict})</span>}
-    </p>
+    <Delta
+      as="p"
+      delta={delta}
+      text={formatDelta(delta, unit, locale)}
+      tone={tone}
+      against={against}
+      verdict={toneVerdict(tone)}
+    />
   )
 }
 
@@ -188,19 +180,6 @@ export function Sparkline({
 }) {
   const { t, locale } = useTranslation()
   if (!points || points.length < 2) return null
-  const width = 120
-  const vs = points.map((p) => p.v)
-  const min = Math.min(...vs)
-  const max = Math.max(...vs)
-  const span = max - min || 1
-  const step = width / (points.length - 1)
-  const d = points
-    .map((p, i) => {
-      const x = i * step
-      const y = height - 2 - ((p.v - min) / span) * (height - 4)
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
   const first = points[0]
   const last = points[points.length - 1]
   const ends = [first, last].map((p) => ({
@@ -219,23 +198,14 @@ export function Sparkline({
   )
   return (
     <figure className={cn('flex flex-col gap-0.5', className)} data-testid="sparkline">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        className={cn('w-full text-muted-foreground', showEnds ? 'h-8' : 'h-4')}
-        aria-hidden
-        focusable="false"
-      >
-        <path
-          d={d}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
+      <SparklineGraphic
+        values={points.map((p) => p.v)}
+        summary={summary}
+        height={height}
+        endDot={false}
+        className={showEnds ? 'h-8 w-full' : 'h-4 w-full'}
+      />
       <figcaption className="flex justify-between gap-2 text-xs leading-tight text-muted-foreground">
-        <span className="sr-only">{summary}</span>
         {showEnds &&
           ends.map((e, i) => (
             <span
