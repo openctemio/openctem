@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -49,8 +50,26 @@ import {
   viewQueryFromSearch,
 } from '../api/use-saved-views'
 
+/** A view the page ships with (not stored): a toggle shown above the saved views. */
+export interface BuiltInView {
+  id: string
+  label: string
+  icon?: React.ElementType
+  checked: boolean
+  onToggle: () => void
+}
+
 interface SavedViewsMenuProps {
   page: SavedViewPage
+  /**
+   * The filter to save: the API's own list params, or a checked filter document.
+   * Defaults to the page URL's query; a page whose URL keeps other names (or
+   * holds a filter as text) resolves its own here.
+   */
+  resolveFilter?: () => Promise<{ query?: string; filter?: Record<string, unknown> }>
+  /** Views the page ships with, listed first under `builtInLabel`. */
+  builtIn?: BuiltInView[]
+  builtInLabel?: string
   /** The saved view the page shows, if any. */
   activeId?: string
   /** True when the list differs from the active view (used when `changes` is not given). */
@@ -110,6 +129,9 @@ export function summarizeChanges(
  */
 export function SavedViewsMenu({
   page,
+  resolveFilter,
+  builtIn,
+  builtInLabel,
   activeId,
   modified,
   changes,
@@ -143,6 +165,18 @@ export function SavedViewsMenu({
   const mine = views.filter((v) => v.is_owner)
   const shared = views.filter((v) => !v.is_owner)
   const dirty = !!active && (changes ? changes.length > 0 : !!modified)
+  // With no saved view open, the trigger names the built-in views that are on.
+  const builtInOn = (builtIn ?? []).filter((b) => b.checked)
+  const triggerName = active
+    ? active.name
+    : builtInOn.length === 1
+      ? builtInOn[0].label
+      : builtInOn.length > 1
+        ? t('confirm.savedView.builtInCount', '{count} views', { count: builtInOn.length })
+        : t('confirm.savedView.trigger', 'Views')
+
+  const currentFilter = async () =>
+    resolveFilter ? resolveFilter() : { query: viewQueryFromSearch(window.location.search) }
 
   const save = async () => {
     setSaving(true)
@@ -150,7 +184,7 @@ export function SavedViewsMenu({
       const view = await createSavedView({
         page,
         name: name.trim(),
-        query: viewQueryFromSearch(window.location.search),
+        ...(await currentFilter()),
         group_id: share === PERSONAL || share === ORGANIZATION ? undefined : share,
         ...(share === ORGANIZATION ? { share_with_org: true } : {}),
         group_by: groupBy || undefined,
@@ -185,7 +219,7 @@ export function SavedViewsMenu({
         description: active.description,
         // The open view stays in the query: the API saves its filter with the
         // URL's filters on top, as the list runs it.
-        query: viewQueryFromSearch(window.location.search),
+        ...(await currentFilter()),
         group_id: active.group_id,
         ...(active.shared_with_org ? { share_with_org: true } : {}),
         group_by: groupBy || undefined,
@@ -336,7 +370,7 @@ export function SavedViewsMenu({
                       name: active.name,
                     })
                   : active.name
-                : t('confirm.savedView.trigger', 'Views')
+                : triggerName
             }
             data-dirty={dirty ? 'true' : undefined}
             onPointerEnter={() => setWanted(true)}
@@ -344,9 +378,7 @@ export function SavedViewsMenu({
           >
             {/* Label by the list toolbar's width (DataTable's size container). */}
             <Bookmark className="h-4 w-4 @2xl/toolbar:me-2" />
-            <span className="hidden truncate @2xl/toolbar:inline">
-              {active ? active.name : t('confirm.savedView.trigger', 'Views')}
-            </span>
+            <span className="hidden truncate @2xl/toolbar:inline">{triggerName}</span>
             {dirty && (
               // The unsaved-changes dot: state by shape and colour, never colour alone
               // (the button's name says it too).
@@ -359,6 +391,29 @@ export function SavedViewsMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
+          {builtIn && builtIn.length > 0 && (
+            <>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                {builtInLabel}
+              </DropdownMenuLabel>
+              {builtIn.map((b) => {
+                const Icon = b.icon
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={b.id}
+                    checked={b.checked}
+                    onCheckedChange={b.onToggle}
+                    // Keep the menu open so several views can be combined.
+                    onSelect={(e) => e.preventDefault()}
+                  >
+                    {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+                    {b.label}
+                  </DropdownMenuCheckboxItem>
+                )
+              })}
+              <DropdownMenuSeparator />
+            </>
+          )}
           {dirty && active && (
             <>
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">

@@ -16,6 +16,7 @@ import { isPropertyKey } from '@/features/asset-types/lib/property-schema'
 import { ASSET_LENSES, type AssetLens } from '@/features/asset-types/registry.generated'
 import type { AssetSearchFilters } from '../hooks/use-assets'
 import { isCoverageCause } from './coverage-cause'
+import { TABS_LENS, tabById, tabFromTypes } from './inventory-tabs'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
 
 /** The subset of AssetSearchFilters the inventory page drives + syncs to the URL. */
@@ -68,12 +69,115 @@ export type InventoryFilters = Pick<
 > & {
   /** One registry lens (`?lens=code`): every type of it, aliases included. */
   lens?: AssetLens
+  /** The open type tab of the External surface lens (`?tab=ip_address`): a locked type condition. */
+  tab?: string
+  /** A filter chips cannot show (`?fq=`): the query text, run through the filter document. */
+  advanced?: string
+  /**
+   * Filters the page has no control for, kept under the API's own names (`ip`,
+   * `network`, `port_gte`...): the query text and the Network column write them.
+   */
+  extra?: Record<string, string>
+  /** The list is grouped (`?group=network`). */
+  group?: 'network'
+  /** The open saved view (`?view=<id>`). */
+  view?: string
 }
 
 /** The risk score from which an asset counts as high risk (the API's high_risk_count). */
 export const HIGH_RISK_SCORE = 70
 
 const LENS_PARAM = 'lens'
+const TAB_PARAM = 'tab'
+const FQ_PARAM = 'fq'
+const GROUP_PARAM = 'group'
+const VIEW_PARAM = 'view'
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The list parameters, under the API's own names, that the page has no control
+ * for. The URL carries them as they are and the list sends them as they are;
+ * anything else in the URL is not a filter of this page. `_not`, `_gte`, `_lte`,
+ * `_gt` and `_lt` follow the registry's naming.
+ */
+const EXTRA_FIELDS = new Set([
+  'id',
+  'name',
+  'name_contains',
+  'name_not',
+  'type_not',
+  'sub_type_not',
+  'criticality_not',
+  'status_not',
+  'scope_not',
+  'exposure_not',
+  'environment_not',
+  'data_classification_not',
+  'discovery_source',
+  'discovery_source_not',
+  'provider_not',
+  'lens_not',
+  'sync_status',
+  'sync_status_not',
+  'technology_not',
+  'attribution_not',
+  'owner',
+  'asset_group',
+  'under',
+  'domain',
+  'domain_not',
+  'ip',
+  'network',
+  'port',
+  'port_not',
+  'service',
+  'service_not',
+  'covered_by',
+  'discovery_technique',
+  'risk_score_lte',
+  'risk_score_gt',
+  'risk_score_lt',
+  'first_seen_gte',
+  'first_seen_lte',
+  'first_seen_gt',
+  'first_seen_lt',
+  'discovered_at_gte',
+  'discovered_at_lte',
+  'discovered_at_gt',
+  'discovered_at_lt',
+  'created_at_gt',
+  'created_at_lt',
+  'updated_at_gte',
+  'updated_at_lte',
+  'updated_at_gt',
+  'updated_at_lt',
+  'last_synced_gte',
+  'last_synced_lte',
+  'last_synced_gt',
+  'last_synced_lt',
+  'last_seen_gt',
+  'last_seen_lt',
+  'finding_count',
+  'finding_count_gte',
+  'finding_count_lte',
+  'finding_count_gt',
+  'finding_count_lt',
+  'port_gte',
+  'port_lte',
+  'port_gt',
+  'port_lt',
+  'expires_gte',
+  'expires_lte',
+  'confidence_gte',
+  'confidence_lte',
+  'confidence_gt',
+  'confidence_lt',
+])
+
+/** Whether a URL param is one of the page's pass-through list filters. */
+export function isExtraParam(key: string): boolean {
+  return EXTRA_FIELDS.has(key)
+}
 const TAGS_MODE_PARAM = 'tags_mode'
 const MIN_RISK_PARAM = 'min_risk_score'
 /** coverage=covered|uncovered (the dashboard's Discovery stage opens uncovered). */
@@ -175,6 +279,23 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
   // An unknown lens would only ever match nothing: drop it.
   const lens = sp.get(LENS_PARAM)
   if (lens && isLens(lens)) out.lens = lens
+  // The External surface lens splits by type: ?tab=, or an old single-type link.
+  if (out.lens === TABS_LENS) {
+    const tab = tabById(sp.get(TAB_PARAM)) ?? tabFromTypes(out.types, out.subType)
+    if (tab) {
+      out.tab = tab.id
+      delete out.types
+      delete out.subType
+    }
+  }
+  const fq = sp.get(FQ_PARAM)
+  if (fq) out.advanced = fq
+  if (sp.get(GROUP_PARAM) === 'network') out.group = 'network'
+  const view = sp.get(VIEW_PARAM)
+  if (view && UUID_RE.test(view)) out.view = view
+  sp.forEach((value, key) => {
+    if (value !== '' && isExtraParam(key)) (out.extra ??= {})[key] = value
+  })
   // "any" is the default and never written; anything else is ignored.
   if (sp.get(TAGS_MODE_PARAM) === 'all') out.tagsMode = 'all'
   const minRisk = Number(sp.get(MIN_RISK_PARAM))
@@ -216,6 +337,13 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   const props = serializePropertiesParam(f.propertiesFilter)
   if (props) sp.set(PROPERTIES_PARAM, props)
   if (f.lens) sp.set(LENS_PARAM, f.lens)
+  if (f.lens === TABS_LENS && f.tab) sp.set(TAB_PARAM, f.tab)
+  if (f.advanced) sp.set(FQ_PARAM, f.advanced)
+  if (f.group) sp.set(GROUP_PARAM, f.group)
+  if (f.view) sp.set(VIEW_PARAM, f.view)
+  for (const key of Object.keys(f.extra ?? {}).sort()) {
+    if (isExtraParam(key) && f.extra?.[key]) sp.set(key, f.extra[key])
+  }
   if (f.tagsMode === 'all' && f.tags?.length) sp.set(TAGS_MODE_PARAM, 'all')
   if (f.minRiskScore !== undefined) sp.set(MIN_RISK_PARAM, String(f.minRiskScore))
   if (f.coverage) sp.set(COVERAGE_PARAM, f.coverage)
@@ -373,7 +501,9 @@ export function isInventoryFilterEmpty(f: InventoryFilters): boolean {
     !f.lastSeenBefore &&
     !f.lastSeenAfter &&
     !f.expiresBefore &&
-    !f.expiresAfter
+    !f.expiresAfter &&
+    !f.advanced &&
+    !Object.keys(f.extra ?? {}).length
   )
 }
 
@@ -395,6 +525,8 @@ export function countActiveFilters(f: InventoryFilters): number {
   for (const values of Object.values(f.propertiesFilter ?? {})) n += values.length
   if (f.lastSeenBefore || f.lastSeenAfter) n += 1
   if (f.expiresBefore || f.expiresAfter) n += 1
+  if (f.advanced) n += 1
+  n += Object.keys(f.extra ?? {}).length
   return n
 }
 

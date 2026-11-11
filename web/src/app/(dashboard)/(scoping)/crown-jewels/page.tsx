@@ -95,7 +95,7 @@ import {
   type RiskNoticeState,
 } from '@/features/assets/components/asset-risk-impact-notice'
 
-const CROWN_JEWELS_KEY = '/api/v1/assets?is_crown_jewel=true&per_page=100'
+const CROWN_JEWELS_KEY = '/api/v1/assets?crown_jewel=true&per_page=100'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 

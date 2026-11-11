@@ -50,19 +50,19 @@ describe('FilterGroupActions', () => {
   it('shows nothing without permission, without a condition or without matches', () => {
     m.can.mockReturnValue(false)
     const { container, rerender } = render(
-      <FilterGroupActions params={{ types: 'domain' }} total={5} />
+      <FilterGroupActions params={{ type: 'domain' }} total={5} />
     )
     expect(container).toBeEmptyDOMElement()
     m.can.mockReturnValue(true)
     rerender(<FilterGroupActions params={{ page: '1', per_page: '20' }} total={5} />)
     expect(container).toBeEmptyDOMElement()
-    rerender(<FilterGroupActions params={{ types: 'domain' }} total={0} />)
+    rerender(<FilterGroupActions params={{ type: 'domain' }} total={0} />)
     expect(container).toBeEmptyDOMElement()
   })
 
   it('saves the filter on screen as a rule group and opens it', async () => {
     m.create.mockResolvedValue({ id: 'new-group' })
-    render(<FilterGroupActions params={{ types: 'domain', tags: 'prod', page: '3' }} total={130} />)
+    render(<FilterGroupActions params={{ type: 'domain', tag: 'prod', page: '3' }} total={130} />)
     fireEvent.click(screen.getByRole('button', { name: /save filter as group/i }))
     const create = screen.getByRole('button', { name: /create group/i })
     expect(create).toBeDisabled()
@@ -78,10 +78,10 @@ describe('FilterGroupActions', () => {
 
   it('names the filters a rule cannot hold', () => {
     render(
-      <FilterGroupActions params={{ types: 'domain', last_seen_after: '2026-10-01' }} total={9} />
+      <FilterGroupActions params={{ type: 'domain', last_seen_gte: '2026-10-01' }} total={9} />
     )
     fireEvent.click(screen.getByRole('button', { name: /save filter as group/i }))
-    expect(screen.getByTestId('filter-unsupported')).toHaveTextContent('last_seen_after')
+    expect(screen.getByTestId('filter-unsupported')).toHaveTextContent('last_seen_gte')
   })
 
   it('adds everything the filter matches, not only the page, and shows the impact', async () => {
