@@ -60,3 +60,38 @@ func (s *AssetService) CompileList(ctx context.Context, c ListCaller, spec *filt
 	}
 	return filterspec.Compile(spec, assetlist.FieldsFor(assetlist.MonitoringScanned(scanned)), actor)
 }
+
+// ipContextReader reads the IP addresses tab's columns.
+type ipContextReader interface {
+	IPContexts(ctx context.Context, actor filterspec.Actor, ids []string) (map[string]assetdom.IPContext, error)
+	NetworkCounts(ctx context.Context, w *filterspec.Where) ([]assetdom.NetworkCount, bool, error)
+}
+
+// IPContexts returns the names resolving to each address of ids and its
+// open ports, as the caller: only names and ports in the caller's data
+// scope are listed or counted.
+func (s *AssetService) IPContexts(ctx context.Context, c ListCaller, ids []string) (map[string]assetdom.IPContext, error) {
+	r, ok := s.repo.(ipContextReader)
+	if !ok {
+		return nil, ErrListUnavailable
+	}
+	actor, _, err := datascope.ListActor(ctx, s.dataScope, c)
+	if err != nil {
+		return nil, err
+	}
+	return r.IPContexts(ctx, actor, ids)
+}
+
+// NetworkCounts groups the addresses an asset filter matches by network,
+// as the caller (the same WHERE as the list).
+func (s *AssetService) NetworkCounts(ctx context.Context, c ListCaller, spec *filterspec.Spec, scanned bool) ([]assetdom.NetworkCount, bool, error) {
+	r, ok := s.repo.(ipContextReader)
+	if !ok {
+		return nil, false, ErrListUnavailable
+	}
+	w, err := s.CompileList(ctx, c, spec, scanned)
+	if err != nil {
+		return nil, false, err
+	}
+	return r.NetworkCounts(ctx, w)
+}
