@@ -242,20 +242,33 @@ const (
 	// FailureScannerConfigSecret: the scan's stored settings hold a
 	// credential, which never reaches a command (scan.CodeScannerConfigSecret).
 	FailureScannerConfigSecret = "SCANNER_CONFIG_SECRET"
+	// FailureSourceRetired: the organization stopped using the step's tool
+	// on the sensor as a source of findings
+	// (docs/architecture/source-retirement.md), and no other sensor of the
+	// organization may run it; refused at claim, never sent. The step is
+	// skipped, never failed: the rest of the run goes on.
+	FailureSourceRetired = "SOURCE_RETIRED"
 )
 
 // unsupportedSkipCodes are the codes of a step skipped because no tool or
-// sensor of the organization runs it.
+// sensor of the organization runs it (or may: SOURCE_RETIRED).
 var unsupportedSkipCodes = map[string]bool{
 	FailureNoMatchingTool:   true,
 	FailureToolNotInstalled: true,
 	FailureToolDisabled:     true,
 	FailureNoSensorForTool:  true,
+	FailureSourceRetired:    true,
 }
 
 // IsUnsupportedSkipCode reports whether code is the reason of a step skipped
 // because no tool or sensor of the organization runs it.
 func IsUnsupportedSkipCode(code string) bool { return unsupportedSkipCodes[code] }
+
+// IsClaimSkipCode reports whether a command failed at claim with code skips
+// its step instead of failing it: the work was never sent, by a decision of
+// the organization, so the rest of the run goes on (it ends partial, or
+// failed when no step produced results).
+func IsClaimSkipCode(code string) bool { return code == FailureSourceRetired }
 
 // FailureCodeForInfra is the step failure code of a command that ended on
 // the infrastructure class class (command.FailureClass spelling). An
@@ -324,6 +337,7 @@ var failureClasses = map[string]FailureClass{
 	FailureDependencySkipped:         FailureClassConfig,
 	FailureDependencyFailed:          FailureClassTransient,
 	FailureScannerConfigSecret:       FailureClassConfig,
+	FailureSourceRetired:             FailureClassPolicy,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a
