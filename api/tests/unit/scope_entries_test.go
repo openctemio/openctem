@@ -352,7 +352,7 @@ func TestScopeEntry_PlatformGuardrails(t *testing.T) {
 		want         error
 	}{
 		{"domain", "*.com.vn", scopedom.ErrPublicSuffix},
-		{"domain", "*.gov.vn", scopedom.ErrDenyList},
+		{"domain", "*.gov.vn", scopedom.ErrGovernmentName},
 		{"cidr", "0.0.0.0/0", scopedom.ErrDenyList},
 		{"cidr", "8.0.0.0/8", scopedom.ErrCIDRTooLarge},
 	} {
