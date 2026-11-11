@@ -6,6 +6,7 @@ import (
 
 	compliancecheckapp "github.com/openctemio/openctem/api/internal/app/compliancecheck"
 
+	inboxapp "github.com/openctemio/openctem/api/internal/app/inbox"
 	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
@@ -701,6 +702,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		NavPin: handler.NewNavPinHandler(
 			navpinapp.NewService(repos.NavPin, svc.SavedView, svc.Vulnerability, log),
 			svc.Vulnerability, log),
+		Inbox: newInboxHandler(svc, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
@@ -2429,4 +2431,22 @@ func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logge
 		h.SetFeedRunner(runner, configured)
 	}
 	return h
+}
+
+// newInboxHandler wires the Inbox summary: the finding, approval and closure
+// counts from the vulnerability service, the task count when remediation
+// tasks run, and the module gate for the remediation module.
+func newInboxHandler(svc *Services, log *logger.Logger) *handler.InboxHandler {
+	if svc.Vulnerability == nil {
+		return nil
+	}
+	var tasks inboxapp.TaskCounter
+	if svc.RemediationTask != nil {
+		tasks = svc.RemediationTask
+	}
+	var modules inboxapp.ModuleReader
+	if svc.ModuleGate != nil {
+		modules = svc.ModuleGate
+	}
+	return handler.NewInboxHandler(inboxapp.NewService(svc.Vulnerability, tasks, modules), log)
 }
