@@ -152,7 +152,8 @@ the administrator hands things over instead of the mailbox.
   account and the page shows it to that account only, after sign-in.
 - In the web app, the invitee sees a banner with **Review invitation** wherever
   they land after signing in (the organization shell, or the account space of
-  a person with no organization).
+  a person with no organization). In the organization shell the list rides in the session
+  bootstrap (`ownership_invitations`), so the banner adds no request.
 - An expired invitation is renewed with **Change invitee** and the same email
   address, which gives a new invitation with seven more days.
 
