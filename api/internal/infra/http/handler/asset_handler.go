@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -321,6 +322,9 @@ func (h *AssetHandler) UnsnoozeAssetLifecycle(w http.ResponseWriter, r *http.Req
 
 // AssetResponse represents an asset in API responses.
 type AssetResponse struct {
+	// IP is the IP addresses tab's columns of an address asset: its
+	// network, the names resolving to it and its open ports (list only).
+	IP *AssetIPView `json:"ip,omitempty"`
 	// Liveness is what the coverage loop observed about whether the asset
 	// is still there (alive, unreachable, unresolvable, gone), absent when
 	// no active check has looked at it.
@@ -735,6 +739,15 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param  domain  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): any of (comma list)"  collectionFormat(csv)
 // @Param  domain_not  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): none of (comma list)"  collectionFormat(csv)
 // @Param  ip  query  []string  false  "IP address or CIDR range (10.0.0.0/8): any of (comma list)"  collectionFormat(csv)
+// @Param  network  query  []string  false  "network (/24 of an IPv4 address, /64 of IPv6) of address assets: any of (comma list)"  collectionFormat(csv)
+// @Param  port  query  []integer  false  "open port (0-65535): any of (comma list)"  collectionFormat(csv)
+// @Param  port_not  query  []integer  false  "open port (0-65535): none of (comma list)"  collectionFormat(csv)
+// @Param  port_gte  query  integer  false  "open port (0-65535) at least"
+// @Param  port_lte  query  integer  false  "open port (0-65535) at most"
+// @Param  port_gt  query  integer  false  "open port (0-65535) greater than"
+// @Param  port_lt  query  integer  false  "open port (0-65535) less than"
+// @Param  service  query  []string  false  "service on an open port (https, ssh...): any of (comma list)"  collectionFormat(csv)
+// @Param  service_not  query  []string  false  "service on an open port (https, ssh...): none of (comma list)"  collectionFormat(csv)
 // @Param  control_plane  query  boolean  false  "control plane equals"
 // @Param  expires_gte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // @Param  expires_lte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
@@ -807,6 +820,223 @@ func (h *AssetHandler) Search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.serveList(w, r, assetapp.ListQuery{Spec: spec})
+}
+
+// Networks handles GET /api/v1/assets/networks
+// @Summary      Address assets by network
+// @Description  The address assets a GET /assets filter matches, grouped by network (the /24 of IPv4, the /64 of
+// @Description  IPv6), most addresses first, at most 500 networks (capped when there are more). Same params,
+// @Description  registry and data scope as GET /assets.
+// @Tags         Assets
+// @Produce      json
+// @Security     BearerAuth
+// filterspec-params: assets GET /assets/networks
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  name  query  []string  false  "name or name pattern (* any characters, ? one): any of (comma list)"  collectionFormat(csv)
+// @Param  name_contains  query  string  false  "name or name pattern (* any characters, ? one) contains"
+// @Param  name_not  query  []string  false  "name or name pattern (* any characters, ? one): none of (comma list)"  collectionFormat(csv)
+// @Param  type  query  []string  false  "type: any of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  type_not  query  []string  false  "type: none of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  sub_type  query  []string  false  "sub type: any of (comma list)"  collectionFormat(csv)
+// @Param  sub_type_not  query  []string  false  "sub type: none of (comma list)"  collectionFormat(csv)
+// @Param  criticality  query  []string  false  "criticality: any of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  criticality_not  query  []string  false  "criticality: none of (comma list)"  collectionFormat(csv)  Enums(critical, high, medium, low, none)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(active, stale, inactive, archived)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(active, stale, inactive, archived)
+// @Param  scope  query  []string  false  "scope: any of (comma list)"  collectionFormat(csv)  Enums(internal, external, cloud, partner, vendor, shadow)
+// @Param  scope_not  query  []string  false  "scope: none of (comma list)"  collectionFormat(csv)  Enums(internal, external, cloud, partner, vendor, shadow)
+// @Param  exposure  query  []string  false  "exposure: any of (comma list)"  collectionFormat(csv)  Enums(public, restricted, private, isolated, unknown)
+// @Param  exposure_not  query  []string  false  "exposure: none of (comma list)"  collectionFormat(csv)  Enums(public, restricted, private, isolated, unknown)
+// @Param  environment  query  []string  false  "environment: any of (comma list)"  collectionFormat(csv)  Enums(production, staging, development, testing, dr)
+// @Param  environment_null  query  boolean  false  "environment is unset (true) or set (false)"
+// @Param  environment_not  query  []string  false  "environment: none of (comma list)"  collectionFormat(csv)  Enums(production, staging, development, testing, dr)
+// @Param  data_classification  query  []string  false  "data classification: any of (comma list)"  collectionFormat(csv)  Enums(public, internal, confidential, restricted, secret)
+// @Param  data_classification_not  query  []string  false  "data classification: none of (comma list)"  collectionFormat(csv)  Enums(public, internal, confidential, restricted, secret)
+// @Param  internet_facing  query  boolean  false  "internet facing equals"
+// @Param  crown_jewel  query  boolean  false  "crown jewel equals"
+// @Param  risk_score_gte  query  integer  false  "risk score at least"
+// @Param  risk_score_lte  query  integer  false  "risk score at most"
+// @Param  risk_score_gt  query  integer  false  "risk score greater than"
+// @Param  risk_score_lt  query  integer  false  "risk score less than"
+// @Param  discovery_source  query  []string  false  "discovery source: any of (comma list)"  collectionFormat(csv)
+// @Param  discovery_source_not  query  []string  false  "discovery source: none of (comma list)"  collectionFormat(csv)
+// @Param  first_seen_gte  query  string  false  "first seen at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_lte  query  string  false  "first seen at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_gt  query  string  false  "first seen greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  first_seen_lt  query  string  false  "first seen less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_gte  query  string  false  "last seen at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_lte  query  string  false  "last seen at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_gt  query  string  false  "last seen greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_seen_lt  query  string  false  "last seen less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_gte  query  string  false  "discovered at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_lte  query  string  false  "discovered at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_gt  query  string  false  "discovered at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  discovered_at_lt  query  string  false  "discovered at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  lens  query  []string  false  "lens: any of (comma list)"  collectionFormat(csv)  Enums(external_surface, applications, cloud_infra, containers_k8s, code, identities, data, network)
+// @Param  lens_not  query  []string  false  "lens: none of (comma list)"  collectionFormat(csv)  Enums(external_surface, applications, cloud_infra, containers_k8s, code, identities, data, network)
+// @Param  tag  query  []string  false  "tag: any of (comma list)"  collectionFormat(csv)
+// @Param  tag_not  query  []string  false  "tag: none of (comma list)"  collectionFormat(csv)
+// @Param  tag_all  query  []string  false  "carries every one of these tags: any of (comma list)"  collectionFormat(csv)
+// @Param  provider  query  []string  false  "provider (unset: none recorded): any of (comma list)"  collectionFormat(csv)
+// @Param  provider_not  query  []string  false  "provider (unset: none recorded): none of (comma list)"  collectionFormat(csv)
+// @Param  updated_at_gte  query  string  false  "updated at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lte  query  string  false  "updated at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_gt  query  string  false  "updated at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  updated_at_lt  query  string  false  "updated at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_gte  query  string  false  "last synced at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_lte  query  string  false  "last synced at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_gt  query  string  false  "last synced greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_synced_lt  query  string  false  "last synced less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  sync_status  query  []string  false  "sync status: any of (comma list)"  collectionFormat(csv)
+// @Param  sync_status_not  query  []string  false  "sync status: none of (comma list)"  collectionFormat(csv)
+// @Param  has_findings  query  boolean  false  "has findings equals"
+// @Param  finding_count  query  integer  false  "open findings equals"
+// @Param  finding_count_gte  query  integer  false  "open findings at least"
+// @Param  finding_count_lte  query  integer  false  "open findings at most"
+// @Param  finding_count_gt  query  integer  false  "open findings greater than"
+// @Param  finding_count_lt  query  integer  false  "open findings less than"
+// @Param  coverage  query  string  false  "coverage equals"  Enums(covered, uncovered)
+// @Param  coverage_cause  query  []string  false  "coverage cause: any of (comma list)"  collectionFormat(csv)  Enums(no_sensor, platform_failure, paused, target_unreachable, never_run, overdue, out_of_scope, other)
+// @Param  freshness  query  string  false  "freshness equals"  Enums(stale, never)
+// @Param  resolution  query  string  false  "resolution equals"  Enums(resolving, not_resolving)
+// @Param  technology  query  []string  false  "technology name, or name@version: any of (comma list)"  collectionFormat(csv)
+// @Param  technology_not  query  []string  false  "technology name, or name@version: none of (comma list)"  collectionFormat(csv)
+// @Param  technology_version  query  []string  false  "a technology of this exact version: any of (comma list)"  collectionFormat(csv)
+// @Param  technology_category  query  []string  false  "technology category: any of (comma list)"  collectionFormat(csv)  Enums(web_server, framework, language, js_library, cdn, hosting, waf, analytics, security_header, other)
+// @Param  business_unit  query  []string  false  "business unit: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_group  query  []string  false  "asset group: any of (comma list)"  collectionFormat(csv)
+// @Param  owner  query  []string  false  "owner: any of (comma list)"  collectionFormat(csv)
+// @Param  has_owner  query  boolean  false  "has owner equals"
+// @Param  under  query  []string  false  "names equal to or below these DNS names: any of (comma list)"  collectionFormat(csv)
+// @Param  domain  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): any of (comma list)"  collectionFormat(csv)
+// @Param  domain_not  query  []string  false  "domain (x: x and everything that belongs to it; *.x: only below x): none of (comma list)"  collectionFormat(csv)
+// @Param  ip  query  []string  false  "IP address or CIDR range (10.0.0.0/8): any of (comma list)"  collectionFormat(csv)
+// @Param  network  query  []string  false  "network (/24 of an IPv4 address, /64 of IPv6) of address assets: any of (comma list)"  collectionFormat(csv)
+// @Param  port  query  []integer  false  "open port (0-65535): any of (comma list)"  collectionFormat(csv)
+// @Param  port_not  query  []integer  false  "open port (0-65535): none of (comma list)"  collectionFormat(csv)
+// @Param  port_gte  query  integer  false  "open port (0-65535) at least"
+// @Param  port_lte  query  integer  false  "open port (0-65535) at most"
+// @Param  port_gt  query  integer  false  "open port (0-65535) greater than"
+// @Param  port_lt  query  integer  false  "open port (0-65535) less than"
+// @Param  service  query  []string  false  "service on an open port (https, ssh...): any of (comma list)"  collectionFormat(csv)
+// @Param  service_not  query  []string  false  "service on an open port (https, ssh...): none of (comma list)"  collectionFormat(csv)
+// @Param  control_plane  query  boolean  false  "control plane equals"
+// @Param  expires_gte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_lte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_gt  query  string  false  "expiry (a certificate's not after, a domain's expiry) greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  expires_lt  query  string  false  "expiry (a certificate's not after, a domain's expiry) less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  attribution  query  []string  false  "attribution: any of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  attribution_not  query  []string  false  "attribution: none of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  covered_by  query  []string  false  "scope entry that confirmed the asset: any of (comma list)"  collectionFormat(csv)
+// @Param  scope_status  query  []string  false  "scope status: any of (comma list)"  collectionFormat(csv)  Enums(in_scope, not_covered, excluded, internal)
+// @Param  monitoring_state  query  []string  false  "monitoring state: any of (comma list)"  collectionFormat(csv)  Enums(irrelevant, out_of_scope, inactive, pending_decision, unvalidated, not_monitored, monitored)
+// @Param  liveness  query  []string  false  "liveness: any of (comma list)"  collectionFormat(csv)  Enums(alive, unreachable, unresolvable, gone, unknown)
+// @Param  primary  query  boolean  false  "the organization's root domains equals"
+// @Param  discovered_by  query  []string  false  "discovered by: any of (comma list)"  collectionFormat(csv)  Enums(fqdn_under_verified_root, fqdn_under_asserted_root, tenant_scanned, tenant_scan_discovered, matches_scope_target, certificate_san)
+// @Param  discovery_technique  query  []string  false  "discovery technique: any of (comma list)"  collectionFormat(csv)
+// @Param  confidence_gte  query  integer  false  "attribution confidence (0-100) at least"
+// @Param  confidence_lte  query  integer  false  "attribution confidence (0-100) at most"
+// @Param  confidence_gt  query  integer  false  "attribution confidence (0-100) greater than"
+// @Param  confidence_lt  query  integer  false  "attribution confidence (0-100) less than"
+// @Param  program_assets  query  string  false  "bug-bounty program assets equals"  Enums(only, exclude)
+// end filterspec-params
+// @Success      200  {object}  AssetNetworksResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Router       /assets/networks [get]
+func (h *AssetHandler) Networks(w http.ResponseWriter, r *http.Request) {
+	q, _ := rewriteLegacyAssetParams(r.URL.Query())
+	spec, ok := h.listRoute("GET /assets/networks").ParseValues(w, r, q)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	tenantID := middleware.MustGetTenantID(ctx)
+	caller := assetapp.ListCaller{TenantID: tenantID, UserID: middleware.GetUserID(ctx),
+		IsAdmin: middleware.IsAdmin(ctx), APIKey: middleware.ReadsOnOwnScope(ctx)}
+	scanned := usesField(spec, "monitoring_state") && h.unclassifiedScanned(r, tenantID)
+	nets, capped, err := h.service.NetworkCounts(ctx, caller, spec, scanned)
+	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			filterquery.WriteError(w, err)
+			return
+		}
+		if errors.Is(err, asset.ErrQueryTimeout) {
+			apierror.QueryTimeout("The assets query took too long; narrow the search or the filters").WriteJSON(w)
+			return
+		}
+		h.handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, AssetNetworksResponse{Data: nets, Capped: capped})
+}
+
+// AssetNetworksResponse is the group by network.
+type AssetNetworksResponse struct {
+	Data   []asset.NetworkCount `json:"data"`
+	Capped bool                 `json:"capped,omitempty"`
+}
+
+// AssetIPView is what the IP addresses tab shows beside an address.
+type AssetIPView struct {
+	// Network is the /24 (IPv4) or /64 (IPv6) the address is in.
+	Network string `json:"network,omitempty"`
+	asset.IPContext
+}
+
+// addIPContexts adds the network, the names resolving to it and its open
+// ports to every address row, as the caller.
+func (h *AssetHandler) addIPContexts(r *http.Request, caller assetapp.ListCaller, out []*AssetResponse, assets []*asset.Asset) {
+	ids := make([]string, 0, len(assets))
+	for i, a := range assets {
+		if a.Type() != asset.AssetTypeIPAddress {
+			continue
+		}
+		ids = append(ids, a.ID().String())
+		out[i].IP = &AssetIPView{Network: addressNetwork(a.Name()), IPContext: asset.IPContext{Names: []string{}, Ports: []asset.IPPort{}}}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	ctxs, err := h.service.IPContexts(r.Context(), caller, ids)
+	if err != nil {
+		h.logger.Warn("asset list: ip columns unavailable", "error", err)
+		return
+	}
+	for i, a := range assets {
+		if c, ok := ctxs[a.ID().String()]; ok && out[i].IP != nil {
+			if c.Names == nil {
+				c.Names = []string{}
+			}
+			if c.Ports == nil {
+				c.Ports = []asset.IPPort{}
+			}
+			out[i].IP.IPContext = c
+		}
+	}
+}
+
+// addressNetwork is the /24 (IPv4) or /64 (IPv6) network of an address
+// name, "" when it is not one bare address (asset_ip_network in SQL).
+func addressNetwork(name string) string {
+	addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(name), "[]"))
+	if err != nil || addr.Zone() != "" {
+		return ""
+	}
+	bits := 64
+	if addr.Is4() || addr.Is4In6() {
+		addr, bits = addr.Unmap(), 24
+	}
+	p, err := addr.Prefix(bits)
+	if err != nil {
+		return ""
+	}
+	return p.String()
 }
 
 // AssetListResponse is a page of assets.
@@ -938,6 +1168,7 @@ func (h *AssetHandler) serveList(w http.ResponseWriter, r *http.Request, lq asse
 	h.addTriage(r, tenantID, ptrs, result.Data)
 	h.addMonitoringStates(r, tenantID, ptrs)
 	h.addTechnologies(r, tenantID, listTechnologiesPerAsset, ptrs)
+	h.addIPContexts(r, caller, ptrs, result.Data)
 	meta := ListResponse[AssetResponse]{Total: result.Total, Page: result.Page, PerPage: result.PerPage,
 		TotalPages: result.TotalPages, Links: NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages)}
 

@@ -258,6 +258,13 @@ that reads another table pins the caller's tenant.
   `total_capped` is true. Offsets stop at 10,000 too; `cursor` (empty for the
   first page) pages in `last_seen desc, id desc` order with `next_cursor` and
   no depth limit. A cursor carries a position only, never a tenant or scope.
+- `network` (the /24 of IPv4, the /64 of IPv6, `asset_ip_network`, index
+  `idx_assets_ip_network`), `port` and `service` (open ports,
+  [asset-ports.md](asset-ports.md)) filter the IP addresses tab. Every
+  address row carries `ip`: its network, up to 3 names resolving to it and up
+  to 5 open ports, with totals, counting only names and ports in the
+  caller's scope. `GET /assets/networks` groups the matching addresses by
+  network (at most 500).
 - `?view=<id>` runs a saved view of the `assets` page as the caller.
 - List and count run in one read-only transaction under a 5 s statement
   timeout.
