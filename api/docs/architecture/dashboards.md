@@ -461,11 +461,14 @@ receipt or on the discovery tool whose report named the software.
   quarantine; the card says "Includes N released from quarantine".
 - Noise: received splits into new or reopened (created plus reopened:
   the receipt list's New and Reopened totals added), merged into findings
-  that exist (the rest after new, reopened and not stored: still detected
-  and repeats within a report) and not stored. These three sum to received.
-  Suppressed by an approved rule is the part of New that was stored closed
-  on arrival (the list's Suppressed total); it is inside New, not a fourth
-  part. One definition per label: the intake summary, the noise headline,
+  that exist (the rest after new, reopened, suppressed and not stored: still
+  detected, repeats within a report and the other outcomes), suppressed and
+  not stored. These four sum to received. Suppressed by an approved rule is
+  the list's Suppressed total; the receipt counts it apart from created (a
+  suppressed new finding is never also counted as created), so it is its own
+  part and New does not contain it, and the removed noise (received minus new)
+  counts it once.
+  One definition per label: the intake summary, the noise headline,
   the hero funnel and the source tooltip all use it.
 - Reconciliation: the noise also carries the receipts' full split
   (`seen_again`: still detected; `repeated`: the `merged` outcome;

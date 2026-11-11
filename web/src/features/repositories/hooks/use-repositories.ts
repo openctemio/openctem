@@ -63,64 +63,36 @@ const defaultConfig: SWRConfiguration = {
 // ============================================
 
 function buildRepositoriesEndpoint(filters?: RepositoryFilters): string {
-  // Use assets endpoint with types=repository filter
+  // The assets list, narrowed to the repository type. It takes the list query
+  // contract's own parameter names and refuses others, so only the filters it
+  // has a field for are sent.
   const baseUrl = '/api/v1/assets'
   const params = new URLSearchParams()
 
-  // Always filter by repository type (API uses 'types' plural)
-  params.set('types', 'repository')
+  params.set('type', 'repository')
 
   if (filters) {
     // Text search
     if (filters.name) params.set('name', filters.name)
-    if (filters.search) params.set('search', filters.search)
+    if (filters.search) params.set('q', filters.search)
 
-    // SCM filters
-    if (filters.scmProviders?.length) params.set('scm_providers', filters.scmProviders.join(','))
-    if (filters.scmConnectionIds?.length)
-      params.set('scm_connection_ids', filters.scmConnectionIds.join(','))
-    if (filters.scmOrganizations?.length)
-      params.set('scm_organizations', filters.scmOrganizations.join(','))
-
-    // Status filters
-    if (filters.visibilities?.length) params.set('visibilities', filters.visibilities.join(','))
-    if (filters.statuses?.length) params.set('statuses', filters.statuses.join(','))
-    if (filters.syncStatuses?.length) params.set('sync_statuses', filters.syncStatuses.join(','))
-    if (filters.complianceStatuses?.length)
-      params.set('compliance_statuses', filters.complianceStatuses.join(','))
-    if (filters.qualityGateStatuses?.length)
-      params.set('quality_gate_statuses', filters.qualityGateStatuses.join(','))
-
-    // Classification filters
-    if (filters.criticalities?.length) params.set('criticalities', filters.criticalities.join(','))
-    if (filters.scopes?.length) params.set('scopes', filters.scopes.join(','))
-    if (filters.exposures?.length) params.set('exposures', filters.exposures.join(','))
+    // Status and classification filters
+    if (filters.statuses?.length) params.set('status', filters.statuses.join(','))
+    if (filters.criticalities?.length) params.set('criticality', filters.criticalities.join(','))
+    if (filters.scopes?.length) params.set('scope', filters.scopes.join(','))
+    if (filters.exposures?.length) params.set('exposure', filters.exposures.join(','))
 
     // Other filters
-    if (filters.languages?.length) params.set('languages', filters.languages.join(','))
-    if (filters.tags?.length) params.set('tags', filters.tags.join(','))
-    if (filters.groupIds?.length) params.set('group_ids', filters.groupIds.join(','))
-    if (filters.teamIds?.length) params.set('team_ids', filters.teamIds.join(','))
-    if (filters.policyIds?.length) params.set('policy_ids', filters.policyIds.join(','))
+    if (filters.tags?.length) params.set('tag', filters.tags.join(','))
 
     // Finding filters
     if (filters.hasFindings !== undefined) params.set('has_findings', String(filters.hasFindings))
-    if (filters.hasCriticalFindings !== undefined)
-      params.set('has_critical_findings', String(filters.hasCriticalFindings))
     if (filters.minRiskScore !== undefined)
-      params.set('min_risk_score', String(filters.minRiskScore))
+      params.set('risk_score_gte', String(filters.minRiskScore))
     if (filters.maxRiskScore !== undefined)
-      params.set('max_risk_score', String(filters.maxRiskScore))
+      params.set('risk_score_lte', String(filters.maxRiskScore))
 
-    // Date filters
-    if (filters.lastScannedAfter) params.set('last_scanned_after', filters.lastScannedAfter)
-    if (filters.lastScannedBefore) params.set('last_scanned_before', filters.lastScannedBefore)
-    if (filters.createdAfter) params.set('created_after', filters.createdAfter)
-    if (filters.createdBefore) params.set('created_before', filters.createdBefore)
-
-    // Pagination & sorting
-    if (filters.sortBy) params.set('sort_by', filters.sortBy)
-    if (filters.sortOrder) params.set('sort_order', filters.sortOrder)
+    // Pagination
     if (filters.page) params.set('page', String(filters.page))
     if (filters.perPage) params.set('per_page', String(filters.perPage))
   }
@@ -872,10 +844,10 @@ export function getSCMConnectionsKey() {
  */
 export async function invalidateRepositoriesCache() {
   const { mutate } = await import('swr')
-  // Match any assets endpoint with types=repository (note: 'types' with 's')
+  // Match any assets endpoint with type=repository
   await mutate(
     (key) =>
-      typeof key === 'string' && key.includes('/api/v1/assets') && key.includes('types=repository'),
+      typeof key === 'string' && key.includes('/api/v1/assets') && key.includes('type=repository'),
     undefined,
     { revalidate: true }
   )

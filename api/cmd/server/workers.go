@@ -1096,6 +1096,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	// Domain membership of assets: drain the queue that database triggers
 	// fill on every asset and edge change (docs/architecture/asset-domain-membership.md).
 	w.ControllerManager.Register(controller.NewAssetDomainMembershipController(postgres.NewAssetDomainMembershipRepository(&postgres.DB{DB: deps.DB}), 0))
+	// Open ports of assets: drain the queue that database triggers fill on
+	// every port, address and edge change (docs/architecture/asset-ports.md).
+	w.ControllerManager.Register(controller.NewAssetPortsController(postgres.NewAssetPortRepository(&postgres.DB{DB: deps.DB}), 0))
 
 	// Durable jobs: ticket status sync and invitation e-mails, queued in the
 	// transaction of the change that needs them.
