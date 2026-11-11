@@ -36,6 +36,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { DataTable, ErrorState, PageStack } from '@/features/shared'
+import { ListSearch } from '@/features/shared/components/list-search'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -407,7 +408,6 @@ function OrganizationField({
   onChange: (v: { id: string; name: string } | null) => void
 }) {
   const { t } = useTranslation()
-  const id = useId()
   const [input, setInput] = useState('')
   const { term } = useSearchQuery(input)
   const { data } = useOrganizations({ search: term, perPage: 8 })
@@ -426,13 +426,16 @@ function OrganizationField({
   }
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={id}>{t('admin.blockedNames.organization', 'Organization')}</Label>
-      <Input
-        id={id}
+      <span className="text-sm font-medium">
+        {t('admin.blockedNames.organization', 'Organization')}
+      </span>
+      <ListSearch
         value={input}
-        onChange={(e) => setInput(e.target.value)}
+        onChange={setInput}
         placeholder={t('admin.blockedNames.organizationSearch', 'Search organizations')}
-        autoComplete="off"
+        label={t('admin.blockedNames.organization', 'Organization')}
+        className="sm:max-w-none"
+        inputProps={{ autoComplete: 'off' }}
       />
       {term && (data?.data?.length ?? 0) > 0 && (
         <ul className="max-h-48 overflow-y-auto rounded-md border">
