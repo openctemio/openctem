@@ -812,6 +812,7 @@ function TrustConfigDialog({
               </p>
             )}
             {allowForks && (
+              // submit-error-ok: a warning about the choice, not a failed submit
               <Alert variant="destructive">
                 <ShieldAlert />
                 <AlertTitle>

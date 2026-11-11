@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/querylang"
 )
 
 // toolInputError is a tool argument-validation error whose message is safe to
@@ -155,7 +156,8 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "list_findings",
 			Description: "List this tenant's findings you can see, with the findings list's filters and order " +
-				"(the console's Findings page). Comma lists are OR within a filter; filters are ANDed. Paged: " +
+				"(the console's Findings page). Comma lists are OR within a filter; filters are ANDed; filter takes " +
+				"the search box syntax for anything else. Paged: " +
 				"page and limit, with total and next_page. A finding is one issue on one asset with its own " +
 				"status: the same CVE can be false_positive on one asset and new on another." + mcpUntrustedHint,
 			InputSchema:  json.RawMessage(mcpFindingListSchema),
@@ -271,6 +273,7 @@ const mcpPageSchema = `{"type":"object","properties":{` +
 // mcpFindingListSchema is list_findings' input: the findings list's
 // filters under plain names.
 const mcpFindingListSchema = `{"type":"object","properties":{` +
+	`"filter":{"type":"string","description":"` + mcpFilterHint + `, e.g. severity>=high kev=true -status:accepted"},` +
 	`"severity":{"type":"string","description":"comma list of critical|high|medium|low|info|none"},` +
 	`"status":{"type":"string","description":"comma list of new|confirmed|in_progress|fix_applied|resolved|false_positive|accepted|duplicate"},` +
 	`"state":{"type":"string","description":"open|fixed|dispositioned|closed (status groups)"},` +
@@ -298,6 +301,7 @@ const mcpFindingListSchema = `{"type":"object","properties":{` +
 	`"limit":{"type":"integer","description":"rows per page (default 25, max 100)"}}}`
 
 type findingListArgs struct {
+	Filter        string   `json:"filter"`
 	Severity      string   `json:"severity"`
 	Status        string   `json:"status"`
 	State         string   `json:"state"`
@@ -415,6 +419,9 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 	spec, err := filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict, NoAliases: true})
 	if err != nil {
 		return nil, filterInputError(err)
+	}
+	if spec, err = withMCPFilter(ctx, tenantID, querylang.Findings, vulnerability.FindingFields, spec, a.Filter); err != nil {
+		return nil, err
 	}
 	aiTLPs, err := h.aiAllowedTLPs(ctx, tenantID)
 	if err != nil {

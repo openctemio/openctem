@@ -213,6 +213,12 @@ type Field struct {
 	// offer "at least high" (OrderedValues). The stored filter is still an
 	// in list of the values.
 	Ordered bool
+	// UserOptional, for a field whose templates read UserToken, says the
+	// field still means something without an acting user (system work, a
+	// user-less key): the zero id is bound and matches no member, so a
+	// user-relative part of the template fails closed instead of the whole
+	// filter being refused ("tags I may see" still filters own tags).
+	UserOptional bool
 	// Glob, for a TypeString field, says its values are name patterns ('*'
 	// any run, '?' one character; NormalizeGlob) or keys with a leading
 	// "*." (domain membership), so an editor does not refuse them.

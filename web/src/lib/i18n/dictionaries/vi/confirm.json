@@ -438,6 +438,7 @@
   "confirm.saml.removeDesc": "Mọi người không thể đăng nhập qua nhà cung cấp danh tính nữa. Hãy chắc chắn họ có cách đăng nhập khác trước. Chứng chỉ và cấu hình đã lưu bị xóa; bạn có thể cấu hình lại SAML từ đầu.",
   "confirm.saml.removeTitle": "Gỡ cấu hình SAML?",
   "confirm.sampleMore": "và {count} mục khác",
+  "confirm.savedView.builtInCount": "{count} chế độ xem",
   "confirm.savedView.change.columns": "đã đổi các cột",
   "confirm.savedView.change.density": "đã đổi mật độ",
   "confirm.savedView.change.filters": "{count, plural, other {đã thêm # bộ lọc}}",

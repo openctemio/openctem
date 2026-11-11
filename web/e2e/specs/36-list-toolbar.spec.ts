@@ -158,6 +158,18 @@ test.describe('Add filter on a phone', { tag: ['@shell'] }, () => {
     // The keyboard takes the lower half: the visual viewport shrinks.
     await page.setViewportSize({ width: 390, height: 450 })
     await page.waitForTimeout(400)
+    // The sheet takes its new height over a few frames (dvh follows the
+    // resize): measure the field once it has stopped moving.
+    let last = Number.NaN
+    await expect
+      .poll(async () => {
+        const y = (await field.boundingBox())!.y
+        const still = y === last
+        last = y
+        await page.waitForTimeout(100)
+        return still
+      })
+      .toBe(true)
     await inView(450)
     // The list scrolls inside the sheet, the field stays put.
     const before = (await field.boundingBox())!.y

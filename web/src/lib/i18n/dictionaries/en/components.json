@@ -45,6 +45,7 @@
   "components.detail.notFoundHint": "No asset you can see uses this package.",
   "components.detail.private": "Seen in your inventory",
   "components.detail.public": "Public package",
+  "components.dialogSubmitError.reference": "Reference",
   "components.empty.description": "Components appear when a sensor runs an SCA tool, a CI job uploads a report, or you import an SBOM (CycloneDX or SPDX JSON).",
   "components.empty.sensors": "Set up a sensor",
   "components.empty.title": "No components yet",

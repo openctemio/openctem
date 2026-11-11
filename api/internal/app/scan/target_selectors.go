@@ -124,8 +124,8 @@ func isCIDRTarget(t string) bool {
 // platform lets anyone cover (a public suffix, a shared provider apex, a
 // denied name), at create and edit. The scope gate would refuse every name
 // under it at dispatch anyway; this says so when the scan is saved.
-func validateSelectorTargets(targets []string) error {
-	g := scopedom.DefaultGuardrails()
+func validateSelectorTargets(tenantID shared.ID, targets []string) error {
+	g := scopedom.DefaultGuardrails().For(tenantID)
 	for _, t := range targets {
 		if !IsWildcardTarget(t) {
 			continue

@@ -339,3 +339,24 @@ func TestBootstrapSession_FailingPinsAreLeftOut(t *testing.T) {
 		t.Fatalf("body = %s, want no pins field", body)
 	}
 }
+
+// The caller's open ownership invitations ride in the bootstrap (the app
+// shell's banner needs no request of its own), read for the request's own
+// account only.
+func TestBootstrapSession_OwnershipInvitationsAreTheCallersOwn(t *testing.T) {
+	var asked shared.ID
+	h := (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
+		OwnershipInvitations: func(_ context.Context, userID shared.ID) (*OwnerInvitationListResponse, error) {
+			asked = userID
+			return &OwnerInvitationListResponse{Data: []OwnerInvitationOfferResponse{{ID: "i1", OrganizationName: "Example Org"}}}, nil
+		},
+	})
+	resp := withModules()
+	h.addSession(bsRequest(t, bsUserEntity(t, bsUser), nil, false), resp, bsTenant, bsUser)
+	if asked.String() != bsUser {
+		t.Fatalf("read for %q, want the caller %q", asked.String(), bsUser)
+	}
+	if resp.OwnershipInvitations == nil || len(resp.OwnershipInvitations.Data) != 1 {
+		t.Fatalf("ownership_invitations = %+v, want the caller's one invitation", resp.OwnershipInvitations)
+	}
+}

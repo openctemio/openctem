@@ -1,6 +1,10 @@
 package ingest
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/safetext"
+)
 
 // maxLogValue caps a report-supplied value written to the log.
 const maxLogValue = 256
@@ -10,8 +14,6 @@ const maxLogValue = 256
 func logValue(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
-	if len(s) > maxLogValue {
-		s = s[:maxLogValue]
-	}
+	s = safetext.TruncateBytes(s, maxLogValue)
 	return s
 }

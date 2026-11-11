@@ -3,7 +3,6 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Label } from '@/components/ui/label'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import {
@@ -30,7 +30,7 @@ import { adminElevate, adminEndElevation } from '../api/use-admin-session'
 import { useConsoleFactors } from '../api/use-console-factors'
 import { actingRoleLabel, adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, useReasonAndCode } from './step-up-code-hint'
 
 const DURATIONS = [15, 30, 60] as const
 
@@ -169,20 +169,19 @@ function ElevateDialog({
   const roles = choices
   const [role, setRole] = useState<string>(roles[0] ?? 'ops_admin')
   const [minutes, setMinutes] = useState<number>(30)
-  const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [code, setCode] = useState('')
-  const [codeError, setCodeError] = useState<string | null>(null)
+  // Reason and code: cleared every time the dialog opens or closes.
+  const rc = useReasonAndCode(open)
+  const { reason, setReason, code, setCode, codeError, setCodeError, codeOptional } = rc
   // A security-key-only console confirms with the key after Elevate (the
   // shared step-up dialog); everyone else types the code here, so the
   // elevation needs one dialog. An administrator with a usable key may leave
   // the code empty and confirm with the key instead.
   const { data: factors } = useConsoleFactors(open)
   const codeAllowed = factors?.totp_allowed ?? true
-  const codeOptional = useStepUpCodeOptional()
   const reasonOk = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX
-  const codeOk = !codeAllowed || stepUpCodeReady(code, codeOptional)
+  const codeOk = !codeAllowed || rc.codeOk
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -192,15 +191,13 @@ function ElevateDialog({
     setCodeError(null)
     try {
       await adminElevate(role, minutes, reason.trim(), codeAllowed ? code.trim() : '')
-      setReason('')
-      setCode('')
+      rc.reset()
       onElevated()
     } catch (err) {
       // A refused code is shown under the code field, which stays usable.
       const message = stepUpErrorMessage(err, t)
       if (codeAllowed && code.trim()) {
-        setCode('')
-        setCodeError(message)
+        rc.refuseCode(message)
       } else {
         setError(message)
       }
@@ -293,12 +290,9 @@ function ElevateDialog({
                 )}
               </p>
             )}
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
           </DialogBody>
+          <DialogSubmitError message={error} />
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel', 'Cancel')}

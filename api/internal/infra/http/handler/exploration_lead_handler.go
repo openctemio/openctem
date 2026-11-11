@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -181,7 +180,7 @@ func (h *ExplorationLeadHandler) fail(w http.ResponseWriter, err error) {
 // @Param        group     query  string  false  "waiting, next, running or done"
 // @Param        asset_id  query  string  false  "Subject asset id"
 // @Param        before    query  string  false  "RFC 3339 time: leads changed before it"
-// @Param        limit     query  int     false  "1-200, default 50"
+// @Param        limit     query  int     false  "1-200 (larger is lowered to 200), default 50"
 // @Success      200  {object}  LeadListResponse
 // @Failure      400  {object}  apierror.Error
 // @Router       /exploration/leads [get]
@@ -192,15 +191,12 @@ func (h *ExplorationLeadHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	in := explorationapp.ListInput{Group: q.Get("group"), AssetID: q.Get("asset_id"), Limit: 50}
-	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n < 1 || n > exploration.MaxListLimit {
-			apierror.BadRequest("limit must be between 1 and 200").WriteJSON(w)
-			return
-		}
-		in.Limit = n
+	in := explorationapp.ListInput{Group: q.Get("group"), AssetID: q.Get("asset_id")}
+	limit, ok := listLimit(w, r, 50, exploration.MaxListLimit)
+	if !ok {
+		return
 	}
+	in.Limit = limit
 	if v := q.Get("before"); v != "" {
 		t, err := time.Parse(time.RFC3339Nano, v)
 		if err != nil {
@@ -345,7 +341,7 @@ func (h *ExplorationLeadHandler) Approve(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// Dismiss handles POST /api/v1/exploration/leads/dismiss.
+// Dismiss handles POST /api/v1/exploration/leads/reject.
 //
 // @Summary      Dismiss leads
 // @Description  Closes up to 100 live leads without running them (a running lead settles from its run). Each lead must be in the caller's data scope; the result is per lead. The reason is audited.
@@ -356,7 +352,7 @@ func (h *ExplorationLeadHandler) Approve(w http.ResponseWriter, r *http.Request)
 // @Param        body  body  LeadBulkRequest  true  "Lead ids and an optional reason"
 // @Success      200  {object}  LeadBulkResponse
 // @Failure      400  {object}  apierror.Error
-// @Router       /exploration/leads/dismiss [post]
+// @Router       /exploration/leads/reject [post]
 func (h *ExplorationLeadHandler) Dismiss(w http.ResponseWriter, r *http.Request) {
 	h.bulk(w, r, func(ctx context.Context, tid shared.ID, p explorationapp.Person, req LeadBulkRequest) ([]explorationapp.BulkResult, error) {
 		return h.leads.Dismiss(ctx, tid, p, req.IDs, req.Reason)
