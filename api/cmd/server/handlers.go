@@ -280,6 +280,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
+	assetHandler.SetSavedViews(svc.SavedView) // GET /assets?view=<id>
 	assetHandler.SetIntegrationService(svc.Integration)
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)

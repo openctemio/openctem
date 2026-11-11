@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -24,6 +25,7 @@ import (
 // box never hands the list a filter the list refuses.
 var listRegistries = map[string]*filterspec.Registry{
 	querylang.Findings.Name: vulnerability.FindingFields,
+	querylang.Assets.Name:   assetlist.Fields,
 	querylang.Scans.Name:    scan.Fields,
 }
 
