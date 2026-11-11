@@ -1,7 +1,7 @@
 # Blocked target names and exceptions
 
-For platform owners. Design: [RFC-154](../rfcs/RFC-154-blocked-target-names.md);
-how the checks run: [scope guardrails](../architecture/scope-guardrails.md).
+For platform owners. Design: RFC-154 (blocked target names); how the checks
+run: the scope guardrails architecture page (`docs/architecture/scope-guardrails.md`).
 
 The platform refuses some targets for every organization, whatever its scope
 says. Open **Scanning > Platform scanning > Blocked names** in the console.
