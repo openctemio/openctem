@@ -7,7 +7,7 @@
 import useSWR from 'swr'
 import { get, post } from '@/lib/api/client'
 
-export type QueryEntity = 'findings' | 'assets'
+export type QueryEntity = 'findings' | 'assets' | 'scans'
 
 /** One problem of a filter, with its byte range in the text. */
 export interface QueryProblem {
