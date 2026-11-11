@@ -102,3 +102,33 @@ type WhereResult struct {
 type WhereLister interface {
 	ListWhere(ctx context.Context, q WhereQuery) (WhereResult, error)
 }
+
+// IPPort is one open port of an address, as the IP addresses tab shows it.
+type IPPort struct {
+	Port      int    `json:"port"`
+	Transport string `json:"transport,omitempty"`
+	Service   string `json:"service,omitempty"`
+}
+
+// IPContext is what the IP addresses tab shows beside an address: the
+// names that resolve to it and its open ports, each capped, with totals.
+// Only names and ports the caller may see are listed or counted.
+type IPContext struct {
+	Names      []string `json:"names"`
+	NamesTotal int      `json:"names_total"`
+	Ports      []IPPort `json:"ports"`
+	PortsTotal int      `json:"ports_total"`
+}
+
+// NetworkCount is one network of the group by network and its addresses.
+type NetworkCount struct {
+	Network string `json:"network"`
+	Count   int64  `json:"count"`
+}
+
+// Caps of the IP addresses tab.
+const (
+	IPContextNames = 3
+	IPContextPorts = 5
+	MaxNetworks    = 500
+)

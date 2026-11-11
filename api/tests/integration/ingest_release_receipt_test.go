@@ -101,7 +101,18 @@ func TestIngest_ReleasedItemReceiptNamesTheSensor(t *testing.T) {
 		t.Fatalf("release: %v", err)
 	}
 	var released *receiptRow
-	for _, rc := range readReceipts(t, r, tn.tenant) {
+	all := readReceipts(t, r, tn.tenant)
+	// The hold and the release are one receipt, and the report's findings
+	// are received once (the hold's count moved to the release's outcomes).
+	if len(all) != 1 || all[0].reports != 1 {
+		t.Fatalf("hold and release made %d receipts: %+v", len(all), all)
+	}
+	var heldOutcome int
+	if err := r.db.QueryRowContext(context.Background(), `SELECT COALESCE((outcomes->>'quarantined')::int, 0) FROM ingest_receipts WHERE tenant_id = $1`,
+		tn.tenant.String()).Scan(&heldOutcome); err != nil || heldOutcome != 0 {
+		t.Fatalf("a released receipt keeps a quarantined outcome: %d, %v", heldOutcome, err)
+	}
+	for _, rc := range all {
 		if rc.kind == "connector" {
 			t.Fatalf("a connector receipt appeared for a sensor's report: %+v", rc)
 		}

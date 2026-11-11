@@ -318,7 +318,9 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 		}
 		return false, err
 	}
-	s.recordQuarantined(ctx, agt, tenantID, sub.Report)
+	// The hold counts on the receipt the release will count on: the item's
+	// own report id names both.
+	s.recordQuarantined(withReportID(ctx, item.ReportID), agt, tenantID, sub.Report)
 	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("quarantined").Inc()
 	s.logger.Info("unsolicited sensor report quarantined",
 		"sensor_id", agt.ID.String(), "sensor_type", string(sensorType), "tenant_id", tenantID.String(),

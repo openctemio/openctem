@@ -392,3 +392,84 @@ func TestIngestReceipt_RunReceiptStatusFollowsRun_DB(t *testing.T) {
 		t.Fatalf("status after the run completed = %q, want completed", got.Status)
 	}
 }
+
+// A report held in the results quarantine and released later is counted as
+// received once: the hold counts its findings as received (quarantined), the
+// release moves them to their real outcomes. The receipt, its sender row, the
+// intake totals and the day's fact all say 3, and the receipt reconciles.
+// Another tenant's receipts never change the sums.
+func TestIngestReceipt_ReleasedReportCountsOnce_DB(t *testing.T) {
+	f := newReceiptFixture(t)
+	other := seedTestTenant(f.ctx, t, f.db)
+	sensorID := shared.NewID().String()
+	inst := ingestreceipt.Instance{Kind: ingestreceipt.InstanceSensor, ID: sensorID}
+	hold := func(tenant shared.ID, ref string, n int) *ingestreceipt.Receipt {
+		return f.record(&ingestreceipt.Delta{TenantID: tenant, Tool: "nuclei", Instance: inst, Received: n,
+			Source:   ingestreceipt.Source{Kind: ingestreceipt.SourceSensor, Ref: ref},
+			Outcomes: map[string]int{ingestreceipt.OutcomeQuarantined: n}})
+	}
+	release := func(tenant shared.ID, ref string, n int, created []shared.ID, suppressed int) *ingestreceipt.Receipt {
+		return f.record(&ingestreceipt.Delta{TenantID: tenant, Tool: "nuclei", Instance: inst, Reports: 1, Received: n,
+			Released: true, ReleasedFindings: n, Created: created, Suppressed: suppressed,
+			Source: ingestreceipt.Source{Kind: ingestreceipt.SourceSensor, Ref: ref}})
+	}
+	totals := func(tenant shared.ID) ingestreceipt.Totals {
+		tt, err := f.repo.Totals(f.ctx, tenant, ingestreceipt.Filter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tt
+	}
+	factReceived := func(tenant shared.ID) int {
+		return f.count(`SELECT COALESCE(sum(received), 0) FROM dash_ingest_day WHERE tenant_id = $1`, tenant.String())
+	}
+
+	// The other tenant holds and releases a report of its own first.
+	hold(other, "ref-other", 5)
+	release(other, "ref-other", 5, []shared.ID{f.finding(other, seedTestAsset(f.ctx, t, f.db, other), "o1", "new")}, 4)
+	before := totals(other)
+	if before.Received != 5 {
+		t.Fatalf("other tenant received %d, want 5", before.Received)
+	}
+
+	held := hold(f.tenant, "ref-1", 3)
+	if held.Received != 3 || held.Outcomes[ingestreceipt.OutcomeQuarantined] != 3 {
+		t.Fatalf("held receipt = %+v", held)
+	}
+	rec := release(f.tenant, "ref-1", 3, []shared.ID{f.finding(f.tenant, f.asset, "r1", "new"), f.finding(f.tenant, f.asset, "r2", "new")}, 1)
+	if rec.Received != 3 || rec.Reports != 1 || !rec.ReleasedFromQuarantine {
+		t.Fatalf("released receipt = %+v", rec)
+	}
+	if _, ok := rec.Outcomes[ingestreceipt.OutcomeQuarantined]; ok {
+		t.Fatalf("released receipt still holds a quarantined outcome: %v", rec.Outcomes)
+	}
+	if n := ingestreceipt.Unaccounted(rec.Received, rec.Counts, rec.Outcomes); n != 0 {
+		t.Fatalf("unaccounted %d, want 0", n)
+	}
+	if tt := totals(f.tenant); tt.Received != 3 || tt.Created != 2 || tt.Suppressed != 1 || tt.Receipts != 1 {
+		t.Fatalf("totals = %+v, want 3 received once", tt)
+	}
+	tool, err := f.repo.Totals(f.ctx, f.tenant, ingestreceipt.Filter{Tool: "nuclei"})
+	if err != nil || tool.Received != 3 {
+		t.Fatalf("tool totals = %+v, %v", tool, err)
+	}
+	if got := factReceived(f.tenant); got != 3 {
+		t.Fatalf("day fact received = %d, want 3", got)
+	}
+	if got := f.count(`SELECT COALESCE(sum(received), 0) FROM ingest_receipt_tools WHERE tenant_id = $1`, f.tenant.String()); got != 3 {
+		t.Fatalf("sender rows received = %d, want 3", got)
+	}
+
+	// A release that finds no hold on its receipt takes nothing off.
+	solo := release(f.tenant, "ref-solo", 2, nil, 2)
+	if solo.Received != 2 {
+		t.Fatalf("release without a hold received %d, want 2", solo.Received)
+	}
+
+	if after := totals(other); after != before {
+		t.Fatalf("another tenant's totals changed: %+v -> %+v", before, after)
+	}
+	if got := factReceived(other); got != 5 {
+		t.Fatalf("other tenant's day fact = %d, want 5", got)
+	}
+}

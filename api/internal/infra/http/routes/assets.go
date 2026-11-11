@@ -51,6 +51,7 @@ func registerAssetRoutes(
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
 		r.POST("/search", h.Search, middleware.Require(permission.AssetsRead))
+		r.GET("/networks", h.Networks, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}/view", assetView.View, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}/full", h.GetWithRepository, middleware.Require(permission.AssetsRead))
