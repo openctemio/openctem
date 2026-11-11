@@ -162,6 +162,7 @@
   "common.showingFirstOf": "Showing the first {loaded} of {total}",
   "common.table.actionsColumn": "Actions",
   "common.table.adjustSearch": "Try adjusting your search or filters",
+  "common.table.cappedCount": "{count}+",
   "common.table.collapseGroup": "Collapse {label}",
   "common.table.columns": "Columns",
   "common.table.density": "Density",

@@ -20,6 +20,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -58,31 +59,11 @@ const programTargetAssets = `
 		WHERE (x.p LIKE '*.%' AND (lower(a.name) = substr(x.p, 3) OR right(lower(a.name), length(x.p) - 1) = substr(x.p, 2)))
 		   OR lower(a.name) = x.p)`
 
-// programLinkTags is the FROM clause that yields, as column t, the system
-// tags each program link (l, its program p) gives its asset; t is NULL for
-// a tag that does not apply. Stored system_tags are its union over every
-// link; a non-owner's view and filter use only the links whose program is
-// not hidden from them (filterspec.ProgramHiddenSQL).
-const programLinkTags = `asset_program_links l
-	JOIN bounty_programs p ON p.tenant_id = l.tenant_id AND p.id = l.program_id
-	CROSS JOIN LATERAL (SELECT
-		COALESCE(NULLIF(regexp_replace(lower(p.platform), '[^a-z0-9-]+', '-', 'g'), ''), 'self') AS plat,
-		regexp_replace(lower(COALESCE(NULLIF(p.handle, ''), p.name)), '[^a-z0-9-]+', '-', 'g') AS slug) s
-	CROSS JOIN LATERAL unnest(ARRAY[
-		'bug-bounty',
-		'source:' || replace(l.source, '_', '-'),
-		'platform:' || s.plat,
-		'program:' || s.plat || ':' || s.slug,
-		CASE WHEN p.status = 'pending_attestation' THEN 'program-unattested' END]) AS t`
+// programLinkTags is assetlist.ProgramLinkTagsSQL.
+const programLinkTags = assetlist.ProgramLinkTagsSQL
 
-// visibleProgramLinkSQL is the condition "asset assetExpr of tenant
-// tenantExpr has a program link not hidden from user userExpr" (extra
-// narrows the links further, e.g. "AND t = ANY($3)"; it may use t, l, p).
 func visibleProgramLinkSQL(assetExpr, tenantExpr, userExpr, extra string) string {
-	return `EXISTS (SELECT 1 FROM ` + programLinkTags + `
-		WHERE l.tenant_id = ` + tenantExpr + `
-		  AND l.asset_id = ` + assetExpr + ` AND t IS NOT NULL ` + extra + `
-		  AND NOT ` + filterspec.ProgramHiddenSQL("p", userExpr) + `)`
+	return assetlist.VisibleProgramLinkSQL(assetExpr, tenantExpr, userExpr, extra)
 }
 
 // syncProgramAssetLinks keeps the program's links equal to its targets and

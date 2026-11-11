@@ -16,6 +16,7 @@ import (
 const (
 	PageFindings        = "findings"
 	PageVulnerabilities = "vulnerabilities"
+	PageAssets          = "assets"
 
 	MaxNameLen        = 120
 	MaxDescriptionLen = 500

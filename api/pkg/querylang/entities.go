@@ -2,9 +2,9 @@ package querylang
 
 import (
 	"sort"
-	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -135,14 +135,19 @@ var Findings = MustEntity(EntityDef{
 	},
 })
 
-// assetQueryFields is the assets registry plus the text search field and
-// the address of ip_address assets (idx_assets_ip_addr).
+// assetQueryFields is the asset inventory's list registry (every filter
+// of GET /assets, pkg/domain/assetlist) on the bare table name, plus the
+// text search field and the server-side soft deletion and program
+// exclusion. The list's open findings sort reads its own subquery here
+// (the query reads FROM assets, without the list's finding counts join).
 var assetQueryFields = func() *filterspec.Registry {
-	reg, err := asset.AssetFields.Extend(textSearchField(asset.AssetFields),
-		filterspec.Field{Name: "ip", Type: filterspec.TypeInet, Ops: []filterspec.Op{filterspec.OpIn}, SQL: "assets.name", MaxValues: 20,
-			Templates: map[filterspec.Op]string{
-				filterspec.OpIn: "assets.tenant_id = {tenant} AND " + strings.ReplaceAll(vulnerability.AssetIPRangeSQL, "a.", "assets."),
-			}})
+	base := assetlist.Fields.Rebase("a", "assets")
+	count, _ := base.Field("finding_count")
+	countField := *count
+	countField.SortSQL = countField.SQL
+	deleted, _ := asset.AssetFields.Field("deleted")
+	programOnly, _ := asset.AssetFields.Field("program_only")
+	reg, err := base.Extend(textSearchField(base), countField, *deleted, *programOnly)
 	if err != nil {
 		panic(err)
 	}
