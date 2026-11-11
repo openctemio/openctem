@@ -18,12 +18,14 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
+	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -581,20 +583,96 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
 }
 
+// scansListDeprecatedAt and scansListSunsetAt date the old GET /scans param
+// names (search, tags): the list query contract's alias window
+// (docs/rfcs/RFC-048-list-query-contract.md).
+var (
+	scansListDeprecatedAt = time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	scansListSunsetAt     = time.Date(2027, 5, 8, 0, 0, 0, 0, time.UTC)
+)
+
+// scansListRoute is GET /scans (and POST /scans/search) on the list query
+// contract: strict params, the old names as aliases. include_ad_hoc is a
+// list option, not a filter.
+func (h *ScanHandler) scansListRoute(name string) filterquery.Route {
+	return filterquery.Route{
+		Name:         name,
+		Registry:     scan.Fields,
+		Options:      filterspec.Options{Unknown: filterspec.UnknownStrict, Extra: []string{"include_ad_hoc"}},
+		DeprecatedAt: scansListDeprecatedAt,
+		SunsetAt:     scansListSunsetAt,
+		Logger:       h.logger,
+		NoEchoValues: true,
+	}
+}
+
 // ListScans handles GET /api/v1/scans
 // @Summary      List scans
-// @Description  Get a paginated list of scans
+// @Description  The tenant's saved scans, filtered and sorted by the list query contract: every field accepts
+// @Description  a comma list (any of), a _not list (none of) and, where its type allows, _contains, _gte, _lte,
+// @Description  _gt and _lt. q searches the name and the description. Quick scans that were never saved are left
+// @Description  out unless include_ad_hoc=true or origin=system. The old names search (now q) and tags (now tag)
+// @Description  still work and answer with Deprecation, Sunset and Warning headers. An unknown param is 400.
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
-// @Param        asset_group_id  query     string  false  "Filter by asset group"
-// @Param        scan_workflow_id     query     string  false  "Filter by scan workflow"
-// @Param        scan_type       query     string  false  "Filter by scan type (workflow, single)"
-// @Param        schedule_type   query     string  false  "Filter by schedule type"
-// @Param        status          query     string  false  "Filter by status"
-// @Param        search          query     string  false  "Search by name"
+// filterspec-params: scans GET /scans
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  name  query  []string  false  "scan name pattern (* any characters, ? one): any of (comma list)"  collectionFormat(csv)
+// @Param  name_contains  query  string  false  "scan name pattern (* any characters, ? one) contains"
+// @Param  name_not  query  []string  false  "scan name pattern (* any characters, ? one): none of (comma list)"  collectionFormat(csv)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(active, paused, disabled)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(active, paused, disabled)
+// @Param  scan_type  query  []string  false  "scan type: any of (comma list)"  collectionFormat(csv)  Enums(workflow, single)
+// @Param  scan_type_not  query  []string  false  "scan type: none of (comma list)"  collectionFormat(csv)  Enums(workflow, single)
+// @Param  schedule_type  query  []string  false  "schedule type: any of (comma list)"  collectionFormat(csv)  Enums(manual, daily, weekly, monthly, crontab, rrule, once)
+// @Param  schedule_type_not  query  []string  false  "schedule type: none of (comma list)"  collectionFormat(csv)  Enums(manual, daily, weekly, monthly, crontab, rrule, once)
+// @Param  sensor_preference  query  []string  false  "sensor preference: any of (comma list)"  collectionFormat(csv)  Enums(auto, tenant, platform)
+// @Param  sensor_preference_not  query  []string  false  "sensor preference: none of (comma list)"  collectionFormat(csv)  Enums(auto, tenant, platform)
+// @Param  origin  query  string  false  "origin equals"  Enums(user, system)
+// @Param  tag  query  []string  false  "scan tag: any of (comma list)"  collectionFormat(csv)
+// @Param  tag_not  query  []string  false  "scan tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_group_id  query  []string  false  "asset group the scan covers: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_group_id_not  query  []string  false  "asset group the scan covers: none of (comma list)"  collectionFormat(csv)
+// @Param  scan_workflow_id  query  []string  false  "scan workflow id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_workflow_id_not  query  []string  false  "scan workflow id: none of (comma list)"  collectionFormat(csv)
+// @Param  profile_id  query  []string  false  "profile id: any of (comma list)"  collectionFormat(csv)
+// @Param  profile_id_not  query  []string  false  "profile id: none of (comma list)"  collectionFormat(csv)
+// @Param  scan_zone_id  query  []string  false  "scan zone id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_zone_id_not  query  []string  false  "scan zone id: none of (comma list)"  collectionFormat(csv)
+// @Param  scanner_name  query  []string  false  "scanner name: any of (comma list)"  collectionFormat(csv)
+// @Param  scanner_name_contains  query  string  false  "scanner name contains"
+// @Param  scanner_name_not  query  []string  false  "scanner name: none of (comma list)"  collectionFormat(csv)
+// @Param  last_run_status  query  []string  false  "last run status: any of (comma list)"  collectionFormat(csv)
+// @Param  last_run_status_not  query  []string  false  "last run status: none of (comma list)"  collectionFormat(csv)
+// @Param  created_by  query  []string  false  "created by: any of (comma list)"  collectionFormat(csv)
+// @Param  created_by_not  query  []string  false  "created by: none of (comma list)"  collectionFormat(csv)
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_gte  query  string  false  "last run at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_lte  query  string  false  "last run at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_gt  query  string  false  "last run at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_lt  query  string  false  "last run at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_gte  query  string  false  "next run at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_lte  query  string  false  "next run at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_gt  query  string  false  "next run at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_lt  query  string  false  "next run at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  total_runs  query  []integer  false  "total runs: any of (comma list)"  collectionFormat(csv)
+// @Param  total_runs_gte  query  integer  false  "total runs at least"
+// @Param  total_runs_lte  query  integer  false  "total runs at most"
+// @Param  total_runs_gt  query  integer  false  "total runs greater than"
+// @Param  total_runs_lt  query  integer  false  "total runs less than"
+// @Param  failed_runs  query  []integer  false  "failed runs: any of (comma list)"  collectionFormat(csv)
+// @Param  failed_runs_gte  query  integer  false  "failed runs at least"
+// @Param  failed_runs_lte  query  integer  false  "failed runs at most"
+// @Param  failed_runs_gt  query  integer  false  "failed runs greater than"
+// @Param  failed_runs_lt  query  integer  false  "failed runs less than"
+// end filterspec-params
+// @Param        q               query     string  false  "Search the name and the description"
 // @Param        include_ad_hoc  query     bool    false  "Also list unsaved quick scans (ad_hoc)"
-// @Param        origin          query     string  false  "Who owns the scan: user (people's scans) or system (scans the platform manages)" Enums(user, system)
 // @Param        sort            query     string  false  "One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs" default(name)
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
@@ -604,35 +682,73 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /scans [get]
 func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	page, ok := listPage(w, r, 20)
+	route := h.scansListRoute("GET /scans")
+	spec, ok := route.ParseQuery(w, r)
 	if !ok {
 		return
 	}
+	h.writeScanList(w, r, route, spec, r.URL.Query().Get("include_ad_hoc") == queryParamTrue)
+}
 
-	input := scansvc.ListScansInput{
-		TenantID:       tenantID,
-		AssetGroupID:   r.URL.Query().Get("asset_group_id"),
-		ScanWorkflowID: r.URL.Query().Get("scan_workflow_id"),
-		ScanType:       r.URL.Query().Get("scan_type"),
-		ScheduleType:   r.URL.Query().Get("schedule_type"),
-		Status:         r.URL.Query().Get("status"),
-		Tags:           parseQueryArray(r.URL.Query().Get("tags")),
-		Search:         r.URL.Query().Get("search"),
-		IncludeAdHoc:   r.URL.Query().Get("include_ad_hoc") == "true",
-		Origin:         r.URL.Query().Get("origin"),
-		Sort:           r.URL.Query().Get("sort"),
-		Page:           page.Page,
-		PerPage:        page.PerPage,
+// ScanSearchRequest documents the FilterDocument body of POST /scans/search.
+// The server parses the raw body with filterspec.ParseDocument; this type
+// exists for the OpenAPI spec.
+type ScanSearchRequest struct {
+	// V is the document version (1).
+	V int `json:"v,omitempty" example:"1"`
+	// Filter is a node ({"all":[...]}, {"any":[...]}, {"not":{...}} or a
+	// {"field","op","value"} leaf) or the flat-name shorthand
+	// ({"status":["active"],"total_runs_gte":3}).
+	Filter map[string]any `json:"filter,omitempty"`
+	// Q searches the name and the description.
+	Q string `json:"q,omitempty"`
+	// Sort keys, "-" for descending.
+	Sort []string `json:"sort,omitempty"`
+	// Page selects the page: {"page": 1, "per_page": 50}.
+	Page *FindingSearchPage `json:"page,omitempty"`
+}
+
+// SearchScans handles POST /api/v1/scans/search
+// @Summary      Search scans with a filter document
+// @Description  Lists the scans selected by a FilterDocument: all/any/not groups with field/op/value leaves, for
+// @Description  OR, nesting and id lists. Same fields, permission, visibility and response as GET /scans.
+// @Description  Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400 INVALID_FILTER with the JSON path
+// @Description  of each problem. Read-only.
+// @Tags         Scans
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request         body      ScanSearchRequest  true   "Filter document"
+// @Param        include_ad_hoc  query     bool               false  "Also list unsaved quick scans (ad_hoc)"
+// @Success      200  {object}  ListResponse[ScanDetailResponse]
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Router       /scans/search [post]
+func (h *ScanHandler) SearchScans(w http.ResponseWriter, r *http.Request) {
+	route := h.scansListRoute("POST /scans/search")
+	spec, ok := route.ParseBody(w, r)
+	if !ok {
+		return
 	}
+	h.writeScanList(w, r, route, spec, r.URL.Query().Get("include_ad_hoc") == queryParamTrue)
+}
 
-	result, err := h.service.ListScans(r.Context(), input)
+// writeScanList runs a decoded filter as the caller's tenant and writes the
+// list response (shared by GET /scans and POST /scans/search).
+func (h *ScanHandler) writeScanList(w http.ResponseWriter, r *http.Request, route filterquery.Route, spec *filterspec.Spec, includeAdHoc bool) {
+	ctx := r.Context()
+	tenantID := middleware.GetTenantID(ctx)
+	result, err := h.service.ListScansBySpec(ctx, tenantID, spec, includeAdHoc)
 	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			route.WriteError(w, err)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
 
-	ctx := r.Context()
 	// Batch-resolve creator names in one query to avoid an N+1 (previously each
 	// row triggered its own users lookup inside toScanResponse).
 	nameByID := h.resolveScanCreatorNames(ctx, result.Data)
