@@ -165,7 +165,7 @@
   "components.stepUp.codeAlreadySent": "This code was already sent. Wait for the next code in your authenticator app.",
   "components.stepUp.codeUsed": "That code was already used. Wait for the next code in your authenticator app.",
   "components.stepUp.confirm": "Confirm",
-  "components.stepUp.description": "This action changes how your organization is secured. Confirm your identity to continue.",
+  "components.stepUp.description": "This action needs a fresh confirmation. Confirm it is you and the action continues right away.",
   "components.stepUp.enterPassword": "Enter your password.",
   "components.stepUp.failed": "Could not confirm your identity. Try again.",
   "components.stepUp.invalidCode": "That code is not valid. Use the current code from the authenticator entry for {host}.",

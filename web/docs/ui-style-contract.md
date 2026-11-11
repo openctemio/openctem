@@ -491,6 +491,16 @@ load.
   box. A page keeps the open state in the URL (`?activity=open`); a drawer
   keeps it in memory.
 - Destructive confirmation: `<ConfirmDialog destructive>`.
+  - A bulk or irreversible act passes `preview` (a sentence with the count, plus
+    the first five names and "and N more"), so the user sees what will change
+    before confirming. An act that is recorded or approved passes `reason`
+    (`required` keeps Confirm disabled until it has text); `handleConfirm`
+    receives the trimmed reason. Typed confirmation, preview and reason combine.
+  - A request held for approval shows the shared `AwaitingApprovalBand` on the
+    object (what is waiting, who asked and why, Cancel request behind a
+    confirmation, the approver's buttons). Do not build a second band.
+  - The step-up dialog says the action continues right away once the identity
+    is confirmed; it never describes the act.
 
 ## 9. Responsiveness
 

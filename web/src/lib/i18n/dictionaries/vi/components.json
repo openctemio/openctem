@@ -165,7 +165,7 @@
   "components.stepUp.codeAlreadySent": "Mã này đã được gửi. Hãy chờ mã tiếp theo trong ứng dụng xác thực.",
   "components.stepUp.codeUsed": "Mã này đã được dùng. Hãy chờ mã tiếp theo trong ứng dụng xác thực.",
   "components.stepUp.confirm": "Xác nhận",
-  "components.stepUp.description": "Thao tác này thay đổi cách tổ chức của bạn được bảo vệ. Hãy xác nhận danh tính để tiếp tục.",
+  "components.stepUp.description": "Thao tác này cần xác nhận lại. Hãy xác nhận danh tính, thao tác sẽ tiếp tục ngay.",
   "components.stepUp.enterPassword": "Nhập mật khẩu của bạn.",
   "components.stepUp.failed": "Không thể xác nhận danh tính của bạn. Hãy thử lại.",
   "components.stepUp.invalidCode": "Mã không hợp lệ. Hãy dùng mã hiện tại trong mục xác thực của {host}.",

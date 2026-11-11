@@ -408,6 +408,8 @@
   "confirm.programSource.syncButton": "Đồng bộ phạm vi",
   "confirm.programSource.syncDesc": "Phạm vi được đọc lại từ nguồn. Các mục mà nguồn không còn liệt kê sẽ bị gỡ và chương trình bị tạm dừng nếu điều khoản của nó thay đổi. Các phát hiện và lịch sử được giữ lại.",
   "confirm.programSource.syncTitle": "Đồng bộ phạm vi của {name} ngay?",
+  "confirm.reasonLabel": "Lý do",
+  "confirm.reasonOptional": "(không bắt buộc)",
   "confirm.reject": "Từ chối",
   "confirm.remove": "Gỡ bỏ",
   "confirm.removing": "Đang gỡ…",
