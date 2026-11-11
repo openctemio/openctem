@@ -209,10 +209,7 @@ func (s *Service) newReplacement(ctx context.Context, old *scopedom.Target, patt
 	if err := scopedom.ValidatePattern(targetType, pattern); err != nil {
 		return nil, entryDecision{}, err
 	}
-	g := scopedom.DefaultGuardrails()
-	if s.guardrails != nil {
-		g = *s.guardrails
-	}
+	g := s.guardrailsFor(tenantID)
 	if err := g.CheckPattern(targetType, pattern); err != nil {
 		return nil, entryDecision{}, err
 	}

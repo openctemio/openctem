@@ -130,6 +130,7 @@ import (
 	scanwindowapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
 	scanzoneapp "github.com/openctemio/openctem/api/internal/app/scanzone"
 	"github.com/openctemio/openctem/api/internal/app/scim"
+	"github.com/openctemio/openctem/api/internal/app/scopenames"
 	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
 	"github.com/openctemio/openctem/api/internal/app/sla"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
@@ -1040,6 +1041,9 @@ type Services struct {
 	// quota, the alert webhook and the platform AI provider. SettingRecorder
 	// writes their audit rows and notices.
 	SettingRecorder *consolesetting.Recorder
+	// ScopeNames is the blocked target names policy (RFC-154): the
+	// government and military rule, the operator's names and exceptions.
+	ScopeNames      *scopenames.Service
 	PlatformCaptcha *platformcaptcha.Service
 	// PlatformSocialLogin is the console's social login setting; nil without
 	// the settings store.
@@ -1175,6 +1179,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		s.PlatformEmail = platformemail.NewService(repos.PlatformSetting, s.Encryptor, repos.AdminAuditLog, log)
 	}
 	s.initConsoleSettings(cfg, repos, log)
+	// Blocked target names (RFC-154): every guardrails built below reads
+	// this one policy.
+	s.initScopeNames(cfg, repos, deps, log)
 	if s.IngestQueue, err = initIngestQueue(cfg, repos); err != nil {
 		return nil, err
 	}

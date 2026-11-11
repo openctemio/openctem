@@ -66,7 +66,7 @@ func wildcardTargetsToRoots(targets []string) []string {
 // saved: each must be *.<domain>, and not a root the platform lets nobody
 // cover (a public suffix, a shared provider apex, a denied name).
 func (s *Service) refuseWildcardTargets(_ context.Context, sc *scan.Scan) error {
-	return validateSelectorTargets(sc.Targets)
+	return validateSelectorTargets(sc.TenantID, sc.Targets)
 }
 
 // applyWildcardTargets is the trigger-time rule for a scan whose only tool
@@ -77,7 +77,7 @@ func (s *Service) refuseWildcardTargets(_ context.Context, sc *scan.Scan) error 
 // would reach the sensor as written, so it refuses the run. The stored scan
 // is never changed.
 func (s *Service) applyWildcardTargets(_ context.Context, sc *scan.Scan) (*scan.Scan, error) {
-	if err := validateSelectorTargets(sc.Targets); err != nil {
+	if err := validateSelectorTargets(sc.TenantID, sc.Targets); err != nil {
 		return nil, err
 	}
 	cfgTargets, hasCfg := sc.ScannerConfig["targets"]
