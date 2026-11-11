@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
@@ -1045,7 +1046,7 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 	if sensorID.IsZero() {
 		return
 	}
-	go func() {
+	safego.Go(s.logger, "ingest:sensor-stats", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -1061,7 +1062,7 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 		); err != nil {
 			s.logger.Warn("failed to update sensor stats", "sensor_id", sensorID.String(), "error", err)
 		}
-	}()
+	})
 }
 
 // recordV2ReportStats adds a completed protocol v2 report to its sensor's
@@ -1210,7 +1211,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 	// tenant are serialized exactly like synchronous request-path audit
 	// events. Detached from the request context — the audit must outlive
 	// the request — but capped so a stalled DB cannot pin the goroutine.
-	go func() {
+	safego.Go(s.logger, "ingest:audit-log", func() {
 		auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -1221,7 +1222,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 				"report_id", logger.SanitizeValue(resourceID),
 			)
 		}
-	}()
+	})
 }
 
 // writeIngestAuditLog persists one ingest audit event.
