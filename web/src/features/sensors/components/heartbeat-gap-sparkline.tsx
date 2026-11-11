@@ -2,6 +2,7 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import type { SensorHeartbeatBucket, SensorHeartbeatHistoryResponse } from '@/lib/api/sensor-types'
+import { Sparkline } from '@/components/ui/sparkline'
 import { cn } from '@/lib/utils'
 
 import { formatDurationShort, type Tr } from '../lib/format'
@@ -103,11 +104,6 @@ export function HeartbeatGapSparkline({
   }
   const interval = Math.max(...withData.map((s) => s.bucket!.interval_s), 0)
   const top = Math.max(...withData.map((s) => s.bucket!.max_gap_s), interval * 2, 1)
-  const barW = 3
-  const step = 4
-  const h = 40
-  const w = slots.length * step
-  const y = (v: number) => h - Math.max(1, (v / top) * (h - 2))
   const late = withData.filter((s) => bucketIsLate(s.bucket!)).length
   const empty = slots.length - withData.length
   const label =
@@ -119,60 +115,22 @@ export function HeartbeatGapSparkline({
     }) +
     (late > 0 ? t('sensors.sparkline.labelLate', undefined, { count: late }) : '') +
     (empty > 0 ? t('sensors.sparkline.labelEmpty', undefined, { count: empty }) : '')
+  const values = slots.map((s) =>
+    s.bucket ? (s.bucket.max_gap_s > 0 ? s.bucket.max_gap_s : s.bucket.interval_s) : null
+  )
   return (
     <figure className={cn('space-y-1', className)}>
-      <svg
-        viewBox={`0 0 ${w} ${h}`}
-        className="h-10 w-full overflow-visible"
-        preserveAspectRatio="none"
-        role="img"
-        aria-label={label}
-      >
-        {slots.map((s, i) => {
-          const x = i * step
-          if (!s.bucket) {
-            return (
-              <rect
-                key={s.start}
-                x={x}
-                y={h - 1}
-                width={barW}
-                height={1}
-                className="fill-muted-foreground/30"
-              >
-                <title>{slotTitle(s, widthMs, t)}</title>
-              </rect>
-            )
-          }
-          const gap = s.bucket.max_gap_s > 0 ? s.bucket.max_gap_s : s.bucket.interval_s
-          const top_ = y(gap)
-          return (
-            <rect
-              key={s.start}
-              x={x}
-              y={top_}
-              width={barW}
-              height={h - top_}
-              data-late={bucketIsLate(s.bucket) || undefined}
-              className={bucketIsLate(s.bucket) ? 'fill-warning' : 'fill-primary/60'}
-            >
-              <title>{slotTitle(s, widthMs, t)}</title>
-            </rect>
-          )
-        })}
-        {interval > 0 && (
-          <line
-            x1={0}
-            x2={w}
-            y1={y(interval)}
-            y2={y(interval)}
-            className="stroke-muted-foreground"
-            strokeDasharray="3 3"
-            strokeWidth={0.75}
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
-      </svg>
+      <Sparkline
+        variant="bars"
+        values={values}
+        warn={slots.map((s) => (s.bucket ? bucketIsLate(s.bucket) : false))}
+        titles={slots.map((s) => slotTitle(s, widthMs, t))}
+        reference={interval}
+        max={top}
+        height={40}
+        summary={label}
+        className="h-10 w-full"
+      />
       <figcaption className="flex justify-between text-xs text-muted-foreground">
         <span>{t('sensors.sparkline.hoursAgo', undefined, { hours: history.hours })}</span>
         <span>

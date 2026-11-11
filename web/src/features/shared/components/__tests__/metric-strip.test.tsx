@@ -206,3 +206,49 @@ describe('MetricStrip warning tone and detail', () => {
     expect(screen.getByText('backlog, key')).toBeInTheDocument()
   })
 })
+
+describe('MetricStrip delta and spark', () => {
+  const base = { key: 'a', label: 'Open', value: 41, href: '/findings' }
+  it('shows the shared delta and sparkline under the value, the tile staying a link', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          {
+            ...base,
+            delta: {
+              value: -3,
+              text: '-3',
+              tone: 'better',
+              against: 'vs last week',
+              verdict: 'better',
+            },
+            spark: { values: [50, 47, 44, 41], summary: 'Open fell from 50 to 41' },
+          },
+          { key: 'b', label: 'Closed', value: 2 },
+        ]}
+      />
+    )
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/findings')
+    const delta = container.querySelector('[data-slot="delta"]')!
+    expect(delta.getAttribute('data-tone')).toBe('better')
+    expect(delta.textContent).toContain('vs last week')
+    expect(screen.getByRole('img', { name: 'Open fell from 50 to 41' })).toBeInTheDocument()
+    // A delta is detail: the strip uses halves on a phone, never a squeezed third.
+    expect(
+      container.querySelector('[data-slot="metric-strip"]')!.getAttribute('data-detailed')
+    ).toBe('true')
+  })
+  it('hides them while loading and on error so the tile keeps its shape', () => {
+    const item = {
+      ...base,
+      delta: { value: 1, text: '+1', tone: 'worse' as const },
+      spark: { values: [1, 2], summary: 's' },
+    }
+    const { container, rerender } = render(<MetricStrip items={[item]} loading />)
+    expect(container.querySelector('[data-slot="delta"]')).toBeNull()
+    expect(screen.queryByRole('img')).toBeNull()
+    rerender(<MetricStrip items={[item]} error="boom" />)
+    expect(container.querySelector('[data-slot="delta"]')).toBeNull()
+    expect(screen.queryByRole('img')).toBeNull()
+  })
+})
