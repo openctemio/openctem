@@ -19,11 +19,17 @@ const assetListTimeout = "5s"
 
 var errUncompiledAssetFilter = errors.New("asset filter was not compiled for the assets registry")
 
-// assetTimeout maps a statement timeout to asset.ErrQueryTimeout.
+// maxAssetPageRows is the largest asset list page. The list params clamp
+// per_page to it already; the repository clamps again so no caller can size
+// a page (or its allocation) from input.
+const maxAssetPageRows = 100
+
+// assetTimeout maps a statement timeout to asset.ErrQueryTimeout. The
+// sentinel replaces the driver text: the timeout is all the caller learns.
 func assetTimeout(err error) error {
 	var pqErr *pq.Error
 	if errors.As(err, &pqErr) && pqErr.Code == "57014" {
-		return fmt.Errorf("%w: %w", asset.ErrQueryTimeout, err)
+		return asset.ErrQueryTimeout
 	}
 	return err
 }
@@ -54,6 +60,9 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 	perPage := q.PerPage
 	if perPage <= 0 {
 		perPage = 20
+	}
+	if perPage > maxAssetPageRows {
+		perPage = maxAssetPageRows
 	}
 	page := max(q.Page, 1)
 	where := liveAssetSQL("a") + " AND " + q.Where.SQL
@@ -91,7 +100,8 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 		return asset.WhereResult{}, assetTimeout(fmt.Errorf("list assets: %w", err))
 	}
 	defer func() { _ = rows.Close() }()
-	data := make([]*asset.Asset, 0, perPage)
+	// A constant capacity: perPage is clamped to maxAssetPageRows above.
+	data := make([]*asset.Asset, 0, maxAssetPageRows)
 	for rows.Next() {
 		a, err := r.scanAssetFromRows(rows)
 		if err != nil {
