@@ -1,6 +1,9 @@
 package ingest
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"testing"
 
 	"github.com/openctemio/ctis/v2"
@@ -130,5 +133,35 @@ func TestCreateAssetFromCTIS_HostExposure(t *testing.T) {
 			assert.False(t, hasLegacy, "host normalisation should have removed properties.ip")
 			assert.Equal(t, c.want, a.Exposure())
 		})
+	}
+}
+
+// TestCreateAssetFromCTIS_LongNonASCIIDescriptionStaysValidUTF8: a
+// description over the 4 KB cap is cut on a character boundary. A byte cut
+// in the middle of a Vietnamese or CJK character left invalid UTF-8, which
+// PostgreSQL refuses (SQLSTATE 22021): the asset and its findings were not
+// stored.
+func TestCreateAssetFromCTIS_LongNonASCIIDescriptionStaysValidUTF8(t *testing.T) {
+	p := NewAssetProcessor(nil, logger.NewNop())
+	tenantID := shared.NewID()
+	for _, text := range []string{
+		"Máy chủ ứng dụng nội bộ của phòng kế toán, ",
+		"社内会計部門のアプリケーションサーバー、",
+		"内部财务部门的应用服务器，",
+		"x" + "Lỗ hổng 脆弱性 🔒",
+	} {
+		// Every offset of the cut: the 4096th byte lands in each byte of a
+		// multi-byte character at least once.
+		for pad := 0; pad < 4; pad++ {
+			desc := strings.Repeat("a", pad) + strings.Repeat(text, 4096/len(text)+2)
+			in := ctis.Asset{Type: ctis.AssetTypeHost, Value: "app-1.example.com", Description: desc}
+			a, err := p.createAssetFromCTIS(tenantID, &in, nil)
+			require.NoError(t, err)
+			got := a.Description()
+			assert.True(t, utf8.ValidString(got), "description is not valid UTF-8 (pad %d, %q)", pad, text)
+			assert.LessOrEqual(t, len(got), 4096)
+			assert.Greater(t, len(got), 4096-4)
+			assert.True(t, strings.HasPrefix(desc, got))
+		}
 	}
 }

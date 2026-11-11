@@ -79,6 +79,28 @@ func Truncate(s string, maxRunes int) string {
 	return string(runes[:maxRunes-1]) + ellipsis
 }
 
+// TruncateBytes returns s as valid UTF-8 in at most maxBytes bytes, cut on
+// a character boundary: a byte slice s[:n] can split a multi-byte character
+// (Vietnamese, CJK, emoji), and PostgreSQL refuses the whole statement for
+// the invalid UTF-8 it leaves. Invalid input bytes become U+FFFD first. No
+// marker is added; a caller that wants one leaves room for it.
+func TruncateBytes(s string, maxBytes int) string {
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "\uFFFD")
+	}
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
 // SingleLine cleans s, folds every run of whitespace (including newlines) into
 // one space and caps the length. Use it for titles and other one-line fields
 // that the receiving system shows as plain text (Jira summary, GitHub title).
