@@ -21,13 +21,14 @@ const (
 
 // Reasons a poll candidate was not handed out (the reason label).
 const (
-	skipLocalPolicy  = "local_policy"
-	skipNoSlot       = "no_slot"
-	skipScopeChanged = "scope_changed"
-	skipWindowHold   = "window_hold"
-	skipProgramHold  = "program_hold"
-	skipToolSettings = "tool_settings"
-	skipTaken        = "taken"
+	skipLocalPolicy   = "local_policy"
+	skipNoSlot        = "no_slot"
+	skipScopeChanged  = "scope_changed"
+	skipWindowHold    = "window_hold"
+	skipProgramHold   = "program_hold"
+	skipToolSettings  = "tool_settings"
+	skipSourceRetired = "source_retired"
+	skipTaken         = "taken"
 	// skipEgressUnsupported: the sensor's jobs use a proxy pool it cannot
 	// honor (egress.go).
 	skipEgressUnsupported = "egress_unsupported"
