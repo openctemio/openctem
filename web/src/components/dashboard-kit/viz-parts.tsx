@@ -234,7 +234,7 @@ export function Sparkline({
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <figcaption className="flex justify-between gap-2 text-[11px] leading-tight text-muted-foreground">
+      <figcaption className="flex justify-between gap-2 text-xs leading-tight text-muted-foreground">
         <span className="sr-only">{summary}</span>
         {showEnds &&
           ends.map((e, i) => (

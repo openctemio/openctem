@@ -51,6 +51,9 @@
   --success: #15803d;
   --warning: #b45309;
   --info: #1d5fd1;
+  /* Delta meaning, by outcome not direction: --good improved, --bad worsened or over threshold. */
+  --good: #1e7a3c;
+  --bad: #b0420a;
 
   /* Severity: marks (>= 3:1 except medium, which always carries its label),
      text (>= 4.5:1 on card, paper and raised), ink on a solid mark. */
@@ -223,6 +226,8 @@
   --viz-seq-ink-3: #ffffff;
   --viz-seq-ink-4: #ffffff;
   --viz-seq-ink-5: #ffffff;
+  --viz-ink: #4a5568;
+  --viz-ink-weak: #b8c0cc;
 
   --sidebar: var(--background);
   --sidebar-foreground: var(--foreground);
@@ -259,6 +264,8 @@
   --success: #4ade80;
   --warning: #f5b451;
   --info: #7fb0f5;
+  --good: #5cc48a;
+  --bad: #f59a5c;
 
   --sev-critical-text: #f27493;
   --sev-high-text: #f59a5c;
@@ -390,6 +397,8 @@
   --viz-seq-ink-3: #ffffff;
   --viz-seq-ink-4: #0b0b0b;
   --viz-seq-ink-5: #0b0b0b;
+  --viz-ink: #a9b4c4;
+  --viz-ink-weak: #3a4a63;
 }
 
 @theme inline {
@@ -472,6 +481,8 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-info: var(--info);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
   --color-brand: var(--brand);
   --color-signal: var(--signal);
   --color-signal-text: var(--signal-text);
@@ -601,6 +612,8 @@
   --color-viz-seq-3: var(--viz-seq-3);
   --color-viz-seq-4: var(--viz-seq-4);
   --color-viz-seq-5: var(--viz-seq-5);
+  --color-viz-ink: var(--viz-ink);
+  --color-viz-ink-weak: var(--viz-ink-weak);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

@@ -156,7 +156,7 @@ export function ProgressViz({
   const { t, locale } = useTranslation()
   const pct = result.value_pct
   const status = targetStatus(pct, result.target)
-  const fill = status ? FILL_BY_STATUS[status] : 'bg-primary'
+  const fill = status ? FILL_BY_STATUS[status] : 'bg-viz-ink'
   const width = pct == null ? 0 : Math.max(0, Math.min(100, pct))
   const valueText = formatMetric(pct, 'percent', locale)
   return (
