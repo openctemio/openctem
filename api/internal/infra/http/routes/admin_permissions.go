@@ -204,6 +204,7 @@ var adminRoutePermissions = map[string]platformauthz.Permission{
 	"POST /api/v1/admin/tenants/{tenantId}/suspend":                          platformauthz.TenantsLifecycle,
 	"POST /api/v1/admin/tenants/{tenantId}/unsuspend":                        platformauthz.TenantsLifecycle,
 	"POST /api/v1/admin/tenants/{tenantId}/users":                            platformauthz.TenantsOwnerBootstrap,
+	"POST /api/v1/admin/platform-users/{user_id}/setup-link":                 platformauthz.TenantsOwnerBootstrap,
 	"POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend":          platformauthz.TenantsOwnerBootstrap,
 	"POST /api/v1/admin/threat-intel/sync":                                   platformauthz.FeedsManage,
 	"POST /api/v1/admin/users/{id}/break-glass-test":                         platformauthz.AdminsManage,
