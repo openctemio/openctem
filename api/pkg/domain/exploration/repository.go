@@ -52,6 +52,9 @@ type Repository interface {
 	AddVerdict(ctx context.Context, v Verdict) error
 	// Links reads a lead's links, oldest first.
 	Links(ctx context.Context, tenantID, leadID shared.ID) ([]Link, error)
+	// CountLive counts the live leads of an exploration, of one subject
+	// asset when subject is set.
+	CountLive(ctx context.Context, tenantID, explorationID shared.ID, subject *shared.ID) (int, error)
 	// Verdicts reads a lead's verdicts, oldest first.
 	Verdicts(ctx context.Context, tenantID, leadID shared.ID) ([]Verdict, error)
 }
