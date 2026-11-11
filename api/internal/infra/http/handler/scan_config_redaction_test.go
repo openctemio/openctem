@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -63,6 +64,10 @@ func (r *redactScanRepo) GetByTenantAndID(_ context.Context, tenantID, id shared
 }
 
 func (r *redactScanRepo) List(_ context.Context, _ scan.Filter, page pagination.Pagination) (pagination.Result[*scan.Scan], error) {
+	return pagination.NewResult([]*scan.Scan{copyScan(r.stored)}, 1, page), nil
+}
+
+func (r *redactScanRepo) ListWhere(_ context.Context, _ *filterspec.Where, page pagination.Pagination) (pagination.Result[*scan.Scan], error) {
 	return pagination.NewResult([]*scan.Scan{copyScan(r.stored)}, 1, page), nil
 }
 
