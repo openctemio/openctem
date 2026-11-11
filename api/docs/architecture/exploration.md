@@ -308,8 +308,46 @@ failed runs exhaust, archived subjects supersede, tenant-bound passes),
 `pkg/domain/exploration/score_test.go`,
 `internal/infra/postgres/exploration_controller_repository_db_test.go`.
 
+## Approvals and people
+
+Who decides a step, by tier:
+
+| Tier | Example | Runs when |
+|---|---|---|
+| T0 passive | DNS resolution | at once, when the lead opens |
+| T1 active, non-intrusive | HTTP probe, takeover templates, host discovery | at once while the organization's automatic coverage is on (`coverage.GovernanceSwitch`: the organization's switch, off under the Strict scan approval mode); otherwise a person with `scans:approve` and step-up approves it. Checked again at dispatch. |
+| T2 intrusive | (no lead type uses one yet) | never started by the system. A person may approve the decision, but the controller blocks the lead (`intrusive_needs_person`); a person-attributed run is planned. |
+
+AI principals hold no approve permission, so they can never approve.
+
+| Route | Gate | Does |
+|---|---|---|
+| `GET /api/v1/exploration/leads` | `assets:read` | leads by group (`waiting`: awaiting approval, proposed, blocked; `next`: open; `running`; `done`), newest change first, keyset paging (`before`, `next_before`), `asset_id` for one asset |
+| `GET /api/v1/exploration/leads/{id}` | `assets:read` | one lead with its links and verdicts; a run is shown with `scans:read` only |
+| `POST /api/v1/exploration/leads` | `scans:execute` | opens a catalog question on an asset in the caller's data scope (`lead_type`, `asset_id`, `rationale`) |
+| `POST /api/v1/exploration/leads/approve` | `scans:approve` + step-up (critical tier: approving active scanning) | up to 100 leads waiting for approval move to `open` with the approver recorded |
+| `POST /api/v1/exploration/leads/reject` | `scans:approve` | up to 100 live leads close as `dismissed` (a running lead settles from its run) |
+
+Object checks (`internal/app/exploration/leads.go`): the tenant comes from
+the principal; every lead is read through the caller's data scope (its
+subject asset, or the subject finding's asset; a member with no scope row
+sees nothing); out of scope or another tenant's lead answers 404 (per lead
+`not_found` in a bulk result). The approver therefore always has the subject
+in their data scope, and the target of the step is the subject itself. An
+approval is never a dispatch: the step still passes the dispatch gate when
+it starts. Bulk results are per lead: `not_found`, `wrong_state`, `changed`.
+
+Audit: `exploration.lead_opened` (a person's lead), `exploration.lead_approved`,
+`exploration.lead_dismissed` (with the reason), each with the person, the
+lead's type, state, capability, tier and action hash.
+
+Tests: `internal/app/exploration/leads_test.go` (a person's lead and its
+first state, refusals: asset outside scope or tenant, unknown type, no action
+for the asset type; approve and dismiss per lead, cross-tenant and
+out-of-scope refused, audit; a run hidden without `scans:read`).
+
 ## Not yet built
 
 - Retest outcomes and evidence items as steps.
-- Approvals by people, leads opened by people and the Exploration page:
-  designed in RFC-153, not built.
+- The Exploration page and the asset "Next steps" card.
+- A person-attributed run for an approved intrusive step; four-eyes approval.

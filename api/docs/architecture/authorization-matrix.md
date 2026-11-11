@@ -397,6 +397,15 @@ and SBOM import write it.
 > is granted to owners and administrators by default (migration
 > `finding_lifecycles_permission`).
 
+#### Exploration leads (`/api/v1/exploration/leads`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/exploration/leads` · `/{id}` | `assets:read` |
+| `POST /api/v1/exploration/leads` | `scans:execute` |
+| `POST /api/v1/exploration/leads/approve` | `scans:approve` + step-up |
+| `POST /api/v1/exploration/leads/reject` | `scans:approve` |
+
 #### Exposures (`/api/v1/exposures`)
 
 | Endpoint | Permission Required |
@@ -2058,6 +2067,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
+| `GET /exploration/leads`, `/{id}`, open, approve, reject | new | a lead is seen and changed only when its subject asset is in scope (list filtered in SQL; by id 404; per-lead `not_found` in bulk results) |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered; 404 on a group not visible to the caller |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values |
