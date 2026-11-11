@@ -75,7 +75,7 @@ func (r *FindingRepository) markSecretsNotObserved(ctx context.Context, tenantID
 }
 
 // coverageProtectedSources are never closed by a scan.
-const coverageProtectedSources = `('pentest', 'manual', 'bug_bounty', 'red_team')`
+const coverageProtectedSources = vulnerability.PersonOwnedSourcesSQL
 
 // CommandCoverage loads a command's state, the scan profile of the scan that
 // queued it, and every v2 report filed under it.
