@@ -193,7 +193,7 @@ bucketed).
 | Entity | Permission | Registry | Group by | Aggregate | Bucket |
 |---|---|---|---|---|---|
 | `findings` | `findings:read` | `vulnerability.FindingFields` + relation fields | severity, status, source, sla_status, priority_class, finding_type, practice, compliance_result, observation, validation, tool_name, family, cve_id, rule_id, is_in_kev, is_reachable, network_transport, network_service, asset.type, asset.criticality, asset.environment, asset.exposure, asset.internet_facing, asset.crown_jewel | cvss_score, epss_score | first_detected_at, last_seen_at, resolved_at, created_at |
-| `assets` | `assets:read` | `asset.AssetFields` | type, sub_type, criticality, status, scope, exposure, environment, data_classification, internet_facing, crown_jewel, discovery_source, provider | risk_score | first_seen, last_seen, discovered_at, created_at |
+| `assets` | `assets:read` | `assetlist.Fields` (every filter of `GET /assets`, list-query-contract.md) | type, sub_type, criticality, status, scope, exposure, environment, data_classification, internet_facing, crown_jewel, discovery_source, provider | risk_score | first_seen, last_seen, discovered_at, created_at |
 | `scans` | `scans:read` | `scan.Fields` | status, scan_type, schedule_type, sensor_preference, origin, last_run_status | total_runs, failed_runs | created_at, last_run_at, next_run_at |
 
 **Scans.** A scan is tenant configuration (schedule, targets, tool), not an
@@ -308,7 +308,8 @@ their versions, sharing and deletion) will be.
 - `api/internal/app/query/parse.go`, `values.go` — search box check and value completion
 - `web/src/features/query/` — `QueryInput`, completion, recent queries
 - `api/pkg/querylang/pgsql/` — SQL rendering, golden files under `testdata/golden`
-- `api/pkg/domain/asset/asset_fields.go` — the assets registry
+- `api/pkg/domain/asset/asset_fields.go` — the asset column fields
+- `api/pkg/domain/assetlist/fields.go` — the asset inventory registry (columns, relations, derived states) the assets entity uses
 - `api/pkg/filterspec/registry.go` — `Registry.Extend`
 - `api/internal/infra/postgres/query_executor.go` — read-only execution, timeout, estimate
 - `api/internal/app/query/` — principal resolution, concurrency, service

@@ -222,6 +222,13 @@ var assetMergeRefs = []mergeRef{
 	{table: "compliance_check_states", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"benchmark_key", "control_id"}}}},
 	{table: "compliance_check_results", column: "asset_id", tenantCol: "tenant_id"},
+	// Exploration (docs/architecture/exploration.md): a lead about a merged
+	// asset is about the kept one; a link to a merged asset names the kept
+	// one, and a lead's link the kept asset already has is dropped (one
+	// link per lead, relation and asset).
+	{table: "exploration_leads", column: "subject_asset_id", tenantCol: "tenant_id"},
+	{table: "exploration_links", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"lead_id", "rel"}}}},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between
