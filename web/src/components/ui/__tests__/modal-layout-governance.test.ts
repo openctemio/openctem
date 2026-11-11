@@ -99,6 +99,8 @@ function looseContent(el: ts.JsxElement, P: string): boolean {
       (c) =>
         ![`${P}Header`, `${P}Footer`, `${P}Body`].includes(tagOf(c) ?? '') &&
         !RENDERS_BODY.has(tagOf(c) ?? '') &&
+        // The submit error sits between the body and the footer.
+        tagOf(c) !== 'DialogSubmitError' &&
         !(ts.isJsxExpression(c) && (hasTag(c, `${P}Body`) || hasTag(c, `${P}Footer`)))
     )
     const wrapper =
@@ -191,6 +193,11 @@ describe('modal surfaces', { timeout: 60_000 }, () => {
     ).toEqual([])
     // A confirmation with nothing between header and footer needs no body.
     expect(problems('<DialogContent><DialogHeader/><DialogFooter/></DialogContent>')).toEqual([])
+    expect(
+      problems(
+        '<DialogContent><DialogHeader/><DialogForm><DialogBody/><DialogSubmitError message={e}/><DialogFooter/></DialogForm></DialogContent>'
+      )
+    ).toEqual([])
     // Fields in a form between header and footer still count.
     expect(
       problems('<DialogContent><DialogHeader/><form><input/><DialogFooter/></form></DialogContent>')
