@@ -16,6 +16,8 @@ const FIX = {
   workflows: '/scans/workflows',
   tools: '/settings/scanning/tools',
   scannerAddresses: '/settings/scanning/proxies#scanner-addresses',
+  // Retired import sources ("use this source again"), on the imports page.
+  sources: '/findings/imports',
 } as const
 type FixTarget = keyof typeof FIX
 
@@ -70,6 +72,9 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   DEADLINE_TOO_CLOSE: null,
   COVERAGE_GAPS: null,
   NO_RESOLVING_TARGETS: null,
+  // The tool is retired as a source on the sensor (refused at claim; the
+  // step is skipped and the run goes on).
+  SOURCE_RETIRED: 'sources',
   // Retest reason codes (api pkg/domain/retest).
   UNREACHABLE: null,
   BLOCKED: 'sensors',
@@ -114,6 +119,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   sensor_overloaded: 'sensors',
   egress_host_direct: 'sensors',
   no_free_slot: null,
+  source_retired: 'sources',
 }
 
 /** The grant refusal prefix ("grant_tools", "grant_tier_ceiling", ...). */
