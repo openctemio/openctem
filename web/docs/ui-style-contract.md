@@ -325,6 +325,12 @@ load.
 
 - **Loading**: `<Skeleton>` shaped like the content it replaces. Spinners
   (`Loader2`) only inside buttons that are working.
+- **Failed load**: a page that reads data shows `ErrorState` with Retry (or a
+  `DataTable` `error` with `onRetry`) for every read that can fail, so a failed
+  read never looks like an empty list or a row of zeros. The route guard
+  `src/lib/__tests__/route-error-state-guard.test.ts` fails when a route page
+  that fetches has none; its debt file `route-error-state-debt.json` lists the
+  pages still to fix and can only shrink.
 - **Navigating**: no `loading.tsx` inside `(dashboard)` (a test enforces it).
   Each page renders its own skeleton; a route-level loading file only adds a
   second, differently shaped skeleton and makes React hold the page back for
