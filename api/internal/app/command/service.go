@@ -95,6 +95,10 @@ type Service struct {
 	proxyRequired ProxyRequirement
 	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
 	toolSettings ToolSettingsSource
+	// retiredSources are the organization's retired sources: a scan job of
+	// a sensor tool retired on the claiming sensor is never handed to it
+	// (retired_source.go, WithRetiredSources); nil: not checked.
+	retiredSources RetiredSourceReader
 	// secrets lists a claimed job's secret refs (WithTaskSecrets).
 	secrets SecretsGranter
 	// balanceWindow is how long a fresh job is left to less-loaded sensors
@@ -355,6 +359,9 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 	// sensor that accepts them.
 	if sensorID != nil {
 		cmds = s.keepAccepted(ctx, tenantID, *sensorID, s.gateFor(ctx, tenantID, sensorID, cmds), cmds)
+		// A sensor tool the organization retired as a source
+		// (retired_source.go) never gets its scan jobs.
+		cmds = s.retiredHold(ctx, *sensorID, cmds)
 	}
 	if len(cmds) > limit {
 		cmds = cmds[:limit]
@@ -664,6 +671,11 @@ func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID
 			if errors.Is(err, ErrOutOfGrant) && s.grantRefusals != nil {
 				s.grantRefusals.ObserveGrantRefusal(ctx, cmd.TenantID, sid, cmd.ID.String(), gate.grantRefusal(cmd))
 			}
+			return nil, err
+		}
+		// A sensor tool the organization retired as a source never gets
+		// its scan jobs (retired_source.go).
+		if err := s.retiredHoldOne(ctx, sid, cmd); err != nil {
 			return nil, err
 		}
 		// Scope may have changed since the job was queued, or polled
@@ -1167,6 +1179,11 @@ func (s *Service) holdForSensor(ctx context.Context, tenantID, sensorID shared.I
 	n := len(cands)
 	cands = s.keepAccepted(ctx, tenantID, sensorID, s.gateFor(ctx, tenantID, &sensorID, cands), cands)
 	claimSkipped(skipLocalPolicy, n, len(cands))
+	// A sensor tool the organization retired as a source never gets its
+	// scan jobs (retired_source.go).
+	n = len(cands)
+	cands = s.retiredHold(ctx, sensorID, cands)
+	claimSkipped(skipSourceRetired, n, len(cands))
 	// The scope may have changed since the jobs were queued: their targets
 	// pass the dispatch gate again before the claim (scope_recheck.go).
 	n = len(cands)
