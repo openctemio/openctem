@@ -6427,6 +6427,7 @@ e2e/
 │   ├── env.ts                      # env loading + skip-on-missing
 │   └── table.ts                    # dataRows(), firstDataRow()
 ├── ci/                             # CI stack: compose.yml, make-env.sh, seed.sh
+├── design/                         # design gate: manifest, references, fixtures (../docs/ui/design-gate.md)
 └── specs/                          # NN-name.spec.ts, see the table above
 ```
 
