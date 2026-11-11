@@ -16,7 +16,7 @@ import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 
 export interface EmailSettingsFormProps {
   settings: EmailSettingsResponse
@@ -81,9 +81,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
   const [caPem, setCaPem] = useState('')
   const [clearCa, setClearCa] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
+  const rc = useReasonAndCode(confirmOpen)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
 
@@ -109,7 +107,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
       await saveEmailSettings({
         enabled: form.enabled,
@@ -124,15 +122,14 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
         // Omitted: keep the stored CA bundle.
         ...(clearCa ? { ca_pem: '' } : caPem.trim() !== '' ? { ca_pem: caPem.trim() } : {}),
         version: settings.version ?? 0,
-        totp_code: code.trim(),
+        totp_code: rc.code.trim(),
       })
       setConfirmOpen(false)
       toast.success(t('admin.email.saved', 'E-mail settings saved'))
       onSaved()
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setConfirmOpen(false)
@@ -359,8 +356,6 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
                 dirty={dirty}
                 saving={busy}
                 onSave={() => {
-                  setCode('')
-                  setCodeError(null)
                   setConfirmOpen(true)
                 }}
                 onDiscard={reset}
@@ -385,7 +380,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
           'admin.email.confirmDesc',
           'The change applies to every e-mail sent from now on and is recorded in the admin audit log (without the password).'
         )}
-        disabled={!stepUpCodeReady(code, codeOptional)}
+        disabled={!rc.codeOk}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -399,13 +394,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
           )
         }
       >
-        <StepUpCodeField
-          id={`${id}-code`}
-          value={code}
-          onChange={setCode}
-          optional={codeOptional}
-          error={codeError}
-        />
+        <ReasonAndCodeFields id={`${id}-code`} state={rc} withReason={false} />
       </ConfirmDialog>
     </>
   )
