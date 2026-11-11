@@ -1,12 +1,14 @@
 package ingest
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/openctemio/openctem/api/pkg/dberr"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
@@ -14,6 +16,30 @@ import (
 // =============================================================================
 // Error Helpers
 // =============================================================================
+
+// ErrRetryLater wraps a transient store error that stopped an ingest
+// before it finished. Nothing of the report is recorded as rejected: the
+// caller runs the same report again later (the ingest worker retries the
+// job with back-off; re-ingesting is idempotent by fingerprint), and a
+// synchronous caller reports a failure instead of a partial result.
+var ErrRetryLater = errors.New("ingest: transient store error, retry later")
+
+// noteRetryable records err on the output when it is transient
+// (dberr.IsTransient) and reports whether it was. The first one wins.
+func noteRetryable(output *Output, err error) bool {
+	if !dberr.IsTransient(err) {
+		return false
+	}
+	if output.retryErr == nil {
+		output.retryErr = err
+	}
+	return true
+}
+
+// retryLater is the error Ingest returns for a transient store error.
+func retryLater(step string, err error) error {
+	return fmt.Errorf("%w: %s: %w", ErrRetryLater, step, err)
+}
 
 // addError adds an error to the output, respecting the limit.
 func addError(output *Output, errMsg string) {
