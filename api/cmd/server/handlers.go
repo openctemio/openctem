@@ -2151,6 +2151,7 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.User != nil {
 		boot.Me = h.User.MeResponse
 		boot.MyTenants = h.User.MyTenantsResponse
+		boot.OwnershipInvitations = h.User.MyOwnerInvitationsResponse
 	}
 	if svc.Notification != nil {
 		boot.UnreadCount = svc.Notification.GetUnreadCount
