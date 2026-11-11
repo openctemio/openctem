@@ -383,7 +383,7 @@ func (c *compiler) leaf(l *Leaf) string {
 			c.fail(l, "unknown value")
 			return ""
 		}
-		if strings.Contains(tpl, UserToken) && (c.actor.system || c.actor.userID.IsZero()) {
+		if strings.Contains(tpl, UserToken) && !f.UserOptional && (c.actor.system || c.actor.userID.IsZero()) {
 			// "related to me" has no meaning without a user.
 			c.fail(l, "unknown field")
 			return ""
@@ -400,7 +400,7 @@ func (c *compiler) leaf(l *Leaf) string {
 		l = expandValueLeaf(f, l)
 	}
 	if tpl, ok := f.Templates[l.Op]; ok {
-		if strings.Contains(tpl, UserToken) && (c.actor.system || c.actor.userID.IsZero()) {
+		if strings.Contains(tpl, UserToken) && !f.UserOptional && (c.actor.system || c.actor.userID.IsZero()) {
 			// "related to me" has no meaning without a user.
 			c.fail(l, "unknown field")
 			return ""
