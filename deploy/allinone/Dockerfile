@@ -51,7 +51,7 @@ FROM ${CONSOLE_IMAGE} AS console
 # advisory since then with it. CADDY_DEPS raises dependencies that have
 # security fixes newer than the Caddy release; drop an entry once a Caddy
 # release requires that version itself.
-FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS caddy
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS caddy
 ARG CADDY_VERSION=v2.11.4
 ARG CADDY_DEPS="golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
 WORKDIR /src
