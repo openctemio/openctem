@@ -31,7 +31,7 @@ func newTagFilterHandler() (*handler.AssetHandler, *HandlerMockRepository) {
 // and binds the tags as values.
 func TestAssetHandler_List_TagModes(t *testing.T) {
 	h, repo := newTagFilterHandler()
-	req := withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?tags=env-prod,pci&tags_mode=all&exclude_tags=retired", nil))
+	req := withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/assets?tags=env-prod,pci&tags_mode=all&exclude_tags=retired", nil))
 	rec := httptest.NewRecorder()
 	h.List(rec, req)
 	if rec.Code != http.StatusOK {
@@ -52,7 +52,7 @@ func TestAssetHandler_List_TagModes(t *testing.T) {
 
 	// any is the default; an exclusion alone needs no include list.
 	rec = httptest.NewRecorder()
-	h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?tags=env-prod,pci&exclude_tags=retired", nil)))
+	h.List(rec, withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/assets?tags=env-prod,pci&exclude_tags=retired", nil)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("any default: %d (%s)", rec.Code, rec.Body.String())
 	}
@@ -60,7 +60,7 @@ func TestAssetHandler_List_TagModes(t *testing.T) {
 		t.Fatal("tags_mode=all compiled to the same filter as the any default")
 	}
 	rec = httptest.NewRecorder()
-	h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?exclude_tags=b,c", nil)))
+	h.List(rec, withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/assets?exclude_tags=b,c", nil)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("exclusion alone: %d (%s)", rec.Code, rec.Body.String())
 	}
@@ -85,14 +85,14 @@ func TestAssetHandler_List_TagModeValidation(t *testing.T) {
 		"tags=" + strings.Join(many, ",") + "&tags_mode=all",
 	} {
 		rec := httptest.NewRecorder()
-		h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?"+q, nil)))
+		h.List(rec, withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/assets?"+q, nil)))
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", q, rec.Code)
 		}
 	}
 	// The bounds themselves are allowed.
 	rec := httptest.NewRecorder()
-	h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?tags="+strings.Repeat("x", 50)+"&exclude_tags="+strings.Join(many[:20], ","), nil)))
+	h.List(rec, withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/assets?tags="+strings.Repeat("x", 50)+"&exclude_tags="+strings.Join(many[:20], ","), nil)))
 	if rec.Code != http.StatusOK {
 		t.Errorf("tags at the bounds: status = %d (%s)", rec.Code, rec.Body.String())
 	}
@@ -101,7 +101,7 @@ func TestAssetHandler_List_TagModeValidation(t *testing.T) {
 func TestAssetHandler_ListTags_SystemTagsForNonOwner(t *testing.T) {
 	h, repo := newTagFilterHandler()
 	user := shared.NewID()
-	req := withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets/tags?q=prod&include_system=true&type=domain&limit=10", nil))
+	req := withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/assets/tags?q=prod&include_system=true&type=domain&limit=10", nil))
 	req = req.WithContext(context.WithValue(req.Context(), middleware.UserIDKey, user.String()))
 	rec := httptest.NewRecorder()
 	h.ListTags(rec, req)
@@ -130,7 +130,7 @@ func TestAssetHandler_ListTags_SystemTagsForNonOwner(t *testing.T) {
 
 	// Without include_system: no viewer needed, no system tags returned.
 	rec = httptest.NewRecorder()
-	h.ListTags(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets/tags", nil)))
+	h.ListTags(rec, withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/assets/tags", nil)))
 	if rec.Code != http.StatusOK || repo.lastTagQuery.IncludeSystem || repo.lastTagQuery.ProgramTagViewer != nil {
 		t.Fatalf("plain list: %d %+v", rec.Code, repo.lastTagQuery)
 	}
