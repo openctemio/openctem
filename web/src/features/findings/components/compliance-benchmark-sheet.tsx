@@ -8,10 +8,10 @@
  */
 
 import * as React from 'react'
-import Link from 'next/link'
+import Link from '@/components/link'
 import { ChevronRight } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import { Input } from '@/components/ui/input'
+import { ListSearch } from '@/features/shared/components/list-search'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -206,12 +206,10 @@ export function ComplianceBenchmarkSheet({ benchmark, onClose }: ComplianceBench
         </SheetHeader>
         <SheetBody className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
-            <Input
+            <ListSearch
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={setInput}
               placeholder={t('findings.complianceView.search', 'Search controls')}
-              aria-label={t('findings.complianceView.search', 'Search controls')}
-              className="max-w-xs"
             />
             <div className="flex items-center gap-2">
               <Switch
