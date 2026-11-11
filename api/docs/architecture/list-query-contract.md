@@ -226,6 +226,64 @@ with CVEs, with a known-exploited CVE, of unknown version, with open alerts).
 Both need `assets:read`. Names, versions and vendors are scan output: clients
 render them as text.
 
+## Asset inventory (`GET /assets`, `POST /assets/search`)
+
+The inventory reads its filter through the `assets` registry
+(`pkg/domain/assetlist`), compiled as the caller: the tenant predicate, the
+caller's data scope and the private program rule come first, then the
+filter; soft-deleted assets never match. The registry holds every inventory
+filter: the asset columns (`type`, `lens`, `criticality`, `exposure`,
+`environment`, `provider`, `risk_score`, times...), the relations (`tag`,
+`tag_all`, `technology`, `technology_category`, `business_unit`,
+`asset_group`, `owner`, `domain`, `under`, `ip`) and the derived states
+(`scope_status`, `monitoring_state`, `liveness`, `attribution`, `coverage`,
+`coverage_cause`, `freshness`, `resolution`, `primary`, `program_assets`).
+The derived states share their SQL with the other reads (dashboards,
+exposure items), so a figure and the list it opens agree. Every template
+that reads another table pins the caller's tenant.
+
+- `name` is the exact name or a pattern (`api-*`); `name_contains` is a
+  partial match. `technology` takes `name` or `name@version`. `domain` is
+  domain membership (names, the addresses they resolve to, services and
+  certificates, [asset-domain-membership.md](asset-domain-membership.md));
+  `under` is the name itself at or below a DNS name.
+- The tag fields count system tags of bug-bounty programs only for owners
+  and members of the program (RFC-065 §15.3).
+- `properties=key:value,...` (attribute filters) and `with_triage` are the
+  list's own params beside the filter.
+- The params the list took before (`types`, `criticalities`, `search`,
+  `min_risk_score`, `tags` with `tags_mode=all`, ...) are aliases until
+  2026-12-20 (`Deprecation`, `Sunset`, `Warning`).
+- Counts stop at 10,000: `total` is exact up to it, and above it
+  `total_capped` is true. Offsets stop at 10,000 too; `cursor` (empty for the
+  first page) pages in `last_seen desc, id desc` order with `next_cursor` and
+  no depth limit. A cursor carries a position only, never a tenant or scope.
+- `network` (the /24 of IPv4, the /64 of IPv6, `asset_ip_network`, index
+  `idx_assets_ip_network`), `port` and `service` (open ports,
+  [asset-ports.md](asset-ports.md)) filter the IP addresses tab. Every
+  address row carries `ip`: its network, up to 3 names resolving to it and up
+  to 5 open ports, with totals, counting only names and ports in the
+  caller's scope. `GET /assets/networks` groups the matching addresses by
+  network (at most 500).
+- `?view=<id>` runs a saved view of the `assets` page as the caller.
+- The asset inventory page (web) sends only these names. Its own URL keeps
+  the page's older params (`types`, `criticalities`, `tags`...) so no link
+  breaks, and carries the fields it has no control for (`ip`, `network`,
+  `port_gte`...) under the names above. Inside the External surface lens
+  (`?lens=external_surface`) the type is a tab (`?tab=ip_address`): a locked
+  `type` condition that is not part of the editable query text; an old
+  `types=<one type>` link opens the matching tab. The Query toggle edits the
+  same filter as text: a filter the chips can show is written back as flat
+  params, any other (an OR across fields, a group) is kept whole as `fq` and
+  runs as the document `POST /query/parse` made of it, through
+  `POST /assets/search`; the page never sends the text to a list endpoint.
+  Saved views of the `assets` page store the list's params, or the checked
+  document of an `fq` filter, with the tab's type. "Group by network" lists
+  `GET /assets/networks` for the same params (not for an `fq` filter), and
+  every total shows "10,000+" when `total_capped` is true.
+- List and count run in one read-only transaction under a 5 s statement
+  timeout.
+
 ## Errors
 
 A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the
@@ -333,8 +391,8 @@ Saved views (UI contract D15) live in `saved_views` (migration 000777) and
   Members of the group use it; only the view's owner edits or deletes it
   (decision A1); others duplicate it. 100 views per person, 100 per group.
 - A view runs as the person using it (decision A5): `?view=<id>` on
-  `/findings`, `/findings/stats`, `/findings/groups` and `/findings/export`
-  compiles the view's filter as the caller, with the request's own params
+  `/findings`, `/findings/stats`, `/findings/groups`, `/findings/export` and
+  `/assets` (page `assets`, needs `assets:read`) compiles the view's filter as the caller, with the request's own params
   overriding it field by field (`filterspec.Overlay`). Sharing a view shares
   a query, not anyone's rows.
 - Every read and write is tenant-bound; a view the caller may not see (or of

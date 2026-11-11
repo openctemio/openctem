@@ -66,6 +66,9 @@ const (
 	// Owner only, apart from the CAPTCHA, quota and region settings a role may be
 	// given with SettingsGeneralWrite.
 	SettingsMFAWrite Permission = "platform.settings.mfa"
+	// SettingsScopeGuardrailsWrite: the blocked target names policy and its
+	// per-organization exceptions (RFC-154). Owner only.
+	SettingsScopeGuardrailsWrite Permission = "platform.settings.scope_guardrails"
 
 	AnnouncementsWrite Permission = "platform.announcements.write"
 
@@ -121,6 +124,7 @@ var catalog = []Definition{
 	{SettingsGeneralWrite, false, "CAPTCHA, region, alerts, storage quota and the version check"},
 	{SettingsMFAWrite, false, "The platform two-factor floor every organization is held to"},
 	{SettingsAIWrite, false, "Platform AI and the organizations' AI policy"},
+	{SettingsScopeGuardrailsWrite, false, "The blocked target names policy and the organizations' exceptions to the government and military rule"},
 	{AnnouncementsWrite, false, "Publish or end an announcement"},
 	{SensorsRead, true, "Shared sensors, scan zones, the job queue and the scanning settings"},
 	{SensorsJobsRead, false, "Open one shared-sensor job's details"},

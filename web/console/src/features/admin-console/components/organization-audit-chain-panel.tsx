@@ -41,7 +41,7 @@ import {
   useAuditChainStatus,
 } from '../api/use-admin-audit-chain'
 import { useTranslation } from '@/context/i18n-provider'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 
 const CLASS_KEY: Record<AuditChainClass, string> = {
   verifies: 'admin.auditChain.class.verifies',
@@ -99,9 +99,7 @@ export function OrganizationAuditChainPanel({
   const { t } = useTranslation()
   const { data, error, isLoading, isValidating, mutate } = useAuditChainStatus(tenantId)
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
+  const rc = useReasonAndCode(confirmOpen)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<AdminAuditChainRebaselineResponse | null>(null)
   const codeId = useId()
@@ -109,19 +107,17 @@ export function OrganizationAuditChainPanel({
   const recheck = () => void mutate()
 
   const openConfirm = () => {
-    setCode('')
-    setCodeError(null)
     setConfirmOpen(true)
   }
 
   const rebaseline = async () => {
     if (!data?.fingerprint) return
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
       const res = await rebaselineAuditChain(tenantId, {
         fingerprint: data.fingerprint,
-        totp_code: code.trim(),
+        totp_code: rc.code.trim(),
       })
       setResult(res)
       setConfirmOpen(false)
@@ -145,8 +141,7 @@ export function OrganizationAuditChainPanel({
       }
       if (e.status === 401) {
         // Wrong, reused or missing code: stay in the dialog.
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setConfirmOpen(false)
@@ -494,16 +489,14 @@ export function OrganizationAuditChainPanel({
           )
         }
         isLoading={busy}
-        disabled={!stepUpCodeReady(code, codeOptional)}
+        disabled={!rc.codeOk}
         handleConfirm={() => void rebaseline()}
       >
-        <StepUpCodeField
+        <ReasonAndCodeFields
           id={codeId}
-          value={code}
-          onChange={setCode}
-          optional={codeOptional}
-          error={codeError}
-          hint={t(
+          state={rc}
+          withReason={false}
+          codeHint={t(
             'admin.organizationAuditChainPanel.aNewCodeTheOne',
             'A new code: the one you signed in with cannot be used again.'
           )}

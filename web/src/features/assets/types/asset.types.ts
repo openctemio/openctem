@@ -409,6 +409,18 @@ export interface AssetTechnologyBrief {
   category: TechnologyCategory
 }
 
+/** What the IP addresses tab shows beside an address (names and ports are scan output: text only). */
+export interface AssetIPContext {
+  /** The /24 (IPv4) or /64 (IPv6) the address is in. */
+  network?: string
+  /** Up to three names resolving to the address. */
+  names: string[]
+  namesTotal: number
+  /** Up to five open ports. */
+  ports: { port: number; transport?: string; service?: string }[]
+  portsTotal: number
+}
+
 export interface Asset {
   id: string
   type: AssetType
@@ -421,6 +433,8 @@ export interface Asset {
   scope: AssetScope // Ownership/location classification
   /** Technologies detected on the asset (at most 20 on a list, all on one asset). */
   technologies?: AssetTechnologyBrief[]
+  /** An address's network, names and open ports (IP addresses only). */
+  ip?: AssetIPContext
   exposure: ExposureLevel // Network accessibility classification
   /**
    * Internet-facing: exposure is public or a source reported the asset

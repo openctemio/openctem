@@ -401,6 +401,7 @@ export function AddScannerTemplateDialog({
                     </AlertDescription>
                   </Alert>
                 ) : (
+                  // submit-error-ok: the result of the Validate button, not a failed submit
                   <Alert variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
                     <AlertTitle>Validation Errors</AlertTitle>

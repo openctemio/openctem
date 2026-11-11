@@ -241,7 +241,7 @@ export function FindingTypePanel({ finding, onOpenTrace, onOpenEvidence }: Findi
   }
   const check = complianceCheckOf(finding)
   if (check) {
-    return <ComplianceCheckSection check={check} compact />
+    return <ComplianceCheckSection check={check} compact findingId={finding.id} />
   }
   if (WEB_SOURCES.has(finding.source)) {
     return <WebEvidencePanel finding={finding} onOpenEvidence={onOpenEvidence} />

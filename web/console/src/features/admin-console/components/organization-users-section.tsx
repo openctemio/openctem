@@ -1,8 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
+import { Link2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { OneTimeLinkDialog } from '@/components/one-time-link-dialog'
 import {
   DataTable,
   ErrorState,
@@ -10,15 +15,18 @@ import {
   RelativeTime,
   StackedCell,
 } from '@/features/shared'
-import { useOrganizationUsers } from '../api/use-admin-organizations'
+import { issueOwnerSetupLink, useOrganizationUsers } from '../api/use-admin-organizations'
+import { AdminConfirmDialog } from './admin-confirm-dialog'
 import type { AdminOrganizationUser, AdminOwnerInvitation } from '../types'
 import { CreateFirstOwnerDialog } from './create-first-owner-dialog'
 import { OwnerInvitationPanel } from './owner-invitation'
 import { OwnerRecoveryDialog } from './owner-recovery-dialog'
 
-function useUserColumns(): ColumnDef<AdminOrganizationUser>[] {
+function useUserColumns(
+  onSetupLink?: (u: AdminOrganizationUser) => void
+): ColumnDef<AdminOrganizationUser>[] {
   const { t } = useTranslation()
-  return [
+  const columns: ColumnDef<AdminOrganizationUser>[] = [
     {
       accessorKey: 'name',
       header: t('admin.organizationUsersSection.user', 'User'),
@@ -59,6 +67,25 @@ function useUserColumns(): ColumnDef<AdminOrganizationUser>[] {
       cell: ({ row }) => <RelativeTime date={row.original.joined_at} className="text-sm" />,
     },
   ]
+  if (onSetupLink) {
+    columns.push({
+      id: 'actions',
+      header: () => <span className="sr-only">{t('common.table.actionsColumn', 'Actions')}</span>,
+      cell: ({ row }) =>
+        needsHandOverLink(row.original) ? (
+          <Button size="sm" variant="outline" onClick={() => onSetupLink(row.original)}>
+            <Link2 className="me-2 size-4" aria-hidden="true" />
+            {t('admin.org.users.setupLink', 'New setup link')}
+          </Button>
+        ) : null,
+    })
+  }
+  return columns
+}
+
+/** A new owner the console created who has not set a password yet. */
+function needsHandOverLink(u: AdminOrganizationUser): boolean {
+  return u.role === 'owner' && u.pending_setup && u.status === 'active'
 }
 
 /**
@@ -75,6 +102,7 @@ export function OrganizationUsersSection({
   canManage,
   canRecover = false,
   ownerInvitation,
+  emailDelivery,
   onChanged,
 }: {
   tenantId: string
@@ -86,9 +114,22 @@ export function OrganizationUsersSection({
   ownerInvitation?: AdminOwnerInvitation
   /** The organization's member count changed. */
   onChanged?: () => void
+  /**
+   * False: the installation cannot send email. A new owner who lost the
+   * one-time link gets a new one from here, handed over by the administrator.
+   */
+  emailDelivery?: boolean
 }) {
   const { t } = useTranslation()
-  const columns = useUserColumns()
+  const noEmail = emailDelivery === false
+  const [linkFor, setLinkFor] = useState<AdminOrganizationUser | null>(null)
+  // Held only in this component's state; dropped when the dialog closes.
+  const [handOver, setHandOver] = useState<{
+    link: string
+    expiresAt?: string
+    email: string
+  } | null>(null)
+  const columns = useUserColumns(noEmail && canManage ? setLinkFor : undefined)
 
   const { data, error, isLoading, mutate } = useOrganizationUsers(tenantId)
   const refresh = () => void mutate()
@@ -165,13 +206,74 @@ export function OrganizationUsersSection({
           invitation={invitation}
           canManage={canManage}
           onChanged={changed}
+          emailDelivery={emailDelivery}
           changeInvitee={
             canBootstrap ? (
-              <CreateFirstOwnerDialog tenantId={tenantId} changeInvitee onCreated={changed} />
+              <CreateFirstOwnerDialog
+                tenantId={tenantId}
+                changeInvitee
+                emailDelivery={emailDelivery}
+                onCreated={changed}
+              />
             ) : undefined
           }
         />
       )}
+      {noEmail && users.some(needsHandOverLink) && (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'admin.org.users.pendingOwnerNoEmail',
+            'The owner has not set a password yet. This server cannot send email: if the one-time link shown when the owner was created is lost or expired, make a new one with New setup link and give it to them yourself.'
+          )}
+        </p>
+      )}
+      {linkFor && (
+        <AdminConfirmDialog
+          open
+          onOpenChange={(next) => !next && setLinkFor(null)}
+          title={t('admin.org.users.setupLink', 'New setup link')}
+          description={
+            <p>
+              {t(
+                'admin.org.users.setupLinkWhat',
+                'This server cannot send email. Creates a new one-time link where {email} sets their password and shows it to you once, for you to hand over over a channel you trust. It works once and expires in 24 hours; any earlier link stops working.',
+                { email: linkFor.email }
+              )}
+            </p>
+          }
+          confirmLabel={t('admin.org.users.setupLinkConfirm', 'Create link')}
+          onConfirm={async ({ reason }) => {
+            // A bearer secret: straight into the one-time dialog, nowhere else.
+            const res = await issueOwnerSetupLink(linkFor.user_id, tenantId, reason)
+            const link = res.setup_url
+            if (!link) {
+              toast.error(
+                t(
+                  'admin.org.users.setupLinkNoAddress',
+                  'The link could not be built: set the public address (APP_URL) on the API.'
+                )
+              )
+              return
+            }
+            setHandOver({ link, expiresAt: res.setup_expires_at, email: linkFor.email })
+            setLinkFor(null)
+          }}
+        />
+      )}
+      <OneTimeLinkDialog
+        open={!!handOver}
+        onOpenChange={(next) => {
+          if (!next) setHandOver(null)
+        }}
+        title={t('admin.org.users.setupLink', 'New setup link')}
+        description={t(
+          'admin.org.users.setupLinkFor',
+          'Set-password link for {email}. It works once.',
+          { email: handOver?.email ?? '' }
+        )}
+        link={handOver?.link ?? ''}
+        expiresAt={handOver?.expiresAt}
+      />
       {error ? (
         <ErrorState
           title={t('admin.organizationUsersSection.users2', 'users')}

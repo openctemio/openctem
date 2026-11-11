@@ -121,7 +121,7 @@ func Load(ctx context.Context, tenantID shared.ID, targets Targets, roots Roots)
 	}
 	// An entry the platform guardrails refuse (a public suffix, the deny
 	// list, an oversized range) covers nothing, whatever is stored.
-	g := scopedom.DefaultGuardrails()
+	g := scopedom.DefaultGuardrails().For(tenantID)
 	kept := make([]*scopedom.Target, 0, len(ts))
 	for _, t := range ts {
 		if t != nil && g.CheckPattern(t.TargetType(), t.Pattern()) == nil {

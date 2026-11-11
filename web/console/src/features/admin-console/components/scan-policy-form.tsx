@@ -19,12 +19,11 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { ScanApprovalMode, ScanApprovalPolicy } from '../api/use-scan-policy'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 const POLICIES: ScanApprovalPolicy[] = ['tenant_controlled', 'off', 'on', 'strict']
@@ -99,11 +98,8 @@ export function ScanPolicyForm({
   const inherits = platformDefault !== undefined
   const initial = value ?? (inherits ? INHERIT : 'tenant_controlled')
   const [choice, setChoice] = useState<string>(initial)
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const rc = useReasonAndCode(open)
   const [busy, setBusy] = useState(false)
 
   // The saved values: on load, after a save and on Discard.
@@ -118,16 +114,14 @@ export function ScanPolicyForm({
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
-      await onSave(next, reason.trim(), code.trim())
+      await onSave(next, rc.reason.trim(), rc.code.trim())
       setOpen(false)
-      setReason('')
       toast.success(t('admin.scanPolicy.saved', 'Scan approval policy saved'))
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setOpen(false)
@@ -219,7 +213,7 @@ export function ScanPolicyForm({
             )}
           </p>
         }
-        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
+        disabled={!rc.codeOk || !rc.reasonOk}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -233,25 +227,7 @@ export function ScanPolicyForm({
           )
         }
       >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-reason`}>{t('admin.scanPolicy.reason', 'Reason')}</Label>
-            <Textarea
-              id={`${id}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <StepUpCodeField
-            id={`${id}-code`}
-            value={code}
-            onChange={setCode}
-            optional={codeOptional}
-            error={codeError}
-          />
-        </div>
+        <ReasonAndCodeFields id={id} state={rc} />
       </ConfirmDialog>
     </>
   )

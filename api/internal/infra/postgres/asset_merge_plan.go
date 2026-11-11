@@ -255,6 +255,9 @@ var assetMergeSpecialRefs = map[string]string{
 	"asset_attributions.asset_id":              "the kept asset keeps the most recent human decision of any merged asset; automatic records of merged assets are dropped (the moved evidence re-derives them)",
 	"asset_domain_memberships.asset_id":        "derived: the merged asset's rows are deleted and the kept asset is queued so the worker recomputes its rows",
 	"asset_domain_queue.asset_id":              "the merged asset's queue rows are deleted and the kept asset is queued",
+	"asset_ports.asset_id":                     "derived: the merged asset's rows are deleted and the kept asset is queued so the worker recomputes its rows",
+	"asset_ports.port_asset_id":                "derived: rows naming a merged port asset are deleted; the kept asset is queued and recomputed",
+	"asset_port_queue.asset_id":                "the merged asset's queue rows are deleted and the kept asset is queued",
 	"asset_attributions.follows_host_id":       "children of a merged host follow the kept asset (the kept asset itself follows nobody it absorbed)",
 }
 
@@ -319,6 +322,9 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	if err := mergeDomainMembership(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}
+	if err := mergeAssetPorts(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
 	return mergeDashboardFacts(ctx, tx, tenantID, keepID, mergeIDs)
 }
 
@@ -336,6 +342,25 @@ func mergeDomainMembership(ctx context.Context, tx *sql.Tx, tenantID, keepID str
 	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_domain_queue (asset_id, tenant_id) VALUES ($1, $2)
 		ON CONFLICT (asset_id) DO NOTHING`, keepID, tenantID); err != nil {
 		return fmt.Errorf("queue kept asset for domain membership: %w", err)
+	}
+	return nil
+}
+
+// mergeAssetPorts drops the merged assets' open port rows (as the asset or
+// as the port) and queue rows, derived data the asset-ports worker
+// recomputes, and queues the kept asset, which now holds their edges.
+func mergeAssetPorts(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_ports WHERE tenant_id = $1 AND (asset_id = ANY($2) OR port_asset_id = ANY($2))`,
+		tenantID, pq.Array(mergeIDs)); err != nil {
+		return fmt.Errorf("merge asset ports: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_port_queue WHERE tenant_id = $1 AND asset_id = ANY($2)`,
+		tenantID, pq.Array(mergeIDs)); err != nil {
+		return fmt.Errorf("merge asset ports queue: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_port_queue (asset_id, tenant_id) VALUES ($1, $2)
+		ON CONFLICT (asset_id) DO NOTHING`, keepID, tenantID); err != nil {
+		return fmt.Errorf("queue kept asset for asset ports: %w", err)
 	}
 	return nil
 }

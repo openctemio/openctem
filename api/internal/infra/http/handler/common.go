@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -267,30 +266,6 @@ func parseQueryIntPtr(s string) *int {
 // parseQueryBoolPtr is an alias for parseQueryBool for consistency.
 func parseQueryBoolPtr(s string) *bool {
 	return parseQueryBool(s)
-}
-
-// parseQueryTimePtr parses a timestamp query param, accepting either RFC3339
-// (2006-01-02T15:04:05Z07:00) or a plain date (2006-01-02). Returns nil for an
-// empty or unparseable value so a malformed param is ignored rather than 400.
-func parseQueryTimePtr(s string) *time.Time {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return nil
-	}
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return &t
-	}
-	if t, err := time.Parse("2006-01-02", s); err == nil {
-		return &t
-	}
-	return nil
-}
-
-func nilIfEmpty(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 // parsePropertiesFilter parses "key:value,key2:value2" into a map.

@@ -385,6 +385,11 @@ type Output struct {
 	// (last_seen_at), and that time, not the ingest's, is their sighting
 	// time (an upload; observation.go).
 	fileObserved bool
+	// retryErr is the first transient store error of this ingest (a lost
+	// connection, a lock or statement timeout, a write conflict): the
+	// report is not finished, so Ingest returns ErrRetryLater instead of
+	// recording what that error kept out as rejected.
+	retryErr error
 	// FingerprintsByIndex maps the index of a finding in the report to the
 	// stored fingerprints it became (one, or one per CVE of a split network
 	// finding). A CI job uses it to learn which of its own results carry a

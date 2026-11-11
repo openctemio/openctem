@@ -4,7 +4,6 @@ import { useId, useState, type FormEvent } from 'react'
 import { Loader2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ContentLintReport } from '@/lib/api/generated'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -17,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -26,7 +26,7 @@ import { AdminApiError } from '@console/lib/admin-api/client'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 import { importContentPack, uploadContentPack } from '../api/use-content-packs'
 import { ContentLintReportView, asLintReport } from './content-lint-report'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, useReasonAndCode } from './step-up-code-hint'
 
 export const KNOWN_KINDS = ['nuclei-templates', 'semgrep-rules', 'wordlist'] as const
 const NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -87,13 +87,11 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
   const [ack, setAck] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
+  // Reason and code: cleared every time the dialog opens or closes.
+  const rc = useReasonAndCode(open)
+  const { reason, setReason, code, setCode, codeOptional } = rc
   const proofOk =
-    reason.trim().length >= REASON_MIN &&
-    reason.trim().length <= REASON_MAX &&
-    stepUpCodeReady(code, codeOptional)
+    reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX && rc.codeOk
 
   const problem = contentPackFormProblem({ mode, name, version, kind, file, url, digest })
   const blockedBySecrets = secretsFound && !ack
@@ -109,8 +107,7 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
     setAck(false)
     setError(null)
     setBusy(false)
-    setReason('')
-    setCode('')
+    rc.reset()
   }
 
   const submit = async (e: FormEvent) => {
@@ -302,11 +299,6 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                   optional={codeOptional}
                 />
               </div>
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
               {report && <ContentLintReportView report={report} />}
               {secretsFound && (
                 <div className="flex items-start gap-2 rounded-md border border-destructive/40 p-3">
@@ -323,6 +315,8 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                 <p className="text-sm text-muted-foreground">{problem}</p>
               )}
             </DialogBody>
+            <DialogSubmitError message={error} />
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 {t('common.cancel', 'Cancel')}
