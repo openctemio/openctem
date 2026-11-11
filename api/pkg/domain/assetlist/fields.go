@@ -1,8 +1,10 @@
 package assetlist
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 
@@ -70,6 +72,24 @@ const ownerSQL = `EXISTS (SELECT 1 FROM tenant_members otm WHERE otm.tenant_id =
 // system tag of a program the caller may see.
 var tagSQL = `(a.tags && {arg} OR (a.system_tags && {arg} AND (` + ownerSQL + ` OR ` +
 	VisibleProgramLinkSQL("a.id", "a.tenant_id", "{user}", "AND t = ANY({arg})") + `)))`
+
+// A tag filter takes at most maxTagValues tags of at most maxTagLen
+// characters (an asset tag is at most maxTagLen long, so a longer value can
+// never match).
+const (
+	maxTagValues = 20
+	maxTagLen    = 50
+)
+
+var errTagTooLong = errors.New("a tag is at most 50 characters")
+
+// checkTagValue refuses a tag longer than any stored tag.
+func checkTagValue(v string) (string, error) {
+	if utf8.RuneCountInString(v) > maxTagLen {
+		return "", errTagTooLong
+	}
+	return v, nil
+}
 
 // tagAllSQL is "the asset carries every tag of the bound array".
 var tagAllSQL = `(` + tagSQL + ` AND NOT EXISTS (SELECT 1 FROM unnest({arg}) AS want(tag) WHERE NOT (want.tag = ANY(a.tags)
@@ -239,11 +259,13 @@ func build(scanned bool) *filterspec.Registry {
 	fields = append(fields,
 		filterspec.Field{Name: "lens", Type: filterspec.TypeEnum, Enum: lensNames(), Ops: inNotIn, SQL: "a.asset_lens"},
 		filterspec.Field{Name: fieldTag, Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.tags", UserOptional: true,
+			MaxValues: maxTagValues, Normalize: checkTagValue,
 			Templates: map[filterspec.Op]string{
 				filterspec.OpIn:    tagSQL,
 				filterspec.OpNotIn: "NOT COALESCE(" + tagSQL + ", FALSE)",
 			}},
 		filterspec.Field{Name: "tag_all", Type: filterspec.TypeString, Ops: onlyIn, SQL: "a.tags", UserOptional: true, Doc: "carries every one of these tags",
+			MaxValues: maxTagValues, Normalize: checkTagValue,
 			Templates: map[filterspec.Op]string{filterspec.OpIn: tagAllSQL}},
 		filterspec.Field{Name: fieldProvider, Type: filterspec.TypeString, Ops: inNotIn, SQL: "a.provider", Sortable: true,
 			Doc: "provider (unset: none recorded)",
