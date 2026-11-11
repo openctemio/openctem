@@ -28,7 +28,7 @@ export const SCOPE_REFUSAL_TEXT = {
   deny_list: {
     label: 'Not allowed by the platform',
     message:
-      'This installation does not allow this target (for example a government or military domain). Ask the platform administrator if your organization is authorised to test it.',
+      'The platform does not allow this target. For a government or military domain, your platform administrator can grant an exception.',
   },
   excluded: {
     label: 'Excluded',
@@ -150,8 +150,9 @@ export const SCOPE_ERROR_TEXT = {
     'This rule also matches assets you cannot see. Ask someone with access to them, or mark only the assets you see.',
   PUBLIC_SUFFIX:
     'A public suffix (such as com.vn or azurewebsites.net) is shared by many organizations and cannot be a scope entry. Enter a domain your organization registered.',
-  DENY_LIST:
-    'This installation does not allow this target (for example a government or military domain). Ask the platform administrator if your organization is authorised to test it.',
+  DENY_LIST: 'The platform does not allow this target as a scope entry.',
+  GOVERNMENT_NAME:
+    'Government and military domains are blocked on this installation. Your platform administrator can grant an exception.',
   SHARED_CODE_HOST:
     'This code host is shared by many organizations. Name your own namespace, such as github.com/your-org/*.',
   CIDR_TOO_LARGE:
