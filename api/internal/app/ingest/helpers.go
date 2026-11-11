@@ -36,9 +36,23 @@ func noteRetryable(output *Output, err error) bool {
 	return true
 }
 
+// retryLaterError is the error Ingest returns for a transient store error:
+// errors.Is matches ErrRetryLater and the cause. Its text names the step
+// only; the cause is logged where it happened.
+type retryLaterError struct {
+	step  string
+	cause error
+}
+
+func (e *retryLaterError) Error() string {
+	return "ingest: transient store error in the " + e.step + " step, retry later"
+}
+
+func (e *retryLaterError) Unwrap() []error { return []error{ErrRetryLater, e.cause} }
+
 // retryLater is the error Ingest returns for a transient store error.
 func retryLater(step string, err error) error {
-	return fmt.Errorf("%w: %s: %w", ErrRetryLater, step, err)
+	return &retryLaterError{step: step, cause: err}
 }
 
 // addError adds an error to the output, respecting the limit.
