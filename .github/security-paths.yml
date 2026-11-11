@@ -106,6 +106,9 @@ scope-gate:
   - api/internal/app/scopeauth/**
   - api/internal/app/scangov/gate.go
   - api/internal/app/scan/dispatch_gate.go
+  # Exploration leads dispatch through the coverage run path; the
+  # controller decides which steps start and on which target.
+  - api/internal/app/exploration/controller.go
   - api/internal/app/command/scope_recheck.go
   # The web scope of every web job (path exclusions): the command create
   # guard and its fail-closed fallback.

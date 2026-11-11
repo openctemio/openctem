@@ -21,7 +21,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SignupAlertThresholds } from '../api/use-signup-events'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 
 const MAX_THRESHOLD = 100_000
 const MIN_WINDOW = 5
@@ -55,11 +55,8 @@ export function SignupAlertsForm({ thresholds, canEdit, onSave }: SignupAlertsFo
   const id = useId()
   const [value, setValue] = useState(thresholds)
   const [domains, setDomains] = useState(thresholds.ignored_domains.join('\n'))
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const rc = useReasonAndCode(open)
   const [busy, setBusy] = useState(false)
 
   // The saved values: on load, after a save and on Discard.
@@ -81,17 +78,14 @@ export function SignupAlertsForm({ thresholds, canEdit, onSave }: SignupAlertsFo
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
-      await onSave(next, reason.trim(), code.trim())
+      await onSave(next, rc.reason.trim(), rc.code.trim())
       setOpen(false)
-      setReason('')
-      setCode('')
       toast.success(t('admin.signupAlerts.saved'))
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setOpen(false)
@@ -162,7 +156,7 @@ export function SignupAlertsForm({ thresholds, canEdit, onSave }: SignupAlertsFo
         }}
         title={t('admin.signupAlerts.confirmTitle')}
         desc={<p>{t('admin.signupAlerts.confirmDesc')}</p>}
-        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
+        disabled={!rc.codeOk || !rc.reasonOk}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -176,25 +170,7 @@ export function SignupAlertsForm({ thresholds, canEdit, onSave }: SignupAlertsFo
           )
         }
       >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-reason`}>{t('admin.scanPolicy.reason')}</Label>
-            <Textarea
-              id={`${id}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <StepUpCodeField
-            id={`${id}-code`}
-            value={code}
-            onChange={setCode}
-            optional={codeOptional}
-            error={codeError}
-          />
-        </div>
+        <ReasonAndCodeFields id={id} state={rc} />
       </ConfirmDialog>
     </>
   )

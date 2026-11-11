@@ -235,7 +235,7 @@ func (g *ActiveGate) judgeCertificates(ctx context.Context, tenantID shared.ID, 
 		}
 		j, covered := standingOf(eps)
 		names := namesOf[cid]
-		j.standing.Ownership, j.standing.OwnedBy = g.ownership(auth, names, rejected, covered)
+		j.standing.Ownership, j.standing.OwnedBy = g.ownership(tenantID, auth, names, rejected, covered)
 		out[cid] = j
 	}
 	return out, nil
@@ -292,9 +292,9 @@ func standingOf(eps []CertEndpoint) (j certJudgement, covered bool) {
 // ownership is the ownership signal of a certificate's names: yours when one
 // sits under a domain root of the tenant, third_party when the certificate
 // is on an endpoint of ours (onOurEndpoint) and every name is foreign.
-func (g *ActiveGate) ownership(auth *scopeauth.Authority, names []string, rejected map[string]bool, onOurEndpoint bool) (string, *scopeauth.Via) {
+func (g *ActiveGate) ownership(tenantID shared.ID, auth *scopeauth.Authority, names []string, rejected map[string]bool, onOurEndpoint bool) (string, *scopeauth.Via) {
 	for _, n := range names {
-		if g.denied(n) || underAny(n, rejected) {
+		if g.denied(tenantID, n) || underAny(n, rejected) {
 			continue
 		}
 		if v, ok := auth.OwnedName(n); ok {

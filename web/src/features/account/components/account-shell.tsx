@@ -15,6 +15,7 @@ import { AccountSpaceProvider } from '@/context/account-space-provider'
 import { cn } from '@/lib/utils'
 
 import { AccountSignOut } from './account-sign-out'
+import { OwnershipInvitationBanner } from './ownership-invitation-banner'
 
 const NAV = [
   { href: '/welcome', key: 'auth.welcome.nav.home', fallback: 'Home' },
@@ -29,7 +30,18 @@ const NAV = [
  * organization switcher, no search: every one of them reads organization data
  * the account-only session cannot reach.
  */
-export function AccountShell({ children }: { children: React.ReactNode }) {
+export function AccountShell({
+  children,
+  sessionReady = true,
+}: {
+  children: React.ReactNode
+  /**
+   * The account-only session exists. False on /welcome while it holds only a
+   * refresh token: the hub starts the session and reloads, so nothing else
+   * reads the API before that.
+   */
+  sessionReady?: boolean
+}) {
   const pathname = usePathname()
   const { t } = useTranslation()
   const brand = useBrand()
@@ -85,6 +97,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
         <MainRegion className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
+          <OwnershipInvitationBanner className="mb-4" enabled={sessionReady} />
           {children}
         </MainRegion>
         {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}

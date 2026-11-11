@@ -95,9 +95,11 @@ Operator settings, never tenant settings:
 
 - **New entries** (`scope.Service.CreateTarget`, `pkg/domain/scope/guardrails.go`):
   no public suffix or wildcard of one (embedded Public Suffix List), no
-  government or military name, no shared-provider apex as a wildcard root,
-  no `0.0.0.0/0`, `::/0`, link-local or metadata address, nothing in
-  `SCOPE_DENY_EXTRA`, no public range larger than the CIDR caps.
+  government or military name unless the organization holds an exception,
+  no shared-provider apex as a wildcard root, no `0.0.0.0/0`, `::/0`,
+  link-local or metadata address, nothing in `SCOPE_DENY_EXTRA` or the
+  console's blocked names, no public range larger than the CIDR caps
+  ([scope-guardrails.md](scope-guardrails.md), RFC-154).
 - **Dispatch** (the ownership gate below): a deny-listed target is refused
   on every path (`platform_denied`).
 - **Platform sensors** (`scan/active_proof.go`): with the platform setting

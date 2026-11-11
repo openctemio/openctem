@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
@@ -486,5 +487,35 @@ func TestProgramEntriesFeedTheSignerLedger(t *testing.T) {
 	}
 	if l.put != 4 {
 		t.Fatalf("resume sent %d entries in total", l.put)
+	}
+}
+
+// A program import honors an exception to the government and military rule
+// for its organization only (docs/rfcs/RFC-154-blocked-target-names.md).
+func TestPreview_GovernmentNameException(t *testing.T) {
+	ctx := context.Background()
+	a, b := shared.NewID(), shared.NewID()
+	policy := scopedom.NewNamePolicy()
+	policy.Set(scopedom.NameSnapshot{Exceptions: []scopedom.NameException{
+		{TenantID: a, Name: "bounty.example.gov.vn", Subdomains: true, ExpiresAt: time.Now().Add(time.Hour)},
+	}})
+	svc := NewService(newFakeRepo(), fullData(true), nil)
+	svc.SetGuardrails(scopedom.DefaultGuardrails().WithNamePolicy(policy))
+	in := input()
+	in.ScopeText = "*.bounty.example.gov.vn\nother.example.gov.vn\n"
+	want := map[shared.ID]map[string]string{
+		a: {"*.bounty.example.gov.vn": PlanCreate, "other.example.gov.vn": PlanRefused},
+		b: {"*.bounty.example.gov.vn": PlanRefused, "other.example.gov.vn": PlanRefused},
+	}
+	for tid, cases := range want {
+		pv, err := svc.Preview(ctx, tid, in, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range pv.Entries {
+			if w, ok := cases[e.Pattern]; ok && (e.Status != w || (w == PlanRefused && e.Code != "GOVERNMENT_NAME")) {
+				t.Errorf("tenant %s %s: %+v, want %s", tid, e.Pattern, e, w)
+			}
+		}
 	}
 }
