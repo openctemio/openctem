@@ -17,10 +17,12 @@ type memRepo struct {
 	leads    map[shared.ID]*exploration.Lead
 	links    []exploration.Link
 	verdicts []exploration.Verdict
+	// inScope are the subject assets a restricted scope sees.
+	inScope map[shared.ID]bool
 }
 
 func newMemRepo() *memRepo {
-	return &memRepo{ex: map[shared.ID]shared.ID{}, leads: map[shared.ID]*exploration.Lead{}}
+	return &memRepo{ex: map[shared.ID]shared.ID{}, leads: map[shared.ID]*exploration.Lead{}, inScope: map[shared.ID]bool{}}
 }
 
 func (m *memRepo) EnsureContinuous(_ context.Context, tenantID shared.ID) (shared.ID, error) {
@@ -51,11 +53,14 @@ func (m *memRepo) OpenLead(_ context.Context, l *exploration.Lead, parents []exp
 	return true, nil
 }
 
-func (m *memRepo) GetLead(_ context.Context, tenantID, id shared.ID, _ *shared.DataScope) (*exploration.Lead, error) {
+func (m *memRepo) GetLead(_ context.Context, tenantID, id shared.ID, scope *shared.DataScope) (*exploration.Lead, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	l, ok := m.leads[id]
 	if !ok || l.TenantID != tenantID {
+		return nil, shared.ErrNotFound
+	}
+	if scope.Restricted() && (l.SubjectAssetID == nil || !m.inScope[*l.SubjectAssetID]) {
 		return nil, shared.ErrNotFound
 	}
 	c := *l
