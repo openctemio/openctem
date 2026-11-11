@@ -246,7 +246,7 @@
   "admin.approvals.target.platformIdpChangeHash": "Identity provider configuration {hash} (described in the reason)",
   "admin.approvals.target.remove": "Remove the identity provider",
   "admin.approvals.target.require_idp_off": "Stop requiring the identity provider",
-  "admin.approvals.target.scopeNameException": "{name} for organization {tenant} until {expires}",
+  "admin.approvals.target.scopeNameException": "{name} for organization {organization} until {expires}",
   "admin.approvals.target.signup": "{mode}; {accounts}",
   "admin.approvals.you": "You",
   "admin.attention.accessRequests.detail": "{count, plural, one {# request} other {# requests}} for an organization; the oldest has waited {days, plural, =0 {less than a day} one {# day} other {# days}}.",

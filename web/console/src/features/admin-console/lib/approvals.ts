@@ -148,10 +148,10 @@ function scopeNameExceptionLabel(target: string, t: Translate): string | null {
     }
     return t(
       'admin.approvals.target.scopeNameException',
-      '{name} for organization {tenant} until {expires}',
+      '{name} for organization {organization} until {expires}',
       {
         name: c.subdomains ? `*.${c.name ?? ''}` : (c.name ?? ''),
-        tenant: c.tenant ?? '',
+        organization: c.tenant ?? '',
         expires: c.expires ?? '',
       }
     )
