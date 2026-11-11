@@ -104,7 +104,7 @@ export function approveLeads(ids: string[]) {
 }
 
 export function dismissLeads(ids: string[], reason?: string) {
-  return post<{ results: LeadBulkResult[] }>(`${LEADS_URL}/dismiss`, {
+  return post<{ results: LeadBulkResult[] }>(`${LEADS_URL}/reject`, {
     ids,
     ...(reason ? { reason } : {}),
   })
