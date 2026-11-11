@@ -36,6 +36,7 @@ it, instead of "Waiting for a sensor".
 | Dispatch gate | private targets: the sensor enforces a local policy when the organization requires one | `private_needs_local_policy` |
 | Dispatch gate | the organization enabled the opt-in the task uses | `opt_in_disabled` |
 | Dispatch gate | the sensor's own local policy accepts the task | `local_policy_refuses` |
+| Retired source | the organization has not retired the task's tool as a source on this sensor ([source retirement](source-retirement.md)); another sensor with the tool takes the task, and a task pinned to this sensor, or one no other sensor may run, fails with `SOURCE_RETIRED` | `source_retired` |
 | Delivery (proxy pools) | the sensor's jobs go through a proxy pool and the sensor reports it can honor one (`egress.upstream@1`, `net.confined@1`); scan and retest jobs only | `egress_unsupported` |
 | Delivery (proxy pools) | the same, and for a validate job the sensor's validate executor goes through the pool (`egress.validate@1`) | `egress_validate_unsupported` |
 | Delivery (proxy pools) | the sensor's owner set it to scan direct on its host (`egress.host-direct@1`) and the job needs a pool: the organization requires a proxy, or a pool is named for the sensor | `egress_host_direct` |

@@ -2517,6 +2517,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Per-sensor tool settings ride on every scan job, inside the signed
 		// payload (settings_layers.sensor).
 		command.WithToolSettings(s.Sensor),
+		// A sensor tool the organization retired as a source never gets its
+		// scan jobs (docs/architecture/source-retirement.md).
+		command.WithRetiredSources(repos.SourceRetirement),
 		// The job's secret refs ride in the signed payload (secrets).
 		command.WithTaskSecrets(s.TaskSecrets),
 		// RFC-052 §5: each sensor's grant, before every other gate.
