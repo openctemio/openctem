@@ -473,10 +473,20 @@ start is skipped the trigger is refused as a blocked run with
 comes (a tool was turned off meanwhile) is skipped with `NO_MATCHING_TOOL`
 instead of failed, and its dependents are skipped with `DEPENDENCY_SKIPPED`.
 
+**At claim time** a scan task whose tool the organization retired as a
+source on the claiming sensor ([source retirement](source-retirement.md)) is
+never sent to it. Another sensor of the organization that runs the tool
+takes it; when the task is pinned to that sensor, or no other sensor may
+run it, the task fails at claim and its step is skipped with
+`SOURCE_RETIRED` (never failed, so `fail_fast` does not stop the run), its
+dependents with `DEPENDENCY_SKIPPED`.
+
 **Outcome.** A run in which a step was skipped for a missing tool or sensor
-ends `partial` ("N of M steps were skipped because no tool or sensor here
-runs them"), never `completed`; it is `failed` only when steps failed and
-none produced results. A step skipped for its condition, depth or intensity
+(or `SOURCE_RETIRED`) ends `partial` ("N of M steps were skipped because no
+tool or sensor here runs them"), never `completed`; it is `failed` when
+steps failed and none produced results, or when no step produced results
+and one was refused with `SOURCE_RETIRED` (the run's message names that
+step, its reason and the code). A step skipped for its condition, depth or intensity
 is a choice, not a gap, and does not make a run partial.
 
 **Safety gates are not bypassed.** Scope (exclusions, ownership, act scope),
