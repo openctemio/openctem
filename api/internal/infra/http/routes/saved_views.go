@@ -12,7 +12,9 @@ import (
 func registerSavedViewRoutes(router Router, h *handler.SavedViewHandler, authMiddleware, userSyncMiddleware Middleware) {
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 	router.Group("/api/v1/views", func(r Router) {
-		read := middleware.Require(permission.FindingsRead)
+		// Each page needs its own read permission too (findings:read,
+		// vulnerabilities:read, assets:read), checked by the service.
+		read := middleware.RequireAny(permission.FindingsRead, permission.AssetsRead)
 		r.GET("/", h.List, read)
 		r.POST("/", h.Create, read)
 		r.GET("/{id}", h.Get, read)
