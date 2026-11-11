@@ -253,7 +253,7 @@ function WebRequestSection({ finding }: { finding: FindingDetail }) {
 function ComplianceSection({ finding }: { finding: FindingDetail }) {
   const check = complianceCheckOf(finding)
   if (!check) return null
-  return <ComplianceCheckSection check={check} />
+  return <ComplianceCheckSection check={check} findingId={finding.id} />
 }
 
 function Web3Section({ finding }: { finding: FindingDetail }) {
