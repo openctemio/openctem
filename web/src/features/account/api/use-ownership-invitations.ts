@@ -24,9 +24,10 @@ interface OwnershipInvitationList {
 
 export const OWNERSHIP_INVITATIONS_ENDPOINT = '/api/v1/me/ownership-invitations'
 
-export function useOwnershipInvitations() {
+/** `enabled: false` skips the read (no session that can make it yet). */
+export function useOwnershipInvitations(enabled = true) {
   const { data, error, isLoading, mutate } = useSWR<OwnershipInvitationList>(
-    OWNERSHIP_INVITATIONS_ENDPOINT,
+    enabled ? OWNERSHIP_INVITATIONS_ENDPOINT : null,
     (url: string) => get<OwnershipInvitationList>(url),
     { revalidateOnFocus: false }
   )

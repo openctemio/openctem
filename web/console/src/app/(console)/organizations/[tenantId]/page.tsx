@@ -219,6 +219,7 @@ export default function AdminOrganizationPage({
                   canManage={canManageUsers}
                   canRecover={adminHas(admin, 'platform.tenants.owner_recovery')}
                   ownerInvitation={org.owner_invitation}
+                  emailDelivery={org.email_delivery}
                   onChanged={refresh}
                 />
               </TabsContent>
