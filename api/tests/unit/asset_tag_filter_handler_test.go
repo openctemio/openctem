@@ -2,10 +2,13 @@ package unit
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
@@ -23,6 +26,9 @@ func newTagFilterHandler() (*handler.AssetHandler, *HandlerMockRepository) {
 	return handler.NewAssetHandler(svc, validator.New(), log), repo
 }
 
+// The old tag params map onto the list query contract: tags + tags_mode=all
+// is tag_all, exclude_tags is tag_not. The compiled filter is tenant scoped
+// and binds the tags as values.
 func TestAssetHandler_List_TagModes(t *testing.T) {
 	h, repo := newTagFilterHandler()
 	req := withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?tags=env-prod,pci&tags_mode=all&exclude_tags=retired", nil))
@@ -31,38 +37,64 @@ func TestAssetHandler_List_TagModes(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (%s)", rec.Code, rec.Body.String())
 	}
-	f := repo.lastFilter
-	if !slices.Equal(f.Tags, []string{"env-prod", "pci"}) || !f.TagsMatchAll || !slices.Equal(f.ExcludeTags, []string{"retired"}) {
-		t.Fatalf("filter = tags %v all %v exclude %v", f.Tags, f.TagsMatchAll, f.ExcludeTags)
+	all := repo.lastWhere.Where
+	if all == nil || len(all.Args) == 0 || fmt.Sprint(all.Args[0]) != testTenantID.String() {
+		t.Fatalf("list not tenant scoped: %+v", all)
 	}
-	if f.TenantID == nil || *f.TenantID != testTenantID.String() {
-		t.Fatalf("list not tenant scoped: %v", f.TenantID)
+	if args := boundText(all.Args); !strings.Contains(args, "env-prod") || !strings.Contains(args, "pci") || !strings.Contains(args, "retired") {
+		t.Fatalf("tags not bound: %s", args)
+	}
+	for _, v := range []string{"env-prod", "pci", "retired"} {
+		if strings.Contains(all.SQL, v) {
+			t.Fatalf("tag %q formatted into the SQL: %s", v, all.SQL)
+		}
 	}
 
 	// any is the default; an exclusion alone needs no include list.
 	rec = httptest.NewRecorder()
-	h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?tags=a&exclude_tags=b,c", nil)))
-	if rec.Code != http.StatusOK || repo.lastFilter.TagsMatchAll || len(repo.lastFilter.ExcludeTags) != 2 {
-		t.Fatalf("any default: %d all=%v exclude=%v", rec.Code, repo.lastFilter.TagsMatchAll, repo.lastFilter.ExcludeTags)
+	h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?tags=env-prod,pci&exclude_tags=retired", nil)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("any default: %d (%s)", rec.Code, rec.Body.String())
+	}
+	if repo.lastWhere.Where.SQL == all.SQL {
+		t.Fatal("tags_mode=all compiled to the same filter as the any default")
+	}
+	rec = httptest.NewRecorder()
+	h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?exclude_tags=b,c", nil)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("exclusion alone: %d (%s)", rec.Code, rec.Body.String())
 	}
 }
 
+// A bad tags_mode, a tag longer than any stored tag and more than 20 tags
+// are refused (400 INVALID_FILTER on the list query contract), never
+// silently widened.
 func TestAssetHandler_List_TagModeValidation(t *testing.T) {
 	h, _ := newTagFilterHandler()
-	long := make([]byte, 51)
-	for i := range long {
-		long[i] = 'x'
+	long := strings.Repeat("x", 51)
+	many := make([]string, 21)
+	for i := range many {
+		many[i] = fmt.Sprint(i + 1)
 	}
 	for _, q := range []string{
 		"tags_mode=some",
-		"exclude_tags=" + string(long),
-		"exclude_tags=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21",
+		"exclude_tags=" + long,
+		"exclude_tags=" + strings.Join(many, ","),
+		"tags=" + long,
+		"tags=" + strings.Join(many, ","),
+		"tags=" + strings.Join(many, ",") + "&tags_mode=all",
 	} {
 		rec := httptest.NewRecorder()
 		h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?"+q, nil)))
-		if rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("%s: status = %d, want 422", q, rec.Code)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, want 400", q, rec.Code)
 		}
+	}
+	// The bounds themselves are allowed.
+	rec := httptest.NewRecorder()
+	h.List(rec, withTenantContext(httptest.NewRequest(http.MethodGet, "/api/v1/assets?tags="+strings.Repeat("x", 50)+"&exclude_tags="+strings.Join(many[:20], ","), nil)))
+	if rec.Code != http.StatusOK {
+		t.Errorf("tags at the bounds: status = %d (%s)", rec.Code, rec.Body.String())
 	}
 }
 
@@ -105,4 +137,19 @@ func TestAssetHandler_ListTags_SystemTagsForNonOwner(t *testing.T) {
 	if json.Unmarshal(rec.Body.Bytes(), &body) != nil {
 		t.Fatal("bad json")
 	}
+}
+
+// boundText renders bound args as the driver sees them (arrays as text).
+func boundText(args []any) string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if v, ok := a.(driver.Valuer); ok {
+			if dv, err := v.Value(); err == nil {
+				out = append(out, fmt.Sprint(dv))
+				continue
+			}
+		}
+		out = append(out, fmt.Sprint(a))
+	}
+	return strings.Join(out, " ")
 }

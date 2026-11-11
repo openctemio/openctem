@@ -1073,7 +1073,9 @@ func rewriteLegacyAssetParams(in url.Values) (url.Values, []string) {
 		q[k] = append([]string(nil), v...)
 	}
 	var legacy []string
-	if q.Has("tags_mode") {
+	// tags_mode other than any or all stays in the params, so the strict
+	// parse refuses it instead of silently matching any tag.
+	if mode := q.Get("tags_mode"); q.Has("tags_mode") && (mode == "" || mode == "any" || mode == sectionAll) {
 		legacy = append(legacy, "tags_mode")
 		if q.Get("tags_mode") == sectionAll && q.Has("tags") {
 			q["tag_all"] = q["tags"]
