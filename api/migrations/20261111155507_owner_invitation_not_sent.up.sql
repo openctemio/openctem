@@ -14,6 +14,3 @@ ALTER TABLE organization_owner_invitations
     ADD CONSTRAINT chk_owner_invitation_send_count CHECK (send_count >= 0);
 ALTER TABLE organization_owner_invitations
     ALTER COLUMN last_sent_at DROP NOT NULL;
-ALTER TABLE organization_owner_invitations
-    ADD CONSTRAINT chk_owner_invitation_sent_at
-        CHECK ((send_count = 0) = (last_sent_at IS NULL));
