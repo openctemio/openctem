@@ -16,8 +16,7 @@ CREATE TABLE IF NOT EXISTS scope_name_exceptions (
     revoked_by_email    VARCHAR(320),
     revoke_reason       TEXT,
     updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    CONSTRAINT scope_name_exceptions_name_lower CHECK (name = LOWER(name) AND name <> ''),
-    CONSTRAINT scope_name_exceptions_expiry CHECK (expires_at > granted_at)
+    CONSTRAINT scope_name_exceptions_name_lower CHECK (name = LOWER(name) AND name <> '')
 );
 
 -- One live exception per organization and name.
