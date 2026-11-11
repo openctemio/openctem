@@ -140,6 +140,10 @@ easm_posture_assets
 easm_posture_state
 easm_tombstones
 easm_weekly_digests
+exploration_leads
+exploration_links
+exploration_verdicts
+explorations
 exposure_disposition_requests
 exposure_events
 exposures
