@@ -119,9 +119,11 @@ const attributionStateSQL = "COALESCE((SELECT aat.state FROM asset_attributions 
 
 // ipRangeSQL is an address asset (ip_address, or a host named by an
 // address) inside the bound range: one btree range on idx_assets_ip_addr
-// for ip_address assets.
-const ipRangeSQL = `a.tenant_id = {tenant} AND a.asset_type IN ('ip_address', 'host')
-	AND parse_asset_ip(a.name) BETWEEN host(network({arg}))::inet AND host(broadcast({arg}))::inet`
+// for ip_address assets (the branches stay apart so the partial index
+// applies).
+const ipRangeSQL = `a.tenant_id = {tenant} AND (
+	(a.asset_type = 'ip_address' AND parse_asset_ip(a.name) BETWEEN host(network({arg}))::inet AND host(broadcast({arg}))::inet)
+	OR (a.asset_type = 'host' AND parse_asset_ip(a.name) BETWEEN host(network({arg}))::inet AND host(broadcast({arg}))::inet))`
 
 // underSQL is "the name is one of the bound DNS names or below one on a
 // label boundary"; LIKE metacharacters of the name are escaped.
@@ -149,6 +151,25 @@ func normalizeTechnology(v string) (string, error) {
 		return "", fmt.Errorf("a technology version is at most 64 characters")
 	}
 	return k + "@" + strings.TrimSpace(version), nil
+}
+
+// portOps are the operators of the port field (a list, or a range with
+// port>=8000 port<=8999).
+var portOps = []filterspec.Op{filterspec.OpIn, filterspec.OpNotIn, filterspec.OpGte, filterspec.OpGt, filterspec.OpLte, filterspec.OpLt}
+
+// portSQL is "the asset answers on an open port matching cond" (cond over
+// asset_ports ap), pinned to the caller's tenant.
+func portSQL(cond string) string {
+	return "EXISTS (SELECT 1 FROM asset_ports ap WHERE ap.tenant_id = {tenant} AND ap.asset_id = a.id AND " + cond + ")"
+}
+
+// normalizeService is a service name as asset_ports stores it.
+func normalizeService(v string) (string, error) {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" || len(v) > 64 {
+		return "", fmt.Errorf("a service name is 1 to 64 characters")
+	}
+	return v, nil
 }
 
 // normalizeUnder is an under value: a DNS name, lower case.
@@ -351,6 +372,30 @@ func build(scanned bool) *filterspec.Registry {
 		filterspec.Field{Name: "ip", Type: filterspec.TypeInet, Ops: onlyIn, SQL: colName, MaxValues: maxIPValues,
 			Doc:       "IP address or CIDR range (10.0.0.0/8)",
 			Templates: map[filterspec.Op]string{filterspec.OpIn: ipRangeSQL}},
+		// Network of an address (the /24 of IPv4, the /64 of IPv6):
+		// network=10.1.2.0/24, or an address for "the same network as".
+		filterspec.Field{Name: "network", Type: filterspec.TypeInet, Ops: onlyIn, SQL: colName, MaxValues: maxIPValues,
+			Doc: "network (/24 of an IPv4 address, /64 of IPv6) of address assets",
+			Templates: map[filterspec.Op]string{
+				filterspec.OpIn: "a.tenant_id = {tenant} AND a.asset_type = 'ip_address' AND asset_ip_network(a.name) = asset_ip_network(host({arg}))",
+			}},
+		// Open ports (asset_ports, docs/architecture/asset-ports.md): the
+		// port asset, its address and the names resolving to it.
+		filterspec.Field{Name: "port", Type: filterspec.TypeInt, Ops: portOps, SQL: colID, Doc: "open port (0-65535)",
+			Templates: map[filterspec.Op]string{
+				filterspec.OpIn:    portSQL("ap.port = ANY({arg})"),
+				filterspec.OpNotIn: "NOT " + portSQL("ap.port = ANY({arg})"),
+				filterspec.OpGte:   portSQL("ap.port >= {arg}"),
+				filterspec.OpGt:    portSQL("ap.port > {arg}"),
+				filterspec.OpLte:   portSQL("ap.port <= {arg}"),
+				filterspec.OpLt:    portSQL("ap.port < {arg}"),
+			}},
+		filterspec.Field{Name: "service", Type: filterspec.TypeString, Ops: inNotIn, SQL: colID, MaxValues: 20,
+			Doc: "service on an open port (https, ssh...)", Normalize: normalizeService,
+			Templates: map[filterspec.Op]string{
+				filterspec.OpIn:    portSQL("ap.service = ANY({arg})"),
+				filterspec.OpNotIn: "NOT " + portSQL("ap.service = ANY({arg})"),
+			}},
 		filterspec.Field{Name: "control_plane", Type: filterspec.TypeBool, Ops: onlyEq, SQL: colID,
 			BoolTemplate: "EXISTS (SELECT 1 FROM asset_relationships ar WHERE ar.target_asset_id = a.id AND ar.is_control_plane = true AND ar.tenant_id = a.tenant_id)"},
 		filterspec.Field{Name: "expires", Type: filterspec.TypeTime, Ops: ranges, SQL: ExpirySQL, Nullable: true,
