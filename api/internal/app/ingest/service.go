@@ -618,6 +618,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 1: Process assets using batch operations
 	assetMap, err := s.assetProcessor.processBatch(assetdiscovery.WithStepRun(ctx, binding.StepRunID), tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
+	if err != nil && noteRetryable(output, err) {
+		// A database blip, timeout or write conflict: the asset upsert is
+		// one transaction, so nothing of it was written. Stop here and let
+		// the report run again; counting its findings as rejected would
+		// let the sensor delete data the platform never stored.
+		s.logger.Warn("asset batch hit a transient store error; the report is retried",
+			"report_id", reportID, "error", logger.SanitizeError(err))
+		return nil, retryLater("assets", err)
+	}
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", logger.SanitizeError(err))
 		// Continue with partial results, but say so: the asset upsert is one
@@ -718,6 +727,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	} else {
 		cveMap, cveErr = s.cveProcessor.ProcessBatch(ctx, report, output)
 	}
+	if cveErr != nil && noteRetryable(output, cveErr) {
+		// Findings stored now would lose their catalog link for good.
+		s.logger.Warn("CVE lookup hit a transient store error; the report is retried",
+			"report_id", reportID, "error", logger.SanitizeError(cveErr))
+		return nil, retryLater("cves", cveErr)
+	}
 	if cveErr != nil {
 		s.logger.Warn("CVE upsert failed; findings will not be linked to vulnerability catalog",
 			"error", cveErr)
@@ -748,6 +763,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 			opts.RequireAssetForFindings, scope, sourceIdentity(agt, binding, opts, report)); err != nil {
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
+		}
+		if output.retryErr != nil {
+			// A finding write failed for a transient reason: the findings
+			// it kept out are not rejected, the report runs again (the
+			// ones already written are re-sighted by fingerprint, not
+			// duplicated), and no receipt is recorded for this attempt.
+			s.logger.Warn("findings batch hit a transient store error; the report is retried",
+				"report_id", reportID, "error", logger.SanitizeError(output.retryErr))
+			return nil, retryLater("findings", output.retryErr)
 		}
 		if report.Tool != nil {
 			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
