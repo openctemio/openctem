@@ -115,7 +115,8 @@ var findingMergeRefs = []mergeRef{
 	{table: "compliance_check_states", column: "finding_id", tenantCol: "tenant_id"},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
-		keys: []mergeKey{{cols: []string{"action_key"}}}},
+		keys: []mergeKey{{cols: []string{"action_key"}}}}, // A lead about the loser is about the survivor (docs/architecture/exploration.md).
+	{table: "exploration_leads", column: "subject_finding_id", tenantCol: "tenant_id"},
 }
 
 // findingMergeKeptRefs reference findings.id and deliberately stay on the
@@ -154,6 +155,9 @@ var findingMergeKeptRefs = map[string]string{
 	// findings it folded; it is history and never moves.
 	"finding_location_merges.survivor_id": "kept; the location merge journal",
 	"finding_location_merges.loser_id":    "kept; the location merge journal",
+	// What an exploration step yielded is history: the link names the
+	// finding as it was, and the tombstone resolves to the survivor.
+	"exploration_links.finding_id": "kept on the tombstone; history of what a lead's step yielded",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to

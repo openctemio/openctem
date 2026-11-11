@@ -3,12 +3,11 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/coverage"
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -20,91 +19,16 @@ import (
 // program-only, the ReadScope asset scope, and the pentest campaign rule for
 // anything counted from findings.
 
-// coverageTrackedSQL / coverageCoveredFmt are the ledger predicates for one
-// asset (alias a): tracked = the ledger has a capability that applies to it;
-// covered = a capability succeeded since {since} AND every capability that
-// applies to it succeeded since then. One working probe never makes an asset
-// covered while its vulnerability check failed, timed out, was paused or was
-// never run: that gap stays visible. Rows refused by scope policy
-// ('blocked') and the platform's own DNS checks are not part of the
-// requirement; per-vantage rows are read by their own views. The asset list
-// filter coverage=covered|uncovered uses the same predicates, so the
-// Discovery figure equals the list it opens.
-const (
-	coverageTrackedSQL = `EXISTS (SELECT 1 FROM asset_coverage act
-		WHERE act.tenant_id = a.tenant_id AND act.asset_id = a.id AND act.state <> 'not_applicable')`
-	coverageCoveredFmt = `(EXISTS (SELECT 1 FROM asset_coverage acs
-		WHERE acs.tenant_id = a.tenant_id AND acs.asset_id = a.id AND acs.state <> 'not_applicable'
-		AND acs.last_success_at >= %[1]s)
-		AND NOT EXISTS (SELECT 1 FROM asset_coverage acg
-		WHERE acg.tenant_id = a.tenant_id AND acg.asset_id = a.id AND acg.vantage = ''
-		AND acg.state NOT IN ('not_applicable', 'blocked') AND acg.capability NOT LIKE 'dns.%%'
-		AND (acg.last_success_at IS NULL OR acg.last_success_at < %[1]s)))`
-)
-
-// CoverageCondition is the asset list predicate for coverage=covered or
-// uncovered (alias a), with since as the bound placeholder. Unknown values
-// give "".
+// CoverageCondition is assetlist.CoverageCondition (alias a).
 func CoverageCondition(value, sincePlaceholder string) string {
-	covered := fmt.Sprintf(coverageCoveredFmt, sincePlaceholder)
-	switch value {
-	case "covered":
-		return covered
-	case "uncovered":
-		return coverageTrackedSQL + " AND NOT " + covered
-	}
-	return ""
+	return assetlist.CoverageCondition(value, sincePlaceholder)
 }
 
-// Coverage causes: why an uncovered asset is uncovered, one cause per asset
-// (docs/architecture/dashboards.md, "Discovery coverage by cause"). The
-// cause is read from the ledger rows of the asset that have no success in
-// the coverage window, by precedence: what the platform must fix first
-// (no eligible sensor took the check, a platform-side failure such as a
-// stalled run, a tool error or the sensor's egress, network or proxy), then
-// a paused pair, then what the organization owns (the target did not
-// answer, or an edge or rate limit answered for it), then never run, then
-// overdue (it ran before but not within the window). Rows refused by scope
-// policy ('blocked') and rows outside the requirement (per-vantage rows,
-// the platform's DNS checks) only name the cause when nothing else does.
-// The asset list filter coverage_cause uses the same expression, so a cause
-// row of the widget equals the list it opens.
-// sqlList is a list of constant strings as SQL literals (outcome names of
-// the coverage package, never input).
-func sqlList(vals []string) string {
-	out := make([]string, len(vals))
-	for i, v := range vals {
-		out[i] = pq.QuoteLiteral(v)
-	}
-	return strings.Join(out, ", ")
-}
+func coverageCauseExpr(since string) string { return assetlist.CoverageCauseExpr(since) }
 
-// coverageCauseExpr is the cause of one asset (alias a) with since as the
-// bound placeholder of the coverage window start.
-func coverageCauseExpr(since string) string {
-	causes := dashboard.CoverageCauses()
-	return `COALESCE((ARRAY[` + sqlList(causes) + `])[(SELECT MIN(CASE
-		WHEN acc.state = 'blocked' THEN 7
-		WHEN acc.vantage <> '' OR acc.capability LIKE 'dns.%' THEN 8
-		WHEN acc.state = 'paused' THEN 3
-		WHEN acc.last_outcome = ` + pq.QuoteLiteral(coverage.OutcomeNotDispatched) + ` THEN 1
-		WHEN acc.platform_fail_streak > 0 OR acc.last_outcome IN (` + sqlList(coverage.PlatformSideOutcomes()) + `) THEN 2
-		WHEN acc.last_outcome IN (` + sqlList(coverage.ObservedFailureOutcomes()) + `) THEN 4
-		WHEN acc.last_attempt_at IS NULL THEN 5
-		ELSE 6 END)
-		FROM asset_coverage acc WHERE acc.tenant_id = a.tenant_id AND acc.asset_id = a.id
-		AND acc.state <> 'not_applicable' AND (acc.last_success_at IS NULL OR acc.last_success_at < ` + since + `))], ` +
-		pq.QuoteLiteral(dashboard.CoverageCauseOther) + `)`
-}
-
-// CoverageCauseCondition is the asset list predicate for coverage_cause
-// (alias a): uncovered, with this cause. since and cause are bound
-// placeholders. Unknown causes give "".
+// CoverageCauseCondition is assetlist.CoverageCauseCondition (alias a).
 func CoverageCauseCondition(cause, since, causeArg string) string {
-	if !dashboard.IsCoverageCause(cause) {
-		return ""
-	}
-	return CoverageCondition("uncovered", since) + " AND " + coverageCauseExpr(since) + " = " + causeArg
+	return assetlist.CoverageCauseCondition(cause, since, causeArg)
 }
 
 // UncoveredCauses implements dashboard.FactReader: the uncovered assets in
@@ -217,8 +141,8 @@ func (r *DashboardWidgetRepository) CrownJewels(ctx context.Context, scope dashb
 // Discovery implements dashboard.FactReader.
 func (r *DashboardWidgetRepository) Discovery(ctx context.Context, scope dashboard.ReadScope, since time.Time) (dashboard.DiscoveryCounts, error) {
 	b := assetWhere(scope)
-	b.add(coverageTrackedSQL)
-	covered := fmt.Sprintf(coverageCoveredFmt, b.arg(since.UTC()))
+	b.add(assetlist.CoverageTrackedSQL)
+	covered := fmt.Sprintf(assetlist.CoverageCoveredFmt, b.arg(since.UTC()))
 	//nolint:gosec // G202: fixed SQL, values bound
 	q := "SELECT COUNT(*), COUNT(*) FILTER (WHERE " + covered + ") FROM assets a WHERE " + b.sql()
 	qctx, cancel := context.WithTimeout(ctx, widgetQueryTimeout)

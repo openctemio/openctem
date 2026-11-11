@@ -893,7 +893,7 @@ quarantine it while the fix is made:
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
-  reads the `toolchain` directive (currently `go1.27.3`). setup-go sets
+  reads the `toolchain` directive (currently `go1.27.4`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
   and the release binaries use. `api/Dockerfile`
   pins its `golang:` base image separately: bump them with `go.mod`.

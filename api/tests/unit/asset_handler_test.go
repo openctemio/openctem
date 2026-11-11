@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,6 +39,8 @@ type HandlerMockRepository struct {
 	// The last list filter and tag-list query the service passed down.
 	lastFilter   asset.Filter
 	lastTagQuery asset.TagListQuery
+	// The last compiled list query (the list query contract).
+	lastWhere asset.WhereQuery
 }
 
 func NewHandlerMockRepository() *HandlerMockRepository {
@@ -114,6 +118,30 @@ func (m *HandlerMockRepository) List(
 		Page:       page.Page,
 		PerPage:    page.PerPage,
 		TotalPages: int((total + int64(page.PerPage) - 1) / int64(page.PerPage)),
+	}, nil
+}
+
+// ListWhere stands in for the postgres list: it cannot run the compiled SQL,
+// so it returns the assets of the tenant bound as the first argument (the
+// compiled WHERE always starts with the tenant predicate). The SQL itself is
+// covered by the postgres and routes DB tests.
+func (m *HandlerMockRepository) ListWhere(_ context.Context, q asset.WhereQuery) (asset.WhereResult, error) {
+	m.lastWhere = q
+	if q.Where == nil || len(q.Where.Args) == 0 {
+		return asset.WhereResult{}, errors.New("uncompiled asset filter")
+	}
+	tenant := fmt.Sprint(q.Where.Args[0])
+	data := make([]*asset.Asset, 0, len(m.assets))
+	for _, a := range m.assets {
+		if a.TenantID().String() == tenant {
+			data = append(data, a)
+		}
+	}
+	perPage := max(q.PerPage, 1)
+	total := int64(len(data))
+	return asset.WhereResult{
+		Data: data, Total: total, Page: max(q.Page, 1), PerPage: perPage,
+		TotalPages: int((total + int64(perPage) - 1) / int64(perPage)),
 	}, nil
 }
 
