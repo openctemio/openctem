@@ -27,8 +27,13 @@ var (
 	grantKey  = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
 	methods   = map[string]bool{http.MethodGet: true, http.MethodPost: true, http.MethodPut: true, http.MethodPatch: true, http.MethodDelete: true}
 	// reservedPrefixes are path roots an extension may not use: the core's
-	// own planes and authentication surfaces.
-	reservedPrefixes = []string{"/admin", "/auth", "/internal", "/sensor", "/scim", "/health", "/version", "/me", "/users/me"}
+	// own planes, authentication and credential surfaces, and the roots the
+	// API-key policy treats as a person's own (middleware.APIKeyDeniedPrefixes).
+	reservedPrefixes = []string{
+		"/admin", "/auth", "/internal", "/sensor", "/scim", "/health", "/version", "/me", "/users",
+		"/platform", "/tenants", "/invitations", "/oauth", "/mcp", "/mcp-access", "/ci", "/ws",
+		"/api-keys", "/scim-tokens", "/service-accounts", "/notifications",
+	}
 )
 
 // router collects and validates an extension's routes.
