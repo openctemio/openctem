@@ -155,7 +155,7 @@ func allowedMethods(want []string) []string {
 // after, at that time.
 func unverifiedIssuedAt(raw string) (time.Time, error) {
 	claims := jwtv5.MapClaims{}
-	if _, _, err := jwtv5.NewParser().ParseUnverified(raw, claims); err != nil {
+	if _, _, err := jwtv5.NewParser().ParseUnverified(raw, claims); err != nil { // security-review: allow JWT-UNVERIFIED reads iat only to set the clock for the CI trust preview (IgnoreTimes); signature, issuer and audience are verified right after
 		return time.Time{}, errors.New("token is not a readable JWT")
 	}
 	iat, err := claims.GetIssuedAt()
