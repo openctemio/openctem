@@ -27,10 +27,10 @@ package coverage
 // sensor's rate limit and line cap, and the attempt bound.
 
 import (
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 const (

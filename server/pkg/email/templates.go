@@ -6,7 +6,7 @@ import (
 	"html/template"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // Template represents a predefined email template type.

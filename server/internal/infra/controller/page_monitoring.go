@@ -6,8 +6,8 @@ import (
 	"context"
 	"time"
 
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PageMonitorRunner dispatches due watches and sweeps old changes.

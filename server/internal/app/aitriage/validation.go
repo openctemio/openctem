@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/aiprompt"
-	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/server/internal/app/aiprompt"
+	aitriagedom "github.com/openctemio/openctem/server/pkg/domain/aitriage"
 )
 
 // =============================================================================

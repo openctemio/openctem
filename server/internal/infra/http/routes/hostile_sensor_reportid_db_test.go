@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"testing"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // F-BOLA-1: a sensor that sends a report under the report id another sensor

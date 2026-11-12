@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // The incident: the only sensor's local policy allows no target. The

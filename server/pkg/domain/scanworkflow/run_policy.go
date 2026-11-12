@@ -22,7 +22,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Depth is how much of a workflow a scan runs.

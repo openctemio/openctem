@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/internal/app/contentpin/builtin"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/app/contentpin/builtin"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 const fixtureSources = `

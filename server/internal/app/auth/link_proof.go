@@ -29,9 +29,9 @@ import (
 	"context"
 	"errors"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
 )
 
 // Purposes of a sign-in method change, recorded in the audit event.

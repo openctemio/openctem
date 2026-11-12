@@ -164,7 +164,7 @@ fetches a due check. Instance-level; no tenant data.
 
 ## Publishing the feed
 
-`api/cmd/release-feed` builds, assembles and verifies the file; the signature
+`server/cmd/release-feed` builds, assembles and verifies the file; the signature
 comes from cosign:
 
 ```bash
@@ -198,7 +198,7 @@ serves. If signing or verification fails the run fails (it runs after the
 release job, so the release itself is complete) and the previous feed stays
 published.
 
-Refreshing the trusted root: `make -C api sigstore-root-refresh` before each
+Refreshing the trusted root: `make -C server sigstore-root-refresh` before each
 release (a test fails once the embedded root has nothing valid for the next 30
 days).
 
@@ -233,11 +233,11 @@ nothing else depends on it.
 
 ## Key files
 
-- `api/pkg/releasefeed/` — format, verification, comparison
-- `api/pkg/contentpkg/sigstore/` — the offline Sigstore verifier and the embedded trusted root (shared with the content catalog)
-- `api/internal/app/versioncheck/` — fetcher, schedule, import, console view
-- `api/internal/infra/controller/version_check.go` — hourly wake-up
-- `api/internal/infra/postgres/version_check_repository.go` — the state row
-- `api/internal/infra/http/handler/admin_version_check_handler.go` — console routes
-- `api/cmd/release-feed/` — feed tooling
+- `server/pkg/releasefeed/` — format, verification, comparison
+- `server/pkg/contentpkg/sigstore/` — the offline Sigstore verifier and the embedded trusted root (shared with the content catalog)
+- `server/internal/app/versioncheck/` — fetcher, schedule, import, console view
+- `server/internal/infra/controller/version_check.go` — hourly wake-up
+- `server/internal/infra/postgres/version_check_repository.go` — the state row
+- `server/internal/infra/http/handler/admin_version_check_handler.go` — console routes
+- `server/cmd/release-feed/` — feed tooling
 - `.github/workflows/release-feed.yml`, `.github/release-feed/` — publishing

@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // DefaultMaxConcurrentRequests is the default maximum number of concurrent requests.

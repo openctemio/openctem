@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
 )
 
 // A Nessus CIS FAILED (scanner severity High) on a normal server is a medium

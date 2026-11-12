@@ -3,7 +3,7 @@
 /**
  * Settings > Finding approvals: the organization's approval policy for
  * false positives and accepted risks, the second-look share and the backup
- * contact (api/docs/architecture/finding-status-lifecycle.md, "Approval
+ * contact (server/docs/architecture/finding-status-lifecycle.md, "Approval
  * levels"). Saving needs settings:write and a recent sign-in (the API client
  * asks for re-authentication); every change is audited and the approvers are
  * told. A lower level takes effect 24 hours later; a higher one at once.

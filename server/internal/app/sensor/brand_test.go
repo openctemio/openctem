@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // Generated sensor configuration and check explanations name the instance

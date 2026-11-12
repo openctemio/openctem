@@ -3,8 +3,8 @@ package sourceretire
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The ingest side of "this source" agrees with the SQL function: a sensor's

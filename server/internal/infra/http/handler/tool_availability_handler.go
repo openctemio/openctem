@@ -8,8 +8,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ToolAvailabilityZone is a scan zone a sensor is assigned to.

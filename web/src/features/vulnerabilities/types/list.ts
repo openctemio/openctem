@@ -1,6 +1,6 @@
 /**
  * The vulnerabilities list: one row per CVE over the findings the caller may
- * see (GET /api/v1/vulnerability-exposures, api/docs/architecture/vulnerability-page.md).
+ * see (GET /api/v1/vulnerability-exposures, server/docs/architecture/vulnerability-page.md).
  */
 
 /** One feed day of a CVE's EPSS history (score 0..1). */

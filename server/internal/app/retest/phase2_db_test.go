@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
-	appsla "github.com/openctemio/openctem/api/internal/app/sla"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	appsla "github.com/openctemio/openctem/server/internal/app/sla"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type recordingAnnouncer struct {

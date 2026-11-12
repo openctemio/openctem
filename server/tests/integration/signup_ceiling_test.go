@@ -8,13 +8,13 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
+	signupapp "github.com/openctemio/openctem/server/internal/app/signup"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // withStoredSignupPolicy stores p as the sign-up policy row (as a console save

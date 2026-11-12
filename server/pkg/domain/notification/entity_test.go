@@ -3,7 +3,7 @@ package notification
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // notifications.severity has CHECK (severity IN critical/high/medium/low/info)

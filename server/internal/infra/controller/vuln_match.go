@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/vulnmatch"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // vulnMatchBudget is how long one pass may run; work left over continues

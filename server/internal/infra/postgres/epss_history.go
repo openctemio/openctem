@@ -1,6 +1,6 @@
 package postgres
 
-// EPSS score history (api/docs/architecture/vulnerability-page.md, "EPSS
+// EPSS score history (server/docs/architecture/vulnerability-page.md, "EPSS
 // trend"). The sync records one point per CVE per feed day for the CVEs that
 // findings carry; the scoped vulnerability reads return the points of CVEs
 // the caller already sees. The history is never read by CVE id alone: a
@@ -15,7 +15,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // EPSSHistoryRetentionDays is how many feed days of EPSS points are kept.

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
 )
 
 // Every skipped target lands in exactly one group, named by its reason,

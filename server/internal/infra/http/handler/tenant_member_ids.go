@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // maxMemberUserIDs bounds the user_ids filter of the members list: one screen

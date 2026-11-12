@@ -3,8 +3,8 @@ package dashboard
 import (
 	"testing"
 
-	domain "github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	domain "github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func homeDash(kind domain.Kind, def, orgDef bool) *domain.Dashboard {

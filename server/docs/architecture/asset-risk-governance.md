@@ -65,9 +65,9 @@ Platform-internal writers (a scan, a sensor report, an integration, an approved 
 
 ## Key files
 
-- `api/pkg/domain/asset/risk_change.go` (inputs, lowering, request, repository interface)
-- `api/internal/app/finding/asset_risk_governance.go` (simulation, decision, approvals)
-- `api/internal/app/asset/risk_governance.go` (the asset service side)
-- `api/internal/infra/postgres/asset_risk_request_repository.go`, migration `asset_risk_requests`
-- `api/internal/infra/http/handler/asset_risk_governance_handler.go`
+- `server/pkg/domain/asset/risk_change.go` (inputs, lowering, request, repository interface)
+- `server/internal/app/finding/asset_risk_governance.go` (simulation, decision, approvals)
+- `server/internal/app/asset/risk_governance.go` (the asset service side)
+- `server/internal/infra/postgres/asset_risk_request_repository.go`, migration `asset_risk_requests`
+- `server/internal/infra/http/handler/asset_risk_governance_handler.go`
 - `web/src/features/assets/components/asset-risk-impact-notice.tsx`

@@ -3,7 +3,7 @@ package tenant
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/liveness"
+	"github.com/openctemio/openctem/server/pkg/domain/liveness"
 )
 
 func TestAssetLivenessSettingsFloors(t *testing.T) {

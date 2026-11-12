@@ -1,7 +1,7 @@
 package postgres
 
 // Material change of standing decisions
-// (api/docs/rfcs/RFC-111-approval-policy.md §6): the approved accepted risks
+// (server/docs/rfcs/RFC-111-approval-policy.md §6): the approved accepted risks
 // and one-person false positives whose finding moved up since their baseline,
 // and the writes that end, flag or withdraw them. Every write is one
 // transaction scoped to the decision's tenant, with its timeline entry and
@@ -17,9 +17,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Audit actions of the material-change controller (audit.ActionFindingApproval*).

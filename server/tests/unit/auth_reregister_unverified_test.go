@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/app/auth"
 )
 
 // Registering again with an address whose password account never verified

@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // ClientIPContext stores the request's client IP (pkg/httpsec: the TCP peer,

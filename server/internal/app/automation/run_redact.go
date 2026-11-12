@@ -12,8 +12,8 @@ import (
 	"context"
 	"slices"
 
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const redactedPayloadReason = "not_in_scope"

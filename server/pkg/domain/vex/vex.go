@@ -3,9 +3,9 @@
 // fixed, under investigation), for every asset or one asset, and how such a
 // statement acts on the findings it covers.
 //
-// Design: api/docs/rfcs/RFC-070-software-components-inventory.md (sections
+// Design: server/docs/rfcs/RFC-070-software-components-inventory.md (sections
 // "VEX statements" and "VEX"), architecture doc
-// api/docs/architecture/software-components.md.
+// server/docs/architecture/software-components.md.
 package vex
 
 import (
@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Status is the exploitability status of a statement.

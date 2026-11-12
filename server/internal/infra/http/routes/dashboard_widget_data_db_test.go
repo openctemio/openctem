@@ -9,14 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
-	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	dashboardapp "github.com/openctemio/openctem/server/internal/app/dashboard"
+	"github.com/openctemio/openctem/server/internal/app/dashboard/widgets"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // widgetEnv is the pentest data-scope fixture (two assets, a scoped member,

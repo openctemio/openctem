@@ -3,8 +3,8 @@ package integration
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/scm"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/internal/infra/scm"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
 )
 
 // A repository is tied to its code host identity only when the integration

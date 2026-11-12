@@ -3,7 +3,7 @@ package postgres
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // The sighting times of a new finding: when it was first detected and last

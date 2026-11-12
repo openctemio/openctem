@@ -3,7 +3,7 @@
 // route gates (permission, team role, module, step-up), the data-scope
 // classification of every route, the personas and the recommended teams.
 //
-// Usage (from api/):
+// Usage (from server/):
 //
 //	go run ./cmd/gen-authz-docs                         # write the web JSON
 //	go run ./cmd/gen-authz-docs -md ../docs-out         # also write markdown pages
@@ -20,7 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/openctemio/openctem/api/internal/authzdoc"
+	"github.com/openctemio/openctem/server/internal/authzdoc"
 )
 
 func main() {
@@ -30,7 +30,7 @@ func main() {
 	flag.Parse()
 
 	if _, err := os.Stat("go.mod"); err != nil {
-		fmt.Fprintln(os.Stderr, "gen-authz-docs: run from api/")
+		fmt.Fprintln(os.Stderr, "gen-authz-docs: run from server/")
 		os.Exit(2)
 	}
 	ref, err := authzdoc.Build(".")

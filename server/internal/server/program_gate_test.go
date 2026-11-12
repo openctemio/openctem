@@ -1,8 +1,8 @@
 package server
 
 import (
-	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/internal/app/scan"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/internal/app/scan"
 )
 
 // The ownership gate the scan service is wired with must answer which

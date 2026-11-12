@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 
-	entitlementapp "github.com/openctemio/openctem/api/internal/app/entitlement"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	entitlementapp "github.com/openctemio/openctem/server/internal/app/entitlement"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // extensionEntitlements answers an extension's grant questions from the

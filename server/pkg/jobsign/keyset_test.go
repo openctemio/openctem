@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
 )
 
 // keysetVector is the cross-implementation key set vector

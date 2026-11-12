@@ -53,8 +53,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/internal/sensorrelay"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/sealed"
+	"github.com/openctemio/openctem/server/internal/sensorrelay"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/sealed"
 )
 
 func main() {

@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ContextLogger injects a request-scoped logger into the request context.

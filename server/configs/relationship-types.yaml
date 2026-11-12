@@ -2,7 +2,7 @@
 # Asset Relationship Type Registry — Single Source of Truth
 # =============================================================================
 #
-# 📖 FULL GUIDE: api/docs/development/relationship-types.md
+# 📖 FULL GUIDE: server/docs/development/relationship-types.md
 #    Read it before making non-trivial changes — covers schema reference,
 #    workflows for add/modify/remove, validation rules, troubleshooting,
 #    and the design rationale FAQ.
@@ -11,7 +11,7 @@
 # the platform supports. The Go enum, TypeScript union, label maps, and
 # constraint maps are GENERATED from this file by:
 #
-#     cd api && make generate-relationships
+#     cd server && make generate-relationships
 #
 # Workflow when adding a new relationship type:
 #   1. Edit this file (add an entry under `types`)

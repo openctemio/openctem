@@ -7,8 +7,8 @@ package scan
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // DefaultSchedulePreviewCount is how many occurrences a preview lists when

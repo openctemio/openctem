@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // jiraWebhookSecretMetaKey is the integration-metadata key under which the

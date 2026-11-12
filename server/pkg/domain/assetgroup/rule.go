@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/net/idna"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A group rule decides which assets belong to a group by themselves. It is

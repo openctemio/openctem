@@ -1,7 +1,7 @@
 package postgres
 
 // Same-issue links between findings (pkg/domain/issuelink decides).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/architecture/deduplication.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/architecture/deduplication.md
 //
 // A link never changes either finding: no status, severity, SLA, ticket or
 // task moves. Candidates come only from server-computed keys
@@ -19,11 +19,11 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/pkg/domain/issuelink"
-	"github.com/openctemio/openctem/api/pkg/domain/scoring"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/pkg/domain/issuelink"
+	"github.com/openctemio/openctem/server/pkg/domain/scoring"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // FindingIssueLinkRepository stores link keys and same-issue links.

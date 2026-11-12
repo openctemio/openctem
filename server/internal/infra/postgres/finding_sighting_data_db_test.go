@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/internal/testdb/sqlcount"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb/sqlcount"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 func TestStoreSightingData_OneStatementBothHalves_DB(t *testing.T) {

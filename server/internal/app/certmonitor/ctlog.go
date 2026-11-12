@@ -13,8 +13,8 @@ import (
 
 	"github.com/openctemio/contract/ctlookup"
 
-	"github.com/openctemio/openctem/api/internal/app/lookupjob"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/lookupjob"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The platform never connects to a CT source itself (zero platform egress:

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	evidencedom "github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The daily evidence cap is counted inside the insert transaction under a

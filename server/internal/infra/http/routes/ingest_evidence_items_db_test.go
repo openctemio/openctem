@@ -14,10 +14,10 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	evidenceapp "github.com/openctemio/openctem/server/internal/app/evidence"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const thirdPartyToken = "tp-bearer-0123456789abcdefghij"

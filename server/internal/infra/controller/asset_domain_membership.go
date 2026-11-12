@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetdomain"
+	"github.com/openctemio/openctem/server/pkg/domain/assetdomain"
 )
 
 // assetDomainMetrics is the namespace and subsystem of the worker's metrics.

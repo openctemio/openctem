@@ -9,8 +9,8 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
 )
 
 // The upload response stays small whatever the report's size: known lists at

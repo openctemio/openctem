@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Replace a scope entry's pattern (api/docs/architecture/scope-entry-replace.md).
+ * Replace a scope entry's pattern (server/docs/architecture/scope-entry-replace.md).
  *
  * The pattern of an entry never changes in place: a new entry with the new
  * pattern takes its place, through the same checks and approvals as adding

@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/querylang"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/querylang"
 )
 
 // tenantToken in a binding is the statement's own tenant parameter ($1,

@@ -6,19 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/aianalysis"
 
 	"fmt"
 	"time"
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // FindingApprovalRepository implements vulnerability.ApprovalRepository using PostgreSQL.

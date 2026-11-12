@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/useridentity"
 )
 
 // Unlinking a sign-in method: only the account's own identity is removed, and

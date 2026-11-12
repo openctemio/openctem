@@ -161,7 +161,7 @@ if [ "$uid" != 0 ]; then
 		[ -d "$d" ] || continue
 		other="$(find "$d" ! -user "$uid" -print 2>/dev/null | head -n 1)"
 		if [ -n "$other" ] || [ ! -w "$d" ]; then
-			die "$d holds files not owned by uid $uid (${other:-$d}), left by a gateway that ran as root. Change their owner once, e.g.: docker compose run --rm --no-deps --user 0 --entrypoint chown gateway -R $uid:$(id -g) /data /config /ca (api/docs/deployment/docker.md, \"Gateway user\")"
+			die "$d holds files not owned by uid $uid (${other:-$d}), left by a gateway that ran as root. Change their owner once, e.g.: docker compose run --rm --no-deps --user 0 --entrypoint chown gateway -R $uid:$(id -g) /data /config /ca (server/docs/deployment/docker.md, \"Gateway user\")"
 		fi
 	done
 	if [ "$mode" = internal ] && [ -d "$ca_dir" ] && [ ! -w "$ca_dir" ]; then

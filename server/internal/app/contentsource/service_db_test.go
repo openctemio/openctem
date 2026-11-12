@@ -21,17 +21,17 @@ import (
 
 	_ "github.com/lib/pq"
 
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	app "github.com/openctemio/openctem/api/internal/app/contentsource"
-	"github.com/openctemio/openctem/api/internal/infra/fetchers"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	cpdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentsource"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	app "github.com/openctemio/openctem/server/internal/app/contentsource"
+	"github.com/openctemio/openctem/server/internal/infra/fetchers"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	cpdom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func openDB(t *testing.T) *postgres.DB {

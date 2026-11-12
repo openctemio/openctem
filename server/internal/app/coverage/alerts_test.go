@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
 )
 
 // The unreachable alert names the capability and a count, never a target.

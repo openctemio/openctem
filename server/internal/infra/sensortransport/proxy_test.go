@@ -12,10 +12,10 @@ import (
 	"connectrpc.com/connect"
 	proxyproto "github.com/pires/go-proxyproto"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/v3/sensorv3connect"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/v3/sensorv3connect"
 )
 
 // startProxied serves the gRPC binding through Start with trusted PROXY

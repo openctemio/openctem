@@ -2,13 +2,13 @@
 // OpenCTEM (docs/development/editions.md).
 //
 // Anyone can build their own edition of the platform: a separate Go module
-// requires github.com/openctemio/openctem/api, writes one or more extensions
-// against this package, and calls server.Main (api/pkg/server) from its own
+// requires github.com/openctemio/openctem/server, writes one or more extensions
+// against this package, and calls server.Main (server/pkg/server) from its own
 // main with them:
 //
 //	func main() { server.Main(myext.Extension(), partner.Extension()) }
 //
-// Go's internal rule then lets the build use only the public api/pkg
+// Go's internal rule then lets the build use only the public server/pkg
 // packages. The Community build passes no extension and runs with the core
 // defaults. An Extension is plain data plus constructors, so the core never
 // depends on how an extension got into the process.

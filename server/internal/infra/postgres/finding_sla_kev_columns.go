@@ -1,6 +1,6 @@
 package postgres
 
-import "github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+import "github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 
 // The SLA reason column of the findings table: whether the stored deadline
 // came from the SLA policy's known exploited (CISA KEV) deadline cap. See

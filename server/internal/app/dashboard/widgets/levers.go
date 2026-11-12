@@ -9,8 +9,8 @@ import (
 	"context"
 	"sort"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 )
 
 // Lever kinds, in tie-break order.

@@ -8,7 +8,7 @@ import (
 
 	"github.com/openctemio/ctis/v2/importer"
 
-	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
+	evidencedom "github.com/openctemio/openctem/server/pkg/domain/evidence"
 )
 
 // A real nuclei 3.11.1 result (wordpress-click2shell against a scratch server

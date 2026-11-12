@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/dashboard/widgets"
+	"github.com/openctemio/openctem/server/internal/app/dashboard/widgets"
 )
 
 // Personal dashboard figures are computed for the caller's data scope, but a

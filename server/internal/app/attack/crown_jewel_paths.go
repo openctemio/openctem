@@ -3,7 +3,7 @@ package attack
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CrownJewelPath is one crown jewel the attack-path scoring reaches: from

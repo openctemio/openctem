@@ -6,7 +6,7 @@ import (
 	"github.com/openctemio/contract/capability"
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // A report bound to a capability takes its technique from it: a third-party

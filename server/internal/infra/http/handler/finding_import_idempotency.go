@@ -21,8 +21,8 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/idempotency"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/idempotency"
 )
 
 // findingImportRoute is the route an import key is scoped to.

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify"
-	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify/chaintest"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify"
+	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify/chaintest"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The admin console rebaseline (RebaselineChainIfExplained) re-runs the

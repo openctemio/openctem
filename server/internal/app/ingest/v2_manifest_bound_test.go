@@ -3,8 +3,8 @@ package ingest
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 func TestVerifyManifest_RejectsOversizedSegmentCount(t *testing.T) {

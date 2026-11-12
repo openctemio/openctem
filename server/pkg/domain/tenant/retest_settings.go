@@ -3,7 +3,7 @@ package tenant
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Auto-retest bounds (RFC-039 §8.1). The defaults apply when a field is zero.

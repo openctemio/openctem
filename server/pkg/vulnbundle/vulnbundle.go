@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/domain/cvecorpus"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 // Format constants (must match the collector).

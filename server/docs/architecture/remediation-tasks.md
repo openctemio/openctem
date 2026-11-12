@@ -467,23 +467,23 @@ are in the `myWork` dictionary (en, vi).
 
 ## Key files
 
-- `api/migrations/*_remediation_tasks.up.sql`, `*_remediation_task_activity_type*.sql` (finding activity type)
-- `api/pkg/domain/remediation/task.go`, `task_repository.go`
-- `api/internal/infra/postgres/remediation_task_repository.go`, `remediation_claim.go` (claim conflicts)
-- `api/pkg/domain/remediation/claim.go`, `api/internal/app/remediation/claims.go`
-- `api/internal/app/remediation/tasks.go`, `owner_access.go` (owner candidates and the owner access rule),
-  `api/internal/infra/postgres/remediation_owner_access_repository.go`,
-  `api/internal/infra/http/handler/remediation_task_owner_handler.go`
-- `api/internal/infra/http/handler/remediation_task_handler.go`, `routes/remediation.go`
-- `api/internal/infra/controller/remediation_tasks.go`
-- `api/migrations/*_remediation_suggestions.up.sql`
-- `api/pkg/domain/remediation/suggestion.go` (generator rules), `api/internal/app/remediation/suggestions.go`,
-  `api/internal/infra/postgres/remediation_suggestion_repository.go`,
-  `api/internal/infra/http/handler/remediation_suggestion_handler.go`,
-  `api/internal/infra/controller/remediation_suggestions.go`
-- `api/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`, `remediation_claim_test.go`
-- Tasks from a query: `api/migrations/*_remediation_task_queries.*.sql`, `api/pkg/domain/remediation/task_query.go`,
-  `api/internal/app/remediation/query_tasks.go`, `api/internal/app/query/match.go`, `api/pkg/querylang/pgsql/match.go`,
-  `api/internal/infra/postgres/remediation_task_query_repository.go`,
-  `api/internal/infra/http/handler/remediation_task_query_handler.go`, `query_from_filters_handler.go`,
-  `api/internal/infra/controller/remediation_task_query.go`, `api/tests/integration/remediation_task_query_test.go`
+- `server/migrations/*_remediation_tasks.up.sql`, `*_remediation_task_activity_type*.sql` (finding activity type)
+- `server/pkg/domain/remediation/task.go`, `task_repository.go`
+- `server/internal/infra/postgres/remediation_task_repository.go`, `remediation_claim.go` (claim conflicts)
+- `server/pkg/domain/remediation/claim.go`, `server/internal/app/remediation/claims.go`
+- `server/internal/app/remediation/tasks.go`, `owner_access.go` (owner candidates and the owner access rule),
+  `server/internal/infra/postgres/remediation_owner_access_repository.go`,
+  `server/internal/infra/http/handler/remediation_task_owner_handler.go`
+- `server/internal/infra/http/handler/remediation_task_handler.go`, `routes/remediation.go`
+- `server/internal/infra/controller/remediation_tasks.go`
+- `server/migrations/*_remediation_suggestions.up.sql`
+- `server/pkg/domain/remediation/suggestion.go` (generator rules), `server/internal/app/remediation/suggestions.go`,
+  `server/internal/infra/postgres/remediation_suggestion_repository.go`,
+  `server/internal/infra/http/handler/remediation_suggestion_handler.go`,
+  `server/internal/infra/controller/remediation_suggestions.go`
+- `server/tests/integration/remediation_tasks_test.go`, `remediation_suggestions_test.go`, `remediation_claim_test.go`
+- Tasks from a query: `server/migrations/*_remediation_task_queries.*.sql`, `server/pkg/domain/remediation/task_query.go`,
+  `server/internal/app/remediation/query_tasks.go`, `server/internal/app/query/match.go`, `server/pkg/querylang/pgsql/match.go`,
+  `server/internal/infra/postgres/remediation_task_query_repository.go`,
+  `server/internal/infra/http/handler/remediation_task_query_handler.go`, `query_from_filters_handler.go`,
+  `server/internal/infra/controller/remediation_task_query.go`, `server/tests/integration/remediation_task_query_test.go`

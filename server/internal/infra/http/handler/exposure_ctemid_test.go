@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	exposuresvc "github.com/openctemio/openctem/api/internal/app/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/ctemid"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	exposuresvc "github.com/openctemio/openctem/server/internal/app/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/ctemid"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func ctemTestEvent(et exposure.EventType, details map[string]any) *exposure.ExposureEvent {

@@ -14,9 +14,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/easmdns"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/easmdns"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // RunNowInterval is the minimum time between two run-now requests of one

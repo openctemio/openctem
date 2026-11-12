@@ -1,19 +1,19 @@
 package handler
 
 // The organization's license policy. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md, "License policy".
+// server/docs/rfcs/RFC-070-software-components-inventory.md, "License policy".
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
 
-	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	licapp "github.com/openctemio/openctem/server/internal/app/licensepolicy"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // LicensePolicyEvaluator re-evaluates the organization's package links.

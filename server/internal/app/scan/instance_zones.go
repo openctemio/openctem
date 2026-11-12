@@ -14,9 +14,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/instancezone"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/instancezone"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // InstanceZones looks up the instance scan zone for an organization's

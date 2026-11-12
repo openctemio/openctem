@@ -2,7 +2,7 @@ package asset
 
 // The asset type registry (RFC-042 §6.3, docs/rfcs/RFC-042-asset-inventory-v2.md).
 //
-// Every asset type is declared once, in api/configs/asset-types.yaml. The
+// Every asset type is declared once, in server/configs/asset-types.yaml. The
 // data lives in registry_generated.go (`make generate-asset-types`); this
 // file holds the shapes and the lookups. A type belongs to exactly one
 // class, and a class to exactly one lens (the `other` class has none).

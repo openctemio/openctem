@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/server/internal/app/asset"
 )
 
 func TestPromoteKnownProperties_SubType(t *testing.T) {

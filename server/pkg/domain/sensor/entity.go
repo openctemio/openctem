@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/sensorkey"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/sensorkey"
 )
 
 // SensorType represents the type of sensor.

@@ -12,17 +12,17 @@ import (
 	"strings"
 	"time"
 
-	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/versions"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	cpsigstore "github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
-	contentpackdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	catalogapp "github.com/openctemio/openctem/server/internal/app/contentcatalog"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	cpsigstore "github.com/openctemio/openctem/server/pkg/contentpkg/sigstore"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/contentcatalog"
+	contentpackdom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/releasefeed"
 )
 
 // AdminActionContentTrustOverride records that the operator added catalog

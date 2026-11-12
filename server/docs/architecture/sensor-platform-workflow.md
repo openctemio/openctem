@@ -8,7 +8,7 @@ document that holds its detail; this page is the map and the place where the
 steps meet.
 
 Where this page and a detail document disagree, the code decides; fix both.
-Code references are `path:Function` relative to `api/` (platform), or
+Code references are `path:Function` relative to `server/` (platform), or
 `sdk-go/…` and `sensor/…` for the other repositories.
 
 Related: [sensors](sensors.md) (vocabulary, protocol v2, the full reference),

@@ -1,5 +1,5 @@
 // Package sourceretire models retiring an import source: "stop using this
-// source" (api/docs/architecture/source-retirement.md).
+// source" (server/docs/architecture/source-retirement.md).
 //
 // A source is a sighting key without the scan definition: a sensor of the
 // organization and a tool, an uploaded tool, or a server-side connector
@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/server/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Kind is what kind of source is retired.

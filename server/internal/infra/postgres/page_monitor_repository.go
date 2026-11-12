@@ -16,9 +16,9 @@ import (
 
 	"github.com/lib/pq"
 
-	pagemonapp "github.com/openctemio/openctem/api/internal/app/pagemon"
-	"github.com/openctemio/openctem/api/pkg/domain/pagemon"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	pagemonapp "github.com/openctemio/openctem/server/internal/app/pagemon"
+	"github.com/openctemio/openctem/server/pkg/domain/pagemon"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PageMonitorRepository stores watches, snapshots and changes.

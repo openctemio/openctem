@@ -1,5 +1,5 @@
 # OpenCTEM API server, from the openctem-server release archive
-# (api/docs/deployment/binary-install.md). Install to /etc/systemd/system/.
+# (server/docs/deployment/binary-install.md). Install to /etc/systemd/system/.
 #
 # Paths: /opt/openctem/server -> the unpacked archive (a symlink, so an
 # upgrade or rollback switches one link); /etc/openctem/server.env holds the

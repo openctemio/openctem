@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The Go packages of api/ whose tests a pull request can affect: the packages
+# The Go packages of server/ whose tests a pull request can affect: the packages
 # it changes, and every package that imports one of them (directly or through
-# others, test files included). Run from api/.
+# others, test files included). Run from server/.
 #
 #   go-affected.sh <base-ref>
 #
@@ -10,13 +10,13 @@
 # ALL: the selection only ever removes work that cannot change the result.
 #
 # ALL when a changed file
-#   - is outside api/ and not documentation or web/ (the root Makefile,
+#   - is outside server/ and not documentation or web/ (the root Makefile,
 #     deploy/, .github/, go.work: shared inputs),
-#   - is inside api/ but not in a Go package's directory tree: go.mod, go.sum,
+#   - is inside server/ but not in a Go package's directory tree: go.mod, go.sum,
 #     migrations/, configs/, deploy/, scripts/, Makefile. Tests read these
 #     files, so every test may depend on them,
-#   - is api/docs/configuration/environment-variables.md (a test compares it).
-# Ignored: Markdown, api/docs/, api/changelog.d/, web/, .claude/.
+#   - is server/docs/configuration/environment-variables.md (a test compares it).
+# Ignored: Markdown, server/docs/, server/changelog.d/, web/, .claude/.
 # A file inside a package's directory tree (code, testdata, embedded files)
 # belongs to its nearest enclosing package.
 #
@@ -26,7 +26,7 @@ set -euo pipefail
 
 base="${1:?usage: go-affected.sh <base-ref>}"
 root="$(git rev-parse --show-toplevel)"
-prefix="$(git rev-parse --show-prefix)"        # "api/"
+prefix="$(git rev-parse --show-prefix)"        # "server/"
 prefix="${prefix%/}"
 
 changed="$(git diff --name-only "$base"...HEAD)" || { echo ALL; exit 0; }
@@ -58,7 +58,7 @@ for p in pkgs:
             rdeps.setdefault(q, set()).add(p["ImportPath"])
 
 def ignored(path):
-    return (path.endswith(".md") or path.startswith(("web/", ".claude/", "api/docs/", "api/changelog.d/"))
+    return (path.endswith(".md") or path.startswith(("web/", ".claude/", "server/docs/", "server/changelog.d/"))
             or "/.claude/" in path)
 
 hit = set()

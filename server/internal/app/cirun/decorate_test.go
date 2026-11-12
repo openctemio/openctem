@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/outbox"
-	scmappsvc "github.com/openctemio/openctem/api/internal/app/scmapp"
-	"github.com/openctemio/openctem/api/internal/infra/scm/githubapp"
-	"github.com/openctemio/openctem/api/internal/infra/scm/gitlabapi"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/scmapp"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	scmappsvc "github.com/openctemio/openctem/server/internal/app/scmapp"
+	"github.com/openctemio/openctem/server/internal/infra/scm/githubapp"
+	"github.com/openctemio/openctem/server/internal/infra/scm/gitlabapi"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/scmapp"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fakePoster struct {

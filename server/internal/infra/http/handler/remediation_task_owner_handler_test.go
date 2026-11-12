@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	remediationapp "github.com/openctemio/openctem/server/internal/app/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestOwnerAccessErrorAnswers422WithCountsOnly(t *testing.T) {

@@ -7,12 +7,12 @@ package server
 import (
 	"database/sql"
 
-	"github.com/openctemio/openctem/api/internal/app/lookupjob"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/lookupjob"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	signerclient "github.com/openctemio/openctem/server/internal/infra/signer"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // newLookupJobService builds the lookup jobs (nil without a database). A

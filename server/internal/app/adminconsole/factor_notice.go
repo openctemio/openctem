@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
 )
 
 // Kinds of factor change an administrator is told about by email, so a

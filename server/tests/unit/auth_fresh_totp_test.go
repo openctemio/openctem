@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
 )
 
 // A fresh authenticator code (an owner approving their own scope entry):

@@ -20,7 +20,7 @@ import (
 
 	"github.com/openctemio/contract/settings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MaxToolSettingsBytes bounds one stored values document (the schema

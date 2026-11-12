@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stepup"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stepup"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Step-up error codes. The web client answers STEP_UP_REQUIRED with its

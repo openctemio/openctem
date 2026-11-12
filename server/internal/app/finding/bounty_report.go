@@ -1,17 +1,17 @@
 package finding
 
 // Report fields of findings filed from a bug-bounty or disclosure program.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-121-bug-bounty-reports.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-121-bug-bounty-reports.md
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // ErrBountyTriageRequired: setting or changing a report's reward or

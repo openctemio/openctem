@@ -26,9 +26,9 @@ import (
 	"github.com/openctemio/contract/transfer/bundle"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/vulnbundle"
+	"github.com/openctemio/openctem/server/pkg/domain/cvecorpus"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
 // FeedV2 is the feed name of vulnerability v2 bundles (their payload

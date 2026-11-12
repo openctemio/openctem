@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The guardrail reads (RFC-054 §16) on the real schema: names resolving to

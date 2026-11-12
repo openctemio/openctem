@@ -12,14 +12,14 @@
 
 The repository `openctemio/api` was **renamed** to
 [`openctemio/openctem`](https://github.com/openctemio/openctem) (old URLs, issues,
-PRs and releases carry over), the Go code moved to `api/`, and `openctemio/ui` was
+PRs and releases carry over), the Go code moved to `server/`, and `openctemio/ui` was
 imported under `web/` with its full history. `openctemio/ui` is being archived.
 
 ```
 openctem/
-  api/              # Go module github.com/openctemio/openctem/api (own go.mod, Dockerfiles)
+  server/              # Go module github.com/openctemio/openctem/server (own go.mod, Dockerfiles)
   web/              # Next.js console (own package.json, Dockerfile)
-  deploy/allinone/  # all-in-one image: API + web + api/deploy/gateway
+  deploy/allinone/  # all-in-one image: API + web + server/deploy/gateway
   .github/          # one set of workflows, path-gated per component; CODEOWNERS; dependabot
   .githooks/        # repository git hooks (make hooks)
   Makefile          # thin root targets: setup, hooks, dev-api, dev-web, lint, test, check, allinone
@@ -31,9 +31,9 @@ Deviations from the proposal below:
 |----------|-----------|-----|
 | New repo `openctemio/platform` | Rename `openctemio/api` → `openctemio/openctem` | Keeps the API's issues, PRs, releases, stars and GHCR package links; old URLs redirect. Name matches the product. |
 | `ui/` directory | `web/` | Names what it is (the web console), not a generic "UI". |
-| `contract/` directory with `permissions.yaml` + `openapi.yaml` | No `contract/`. The spec stays where the API generates it, `api/api/openapi/swagger.yaml`; `web/scripts/generate-api-types.sh` derives `web/src/lib/api/generated/api.types.ts` from it, and Web CI's `check:api-types` fails on drift | One source of truth with no copy; the vendored spec, `check:spec-vendored` and the `sync-api-spec` workflow were deleted. Permission constants are **not** generated yet (`web/src/lib/permissions/constants.ts` is still hand-maintained). |
-| `go.work` at the root | No `go.work`; Go runs from `api/` with `GOWORK=off` | Nothing else to resolve: `ctis`/`sdk-go` are ordinary versioned dependencies. |
-| Module path unchanged | Module path **is** `github.com/openctemio/openctem/api` (one mechanical commit, listed in `.git-blame-ignore-revs`) | Matches the new repository URL. |
+| `contract/` directory with `permissions.yaml` + `openapi.yaml` | No `contract/`. The spec stays where the API generates it, `server/api/openapi/swagger.yaml`; `web/scripts/generate-api-types.sh` derives `web/src/lib/api/generated/api.types.ts` from it, and Web CI's `check:api-types` fails on drift | One source of truth with no copy; the vendored spec, `check:spec-vendored` and the `sync-api-spec` workflow were deleted. Permission constants are **not** generated yet (`web/src/lib/permissions/constants.ts` is still hand-maintained). |
+| `go.work` at the root | No `go.work`; Go runs from `server/` with `GOWORK=off` | Nothing else to resolve: `ctis`/`sdk-go` are ordinary versioned dependencies. |
+| Module path unchanged | Module path **is** `github.com/openctemio/openctem/server` (one mechanical commit, listed in `.git-blame-ignore-revs`) | Matches the new repository URL. |
 | `paths:` filters + `dorny/paths-filter` | Every workflow always starts; a `changes` job runs `.github/scripts/changed.sh`; one aggregator check per workflow (`API CI OK`, `Web CI OK`, `CodeQL OK`, `All-in-one OK`) plus `Secret Scanning` and `Workflow Lint` are the required checks | `on.paths` leaves skipped required checks Pending forever; one less third-party action. |
 | Keep independent image builds + tags; image names unchanged | **One `vX.Y.Z` tag releases everything** from one commit: `openctem-api`, `openctem-web`, a new all-in-one `openctem`, `migrations`, `seed`, `admin-cli` (multi-arch, cosign-signed, SBOMs). The old `ghcr.io/openctemio/api` / `ui` names receive identical copies for a two-release transition window | API and web were always deployed as a pair; one version removes the version-matrix question. |
 | ui tags kept as-is | ui tags imported as `ui/vX.Y.Z`; they are history only (`v*` does not match them) | Avoids collisions with the API's `vX.Y.Z` tags. |
@@ -79,7 +79,7 @@ Create a single repository (working name `openctemio/platform`) laid out as:
 
 ```
 platform/
-  api/            # unchanged Go module (own go.mod, Dockerfile)
+  server/            # unchanged Go module (own go.mod, Dockerfile)
   ui/             # unchanged Next.js app (own package.json, Dockerfile)
   contract/       # NEW: single source of shared contract + codegen
     permissions.yaml         # or derive from api's AllPermissions()
@@ -98,7 +98,7 @@ platform/
 
 ### Design decisions
 
-1. **Path-filtered CI.** Go workflows trigger on `api/**` + `contract/**`; Node
+1. **Path-filtered CI.** Go workflows trigger on `server/**` + `contract/**`; Node
    workflows on `ui/**` + `contract/**`. No cross-toolchain waste; a UI-only PR
    never runs Go CI and vice-versa. GitHub Actions `paths:` filters + a small
    "changes" job (dorny/paths-filter) gate each pipeline.
@@ -112,13 +112,13 @@ platform/
    as today. Release tagging becomes "one commit = one deployable api+ui set",
    which is what operators already assume.
 4. **`go.work` stays** for local Go resolution; the api module path is unchanged
-   (`github.com/openctemio/openctem/api`) so imports don't churn — the module lives at
+   (`github.com/openctemio/openctem/server`) so imports don't churn — the module lives at
    `platform/api` but keeps its module path. (Alternatively rename to
    `.../platform/api`; deferred — avoid a mass import rewrite in the migration PR.)
 
 ### Migration (history-preserving, reversible)
 
-1. `git filter-repo` (or `subtree`) to import `api/` and `ui/` into `platform/`
+1. `git filter-repo` (or `subtree`) to import `server/` and `ui/` into `platform/`
    **preserving full history** (commits, blame, tags).
 2. Recreate branch protection, required checks, `CODEOWNERS`, and secrets on the
    new repo.

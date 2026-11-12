@@ -1,7 +1,7 @@
 // Package contentpkg is the content package format: the manifest
 // (package.yaml), its JSON schema and its validation.
 //
-// Design: api/docs/rfcs/RFC-099-content-packages.md.
+// Design: server/docs/rfcs/RFC-099-content-packages.md.
 package contentpkg
 
 import (
@@ -20,7 +20,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 // APIVersion is the manifest version this package reads.

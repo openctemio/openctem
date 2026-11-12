@@ -31,7 +31,7 @@ export interface RoutePermissionConfig {
 }
 
 /**
- * Module ids. Generated from the API registry (api/configs/modules/*.yaml), the
+ * Module ids. Generated from the API registry (server/configs/modules/*.yaml), the
  * one list of modules: a name here that the registry does not have fails the
  * type check.
  */

@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"slices"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // GrantUsage is what a sensor did in the look-back window.

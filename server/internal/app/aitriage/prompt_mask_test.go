@@ -10,13 +10,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/openctem/api/internal/app/aibundle"
-	"github.com/openctemio/openctem/api/internal/app/aipolicy"
-	"github.com/openctemio/openctem/api/internal/infra/llm"
-	"github.com/openctemio/openctem/api/pkg/aimask"
-	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/aibundle"
+	"github.com/openctemio/openctem/server/internal/app/aipolicy"
+	"github.com/openctemio/openctem/server/internal/infra/llm"
+	"github.com/openctemio/openctem/server/pkg/aimask"
+	aitriagedom "github.com/openctemio/openctem/server/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // echoLLM answers with the placeholders it was given, the way a model refers

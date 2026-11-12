@@ -7,8 +7,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
 )
 
 // AuditActionWriteStarted is the write-ahead row of a super administrator's

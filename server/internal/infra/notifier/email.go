@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/notifymsg"
+	"github.com/openctemio/openctem/server/pkg/notifymsg"
 
-	emailpkg "github.com/openctemio/openctem/api/pkg/email"
+	emailpkg "github.com/openctemio/openctem/server/pkg/email"
 )
 
 // EmailClient implements the Client interface for email notifications via SMTP.

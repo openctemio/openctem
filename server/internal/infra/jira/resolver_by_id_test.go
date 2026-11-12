@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	appjira "github.com/openctemio/openctem/api/internal/app/jira"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	appjira "github.com/openctemio/openctem/server/internal/app/jira"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // byIDRepo answers GetByTenantAndID like the postgres repository: an

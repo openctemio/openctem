@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/entitlement"
+	"github.com/openctemio/openctem/server/internal/app/entitlement"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/internal/config"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
 )
 
 // requireSelfServiceStartLimits refuses to start when self-service sign-up

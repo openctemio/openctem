@@ -10,12 +10,12 @@ import (
 
 	"github.com/google/uuid"
 
-	activityapp "github.com/openctemio/openctem/api/internal/app/activity"
-	lcapp "github.com/openctemio/openctem/api/internal/app/findinglifecycle"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	activityapp "github.com/openctemio/openctem/server/internal/app/activity"
+	lcapp "github.com/openctemio/openctem/server/internal/app/findinglifecycle"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	lc "github.com/openctemio/openctem/server/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // lifecycleFixture publishes an organization lifecycle on the harness's

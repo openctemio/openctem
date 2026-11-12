@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Route is one HTTP route of an extension. The core mounts it at

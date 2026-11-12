@@ -2,6 +2,6 @@
 // the importable package pkg/server so that a custom build can reuse it.
 package main
 
-import "github.com/openctemio/openctem/api/pkg/server"
+import "github.com/openctemio/openctem/server/pkg/server"
 
 func main() { server.Main() }

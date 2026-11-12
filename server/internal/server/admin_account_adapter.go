@@ -5,10 +5,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/adminconsole"
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/adminconsole"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // adminAccountDirectory lets the admin console (RFC-022) check an account's

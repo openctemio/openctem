@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
 )
 
 // DisabledModuleProvider supplies the modules that are off for a tenant.

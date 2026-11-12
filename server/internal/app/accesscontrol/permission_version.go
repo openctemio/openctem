@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/redis"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/infra/redis"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // PermissionVersionService manages permission version tracking in Redis.

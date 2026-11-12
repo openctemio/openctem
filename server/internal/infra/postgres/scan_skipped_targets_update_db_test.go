@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
 )
 
 // Update writes the scan's skipped targets: an edit that replaces the

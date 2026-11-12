@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/aiknowledge"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	kdom "github.com/openctemio/openctem/api/pkg/domain/aiknowledge"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/aiknowledge"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	kdom "github.com/openctemio/openctem/server/pkg/domain/aiknowledge"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Knowledge for AI agents on a real database (docs/architecture/ai-knowledge.md):

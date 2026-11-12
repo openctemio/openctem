@@ -21,10 +21,10 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/openctemio/openctem/api/internal/infra/sensortransport"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/v3/sensorv3connect"
+	"github.com/openctemio/openctem/server/internal/infra/sensortransport"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/v3/sensorv3connect"
 )
 
 type mtlsBinding struct {

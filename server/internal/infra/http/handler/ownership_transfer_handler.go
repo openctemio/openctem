@@ -16,9 +16,9 @@ import (
 	"net/http"
 	"strings"
 
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // StartOwnershipTransferRequest asks a member to take ownership.

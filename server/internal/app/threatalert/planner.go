@@ -19,13 +19,13 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/outbox"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/threatalert"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnevent"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnevent"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Windows and limits.

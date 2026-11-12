@@ -2,7 +2,7 @@
 
 package exploration
 
-import "github.com/openctemio/openctem/api/pkg/domain/stage"
+import "github.com/openctemio/openctem/server/pkg/domain/stage"
 
 // leadTypes is the lead type catalog (configs/lead-types.yaml).
 var leadTypes = []LeadType{

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // DispositionGate is the four-eyes rule for accepting the risk of, or marking
@@ -28,7 +28,7 @@ import (
 // owner is present. Approving one's own request when another approver
 // exists stays refused.
 //
-// Design: api/docs/architecture/finding-status-lifecycle.md ("Four-eyes on
+// Design: server/docs/architecture/finding-status-lifecycle.md ("Four-eyes on
 // exposure dispositions").
 type DispositionGate struct {
 	repo   exposuredom.DispositionRepository

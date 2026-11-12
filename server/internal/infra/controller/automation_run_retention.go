@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AutomationRunExpirer deletes finished automation runs past their retention.

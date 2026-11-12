@@ -3,7 +3,7 @@ package remediation
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Group is one remediation group: the set of open findings a single fix resolves.

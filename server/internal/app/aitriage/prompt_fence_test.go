@@ -7,10 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/openctemio/openctem/api/internal/app/aipolicy"
-	aitriagedom "github.com/openctemio/openctem/api/pkg/domain/aitriage"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/aipolicy"
+	aitriagedom "github.com/openctemio/openctem/server/pkg/domain/aitriage"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // pwnMarker is the attacker's injected instruction. The prompt is safe only if

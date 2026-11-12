@@ -7,7 +7,7 @@ import (
 
 	"github.com/openctemio/contract/politeness"
 
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 func TestChunkHostKeys(t *testing.T) {

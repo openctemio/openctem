@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/ssochange"
 )
 
 // An owner approves an SSO change by reading its summary: it names the

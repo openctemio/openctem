@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	vexapp "github.com/openctemio/openctem/server/internal/app/vex"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // A caller with findings:approve but not findings:verify cannot write a

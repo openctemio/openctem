@@ -3,7 +3,7 @@ package postgres
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 // The pending-client migration removes metadata-document clients nobody

@@ -5,7 +5,7 @@ import (
 
 	"github.com/openctemio/saml"
 
-	"github.com/openctemio/openctem/api/pkg/oidc"
+	"github.com/openctemio/openctem/server/pkg/oidc"
 )
 
 // Second-factor evidence from an identity provider (RFC-058): a host

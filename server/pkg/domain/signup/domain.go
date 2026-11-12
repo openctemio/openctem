@@ -3,7 +3,7 @@ package signup
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
 )
 
 // DomainPolicySource answers the sign-up policy of the organization that

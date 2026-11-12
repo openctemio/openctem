@@ -3,8 +3,8 @@ package contentsource
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SnapshotState is a snapshot's place in the source's history. Which

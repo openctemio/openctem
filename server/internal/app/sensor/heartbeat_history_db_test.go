@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 type gapRecorder struct {

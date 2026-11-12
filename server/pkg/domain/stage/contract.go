@@ -23,7 +23,7 @@ import (
 
 	"github.com/openctemio/contract/capability"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // PortType is the type of a workflow node port. The set is closed: ports

@@ -129,7 +129,7 @@ temporary table rewrites (up to the size of `assets` + `findings`).
 | Self-registration | off (`AUTH_ALLOW_REGISTRATION=false`) | `AUTH_ALLOW_REGISTRATION=true` (open instances only) |
 | Members without an access group | see nothing | put them in access groups, or give their role "full data access" |
 | Who may resolve findings | `findings:verify` holders (owner, admin) | add `findings:verify` to a custom role |
-| Compose layout | single HTTPS port stack (`api/deploy/docker-compose.yml`) | keep the two Compose files ([3.2](#32-docker-compose)) |
+| Compose layout | single HTTPS port stack (`server/deploy/docker-compose.yml`) | keep the two Compose files ([3.2](#32-docker-compose)) |
 | Least-privilege database roles | optional | single role (nothing to do) |
 | Platform administrators | two new sign-in accounts (primary + break-glass) | `bootstrap-admin -link` for a v0.8.0 administrator |
 
@@ -193,12 +193,12 @@ All images are signed with cosign (keyless) and have SBOMs on the release.
 
 ### 3.2 Docker Compose
 
-The two v0.8.0 repositories are now `api/` and `web/` of
+The two v0.8.0 repositories are now `server/` and `web/` of
 `openctemio/openctem`. You have two options.
 
 **Option A — keep your layout (two Compose projects).** Keep the Compose files
 your v0.8.0 installation runs: v0.9.0 no longer ships API-only or web-only
-Compose files (`api/docker-compose.prod.yml`, `web/docker-compose.prod.yml` and
+Compose files (`server/docker-compose.prod.yml`, `web/docker-compose.prod.yml` and
 `web/docker-compose.prod-simple.yml` are removed), so plan to move to Option B
 afterwards. Change your files as follows:
 
@@ -227,7 +227,7 @@ afterwards. Change your files as follows:
   changes with the C library (musl → glibc) and text indexes would no longer
   match.
 
-**Option B — the single HTTPS port stack (`api/deploy/docker-compose.yml`).**
+**Option B — the single HTTPS port stack (`server/deploy/docker-compose.yml`).**
 Gateway (Caddy) on one HTTPS port, web, API, migrations, PostgreSQL and Redis
 with TLS between them. It is the layout new installations use. Moving to it
 means a new stack: finish [section 4](#4-database-migration-path) on your
@@ -236,7 +236,7 @@ with an empty database volume up to Postgres only, `pg_restore` the dump, then
 start the rest. It needs `OPENCTEM_VERSION`, `OPENCTEM_HOSTNAME`,
 `OPENCTEM_PUBLIC_URL`, `DB_PASSWORD`, `REDIS_PASSWORD`, `AUTH_JWT_SECRET`
 and `APP_ENCRYPTION_KEY` (same value as before)
-(`api/deploy/.env.example`). Sensors then use `https://<hostname>` as `API_URL`.
+(`server/deploy/.env.example`). Sensors then use `https://<hostname>` as `API_URL`.
 
 ### 3.3 API environment variables
 
@@ -359,7 +359,7 @@ The way through:
 
 1. **Hop 1**: apply the migrations of git tag `pre-baseline-001146`
    (000225 → 001146). No image is published for that tag; use the upstream
-   `migrate/migrate:v4.18.1` image with the tag's `api/migrations` directory.
+   `migrate/migrate:v4.18.1` image with the tag's `server/migrations` directory.
 2. **Hop 2**: apply the v0.9.0 migrations image (001147 → latest). It applies
    only the migrations above 001146; the baseline never runs on an existing
    database.

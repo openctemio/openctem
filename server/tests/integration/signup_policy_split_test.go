@@ -7,11 +7,11 @@ import (
 
 	"github.com/google/uuid"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
-	"github.com/openctemio/openctem/api/internal/config"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
+	signupapp "github.com/openctemio/openctem/server/internal/app/signup"
+	"github.com/openctemio/openctem/server/internal/config"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The two decisions of the sign-up policy (who may create an account, who

@@ -23,7 +23,7 @@ A line that genuinely needs a private address (for example a page that explains 
 private ranges are handled) can carry the marker `docs-check: allow-private` in an HTML
 comment on the same line.
 
-The glossary (api/docs/glossary.md) is the one page allowed to carry Vietnamese: it records
+The glossary (server/docs/glossary.md) is the one page allowed to carry Vietnamese: it records
 the Vietnamese console wording of every term.
 """
 import os
@@ -42,7 +42,7 @@ INTERNAL_HOSTS = re.compile(r"manhnv\.com|\.internal\.openctem", re.IGNORECASE)
 LANGUAGE_NAMES = re.compile("Tiếng Việt")
 ALLOW_PRIVATE = "docs-check: allow-private"
 # The glossary gives each term's Vietnamese console wording on purpose.
-VIETNAMESE_ALLOWED = {os.path.normpath("api/docs/glossary.md")}
+VIETNAMESE_ALLOWED = {os.path.normpath("server/docs/glossary.md")}
 
 LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 REF_DEF = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.MULTILINE)

@@ -5,7 +5,7 @@
  * (title, owner, deadline, optionally a campaign) or an existing open task.
  * A finding is in at most one active task: when some already are, the API
  * answers 409 FINDINGS_IN_OTHER_TASK and the dialog shows them, to skip or,
- * where allowed, move with a reason (api/docs/rfcs/RFC-098-remediation-tasks.md).
+ * where allowed, move with a reason (server/docs/rfcs/RFC-098-remediation-tasks.md).
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'

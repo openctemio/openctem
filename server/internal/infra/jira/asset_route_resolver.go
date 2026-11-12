@@ -3,9 +3,9 @@ package jira
 import (
 	"context"
 
-	appjira "github.com/openctemio/openctem/api/internal/app/jira"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	appjira "github.com/openctemio/openctem/server/internal/app/jira"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // assetReader is the narrow slice of the asset repository the route resolver

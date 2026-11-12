@@ -7,8 +7,8 @@ import (
 
 	"github.com/openctemio/ctis/v2/importer"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // A .nessus upload is converted by the ctis importer. Every plugin result,

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 func signKeySet(t *testing.T, root ed25519.PrivateKey, version uint64, issued time.Time, keys ...ed25519.PrivateKey) []byte {

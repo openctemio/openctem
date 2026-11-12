@@ -10,11 +10,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	commandapp "github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	commandapp "github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakePlacement struct {

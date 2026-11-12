@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 )
 
 // Attribution against the real schema (migration 000324): evidence upsert is

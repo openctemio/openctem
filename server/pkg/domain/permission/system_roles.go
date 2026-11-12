@@ -1,6 +1,6 @@
 package permission
 
-import "github.com/openctemio/openctem/api/pkg/domain/tenant"
+import "github.com/openctemio/openctem/server/pkg/domain/tenant"
 
 // SystemRole is a built-in role as the database seeds it (roles.is_system,
 // tenant_id NULL) with the permissions it carries.

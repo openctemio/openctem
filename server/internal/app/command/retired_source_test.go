@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/sourceretire"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/sourceretire"
 )
 
 func retiredJob(t *testing.T, typ commanddom.CommandType, tool string, pinned *shared.ID) *commanddom.Command {

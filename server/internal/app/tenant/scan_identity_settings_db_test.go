@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/scanident"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/scanident"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The organization's rotation list, query parameter and requirement persist

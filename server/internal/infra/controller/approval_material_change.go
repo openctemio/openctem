@@ -1,7 +1,7 @@
 package controller
 
 // Material change of standing decisions
-// (api/docs/rfcs/RFC-111-approval-policy.md §6). Every few minutes the
+// (server/docs/rfcs/RFC-111-approval-policy.md §6). Every few minutes the
 // controller takes the approved accepted risks and one-person false
 // positives whose finding facts moved up since their baseline (severity or
 // priority up, KEV added, EPSS reaching the threshold, an exploit newly
@@ -23,10 +23,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // MaterialChangeStore reads and writes standing decisions

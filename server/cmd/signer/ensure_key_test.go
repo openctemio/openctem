@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/signer"
+	"github.com/openctemio/openctem/server/internal/signer"
 )
 
 // SIGNER_GENERATE_KEY creates the key once, 0400, and never replaces an

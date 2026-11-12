@@ -9,8 +9,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/pkg/aimask"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/aimask"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AIMaskClass is one class of values the AI context masker can leave

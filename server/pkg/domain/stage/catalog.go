@@ -22,7 +22,7 @@ import (
 
 	"github.com/openctemio/contract/capability"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // Key is a stage's capability key, "<verb>.<object>".

@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanident"
+	"github.com/openctemio/openctem/server/pkg/domain/scanident"
 )
 
 // Refusal layers: which layer decided that a job may not run on a sensor.

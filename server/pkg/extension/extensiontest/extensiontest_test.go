@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/extension/example"
-	"github.com/openctemio/openctem/api/pkg/extension/extensiontest"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/extension/example"
+	"github.com/openctemio/openctem/server/pkg/extension/extensiontest"
 )
 
 func TestDeps(t *testing.T) {

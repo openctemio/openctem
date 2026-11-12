@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"testing"
 
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // codeTOTP accepts one code, once (a used code cannot be replayed).

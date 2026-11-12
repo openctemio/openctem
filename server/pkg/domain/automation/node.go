@@ -4,7 +4,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // NodeType represents the type of workflow node.

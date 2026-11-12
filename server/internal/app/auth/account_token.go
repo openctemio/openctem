@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ErrAccountTokenHasOrganization: the account can open an organization, so

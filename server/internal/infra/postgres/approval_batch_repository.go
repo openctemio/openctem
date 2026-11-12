@@ -1,6 +1,6 @@
 package postgres
 
-// Group-level exceptions (api/docs/rfcs/RFC-111-approval-policy.md §7): the
+// Group-level exceptions (server/docs/rfcs/RFC-111-approval-policy.md §7): the
 // batch request, its member finding requests, sign-offs and decision. Every
 // query is scoped to one tenant.
 
@@ -13,11 +13,11 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // signoffSubjectBatch is the subject type of a group exception's sign-offs.

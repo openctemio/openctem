@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-pdf/fpdf"
 
-	"github.com/openctemio/openctem/api/pkg/report/markdown"
+	"github.com/openctemio/openctem/server/pkg/report/markdown"
 )
 
 // The report font is DejaVu Sans, embedded (subset into each PDF) so every

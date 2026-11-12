@@ -3,7 +3,7 @@
 #
 # Gives the migrations a change adds new, unique versions when theirs clash.
 # Used by pull request CI on its test merge (in the runner's working tree
-# only, never committed) and by `make -C api migration-renumber` (which
+# only, never committed) and by `make -C server migration-renumber` (which
 # stages the renames for the author to commit).
 #
 # Migration versions only have to be unique: openctem-migrate applies every
@@ -31,7 +31,7 @@
 #     (so their order is kept) get UTC timestamp versions YYYYMMDDHHMMSS,
 #     starting at the current second (MIGRATION_NOW overrides it, for tests),
 #     each one unused by the base, the tree and MIGRATION_TAKEN; references
-#     to the old file stems outside api/migrations are rewritten.
+#     to the old file stems outside server/migrations are rewritten.
 # A migration baseline (NNNNNN_baseline, RFC-053) is left alone.
 # Nothing is committed or pushed; every change is printed as a warning.
 # merge_group and push never call this: there, check-migration-versions.sh
@@ -40,7 +40,7 @@
 # Tests: .github/scripts/pr-migration-renumber.test.sh
 set -euo pipefail
 
-dir="${MIGRATIONS_DIR:-api/migrations}"
+dir="${MIGRATIONS_DIR:-server/migrations}"
 base="${1:-HEAD^1}"
 pattern='^([0-9]+)_(.+)\.(up|down)\.sql$'
 
@@ -48,6 +48,16 @@ if ! git rev-parse -q --verify "${base}^{commit}" >/dev/null; then
   echo "::notice::pr-migration-renumber: base ${base} is not available; migrations left as they are"
   exit 0
 fi
+
+# The base's own layout: the base of the backend directory rename (server/ to
+# server/) still keeps its migrations under server/. base_ls and base_diff read
+# the base in its layout and print paths in this tree's ($dir/...).
+bdir="$dir"
+if [[ -n "$base" ]] && ! git cat-file -e "$base:$dir" 2>/dev/null && git cat-file -e "$base:api/${dir#server/}" 2>/dev/null; then bdir="api/${dir#server/}"; fi # rename-guard: allow
+base_ls() { if [[ "$bdir" == "$dir" ]]; then git ls-tree --name-only "$base" -- "$dir/"; else git ls-tree --name-only "$base:$bdir"; fi; }
+base_diff() { # base_diff <git diff options>
+  if [[ "$bdir" == "$dir" ]]; then git diff "$@" "$base" HEAD -- "$dir/"; else git diff "$@" "$base:$bdir" "HEAD:$dir" | sed -E "s#^([A-Z][0-9]*\t)?#\1$dir/#"; fi
+}
 
 # versions: "version name raw" per migration, numerically sorted, unique.
 versions() {
@@ -58,8 +68,8 @@ versions() {
   done | sort -n -k1,1 -k2 | uniq
 }
 
-base_list="$(git ls-tree --name-only "$base" -- "$dir/" | versions)"
-added="$(git diff --no-renames --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
+base_list="$(base_ls | versions)"
+added="$(base_diff --no-renames --name-only --diff-filter=A | versions)"
 
 # 1. Byte-identical copies of a base migration (same name, other number).
 own=()
@@ -67,8 +77,8 @@ while read -r v name raw; do
   [[ -n "$v" ]] || continue
   b_raw="$(awk -v n="$name" '$2 == n {print $3; exit}' <<<"$base_list")"
   if [[ -n "$b_raw" && "$b_raw" != "$raw" ]] \
-    && cmp -s "$dir/${raw}_${name}.up.sql" <(git show "${base}:${dir}/${b_raw}_${name}.up.sql" 2>/dev/null) \
-    && cmp -s "$dir/${raw}_${name}.down.sql" <(git show "${base}:${dir}/${b_raw}_${name}.down.sql" 2>/dev/null); then
+    && cmp -s "$dir/${raw}_${name}.up.sql" <(git show "${base}:${bdir}/${b_raw}_${name}.up.sql" 2>/dev/null) \
+    && cmp -s "$dir/${raw}_${name}.down.sql" <(git show "${base}:${bdir}/${b_raw}_${name}.down.sql" 2>/dev/null); then
     rm -f "$dir/${raw}_${name}.up.sql" "$dir/${raw}_${name}.down.sql"
     echo "::warning::${dir}/${raw}_${name} is a copy of ${b_raw}_${name}, already on the base; ignored in this run"
     continue

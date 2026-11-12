@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	vexapp "github.com/openctemio/openctem/api/internal/app/vex"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	vexapp "github.com/openctemio/openctem/server/internal/app/vex"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // vexScope is a member's data scope: restricted to the listed assets, or

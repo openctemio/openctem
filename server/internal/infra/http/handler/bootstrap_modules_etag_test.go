@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	modulesvc "github.com/openctemio/openctem/api/internal/app/module"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	modulesvc "github.com/openctemio/openctem/server/internal/app/module"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type etagModuleRepo struct{}

@@ -5,14 +5,14 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/openctemio/openctem/api/internal/app/feedstatus"
-	"github.com/openctemio/openctem/api/internal/app/feedsync"
-	vulneventapp "github.com/openctemio/openctem/api/internal/app/vulnevent"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/controller"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/internal/app/feedsync"
+	vulneventapp "github.com/openctemio/openctem/server/internal/app/vulnevent"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeed"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // feedControllers are the controllers of the platform-wide intelligence feeds:

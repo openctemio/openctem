@@ -1,4 +1,4 @@
-# Synthetic probes (api/docs/operations/monitoring.md). No credentials are
+# Synthetic probes (server/docs/operations/monitoring.md). No credentials are
 # sent: the probes read public pages only (/health, /login).
 modules:
   # Plain HTTP inside the stack, or HTTPS with a certificate from a public CA.

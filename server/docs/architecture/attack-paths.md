@@ -10,9 +10,9 @@ GET /api/v1/attack-surface/exposure-chains    (assets:read, module attack_surfac
 GET /api/v1/attack-surface/attack-paths/{id}  (assets:read, module attack_surface)  routes to one asset, step weights, choke points
 ```
 
-Key code: `api/internal/app/attack/` (`path_scoring.go`, `exposure_chains.go`,
-`path_detail.go`, `scoped.go`), the priority oracle in `api/internal/server/reachability_oracle.go`, the
-threat-model consumer in `api/internal/app/threatmodel/service.go`.
+Key code: `server/internal/app/attack/` (`path_scoring.go`, `exposure_chains.go`,
+`path_detail.go`, `scoped.go`), the priority oracle in `server/internal/server/reachability_oracle.go`, the
+threat-model consumer in `server/internal/app/threatmodel/service.go`.
 
 ## Graph
 
@@ -25,7 +25,7 @@ threat-model consumer in `api/internal/app/threatmodel/service.go`.
 ## Security controls
 
 `protected_by` and `monitors` are not walked; they mark an asset as protected.
-The direction follows `api/configs/relationship-types.yaml`: for `A protected_by B`
+The direction follows `server/configs/relationship-types.yaml`: for `A protected_by B`
 (a website protected by a WAF) the protected asset is the source `A`; for
 `A monitors B` (a SIEM watching a host) it is the target `B`.
 

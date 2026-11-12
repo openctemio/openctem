@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/notifymsg"
+	"github.com/openctemio/openctem/server/pkg/notifymsg"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the renderer golden files")

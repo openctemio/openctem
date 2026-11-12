@@ -8,10 +8,10 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/scm"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/internal/infra/scm"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 func TestClassifyConnFailure(t *testing.T) {

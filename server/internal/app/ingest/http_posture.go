@@ -17,7 +17,7 @@ package ingest
 import (
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
+	"github.com/openctemio/openctem/server/pkg/domain/webendpoint"
 )
 
 func sanitizeHTTPPosture(report *ctis.Report, scope *alterScope) {

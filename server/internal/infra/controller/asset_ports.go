@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetport"
+	"github.com/openctemio/openctem/server/pkg/domain/assetport"
 )
 
 var (

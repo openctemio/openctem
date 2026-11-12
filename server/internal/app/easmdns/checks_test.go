@@ -8,9 +8,9 @@ import (
 
 	"golang.org/x/net/dns/dnsmessage"
 
-	"github.com/openctemio/openctem/api/pkg/dnsprobe"
-	"github.com/openctemio/openctem/api/pkg/dnsprobe/dnstest"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe/dnstest"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
 )
 
 // fakeDNS starts the fake resolver with the given zone. Every registrable

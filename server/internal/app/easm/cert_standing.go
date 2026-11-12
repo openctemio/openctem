@@ -34,10 +34,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/scopeauth"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/scopeauth"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ActiveGateCertificates reads which of the tenant's assets served a

@@ -15,11 +15,11 @@ import (
 
 	"github.com/openctemio/saml"
 
-	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	samldom "github.com/openctemio/openctem/server/pkg/domain/samlprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/useridentity"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SAML errors.

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/idempotency"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/idempotency"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A key is claimed once; while the first request runs a second claim sees

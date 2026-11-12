@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	auditsvc "github.com/openctemio/openctem/api/internal/app/audit"
-	modulesvc "github.com/openctemio/openctem/api/internal/app/module"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
+	modulesvc "github.com/openctemio/openctem/server/internal/app/module"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // =============================================================================

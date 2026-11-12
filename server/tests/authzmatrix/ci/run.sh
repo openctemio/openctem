@@ -6,7 +6,7 @@
 #   3. go test -tags authzmatrix ./tests/authzmatrix/
 #   4. tears everything down (always)
 #
-# Usage: api/tests/authzmatrix/ci/run.sh [go test args...]
+# Usage: server/tests/authzmatrix/ci/run.sh [go test args...]
 # Env: MATRIX_KEEP=1 keeps the stack up (prints how to stop it),
 #      MATRIX_REPORT=<file> writes the JSON report there.
 set -euo pipefail

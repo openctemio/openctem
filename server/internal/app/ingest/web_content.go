@@ -10,9 +10,9 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/pagemon"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/pagemon"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // WebContentRecorder takes the fetches of one report.

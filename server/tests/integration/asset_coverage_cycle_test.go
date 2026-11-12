@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	coverageapp "github.com/openctemio/openctem/server/internal/app/coverage"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type cycleRig struct {

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	app "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	app "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func TestSensorService_RenewAPIKey_RegenerationBeforeRotate_Refused(t *testing.T) {

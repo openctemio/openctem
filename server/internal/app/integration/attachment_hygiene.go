@@ -9,14 +9,14 @@ import (
 	"fmt"
 	"io"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	attachmentdom "github.com/openctemio/openctem/server/pkg/domain/attachment"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Image hygiene and malware scanning of attachments: design in
-// api/docs/rfcs/RFC-084-file-storage.md.
+// server/docs/rfcs/RFC-084-file-storage.md.
 
 // sanitizeImageUpload reads an image upload (bounded by MaxFileSize: images
 // are the one kind held in memory, to rewrite them), removes its metadata

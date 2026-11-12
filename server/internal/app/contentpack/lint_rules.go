@@ -3,8 +3,8 @@ package contentpack
 import (
 	"fmt"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/contentrule"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/contentrule"
 )
 
 // lintRules checks one file of a detection rule pack

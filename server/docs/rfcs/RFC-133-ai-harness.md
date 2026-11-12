@@ -110,7 +110,7 @@ flowchart LR
   must be cited. One repair turn is allowed. Error codes are fixed strings.
 - **Record.** `openctem.ai.run/v1` is an append-only JSON-lines record whose digest is reported in the result.
   Replaying with the recorded nonce produces the same digest.
-- **Contract copies.** `pkg/harness/contract` holds byte-identical copies of `api/pkg/sensorproto/analyze/schemas`,
+- **Contract copies.** `pkg/harness/contract` holds byte-identical copies of `server/pkg/sensorproto/analyze/schemas`,
   pinned by sha256 in a test. A change is the same reviewed change on both sides (RFC-094: the platform never
   imports the SDK).
 

@@ -3,7 +3,7 @@ package signer
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // SECURITY: a lookup statement is signed only for a platform (instance)

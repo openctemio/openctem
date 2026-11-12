@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 func TestSensorV2Logs_HolderStoresOnceOthersNotFound(t *testing.T) {

@@ -38,8 +38,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // V2Body is the verified request content the v2 edge leaves in the context.

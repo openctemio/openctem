@@ -8,7 +8,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
 )
 
 // TestCIReportHygiene: a secret a CI run uploads unmasked is stored nowhere

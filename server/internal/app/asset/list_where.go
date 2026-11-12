@@ -11,10 +11,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/assetlist"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // ListCaller is the request's caller.

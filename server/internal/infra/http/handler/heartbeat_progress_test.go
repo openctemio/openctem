@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 // The heartbeat's progress reaches the sensor service as sent (untrusted;

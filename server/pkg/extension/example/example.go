@@ -6,7 +6,7 @@
 // It adds organization notes: one table in its own schema, a grant key, two
 // routes (list and add) gated by a core permission and the grant, a config
 // key, and a background controller. A build that wants it passes it to
-// server.Main from its own main (api/examples/custombuild does):
+// server.Main from its own main (server/examples/custombuild does):
 //
 //	func main() { server.Main(example.Extension()) }
 package example
@@ -22,9 +22,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/extension"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/extension"
 )
 
 // Grant is the grant key of the notes feature.

@@ -3,7 +3,7 @@ package handler
 // Same-issue groups of findings: the group a finding is in, and taking a
 // finding out of it. Members on assets outside the caller's data scope are
 // never listed or counted.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/architecture/deduplication.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/architecture/deduplication.md
 
 import (
 	"encoding/json"
@@ -11,10 +11,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/issuelink"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/issuelink"
 )
 
 // FindingIssueGroupMember is one finding of a same-issue group.

@@ -25,7 +25,7 @@ func goListStream(t *testing.T) string {
 	mod := func(name string) string { return fixture(t, "modcache", "example.com", name) }
 	pkgs := []map[string]any{
 		{"ImportPath": "fmt", "Standard": true},
-		{"ImportPath": "github.com/openctemio/openctem/api/cmd/server", "Module": map[string]any{"Path": "github.com/openctemio/openctem/api", "Main": true, "Dir": "/src/api"}},
+		{"ImportPath": "github.com/openctemio/openctem/server/cmd/server", "Module": map[string]any{"Path": "github.com/openctemio/openctem/server", "Main": true, "Dir": "/src/api"}},
 		{"ImportPath": "example.com/mit", "Module": map[string]any{"Path": "example.com/mit", "Version": "v1.0.0", "Dir": mod("mit")}},
 		{"ImportPath": "example.com/mit/sub", "Module": map[string]any{"Path": "example.com/mit", "Version": "v1.0.0", "Dir": mod("mit")}},
 		{"ImportPath": "example.com/apache", "Module": map[string]any{"Path": "example.com/apache", "Version": "v2.1.0", "Dir": mod("apache")}},

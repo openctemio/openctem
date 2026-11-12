@@ -6,9 +6,9 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
-	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	evidenceapp "github.com/openctemio/openctem/server/internal/app/evidence"
+	evidencedom "github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // EvidenceStore keeps the typed proof of each sighting

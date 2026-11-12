@@ -6,9 +6,9 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/redis"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/infra/redis"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // PermissionCacheService provides cached access to user permissions.

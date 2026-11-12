@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/versioncheck"
-	"github.com/openctemio/openctem/api/pkg/releasefeed"
+	"github.com/openctemio/openctem/server/internal/app/versioncheck"
+	"github.com/openctemio/openctem/server/pkg/releasefeed"
 )
 
 // VersionCheckRepository stores the version check's one row in

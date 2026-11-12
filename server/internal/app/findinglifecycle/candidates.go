@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	lc "github.com/openctemio/openctem/server/pkg/domain/findinglifecycle"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The published schemes the status paths evaluate. A published version

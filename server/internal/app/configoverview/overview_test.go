@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/leakedsecretpolicy"
-	"github.com/openctemio/openctem/api/internal/app/orgrelay"
-	"github.com/openctemio/openctem/api/internal/app/platformmfa"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/leakedsecretpolicy"
+	"github.com/openctemio/openctem/server/internal/app/orgrelay"
+	"github.com/openctemio/openctem/server/internal/app/platformmfa"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type settingsMap map[string]platformsetting.State

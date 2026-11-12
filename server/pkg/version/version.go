@@ -3,9 +3,9 @@
 // Release builds set Version, Commit and BuildTime with -ldflags, from the tag
 // (Dockerfile + docker-publish.yml):
 //
-//	-X github.com/openctemio/openctem/api/pkg/version.Version=v0.9.0
-//	-X github.com/openctemio/openctem/api/pkg/version.Commit=<sha>
-//	-X github.com/openctemio/openctem/api/pkg/version.BuildTime=2026-10-02T10:00:00Z
+//	-X github.com/openctemio/openctem/server/pkg/version.Version=v0.9.0
+//	-X github.com/openctemio/openctem/server/pkg/version.Commit=<sha>
+//	-X github.com/openctemio/openctem/server/pkg/version.BuildTime=2026-10-02T10:00:00Z
 //
 // The dev container's air build passes "<highest tag>-dev+<short HEAD>" and the
 // short HEAD (.air.toml). A binary built with none of them (go run, an air
@@ -13,7 +13,7 @@
 // metadata of the checkout it runs in, read from the filesystem (see
 // gitinfo.go), so a dev deployment still says which commit it is.
 //
-// The rule (api/docs/rfcs/RFC-037 §3.2): every component reports version,
+// The rule (server/docs/rfcs/RFC-037 §3.2): every component reports version,
 // commit and channel. channel is "release" for a vX.Y.Z tag, "rc" for any
 // other pre-release tag (v1.2.0-rc.1, v1.2.0-staging), "dev" for everything
 // else. A dev version is "<highest vX.Y.Z tag>-dev+<short sha>", the highest

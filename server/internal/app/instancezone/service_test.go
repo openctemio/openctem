@@ -6,10 +6,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	zonedom "github.com/openctemio/openctem/api/pkg/domain/instancezone"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	zonedom "github.com/openctemio/openctem/server/pkg/domain/instancezone"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // memRepo is a zone repository in memory.

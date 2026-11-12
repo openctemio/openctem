@@ -8,8 +8,8 @@ import (
 	"context"
 	"time"
 
-	commandapp "github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	commandapp "github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ClosedWindowEnforcer is the command service's pass.

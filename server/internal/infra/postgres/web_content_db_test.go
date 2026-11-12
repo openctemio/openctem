@@ -8,10 +8,10 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/internal/app/webverify"
-	"github.com/openctemio/openctem/api/pkg/domain/easmchange"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
+	"github.com/openctemio/openctem/server/internal/app/webverify"
+	"github.com/openctemio/openctem/server/pkg/domain/easmchange"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/webendpoint"
 )
 
 // Web content intelligence against the real schema: platform labels, the

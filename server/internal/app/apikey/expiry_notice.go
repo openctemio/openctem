@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"time"
 
-	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	apikeydom "github.com/openctemio/openctem/server/pkg/domain/apikey"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ExpiryNoticeLead is how long before expiry the holder is told.

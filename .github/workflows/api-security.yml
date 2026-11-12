@@ -6,7 +6,7 @@ name: API Security
 
 # No required check lives here, so this workflow uses `paths:` and does not
 # start at all for a web-only change. Same routing as .github/scripts/changed.sh
-# (api/ + shared files); keep the two in step. The weekly schedule scans
+# (server/ + shared files); keep the two in step. The weekly schedule scans
 # everything. No merge_group trigger: it cannot be path-filtered, the PR run
 # already scanned the change, and the push to the branch scans it again.
 
@@ -14,25 +14,25 @@ on:
   push:
     branches: [develop]
     paths:
-      - 'api/**'
+      - 'server/**'
       - 'Makefile'
       - 'go.work'
       - 'go.work.sum'
       - '.github/**'
       - 'deploy/**'
       - '!**/*.md'
-      - '!api/docs/**'
+      - '!server/docs/**'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'api/**'
+      - 'server/**'
       - 'Makefile'
       - 'go.work'
       - 'go.work.sum'
       - '.github/**'
       - 'deploy/**'
       - '!**/*.md'
-      - '!api/docs/**'
+      - '!server/docs/**'
   schedule:
     - cron: '0 0 * * 1' # Monday 00:00 UTC; schedules run from the default branch (main)
 
@@ -43,15 +43,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
-# version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
+# Go version: setup-go reads server/go.mod (its `toolchain` directive), the same
+# version server/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
 # separate pin here would silently test and govulncheck an OLDER Go than ships.
 env:
   GOWORK: "off"
 
 defaults:
   run:
-    working-directory: api
+    working-directory: server
 
 jobs:
   # govulncheck, Trivy (fs) and the license check in ONE job (one runner, one
@@ -71,9 +71,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Go Vulnerability Check
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
@@ -87,8 +87,8 @@ jobs:
         with:
           skip-setup-trivy: true
           scan-type: 'fs'
-          scan-ref: 'api'
-          trivy-config: 'api/trivy.yaml'
+          scan-ref: 'server'
+          trivy-config: 'server/trivy.yaml'
           format: 'sarif'
           output: 'trivy-api.sarif'
           severity: 'CRITICAL,HIGH,MEDIUM'
@@ -130,8 +130,8 @@ jobs:
         with:
           persist-credentials: false
       # Scanned from the repository root with `api` as the target, so the SARIF
-      # paths are repository-relative (api/internal/...). Scanned from inside
-      # api/, they would be internal/... and code scanning would place the
+      # paths are repository-relative (server/internal/...). Scanned from inside
+      # server/, they would be internal/... and code scanning would place the
       # alerts on files that do not exist in this repository.
       - name: Run Semgrep
         working-directory: .
@@ -139,7 +139,7 @@ jobs:
           semgrep scan --metrics=off --sarif --output semgrep-api.sarif
           --config p/golang --config p/secrets --config p/dockerfile
           --exclude 'vendor' --exclude '*_test.go'
-          api
+          server
       - name: Upload Semgrep results
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         # The merge queue deletes its temporary gh-readonly-queue branch when a group
@@ -162,16 +162,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Run Snyk to check for vulnerabilities
         uses: snyk/actions/golang@9adf32b1121593767fc3c057af55b55db032dc04 # v1.0.0
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --severity-threshold=high --file=api/go.mod
+          args: --severity-threshold=high --file=server/go.mod
 
   # Weekly sweep + PRs into main (release candidates). Not on every
   # PR: building the image costs minutes and the fs scan covers dependencies.
@@ -200,7 +200,7 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: api
+          context: server
           push: false
           load: true
           tags: openctem-api:scan

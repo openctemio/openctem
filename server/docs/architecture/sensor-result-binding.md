@@ -352,20 +352,20 @@ is not part of it yet.
 
 | What | Where |
 |---|---|
-| Binding, coverage, roles | `api/internal/app/ingest/binding.go` |
-| Hostname-scoped jobs (location binding) | `api/internal/app/ingest/job_bound.go` |
-| Channel of a sensor's findings | `api/internal/app/ingest/channel.go` |
-| Gate, quarantine, review, `OpenCommand` and `OpenSharedCommand` (shared with the v2 receiver) | `api/internal/app/ingest/quarantine.go` |
-| Shared-sensor binding of v2 writes (`bind`) | `api/internal/app/ingest/v2_receiver.go` |
-| Limited asset merge | `api/internal/app/ingest/processor_assets.go` (`mergeInto`) |
-| Trusted collectors, complete reports | `api/internal/app/ingest/collector_trust.go`, `collector_reports.go`, `api/internal/infra/postgres/collector_asset_repository.go` |
-| Human-resolved reopen guard | `api/internal/app/ingest/processor_findings.go` (`withoutHumanResolved`), `api/internal/infra/postgres/finding_human_resolved.go` |
-| Auto-resolve gating | `api/internal/app/ingest/service.go` (in-process ingests), `v2.go` (`CommitV2Report`, `coveredByCommand`) |
-| v2 segment gate | `api/internal/app/ingest/v2_jobs.go` (`processSegment`), `quarantine.go` (`admitV2Segment`) |
-| Lease epoch at accept and at processing | `api/internal/app/ingest/v2_receiver.go` (`createReport`), `queued_sensor.go` (`heldRun`) |
-| v2 results routes | `api/internal/infra/http/handler/sensor_results_v2_handler.go` |
-| Review API | `api/internal/infra/http/handler/sensor_result_handler.go` |
-| Store | `api/internal/infra/postgres/sensor_result_repository.go`, `api/pkg/domain/sensorresult` |
+| Binding, coverage, roles | `server/internal/app/ingest/binding.go` |
+| Hostname-scoped jobs (location binding) | `server/internal/app/ingest/job_bound.go` |
+| Channel of a sensor's findings | `server/internal/app/ingest/channel.go` |
+| Gate, quarantine, review, `OpenCommand` and `OpenSharedCommand` (shared with the v2 receiver) | `server/internal/app/ingest/quarantine.go` |
+| Shared-sensor binding of v2 writes (`bind`) | `server/internal/app/ingest/v2_receiver.go` |
+| Limited asset merge | `server/internal/app/ingest/processor_assets.go` (`mergeInto`) |
+| Trusted collectors, complete reports | `server/internal/app/ingest/collector_trust.go`, `collector_reports.go`, `server/internal/infra/postgres/collector_asset_repository.go` |
+| Human-resolved reopen guard | `server/internal/app/ingest/processor_findings.go` (`withoutHumanResolved`), `server/internal/infra/postgres/finding_human_resolved.go` |
+| Auto-resolve gating | `server/internal/app/ingest/service.go` (in-process ingests), `v2.go` (`CommitV2Report`, `coveredByCommand`) |
+| v2 segment gate | `server/internal/app/ingest/v2_jobs.go` (`processSegment`), `quarantine.go` (`admitV2Segment`) |
+| Lease epoch at accept and at processing | `server/internal/app/ingest/v2_receiver.go` (`createReport`), `queued_sensor.go` (`heldRun`) |
+| v2 results routes | `server/internal/infra/http/handler/sensor_results_v2_handler.go` |
+| Review API | `server/internal/infra/http/handler/sensor_result_handler.go` |
+| Store | `server/internal/infra/postgres/sensor_result_repository.go`, `server/pkg/domain/sensorresult` |
 
 ## Not yet
 

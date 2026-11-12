@@ -14,8 +14,8 @@ import (
 	"context"
 	"fmt"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CodeClosesCriticalFindings is the error code of a closing exclusion that

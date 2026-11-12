@@ -7,11 +7,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/durablejob"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/durablejob"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
-// Durable jobs (api/docs/architecture/durable-jobs.md): rows queued in the
+// Durable jobs (server/docs/architecture/durable-jobs.md): rows queued in the
 // transaction of the change that needs them, claimed with FOR UPDATE SKIP
 // LOCKED, so every replica may run this controller; a job runs on one.
 

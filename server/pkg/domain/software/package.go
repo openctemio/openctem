@@ -2,7 +2,7 @@ package software
 
 // Package observations: what a producer (sensor or CI SCA tool, SBOM upload,
 // finding import) reports about the packages one asset is built from.
-// Design: api/docs/rfcs/RFC-070-software-components-inventory.md.
+// Design: server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Package link relationship values.

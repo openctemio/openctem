@@ -1,5 +1,5 @@
 # OpenCTEM gateway (Caddy with the layer4 module), from the openctem-gateway
-# release archive (api/docs/deployment/binary-install.md). It runs the same
+# release archive (server/docs/deployment/binary-install.md). It runs the same
 # entrypoint and Caddyfile as the gateway container: the settings checks, the
 # internal CA export, then Caddy.
 #

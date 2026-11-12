@@ -28,8 +28,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/threatsource"
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/internal/app/threatsource"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 )
 
 // Metadata keys of the sync status row.

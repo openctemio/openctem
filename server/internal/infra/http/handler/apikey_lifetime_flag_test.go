@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	apikeydom "github.com/openctemio/openctem/api/pkg/domain/apikey"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	apikeydom "github.com/openctemio/openctem/server/pkg/domain/apikey"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestExceedsLifetime(t *testing.T) {

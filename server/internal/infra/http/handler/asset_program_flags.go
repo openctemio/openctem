@@ -9,9 +9,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ProgramAssetFlags are one asset's derived program fields.

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // The projection reads each implemented capability's param mapping from

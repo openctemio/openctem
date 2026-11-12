@@ -8,7 +8,7 @@ package integration
 // per-report cost into a per-finding cost (an N+1) is caught before it ships.
 //
 // A change that legitimately needs more statements, or saves some, rewrites
-// the budget with `make budgets-update` (from api/, or the repository root);
+// the budget with `make budgets-update` (from server/, or the repository root);
 // the diff of the budget file is then part of the review.
 
 import (
@@ -25,14 +25,14 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/internal/testdb/sqlcount"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/testdb/sqlcount"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 var updateBudgets = flag.Bool("update-budgets", false, "rewrite testdata/ingest_budget.json with the measured counts")

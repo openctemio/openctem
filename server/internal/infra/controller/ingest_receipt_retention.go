@@ -9,7 +9,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
 )
 
 // IngestReceiptRetentionInterval is how often the purge runs.

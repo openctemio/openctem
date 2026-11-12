@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
 )
 
 // registerInboxRoutes mounts /api/v1/me/inbox: the signed-in person's own

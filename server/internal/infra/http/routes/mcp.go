@@ -1,9 +1,9 @@
 package routes
 
 import (
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
 )
 
 // MCPDiscovery is the OAuth discovery of the MCP endpoint (RFC-062 §4): the

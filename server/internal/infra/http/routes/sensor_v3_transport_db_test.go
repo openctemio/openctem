@@ -14,8 +14,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 func (h *v3Harness) protocolOf(sensorID string) (version int, binding, reason string) {

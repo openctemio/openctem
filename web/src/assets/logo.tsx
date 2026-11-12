@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
  * OpenCTEM logo: the Scope "Caught" symbol (two corner brackets with the
  * marker caught in the open corner) and the outlined Sora wordmark.
  * Construction, colour, clear space and minimum sizes are in
- * `api/docs/architecture/brand.md` and `src/assets/brand/README.md`.
+ * `server/docs/architecture/brand.md` and `src/assets/brand/README.md`.
  *
  * Every part is a path or a shape (nothing depends on installed fonts) and
  * draws in `currentColor`. The marker square is the only accent: it takes

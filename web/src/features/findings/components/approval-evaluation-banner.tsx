@@ -2,7 +2,7 @@
 
 /**
  * Why a finding request needs the approval it does, and who may give it
- * (the approval policy's evaluation, api/docs/rfcs/RFC-111-approval-policy.md).
+ * (the approval policy's evaluation, server/docs/rfcs/RFC-111-approval-policy.md).
  * Informational only: the API decides again when the request is made.
  */
 

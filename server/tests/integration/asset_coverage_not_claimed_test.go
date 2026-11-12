@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
 )
 
 // unclaimed ends the capability's last run as no sensor took it: its task

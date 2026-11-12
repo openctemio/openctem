@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
+	mcpoauthapp "github.com/openctemio/openctem/server/internal/app/mcpoauth"
 )
 
 // ReadsOnOwnScope is the data-scope flag of a delegated credential. Only an

@@ -14,8 +14,8 @@ import (
 	"net/netip"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 var _ proxypool.ExitStore = (*ProxyPoolRepository)(nil)

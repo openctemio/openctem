@@ -6,9 +6,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/openctemio/openctem/api/pkg/extension"
-	"github.com/openctemio/openctem/api/pkg/extension/example"
-	"github.com/openctemio/openctem/api/pkg/version"
+	"github.com/openctemio/openctem/server/pkg/extension"
+	"github.com/openctemio/openctem/server/pkg/extension/example"
+	"github.com/openctemio/openctem/server/pkg/version"
 )
 
 func ok(name string) extension.Extension {

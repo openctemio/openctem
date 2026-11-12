@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // finishStopped completes a command with the legacy shape of a killed run:

@@ -9,9 +9,9 @@ import (
 
 	jwtv5 "github.com/golang-jwt/jwt/v5"
 
-	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
-	"github.com/openctemio/openctem/api/pkg/oidc"
+	identityproviderdom "github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
+	"github.com/openctemio/openctem/server/pkg/oidc"
 )
 
 // backchannelLogoutEvent is the OIDC Back-Channel Logout 1.0 event identifier

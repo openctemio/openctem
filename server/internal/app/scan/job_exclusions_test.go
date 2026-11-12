@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/scope/ipset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A job carries the exclusions near its range pieces, so the sensor can cut

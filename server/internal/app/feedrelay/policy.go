@@ -3,7 +3,7 @@ package feedrelay
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/threatsource"
+	"github.com/openctemio/openctem/server/internal/app/threatsource"
 )
 
 // ThreatSourcePolicy is the KEV and EPSS source policy with relay mode on

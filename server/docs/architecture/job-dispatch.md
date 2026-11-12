@@ -800,17 +800,17 @@ change and this page updated when it lands:
 
 ## Key files
 
-- `api/internal/app/scan/trigger.go`, `api/internal/app/scan/step_plan.go`,
-  `api/internal/app/scanrun/run.go`, `api/internal/app/scanrun/host_chunks.go`
-- `api/internal/app/command/service.go` (claim, transitions),
-  `api/internal/app/command/job_signing.go`, `api/internal/app/command/host_split.go`,
-  `api/internal/app/command/expiration_checker.go`, `api/internal/app/command/shared_claim.go`
-- `api/internal/infra/postgres/command_repository.go` (predicates, fair order, claim),
+- `server/internal/app/scan/trigger.go`, `server/internal/app/scan/step_plan.go`,
+  `server/internal/app/scanrun/run.go`, `server/internal/app/scanrun/host_chunks.go`
+- `server/internal/app/command/service.go` (claim, transitions),
+  `server/internal/app/command/job_signing.go`, `server/internal/app/command/host_split.go`,
+  `server/internal/app/command/expiration_checker.go`, `server/internal/app/command/shared_claim.go`
+- `server/internal/infra/postgres/command_repository.go` (predicates, fair order, claim),
   `command_shared_claim.go`, `command_lease.go`, `command_progress.go`, `command_notify.go`
-- `api/internal/infra/controller/job_recovery.go`
-- `api/internal/app/sensor/doorbell.go`, `api/internal/infra/sensortransport/subscribe.go`,
-  `api/internal/infra/redis/sensor_wake.go`
-- `api/internal/infra/http/handler/sensor_control_v2_handler.go`, `api/internal/infra/http/routes/sensor_v2.go`
-- `api/pkg/domain/command/` (entity, lease, host keys, placement), `api/pkg/jobsign`, `api/cmd/signer`, `api/internal/signer`
+- `server/internal/infra/controller/job_recovery.go`
+- `server/internal/app/sensor/doorbell.go`, `server/internal/infra/sensortransport/subscribe.go`,
+  `server/internal/infra/redis/sensor_wake.go`
+- `server/internal/infra/http/handler/sensor_control_v2_handler.go`, `server/internal/infra/http/routes/sensor_v2.go`
+- `server/pkg/domain/command/` (entity, lease, host keys, placement), `server/pkg/jobsign`, `server/cmd/signer`, `server/internal/signer`
 - sdk-go: `pkg/core/command_poller.go`, `pkg/core/command_queue.go`, `pkg/core/doorbell.go`,
   `pkg/core/job_signing.go`, `pkg/jobsig`, `pkg/client/lease.go`

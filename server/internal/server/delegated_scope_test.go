@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 )
 
 // The shared data-scope caller marks MCP OAuth and API key requests as

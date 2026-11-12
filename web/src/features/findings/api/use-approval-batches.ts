@@ -1,6 +1,6 @@
 /**
  * Group exceptions: one approval decision covering the open findings of a
- * remediation task (api/docs/rfcs/RFC-111-approval-policy.md). The task asks
+ * remediation task (server/docs/rfcs/RFC-111-approval-policy.md). The task asks
  * for it (preview, then request); the approvals inbox decides it once.
  */
 

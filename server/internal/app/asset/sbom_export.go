@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	componentdom "github.com/openctemio/openctem/server/pkg/domain/component"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MaxSBOMComponents is the most components one SBOM export holds. A larger

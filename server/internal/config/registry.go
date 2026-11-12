@@ -15,7 +15,7 @@ import (
 
 // The environment variable registry (env_registry.yaml) is the one list of
 // every variable the API and its tools read. Startup validation, the
-// generated api/.env.example and the generated reference page come from it,
+// generated server/.env.example and the generated reference page come from it,
 // and TestEnvRegistryMatchesCode keeps it equal to what the code reads.
 
 //go:embed env_registry.yaml

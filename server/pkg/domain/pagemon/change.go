@@ -3,7 +3,7 @@ package pagemon
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Change is one detected change of a watched URL.

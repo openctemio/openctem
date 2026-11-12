@@ -12,7 +12,7 @@ import { AutoClosedList, ReadyToCloseList, useReadyToCloseCount } from '@/featur
 /**
  * Findings > Ready to close: closes waiting for a person, and what the
  * platform closed by itself in the last 7 days
- * (api/docs/architecture/finding-verification-plan.md, "Ready to close").
+ * (server/docs/architecture/finding-verification-plan.md, "Ready to close").
  */
 export default function ReadyToClosePage() {
   const { t } = useTranslation()

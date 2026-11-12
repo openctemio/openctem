@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	bpapp "github.com/openctemio/openctem/api/internal/app/bountyprogram"
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	bpapp "github.com/openctemio/openctem/server/internal/app/bountyprogram"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 )
 
 // A program import or re-import audits the identification rules in force

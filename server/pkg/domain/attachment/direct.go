@@ -7,7 +7,7 @@ import (
 )
 
 // Short-lived direct downloads from a bucket
-// (api/docs/rfcs/RFC-084-file-storage.md §3.4).
+// (server/docs/rfcs/RFC-084-file-storage.md §3.4).
 
 // DirectDownloadTTL is how long a signed download URL works.
 const DirectDownloadTTL = 60 * time.Second

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/lookalike"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/lookalike"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Lookalike watches and candidates against the real schema. Requires DATABASE_URL.

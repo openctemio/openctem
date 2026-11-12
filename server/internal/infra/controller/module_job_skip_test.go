@@ -7,14 +7,14 @@ import (
 
 	"github.com/openctemio/contract/ctlookup"
 
-	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketlink"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	certmonitorapp "github.com/openctemio/openctem/server/internal/app/certmonitor"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketlink"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // Each test below proves that one background job leaves a tenant with its

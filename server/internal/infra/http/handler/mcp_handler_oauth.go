@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
 )
 
 // rpcInsufficientScope is the JSON-RPC error of a call refused for a missing

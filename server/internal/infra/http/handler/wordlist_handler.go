@@ -9,12 +9,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/contentpin"
-	wordlistapp "github.com/openctemio/openctem/api/internal/app/wordlist"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/wordlist"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/contentpin"
+	wordlistapp "github.com/openctemio/openctem/server/internal/app/wordlist"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/wordlist"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // maxWordlistBody bounds a create or update request: the list text plus

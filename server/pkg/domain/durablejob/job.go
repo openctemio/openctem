@@ -1,13 +1,13 @@
 // Package durablejob holds background jobs that must not be lost: rows
 // written in the same database transaction as the change that needs them,
-// and run by a worker that retries them (api/docs/architecture/durable-jobs.md).
+// and run by a worker that retries them (server/docs/architecture/durable-jobs.md).
 package durablejob
 
 import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Kind names what a job does.

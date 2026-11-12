@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
 )
 
 // RegistryTargetPairResponse is one built-in pair: a tool that accepts

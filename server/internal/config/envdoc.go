@@ -9,7 +9,7 @@ import (
 // Renderers for the files generated from env_registry.yaml (`make env-docs`,
 // cmd/envdoc). TestEnvDocsUpToDate fails when a committed copy is stale.
 
-// Generated file paths, relative to api/.
+// Generated file paths, relative to server/.
 const (
 	EnvExamplePath   = ".env.example"
 	EnvReferencePath = "docs/configuration/environment-variables.md"
@@ -19,8 +19,8 @@ var componentTitles = []struct{ ID, Title, Intro string }{
 	{"api", "API server", "Read by the API server at start-up (`server`). The server refuses to start when a variable under one of its prefixes is a likely misspelling of a listed name, or when a typed value does not parse; `server -check-config` runs the same checks without starting."},
 	{"tool", "Administration tools", "Read by the command-line tools shipped with the server (`bootstrap-admin`, `rekey`, `openctem-signer`, ...), in addition to the database variables."},
 	{"web", "Web console", "Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the browser bundle at build time: never put a secret in one."},
-	{"gateway", "Gateway", "Read by the bundled Caddy gateway (`api/deploy/gateway`)."},
-	{"compose", "Docker Compose stack", "Read by `api/deploy/docker-compose.yml` from its `.env` file."},
+	{"gateway", "Gateway", "Read by the bundled Caddy gateway (`server/deploy/gateway`)."},
+	{"compose", "Docker Compose stack", "Read by `server/deploy/docker-compose.yml` from its `.env` file."},
 	{"allinone", "All-in-one image", "Read by the all-in-one image's supervisor."},
 }
 
@@ -53,7 +53,7 @@ func wrap(s string, width int, prefix string) []string {
 	return out
 }
 
-// RenderEnvExample renders api/.env.example: the variables a local
+// RenderEnvExample renders server/.env.example: the variables a local
 // development checkout sets. Everything else keeps its default.
 func RenderEnvExample(r *EnvRegistry) string {
 	var b strings.Builder
@@ -113,7 +113,7 @@ func RenderEnvReference(r *EnvRegistry) string {
 	var b strings.Builder
 	b.WriteString(`# Environment variable reference
 
-<!-- GENERATED from api/internal/config/env_registry.yaml by "make env-docs". Do not edit. -->
+<!-- GENERATED from server/internal/config/env_registry.yaml by "make env-docs". Do not edit. -->
 
 Every environment variable OpenCTEM reads. **Default** is the value used when the
 variable is unset or empty (durations in Go syntax: ` + "`30s`, `5m`, `24h`" + `; lists

@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	samldom "github.com/openctemio/openctem/server/pkg/domain/samlprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ssochange"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func certPEMValidUntil(t *testing.T, notAfter time.Time) string {

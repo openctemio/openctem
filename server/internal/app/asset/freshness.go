@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"time"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
-	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	freshdom "github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/assetresolution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CreatedAssetsHook receives assets a person created (manual create, CSV

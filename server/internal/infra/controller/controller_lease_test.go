@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/controllerlease"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/controllerlease"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // fakeLeases grants a lease to the first holder only, until released.

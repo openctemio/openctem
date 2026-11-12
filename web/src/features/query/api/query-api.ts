@@ -1,5 +1,5 @@
 /**
- * The search box API (api/docs/architecture/query-language.md, "Short
+ * The search box API (server/docs/architecture/query-language.md, "Short
  * form"): parse a filter, complete values, read the caller's fields. Every
  * call runs as the signed-in person; nothing here sends a tenant or a scope.
  */

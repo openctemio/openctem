@@ -25,7 +25,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // Reasons the I-JSON pre-pass refuses a document. They map to 422

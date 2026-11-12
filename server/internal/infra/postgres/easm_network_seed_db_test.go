@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/easmseed"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Network seeds against the real schema. Requires DATABASE_URL.

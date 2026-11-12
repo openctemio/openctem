@@ -12,10 +12,10 @@
 # build arguments. CI images take no commit-specific build argument (no
 # version, commit or time), which is what makes a content key possible; the
 # release build passes them and so never reuses a CI image as-is
-# (api/docs/development/ci-cd.md, "Build images once").
+# (server/docs/development/ci-cd.md, "Build images once").
 #
-#   api        the API (target production): tree api
-#   web        the web app: tree web, plus tree api and the generate-contract
+#   api        the API (target production): tree server
+#   web        the web app: tree web, plus tree server and the generate-contract
 #              action, because the web compiles against contract files
 #              generated from the Go source
 #   console    the platform console (web Dockerfile, target console): as web
@@ -32,13 +32,13 @@ tree() { git rev-parse --verify --quiet "${rev}:$1" || { echo "image-key: $1 doe
 h() { sha256sum | cut -c1-40; }
 
 case "$image" in
-  api)       parts=("api:$(tree api)" "file:api/Dockerfile" "target:production" "args:") ;;
+  api)       parts=("api:$(tree server)" "file:server/Dockerfile" "target:production" "args:") ;;
   web | console)
     target=""; [ "$image" = console ] && target=console
-    parts=("web:$(tree web)" "api:$(tree api)" "contract:$(tree .github/actions/generate-contract)"
+    parts=("web:$(tree web)" "api:$(tree server)" "contract:$(tree .github/actions/generate-contract)"
            "file:web/Dockerfile" "target:$target" "args:") ;;
   allinone)
-    parts=("allinone:$(tree deploy/allinone)" "gateway:$(tree api/deploy/gateway)"
+    parts=("allinone:$(tree deploy/allinone)" "gateway:$(tree server/deploy/gateway)"
            "api:$("$0" api "$rev")" "web:$("$0" web "$rev")" "console:$("$0" console "$rev")"
            "file:deploy/allinone/Dockerfile" "args:") ;;
   *) echo "image-key: unknown image '$image'" >&2; exit 2 ;;

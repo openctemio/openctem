@@ -3,7 +3,7 @@ package middleware
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Bulk units come out of the same per-tenant bucket as single requests, and

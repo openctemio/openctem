@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	mcpoauthapp "github.com/openctemio/openctem/server/internal/app/mcpoauth"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // fakeTokens accepts one access token and returns a fixed principal.

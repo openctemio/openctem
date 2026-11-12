@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // TenantPermissionChecker answers whether a user holds a permission in a

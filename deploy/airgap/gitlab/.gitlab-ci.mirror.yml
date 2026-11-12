@@ -1,5 +1,5 @@
 # GitLab CI: mirror each new OpenCTEM release into your registry, verified.
-# Guide: api/docs/deployment/air-gapped.md ("CI mirror job").
+# Guide: server/docs/deployment/air-gapped.md ("CI mirror job").
 #
 # discover -> mirror (to staging, signatures checked at the source and again in
 # staging) -> scan (Trivy) -> promote (staging -> trusted, checked again) ->

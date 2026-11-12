@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AttachmentRetentionSweeper purges evidence files the retention periods
-// allow (api/docs/architecture/file-storage.md, "Retention").
+// allow (server/docs/architecture/file-storage.md, "Retention").
 type AttachmentRetentionSweeper interface {
 	SweepRetention(ctx context.Context) (int, error)
 }

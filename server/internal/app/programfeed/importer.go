@@ -14,11 +14,11 @@ import (
 
 	"github.com/openctemio/contract/transfer"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	feed "github.com/openctemio/openctem/api/pkg/programfeed"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	feed "github.com/openctemio/openctem/server/pkg/programfeed"
 )
 
 // BundleSource hands the importer a bundle directory (a mirror or an

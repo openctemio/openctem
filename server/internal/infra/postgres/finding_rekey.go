@@ -1,7 +1,7 @@
 package postgres
 
 // Re-fingerprint storage (RFC-043 §6).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 //
 // The job reads a tenant's findings that are still on an older identity
 // version in id order, recomputes each key and re-keys it. A key that another
@@ -22,8 +22,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // causeRefingerprint labels merges made by the job.

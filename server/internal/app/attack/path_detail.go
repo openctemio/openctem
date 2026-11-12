@@ -4,7 +4,7 @@ package attack
 // point to the asset, the finding that enables each step, the product of the
 // step weights as the path likelihood, and the choke points (the assets whose
 // findings, once fixed, cut the most of those routes).
-// Design: api/docs/architecture/attack-paths.md.
+// Design: server/docs/architecture/attack-paths.md.
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // PathFindingReader returns, per asset, the open finding count, the KEV count

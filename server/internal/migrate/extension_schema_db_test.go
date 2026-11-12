@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/adminbootstrap"
-	"github.com/openctemio/openctem/api/internal/migrate"
-	"github.com/openctemio/openctem/api/internal/testdb"
+	"github.com/openctemio/openctem/server/internal/adminbootstrap"
+	"github.com/openctemio/openctem/server/internal/migrate"
+	"github.com/openctemio/openctem/server/internal/testdb"
 )
 
 // A database that ran an extension build (docs/development/editions.md) has

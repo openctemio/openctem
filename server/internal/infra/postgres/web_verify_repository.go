@@ -8,8 +8,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/webverify"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/webverify"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // WebVerifyRepository stores the verification ledger of the web verification

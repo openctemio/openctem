@@ -10,8 +10,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
 )
 
 // DB returns a database for this test alone with the core migrations

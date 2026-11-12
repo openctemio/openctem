@@ -16,14 +16,14 @@ import (
 	"sync"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentcatalog"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Errors the handlers map.

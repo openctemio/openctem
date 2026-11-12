@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io"
 
-	attachmentdom "github.com/openctemio/openctem/api/pkg/domain/attachment"
-	"github.com/openctemio/openctem/api/pkg/domain/pentest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	attachmentdom "github.com/openctemio/openctem/server/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/pentest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Report templates and stored reports in the organization's file storage
-// (api/docs/rfcs/RFC-084-file-storage.md): the same storage resolution as
+// (server/docs/rfcs/RFC-084-file-storage.md): the same storage resolution as
 // attachments (an organization's own bucket, failing closed), so the files
 // are erased with the organization.
 

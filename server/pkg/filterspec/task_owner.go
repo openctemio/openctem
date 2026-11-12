@@ -3,7 +3,7 @@ package filterspec
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // TaskOwnerFindingSQL is the condition "the finding findingExpr is an active

@@ -1,4 +1,4 @@
-# Root-level ignores. api/.gitignore and web/.gitignore keep their own
+# Root-level ignores. server/.gitignore and web/.gitignore keep their own
 # language-specific rules; this file covers what bites at the root.
 
 # Secrets / env (whitelist examples)
@@ -12,7 +12,7 @@ go.work
 go.work.sum
 
 # Sibling checkouts that CI's Security Gates job (and local security-lint runs)
-# place next to api/: <root>/{api,agent,sdk-go}
+# place next to server/: <root>/{server,agent,sdk-go}
 /agent/
 /sdk-go/
 
@@ -27,11 +27,11 @@ go.work.sum
 
 # Generated contract files: produced by `make generate` (CI, image builds and
 # local dev), never committed, so pull requests cannot conflict on them. See
-# api/docs/development/ci-cd.md, "Generated contract files".
-/api/api/openapi/swagger.yaml
-/api/api/openapi/swagger.json
-/api/api/openapi/docs.go
-/api/api/openapi/routes.txt
+# server/docs/development/ci-cd.md, "Generated contract files".
+/server/api/openapi/swagger.yaml
+/server/api/openapi/swagger.json
+/server/api/openapi/docs.go
+/server/api/openapi/routes.txt
 /web/src/lib/api/generated/api.types.ts
 /web/src/config/api-route-permissions.json
 /web/src/config/authz-matrix.json
@@ -44,8 +44,8 @@ __pycache__/
 /*.out
 /*.txt
 /*.log
-/api/*.txt
-/api/*.out
+/server/*.txt
+/server/*.out
 /web/*.txt
 /web/*.out
 

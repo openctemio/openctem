@@ -7,7 +7,7 @@ import (
 )
 
 // Template data model: the values an organization's report template can
-// read (api/docs/architecture/pentest-report-templates.md lists every key).
+// read (server/docs/architecture/pentest-report-templates.md lists every key).
 // It is built only from a ReportInput, which holds one campaign of one
 // tenant, so a template can never reach other data.
 

@@ -8,7 +8,7 @@ package scanrun
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // settleSplitParent settles the parent of the zone child run once every

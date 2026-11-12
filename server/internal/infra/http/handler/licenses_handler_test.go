@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/notices"
+	"github.com/openctemio/openctem/server/pkg/notices"
 )
 
 func getLicenses(t *testing.T, h *LicensesHandler) notices.Document {

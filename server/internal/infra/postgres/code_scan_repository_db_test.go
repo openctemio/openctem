@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/codescan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/codescan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func seedCodeScanRepo(ctx context.Context, t *testing.T, db *sql.DB, tenantID shared.ID, name, defaultBranch string) shared.ID {

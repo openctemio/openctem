@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/simulation"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/simulation"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // SimulationRunRepository implements simulation.RunRepository against the

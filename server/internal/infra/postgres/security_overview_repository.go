@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/securityoverview"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/securityoverview"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SecurityOverviewRepository counts the rows behind the security overview

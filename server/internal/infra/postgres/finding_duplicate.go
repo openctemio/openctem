@@ -1,7 +1,7 @@
 package postgres
 
 // "Mark duplicate of" storage (RFC-043 §9).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 //
 // A user folds a finding into another through the same merge an asset merge
 // and the re-fingerprint job use: the canonical finding inherits the stronger
@@ -17,8 +17,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // MarkDuplicateOf folds duplicateID into canonicalID, both of tenantID, in one

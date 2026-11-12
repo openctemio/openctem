@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // runIssueLinks derives same-issue links of stored findings, per tenant.

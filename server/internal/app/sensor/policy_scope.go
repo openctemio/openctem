@@ -16,7 +16,7 @@ import (
 
 	"github.com/openctemio/contract/addrscope"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // Where the policy prefill came from (PolicyTemplateData.Source).

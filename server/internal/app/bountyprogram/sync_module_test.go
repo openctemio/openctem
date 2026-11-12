@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
 )
 
 type scopeOff map[string]bool

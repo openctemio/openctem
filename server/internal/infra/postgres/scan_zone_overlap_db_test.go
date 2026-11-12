@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
 )
 
 // Overlap ambiguity is per tenant (research 466 D9): another tenant's zone

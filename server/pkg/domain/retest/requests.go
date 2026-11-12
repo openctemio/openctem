@@ -8,7 +8,7 @@ import (
 
 	"github.com/openctemio/contract/edgeprotect"
 
-	"github.com/openctemio/openctem/api/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/evidence"
 )
 
 // RequestResult is what one request of a re-run saw, as the sensor reports it

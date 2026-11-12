@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sla"
+	"github.com/openctemio/openctem/server/pkg/domain/sla"
 )
 
 // A tenant has one default per practice: a compliance default sits beside

@@ -2,7 +2,7 @@ package finding
 
 // The daily digest of finding requests waiting for each approver, and of
 // the decisions one person made alone in the last day
-// (api/docs/architecture/finding-status-lifecycle.md, "Approvals").
+// (server/docs/architecture/finding-status-lifecycle.md, "Approvals").
 //
 // Threat model: the digest changes nobody's power; it reminds, and it makes
 // every single-person decision (a false positive or accepted risk decided
@@ -22,11 +22,11 @@ import (
 	"strings"
 	"time"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/weblink"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/weblink"
 )
 
 // ApprovalDigestInterval is the shortest time between two digests of one

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
 )
 
 // enumerate.subdomains is planned (an active stage); an intrusive stage and

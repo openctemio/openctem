@@ -13,7 +13,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
 )
 
 // addRefusedItems books the refused and held findings on the output's item

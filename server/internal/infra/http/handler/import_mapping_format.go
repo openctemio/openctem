@@ -5,10 +5,10 @@ import (
 	"errors"
 	"net/http"
 
-	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/importmapping"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	appimportmapping "github.com/openctemio/openctem/server/internal/app/importmapping"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/importmapping"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ImportMappingResolver resolves "format=mapping:<ref>[@<version>]" in the

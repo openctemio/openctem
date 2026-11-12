@@ -11,8 +11,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 func TestMigrationAssetRiskModelMovesBuiltInSettings(t *testing.T) {

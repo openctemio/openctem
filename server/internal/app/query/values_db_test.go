@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/query"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/query"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Value completion counts only what the caller can list: their tenant,

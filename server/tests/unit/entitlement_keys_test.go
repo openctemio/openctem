@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
 )
 
 // Every limit and every deniable feature goes through the entitlement

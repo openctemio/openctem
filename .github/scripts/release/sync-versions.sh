@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # sync-versions.sh: copy versions.yaml into every default that repeats it
-# (api/docs/rfcs/RFC-037).
+# (server/docs/rfcs/RFC-037).
 #
 # The API reads every version default from a byte-for-byte copy of
-# versions.yaml embedded at build time (api/internal/versions/versions.yaml):
-# go:embed cannot reach outside the Go module in api/. This script writes that
+# versions.yaml embedded at build time (server/internal/versions/versions.yaml):
+# go:embed cannot reach outside the Go module in server/. This script writes that
 # copy; no Go file holds a version, so a bump changes YAML (and the few
 # non-Go consumers below) only. A sensor or SDK release needs no bump at all:
 # running instances learn it from the signed release feed (RFC-037 §12).
@@ -16,7 +16,7 @@
 #   sync-versions.sh --root DIR operate on another checkout (tests)
 #   sync-versions.sh --release vX.Y.Z
 #                               the checkout is the release branch of vX.Y.Z
-#                               (or main right after it merged): api/deploy/VERSION
+#                               (or main right after it merged): server/deploy/VERSION
 #                               must be exactly vX.Y.Z, which may be newer than
 #                               the newest tag because the tag comes after
 #
@@ -28,7 +28,7 @@
 #   - versions.yaml values are versions (vX.Y.Z) or "" where "" is allowed,
 #     and every sensor product section (any section other than platform,
 #     sdk and ci) has its keys (the API's tests check the rest);
-#   - api/deploy/VERSION (the tag checkout's install version, written only on
+#   - server/deploy/VERSION (the tag checkout's install version, written only on
 #     a release branch) is not newer than the newest tag (when tags are
 #     present), except on the release branch that is about to create that tag
 #     (--release), where it must name exactly that version;
@@ -60,14 +60,14 @@ MANIFEST="$ROOT/versions.yaml"
 [[ -f "$MANIFEST" ]] || { echo "no versions.yaml at $ROOT" >&2; exit 2; }
 
 # The API's embedded copy of versions.yaml (whole file, byte for byte).
-EMBEDDED="api/internal/versions/versions.yaml"
+EMBEDDED="server/internal/versions/versions.yaml"
 
 # key | file (relative to the root) | closer | sed -E regex. Group 1 is the
 # text before the value, group 2 the value; the regex ends right after the
 # value's closing delimiter (closer: '"', '}' or nothing), which is put back.
 # Never a Go file: Go reads the embedded copy.
 CONSUMERS=(
-  'sensor.latest|api/deploy/docker-compose.sensor.yml|}|(SENSOR_VERSION:-)([^}]*)\}'
+  'sensor.latest|server/deploy/docker-compose.sensor.yml|}|(SENSOR_VERSION:-)([^}]*)\}'
   'ci.latest|web/src/features/ci-runners/lib/ci.ts|'"'"'|^(export const CI_RELEASE_FALLBACK = '"'"')([^'"'"']*)'"'"''
 )
 
@@ -111,13 +111,13 @@ for check in "${CHECKS[@]}"; do
 done
 
 # The platform version is the git tag. The only committed copy is
-# api/deploy/VERSION, which a tag's checkout installs by default; cut-release.sh
+# server/deploy/VERSION, which a tag's checkout installs by default; cut-release.sh
 # writes it on the release branch and it never reaches develop. Only a release
 # branch (--release) may name the version it is about to tag, and it must name
 # exactly that.
 for section in platform chart; do
   if grep -qE "^${section}:" "$MANIFEST"; then
-    problem "versions.yaml: the '$section' section is gone: the platform version is the git tag (api/deploy/VERSION on a release branch), the chart version lives in openctemio/helm-charts"
+    problem "versions.yaml: the '$section' section is gone: the platform version is the git tag (server/deploy/VERSION on a release branch), the chart version lives in openctemio/helm-charts"
   fi
 done
 latest_tag="$(rel_latest_tag "$ROOT" 2>/dev/null || true)"

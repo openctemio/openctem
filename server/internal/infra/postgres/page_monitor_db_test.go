@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	pagemonapp "github.com/openctemio/openctem/api/internal/app/pagemon"
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/pagemon"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	pagemonapp "github.com/openctemio/openctem/server/internal/app/pagemon"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/pagemon"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // pmScope is the caller's data scope for the service: Resolve returns the

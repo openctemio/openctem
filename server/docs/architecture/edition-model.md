@@ -61,18 +61,18 @@ day one and add a licence later.
 
 | Kind | Where | Why |
 |---|---|---|
-| In-process paid features | An extension in its own repository; the paid build is its own Go module that requires `github.com/openctemio/openctem/api`, imports the extension and calls `api/pkg/server.Main()` | They need core transactions, authorization, tenant scope, audit and the read engine. A separate service would duplicate the tenant-isolation surface |
+| In-process paid features | An extension in its own repository; the paid build is its own Go module that requires `github.com/openctemio/openctem/server`, imports the extension and calls `server/pkg/server.Main()` | They need core transactions, authorization, tenant scope, audit and the read engine. A separate service would duplicate the tenant-isolation surface |
 | Components with their own runtime | Separate components on open protocols (sdk-go, CTIS), verifying their licence themselves | No second authorization surface |
 | Billing, sign-up, metering | Separate services of the hosted service | Not part of the product a customer installs |
 | The public extension API, the grant seam and the guarantees of any grant provider | This repository | Plain, documented, versioned interfaces with a Community default |
 
 A paid build is one custom build of OpenCTEM, made the way anyone can make one. Because it is a
-separate Go module, Go's `internal` rule lets it import only the public `api/pkg/...` packages: the
+separate Go module, Go's `internal` rule lets it import only the public `server/pkg/...` packages: the
 compiler enforces "public API only", and the extension's dependencies stay in its own `go.mod`.
 
 ### Extension points
 
-`api/pkg/extension` is the public back-end API: one `Extension` value per extension, several per
+`server/pkg/extension` is the public back-end API: one `Extension` value per extension, several per
 build, each field optional with a tested Community default. Routes are mounted only behind
 authentication, the organization from the credential, membership, CSRF, the declared permission and
 grant; dependencies handed to an extension are interfaces (a tenant-scoped store, declared settings,
@@ -110,10 +110,10 @@ tier field) are removed. See [limits and feature denies](limits.md) and RFC-145.
 1. The web mount points (`web/src/extensions/`, `(extensions)` route groups) are git-ignored and
    empty here; no extension Go code is ever placed in a checkout of this repository.
 2. The required check **Edition fence** fails on a tracked mount-point file, a direct import of a mount
-   point, a `replace` directive in `api/go.mod`, or a restricted word (the list is kept out of this
+   point, a `replace` directive in `server/go.mod`, or a restricted word (the list is kept out of this
    repository). The pre-commit hook runs the same script.
-3. CODEOWNERS requires a maintainer for `api/pkg/extension/`, `api/pkg/server/`,
-   `api/pkg/domain/limits/`, `web/src/lib/extension/` and the fence.
+3. CODEOWNERS requires a maintainer for `server/pkg/extension/`, `server/pkg/server/`,
+   `server/pkg/domain/limits/`, `web/src/lib/extension/` and the fence.
 4. The pull request template has an "Extension point?" checklist.
 
 ## Day-to-day workflow

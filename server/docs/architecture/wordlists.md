@@ -21,7 +21,7 @@ the plan gate.
 
 ## The build
 
-`api/cmd/wordlists-build` reads `api/cmd/wordlists-build/sources.yaml`:
+`server/cmd/wordlists-build` reads `server/cmd/wordlists-build/sources.yaml`:
 
 1. Every upstream file is pinned by repository commit **and** by the sha256 of the file. The
    download is over https from `raw.githubusercontent.com` only, is capped at 32 MiB per file
@@ -45,7 +45,7 @@ the plan gate.
    (the release workflow builds twice and compares).
 
 ```
-cd api
+cd server
 go run ./cmd/wordlists-build -out dist/wordlists
 ```
 
@@ -56,7 +56,7 @@ the release carries the asset sha256 of each pack.
 ## Built-in packs
 
 The packs of the current release are also embedded in the API
-(`api/internal/app/contentpin/builtin/`: the two archives and `release.json`), so subdomain
+(`server/internal/app/contentpin/builtin/`: the two archives and `release.json`), so subdomain
 enumeration works on a fresh install with no import and no internet access:
 
 - At start the API installs each embedded pack whose name has **no `stable` channel**, through the

@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/openctemio/openctem/api/internal/migrate"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/migrate"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // migrationUpFileRe matches a migration up file: VERSION_name.up.sql.

@@ -6,7 +6,7 @@ import (
 	"html/template"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // SummaryInput is the data for a tenant-wide findings executive summary — the

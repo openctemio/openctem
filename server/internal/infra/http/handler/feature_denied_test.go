@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
 )
 
 // A change refused by the plan answers 403 FEATURE_NOT_INCLUDED naming the

@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
 )
 
 func grantFixture(t *testing.T) (ed25519.PrivateKey, ed25519.PublicKey, []byte, *pairing.SignedGrant) {

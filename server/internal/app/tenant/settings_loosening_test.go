@@ -3,7 +3,7 @@ package tenant
 import (
 	"testing"
 
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 func TestLifecycleLoosened(t *testing.T) {

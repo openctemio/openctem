@@ -23,8 +23,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/sealed"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/relay"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/sealed"
 )
 
 // The relay connector is the platform side of relay mode: it dials the

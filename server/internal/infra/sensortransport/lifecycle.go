@@ -10,7 +10,7 @@ import (
 
 	proxyproto "github.com/pires/go-proxyproto"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // EnableMTLS prepares the gRPC binding (Start starts it).

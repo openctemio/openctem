@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/sealed"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/relay"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/sealed"
 )
 
 type fakeAPI struct {

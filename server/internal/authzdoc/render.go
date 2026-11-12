@@ -34,7 +34,7 @@ const (
 	yes            = "yes"
 	referenceTitle = "Authorization reference"
 	identityTitle  = "Identity and access"
-	generatedNote  = "<!-- Generated from the OpenCTEM source by `go run ./cmd/gen-authz-docs` in api/. Do not edit by hand. -->\n\n"
+	generatedNote  = "<!-- Generated from the OpenCTEM source by `go run ./cmd/gen-authz-docs` in server/. Do not edit by hand. -->\n\n"
 )
 
 func frontMatter(opts MarkdownOptions, title, parent, grandParent string, order int, hasChildren bool) string {

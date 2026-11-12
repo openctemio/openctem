@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // setRepo is the attribute source repository's set side, when it has one.

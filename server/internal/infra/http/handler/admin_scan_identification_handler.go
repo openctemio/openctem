@@ -5,9 +5,9 @@ import (
 
 	"github.com/openctemio/contract/identity"
 
-	"github.com/openctemio/openctem/api/internal/app/scanidentity"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/scanident"
+	"github.com/openctemio/openctem/server/internal/app/scanidentity"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/scanident"
 )
 
 // ScanIdentificationHeader is one header of the platform layer.

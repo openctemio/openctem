@@ -10,7 +10,7 @@ package dashboard
 // (docs/architecture/dashboards.md, "Fact layer"), so any viewer scope applies
 // as a join at read time.
 
-import "github.com/openctemio/openctem/api/pkg/domain/module"
+import "github.com/openctemio/openctem/server/pkg/domain/module"
 
 // Shape is the form of a widget result.
 type Shape string

@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 const configCanary = "CANARY-SECRET-7f3a"

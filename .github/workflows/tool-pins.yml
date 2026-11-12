@@ -9,7 +9,7 @@ name: Tool Pin Freshness
 #
 # Scheduled runs use the default branch's copy of this file (main), so the
 # schedule starts once a release has brought it there; run it by hand any time.
-# Design and the manifest format: api/docs/development/ci-cd.md#tool-pin-freshness.
+# Design and the manifest format: server/docs/development/ci-cd.md#tool-pin-freshness.
 
 on:
   schedule:

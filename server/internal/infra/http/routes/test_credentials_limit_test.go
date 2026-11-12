@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 )
 
 // Connection tests are limited per tenant: one tenant exhausting its budget

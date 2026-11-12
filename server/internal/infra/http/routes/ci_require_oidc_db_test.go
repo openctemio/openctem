@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 func TestCIRequireOIDC_RunnerKeyRefused_DB(t *testing.T) {

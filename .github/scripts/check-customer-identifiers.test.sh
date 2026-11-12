@@ -57,8 +57,8 @@ expect "content hit in a denied path withholds the path" 1 "$d" "$deny" "(path w
 d="$(repo)"; put "$d" web/.env.example "ORIGINS=$lan"
 expect "live LAN outside tests fails (even with no secret)" 1 "$d" "" "web/.env.example:1"
 
-d="$(repo)"; put "$d" api/x_test.go "u := \"https://$lan\""; put "$d" web/src/__tests__/y.test.ts "'$lan'"
-expect "live LAN in tests fails too" 1 "$d" "$deny" "api/x_test.go:1"
+d="$(repo)"; put "$d" server/x_test.go "u := \"https://$lan\""; put "$d" web/src/__tests__/y.test.ts "'$lan'"
+expect "live LAN in tests fails too" 1 "$d" "$deny" "server/x_test.go:1"
 
 d="$(repo)"; put "$d" a.txt 'acmebank'; printf 'acmebank\n' > "$d/untracked.txt"
 git -C "$d" commit -qm x; git -C "$d" rm -q --cached a.txt

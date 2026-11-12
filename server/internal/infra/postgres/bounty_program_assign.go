@@ -15,9 +15,9 @@ import (
 
 	"github.com/lib/pq"
 
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // programCoveredAssets selects the tenant's assets one program's in-effect

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	lc "github.com/openctemio/openctem/api/pkg/domain/findinglifecycle"
+	lc "github.com/openctemio/openctem/server/pkg/domain/findinglifecycle"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Every status change a person or a delegated actor makes goes through the

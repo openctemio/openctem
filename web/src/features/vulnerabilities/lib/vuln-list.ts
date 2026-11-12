@@ -1,5 +1,5 @@
 /**
- * The vulnerabilities list's URL model (api/docs/architecture/vulnerability-page.md,
+ * The vulnerabilities list's URL model (server/docs/architecture/vulnerability-page.md,
  * "The list"). The page URL uses the API's own params, so a view is a link
  * and the request is a reading of the address bar: only the params below are
  * forwarded, each checked against its shape, so a stray or hand-edited param

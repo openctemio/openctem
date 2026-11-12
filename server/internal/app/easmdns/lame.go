@@ -22,8 +22,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/dnsprobe"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
 )
 
 // AuthQuerier asks one authoritative server a non-recursive question.

@@ -1,7 +1,7 @@
 /**
  * The web extension API: what an extension build (a separately built
  * extension, a fork or any third-party build) can add to the tenant app and the console
- * (api/docs/development/editions.md). The default build resolves the
+ * (server/docs/development/editions.md). The default build resolves the
  * `@extension/*` modules to src/extension-default, which adds nothing; an
  * extension build resolves them to its own modules. An extension sees only
  * what is declared here, so anything it needs from the core is added to this

@@ -13,9 +13,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/assetcanon"
+	"github.com/openctemio/openctem/server/internal/app/assetcanon"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CanonicalAsset is one stored asset the runner looks at.

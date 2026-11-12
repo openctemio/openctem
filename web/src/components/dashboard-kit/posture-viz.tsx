@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The attack surface posture (api/docs/architecture/easm-posture.md): the
+ * The attack surface posture (server/docs/architecture/easm-posture.md): the
  * grade badge, the score and what each category takes away. One look for
  * the dashboard widget, the Attack surface overview card and the Posture
  * page.

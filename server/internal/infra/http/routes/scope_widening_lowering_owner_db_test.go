@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func TestScopeSettings_LoweringWideningApprovalsIsOwnerOnly_DB(t *testing.T) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # next-version.sh: propose the next release version from the conventional
-# commits since the last tag (api/docs/rfcs/RFC-037 §3.6).
+# commits since the last tag (server/docs/rfcs/RFC-037 §3.6).
 #
 #   next-version.sh [--ref REV] [--version vX.Y.Z] [--notes FILE] [--repo DIR]
 #   next-version.sh --mode hotfix --picks "SHA ..." [--notes FILE] [--repo DIR]

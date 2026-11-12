@@ -3,7 +3,7 @@ package asset
 import (
 	"testing"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // An approved relationship suggestion is an inferred edge a human confirmed.

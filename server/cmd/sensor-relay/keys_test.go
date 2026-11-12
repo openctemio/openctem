@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/relay"
 )
 
 func capture(t *testing.T, f func() error) string {

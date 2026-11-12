@@ -5,7 +5,7 @@
  * API and the web build), with their license identifiers and texts. Shared by
  * the tenant app and the platform console; each passes where its notices come
  * from. Part of the core: no brand pack, setting or extension removes or
- * replaces it. Design: api/docs/architecture/third-party-notices.md.
+ * replaces it. Design: server/docs/architecture/third-party-notices.md.
  */
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'

@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // DataScopeEnforcer is the slice of the Layer 2 data-scope enforcer

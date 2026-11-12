@@ -7,8 +7,8 @@ package command
 import (
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 // Claim modes (the mode label).

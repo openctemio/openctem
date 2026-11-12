@@ -9,9 +9,9 @@
 
 ## Quick Setup
 
-The API is the `api/` directory of the
+The API is the `server/` directory of the
 [`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo; the web
-console is `web/`. Every command on this page runs **in `api/`** (the compose
+console is `web/`. Every command on this page runs **in `server/`** (the compose
 files, `.env.example` and this Makefile are there, not at the repository root).
 From the root, `make setup` installs both components and enables the git hooks
 (`.githooks/`), `make dev-api` / `make dev-web` run each side, and
@@ -23,7 +23,7 @@ From the root, `make setup` installs both components and enables the git hooks
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem/api   # the API lives in api/ of the openctem monorepo
+cd openctem/api   # the API lives in server/ of the openctem monorepo
 
 # 2. Setup env
 cp .env.example .env
@@ -38,7 +38,7 @@ make docker-dev
 ```bash
 # 1. Clone
 git clone https://github.com/openctemio/openctem.git
-cd openctem/api   # the API lives in api/ of the openctem monorepo
+cd openctem/api   # the API lives in server/ of the openctem monorepo
 
 # 2. Install tools
 make install-tools
@@ -129,7 +129,7 @@ make tidy             # Tidy go.mod
 ```bash
 make docker-dev       # Start dev environment (hot reload)
 make docker-dev-d     # Start dev environment (background)
-make docker-prod      # Prints how to start the production stack (api/deploy)
+make docker-prod      # Prints how to start the production stack (server/deploy)
 make docker-down      # Stop all containers
 make docker-logs      # View logs
 make docker-logs-app  # View app logs only
@@ -156,10 +156,10 @@ make proto            # Generate protobuf (if using gRPC)
 
 ## Monorepo and Go workspaces
 
-`api/` is one Go module (`github.com/openctemio/openctem/api`) and does not
+`server/` is one Go module (`github.com/openctemio/openctem/server`) and does not
 depend on sdk-go; the monorepo has no `go.work`. A `go.work` in a parent
 directory (for example a checkout that also holds `sdk-go` or `sensor`) would
-still be picked up, so run Go commands from `api/` with `GOWORK=off`, as CI
+still be picked up, so run Go commands from `server/` with `GOWORK=off`, as CI
 and the root `Makefile` do:
 
 ```bash
@@ -316,7 +316,7 @@ go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 ## Custom builds: the `pkg/server.Main` entry point
 
 The server's code lives in `internal/server`. The only public way in is
-`github.com/openctemio/openctem/api/pkg/server`, whose `Main()` runs the server
+`github.com/openctemio/openctem/server/pkg/server`, whose `Main()` runs the server
 (or one of its bundled command-line tools, chosen by the name the binary was
 invoked as). The stock binary `cmd/server` is one line, `server.Main()`.
 
@@ -325,12 +325,12 @@ A custom build is a separate Go module with its own `main` package:
 ```go
 package main
 
-import "github.com/openctemio/openctem/api/pkg/server"
+import "github.com/openctemio/openctem/server/pkg/server"
 
 func main() { server.Main() }
 ```
 
-Because everything under `api/internal` is unimportable from another module,
-such a build can use only the public `api/pkg/...` packages. `Main` defines its
+Because everything under `server/internal` is unimportable from another module,
+such a build can use only the public `server/pkg/...` packages. `Main` defines its
 command-line flags on its own flag set, so importing the package adds nothing to
 the importing program's global flags.

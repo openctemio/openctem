@@ -6,9 +6,9 @@
 #   a. no tracked file under a web extension mount point (an extension's web
 #      code is copied in by its own build; the mount points are empty here),
 #      and .gitignore lists every mount point;
-#   b. api/go.mod has no replace directive (the core always builds from public
+#   b. server/go.mod has no replace directive (the core always builds from public
 #      sources and works as a dependency of a custom build, which imports
-#      api/pkg/server and api/pkg/extension; docs/development/editions.md);
+#      server/pkg/server and server/pkg/extension; docs/development/editions.md);
 #   c. no web code imports a mount point directly (the default build reaches
 #      it only through the @extension/* alias, which points at the empty
 #      default), and the mount directory is named only in the web build
@@ -62,8 +62,8 @@ else
 fi
 
 # b. the core module builds from public sources only.
-if [[ -f api/go.mod ]] && grep -Eq '^[[:space:]]*replace([[:space:]]|\()' api/go.mod; then
-  fail "api/go.mod: has a replace directive (rule b); the core must build from public sources and work as a dependency"
+if [[ -f server/go.mod ]] && grep -Eq '^[[:space:]]*replace([[:space:]]|\()' server/go.mod; then
+  fail "server/go.mod: has a replace directive (rule b); the core must build from public sources and work as a dependency"
 fi
 
 # c. web: no direct import of a mount point; mount directory named in the configs only.
@@ -108,7 +108,7 @@ else
 fi
 
 if (( status )); then
-  echo "edition fence: see api/docs/development/editions.md" >&2
+  echo "edition fence: see server/docs/development/editions.md" >&2
 else
   echo "edition fence: ok"
 fi

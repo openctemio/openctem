@@ -3,9 +3,9 @@ package compliance
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/simulation"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/simulation"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // RFC-012 Phase 0: the synthetic BAS path must never present its outcome as a

@@ -30,7 +30,7 @@ Verified in code on 2026-11-02.
 |---|---|
 | Sensor pull connectors | Tenable.sc (`connector-tenable`: `connector_sync`, `connector_scan`, capability `network_va.connector`), credentials stay on the sensor |
 | Asset collectors | vCenter, LDAP, Cloud DNS, PRTG, Splunk inventory (asset-collector add-on) |
-| Cloud inventory | **Not shipped.** `api/internal/app/connector/connector.go` is a framework with an AWS scaffold and no provider code; the Azure and Kubernetes provider constants have no adapter |
+| Cloud inventory | **Not shipped.** `server/internal/app/connector/connector.go` is a framework with an AWS scaffold and no provider code; the Azure and Kubernetes provider constants have no adapter |
 | File and push import | CTIS ingest, sdk-go, 18+ importers (Nessus, Qualys, DefectDojo, CycloneDX, SPDX, OSV, CSAF, OpenVEX, SARIF, trivy, nuclei, semgrep, opengrep, gitleaks, grype, vuls, ZAP, bounty reports), generic CSV/JSON/JUnit mappings |
 | Ticketing | Jira two-way and **GitHub Issues**. There is no GitLab Issues, Azure Boards or ServiceNow tracker |
 | Other downstream | Slack, Teams, Telegram, email, signed webhook, Splunk HEC, admin audit syslog, finding CSV/NDJSON export, SBOM export, MCP server |

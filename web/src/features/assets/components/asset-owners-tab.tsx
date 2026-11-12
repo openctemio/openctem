@@ -109,7 +109,7 @@ const VIEW_GRANTING_TYPES: ReadonlySet<string> = new Set(['primary', 'secondary'
 /**
  * A primary or secondary user owner set by a person sees the asset, so
  * naming, re-typing or removing one changes who can see it: the API asks for
- * team:groups:write (docs: api/docs/architecture/asset-ownership.md).
+ * team:groups:write (docs: server/docs/architecture/asset-ownership.md).
  */
 function ownerGrantsView(o: AssetOwner): boolean {
   return !!o.userId && VIEW_GRANTING_TYPES.has(o.ownershipType) && o.assignmentSource === 'manual'

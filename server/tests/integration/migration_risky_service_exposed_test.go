@@ -8,8 +8,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
 )
 
 func TestMigrationRiskyServiceExposed(t *testing.T) {

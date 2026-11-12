@@ -5,11 +5,11 @@ import (
 	"errors"
 	"testing"
 
-	accesscontrolsvc "github.com/openctemio/openctem/api/internal/app/accesscontrol"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/group"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	accesscontrolsvc "github.com/openctemio/openctem/server/internal/app/accesscontrol"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/group"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type poolStepUpGate struct{ refuse bool }

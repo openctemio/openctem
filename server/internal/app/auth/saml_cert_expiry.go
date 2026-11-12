@@ -10,10 +10,10 @@ import (
 	"math"
 	"time"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ssochange"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	samldom "github.com/openctemio/openctem/server/pkg/domain/samlprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ssochange"
 )
 
 // samlCertNoticeDays are the days-before-expiry at which owners are alerted;

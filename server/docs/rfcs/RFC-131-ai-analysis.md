@@ -30,7 +30,7 @@ sensor. Three rules hold for every AI path:
 ## 2. The `openctem.analyze/v1` contract
 
 One contract for every executor, published as versioned JSON Schemas in
-`api/pkg/sensorproto/analyze/schemas/` (the sensor protocol lives in the API,
+`server/pkg/sensorproto/analyze/schemas/` (the sensor protocol lives in the API,
 RFC-094):
 
 | Schema | `$id` | What |

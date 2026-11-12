@@ -2,7 +2,7 @@
 # shellcheck source-path=SCRIPTDIR
 # feed-components.sh [LIST]: the newest stable release of each first-party
 # component, as the JSON array `release-feed build -components` signs into the
-# release feed (api/docs/rfcs/RFC-037-versioning-and-release-train.md §12).
+# release feed (server/docs/rfcs/RFC-037-versioning-and-release-train.md §12).
 #
 # LIST (default: stdin) is what `go run ./cmd/release-feed components` prints:
 # one "<component> <repository> <image repository or ->" per line.

@@ -1,7 +1,7 @@
 // Package docx renders organization-supplied Word (.docx) report templates
 // with a small, fixed tag language (see tags.go) over a data map. Templates
 // are untrusted input: there is no expression language, no function call, no
-// URL fetching, and every size is bounded. Design: api/docs/rfcs/RFC-076-pentest-report-templates.md.
+// URL fetching, and every size is bounded. Design: server/docs/rfcs/RFC-076-pentest-report-templates.md.
 package docx
 
 import (
@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/report/markdown"
+	"github.com/openctemio/openctem/server/pkg/report/markdown"
 )
 
 var (

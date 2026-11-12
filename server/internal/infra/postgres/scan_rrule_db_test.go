@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
 )
 
 // An rrule schedule (RFC-046 D11) is stored and read back, tenant-scoped,

@@ -3,7 +3,7 @@ package filterspec
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Visibility of the containers that group assets (asset groups, business

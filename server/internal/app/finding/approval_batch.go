@@ -1,6 +1,6 @@
 package finding
 
-// Group-level exceptions (api/docs/rfcs/RFC-111-approval-policy.md §7): one
+// Group-level exceptions (server/docs/rfcs/RFC-111-approval-policy.md §7): one
 // request to accept the risk of, or mark false positive, the open findings of
 // a remediation task, decided once.
 //
@@ -21,13 +21,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 )
 
 // batchStore stores group exceptions (*postgres.FindingApprovalRepository).

@@ -29,13 +29,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // PayloadKeyWordlists is the payload member a scan names the wordlists it

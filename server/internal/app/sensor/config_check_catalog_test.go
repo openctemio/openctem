@@ -7,8 +7,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // contractChecks is the check catalog v0 every sensor-side emitter shares

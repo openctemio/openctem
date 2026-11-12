@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/querylang"
-	"github.com/openctemio/openctem/api/pkg/querylang/pgsql"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/querylang"
+	"github.com/openctemio/openctem/server/pkg/querylang/pgsql"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files")

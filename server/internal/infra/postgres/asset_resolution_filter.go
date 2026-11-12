@@ -1,6 +1,6 @@
 package postgres
 
-import "github.com/openctemio/openctem/api/pkg/domain/assetlist"
+import "github.com/openctemio/openctem/server/pkg/domain/assetlist"
 
 // The assets list filter on whether a host name resolves.
 

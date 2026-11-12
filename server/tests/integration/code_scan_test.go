@@ -5,12 +5,12 @@ import (
 	"errors"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	codescanapp "github.com/openctemio/openctem/api/internal/app/codescan"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/codescan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	codescanapp "github.com/openctemio/openctem/server/internal/app/codescan"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/codescan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Code scanning end to end on the real repositories: a repository inherits

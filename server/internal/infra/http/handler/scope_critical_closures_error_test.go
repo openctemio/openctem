@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/scope"
+	"github.com/openctemio/openctem/server/internal/app/scope"
 )
 
 // A closing exclusion that would close critical, P0 or KEV findings without

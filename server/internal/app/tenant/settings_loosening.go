@@ -1,7 +1,7 @@
 package tenant
 
 import (
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // Loosening of an organization policy needs a recent re-authentication and is

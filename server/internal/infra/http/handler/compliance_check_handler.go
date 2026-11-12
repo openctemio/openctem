@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	ccapp "github.com/openctemio/openctem/api/internal/app/compliancecheck"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	ccdom "github.com/openctemio/openctem/api/pkg/domain/compliancecheck"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	ccapp "github.com/openctemio/openctem/server/internal/app/compliancecheck"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	ccdom "github.com/openctemio/openctem/server/pkg/domain/compliancecheck"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // SetComplianceChecks wires the compliance check reads. Without it the

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
 )
 
 // SuppressionType represents the type of suppression.
@@ -455,7 +455,7 @@ func matchGlob(pattern, path string) bool {
 func (r *Rule) ReasonCode() string { return r.reasonCode }
 
 // Tier and RequiredApprovals are what the approval policy gave the rule
-// (api/docs/rfcs/RFC-111-approval-policy.md); empty / 0 on a rule made
+// (server/docs/rfcs/RFC-111-approval-policy.md); empty / 0 on a rule made
 // before the policy. ApprovalsCollected is how many people signed off.
 func (r *Rule) Tier() string              { return r.tier }
 func (r *Rule) RequiredApprovals() int    { return r.requiredApprovals }

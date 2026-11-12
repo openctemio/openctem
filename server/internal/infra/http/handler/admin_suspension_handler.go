@@ -10,14 +10,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/orgdeletion"
-	"github.com/openctemio/openctem/api/internal/app/platformuser"
-	"github.com/openctemio/openctem/api/internal/app/suspension"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/orgdeletion"
+	"github.com/openctemio/openctem/server/internal/app/platformuser"
+	"github.com/openctemio/openctem/server/internal/app/suspension"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AdminSuspensionHandler serves the console's suspend / lift (organizations)

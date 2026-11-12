@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The overview answers each dashboard read by sending it through the API's

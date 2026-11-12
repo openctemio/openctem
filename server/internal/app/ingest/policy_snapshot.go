@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/sourceretire"
-	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/sourceretire"
+	"github.com/openctemio/openctem/server/pkg/domain/suppression"
 )
 
 // RetiredSourceReader reads the sources a tenant stopped using

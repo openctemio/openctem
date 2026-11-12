@@ -1,7 +1,7 @@
 package postgres
 
 // Bug-bounty report identity on findings (RFC-121).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-121-bug-bounty-reports.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-121-bug-bounty-reports.md
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // bountyReportIndex keeps (tenant, intake, ref) unique among bug_bounty

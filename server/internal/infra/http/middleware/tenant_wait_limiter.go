@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // TenantWaitLimiter caps how many requests of one tenant run a guarded

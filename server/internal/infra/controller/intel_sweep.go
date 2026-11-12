@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/threat"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/threat"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // IntelSweeper is the work after a threat intel feed (KEV or EPSS) changed:

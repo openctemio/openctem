@@ -129,7 +129,11 @@ out "### Migrations since ${last:-the beginning}"
 if [[ -z "$last" ]]; then
   out "- no release tag; skipped"
 else
-  added="$(git diff --name-only --diff-filter=A --no-renames "${last}" "${ref}" -- 'api/migrations/*.up.sql' 2>/dev/null | sed -E 's#.*/([0-9]+)_.*#\1#' | sort -n | tr '\n' ' ')"
+  # Each side in its own layout: a tag from before the backend directory
+  # rename keeps its migrations under server/.
+  last_mig="server/migrations"
+  git cat-file -e "${last}:${last_mig}" 2>/dev/null || last_mig="api/migrations" # rename-guard: allow
+  added="$(git diff --name-only --diff-filter=A --no-renames "${last}:${last_mig}" "${ref}:server/migrations" 2>/dev/null | sed -nE 's#^(.*/)?([0-9]+)_.*\.up\.sql$#\2#p' | sort -n | tr '\n' ' ')"
   if [[ -z "${added// /}" ]]; then
     out "- none added"
   else

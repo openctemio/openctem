@@ -26,7 +26,7 @@ paths = [
     '''\.git/.*''',
     # Development scripts (contains placeholder credentials for local dev)
     '''scripts/.*''',
-    '''api/scripts/.*''',
+    '''server/scripts/.*''',
     '''.*/scripts/.*''',
 ]
 
@@ -72,7 +72,7 @@ regex = '''redis://[^:]*:[^@]+@[^/]+'''
 entropy = 0
 allowlist = { regexes = ['''redis://[^:]*:(password|secret)@(localhost|127\.0\.0\.1|redis)'''] }
 
-# OpenCTEM sensor credentials (api/docs/architecture/agent-identity.md,
+# OpenCTEM sensor credentials (server/docs/architecture/agent-identity.md,
 # "Credential formats"). octs_ and octe_ are <prefix> + 43 base62 characters
 # (32 random bytes) + 6 base62 characters (CRC32 of the random part); the
 # regex pins that exact shape so it cannot match prose or placeholders. The

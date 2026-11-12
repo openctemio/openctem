@@ -12,9 +12,9 @@ import (
 	"context"
 	"time"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // WindowTenants lists the tenants that have scan windows (enabled policies

@@ -3,6 +3,6 @@
 // reverts that fold (internal/tools/vulnmatchlocationscmd).
 package main
 
-import "github.com/openctemio/openctem/api/internal/tools/vulnmatchlocationscmd"
+import "github.com/openctemio/openctem/server/internal/tools/vulnmatchlocationscmd"
 
 func main() { vulnmatchlocationscmd.Main() }

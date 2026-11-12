@@ -10,11 +10,11 @@ import (
 	"time"
 	_ "time/tzdata" // isValidTimezone must not depend on the host zone database
 
-	"github.com/openctemio/openctem/api/pkg/domain/branch"
-	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/scanident"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stepup"
+	"github.com/openctemio/openctem/server/pkg/domain/branch"
+	"github.com/openctemio/openctem/server/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/scanident"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stepup"
 )
 
 // =============================================================================

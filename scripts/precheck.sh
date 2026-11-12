@@ -12,7 +12,7 @@
 #    It then warns about other open pull requests that touch the same files.
 # 2. Checks: what CI's lint and static gates check, for the components the
 #    branch changes. API: gofmt, go vet, staticcheck, golangci-lint on new
-#    code (`make -C api lint-ci`). Web: prettier, eslint on changed files,
+#    code (`make -C server lint-ci`). Web: prettier, eslint on changed files,
 #    tsc, the separator gate and sorted message catalogs.
 #
 # --verify (the pre-push hook): never changes the branch; fails when a branch
@@ -85,11 +85,11 @@ fi
 
 fail=0
 
-if printf '%s\n' "$changed" | grep -q '^api/.*\.go$'; then
+if printf '%s\n' "$changed" | grep -q '^server/.*\.go$'; then
   echo "precheck: api"
-  bad=$(printf '%s\n' "$changed" | grep '^api/.*\.go$' | xargs gofmt -l 2>/dev/null || true)
+  bad=$(printf '%s\n' "$changed" | grep '^server/.*\.go$' | xargs gofmt -l 2>/dev/null || true)
   [ -n "$bad" ] && { echo "gofmt needed:"; echo "$bad"; fail=1; }
-  make -s -C api lint-ci BASE_REF="$base" || fail=1
+  make -s -C server lint-ci BASE_REF="$base" || fail=1
 fi
 
 if printf '%s\n' "$changed" | grep -qE '^web/(src/|e2e/|scripts/|package(-lock)?\.json$|tsconfig[^/]*\.json$|next\.config|eslint|\.prettier)'; then

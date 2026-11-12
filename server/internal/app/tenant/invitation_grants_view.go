@@ -13,9 +13,9 @@ package tenant
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // InvitationGrantRole is one role of an invitation as the invitee sees it.

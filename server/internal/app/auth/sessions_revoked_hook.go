@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SessionsRevokedHook runs after the sessions of an account were revoked

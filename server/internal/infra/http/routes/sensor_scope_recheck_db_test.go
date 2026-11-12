@@ -18,13 +18,13 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
 )
 
 // scopeGateStub refuses the targets the test names.

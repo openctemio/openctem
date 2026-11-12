@@ -8,8 +8,8 @@ import (
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 
-	"github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
-	"github.com/openctemio/openctem/api/pkg/releasefeed/testdata/releasefeedtest"
+	"github.com/openctemio/openctem/server/pkg/contentpkg/sigstore"
+	"github.com/openctemio/openctem/server/pkg/releasefeed/testdata/releasefeedtest"
 )
 
 // VerifyPattern refuses a pattern that is not anchored: an unanchored one

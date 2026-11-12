@@ -10,7 +10,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MaxHostSplits bounds how often one command (and the follow-ups split from

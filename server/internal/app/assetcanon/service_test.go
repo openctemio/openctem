@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // fakeStore keeps assets per tenant; names are unique per tenant as in the

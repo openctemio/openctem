@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MaxExportRows caps one audit log export: the newest rows are exported and

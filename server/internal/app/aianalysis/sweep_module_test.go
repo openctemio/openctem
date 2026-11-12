@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // sweepRepo serves a fixed list of active AI agents with no active owner and

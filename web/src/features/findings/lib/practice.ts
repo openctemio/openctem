@@ -1,5 +1,5 @@
 /**
- * The findings practice switch (docs: api/docs/architecture/finding-practices.md).
+ * The findings practice switch (docs: server/docs/architecture/finding-practices.md).
  * A finding's practice is the program that triages it. The list opens on
  * "Vulnerabilities" (every practice except compliance, so failed benchmark
  * checks never mix with exploitable weaknesses); one click shows compliance,

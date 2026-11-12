@@ -7,7 +7,7 @@ import (
 	"mime"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // decodeLedgerBody reads a JSON POST body of at most

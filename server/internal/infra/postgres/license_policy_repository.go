@@ -1,7 +1,7 @@
 package postgres
 
 // License policy evaluation rows: verdicts on package links and license
-// findings. Design: api/docs/rfcs/RFC-070-software-components-inventory.md.
+// findings. Design: server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 
 	"github.com/lib/pq"
 
-	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
+	licapp "github.com/openctemio/openctem/server/internal/app/licensepolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
 )
 
 // LicensePolicyRepository implements licensepolicy.Store.

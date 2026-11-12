@@ -63,7 +63,7 @@ Backend API for the OpenCTEM Continuous Threat Exposure Management platform. Bui
 ## Project Structure
 
 ```
-api/
+server/
 ├── cmd/
 │   ├── server/                # Main API server
 │   └── bootstrap-admin/       # Creates the first platform administrators and organization
@@ -311,7 +311,7 @@ See `/docs` endpoint for complete OpenAPI documentation.
 ### Docker Compose
 
 ```bash
-# 1. Go to the production stack (api/deploy/ in the openctem repository)
+# 1. Go to the production stack (server/deploy/ in the openctem repository)
 cd deploy
 
 # 2. Create the environment file: OPENCTEM_VERSION (required, no default),

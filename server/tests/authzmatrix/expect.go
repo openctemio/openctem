@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/authzdoc"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/internal/authzdoc"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 )
 
 // route is one registered route with its gate and data-scope class, as

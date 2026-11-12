@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/notifymsg"
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/notifymsg"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // Card rendering: every provider lays out a notifymsg.Card the same way.

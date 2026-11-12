@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"time"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 )
 
 // AttributeSourceResponse is one source's value of an attribute.

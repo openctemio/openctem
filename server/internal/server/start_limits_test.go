@@ -7,12 +7,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/entitlement"
-	signupapp "github.com/openctemio/openctem/api/internal/app/signup"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/internal/app/entitlement"
+	signupapp "github.com/openctemio/openctem/server/internal/app/signup"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
 )
 
 // noDefaultsRepo stores nothing: no console setting.

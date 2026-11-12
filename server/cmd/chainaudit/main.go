@@ -21,7 +21,7 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify"
+	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify"
 )
 
 type row struct {

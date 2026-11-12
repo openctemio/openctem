@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // statusListRE finds a hand-written SQL status list: status IN ('a', 'b') or
@@ -16,7 +16,7 @@ var statusListRE = regexp.MustCompile(`(?i)\bstatus\s+(NOT\s+)?IN\s*\(\s*('[a-z_
 
 // handWrittenStatusListAllowed are the few finding-status lists that are not
 // an open / fixed / dispositioned / closed definition, keyed by file (relative
-// to api/) and the exact list. Each says why it is its own set. Everything
+// to server/) and the exact list. Each says why it is its own set. Everything
 // else uses vulnerability.OpenStatusSQL and its siblings.
 var handWrittenStatusListAllowed = map[string]map[string]string{
 	"internal/infra/postgres/compliance_check_read.go": {

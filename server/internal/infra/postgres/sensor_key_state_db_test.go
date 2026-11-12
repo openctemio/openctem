@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // Dispatch to zone sensors filtered on key_expires_at, the inline key's

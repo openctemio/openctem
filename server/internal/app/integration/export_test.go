@@ -3,8 +3,8 @@ package integration
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/infra/scm"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/infra/scm"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // UpsertRepositoryAssetForTest exposes upsertRepositoryAsset to the

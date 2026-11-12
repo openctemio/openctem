@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 // MaxRules bounds the rule list recorded for one snapshot.

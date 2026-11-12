@@ -83,7 +83,7 @@ Such a database has only `schema_migrations`, at its highest version V. "Every
 file up to V" is not what it applied: a release branch can carry a migration
 numbered above one merged to develop later (v0.15.4 ships 003428; 003420
 merged to develop afterwards), and the earlier tool skips the lower one
-silently. So the runner ships `api/migrations/released.json`: for every
+silently. So the runner ships `server/migrations/released.json`: for every
 release tag that still shipped the earlier tool, exactly the migration
 versions it contained (tags with the same set grouped), generated from the
 tags by `scripts/released-migrations.sh` and checked in CI
@@ -103,7 +103,7 @@ recorded.
 
 A release with the runner keeps the fence, never a bare version, so new tags
 are not listed. A release tagged while it still ships the earlier tool (a
-hotfix of an older line) makes the check fail until `make -C api
+hotfix of an older line) makes the check fail until `make -C server
 migrations-released` is committed.
 
 Legacy numbers still added must be above the base's highest legacy number, and
@@ -129,7 +129,7 @@ valid timestamp version (a legacy number is a warning, and an error at or below
 the base's highest legacy number or once the base has a timestamp version); no merged up file is changed, removed or
 renamed (a fix is a new migration; a baseline that replaces the chain is the
 one exception); `released.json` matches the release tags. Pull request CI gives a clashing migration a new timestamp in
-its runner only; `make -C api migration-renumber` does it for the branch.
+its runner only; `make -C server migration-renumber` does it for the branch.
 
 ## 3. Threat model
 
@@ -161,7 +161,7 @@ with the same arguments as before.
 
 ## 5. Implementation
 
-- Runner: `api/internal/migrate`, command `api/cmd/openctem-migrate`.
+- Runner: `server/internal/migrate`, command `server/cmd/openctem-migrate`.
 - Unit and database tests: `internal/migrate/state_test.go`,
   `internal/migrate/runner_test.go` (missing in the middle, idempotence, dirty
   refusal and force, concurrent runners and the lock timeout, takeover from the

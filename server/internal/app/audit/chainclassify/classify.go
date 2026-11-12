@@ -37,7 +37,7 @@ import (
 	"hash"
 	"time"
 
-	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
+	cryptopkg "github.com/openctemio/openctem/server/pkg/crypto"
 )
 
 // Class is why a chain row does or does not verify.

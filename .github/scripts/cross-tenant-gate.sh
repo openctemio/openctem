@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Cross-tenant job isolation gate (api/docs/architecture/sensors.md, "Tenant
+# Cross-tenant job isolation gate (server/docs/architecture/sensors.md, "Tenant
 # isolation of jobs"): runs the named DB-backed tests that prove a sensor,
 # member or token of one organization can never claim, read, change or learn
 # of another organization's jobs, and fails unless EVERY named test ran and
 # passed. A renamed, deleted, skipped or filtered-out test fails the gate as
 # surely as a failing one. These tests are never quarantined.
 #
-# Run from api/ with DATABASE_URL (and OPENCTEM_TEST_DB_REQUIRED=1) set.
+# Run from server/ with DATABASE_URL (and OPENCTEM_TEST_DB_REQUIRED=1) set.
 # Usage: cross-tenant-gate.sh [extra go test flags]
 set -euo pipefail
 

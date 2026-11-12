@@ -4,7 +4,7 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/server"
+	"github.com/openctemio/openctem/server/pkg/server"
 )
 
 // Main must keep the func() signature a custom build's main calls.

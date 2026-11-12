@@ -2,7 +2,7 @@
 
 Everything here works without the OpenCTEM source code. The release ships
 this folder as `openctem-image-kit-<version>.tar.gz`, covered by the release's
-signed `checksums-sha256.txt`. Guide: `api/docs/deployment/air-gapped.md`
+signed `checksums-sha256.txt`. Guide: `server/docs/deployment/air-gapped.md`
 (and "Air-gapped installs" on https://docs.openctem.io).
 
 | Path | What it is for |

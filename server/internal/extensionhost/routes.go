@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
 )
 
 // Route is an extension route the core accepted, ready to mount at

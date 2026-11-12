@@ -14,7 +14,7 @@
 
 ## 1. Summary
 
-`api/migrations` held 790 files (395 migrations, numbered up to 001146). Every
+`server/migrations` held 790 files (395 migrations, numbered up to 001146). Every
 fresh install, every CI job and every private test database applied all of
 them, and the tree carried tests and runbooks for data migrations that every
 existing database ran long ago.
@@ -67,7 +67,7 @@ deleted or forced by hand.
 
 `scripts/squash-migrations.sh REF` (default `origin/develop`):
 
-1. extracts `api/migrations` at REF with `git archive` (the work tree does not
+1. extracts `server/migrations` at REF with `git archive` (the work tree does not
    matter), B = its highest version;
 2. applies the chain with golang-migrate to a throwaway `postgres:17-alpine`;
 3. `pg_dump --no-owner --no-privileges --column-inserts`, without
@@ -177,7 +177,7 @@ spelled out in three places:
 The way out: back up, deploy the last release before the baseline (git tag
 `pre-baseline-001146`, which ships every old migration), run its migrations,
 then deploy the new release. The old files stay reachable at that tag
-(`git show pre-baseline-001146:api/migrations/<file>`).
+(`git show pre-baseline-001146:server/migrations/<file>`).
 
 ## 7. What reads the migrations, and what changed
 
@@ -190,7 +190,7 @@ then deploy the new release. The old files stay reachable at that tag
 | CI `Asset Types Drift` (`cmd/gen-asset-types -check`) | the dump keeps no registry markers: when no migration above the baseline carries the block, the migration half is left to the database tests (`TestAssetTypeRegistry_*`), which compare the migrated schema with the YAML; the next registry migration brings the static check back |
 | `scripts/preflight-migrate.sh`, `make migrate-preflight` | removed: its only checks were for 000170/000171, which no database can still be before |
 | `cmd/server/schema_check.go` | refuses a database older than the baseline (§6) |
-| `api/Dockerfile.migrations` | entrypoint `openctem-migrate` (§6) |
+| `server/Dockerfile.migrations` | entrypoint `openctem-migrate` (§6) |
 | all-in-one (`deploy/allinone`) | runs `openctem-migrate`, copied from the API image |
 | seed image (`Dockerfile.seed`, `migrations/seed`) | none |
 | `web/e2e/ci/compose.yml` (`migrate/migrate` image on the directory) | none |

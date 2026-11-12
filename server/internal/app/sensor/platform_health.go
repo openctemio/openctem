@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // PlatformHealthConfig tunes the guard. Zero values take the defaults.

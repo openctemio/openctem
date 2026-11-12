@@ -1,7 +1,7 @@
 package asset
 
 // SBOM upload into the software components inventory. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md.
+// server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"context"
@@ -10,15 +10,15 @@ import (
 	"io"
 	"sort"
 
-	"github.com/openctemio/openctem/api/internal/app/licensepolicy"
+	"github.com/openctemio/openctem/server/internal/app/licensepolicy"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	componentdom "github.com/openctemio/openctem/api/pkg/domain/component"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	componentdom "github.com/openctemio/openctem/server/pkg/domain/component"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // assetTenantChecker resolves an asset of the tenant (ErrNotFound otherwise).

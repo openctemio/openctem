@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/aibundle"
-	"github.com/openctemio/openctem/api/internal/app/aipolicy"
-	"github.com/openctemio/openctem/api/internal/infra/llm"
-	"github.com/openctemio/openctem/api/pkg/aimask"
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/analyze"
+	"github.com/openctemio/openctem/server/internal/app/aibundle"
+	"github.com/openctemio/openctem/server/internal/app/aipolicy"
+	"github.com/openctemio/openctem/server/internal/infra/llm"
+	"github.com/openctemio/openctem/server/pkg/aimask"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/analyze"
 )
 
 // The built-in executor runs single-shot kinds (one model call, no tools) in

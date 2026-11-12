@@ -18,8 +18,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/domain/easmseed"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 const (

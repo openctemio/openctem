@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
 // Sources of an observation (asset_software.source).

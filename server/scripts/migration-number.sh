@@ -5,7 +5,7 @@
 # unique: openctem-migrate applies every migration a database has not
 # applied, whatever its version (docs/rfcs/RFC-130-migration-applied-set.md).
 #
-#   new <name>   creates api/migrations/<UTC now>_<name>.{up,down}.sql (one
+#   new <name>   creates server/migrations/<UTC now>_<name>.{up,down}.sql (one
 #                second later while that version is taken).
 #   renumber     gives this branch's added migrations new timestamp versions
 #                when a version is also used by develop or an open pull
@@ -19,12 +19,12 @@
 # (testdb.MigrationVersion), so a new version never needs a test change.
 # The rules behind it: .github/scripts/pr-migration-renumber.sh (also run by
 # pull request CI on its test merge) and check-migration-versions.sh.
-# Make targets: `make -C api migration-new name=...`, `make -C api migration-renumber`.
+# Make targets: `make -C server migration-new name=...`, `make -C server migration-renumber`.
 set -euo pipefail
 
 top="$(git rev-parse --show-toplevel)"
 cd "$top"
-dir=api/migrations
+dir=server/migrations
 repo="${MIGRATION_REPO:-openctemio/openctem}"
 
 

@@ -13,7 +13,7 @@ import (
 
 	"github.com/openctemio/contract/identity"
 
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // Bounds of the applied identification a step keeps.

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/notices"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/notices"
 )
 
 // LicensesHandler serves the API's third-party notices (About > Open-source

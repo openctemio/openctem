@@ -25,7 +25,7 @@ var (
 	// token_mismatch. Route method is labelled separately so a
 	// spike on one endpoint doesn't get lost in the platform total.
 	//
-	// Emit from api/internal/infra/http/middleware/csrf.go at each
+	// Emit from server/internal/infra/http/middleware/csrf.go at each
 	// reject-branch.
 	CSRFRejectionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

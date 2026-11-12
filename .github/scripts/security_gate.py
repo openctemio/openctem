@@ -3,7 +3,7 @@
 review its diff for high-risk patterns, collect new code-scanning alerts, and
 decide whether it may merge.
 
-Design and operator guide: openctemio/openctem api/docs/development/ci-cd.md#security-gate
+Design and operator guide: openctemio/openctem server/docs/development/ci-cd.md#security-gate
 (this file is shared verbatim by the openctemio repositories that use the gate).
 
 Threat model. The gate routes security-sensitive changes to a deliberate human
@@ -53,7 +53,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 
-GUIDE = "https://github.com/openctemio/openctem/blob/develop/api/docs/development/ci-cd.md#security-gate"
+GUIDE = "https://github.com/openctemio/openctem/blob/develop/server/docs/development/ci-cd.md#security-gate"
 SENSITIVE_LABEL = "security-sensitive"
 ACK_LABEL = "security-ack"
 COMMENT_MARKER = "<!-- security-gate -->"
@@ -229,24 +229,24 @@ RULES: list[Rule] = [
        "raw HTML sink"),
     _r("WEB-EVAL", "HIGH", NOT_TEST + r"^web/.*\.(tsx?|jsx?|mjs)$", r"\beval\(|new Function\(",
        "dynamic code evaluation"),
-    _r("SQL-RLS-OFF", "HIGH", r"^api/migrations/.*\.up\.sql$", r"(?i)disable\s+row\s+level\s+security|\bbypassrls\b|grant\s+.*\bto\s+public\b",
+    _r("SQL-RLS-OFF", "HIGH", r"^server/migrations/.*\.up\.sql$", r"(?i)disable\s+row\s+level\s+security|\bbypassrls\b|grant\s+.*\bto\s+public\b",
        "row-level security disabled or a grant to PUBLIC"),
-    _r("GO-RAW-HTTP", "MEDIUM", NOT_TEST + r"^api/(?!pkg/httpsec/).*\.go$", r"\bhttp\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|&http\.Client\{",
+    _r("GO-RAW-HTTP", "MEDIUM", NOT_TEST + r"^server/(?!pkg/httpsec/).*\.go$", r"\bhttp\.(Get|Post|PostForm|Head)\(|http\.DefaultClient|&http\.Client\{",
        "outbound HTTP outside pkg/httpsec (SSRF guard)"),
-    _r("GO-RAW-CLIENT-IP", "MEDIUM", NOT_TEST + r"^api/(?!pkg/httpsec/).*\.go$", r"\"X-(Forwarded-For|Real-IP)\"",
+    _r("GO-RAW-CLIENT-IP", "MEDIUM", NOT_TEST + r"^server/(?!pkg/httpsec/).*\.go$", r"\"X-(Forwarded-For|Real-IP)\"",
        "client IP read from a raw header (use pkg/httpsec)"),
-    _r("GO-EXEC", "MEDIUM", NOT_TEST + r"^api/.*\.go$", r"\"os/exec\"",
+    _r("GO-EXEC", "MEDIUM", NOT_TEST + r"^server/.*\.go$", r"\"os/exec\"",
        "process execution in the API"),
-    _r("GO-SQL-FORMAT", "MEDIUM", NOT_TEST + r"^api/.*\.go$", r"(?i)Sprintf\(\s*[`\"][^`\"]*\b(select|insert\s+into|update|delete\s+from)\s",
+    _r("GO-SQL-FORMAT", "MEDIUM", NOT_TEST + r"^server/.*\.go$", r"(?i)Sprintf\(\s*[`\"][^`\"]*\b(select|insert\s+into|update|delete\s+from)\s",
        "SQL built with Sprintf (check every interpolated value is not user input)"),
     _r("CORS-WILDCARD", "MEDIUM", NOT_TEST + r".*(\.(go|tsx?|jsx?|mjs|conf)|Caddyfile)$", r"Access-Control-Allow-Origin[\"']?\s*[,:]\s*[\"']\*|AllowedOrigins\s*:\s*\[\]string\{\s*\"\*\"",
        "CORS allows every origin"),
     _r("DOCKER-PRIVILEGED", "MEDIUM", r"(^|/)(Dockerfile[^/]*|docker-compose[^/]*\.ya?ml)$", r"privileged\s*:\s*true|--privileged|chmod\s+(-R\s+)?777",
        "privileged container or world-writable files"),
-    _r("SQL-PERMISSIONS", "SENSITIVE", r"^api/migrations/.*\.up\.sql$",
+    _r("SQL-PERMISSIONS", "SENSITIVE", r"^server/migrations/.*\.up\.sql$",
        r"(?i)row\s+level\s+security|\b(create|drop|alter)\s+policy\b|^\s*(grant|revoke)\s|\bbypassrls\b|\b(insert\s+into|update)\s+role_permissions\b",
        "migration changes row-level security, database grants or which roles hold a permission"),
-    _r("CONFIG-SECURITY-DEFAULT", "SENSITIVE", r"^api/internal/config/config\.go$",
+    _r("CONFIG-SECURITY-DEFAULT", "SENSITIVE", r"^server/internal/config/config\.go$",
        r"(?i)(cookie\w*secure|secure_?cookie|csrf|cors|allow\w*origin|app_?debug|insecure|allow\w*private|trusted\w*prox|skip\w*verif|hsts|require\w*(mfa|email|verif))",
        "configuration default of a security control"),
 ]

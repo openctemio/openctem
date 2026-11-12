@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
 )
 
 // The scan intensity (RFC-071) is stored and read back, tenant-scoped; the

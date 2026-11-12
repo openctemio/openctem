@@ -3,7 +3,7 @@ package permission
 import (
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // Privileged permissions (decisions G1-G12 G3). A role is privileged when it has

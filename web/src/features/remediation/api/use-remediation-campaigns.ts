@@ -2,7 +2,7 @@
 
 /**
  * Remediation campaigns: programs of remediation tasks under one owner and
- * one due date (api/docs/rfcs/RFC-098-remediation-tasks.md). A campaign holds
+ * one due date (server/docs/rfcs/RFC-098-remediation-tasks.md). A campaign holds
  * tasks, never findings; its numbers come from its tasks, counted on the
  * server within the caller's data scope.
  */

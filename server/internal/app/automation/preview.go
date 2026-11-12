@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // MaxPreviewSubjects is the most subjects a preview runs against.

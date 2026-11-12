@@ -3,7 +3,7 @@ package threatmodel
 import (
 	"sort"
 
-	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
+	tmdom "github.com/openctemio/openctem/server/pkg/domain/threatmodel"
 )
 
 // TechniqueMeta is the catalog enrichment for one ATT&CK technique: its display

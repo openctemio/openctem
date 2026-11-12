@@ -16,8 +16,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/lookupjob"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/lookupjob"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // LookupJobRepository implements lookupjob.Repository.

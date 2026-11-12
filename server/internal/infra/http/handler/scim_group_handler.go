@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/scim"
-	"github.com/openctemio/openctem/api/pkg/domain/scimgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/scim"
+	"github.com/openctemio/openctem/server/pkg/domain/scimgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const scimGroupSchema = "urn:ietf:params:scim:schemas:core:2.0:Group"

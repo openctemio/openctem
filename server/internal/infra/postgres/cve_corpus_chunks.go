@@ -17,8 +17,8 @@ import (
 	"github.com/lib/pq"
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cvecorpus"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/domain/cvecorpus"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
 // FeedCheckpoint returns the checkpoint of the vulnerability feed.

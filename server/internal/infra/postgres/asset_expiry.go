@@ -1,6 +1,6 @@
 package postgres
 
-import "github.com/openctemio/openctem/api/pkg/domain/assetlist"
+import "github.com/openctemio/openctem/server/pkg/domain/assetlist"
 
 // expirySQL is assetlist.ExpirySQL (alias a).
 var expirySQL = assetlist.ExpirySQL

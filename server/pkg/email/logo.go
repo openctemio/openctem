@@ -5,7 +5,7 @@ import (
 	"html/template"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // logoPNG is the OpenCTEM lockup (ink, teal marker) at 280 x 43 px, shown at

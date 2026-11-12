@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/notifymsg"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/notifymsg"
 )
 
 // NotificationPreviewRequest is the channel message to preview: the detail

@@ -20,7 +20,7 @@
  * module of one server process shares it. The API's rotation grace covers the
  * same race across server processes.
  *
- * Design: api/docs/architecture/session-refresh.md
+ * Design: server/docs/architecture/session-refresh.md
  */
 
 import { createHash } from 'node:crypto'

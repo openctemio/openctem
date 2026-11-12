@@ -3,8 +3,8 @@ package permission_test
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // The member role is the baseline for outside people: inviting one as a

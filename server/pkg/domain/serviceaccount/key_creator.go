@@ -1,6 +1,6 @@
 package serviceaccount
 
-import "github.com/openctemio/openctem/api/pkg/domain/shared"
+import "github.com/openctemio/openctem/server/pkg/domain/shared"
 
 // KeyCreator is a person who minted live service-account keys in a tenant.
 // A zero UserID stands for the keys that record no creator.

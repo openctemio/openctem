@@ -3,7 +3,7 @@ package signer
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // A statement for a shared sensor is signed only within the shared-job

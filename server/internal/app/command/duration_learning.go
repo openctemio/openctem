@@ -8,8 +8,8 @@ import (
 	"context"
 	"encoding/json"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/toolbudget"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/toolbudget"
 )
 
 // WithDurationStats makes every completed scan command feed the learned

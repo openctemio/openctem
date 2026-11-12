@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
 )
 
 // A trust configuration pins the namespace id that first used a name: a

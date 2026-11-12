@@ -4,7 +4,7 @@ import (
 	"github.com/openctemio/contract/capability"
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // capabilitySource is the finding source (the detection technique) of each

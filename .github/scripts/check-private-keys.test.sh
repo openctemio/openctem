@@ -24,8 +24,8 @@ check() {
   echo "ok:   $name"; pass=$((pass + 1))
 }
 
-check "pem key fails"            1 api/x.txt            "$(block '')"
-check "rsa key fails"            1 api/x.txt            "$(block 'RSA ')"
+check "pem key fails"            1 server/x.txt            "$(block '')"
+check "rsa key fails"            1 server/x.txt            "$(block 'RSA ')"
 check "openssh key fails"        1 deploy/x.txt         "$(block 'OPENSSH ')"
 check "ec key fails"             1 data/sensor-ca/a.pem "$(block 'EC ')"
 check "any file under data fails" 1 data/notes.txt      "hello"
@@ -33,12 +33,12 @@ check ".key file fails"          1 certs/server.key     "x"
 check ".p12 file fails"          1 certs/a.p12          "x"
 check ".pfx file fails"          1 certs/a.pfx          "x"
 check "id_ed25519 fails"         1 ssh/id_ed25519       "x"
-check "testdata key allowed"     0 api/pkg/a/testdata/k.pem "$(block '')"
-check "testdata .key allowed"    0 api/pkg/a/testdata/s.key "x"
+check "testdata key allowed"     0 server/pkg/a/testdata/k.pem "$(block '')"
+check "testdata .key allowed"    0 server/pkg/a/testdata/s.key "x"
 check "header-only placeholder passes" 0 web/a.tsx "placeholder=\"${dash}BEGIN RSA PRIVATE KEY${dash}\""
-check "go string with escaped newline passes" 0 api/a_test.go "x := \"${dash}BEGIN PRIVATE KEY${dash}\\nAAAA\\n\""
+check "go string with escaped newline passes" 0 server/a_test.go "x := \"${dash}BEGIN PRIVATE KEY${dash}\\nAAAA\\n\""
 check "public cert passes"       0 deploy/ca.crt "$(printf '%sBEGIN CERTIFICATE%s\nMIIBFakeFakeFakeFakeFakeFakeFake\n%sEND CERTIFICATE%s\n' "$dash" "$dash" "$dash" "$dash")"
-check "plain file passes"        0 api/main.go "package main"
+check "plain file passes"        0 server/main.go "package main"
 
 echo "$pass passed, $failed failed"
 [[ "$failed" -eq 0 ]]

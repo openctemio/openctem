@@ -15,7 +15,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PropKeyNativeSubType keeps a sub-type that ingest received but the

@@ -3,7 +3,7 @@ package unit
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/keycloak"
+	"github.com/openctemio/openctem/server/pkg/keycloak"
 )
 
 func TestClaims_GetUserID(t *testing.T) {

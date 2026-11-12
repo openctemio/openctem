@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	appjira "github.com/openctemio/openctem/api/internal/app/jira"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	ticketmapdom "github.com/openctemio/openctem/api/pkg/domain/ticketmap"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	appjira "github.com/openctemio/openctem/server/internal/app/jira"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	ticketmapdom "github.com/openctemio/openctem/server/pkg/domain/ticketmap"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // The ticket paths use published profiles through these methods (they

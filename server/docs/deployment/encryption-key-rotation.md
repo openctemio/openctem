@@ -107,7 +107,7 @@ when `DATABASE_URL` is unset, so it runs unchanged inside the API container.
 2. **Generate the new key**: `openssl rand -hex 32`. Store it the way the
    other secrets are stored, for example a mode-600 `.env`.
 3. **Build the tool** from a checkout that contains it:
-   `cd api && CGO_ENABLED=0 go build -o /tmp/rekey ./cmd/rekey`. Then copy it
+   `cd server && CGO_ENABLED=0 go build -o /tmp/rekey ./cmd/rekey`. Then copy it
    into the API container: `docker cp /tmp/rekey <api-container>:/tmp/rekey`.
 4. **Dry run.** It re-encrypts inside a transaction, prints the counts, and
    rolls back:

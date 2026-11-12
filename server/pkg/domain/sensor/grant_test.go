@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func payload(t *testing.T, v map[string]any) json.RawMessage {

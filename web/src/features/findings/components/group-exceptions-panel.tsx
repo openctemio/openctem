@@ -4,7 +4,7 @@
  * Group exceptions in the approvals inbox: one row per exception (source
  * task, status, tier and sign-offs, member count, deadline) and a side panel
  * with its members and the decision (approve, reject with a reason, cancel
- * by the requester). See api/docs/rfcs/RFC-111-approval-policy.md.
+ * by the requester). See server/docs/rfcs/RFC-111-approval-policy.md.
  * The API decides who may act; the UI hides what the caller could not do.
  */
 

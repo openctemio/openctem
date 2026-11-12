@@ -1,7 +1,7 @@
 package postgres
 
 // Finding fingerprint aliases (RFC-043 §6).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 //
 // findings.fingerprint is a finding's current key. finding_fingerprints holds
 // every key the finding has had: the current one (kept in step by triggers on
@@ -20,8 +20,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // fingerprintAliasChunk bounds the array bound to one lookup.

@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // fakeReadiness answers a reason per tenant and capability ("*" = every

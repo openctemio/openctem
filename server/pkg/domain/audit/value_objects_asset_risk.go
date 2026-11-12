@@ -1,7 +1,7 @@
 package audit
 
 // Edits that lower an asset's exposure, criticality or crown-jewel flag
-// (api/docs/architecture/asset-risk-governance.md). The resource is the asset;
+// (server/docs/architecture/asset-risk-governance.md). The resource is the asset;
 // a request's id is in the metadata.
 const (
 	// ActionAssetRiskLowered: risk inputs were lowered and the change applied

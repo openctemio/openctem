@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/report/docx"
+	"github.com/openctemio/openctem/server/pkg/report/docx"
 )
 
 // Template reference: every value a report template can read, with its type,

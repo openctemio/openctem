@@ -1,7 +1,7 @@
 package postgres
 
 import (
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // The from-state lists of every SQL statement that moves findings.status in

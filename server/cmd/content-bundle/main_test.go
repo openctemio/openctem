@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/versions"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	cpsigstore "github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	cpsigstore "github.com/openctemio/openctem/server/pkg/contentpkg/sigstore"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 func writeKey(t *testing.T, dir, name string) ed25519.PrivateKey {

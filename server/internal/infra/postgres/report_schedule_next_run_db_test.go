@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/reportschedule"
+	"github.com/openctemio/openctem/server/pkg/domain/reportschedule"
 )
 
 // Create did not write next_run_at, so every new schedule was stored with NULL

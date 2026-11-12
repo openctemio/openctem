@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	coverageapp "github.com/openctemio/openctem/server/internal/app/coverage"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fakeStarter struct {

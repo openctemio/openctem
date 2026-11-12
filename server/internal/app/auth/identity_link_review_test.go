@@ -9,9 +9,9 @@ import (
 	"errors"
 	"testing"
 
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
-	"github.com/openctemio/openctem/api/pkg/domain/useridentity"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/domain/useridentity"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const entraIssuer = "https://login.microsoftonline.com/0b8e2c4a-1111-4222-8333-944455556666/v2.0"

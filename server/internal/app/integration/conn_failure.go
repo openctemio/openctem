@@ -19,11 +19,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/infra/scm"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	emailpkg "github.com/openctemio/openctem/api/pkg/email"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/internal/infra/scm"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	emailpkg "github.com/openctemio/openctem/server/pkg/email"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // ConnFailure is a classified connection failure.

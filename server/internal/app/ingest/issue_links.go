@@ -1,7 +1,7 @@
 package ingest
 
 // Same-issue links at ingest (pkg/domain/issuelink decides).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/architecture/deduplication.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/architecture/deduplication.md
 //
 // After a batch is stored, the link keys of its SAST, secret and CVE findings
 // are recomputed and the findings are linked to the findings of other tools
@@ -19,8 +19,8 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // IssueLinkStore derives same-issue links (the postgres finding issue link
