@@ -1,6 +1,6 @@
 # RFC-019 — Certificate-Transparency (CT) exposure discovery
 
-- Status: **Implemented (Phase 1); Phase 2 partial** — Phase 1 (#480): crt.sh client + parser, per-tenant scheduled controller, and two exposure types emitted. Since then, under RFC-036: every watched domain covered, crt.sh retries and a Cert Spotter fallback with the `ct_monitor_state` table (#811, migration `000266`), `certificate_expired` for the newest certificate, and CT names promoted to assets with attribution (#839, migration `000324`). Not built: lookalike/typosquat detection (checked 2026-10-04).
+- Status: **Implemented (Phase 1); Phase 2 partial** — Phase 1 (#480): crt.sh client + parser, per-tenant scheduled controller, and two exposure types emitted. Since then, under RFC-036: every watched domain covered, crt.sh retries and a Cert Spotter fallback with the `ct_monitor_state` table (#811, migration `000266`), `certificate_expired` for the newest certificate, and CT names promoted to assets with attribution (#839, migration `000324`). Not built: lookalike/typosquat detection (checked 2026-10-04). Amended 2026-11: the CT queries run on platform sensors as lookup jobs (`lookup.ct@1`), see the amendment below.
 - Area: CTEM Discovery — external-exposure connectors, external attack surface.
 - Related: RFC-018 (identity exposure discovery — the sibling connector; it shipped only the *vocabulary*), `internal/app/exposurebridge` (the exposure projection this joins), `pkg/httpsec` (SSRF guard).
 
@@ -86,3 +86,20 @@ stable per (type, host), so a daily re-poll upserts the same rows (refreshing
   ingest/asset pipeline to avoid a second, divergent asset-creation path.
 - `certificate_expired` emission for already-lapsed certs (dropped today to avoid
   flooding on historical certs).
+
+## Amendment 2026-11: CT queries on platform sensors
+
+The platform talks only to its sensors, so the API no longer queries crt.sh or
+Cert Spotter. Each watched domain is a lookup job of capability
+`lookup.ct@1` (contract package `ctlookup`): the platform creates it for the
+organization, an active instance-scope sensor that reports the capability
+claims it, the job signer signs it (command type `lookup`, the organization's
+tenant id, the instance scope, tool `ctlog`, the one root domain), the sensor
+queries crt.sh then Cert Spotter (sdk-go `pkg/ctlog`) and returns
+`{records, source_status}`. The platform validates the answer again against
+the domain it asked about before anything reaches an exposure. Without such a
+sensor CT monitoring reports `needs_platform_sensor`. The platform settings
+`CERT_MONITOR_FEED_URL`, `CERT_MONITOR_CERTSPOTTER_URL` and
+`CERT_MONITOR_CERTSPOTTER_KEY` are removed; the source URLs and the Cert
+Spotter key are the sensor's settings (`SENSOR_CT_*`). Details:
+[certificate-transparency-monitoring.md](../architecture/certificate-transparency-monitoring.md).

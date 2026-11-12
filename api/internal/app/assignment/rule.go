@@ -69,6 +69,7 @@ func validateAssignmentOptions(opts accesscontrol.AssignmentOptions) error {
 
 // RuleService handles assignment rule business operations.
 type RuleService struct {
+	tagRules         TagRulesInvalidator
 	acRepo           accesscontrol.Repository
 	groupRepo        group.Repository
 	assignmentEngine *Engine
@@ -116,6 +117,7 @@ func (s *RuleService) CreateRule(ctx context.Context, input CreateRuleInput, cre
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
+	defer s.tagRulesChanged(tenantID)
 
 	targetGroupID, err := shared.IDFromString(input.TargetGroupID)
 	if err != nil {
@@ -204,6 +206,7 @@ func (s *RuleService) UpdateRule(ctx context.Context, tenantIDStr, ruleID string
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
+	defer s.tagRulesChanged(tenantID)
 
 	id, err := shared.IDFromString(ruleID)
 	if err != nil {
@@ -286,6 +289,7 @@ func (s *RuleService) DeleteRule(ctx context.Context, tenantIDStr, ruleID string
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
 	}
+	defer s.tagRulesChanged(tenantID)
 
 	id, err := shared.IDFromString(ruleID)
 	if err != nil {
@@ -423,7 +427,7 @@ func (s *RuleService) TestRule(ctx context.Context, tenantIDStr, ruleID string) 
 		var matchCount int64
 		samples := make([]TestRuleFindingSummary, 0, 5)
 		for _, f := range findingResult.Data {
-			if s.assignmentEngine.MatchesConditions(rule.Conditions(), f) {
+			if s.assignmentEngine.MatchesConditions(rule.Conditions(), f, s.assignmentEngine.FactsFor(ctx, tenantID, f)) {
 				matchCount++
 				if len(samples) < 5 {
 					msg := f.Message()
@@ -447,4 +451,17 @@ func (s *RuleService) TestRule(ctx context.Context, tenantIDStr, ruleID string) 
 	}
 
 	return result, nil
+}
+
+// TagRulesInvalidator is told when a rule that decides which asset tags are
+// governing was saved, so the governing-tag set is not stale (taggov).
+type TagRulesInvalidator interface{ Invalidate(tenantID shared.ID) }
+
+// SetTagRulesInvalidator wires it.
+func (s *RuleService) SetTagRulesInvalidator(i TagRulesInvalidator) { s.tagRules = i }
+
+func (s *RuleService) tagRulesChanged(tenantID shared.ID) {
+	if s.tagRules != nil {
+		s.tagRules.Invalidate(tenantID)
+	}
 }

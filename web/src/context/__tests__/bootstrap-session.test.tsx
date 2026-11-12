@@ -113,6 +113,44 @@ describe('session bootstrap cache', () => {
     vi.doUnmock('@/context/tenant-provider')
   })
 
+  it('seeded ownership invitations show the shell banner without a request', async () => {
+    const { OWNERSHIP_INVITATIONS_ENDPOINT } =
+      await import('@/features/account/api/use-ownership-invitations')
+    const { OWNERSHIP_INVITATIONS_URL } = await import('../bootstrap-session')
+    expect(OWNERSHIP_INVITATIONS_URL).toBe(OWNERSHIP_INVITATIONS_ENDPOINT)
+    vi.doMock('next/navigation', () => ({ usePathname: () => '/' }))
+    const { OwnershipInvitationBanner } =
+      await import('@/features/account/components/ownership-invitation-banner')
+    function Seeded({ children }: { children: React.ReactNode }) {
+      const [ready, setReady] = React.useState(false)
+      React.useEffect(() => {
+        void seedSessionCache({
+          ownership_invitations: {
+            data: [
+              {
+                id: 'i1',
+                organization_id: 't1',
+                organization_name: 'Example Org',
+                organization_slug: 'example-org',
+                invited_at: '2026-11-01T00:00:00Z',
+                expires_at: '2099-01-01T00:00:00Z',
+              },
+            ],
+          },
+        }).then(() => setReady(true))
+      }, [])
+      return ready ? <>{children}</> : null
+    }
+    const { findByTestId } = render(
+      <Seeded>
+        <OwnershipInvitationBanner />
+      </Seeded>
+    )
+    expect((await findByTestId('ownership-invitation-banner')).textContent).toContain('Example Org')
+    expect(get).not.toHaveBeenCalled()
+    vi.doUnmock('next/navigation')
+  })
+
   it('without a seed the profile is fetched as before', async () => {
     const { useProfile } = await import('@/features/account/api/use-profile')
     get.mockResolvedValue({ id: 'u2', email: 'b@example.test', name: 'B' })

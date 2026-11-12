@@ -47,6 +47,7 @@ var readBudgetRoutes = []string{ //nolint:gochecknoglobals // test table
 	"/api/v1/dashboard/stats",
 	"/api/v1/attack-surface/stats",
 	"/api/v1/notifications/unread-count",
+	"/api/v1/me/inbox/summary",
 }
 
 type readBudget struct {

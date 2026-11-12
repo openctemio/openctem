@@ -32,6 +32,7 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -166,6 +167,21 @@ func (s *ScanStamper) StampScanned(ctx context.Context, tenantID shared.ID, asse
 			fresh = append(fresh, id)
 		}
 	}
+	// A new address inside a provider's published shared front-end range is
+	// the provider's, not the tenant's: recorded as a dependency (passive,
+	// active checks only after a person's confirm), never evaluated as the
+	// tenant's own address. Names that resolve to it are not affected.
+	var providers []string
+	fresh, providers = splitSharedFrontEnds(fresh, byID)
+	for _, id := range providers {
+		if err := s.store.SaveAutomatic(ctx, tenantID, id, attribution.Decision{State: attribution.StateDependency,
+			Confidence: 100, Reason: attribution.RuleProviderSharedFrontEnd}); err != nil {
+			return err
+		}
+	}
+	if len(providers) > 0 {
+		all = slices.DeleteFunc(all, func(id string) bool { return slices.Contains(providers, id) })
+	}
 	if err := s.verifiedEvidence(ctx, tenantID, fresh, byID); err != nil {
 		return err
 	}
@@ -224,12 +240,32 @@ func toEvaluate(all []string, records map[string]attribution.Record, byID map[st
 			continue // it follows its host: its state is the host's
 		case byID[id].Typed && has && (rec.State == attribution.StateDiscovered || rec.State == attribution.StateNeedsReview || rec.State == attribution.StateRejected):
 			continue // a scan of it does not confirm it (E7)
+		case has && rec.State == attribution.StateDependency:
+			continue // the provider's (a shared front end) until a person decides
 		case !has && !slices.Contains(fresh, id):
 			continue // no record: the active-scan gate decides by scope and seed
 		}
 		out = append(out, id)
 	}
 	return out
+}
+
+// splitSharedFrontEnds separates from fresh the new address assets inside a
+// provider's published shared front-end range (edgeaddr.SharedFrontEnd:
+// only a published range counts, anything in doubt is not shared).
+func splitSharedFrontEnds(fresh []string, byID map[string]ingest.ScannedAsset) (own, shared []string) {
+	c := edgeaddr.Default()
+	for _, id := range fresh {
+		a := byID[id]
+		if asset.CanonicalPair(a.Type.Type, a.Type.SubType).Type == asset.AssetTypeIPAddress {
+			if _, ok := c.SharedFrontEnd(a.Name); ok {
+				shared = append(shared, id)
+				continue
+			}
+		}
+		own = append(own, id)
+	}
+	return own, shared
 }
 
 // holdUnsolicited gives a new internet-facing asset from an unsolicited

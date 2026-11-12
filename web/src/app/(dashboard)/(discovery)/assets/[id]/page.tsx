@@ -42,11 +42,12 @@ import {
 } from '@/features/assets/components/resolved-ports-section'
 import { ClassificationBadges } from '@/features/assets/components/classification-badges'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
-import { AssetStatusBadge } from '@/features/asset-lifecycle'
+import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
 import { AssetScanWindowCard } from '@/features/scan-windows'
 import { AssetWebEvidenceCard } from '@/features/attack-surface'
 import { OriginWebSection, isWebOriginType } from '@/features/web-surface'
 import { useTranslation } from '@/context/i18n-provider'
+import { AssetNextSteps } from '@/features/exploration/components/asset-next-steps'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { SettleGroup } from '@/features/shared/components/settle-group'
@@ -191,7 +192,12 @@ export default function AssetDetailPage() {
             <DetailRow label={t('assetDetail.type', 'Type')} value={typeLabel} />
             <DetailRow
               label={t('assetDetail.status', 'Status')}
-              value={<AssetStatusBadge status={asset.status} />}
+              value={
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <AssetStatusBadge status={asset.status} />
+                  <AssetLivenessBadge liveness={asset.liveness} />
+                </span>
+              }
             />
             {asset.description && (
               <DetailRow
@@ -239,6 +245,7 @@ export default function AssetDetailPage() {
                   assetType={asset.type}
                 />
                 <AssetLineageSection assetId={asset.id} />
+                <AssetNextSteps assetId={asset.id} />
                 <AssetAttributeSourcesSection assetId={asset.id} />
                 <AssetFreshnessSection assetId={asset.id} />
                 <AssetCoverageSection assetId={asset.id} />

@@ -15,6 +15,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Web E2E (`web-e2e.yml`) | PR (with `run-e2e`, a changed suite, or the full tier) / push to `develop`; merge queue | Takes the API, web and admin images from Build images (built once per content key for the whole pipeline), then runs the Playwright suite (`web/e2e`) in 1 to 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). The pull request and the merge queue run only the specs the change needs (see [E2E impact selection](#e2e-impact-selection)); a push to `develop` and the nightly run (02:41 UTC) run all of them, and a failure there opens or updates the issue labelled `e2e-regression`. The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | CodeQL (`codeql.yml`) | PR / push; merge queue; daily (03:00 UTC, on `develop`) | One matrix over the languages: Go (built inside `api/`) and JavaScript/TypeScript (`web/`), one category per language. Go runs `security-and-quality` with `go/log-injection` replaced by `.github/codeql/go-queries/LogInjectionUnstructured.ql` (`openctem/go/log-injection`): the same sources, sinks and sanitizers, minus the key-value attributes of `log/slog` calls, which slog's text and JSON handlers escape (pinned by `api/pkg/logger/forging_test.go`); the message argument and every other logger stay checked, and `logger.SanitizeValue`, `SanitizeText` and `SanitizeError` are recognised sanitizers. PR and push to `develop`: only the changed language(s) (`.github/scripts/codeql-languages.sh`); a language whose code did not change keeps its last analysis, which still matches that code, and query versions change only with the pinned action or `.github/codeql/` (a CI change, which selects both). Merge queue: none. Push to `main` and the daily run: both; the daily run checks out `develop` and uploads for `refs/heads/develop`, so develop's baseline is never older than a day for either language | **CodeQL OK** |
 | Web E2E (`web-e2e.yml`) | PR (smoke set; more with `run-e2e` or a changed suite; all with the full tier) / push to `develop`; merge queue | Builds the API, web and admin images once, then runs the Playwright suite (`web/e2e`) in 1 to 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). A pull request runs the smoke set (see [E2E tiers](#e2e-tiers)); the merge queue, a push to `develop` and the nightly run (02:41 UTC) run all of them, and a failure there opens or updates the issue labelled `e2e-regression`. The merge queue runs it whenever the queued PR changed `web/`, `api/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
+| Web design gate (`web-design-gate.yml`) | PR / merge queue (the gate job when `web/` or a shared CI file changed); on demand | The pages in `web/e2e/design/manifest.ts` against the images exported from their design boards, with the design sample data from a mock API (no stack): 1440 and 390 px, light and dark; `expected: match` entries fail above their threshold (default 2% of pixels), `pending` entries report. A layout pass in Vietnamese with long and empty data fails on sideways scroll, clipped text and overlapping controls. Uploads expected, actual and diff as `design-gate` ([web/docs/ui/design-gate.md](../../../web/docs/ui/design-gate.md)) | `Design gate OK` (always reports; not required yet) |
 | Web visual regression (`web-visual.yml`) | PR with the `run-visual` label; nightly on `develop`; on demand | Screenshots of the key pages (dashboard, findings, assets, scans, remediation tasks, My Work, settings) at 1440 light and dark and 390 light against `web/e2e/visual/__screenshots__` (`playwright.visual.config.ts`, 2% pixel tolerance, volatile values masked). A missing baseline is written, not failed; `workflow_dispatch` with `update` takes new baselines and uploads them as the `visual-baselines` artifact to commit. Diffs are uploaded on failure | none (not required) |
 | All-in-one CI (`allinone-ci.yml`) | Push to `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Build images (`build-images.yml`) | Called by Web E2E and All-in-one CI on push and merge-queue events (`workflow_call`); pull requests call Resolve images (`resolve-images.yml`, read-only) | Builds each CI image once per content key and returns it by digest, or reuses the one already in `ghcr.io/openctemio/ci-images` (see [Build images once](#build-images-once)) | — |
@@ -893,7 +894,7 @@ quarantine it while the fix is made:
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
-  reads the `toolchain` directive (currently `go1.27.3`). setup-go sets
+  reads the `toolchain` directive (currently `go1.27.4`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
   and the release binaries use. `api/Dockerfile`
   pins its `golang:` base image separately: bump them with `go.mod`.
@@ -916,6 +917,47 @@ day, with the commit range in the run history. A migration that needs a newer ma
 column) fails the 16 job: write it so 16 can run it, or raise the supported floor in the same pull request, in this section
 and in the install documentation. The images are pinned by digest in `.github/ci-images.txt` and mirrored; bump the
 digest in `api-ci.yml` (18) and `api-pg-compat.yml` (16 and 18) together with it.
+### Pinned tool downloads
+
+Tools that CI installs from a GitHub release asset (betterleaks, actionlint and
+zizmor in `repo-security.yml`, trivy through `./.github/actions/setup-trivy`, gh
+through `./.github/actions/setup-gh` on runners without it, buf in `API static checks`,
+crane in `ci-image-mirror.yml`) all go through one composite action,
+`./.github/actions/fetch-tool`. Inputs: `name`, `version`, `url` (https), `sha256` and
+`extract` (the binary's path inside a `.tar.gz` archive; empty when the asset is the
+binary itself); outputs: `path` (the binary) and `dir` (the directory holding it, for
+`PATH`). The version and SHA-256 stay next to each other in the calling file, where
+`.github/tool-pins.tsv` finds them; buf's pin stays in `api/scripts/check-proto.sh`
+(also used by `make proto-check`), which API CI reads, and the script skips its own
+download when the pinned buf is already in `PROTO_TOOLS_DIR`.
+
+What it does on every run:
+
+1. Restores the archive from the GitHub Actions cache. The key is
+   `fetch-tool-<name>-<version>-<OS>-<arch>-<sha256>`; every part comes from the
+   workflow file, none from event data.
+2. Checks the archive against the pinned SHA-256. A cached archive that does not
+   match is discarded with a warning and downloaded again.
+3. On a miss, downloads it with retries (`curl -fsSL --retry 6 --retry-all-errors
+   --retry-delay 10 --connect-timeout 20`) and checks it. A mismatch fails the step and
+   nothing is kept.
+4. Saves a fresh download to the cache, but only on a push, a schedule or a manual run:
+   a pull request or merge group restores and never saves, so it cannot place an entry
+   that another branch reads. A pull request into `develop` restores the entries the
+   develop pushes saved. A failed save never fails the job.
+5. Checks the SHA-256 once more right before installing the one binary into
+   `$RUNNER_TEMP/fetch-tool/<name>-<version>/`. Nothing unverified is executed.
+
+The cache only saves the network round trip: the same tool, version and checks run
+either way. When GitHub release downloads fail, jobs keep passing as long as develop
+has a cache entry for the pin (an entry not read for 7 days is evicted). A pin bump
+has no entry until its pull request merges and develop's push saves one, so a bump
+pull request still downloads. The archives are small next to the Go and layer caches.
+
+To add a tool, call the action with its pinned version, URL and published SHA-256
+(from the release's checksums file), and add a row with the `checksum` flag to
+`.github/tool-pins.tsv`.
+
 ### Tool pin freshness
 
 Linters, scanners, signing tools and the like are pinned inline (a version in a
@@ -1202,7 +1244,9 @@ shards stay on GitHub-hosted runners (see above).
   `GITHUB_TOKEN` is read-only as well.
 - **No `pull_request_target`.** PR workflows run with the PR's read-only token
   and no secrets for fork PRs; nothing checks out a PR head with a write token.
-- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint, zizmor).
+- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint, zizmor,
+  trivy, crane, gh, buf) and fetched through `.github/actions/fetch-tool`, which checks the
+  SHA-256 on a cache hit as well as after a download (see [Pinned tool downloads](#pinned-tool-downloads)).
 
 ### Generated contract files
 

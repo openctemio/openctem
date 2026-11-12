@@ -8,6 +8,43 @@ organization tests under its published rules. It owns scope entries
 (`authorization_source = program`), exclusions for the items it lists as out
 of scope, its rules and a group whose members work on it.
 
+## Flow: import a program
+
+Checked against the code of v0.19.1 and develop on 2026-11-05 (no change
+between them in this area). A followed public program (`POST
+/programs/subscriptions`) and a sync take the same path from step 5, with
+entries inactive until a member accepts the terms hash.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor R as Researcher or admin
+  participant H as BountyProgramHandler
+  participant S as bountyprogram.Service
+  participant L as Job signer scope ledger
+  participant DB as bounty_programs, scope_targets, exclusions
+  participant T as programtarget.Ingester
+  participant I as ingest.Service.Ingest
+  R->>H: POST /api/v1/programs/preview (attack_surface:programs:write)
+  H->>S: Preview: ParseScope, RFC-054 guardrails, terms_sha256
+  H-->>R: items in, out, not scannable, terms hash
+  R->>H: POST /api/v1/programs {accept_terms_sha256} (step-up)
+  H->>S: Import(tenant from token, actor)
+  S->>S: Preview again, checkTerms(accepted == computed)
+  S->>L: CommitEntries(program entries, policy program_attestation)
+  L->>DB: repo.Import: program, group with the importer, entries, exclusions
+  S->>S: recordAttestation (terms hash per person)
+  S->>T: assign: IngestProgramTargets (at most 4x MaxScopeItems)
+  T->>I: CTIS report, BindingTrusted, SourceKind import or feed,<br/>partial, NoExposureProjection
+  T->>DB: ReplaceTargetAssets, AssignProgramAssets (asset_owners, data scope)
+  S->>S: NotifyAdmins, scope join scheduled
+```
+
+At scan time the one authority check (`scopeauth`) treats program entries
+like any entry; `internal/app/scan/active_proof.go` refuses platform sensors
+for program-only targets, and command delivery attaches the program rules
+(below).
+
 ## Where a program target is decided
 
 ```
@@ -74,14 +111,20 @@ tenant only):
 - outside a covering program's testing windows the job waits: the scan
   window hold evaluates them as allow windows that cannot be overridden
   (RFC-067, [scan-windows.md](scan-windows.md));
-- two programs with different values for one header, or two User-Agents:
+- two programs with different values for one header, or different
+  User-Agent settings (a single value or a rotation list, compared whole):
   the job fails with `PROGRAM_RULES_CONFLICT`;
 - otherwise the delivered copy carries the headers and User-Agent in
   `http_policy` and a `rate_limit` capped at the smallest program rate; the
   stored command is unchanged;
 - headers or a User-Agent go only to a sensor that reports the capability
   `http.identity@1` (its tools send them on every request; others would
-  ignore them); a failed lookup withholds the job.
+  ignore them); a failed lookup withholds the job;
+- a program's `identification_required` (new programs default to on in the
+  console) makes the job require identification: without a header or query
+  parameter from any layer it fails with `IDENTIFICATION_REQUIRED_MISSING`,
+  and only a sensor that reports `http.identity.required@1` gets it
+  ([scan-identification.md](scan-identification.md)).
 
 The trigger refuses conflicting rules up front (`PROGRAM_RULES_CONFLICT`);
 a run outside a testing window waits, a scheduled one is deferred to the
@@ -174,7 +217,7 @@ left out of the organization's own metrics by default (RFC-065 §16.5).
 ## Typed targets and per-target qualifiers
 
 The classifier keeps what a program lists: `api.x.com:8443/tcp`,
-`10.0.0.5:22` and `https://api.x.com:8443` become entries of the host
+`198.51.100.5:22` and `https://api.x.com:8443` become entries of the host
 limited to that port (never the whole host); a URL with a path becomes a
 path-limited URL entry; feed targets carry `ports`, `protocol` and
 `path_prefix` (schema 1.1) into the same limits, and a limit an entry cannot

@@ -43,6 +43,20 @@ type OwnerInvitationNotifier interface {
 	SendOwnershipInvitation(ctx context.Context, email, name, organizationName string, expiresAt time.Time)
 	// NotifyOwnershipTransfer sends a plain security notice.
 	NotifyOwnershipTransfer(ctx context.Context, email, name, subject, message string)
+	// CanDeliverSystem reports whether the platform relay can send mail. The
+	// invitation and its notices go through that relay only.
+	CanDeliverSystem() bool
+}
+
+// ErrOwnerInvitationEmailUnavailable: "send again" on an installation that
+// cannot send email. Nothing would be sent, so nothing is recorded as sent;
+// the person accepts in the app after signing in.
+var ErrOwnerInvitationEmailUnavailable = fmt.Errorf("%w: this installation cannot send email", shared.ErrConflict)
+
+// OwnerInvitationEmailOn reports whether the invitee is told by email when an
+// invitation is sent, sent again or canceled.
+func (s *TenantService) OwnerInvitationEmailOn() bool {
+	return s.ownerInvitationNotices != nil && s.ownerInvitationNotices.CanDeliverSystem()
 }
 
 // SetOwnerInvitationRepository wires the invitation store. Without it the
@@ -68,6 +82,20 @@ func (s *TenantService) ownerInvitationStore() (tenantdom.OwnerInvitationReposit
 
 func ownerInvitationNow() time.Time { return time.Now().UTC() }
 
+// newOwnerInvitation builds the invitation, recorded as never sent when the
+// installation cannot send email: send_count and last_sent_at never claim a
+// send that did not happen.
+func (s *TenantService) newOwnerInvitation(tenantID shared.ID, invitee *userdom.User, invitedBy shared.ID) (*tenantdom.OwnerInvitation, error) {
+	inv, err := tenantdom.NewOwnerInvitation(tenantID, invitee.ID(), invitee.Email(), invitedBy, ownerInvitationNow())
+	if err != nil {
+		return nil, err
+	}
+	if !s.OwnerInvitationEmailOn() {
+		inv.MarkNotSent()
+	}
+	return inv, nil
+}
+
 // CreateTenantAwaitingOwner creates an organization with no member and an
 // ownership invitation to invitee (an existing account), atomically. The
 // organization starts with the same limits as CreateTenant gives it.
@@ -83,7 +111,7 @@ func (s *TenantService) CreateTenantAwaitingOwner(ctx context.Context, input Cre
 	var inv *tenantdom.OwnerInvitation
 	t, err := s.createTenant(ctx, input, invitee.ID(), actx, func(t *tenantdom.Tenant) error {
 		var err error
-		inv, err = tenantdom.NewOwnerInvitation(t.ID(), invitee.ID(), invitee.Email(), invitedBy, ownerInvitationNow())
+		inv, err = s.newOwnerInvitation(t.ID(), invitee, invitedBy)
 		if err != nil {
 			return err
 		}
@@ -116,7 +144,7 @@ func (s *TenantService) InviteOwner(ctx context.Context, tenantID shared.ID, inv
 	if !t.TypedSettings().Security.EmailDomainAllowed(invitee.Email()) {
 		return nil, ErrEmailDomainNotAllowed
 	}
-	inv, err := tenantdom.NewOwnerInvitation(tenantID, invitee.ID(), invitee.Email(), invitedBy, ownerInvitationNow())
+	inv, err := s.newOwnerInvitation(tenantID, invitee, invitedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +181,9 @@ func (s *TenantService) ResendOwnerInvitation(ctx context.Context, tenantID shar
 	store, err := s.ownerInvitationStore()
 	if err != nil {
 		return nil, err
+	}
+	if !s.OwnerInvitationEmailOn() {
+		return nil, ErrOwnerInvitationEmailUnavailable
 	}
 	t, err := s.repo.GetByID(ctx, tenantID)
 	if err != nil {
@@ -265,7 +296,8 @@ func (s *TenantService) auditOwnerInvitation(ctx context.Context, actx auditapp.
 		WithMetadata("invitation_id", inv.ID.String()).
 		WithMetadata("invitee_user_id", inv.InviteeUserID.String()).
 		WithMetadata("expires_at", inv.ExpiresAt.Format(time.RFC3339)).
-		WithMetadata("send_count", inv.SendCount))
+		WithMetadata("send_count", inv.SendCount).
+		WithMetadata("invitee_emailed", s.OwnerInvitationEmailOn()))
 }
 
 func (s *TenantService) sendOwnerInvitation(ctx context.Context, inv *tenantdom.OwnerInvitation, name, orgName string) {

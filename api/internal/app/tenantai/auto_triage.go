@@ -19,6 +19,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
@@ -100,7 +101,7 @@ func (s *Service) SaveAutoTriage(ctx context.Context, tenantID string, in tenant
 			return AutoTriageView{}, ErrNoActor
 		}
 		if s.stepUp != nil {
-			if err := s.stepUp.RequireRecentAuth(ctx, actx.ActorID); err != nil {
+			if err := stepup.Require(ctx, s.stepUp, actx.ActorID, stepup.TierSensitive); err != nil {
 				return AutoTriageView{}, err
 			}
 		}

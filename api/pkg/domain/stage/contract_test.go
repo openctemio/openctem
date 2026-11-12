@@ -181,9 +181,11 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 	// 17 routed + 12 planned: the 22 of taxonomy v1 plus discover.cloud,
 	// sbom.generate and import.file (RFC-055), lookup.rdap and lookup.asn
 	// (RFC-071), discover.hosts (RFC-088), enumerate.subdomains (RFC-036),
-	// monitor.web_content (RFC-138).
-	if len(all) != 30 {
-		t.Fatalf("taxonomy v1: %d capabilities, want 30", len(all))
+	// monitor.web_content (RFC-138), enumerate.web_paths (routed) and
+	// enumerate.web_params (later) (RFC-150), lookup.ct (cross-cutting,
+	// certificate monitoring).
+	if len(all) != 32 {
+		t.Fatalf("taxonomy v1: %d capabilities, want 32", len(all))
 	}
 	ids := map[string]bool{}
 	for _, s := range all {
@@ -191,7 +193,7 @@ func TestTaxonomy_PlannedAreNeverRouted(t *testing.T) {
 			t.Fatalf("duplicate capability id %s", s.ID())
 		}
 		ids[s.ID()] = true
-		if s.CrossCutting != (s.Key == "verify.finding" || s.Key == "import.file") {
+		if s.CrossCutting != (s.Key == "verify.finding" || s.Key == "import.file" || s.Key == LookupCT) {
 			t.Fatalf("%s: cross-cutting flag", s.Key)
 		}
 	}

@@ -961,6 +961,18 @@ const coreSettingsNav: SettingsNavGroup[] = [
         module: 'scans',
         keywords: ['secret store', 'secrets', 'tokens', 'git token'],
       },
+      {
+        id: 'tool-sources',
+        section: 'content',
+        title: 'Tool source keys',
+        description:
+          "API keys of third-party sources your scan tools query, such as subfinder's passive sources. Used only by your organization's scans.",
+        url: '/settings/scanning/tool-sources',
+        icon: KeyRound,
+        permission: Permission.SecretStoreRead,
+        module: 'scans',
+        keywords: ['api key', 'subfinder', 'passive sources', 'securitytrails', 'shodan', 'censys'],
+      },
     ],
   },
   {

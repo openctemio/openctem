@@ -86,6 +86,10 @@ type Endpoint struct {
 	LastSeenAt    time.Time  `json:"last_seen_at"`
 	LastChangedAt *time.Time `json:"last_changed_at,omitempty"`
 	LastTool      string     `json:"last_tool,omitempty"`
+	// RespSize and RespHash are the response evidence of a path discovery
+	// hit (nil and "" for an endpoint discovery never confirmed).
+	RespSize *int   `json:"resp_size,omitempty"`
+	RespHash string `json:"resp_hash,omitempty"`
 }
 
 // Param is one stored parameter of an endpoint: never a value.

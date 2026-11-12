@@ -50,11 +50,17 @@ const SAFE_CALLS = new Set([
   // filters as URLSearchParams values.
   'cveFindingsHref',
   'findingsHrefForSources',
+  // features/exploration/lib/leads.ts: `/exploration` with the asset and lead
+  // ids only as URLSearchParams values.
+  'explorationHref',
   'mitreTechniqueUrl',
   // features/findings/lib/quick-views.ts: `/findings?` with a quick view's
   // filter (from the API) only in the query.
   'quickViewHref',
   'registerHref',
+  // features/findings/api/receipts-api.ts: `/findings?` with one fixed
+  // "seen by" param name and the value as URLSearchParams.
+  'seenByFindingsHref',
   // features/vulnerabilities/api/use-cve-exposure.ts: `/vulnerabilities/` with
   // the id URI-encoded.
   'vulnerabilityHref',
@@ -69,6 +75,9 @@ const SAFE_TAGS = new Set(['SafeExternalLink'])
  * route builder or a constant.
  */
 const REVIEWED = new Set([
+  // Step detail: href is linkHref() (features/exploration/lib/leads.ts), a fixed same-origin prefix
+  // (/assets via assetDetailHref, /findings/, /scans/runs?run=) with the id URI-encoded.
+  'features/exploration/components/lead-detail-sheet.tsx|Link|href={href}',
   // Account space links: NAV and ACCOUNT_LINKS are constant same-origin paths in the same file.
   'features/account/components/account-shell.tsx|Link|href={item.href}',
   'features/account/components/welcome-hub.tsx|Link|href={item.href}',

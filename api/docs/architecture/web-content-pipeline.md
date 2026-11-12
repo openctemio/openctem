@@ -28,10 +28,15 @@ other key (and the key on any other asset type):
 |---|---|
 | `hsts`, `hsts_include_subdomains`, `hsts_preload`, `csp`, `csp_unsafe_inline`, `csp_unsafe_eval`, `nosniff`, `permissions_policy`, `cors_credentials` | boolean |
 | `hsts_max_age` | integer seconds, 0 to ten years |
-| `frame_options` | `deny`, `sameorigin`, `allow_from`, `other` |
-| `referrer_policy` | the standard policy tokens, or `other` |
+| `frame_options` | `deny`, `sameorigin`, `allow_from`, `other`, `none` (not sent) |
+| `referrer_policy` | the standard policy tokens, `other`, or `none` (not sent) |
 | `cors_origin` | `none`, `wildcard`, `specific`, `reflected` |
 | `cookies` | at most 20 entries `{name, secure, httponly, samesite}`; `name` matches `[A-Za-z0-9_.-]{1,64}`; `samesite` is `strict`, `lax` or `none` |
+
+`none` comes only from a template check that reports the header missing
+([template-facts.md](template-facts.md)); a header value is never read as
+`none`. A template's missing-header matches add the keys the report's own
+headers do not decide.
 
 Posture is never a finding by itself.
 
@@ -62,6 +67,15 @@ controller (one replica at a time).
    config carries `template_ids`.
 5. The run files findings only through the normal ingest of the template
    hits. The planner itself writes no finding and no exposure.
+
+Endpoints found by path discovery ([web-discovery.md](web-discovery.md),
+source `guess`) are candidates like crawled ones when their catalog entry
+has a `verify` block. A guessed backup, dump, source or config file is
+labelled (`ext:*`) and never filed on its own. A guessed backup, archive or
+dump file (`ext:backup`, `ext:archive`, `ext:dbdump`) is a candidate without a
+catalog entry: the planner asks the sensor for its own compiled-in
+`openctem-backup-file-signature` template by id (`scanner_config.template_ids`,
+RFC-150 §5), whose magic-byte check of the exact URL decides.
 
 A depth never raises the tier: passive verifies nothing, standard and deep
 are T1 (deep doubles the budget). `dast.web` (T2) is never planned here.

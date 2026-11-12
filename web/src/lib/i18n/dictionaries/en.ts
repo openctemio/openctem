@@ -11,6 +11,7 @@ import en_actor from './en/actor.json'
 import en_admin from './en/admin.json'
 import en_announcements from './en/announcements.json'
 import en_assetFreshness from './en/assetFreshness.json'
+import en_assetLiveness from './en/assetLiveness.json'
 import en_assetCoverage from './en/assetCoverage.json'
 import en_assetPorts from './en/assetPorts.json'
 import en_assetSources from './en/assetSources.json'
@@ -23,6 +24,7 @@ import en_brand from './en/brand.json'
 import en_businessContext from './en/businessContext.json'
 import en_easmReview from './en/easmReview.json'
 import en_threatIntel from './en/threatIntel.json'
+import en_toolSources from './en/toolSources.json'
 import en_emergingThreats from './en/emergingThreats.json'
 import en_auth from './en/auth.json'
 import en_automations from './en/automations.json'
@@ -42,6 +44,7 @@ import en_findings from './en/findings.json'
 import en_findingApprovals from './en/findingApprovals.json'
 import en_findingLifecycle from './en/findingLifecycle.json'
 import en_exceptions from './en/exceptions.json'
+import en_exploration from './en/exploration.json'
 import en_exposures from './en/exposures.json'
 import en_help from './en/help.json'
 import en_insights from './en/insights.json'
@@ -95,6 +98,7 @@ import en_workflowStages from './en/workflowStages.json'
 import en_remediationHub from './en/remediationHub.json'
 import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
+import en_queryInput from './en/queryInput.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
 import en_threatModel from './en/threatModel.json'
@@ -112,6 +116,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   admin: en_admin,
   announcements: en_announcements,
   assetFreshness: en_assetFreshness,
+  assetLiveness: en_assetLiveness,
   assetCoverage: en_assetCoverage,
   assetPorts: en_assetPorts,
   assetSources: en_assetSources,
@@ -124,6 +129,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   businessContext: en_businessContext,
   easmReview: en_easmReview,
   threatIntel: en_threatIntel,
+  toolSources: en_toolSources,
   emergingThreats: en_emergingThreats,
   auth: en_auth,
   automations: en_automations,
@@ -143,6 +149,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   findingApprovals: en_findingApprovals,
   findingLifecycle: en_findingLifecycle,
   exceptions: en_exceptions,
+  exploration: en_exploration,
   exposures: en_exposures,
   help: en_help,
   insights: en_insights,
@@ -196,6 +203,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   remediationHub: en_remediationHub,
   remediationClaim: en_remediationClaim,
   remediationCampaigns: en_remediationCampaigns,
+  queryInput: en_queryInput,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,
   threatModel: en_threatModel,

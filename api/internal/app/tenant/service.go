@@ -15,7 +15,6 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/entitlement"
 	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 
 	"github.com/openctemio/openctem/api/pkg/crypto"
@@ -31,6 +30,7 @@ import (
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -65,6 +65,8 @@ type TeamInvitationJobPayload struct {
 // TenantService handles tenant-related business operations.
 // Note: Tenants are displayed as "Teams" in the UI.
 type TenantService struct {
+	// tagRules drops the cached governing-tag set when approval rules change.
+	tagRules TagRulesInvalidator
 	// signups reports organizations created to the sign-up feed (optional).
 	signups signupevent.Recorder
 	repo    tenantdom.Repository
@@ -115,10 +117,6 @@ type TenantService struct {
 	ssoPathChecker SSOPathChecker
 	// mfaFloor is the platform two-factor floor (SetMFAFloorSource).
 	mfaFloor MFAFloorSource
-	// features gates sso.enforcement by the organization's limits; enforced
-	// lists the organizations that enforce SSO (the post-grace sweep).
-	features SSOFeatureGate
-	enforced SSOEnforcedLister
 	// ssoDomains reports whether a tenant holds a domain verified for SSO
 	// (requiring SSO needs one). Nil: requiring SSO is refused.
 	ssoDomains SSODomainChecker
@@ -254,7 +252,7 @@ func WithEmailEnqueuer(enqueuer EmailJobEnqueuer) TenantServiceOption {
 
 // SetEmailEnqueuer wires the email job enqueuer (invitation emails). It is a
 // setter, not only a constructor option, because the job client is built after
-// the services: cmd/server used to construct a second TenantService just to
+// the services: internal/server used to construct a second TenantService just to
 // pass it, and every collaborator wired on the first instance was lost.
 func (s *TenantService) SetEmailEnqueuer(enqueuer EmailJobEnqueuer) {
 	s.emailEnqueuer = enqueuer
@@ -281,24 +279,6 @@ func WithTenantRoleService(svc *accesscontrol.RoleService) TenantServiceOption {
 // RoleService — same pattern as SetMembershipCache).
 func (s *TenantService) SetRoleService(svc *accesscontrol.RoleService) {
 	s.roleService = svc
-}
-
-// SSOFeatureGate is the entitlement check of the sign-in features.
-type SSOFeatureGate interface {
-	Allowed(ctx context.Context, tenantID shared.ID, feature string) (bool, error)
-	Usable(ctx context.Context, tenantID shared.ID, feature string) (bool, error)
-}
-
-// SSOEnforcedLister lists the organizations that currently enforce SSO.
-type SSOEnforcedLister interface {
-	ListSSOEnforcedTenantIDs(ctx context.Context, limit int) ([]shared.ID, error)
-}
-
-// SetSSOFeatureGate wires the feature check of SSO enforcement: turning it on
-// needs sso.enforcement, and SweepDeniedSSOEnforcement turns it off once the
-// organization lost the feature and its grace ended.
-func (s *TenantService) SetSSOFeatureGate(g SSOFeatureGate, enforced SSOEnforcedLister) {
-	s.features, s.enforced = g, enforced
 }
 
 // SetSSOPathChecker wires the SSO-path checker after construction. TenantService
@@ -2109,6 +2089,9 @@ type UpdateSecuritySettingsInput struct {
 	// yes: keys and grants made from a later SSO session keep working.
 	RevokeCredentialsOnSSOEnforce *bool `json:"revoke_credentials_on_sso_enforce"`
 	MFARequired                   *bool `json:"mfa_required"`
+	// StepUp replaces the re-verification policy (all three tiers). Owner
+	// only (route gate), with step-up; critical cannot go below the floor.
+	StepUp *stepup.Policy `json:"step_up"`
 	// MFARequiredForAdmins: see tenantdom.SecuritySettings.
 	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
 	IPWhitelist           []string `json:"ip_whitelist"`
@@ -2128,6 +2111,12 @@ type UpdateSecuritySettingsInput struct {
 	// ToolHTTPHeaders replaces the organization's scan identification
 	// headers (nil: unchanged; empty: none).
 	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers"`
+	// ToolHTTPUserAgents replaces the rotation list (nil: unchanged; empty:
+	// none); ToolHTTPQuery the query parameter (nil: unchanged; a blank name
+	// and value: none); ToolHTTPIdentificationRequired the requirement.
+	ToolHTTPUserAgents             *[]string        `json:"tool_http_user_agents"`
+	ToolHTTPQuery                  *scanident.Query `json:"tool_http_query"`
+	ToolHTTPIdentificationRequired *bool            `json:"tool_http_identification_required"`
 	// PersonalAccounts and SSOExceptions: see tenantdom.SecuritySettings
 	// (RFC-058). The route already needs the owner with step-up.
 	PersonalAccounts *string                   `json:"personal_accounts"`
@@ -2183,7 +2172,8 @@ func (s *TenantService) ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) 
 	}
 	sec := t.TypedSettings().Security
 	p := sec.ToolHTTPPolicy()
-	out := sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, AllowInsecureTLS: p.AllowInsecureTLS}
+	out := sensordom.ToolHTTPPolicy{UserAgent: p.UserAgent, UserAgents: p.UserAgents, AllowInsecureTLS: p.AllowInsecureTLS,
+		Query: p.Query, IdentificationRequired: p.IdentificationRequired}
 	if len(p.Headers) > 0 {
 		out.Headers = make(map[string]string, len(p.Headers))
 		for _, h := range p.Headers {
@@ -2280,6 +2270,15 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 				security.ToolHTTPHeaders = nil
 			}
 		}
+		if input.ToolHTTPUserAgents != nil {
+			security.ToolHTTPUserAgents = scanident.NormalizeUserAgents(*input.ToolHTTPUserAgents)
+		}
+		if input.ToolHTTPQuery != nil {
+			security.ToolHTTPQuery = scanident.NormalizeQuery(input.ToolHTTPQuery)
+		}
+		if input.ToolHTTPIdentificationRequired != nil {
+			security.ToolHTTPIdentificationRequired = *input.ToolHTTPIdentificationRequired
+		}
 		if input.PersonalAccounts != nil {
 			security.PersonalAccounts = tenantdom.PersonalAccountsPolicy(*input.PersonalAccounts)
 		}
@@ -2288,6 +2287,13 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		}
 		if input.ExternalAccessEndRequired != nil {
 			security.ExternalAccessEndRequired = *input.ExternalAccessEndRequired
+		}
+		if input.StepUp != nil {
+			p := *input.StepUp
+			if err := p.Validate(); err != nil {
+				return err
+			}
+			security.StepUp = &p
 		}
 		if input.SSOExceptions != nil {
 			if err := s.validateSSOExceptions(ctx, t.ID(), *input.SSOExceptions); err != nil {
@@ -2316,11 +2322,6 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 		// Only gate when this request actually asserts enforcement ON. The owner
 		// break-glass at the enforcement gate is the ultimate lock-out guarantee, so
 		// if the checker is unavailable we log and allow rather than hard-fail.
-		if input.SSOEnforced != nil && *input.SSOEnforced && !before.SSOEnforced && s.features != nil {
-			if err := entitlement.RequireFeature(ctx, s.features, t.ID(), limits.FeatureSSOEnforcement); err != nil {
-				return err
-			}
-		}
 		if input.SSOEnforced != nil && *input.SSOEnforced {
 			if s.ssoPathChecker == nil {
 				s.logger.Warn("sso_enforced enabled without an SSO-path checker wired; skipping usable-path guard",
@@ -2391,6 +2392,7 @@ func (s *TenantService) UpdateSecuritySettings(ctx context.Context, tenantID str
 	after := t.TypedSettings().Security
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_interactsh", before.AllowSensorInteractsh, after.AllowSensorInteractsh)
 	s.auditSensorOptIn(ctx, actx, "allow_sensor_custom_templates", before.AllowSensorCustomTemplates, after.AllowSensorCustomTemplates)
+	s.auditStepUpPolicy(ctx, actx, before.EffectiveStepUp(), after.EffectiveStepUp())
 	s.notifySecurityLoosened(ctx, tenantID, actx, before, after)
 	if enforcedNow {
 		s.revokeCredentialsAtSSOEnforce(ctx, t.ID(), actx, input.RevokeCredentialsOnSSOEnforce)
@@ -2519,7 +2521,7 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 		// Letting more sensitive findings reach trackers, or starting
 		// campaigns without a recorded authorization, loosens the policy.
 		if pentestLoosened(before, ps) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -2718,11 +2720,15 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		// "must run dry-run before enabling" gate by submitting a
 		// fabricated timestamp in the PUT body.
 		al.DryRunCompletedAt = before.DryRunCompletedAt
+		// A body without liveness keeps the stored liveness settings.
+		if al.Liveness == nil {
+			al.Liveness = before.Liveness
+		}
 
 		// Demoting more assets, sooner or with fewer guards hides them from
 		// monitoring: it needs a recent re-authentication.
 		if lifecycleLoosened(before, al) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -2749,7 +2755,9 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		WithMetadata("grace_period_days_before", before.GracePeriodDays).
 		WithMetadata("grace_period_days_after", al.GracePeriodDays).
 		WithMetadata("excluded_source_types_before", before.ExcludedSourceTypes).
-		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes)
+		WithMetadata("excluded_source_types_after", al.ExcludedSourceTypes).
+		WithMetadata("close_findings_when_gone_before", before.LivenessSettings().CloseFindingsWhenGone).
+		WithMetadata("close_findings_when_gone_after", al.LivenessSettings().CloseFindingsWhenGone)
 	if lifecycleLoosened(before, t.TypedSettings().AssetLifecycle) {
 		event = event.WithSeverity(audit.SeverityHigh)
 		s.notifyPolicyLoosened(ctx, tenantID, actx, "Asset lifecycle loosened",
@@ -2790,7 +2798,7 @@ func (s *TenantService) UpdateRetestSettings(
 		// Auto-resolve closes findings without a person: turning it on needs
 		// a recent sign-in.
 		if rs.AutoResolve && !before.AutoResolve {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -2938,7 +2946,7 @@ func (s *TenantService) UpdateCycleSettings(
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionCycles, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().Cycles
 		if cycleLoosened(before, cs) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}
@@ -3170,6 +3178,17 @@ func (s *TenantService) GetScopeSettings(ctx context.Context, tenantID string) (
 	return &ss, nil
 }
 
+// MaxRangeHostBits is the widest range one scan target of the tenant may
+// name, in host bits (RFC-151): its scope setting max_range_prefix, 16 (/16)
+// by default. A lookup error is returned: the caller refuses the wide range.
+func (s *TenantService) MaxRangeHostBits(ctx context.Context, tenantID shared.ID) (int, error) {
+	t, err := s.repo.GetByID(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	return t.TypedSettings().Scope.RangeHostBits(), nil
+}
+
 // UpdateScopeSettings replaces the tenant's scope settings and audits the
 // before/after values. The route requires attack_surface:scope:approve and
 // step-up; the caller notifies the administrators.
@@ -3189,12 +3208,18 @@ func (s *TenantService) UpdateScopeSettings(
 		return nil, err
 	}
 	actx.TenantID = tenantID
+	out := t.TypedSettings().Scope
 	event := auditapp.NewSuccessEvent(audit.ActionScopeSettingsUpdated, audit.ResourceTypeTenant, tenantID).
-		WithChanges(auditapp.DiffChanges(before, t.TypedSettings().Scope)).
+		WithChanges(auditapp.DiffChanges(before, out)).
 		WithMessage("Scope settings updated").
 		WithSeverity(audit.SeverityHigh)
+	// A wider range per scan target widens what one scan may sweep: named
+	// in the audit message so a reviewer sees it at a glance.
+	if tenantdom.RangeWidened(before, out) {
+		event = event.WithMessage(fmt.Sprintf("Scope settings updated: the widest scan target range was raised from /%d to /%d", before.RangePrefix(), out.RangePrefix())).
+			WithMetadata("range_widened", true)
+	}
 	s.logAudit(ctx, actx, event)
-	out := t.TypedSettings().Scope
 	return &out, nil
 }
 
@@ -3244,7 +3269,7 @@ func (s *TenantService) UpdateEASMSettings(
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionEASM, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().EASM
 		if easmLoosened(before, es) {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}

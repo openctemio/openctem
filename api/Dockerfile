@@ -6,7 +6,7 @@
 # -----------------------------------------------------------------------------
 # Development stage - Standalone, no deps copy needed (uses volumes)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS development
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS development
 
 WORKDIR /app
 
@@ -41,7 +41,7 @@ CMD ["/usr/local/bin/dev-entrypoint.sh"]
 # SDK is fetched from GitHub as a released module (not local)
 # Build context: api/ folder (not parent)
 # -----------------------------------------------------------------------------
-FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS base
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS base
 
 WORKDIR /app
 
@@ -66,7 +66,7 @@ RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (
 # /app/api/openapi/swagger.yaml. It is the same on every architecture, so it
 # runs on the build platform (no emulation). Same swag version and flags as
 # `make swagger` (SWAG_VERSION there and in scripts/check-openapi.sh).
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS openapi
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS openapi
 ARG SWAG_VERSION=v1.16.4
 WORKDIR /app
 ENV GOWORK=off
@@ -77,7 +77,7 @@ RUN go install github.com/swaggo/swag/cmd/swag@${SWAG_VERSION}
 COPY go.mod go.sum ./
 RUN for i in 1 2 3; do go mod download && exit 0; echo "go mod download failed (attempt $i); retrying" >&2; sleep $((i * 10)); done; exit 1
 COPY . .
-RUN swag init --generalInfo cmd/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
+RUN swag init --generalInfo internal/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
  && test -s api/openapi/swagger.yaml
 
 # -----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ ARG BUILD_TIME=""
 # Binaries:
 #   server           the API, and the operator commands below: each is a link
 #                    to the server binary, which runs the command named by the
-#                    link (cmd/server/tools.go). One binary instead of one per
+#                    link (internal/server/tools.go). One binary instead of one per
 #                    command keeps the shared packages in the image once.
 #     bootstrap-admin      initial setup: platform administrators and the
 #                          first organization
@@ -119,6 +119,14 @@ ARG BUILD_TIME=""
 #                          to scope (read-only)
 #     asset-canonical      moves stored asset names to the CTIS 2.0 canonical
 #                          form (a dry run by default; -revert undoes renames)
+#     receipt-reattribute  moves the receipts of auto-released quarantine items
+#                          back to their sensor (a dry run by default)
+#     finding-practice     sets the practice of findings stored before practices
+#                          existed (a dry run by default, aggregates only)
+#     finding-source-backfill  gives findings stored before per-source
+#                          records one record each (a dry run by default)
+#     compliance-checks    moves compliance findings stored before check state
+#                          to it (a dry run by default, aggregates only)
 #   openctem-signer  the job signer (RFC-040 §5.6); runs as its own container
 #                    from this image, see deploy/docker-compose.job-signer.yml.
 #                    A binary of its own: it holds the signing key and links
@@ -168,7 +176,7 @@ RUN echo 'openctem:x:1000:1000:openctem:/app:/sbin/nologin' >> /out/etc/passwd \
  && chmod 0770 /out/signer-run \
  && chmod 0755 /out/signer-pub \
  && mkdir -p /out/tool-links \
- && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical; do ln -s server /out/tool-links/$t; done
+ && for t in bootstrap-admin refingerprint repomerge ci-trust-scope-plan asset-canonical receipt-reattribute finding-practice finding-source-backfill compliance-checks; do ln -s server /out/tool-links/$t; done
 
 # -----------------------------------------------------------------------------
 # Production stage
@@ -190,7 +198,7 @@ COPY --from=builder /app/bin/server /app/bin/openctem-signer /app/bin/openctem-m
 COPY --from=runtime-fs /out/tool-links/ ./
 
 # The OpenAPI spec served at /openapi.yaml (path relative to WORKDIR, see
-# cmd/server/handlers.go NewDocsHandler).
+# internal/server/handlers.go NewDocsHandler).
 COPY --from=openapi /app/api/openapi/swagger.yaml ./api/openapi/swagger.yaml
 
 # The third-party notices the API serves (path relative to WORKDIR, see

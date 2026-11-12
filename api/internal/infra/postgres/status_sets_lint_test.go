@@ -19,6 +19,9 @@ var statusListRE = regexp.MustCompile(`(?i)\bstatus\s+(NOT\s+)?IN\s*\(\s*('[a-z_
 // to api/) and the exact list. Each says why it is its own set. Everything
 // else uses vulnerability.OpenStatusSQL and its siblings.
 var handWrittenStatusListAllowed = map[string]map[string]string{
+	"internal/infra/postgres/compliance_check_read.go": {
+		"status IN ('accepted', 'false_positive')": "an excepted benchmark failure: accepted or judged a false positive, not a duplicate (docs/architecture/compliance-checks.md)",
+	},
 	"internal/infra/postgres/pentest_campaign_stats.go": {
 		"status NOT IN ('draft', 'in_review', 'false_positive', 'duplicate')": "a pentest report's published findings (publication, not lifecycle)",
 		"status IN ('confirmed', 'in_progress')":                              "the pentest 'being fixed' work bucket next to fix_applied",

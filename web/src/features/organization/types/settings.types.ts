@@ -1,4 +1,8 @@
-import type { IdentHeader, PlatformIdentLayer } from '@/features/sensors/lib/scan-identification'
+import type {
+  IdentHeader,
+  IdentQuery,
+  PlatformIdentLayer,
+} from '@/features/sensors/lib/scan-identification'
 
 /**
  * Tenant Settings Types
@@ -65,6 +69,12 @@ export interface SecuritySettings {
   forbid_tool_insecure_tls?: boolean
   /** Scan identification headers of the organization (free names and values). */
   tool_http_headers?: IdentHeader[]
+  /** A User-Agent rotation list instead of tool_http_user_agent (at most 200). */
+  tool_http_user_agents?: string[]
+  /** The identification query parameter added to every request URL. */
+  tool_http_query?: IdentQuery | null
+  /** Every request of the organization's scans must carry a header or the query parameter. */
+  tool_http_identification_required?: boolean
   /** The platform's layer of the scan identification markers (read-only, GET only). */
   platform_scan_identification?: PlatformIdentLayer
   /**
@@ -86,6 +96,21 @@ export interface SecuritySettings {
   jit_requires_approval?: boolean
   /** A sign-in through the organization's own IdP must carry its MFA proof. */
   sso_require_mfa_evidence?: boolean
+  /** Re-verification (step-up) policy in force, per risk tier. */
+  step_up?: StepUpPolicy
+}
+
+/** How often a tier asks the person to confirm their identity again. */
+export type StepUpMode = 'every_time' | 'once_per_window' | 'off'
+export type StepUpWindow = '10m' | '1h' | '4h' | '8h' | 'session'
+export interface StepUpRule {
+  mode: StepUpMode
+  window?: StepUpWindow
+}
+export interface StepUpPolicy {
+  critical: StepUpRule
+  sensitive: StepUpRule
+  routine: StepUpRule
 }
 
 export type PersonalAccountsPolicy = 'allowed' | 'allowed_with_mfa' | 'blocked'
@@ -113,6 +138,11 @@ export interface UpdateSecuritySettingsInput {
   forbid_tool_insecure_tls?: boolean
   /** Replaces the organization's scan identification headers. */
   tool_http_headers?: IdentHeader[]
+  /** Replaces the rotation list ([] none). */
+  tool_http_user_agents?: string[]
+  /** Replaces the query parameter (a blank name and value: none). */
+  tool_http_query?: IdentQuery
+  tool_http_identification_required?: boolean
   personal_accounts?: PersonalAccountsPolicy
   invitees?: InviteesPolicy
   external_access_end_required?: boolean
@@ -120,6 +150,8 @@ export interface UpdateSecuritySettingsInput {
   sso_exceptions?: SSOException[]
   jit_requires_approval?: boolean
   sso_require_mfa_evidence?: boolean
+  /** Replaces the re-verification policy (owner only; critical keeps its floor). */
+  step_up?: StepUpPolicy
 }
 
 // ============================================

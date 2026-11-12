@@ -427,6 +427,26 @@ func TestRetest_HumanFindingsHaveNoAutomaticRetest(t *testing.T) {
 	}
 }
 
+// A scanner's report imported from a file (the manual channel, a scanner's
+// source) is not a person's finding: it is re-checked by a newer import,
+// and no job is queued.
+func TestRetest_FileImportedScannerReportSaysReimport(t *testing.T) {
+	fx := newPVFixture(t, vulnerability.FindingSourceVA, "nessus", "21157")
+	fx.finding.SetIngestChannel(vulnerability.IngestChannelManual)
+	s := fx.service()
+	_, err := fx.request(t, s, ModeDefault)
+	if !errors.Is(err, retestdom.ErrNotEligible) || IneligibleReason(err) != ReasonReimportToVerify {
+		t.Fatalf("err %v (%s)", err, IneligibleReason(err))
+	}
+	o, err := s.Offer(context.Background(), fx.tenant, fx.finding.ID())
+	if err != nil || o.Available || o.Reason != ReasonReimportToVerify || o.Strategy.Kind != StrategyNone {
+		t.Fatalf("offer %+v %v", o, err)
+	}
+	if len(fx.disp.tool)+len(fx.disp.validated) != 0 || len(fx.store.created) != 0 {
+		t.Fatal("a job was queued")
+	}
+}
+
 // A nuclei template re-run goes to the sensor that reported the finding.
 func TestRetest_TemplateRetestGoesToTheSightingSensor(t *testing.T) {
 	fx := newPVFixture(t, vulnerability.FindingSourceDAST, "nuclei", "apache-detect")

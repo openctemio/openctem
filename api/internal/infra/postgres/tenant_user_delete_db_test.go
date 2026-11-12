@@ -215,6 +215,33 @@ type schemaSeeder struct {
 // CHECK constraints and formats. Keep it small; everything else is derived
 // from the catalog so new tables are covered without touching this test.
 var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
+	// A live lead on one subject (chk_exploration_leads_subject, _closed,
+	// _action); a link has one typed end of its kind; a verdict by a checker.
+	"exploration_leads": func(*schemaSeeder) map[string]any {
+		return map[string]any{"subject_finding_id": nil, "lead_type": "dns.takeover_check", "state": "open",
+			"capability": "check.takeover", "tier": 1, "action_hash": strings.Repeat("a", 64), "origin": "rule",
+			"likelihood": "medium", "closed_at": nil}
+	},
+	"exploration_links": func(*schemaSeeder) map[string]any {
+		return map[string]any{"rel": "derived_from", "end_kind": "asset", "finding_id": nil, "scan_run_id": nil,
+			"ref_lead_id": nil, "effect": nil}
+	},
+	"exploration_verdicts": func(*schemaSeeder) map[string]any {
+		return map[string]any{"verdict": "refuted", "tier": "deterministic", "checker": "scan_run"}
+	},
+	"explorations": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "continuous", "status": "open"}
+	},
+	// A connector source (chk_source_retirements_shape), live
+	// (chk_source_retirements_restored); its journal row has a prior open
+	// status (chk_source_retirement_findings_prior).
+	"source_retirements": func(*schemaSeeder) map[string]any {
+		return map[string]any{"kind": "connector", "sender": "seed", "tool": "", "mode": "archive",
+			"state": "active", "sensor_id": nil, "restored_at": nil}
+	},
+	"source_retirement_findings": func(*schemaSeeder) map[string]any {
+		return map[string]any{"prior_status": "new", "restored_at": nil, "restore_outcome": nil}
+	},
 	// An instance scan zone (global) needs at least one private range.
 	"instance_scan_zones": func(*schemaSeeder) map[string]any {
 		return map[string]any{"name": "seed zone", "ranges": "{10.0.0.0/8}"}
@@ -224,6 +251,18 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"asset_risk_queue": func(s *schemaSeeder) map[string]any {
 		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_risk_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
 			s.t.Fatalf("clear asset_risk_queue: %v", err)
+		}
+		return nil
+	},
+	"asset_port_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_port_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear asset_port_queue: %v", err)
+		}
+		return nil
+	},
+	"asset_domain_queue": func(s *schemaSeeder) map[string]any {
+		if _, err := s.tx.ExecContext(s.ctx, `DELETE FROM asset_domain_queue WHERE tenant_id = $1`, s.tenantID); err != nil {
+			s.t.Fatalf("clear asset_domain_queue: %v", err)
 		}
 		return nil
 	},
@@ -239,6 +278,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 		mustExecTx(s.t, s.tx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'FK Delete Test 2')`, other, "fkdel-"+other+"@example.test")
 		return map[string]any{"from_user_id": s.userID, "to_user_id": other, "status": "pending",
 			"created_at": "2026-01-01T00:00:00Z", "expires_at": "2026-01-04T00:00:00Z"}
+	},
+	// An exception names one lower-case domain (CHECK on the column).
+	"scope_name_exceptions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "portal.example.gov.xx", "expires_at": "2026-02-01T00:00:00Z"}
 	},
 	// A feature key is a lowercase identifier (CHECK on the column).
 	"tenant_feature_denies": func(*schemaSeeder) map[string]any {
@@ -458,6 +501,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	"roles": func(*schemaSeeder) map[string]any {
 		return map[string]any{"managed_group_id": nil}
 	},
+	// A tool source key names a source id (format CHECK).
+	"tool_source_keys": func(*schemaSeeder) map[string]any {
+		return map[string]any{"source": "shodan", "key_enc": "probe-ciphertext"}
+	},
 	"scan_window_overrides": func(*schemaSeeder) map[string]any {
 		return map[string]any{"reason": "incident rescan now", "starts_at": "2026-10-05T10:00:00Z", "ends_at": "2026-10-05T11:00:00Z"}
 	},
@@ -519,6 +566,10 @@ var seedOverrides = map[string]func(s *schemaSeeder) map[string]any{
 	// findings.definition_id must name one of the finding's own links, which
 	// do not exist yet when the finding is seeded.
 	"findings": func(*schemaSeeder) map[string]any { return map[string]any{"definition_id": nil} },
+	// A per-sensor DNS answer: a lower-case name and 1-16 addresses (CHECKs).
+	"name_resolutions": func(*schemaSeeder) map[string]any {
+		return map[string]any{"name": "host.example.com", "addrs": "{192.0.2.7}"}
+	},
 	// A record never follows itself (chk_asset_attributions_follows_other).
 	"asset_attributions": func(*schemaSeeder) map[string]any { return map[string]any{"follows_host_id": nil} },
 	// An organization wordlist: a short name (CHECK), a closed purpose, a

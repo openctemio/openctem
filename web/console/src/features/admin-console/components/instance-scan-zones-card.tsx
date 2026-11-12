@@ -25,12 +25,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { StepUpCodeField } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import {
   createInstanceScanZone,
@@ -149,17 +150,14 @@ function ZoneDialog({
   const [ranges, setRanges] = useState((zone?.ranges ?? []).join('\n'))
   const [sensors, setSensors] = useState((zone?.sensor_ids ?? []).join('\n'))
   const [orgs, setOrgs] = useState((zone?.organization_ids ?? []).join('\n'))
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
+  // Mounted only while the dialog is open, so it starts empty every time.
+  const rc = useReasonAndCode(true)
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const ready =
-    name.trim() !== '' &&
-    lines(ranges).length > 0 &&
-    reason.trim() !== '' &&
-    code.trim().length >= 6
+    name.trim() !== '' && lines(ranges).length > 0 && rc.reasonOk && rc.code.trim().length >= 6
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true)
@@ -174,7 +172,8 @@ function ZoneDialog({
           ? e.message
           : t('admin.instanceZones.saveFailed')
       )
-      if (e instanceof AdminApiError && e.status === 401) setCode('')
+      // A code is good for one request: whatever came back, type a new one.
+      rc.setCode('')
     } finally {
       setBusy(false)
       setConfirmDelete(false)
@@ -183,7 +182,7 @@ function ZoneDialog({
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const confirm = { reason: reason.trim(), totp_code: code.trim() }
+    const confirm = { reason: rc.reason.trim(), totp_code: rc.code.trim() }
     void run(async () => {
       const body = {
         name: name.trim(),
@@ -208,7 +207,7 @@ function ZoneDialog({
   const remove = () => {
     if (!zone) return undefined
     return run(() =>
-      deleteInstanceScanZone(zone.id, { reason: reason.trim(), totp_code: code.trim() })
+      deleteInstanceScanZone(zone.id, { reason: rc.reason.trim(), totp_code: rc.code.trim() })
     )
   }
 
@@ -275,26 +274,16 @@ function ZoneDialog({
                 {t('admin.instanceZones.organizationsHint')}
               </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor={`${id}-reason`}>{t('admin.scanPolicy.reason')}</Label>
-              <Textarea
-                id={`${id}-reason`}
-                rows={2}
-                maxLength={1000}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </div>
-            <StepUpCodeField id={`${id}-code`} value={code} onChange={setCode} />
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            <ReasonAndCodeFields id={id} state={rc} codeRequired />
           </DialogBody>
+          <DialogSubmitError message={error} />
           <DialogFooter className="flex-wrap gap-2">
             {zone && (
               <Button
                 type="button"
                 variant="destructive"
                 className="me-auto"
-                disabled={busy || reason.trim() === '' || code.trim().length < 6}
+                disabled={busy || !rc.reasonOk || rc.code.trim().length < 6}
                 onClick={() => setConfirmDelete(true)}
               >
                 {t('admin.instanceZones.delete')}

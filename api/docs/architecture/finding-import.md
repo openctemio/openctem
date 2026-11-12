@@ -9,19 +9,157 @@ drives it.
 Related: [finding-source-interop.md](finding-source-interop.md) (what a
 finding keeps of its source, and `INGEST_VEX`), [deduplication.md](deduplication.md).
 
+## Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05 (no change
+between them in this area). What ingest does with the converted report is
+in [ctis-receiver.md](ctis-receiver.md) and [ingest-receipts.md](ingest-receipts.md).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Member or API key
+  participant H as FindingImportHandler.Import
+  participant I as idempotency store
+  participant S as findingimport.Service
+  participant Q as ingestqueue.Queue (ingest_jobs, ingest_payloads)
+  participant W as Ingest worker (ProcessImportJob)
+  participant G as ingest.Service.Ingest
+  U->>H: POST /api/v1/findings/imports (multipart, up to 10 file parts)
+  H->>H: RequireAll(findings:write, assets:write, assets:import),<br/>step-up when coverage=full, 6 per minute per tenant, body 110 MiB
+  H->>H: actorOf(tenant): the caller's data scope, format or mapping:ref<br/>(resolveMappingFormat in the caller's tenant), parseCoverage
+  alt dry_run=true
+    H->>S: importPart per file: Convert, count, no write (10 min)
+    H-->>U: 200 per-file results, audit asset.imported
+  else commit
+    H->>I: claimKey (Idempotency-Key, 24 h): replay, 409 in flight, 422 reused, 503 store down
+    H->>S: AdmitUpload: tenant queue below its limit (else 429)
+    H->>S: StagePart per part (sealed per tenant), request fingerprint
+    H->>S: CommitUpload(principal, digest)
+    S->>Q: Recent(principal, digest, 10 min): same upload replayed
+    S->>Q: Admit again, ingest_receipts upload row (queued),<br/>job finding_import, lane interactive, one per tenant at a time
+    H-->>U: 202 receipt_id, Location /api/v1/findings/imports/{id}
+    W->>Q: claim the job
+    W->>S: currentKey, currentCaller: key active, member active,<br/>rights only narrowed (else uploader_not_permitted)
+    W->>S: resolveScope(caller) again, resolvePin in the job's tenant<br/>(else mapping_unavailable)
+    W->>Q: Parts (open sealed payloads), markProcessing
+    loop each file part
+      W->>S: ImportUpload: Convert (detect, OpenZip limits, KB pairing)
+      S->>G: Ingest(report, partial, Options.Actor = uploader scope,<br/>Receipt = upload, SourceKind import)
+      S->>S: ApplyVEXStatements, closeUncovered (coverage=full only)
+    end
+    W->>S: FinishUpload (receipt completed or failed), AuditImport
+    W->>Q: job completed, stored parts deleted
+  end
+  U->>H: GET /api/v1/findings/imports/{id}/result?wait=10
+```
+
+- A job that fails for good (`ingestjob.Permanent`) is dead-lettered and
+  its receipt failed with the fixed code (`DeadLetter`). Retries and
+  back-off are the ingest worker's ([ctis-receiver.md](ctis-receiver.md#flow)).
+- The tenant of the job is the stored row's, never the envelope's; the
+  envelope only narrows (`currentCaller` keeps a flag only when both the
+  record and the current role grant it).
+
 ## Formats
 
 The pinned ctis module decides which formats are read
 (`importer.AllFormats()`; the response lists them as `supported_formats`):
 Nessus v2 XML, Qualys host detection XML with an optional KnowledgeBase,
-SARIF 2.1.0, trivy, grype, semgrep, gitleaks (and betterleaks), nuclei, ZAP
-(JSON and XML), vuls, CycloneDX (SBOM, VDR, VEX), SPDX, osv-scanner results,
-CSAF 2.0, OpenVEX and DefectDojo Generic Findings JSON. Each importer has a mapping spec, golden
+SARIF 2.1.0, trivy, grype, semgrep (and opengrep), gitleaks (and
+betterleaks), nuclei, ZAP (JSON and XML), vuls, CycloneDX (SBOM, VDR, VEX),
+SPDX, osv-scanner results, CSAF 2.0, OpenVEX, DefectDojo Generic Findings
+JSON, the generic `bounty_report`, and the inventory formats nmap XML,
+testssl.sh JSON, ffuf, S3Scanner, arjun, a line list (`format=lines`) and CTIS
+2.0 itself (ctis v2.0.2). A `bounty_report` file is
+read, but its findings get the source `external` (no tool name in the
+ingest table matches) and the importer's `extensions[io.openctem].bounty_report`
+is not read into `metadata.bounty_report`, so they are not `bug_bounty`
+findings ([bounty-reports.md](bounty-reports.md#status)). Each importer has a mapping spec, golden
 fixtures and a field-coverage test in the ctis repository
 (`docs/importers/`). The API never branches on the format: it calls
 `importer.Detect`, `importer.Parse` and `importer.OpenZip` only, through one entry
 point, `findingimport.Convert` (content sniffing, archive limits, KnowledgeBase
 pairing), which any other caller that accepts exported files reuses.
+
+## Nessus host inventory
+
+A credentialed `.nessus` file describes the inside of each host. The ctis
+importer (mapping: ctis `docs/importers/nessus.md`) emits it and ingest stores
+it like any other CTIS report:
+
+- `cpe-*` host properties become technologies with a CPE 2.3 name
+  (`asset_technologies`); a CPE technology is also software of the asset
+  (`recordSoftware`), so vulnerability matching finds CVEs from it even when
+  the export carries none.
+- The package lists of Software Enumeration (SSH) and Windows Installed
+  Software Enumeration become dependencies with `asset_ref` set to their host.
+  `ComponentProcessor.resolveDepAssetIDs` honours `asset_ref`: a package goes
+  to the host it names, and is skipped when that host was not stored (out of
+  scope, left out), never moved to another host of the file. An import writes
+  packages add-only (`software.SnapshotMode`).
+- `netstat-listen-*` sockets become open-port services with
+  `observed_from` (`host`: only the host's socket table shows it; `network`:
+  the scanner also reached it), `bind_address` and `process`
+  (`addLocalListenerProperties` reads only these keys of
+  `technical.service.details`). Loopback-only sockets are not services.
+- `ssh-fingerprint` keys are kept in the host's properties
+  (`ssh_host_key_fingerprints`); CTIS identity hints have no SSH key member,
+  so they do not match hosts yet.
+- A file without plugin details gets the importer issue "export lacks plugin
+  details; re-export with full plugin attributes", shown on the import result.
+
+## What a Nessus import closes
+
+A `.nessus` file says what it proves about the findings it does not hold
+(ctis `ImportCoverage`): per host when its scan ended, whether it finished,
+whether the scan logged in and the local checks ran, and which plugins and
+plugin families the scan policy ran. The uploader declares nothing: the close
+scope is the file's own hosts (`findingimport.closeByFileCoverage`). Nessus
+results sometimes leave out findings that were mitigated or moved; the rule
+is that no finding stays open for ever, and nothing closes without proof.
+
+An open finding of the file's tool on one of its hosts that the upload did
+not report is a candidate, and gets exactly one outcome:
+
+| Outcome | When |
+|---|---|
+| closed `not_in_scan` | the file is complete, the host finished, the check ran (its plugin, or its family whole), a local check only where local checks ran (`importer.ImportCoverage.Covers`) |
+| kept `host_not_finished` | the file records no end of the host's scan (a stopped scan) |
+| kept `local_checks_not_run` | a local check (a "Local Security Checks" family, plugin type local) on a host the scan did not log in to, or where authentication failed (plugins 21745, 104410, 110385, 117885, 110723, 117886) |
+| kept `check_not_run` | the plugin and its family were not in the scan policy |
+| kept `seen_later` | the finding was seen after the host's scan (an older file uploaded later) |
+| kept `file_incomplete` | the file has no plugin selection or no plugin details, or any file or row of the upload failed, was skipped or filtered (`min_severity`), or went through a mapping |
+| kept `needs_verify` | the uploader lacks `findings:verify` |
+| kept `guard` | critical or known exploited, a leaked secret, last seen by a platform sensor, a compliance result missing from the file, the organization's closing mode keeps it, or it changed meanwhile |
+| proposed | the closing mode asks a person, or the mass-close guard held the close (Ready to close) |
+
+Human sources and branch occurrences are never candidates. A compliance
+result is never closed by absence: a `PASSED` result of the same check on the
+same host resolves the open `FAILED` finding (closed `compliance_passed`);
+`WARNING` and `ERROR` never resolve it. A passed check is not stored as a
+finding and is not a sighting of the failure (receipt outcome
+`compliance_passed`).
+
+Time ordering (`ingest/observation.go`): each finding of the file carries its
+host's scan end (`last_seen_at`). That time is the sighting: a new finding is
+stored with it, an existing one keeps the newer of the stored and the file's
+time (`GREATEST`, never `NOW()`), and a closed finding reopens only when the
+file saw it after it was closed. A close is dated at the host's scan end, so
+a later file that still saw the finding reopens it, and an older file never
+closes or reopens what a newer one decided. Importing the same file twice
+gives the same result.
+
+The receipt's `closing` counts the outcomes (`considered = closed + proposed
++ kept`) and the hosts that did not finish or were not logged in to; the
+import result says, for example, "Authentication failed on 2 hosts: local
+findings there were not closed". A declared `coverage=full` no longer decides
+a file that carries its own coverage; it still applies to the other files of
+the upload.
+
+Simplest path: upload the `.nessus` export of a credentialed scan with the
+plugin details; the import closes what the scan proves gone and says why the
+rest stayed open.
 
 ## Recon results (reconFTW directory)
 
@@ -133,13 +271,17 @@ A preview ignores the key.
 
 - Gate: `findings:write`, `assets:write` and `assets:import`. Rate limited
   **per organization** (6 per minute, burst 3), not per client address. Body
-  limit 110 MiB; 10 minutes per request.
+  limit 110 MiB (a file part up to the body limit, a KnowledgeBase part
+  64 MiB); a preview has 10 minutes in the request, and an Idempotency-Key
+  claim is held for 15 minutes.
 - The report is ingested through
   `ingest.Service` with the uploader's data scope as `Options.Actor`, so a
   restricted uploader only adds findings to existing assets in their scope
   and creates none. Coverage is **partial** unless the upload declares
-  `coverage=full` for explicit assets: without that an import never closes
-  anything, whatever the file says. Closing by absence is a verification of a
+  `coverage=full` for explicit assets, or a file carries its own coverage (a
+  Nessus export, [What a Nessus import closes](#what-a-nessus-import-closes)):
+  otherwise an import never closes anything. The file's hosts are narrowed to
+  the uploader's visibility, so a host outside it closes nothing. Closing by absence is a verification of a
   fix: it also needs `findings:verify` (without it the file is imported, the
   receipt note is `needs_verify` and nothing closes); a critical or
   known-exploited finding stays open; and only a finding whose latest sighting
@@ -187,15 +329,17 @@ statement touches at most 5,000 findings.
 
 Every committed upload (one request, all its files) gets one receipt in
 `ingest_receipts` (migration 003308, formerly `finding_imports`; see
-[ingest-receipts.md](ingest-receipts.md)) before anything is written: tenant,
-uploader (`actor_user_id`), the SHA-256 of the first file name (the names
-themselves are only in the audit log), status `processing`. Each file's
+[ingest-receipts.md](ingest-receipts.md)) when it is accepted, before
+anything is imported: tenant, uploader (`actor_user_id`), the format, the
+SHA-256 of the first file name (the names themselves are only in the audit
+log), status `queued`; the worker moves it to `processing`
+(`markProcessing`). Each file's
 ingest adds what it did to the findings (created, still detected, reopened,
 skipped, failed) and links each finding to the receipt in
 `finding_ingest_actions`; when the request is done the receipt gets the
 file-level counts (components, VEX statements stored and requested, what the
 parsers skipped, the files that failed), the format (`mixed` for several)
-and its status (`completed`, or `failed` when no file was imported). A
+and its status (`completed`, or `failed` when no file was imported or the job was dead-lettered). A
 preview writes none. The receipt id is:
 
 - the report id of every file's ingest, so the findings the upload created
@@ -232,5 +376,8 @@ finding ids.
 | A recon directory naming someone else's hosts (or claiming their domain as its target) | scope verdict from the organization's scope entries; uncovered hosts are candidates, never scanned; endpoints only under origins the uploader may change |
 | A recon directory closing findings | partial coverage by nature; full coverage refused; `closeUncovered` skips bundles; `TestBundle_PartialNeverCloses` |
 | People and credential data in a recon directory | `osint/` never opened; `TestBundle_OsintNeverRead` |
+| A crafted scan file closing findings | closes only on the file's hosts in the uploader's visibility, of the file's tool, with `findings:verify`, under the guards (critical, known exploited, secrets, sensor sightings, human sources, mass-close guard); a close needs host, check and local-check proof; `TestNessusClose_*_DB` |
+| An old file closing or reopening what a newer scan decided | closes and reopens compare the host's scan end with the finding's last sighting and close time; last seen never moves back; `TestNessusClose_TimeOrderingAndIdempotence_DB` |
+| A file closing another organization's findings | every statement `tenant_id = $1`; host assets come from the upload's own ingest; `TestNessusClose_TenantAndScopeIsolation_DB` |
 | Abuse of the parser | per-organization rate limit; request timeout |
 | Credentials or account names in reports | the importers skip the Nessus scan policy and login accounts and redact credentials in scanner output |

@@ -174,8 +174,10 @@ func TestDashboardFlowWidgets_Organization_DB(t *testing.T) {
 	if in.Failing != 1 || in.Totals.Received != 200 || in.Totals.Receipts != 4 {
 		t.Errorf("failing %d totals %+v", in.Failing, in.Totals)
 	}
+	// Suppressed is counted apart from created on the receipt, so the four
+	// parts (new, merged, suppressed, not stored) sum to what was received.
 	n := in.Noise
-	if n.New+n.Merged+n.NotStored != n.Received || n.Suppressed != 4 || n.New != 27+2 {
+	if n.New+n.Merged+n.Suppressed+n.NotStored != n.Received || n.Suppressed != 4 || n.New != 27+2 {
 		t.Errorf("noise %+v", n)
 	}
 

@@ -68,6 +68,11 @@ var findingMergeRefs = []mergeRef{
 		keys: []mergeKey{{}}},
 	{table: "finding_remediation_keys", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
+	// The journal of a retired source follows the finding; a restore acts
+	// only while the finding is still the closure the retirement made, so
+	// a moved row can never reopen anything else. One row per retirement.
+	{table: "source_retirement_findings", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"retirement_id"}}}},
 	// Ticket links follow the finding; a loser's link to an issue the
 	// survivor already links is dropped (one link per finding and issue).
 	{table: "ticket_links", column: "finding_id", tenantCol: "tenant_id", idCol: "id",
@@ -89,9 +94,29 @@ var findingMergeRefs = []mergeRef{
 	// row (one row per receipt and finding).
 	{table: "finding_ingest_actions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"receipt_id"}}}},
+	// The services a version-match finding is observed on follow it; a
+	// location belongs to one finding (unique key), so a move cannot collide.
+	{table: "finding_locations", column: "finding_id", tenantCol: "tenant_id"},
+	// Who reported the loser reported the survivor; a source the survivor
+	// already has keeps the survivor's row (one row per finding and source).
+	{table: "finding_sightings", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"channel", "sender", "tool"}, nullSafe: []string{"sensor_id", "scan_id"}}}}, //nolint:goconst // column names of the key
+	// What each source reported: a source the survivor already has was
+	// folded into the survivor's record first (foldLoserSourceRecords), so
+	// dropping the loser's copy loses nothing; the others move.
+	{table: "finding_source_records", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{cols: []string{"channel", "sender", "tool"}, nullSafe: []string{"sensor_id"}}}},
+	// The finding of a control's latest failed result follows the merge, so
+	// the control points at the live finding. The row is keyed by asset and
+	// control, not by finding, so a move cannot collide. The history
+	// (compliance_check_results.finding_id, no foreign key) keeps the finding
+	// it was written with; the tombstone keeps its id, so the link still
+	// resolves and no history is lost.
+	{table: "compliance_check_states", column: "finding_id", tenantCol: "tenant_id"},
 	// A person took the finding out of a fix: the survivor stays out of it.
 	{table: "remediation_key_exclusions", column: "finding_id", tenantCol: "tenant_id", idCol: "ctid",
-		keys: []mergeKey{{cols: []string{"action_key"}}}},
+		keys: []mergeKey{{cols: []string{"action_key"}}}}, // A lead about the loser is about the survivor (docs/architecture/exploration.md).
+	{table: "exploration_leads", column: "subject_finding_id", tenantCol: "tenant_id"},
 }
 
 // findingMergeKeptRefs reference findings.id and deliberately stay on the
@@ -126,6 +151,13 @@ var findingMergeKeptRefs = map[string]string{
 	"finding_link_keys.finding_id":   "kept on the tombstone; tombstones are never link candidates",
 	"finding_issue_links.primary_id": "kept on the tombstone; re-derived for the survivor",
 	"finding_issue_links.member_id":  "kept on the tombstone; re-derived for the survivor",
+	// The recovery journal of the version-match location merge names the
+	// findings it folded; it is history and never moves.
+	"finding_location_merges.survivor_id": "kept; the location merge journal",
+	"finding_location_merges.loser_id":    "kept; the location merge journal",
+	// What an exploration step yielded is history: the link names the
+	// finding as it was, and the tombstone resolves to the survivor.
+	"exploration_links.finding_id": "kept on the tombstone; history of what a lead's step yielded",
 }
 
 // FindingMergeReferenceHandling returns "table.column" for every reference to
@@ -386,6 +418,9 @@ func mergeFindingInto(ctx context.Context, tx *sql.Tx, tenantID, survivorID, los
 		return err
 	}
 
+	if err := foldLoserSourceRecords(ctx, tx, tenantID, survivorID, loserID); err != nil {
+		return err
+	}
 	for _, ref := range findingMergeRefs {
 		if err := repointRef(ctx, tx, ref, survivorID, []string{loserID}, tenantID); err != nil {
 			return fmt.Errorf("finding merge: %w", err)

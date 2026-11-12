@@ -139,13 +139,13 @@ export function selectorPreviewURL(
   const params = new URLSearchParams({ per_page: String(perPage), sort: '-last_seen' })
   if (sel.kind === 'wildcard') {
     params.set('under', sel.value)
-    params.set('types', 'domain,subdomain')
+    params.set('type', 'domain,subdomain')
   } else {
-    params.set('in_cidr', sel.value)
+    params.set('ip', sel.value)
   }
-  params.set('statuses', options?.include_stale ? 'active,stale,inactive' : 'active')
+  params.set('status', options?.include_stale ? 'active,stale,inactive' : 'active')
   if (options?.seen_within_days && options.seen_within_days > 0) {
-    params.set('last_seen_after', seenSince(options.seen_within_days, now))
+    params.set('last_seen_gte', seenSince(options.seen_within_days, now))
   }
   return `/api/v1/assets?${params}`
 }
@@ -154,14 +154,17 @@ export function selectorPreviewURL(
 export function describeTargetOptions(
   targets: readonly string[],
   o: ScanTargetOptions | undefined,
-  t: Translate = enTranslate
+  t: Translate = enTranslate,
+  /** The mode ranges run without a stored one (effectiveCidrMode); a saved scan sweeps. */
+  unsetMode: CidrMode = 'sweep'
 ): string[] {
   const out: string[] = []
   if (hasCidrTarget(targets)) {
+    const mode = o?.cidr_mode ?? unsetMode
     out.push(
-      o?.cidr_mode === 'inventory'
+      mode === 'inventory'
         ? t('scans.targetOptions.rangesInventory')
-        : o?.cidr_mode === 'liveness'
+        : mode === 'liveness'
           ? t('scans.targetOptions.rangesLiveness')
           : t('scans.targetOptions.rangesSweep')
     )

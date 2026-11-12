@@ -19,6 +19,8 @@ description: What a pull request in this repository needs before it is ready - v
   `--new-from-rev=origin/develop`; use the Makefile's pin, not a global binary). If lint reports findings in
   files you did not touch, your branch lags `develop`: merge it and rerun.
 - Web: `npm run validate` (type-check, eslint, prettier) and `npx vitest run <touched paths>`.
+- A page redesigned to its design board: its entry in `web/e2e/design/manifest.ts` and the design gate green
+  at both widths and both themes (`npx playwright test -c playwright.design.config.ts`, `web/docs/ui/design-gate.md`).
 - A test that fails without the change, plus a real functional check (call the endpoint, load the page).
 - After merging `develop` into your branch, rerun the touched package tests: git can call a semantic
   conflict clean.

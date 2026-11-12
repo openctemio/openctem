@@ -172,8 +172,8 @@ func (g *ActiveGate) WithPlatformPolicy(gr scopedom.Guardrails) *ActiveGate {
 	return g
 }
 
-func (g *ActiveGate) denied(name string) bool {
-	return g.guardrails != nil && g.guardrails.Denies(name)
+func (g *ActiveGate) denied(tenantID shared.ID, name string) bool {
+	return g.guardrails != nil && g.guardrails.For(tenantID).Denies(name)
 }
 
 // CoverOf answers which of the tenant's authorities covers each target
@@ -670,6 +670,20 @@ func (g *ActiveGate) UncoveredTargets(ctx context.Context, tenantID shared.ID, t
 			out = append(out, t)
 		}
 	}
+	// An address one of the organization's in-scope names resolves to may
+	// get passive steps (its network lookup): passive_address.go.
+	if len(out) > 0 {
+		behind := g.addressesBehindScope(ctx, tenantID, auth, out)
+		if len(behind) > 0 {
+			rest := out[:0:0]
+			for _, t := range out {
+				if !behind[t] {
+					rest = append(rest, t)
+				}
+			}
+			out = rest
+		}
+	}
 	if len(out) == 0 || g.unclassifiedMode(ctx, tenantID) == unclassifiedOff {
 		return out, nil
 	}
@@ -812,7 +826,7 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 		}
 		var auth *scopeauth.Authority
 		for _, t := range free {
-			if g.denied(t) {
+			if g.denied(tenantID, t) {
 				out[t] = attribution.StatePlatformDenied
 				continue
 			}
@@ -897,7 +911,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			certs = append(certs, a)
 			continue
 		}
-		if g.denied(a.Name()) {
+		if g.denied(tenantID, a.Name()) {
 			out[id] = attribution.StatePlatformDenied
 			continue
 		}

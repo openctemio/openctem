@@ -26,7 +26,10 @@
       "completed_at": "2026-10-08T09:01:30Z",
       "attempt": 1,
       "max_attempts": 3,
-      "findings_count": 3
+      "findings_count": 3,
+      "info_observations": 0,
+      "findings_held": 0,
+      "findings_refused": 0
     },
     {
       "id": "66666666-6666-4666-8666-666666666666",
@@ -38,7 +41,10 @@
       "started_at": "2026-10-08T09:01:30Z",
       "attempt": 1,
       "max_attempts": 3,
-      "findings_count": 0
+      "findings_count": 0,
+      "info_observations": 0,
+      "findings_held": 0,
+      "findings_refused": 0
     }
   ],
   "kind": "scan",

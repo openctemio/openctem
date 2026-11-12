@@ -256,8 +256,9 @@ so that window does not matter.
   refuses another one. It requires that `main` has not changed since the last
   tag.
 
-Run it from the Actions page (Release Train > Run) or the command line, dry
-run first:
+Run it from the Actions page (Release Train > Run, with "Use workflow from"
+set to develop: a run from any other branch stops at once) or the command
+line with `--ref develop`, dry run first:
 
 ```bash
 # merge commits of the fix pull requests on develop, oldest first

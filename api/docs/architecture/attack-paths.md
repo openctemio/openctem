@@ -11,7 +11,7 @@ GET /api/v1/attack-surface/attack-paths/{id}  (assets:read, module attack_surfac
 ```
 
 Key code: `api/internal/app/attack/` (`path_scoring.go`, `exposure_chains.go`,
-`path_detail.go`, `scoped.go`), the priority oracle in `api/cmd/server/reachability_oracle.go`, the
+`path_detail.go`, `scoped.go`), the priority oracle in `api/internal/server/reachability_oracle.go`, the
 threat-model consumer in `api/internal/app/threatmodel/service.go`.
 
 ## Graph
@@ -128,6 +128,21 @@ narrowing works on the caller's copy.
 - `finding_count` on a scored asset counts open findings only (the open status
   set), so resolved, closed and dispositioned findings do not raise the score.
   Branch-only findings are still left out.
+
+## Proof
+
+Every exposure chain and attack path is a **possible** path: it is built from
+the asset graph and the open findings, and no check has shown that an
+attacker can follow it. The API says so on every result (`proof: "possible"`
+on each exposure chain and on the routes to one asset, `attack.ProofPossible`),
+the MCP tool `get_exposure_chains` describes its chains as possible and not
+proven and adds a `proof_note`, and every page that presents paths shows the
+label "Possible path, not proven" (`web/src/components/ui/possible-path-label.tsx`:
+`/exposure-chains`, `/attack-paths` and the dashboard's crown-jewel paths).
+A path becomes proven only from a recorded verdict (a deterministic check or
+a person with evidence); verdicts are designed in
+RFC-153 (exploration) and not built, so no path is proven
+today.
 
 ## Web pages
 

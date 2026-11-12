@@ -69,6 +69,10 @@ var AssetFields = filterspec.MustRegistry(filterspec.Registry{
 		BoolTemplate: "assets.program_only"},
 )
 
+// StoredAssetTypeNames are the asset types an asset row can hold (the enum
+// of the assets type filter and the findings asset_type filter).
+func StoredAssetTypeNames() []string { return assetTypeNames() }
+
 func assetTypeNames() []string {
 	ts := StoredAssetTypes()
 	out := make([]string, 0, len(ts))

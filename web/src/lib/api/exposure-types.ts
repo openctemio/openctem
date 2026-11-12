@@ -41,6 +41,7 @@ export type ExposureEventType =
   | 'web_interface_exposed'
   | 'mcp_server_exposed'
   | 'mail_server_blocklisted'
+  | 'risky_service_exposed'
   | 'custom'
 
 // Exposure severity levels
@@ -60,7 +61,7 @@ export const OPEN_EXPOSURE_STATES: ExposureState[] = ['active', 'in_progress']
  */
 export const EXPOSURE_DISPLAY_CATEGORIES = [
   { key: 'exposed_ports', label: 'Exposed ports', produced: true },
-  { key: 'web_interfaces', label: 'Exposed web interfaces', produced: false },
+  { key: 'web_interfaces', label: 'Exposed web interfaces', produced: true },
   { key: 'exposed_apis', label: 'Exposed APIs', produced: true },
   { key: 'ai_services', label: 'Exposed AI services', produced: false },
   { key: 'web_application', label: 'Web application security', produced: true },
@@ -472,6 +473,12 @@ export const EVENT_TYPE_CONFIG: Record<
     label: 'Mail Server Blocklisted',
     description: 'A mail server address listed on a DNS blocklist',
     category: 'domain',
+  },
+  risky_service_exposed: {
+    label: 'Risky Service Exposed',
+    description:
+      'A service that should not be reachable from the internet (remote access, a database, an industrial protocol, ...)',
+    category: 'service',
   },
   custom: {
     label: 'Custom',

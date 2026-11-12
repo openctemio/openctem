@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/validator"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -190,6 +191,11 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 		return nil, fmt.Errorf("%w: invalid tenant_id", shared.ErrValidation)
 	}
 
+	// A credential in the settings is refused before anything is stored.
+	if err := scan.RefuseConfigSecrets(input.Config); err != nil {
+		return nil, err
+	}
+
 	// SECURITY: apply SSRF target validation (blocks internal/localhost/private
 	// IPs) to BOTH the single-scanner and workflow paths. The workflow path
 	// previously skipped this entirely, which both let internal targets through
@@ -198,7 +204,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	validatedTargets, err := s.validateScanTargets(ctx, CreateScanInput{
 		TenantID: input.TenantID,
 		Targets:  input.Targets,
-	})
+	}, validator.DefaultCIDRHostBits)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +344,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 // quick scans started in the same second (409 "scan with this name already
 // exists", 22c B8); a short random suffix keeps every name unique.
 func quickScanName(now time.Time, nonce shared.ID) string {
-	return fmt.Sprintf("Quick Scan - %s-%s", now.Format("20060102-150405"), strings.ReplaceAll(nonce.String(), "-", "")[24:])
+	return fmt.Sprintf("Quick Scan - %s-%s", now.Format("20060102-150405"), strings.ReplaceAll(nonce.String(), "-", "")[20:])
 }
 
 // SaveQuickScan turns an ad-hoc quick scan into a saved configuration named

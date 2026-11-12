@@ -125,6 +125,7 @@ export type AuditAction =
   | 'finding.commented'
   | 'finding.bulk_updated'
   | 'finding.duplicate_marked'
+  | 'finding.location_changed'
   | 'finding.issue_unlinked'
   | 'finding.bounty_report_changed'
   | 'finding.severity_changed'
@@ -171,6 +172,7 @@ export type AuditAction =
   | 'scope_target.deleted'
   | 'scope_target.activated'
   | 'scope_target.deactivated'
+  | 'scope_target.replaced'
   | 'scope_exclusion.created'
   | 'scope_exclusion.updated'
   | 'scope_exclusion.deleted'
@@ -234,6 +236,12 @@ export type AuditAction =
   | 'assignment_rule.created'
   | 'assignment_rule.updated'
   | 'assignment_rule.deleted'
+  // Exploration: the next steps the platform plans on an asset
+  | 'exploration.lead_opened'
+  | 'exploration.lead_approved'
+  | 'exploration.lead_dismissed'
+  | 'exploration.lead_state_changed'
+  | 'exploration.lead_verdict'
 
 /**
  * Resource types - maps to backend audit.ResourceType
@@ -273,6 +281,7 @@ export type AuditResourceType =
   | 'priority_rule'
   | 'scope_rule'
   | 'assignment_rule'
+  | 'exploration_lead'
   | typeof HISTORICAL_SENSOR_RESOURCE_TYPE
 
 /**
@@ -333,6 +342,7 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
   'finding.bulk_updated': 'Findings bulk updated',
   'finding.duplicate_marked': 'Finding marked duplicate',
+  'finding.location_changed': 'Finding service location changed',
   'finding.issue_unlinked': 'Finding taken out of a same-issue group',
   'finding.bounty_report_changed': 'Finding bug-bounty report changed',
   'finding.severity_changed': 'Finding severity changed',
@@ -365,6 +375,12 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'integration.webhook_secret_rotated': 'Webhook secret rotated',
   'notification_outbox.retried': 'Notification retried',
   'notification_outbox.deleted': 'Notification deleted',
+  // A lead is a "next step" in the console.
+  'exploration.lead_opened': 'Exploration question asked',
+  'exploration.lead_approved': 'Exploration step approved',
+  'exploration.lead_dismissed': 'Exploration step dismissed',
+  'exploration.lead_state_changed': 'Exploration step state changed',
+  'exploration.lead_verdict': 'Exploration step answered',
 }
 
 /**

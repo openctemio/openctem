@@ -204,12 +204,23 @@ reference implementations.
   findings.
 - **Group by is a toolbar select** (`Layers` icon, "No grouping" / "Group" as
   the first option) and lives in the URL (`?group=`). Not tabs.
-- **The header row** (`renderHeader`): the group's name first (`font-medium`,
-  foreground), then muted meta joined with `·` (type, owner, CVSS, counts).
-  Summary counts go on the end (`renderActions`), compact: a status mix such
-  as `3 open · 1 fixing · 0 applied · 2 resolved` with a dot coloured only when
-  the number is above zero, and at most one mini bar (`% verified`). Hide the
-  summary below `lg` before it wraps the name.
+- **The header row** is one cell spanning every column, laid out as one
+  wrapping line of three slots, never positioned over the columns:
+  - identity (`renderHeader`): the group's name first (`font-medium`,
+    foreground), then muted meta joined with commas (type, owner, CVSS,
+    counts);
+  - summary (`renderSummary`): a compact status mix such as `3 open`,
+    `1 fixing`, `0 applied`, `2 resolved` as separate items with a dot
+    coloured only when the number is above zero, and at most one mini bar
+    (`% verified`);
+  - actions (`renderActions`): buttons only, in their own slot that never
+    shrinks, aligned to the end.
+
+  When the header is too narrow for one line, the summary and then the
+  actions move to the next line; nothing overflows the frame (an overflowing
+  header widens the table and slides its buttons under the pinned row-actions
+  column).
+
 - **Group actions** (`renderActions`): `size="sm"` buttons at `h-7`, ghost for
   navigation (View), outline for a change (Mark fixed, Approve). Gate each on
   its permission **and** on the API being able to do it for that group type;
@@ -314,6 +325,12 @@ load.
 
 - **Loading**: `<Skeleton>` shaped like the content it replaces. Spinners
   (`Loader2`) only inside buttons that are working.
+- **Failed load**: a page that reads data shows `ErrorState` with Retry (or a
+  `DataTable` `error` with `onRetry`) for every read that can fail, so a failed
+  read never looks like an empty list or a row of zeros. The route guard
+  `src/lib/__tests__/route-error-state-guard.test.ts` fails when a route page
+  that fetches has none; its debt file `route-error-state-debt.json` lists the
+  pages still to fix and can only shrink.
 - **Navigating**: no `loading.tsx` inside `(dashboard)` (a test enforces it).
   Each page renders its own skeleton; a route-level loading file only adds a
   second, differently shaped skeleton and makes React hold the page back for
@@ -322,6 +339,21 @@ load.
   without the next page, the clicked row shows a moving bar and the window a
   top progress bar. Sidebar links use `SidebarLink`, which prefetches on hover
   or focus rather than on render.
+- **Progress feedback, one kind each**:
+  - route navigation: the top-of-window `NavProgressBar`
+    (`src/components/layout/nav-progress.tsx`), for navigation only;
+  - first load (no rows yet): skeletons (`isLoading` on `DataTable`, or the
+    page's own skeleton);
+  - data refresh (rows already on screen are re-read after a filter, sort or
+    page change, or a background revalidation): `isRefreshing` on
+    `DataTable`. It draws `TableRefreshBar`, a thin indeterminate bar on the
+    top edge of the table frame, below the toolbar and the search box,
+    absolutely positioned so nothing moves. It is a `progressbar` (pass
+    `refreshingLabel` for a specific name) only while active, waits 120 ms so
+    fast refetches stay quiet, and is a static faint line under reduced
+    motion. A list that is not a `DataTable` puts `TableRefreshBar` as the
+    first child of its own `relative` frame. Never draw a bar above the
+    toolbar or between the toolbar and the frame.
 - **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
   next step, optional primary action, optional secondary link such as docs).
   Three kinds, each worded for its case:
@@ -465,6 +497,16 @@ load.
   box. A page keeps the open state in the URL (`?activity=open`); a drawer
   keeps it in memory.
 - Destructive confirmation: `<ConfirmDialog destructive>`.
+  - A bulk or irreversible act passes `preview` (a sentence with the count, plus
+    the first five names and "and N more"), so the user sees what will change
+    before confirming. An act that is recorded or approved passes `reason`
+    (`required` keeps Confirm disabled until it has text); `handleConfirm`
+    receives the trimmed reason. Typed confirmation, preview and reason combine.
+  - A request held for approval shows the shared `AwaitingApprovalBand` on the
+    object (what is waiting, who asked and why, Cancel request behind a
+    confirmation, the approver's buttons). Do not build a second band.
+  - The step-up dialog says the action continues right away once the identity
+    is confirmed; it never describes the act.
 
 ## 9. Responsiveness
 

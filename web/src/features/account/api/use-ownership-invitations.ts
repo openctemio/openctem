@@ -8,6 +8,7 @@
 
 import useSWR from 'swr'
 import { get, post } from '@/lib/api/client'
+import { useBootstrapPending } from '@/context/bootstrap-provider'
 
 export interface OwnershipInvitation {
   id: string
@@ -18,17 +19,23 @@ export interface OwnershipInvitation {
   expires_at: string
 }
 
-interface OwnershipInvitationList {
+export interface OwnershipInvitationList {
   data: OwnershipInvitation[]
 }
 
 export const OWNERSHIP_INVITATIONS_ENDPOINT = '/api/v1/me/ownership-invitations'
 
-export function useOwnershipInvitations() {
+/**
+ * `enabled: false` skips the read (no session that can make it yet). In the
+ * app shell the session bootstrap carries the list (bootstrap-session.ts), so
+ * the hook waits for it and does not send a request of its own.
+ */
+export function useOwnershipInvitations(enabled = true) {
+  const bootstrapPending = useBootstrapPending()
   const { data, error, isLoading, mutate } = useSWR<OwnershipInvitationList>(
-    OWNERSHIP_INVITATIONS_ENDPOINT,
+    enabled && !bootstrapPending ? OWNERSHIP_INVITATIONS_ENDPOINT : null,
     (url: string) => get<OwnershipInvitationList>(url),
-    { revalidateOnFocus: false }
+    { revalidateOnFocus: false, revalidateIfStale: false }
   )
   return { invitations: data?.data ?? [], error, isLoading, mutate }
 }

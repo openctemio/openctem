@@ -3,13 +3,14 @@
 import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { get, patch } from '@/lib/api/client'
+import type { RiskRequest } from '@/features/assets/lib/risk-impact'
 import { useRegisterPages } from '@/lib/api/use-register-pages'
 
-// Crown jewels = assets with is_crown_jewel=true
+// Crown jewels = assets with crown_jewel=true
 // Uses existing asset API with filter param
 
 /** Page-1 URL of the crown jewel register; also its SWR key. */
-export const CROWN_JEWELS_URL = '/api/v1/assets?is_crown_jewel=true&per_page=100'
+export const CROWN_JEWELS_URL = '/api/v1/assets?crown_jewel=true&per_page=100'
 
 interface PaginatedAssets {
   data: Record<string, unknown>[]
@@ -23,7 +24,7 @@ export function useCrownJewels() {
 // `enabled` keeps the picker idle until the designate dialog opens.
 export function useAllAssets(search?: string, enabled = true) {
   const params = new URLSearchParams({ per_page: '50', page: '1' })
-  if (search) params.set('search', search)
+  if (search) params.set('q', search)
   return useSWR<PaginatedAssets>(enabled ? `/api/v1/assets?${params.toString()}` : null, get, {
     revalidateOnFocus: false,
   })
@@ -70,6 +71,20 @@ export function useDesignateCrownJewel() {
   )
 }
 
+/**
+ * The answer to a crown-jewel change. A removal that waits for approval (202)
+ * carries the pending request and leaves the asset as it was.
+ */
+export interface CrownJewelChangeResult {
+  is_crown_jewel?: boolean
+  pending_risk_request?: RiskRequest
+}
+
+/**
+ * Removes the crown-jewel flag. Only the flag is sent: the business impact
+ * stays recorded. `reason` is required by the API when the removal would drop
+ * an open P0/P1 finding.
+ */
 export function useUndesignateCrownJewel() {
   return useSWRMutation(
     'crown-jewel-undesignate',
@@ -80,13 +95,13 @@ export function useUndesignateCrownJewel() {
       }: {
         arg: {
           assetId: string
+          reason?: string
         }
       }
     ) =>
-      patch(`/api/v1/assets/${arg.assetId}/crown-jewel`, {
+      patch<CrownJewelChangeResult>(`/api/v1/assets/${arg.assetId}/crown-jewel`, {
         is_crown_jewel: false,
-        business_impact_score: 0,
-        business_impact_notes: '',
+        ...(arg.reason ? { reason: arg.reason } : {}),
       })
   )
 }

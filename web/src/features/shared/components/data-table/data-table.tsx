@@ -68,6 +68,7 @@ import {
   type DataTableRowGroups,
 } from './data-table-groups'
 import { useTableDensity, type TableDensity } from './use-table-density'
+import { TableRefreshBar } from './table-refresh-bar'
 import { pageSizeChoices } from '@/lib/page-size-options'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
@@ -146,6 +147,8 @@ interface DataTableProps<TData, TValue> {
   manualPagination?: boolean
   pageCount?: number
   rowCount?: number
+  /** The server stopped counting at `rowCount`: the footer says "10,000+" instead of the exact-looking number. */
+  rowCountCapped?: boolean
   pagination?: { pageIndex: number; pageSize: number }
   onPaginationChange?: (pagination: { pageIndex: number; pageSize: number }) => void
   /**
@@ -221,6 +224,15 @@ interface DataTableProps<TData, TValue> {
    * Rows already on screen stay visible; skeletons only replace an empty body.
    */
   isLoading?: boolean
+  /**
+   * Rows already on screen are being re-read (filter, sort or page change, a
+   * background revalidation). Draws a thin indeterminate bar on the top edge
+   * of the table frame, below the toolbar, without moving the layout. A first
+   * load with no rows uses `isLoading` (skeletons) instead.
+   */
+  isRefreshing?: boolean
+  /** Accessible name of the refresh bar; defaults to "Refreshing". */
+  refreshingLabel?: string
   /**
    * Columns hidden until the user turns them on under Columns, e.g. metrics
    * that most rows do not report. Keyed by column id.
@@ -449,6 +461,7 @@ export function DataTable<TData, TValue>({
   manualPagination = false,
   pageCount,
   rowCount,
+  rowCountCapped,
   pagination,
   onPaginationChange,
   getRowId,
@@ -465,6 +478,8 @@ export function DataTable<TData, TValue>({
   mobileRow,
   mobileCards = true,
   isLoading = false,
+  isRefreshing = false,
+  refreshingLabel,
   initialColumnVisibility,
   columnVisibility: columnVisibilityProp,
   onColumnVisibilityChange,
@@ -869,7 +884,8 @@ export function DataTable<TData, TValue>({
       />
 
       {phoneCards && (
-        <div className="divide-y rounded-md border">
+        <div className="relative divide-y overflow-hidden rounded-md border">
+          <TableRefreshBar active={isRefreshing} label={refreshingLabel} />
           {hasBody ? (
             displayGroups.map((group) => {
               const expanded = groupExpansion.isExpanded(group.key)
@@ -971,7 +987,10 @@ export function DataTable<TData, TValue>({
       {/* Table */}
       <div
         ref={tableWrapRef}
-        className={cn('group/table rounded-md border overflow-x-auto', phoneCards && 'hidden')}
+        className={cn(
+          'group/table relative rounded-md border overflow-x-auto',
+          phoneCards && 'hidden'
+        )}
         data-density={density}
         data-hidden-start={hiddenEdges.start}
         data-hidden-end={hiddenEdges.end}
@@ -981,6 +1000,7 @@ export function DataTable<TData, TValue>({
           if ((e.target as HTMLElement).dataset.slot === 'table-container') measureEdges()
         }}
       >
+        <TableRefreshBar active={isRefreshing} label={refreshingLabel} />
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
@@ -1181,7 +1201,9 @@ export function DataTable<TData, TValue>({
                 {t('common.table.showing', 'Showing {start} - {end} of {total} {noun}', {
                   start,
                   end,
-                  total,
+                  total: rowCountCapped
+                    ? t('common.table.cappedCount', '{count}+', { count: total.toLocaleString() })
+                    : total,
                   noun: paginationNoun,
                 })}
               </div>

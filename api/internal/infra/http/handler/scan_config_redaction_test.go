@@ -18,6 +18,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 	"github.com/openctemio/openctem/api/pkg/validator"
@@ -63,6 +64,10 @@ func (r *redactScanRepo) GetByTenantAndID(_ context.Context, tenantID, id shared
 }
 
 func (r *redactScanRepo) List(_ context.Context, _ scan.Filter, page pagination.Pagination) (pagination.Result[*scan.Scan], error) {
+	return pagination.NewResult([]*scan.Scan{copyScan(r.stored)}, 1, page), nil
+}
+
+func (r *redactScanRepo) ListWhere(_ context.Context, _ *filterspec.Where, page pagination.Pagination) (pagination.Result[*scan.Scan], error) {
 	return pagination.NewResult([]*scan.Scan{copyScan(r.stored)}, 1, page), nil
 }
 
@@ -232,48 +237,49 @@ func TestScanConfigRedaction_Export(t *testing.T) {
 // A config saved back with the mask in place keeps the stored secret; a new
 // value replaces it. Writers are shown real values, so this is a guard
 // against a client that echoes a masked config, not the normal path.
-func TestScanConfigRedaction_UpdateWithMaskKeepsStoredSecret(t *testing.T) {
+// A scan stored with a credential in its settings (before the platform
+// refused them) cannot keep it through an edit: saving the masked form back
+// would restore the stored value, so the edit is refused, naming the keys
+// and never the values. Removing the credentials saves.
+func TestScanConfigRedaction_UpdateRefusesStoredSecret(t *testing.T) {
 	h, repo, sc := newRedactScanFixture(t)
 	member := redactCallers[2]
 
 	cfg := scan.RedactConfigSecrets(redactTestConfig())
 	cfg["severity"] = "critical"
 	body, _ := json.Marshal(map[string]any{"scanner_name": "nuclei", "scanner_config": cfg})
-
-	req := withCaller(httptest.NewRequest(http.MethodPut, "/api/v1/scans/"+sc.ID.String(), bytes.NewReader(body)),
+	req := withCaller(httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/scans/"+sc.ID.String(), bytes.NewReader(body)),
 		sc.TenantID, member, map[string]string{"id": sc.ID.String()})
 	rec := httptest.NewRecorder()
 	h.UpdateScan(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "password") ||
+		strings.Contains(rec.Body.String(), redactTestPassword) || strings.Contains(rec.Body.String(), redactTestBearer) {
+		t.Fatalf("masked secret saved back: %d %s", rec.Code, rec.Body)
 	}
-	if repo.updated == nil {
-		t.Fatal("scan was not saved")
-	}
-	saved := repo.updated.ScannerConfig
-	if saved["password"] != redactTestPassword {
-		t.Fatalf("password saved as %v", saved["password"])
-	}
-	if saved["headers"].(map[string]any)["Authorization"] != redactTestBearer {
-		t.Fatalf("Authorization saved as %v", saved["headers"])
-	}
-	if saved["severity"] != "critical" {
-		t.Fatalf("non-secret edit lost: %v", saved["severity"])
+	if repo.updated != nil {
+		t.Fatal("scan was saved")
 	}
 
-	// A new secret replaces the stored one.
-	cfg = scan.RedactConfigSecrets(redactTestConfig())
-	cfg["password"] = "rotated-pass"
+	// A new credential typed in is refused too.
+	cfg["password"] = "rotated-pass-9Xq"
 	body, _ = json.Marshal(map[string]any{"scanner_name": "nuclei", "scanner_config": cfg})
-	req = withCaller(httptest.NewRequest(http.MethodPut, "/api/v1/scans/"+sc.ID.String(), bytes.NewReader(body)),
+	req = withCaller(httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/scans/"+sc.ID.String(), bytes.NewReader(body)),
 		sc.TenantID, member, map[string]string{"id": sc.ID.String()})
 	rec = httptest.NewRecorder()
 	h.UpdateScan(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusBadRequest || strings.Contains(rec.Body.String(), "rotated-pass-9Xq") {
+		t.Fatalf("new secret: %d %s", rec.Code, rec.Body)
 	}
-	if got := repo.updated.ScannerConfig["password"]; got != "rotated-pass" {
-		t.Fatalf("new password not saved: %v", got)
+
+	// Without the credentials the edit saves.
+	clean := map[string]any{"severity": "critical"}
+	body, _ = json.Marshal(map[string]any{"scanner_name": "nuclei", "scanner_config": clean})
+	req = withCaller(httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/scans/"+sc.ID.String(), bytes.NewReader(body)),
+		sc.TenantID, member, map[string]string{"id": sc.ID.String()})
+	rec = httptest.NewRecorder()
+	h.UpdateScan(rec, req)
+	if rec.Code != http.StatusOK || repo.updated == nil || repo.updated.ScannerConfig["password"] != nil {
+		t.Fatalf("clean edit: %d %s", rec.Code, rec.Body)
 	}
 }
 

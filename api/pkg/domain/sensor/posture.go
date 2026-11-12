@@ -35,6 +35,19 @@ const (
 	SandboxModeRequired = "required"
 )
 
+// How a sensor runs its tools without the sandbox (posture.sandbox.unconfined;
+// SensorPosture.ToolsUnconfined). "" (not reported) means sandboxed or an
+// older sensor.
+const (
+	// ToolsUnconfinedRefused: the sandbox is not available on the sensor's
+	// host (it is Linux only), so tools that contact their targets (T1 and
+	// above) are refused there; passive lookups still run.
+	ToolsUnconfinedRefused = "refused"
+	// ToolsUnconfinedAcknowledged: the sensor's operator turned the sandbox
+	// off (SENSOR_SANDBOX=off): every tool runs unconfined.
+	ToolsUnconfinedAcknowledged = "acknowledged"
+)
+
 // Local policy postures the console shows (SensorPosture.LocalPolicy).
 const (
 	PostureLocalPolicyEnforced       = "enforced"
@@ -58,11 +71,14 @@ const (
 	// UnhardenedBearerKey: the sensor authenticates with a bearer key
 	// instead of a key-bound identity.
 	UnhardenedBearerKey = "bearer_key"
+	// UnhardenedToolsUnconfined: tools run without the sandbox (refused for
+	// active tools, or acknowledged by the operator).
+	UnhardenedToolsUnconfined = "tools_unconfined"
 )
 
 // UnhardenedKinds are the unhardened reasons in display order.
 func UnhardenedKinds() []string {
-	return []string{UnhardenedPolicyNone, UnhardenedPinNone, UnhardenedNetworkUnenforced, UnhardenedBearerKey}
+	return []string{UnhardenedPolicyNone, UnhardenedPinNone, UnhardenedToolsUnconfined, UnhardenedNetworkUnenforced, UnhardenedBearerKey}
 }
 
 // ManifestPosture is the manifest member "posture".
@@ -85,6 +101,10 @@ type SandboxPosture struct {
 	Sandboxed bool `json:"sandboxed"`
 	// NetworkEnforced: each tool run's network is confined.
 	NetworkEnforced bool `json:"network_enforced"`
+	// Unconfined is ToolsUnconfinedRefused or ToolsUnconfinedAcknowledged
+	// when tools run without the sandbox; "" when sandboxed, not reported,
+	// or a value outside that set.
+	Unconfined string `json:"unconfined,omitempty"`
 }
 
 // SanitizeManifestPosture returns p reduced to the closed values, or nil
@@ -106,6 +126,12 @@ func SanitizeManifestPosture(p *ManifestPosture) *ManifestPosture {
 		case SandboxModeOff, SandboxModeAuto, SandboxModeRequired:
 			sb.Mode = mode
 		}
+		if !s.Sandboxed {
+			switch u := strings.ToLower(strings.TrimSpace(s.Unconfined)); u {
+			case ToolsUnconfinedRefused, ToolsUnconfinedAcknowledged:
+				sb.Unconfined = u
+			}
+		}
 		out.Sandbox = sb
 	}
 	if out.PlatformTLS == nil && out.Sandbox == nil {
@@ -126,6 +152,10 @@ type SensorPosture struct {
 	// NetworkEnforced is whether tool runs are network-confined; nil when
 	// the sensor did not report its sandbox.
 	NetworkEnforced *bool
+	// ToolsUnconfined is ToolsUnconfinedRefused or
+	// ToolsUnconfinedAcknowledged when the sensor runs its tools without the
+	// sandbox; "" when it runs them sandboxed or did not say.
+	ToolsUnconfined string
 	// Unhardened lists the Unhardened* reasons, in UnhardenedKinds order;
 	// never nil.
 	Unhardened []string
@@ -165,12 +195,16 @@ func DerivePosture(in PostureInput) SensorPosture {
 	if p != nil && p.Sandbox != nil {
 		v := p.Sandbox.NetworkEnforced
 		out.NetworkEnforced = &v
+		out.ToolsUnconfined = p.Sandbox.Unconfined
 	}
 	if out.LocalPolicy == PostureLocalPolicyAbsentLegacy || (out.LocalPolicy == PostureLocalPolicyUnknown && in.Seen) {
 		out.Unhardened = append(out.Unhardened, UnhardenedPolicyNone)
 	}
 	if out.PlatformPin == PlatformPinNone {
 		out.Unhardened = append(out.Unhardened, UnhardenedPinNone)
+	}
+	if out.ToolsUnconfined != "" {
+		out.Unhardened = append(out.Unhardened, UnhardenedToolsUnconfined)
 	}
 	if out.NetworkEnforced != nil && !*out.NetworkEnforced {
 		out.Unhardened = append(out.Unhardened, UnhardenedNetworkUnenforced)

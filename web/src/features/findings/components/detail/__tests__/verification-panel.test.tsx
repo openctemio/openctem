@@ -44,6 +44,11 @@ vi.mock('@/context/permission-provider', () => ({
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+vi.mock('../../import-results-dialog', () => ({
+  ImportResultsDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="import-results-dialog" /> : null,
+}))
+
 const secretPlan = (over: Partial<VerificationPlan> = {}): VerificationPlan => ({
   finding_id: 'f-1',
   status: 'confirmed',
@@ -180,5 +185,47 @@ describe('VerificationPanel', () => {
     mockError = new ApiClientError('nope', 'NOT_FOUND', 404)
     const { container } = render(<VerificationPanel findingId="f-1" />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  // A scanner's report imported from a file is not a person's finding: the
+  // retest row says to import a newer report, and the panel offers it.
+  const importedPlan = (): VerificationPlan =>
+    secretPlan({
+      tier: 'standard',
+      requirement: 'checklist_or_retest',
+      second_person_required: false,
+      methods: [
+        { kind: 'retest', available: false, counts_as_proof: true, reason: 'reimport_to_verify' },
+        { kind: 'evidence_review', available: true, counts_as_proof: true },
+      ],
+    })
+
+  it('offers a re-import for an imported scanner report, never "a person reported"', async () => {
+    mockPlan = importedPlan()
+    render(<VerificationPanel findingId="f-1" />)
+    expect(screen.getByText(/import a newer report of the same scan/)).toBeInTheDocument()
+    expect(screen.queryByText(/A person reported this finding/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Import newer results/ }))
+    expect(screen.getByTestId('import-results-dialog')).toBeInTheDocument()
+  })
+
+  it('hides the re-import without the import permissions', () => {
+    mockPlan = importedPlan()
+    mockHasPermission = (p) => p !== 'assets:import'
+    render(<VerificationPanel findingId="f-1" />)
+    expect(screen.getByText(/import a newer report of the same scan/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Import newer results/ })).not.toBeInTheDocument()
+  })
+
+  it('shows no re-import for a person-reported finding', () => {
+    mockPlan = secretPlan({
+      methods: [
+        { kind: 'retest', available: false, counts_as_proof: true, reason: 'no_automatic_retest' },
+        { kind: 'evidence_review', available: true, counts_as_proof: true },
+      ],
+    })
+    render(<VerificationPanel findingId="f-1" />)
+    expect(screen.getByText(/A person reported this finding/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Import newer results/ })).not.toBeInTheDocument()
   })
 })

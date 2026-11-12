@@ -364,6 +364,26 @@ func (s *Service) scheduleRunnableSteps(ctx context.Context, run *scanrun.Run, t
 			settledInline = true
 			continue
 		}
+		// Path discovery runs only while the organization has it on.
+		if reason := s.pathDiscoverySkipReason(ctx, run, step); reason != "" {
+			stepRun.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip a path discovery step", "step_key", step.StepKey, "error", err)
+			}
+			settledInline = true
+			continue
+		}
+
+		// A step whose organization switch is off (screenshots) is skipped:
+		// no job is created, so the sensor never takes the picture.
+		if reason := s.stepGateReason(ctx, run, step); reason != "" {
+			stepRun.Skip(reason)
+			if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+				s.logger.Error("failed to skip a step its organization switch holds off", "step_key", step.StepKey, "error", err)
+			}
+			settledInline = true
+			continue
+		}
 
 		// Queue the step - create a command that sensors can poll
 		err := s.queueStepForExecutionWithSettings(ctx, run, step, stepRun, template.Settings, predecessorsOf(template, step),
@@ -450,7 +470,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
-	step = resolved.WithTool(step)
+	step = resolved.WithTool(resolved.WithDepthDefaults(step, RunDepth(run)))
 	if err := checkStepIntensity(run, step, resolved); err != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, err)
 	}
@@ -502,7 +522,7 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 	if kerr != nil {
 		return fmt.Errorf("step %s: %w", step.StepKey, kerr)
 	}
-	stepTargets = kindGated
+	stepTargets = collapseRegistrable(resolved, kindGated, run.Context)
 	if stepTargets != nil && stepTargets.Refused > 0 {
 		s.logger.Info("step targets of a kind the stage does not take were left out",
 			"run_id", run.ID.String(), "step_key", logger.SanitizeValue(step.StepKey), "refused", stepTargets.Refused, "reason", logger.SanitizeValue(stepTargets.Reason))
@@ -556,6 +576,11 @@ func (s *Service) queueStepForExecutionWithSettings(ctx context.Context, run *sc
 func (s *Service) dispatchStep(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool,
 	stepRun *scanrun.StepRun, stepTargets *scanapp.StepTargets, wantsPlatform, splitForStream bool,
 ) error {
+	// A path discovery step keeps the origins the shared gate lets through.
+	stepTargets, err := s.admitPathDiscovery(ctx, run, step, stepTargets, run.Context)
+	if err != nil {
+		return err
+	}
 	// Where the step's commands may run. No command is pinned to one
 	// sensor (research/49 W27): a zone-routed run's commands are stamped
 	// with the zone, the others go to the platform queue or to any tenant
@@ -622,6 +647,7 @@ func (s *Service) dispatchStep(ctx context.Context, run *scanrun.Run, step *scan
 	if len(created) == 0 || !stepRun.IsPending() {
 		return nil // a later wave of a streamed step that is queued already
 	}
+	s.recordEffectiveConfig(ctx, run, step, resolved, stepRun, created[0])
 	// Mark step as queued
 	stepRun.Queue()
 	stepRun.CommandID = &created[0].ID
@@ -1044,6 +1070,14 @@ func (s *Service) skipBlockedSteps(ctx context.Context, run *scanrun.Run, templa
 		changed = false
 		for _, step := range template.Steps {
 			sr := run.GetStepRun(step.StepKey)
+			if sr != nil && (sr.IsQueued() || sr.IsRunning()) {
+				// A step that streamed from a source that then failed stops
+				// (stream.go): it never runs on its seeds alone.
+				if dep := step.BlockedByDependency(run); dep != "" && s.stopStreamOfFailedSource(ctx, run, sr, dep) {
+					changed = true
+				}
+				continue
+			}
 			if sr == nil || !sr.IsPending() {
 				continue
 			}
@@ -1104,10 +1138,15 @@ func (s *Service) finishRun(ctx context.Context, run *scanrun.Run, status scanru
 	}
 	metrics.ScanRunsInProgress.WithLabelValues().Dec()
 	metrics.ScanRunsTotal.WithLabelValues(string(status)).Inc()
+	run.Status = status
+	run.TotalFindings = findings
+	if run.ParentRunID != nil {
+		// A zone child: its parent is the scan's run (zone_split.go).
+		s.settleSplitParent(ctx, run)
+		return true
+	}
 	s.recordScanRun(ctx, run, string(status))
 	if s.runCompleted != nil {
-		run.Status = status
-		run.TotalFindings = findings
 		s.runCompleted(ctx, run)
 	}
 	return true
@@ -1201,6 +1240,9 @@ type Partial struct {
 	// follow-ups). They are recorded on the run, so the next scheduled run
 	// plans them first and coverage never reads them as covered.
 	Unfinished []string
+	// Sensor is what the sensor reported it ran with (untrusted, bounded);
+	// recorded on the step run for display only.
+	Sensor scanrun.SensorSettings
 }
 
 // incomplete reports whether the command left work unfinished: hosts the
@@ -1354,6 +1396,13 @@ func (s *Service) OnStepCompletedPartial(ctx context.Context, tenantID shared.ID
 	if s.stepAlreadyFinished(run, stepRun, "completed") {
 		return nil
 	}
+	if stepRun != nil && !p.Sensor.IsZero() {
+		if rec, ok := s.stepRunRepo.(scanrun.StepRunConfigRecorder); ok {
+			if err := rec.SetSensorSettings(ctx, run.TenantID, stepRun.ID, p.Sensor); err != nil {
+				s.logger.Warn("failed to record the sensor's settings", "step_key", logger.SanitizeValue(stepKey), "error", err)
+			}
+		}
+	}
 
 	// A zone-routed scan runs one command per batch under this step: the step
 	// finishes with the last batch. If every batch failed the step fails; if
@@ -1502,6 +1551,9 @@ func (s *Service) settleBatchedStep(ctx context.Context, run *scanrun.Run, stepR
 // never fire (StepRun.CanRetry needs a step that is already failed, and a
 // failure arrives while the step is still running).
 func (s *Service) failStep(ctx context.Context, run *scanrun.Run, stepRun *scanrun.StepRun, errorMessage, errorCode string) error {
+	if scanrun.IsClaimSkipCode(errorCode) {
+		return s.skipStepAtClaim(ctx, run, stepRun, errorMessage, errorCode)
+	}
 	if stepRun != nil {
 		code, _ := scanrun.ClassifyStepFailure(errorCode, errorMessage)
 		stepRun.Fail(errorMessage, code)
@@ -1528,6 +1580,26 @@ func (s *Service) failStep(ctx context.Context, run *scanrun.Run, stepRun *scanr
 		return nil
 	}
 
+	return s.advanceRun(ctx, run, template)
+}
+
+// skipStepAtClaim records a step whose work the claim refused by a decision
+// of the organization (SOURCE_RETIRED: its tool is retired as a source on
+// the sensor, and no other sensor may run it). The step is skipped with the
+// reason, never failed, so fail_fast does not stop the run: the steps that
+// need its results are skipped as DEPENDENCY_SKIPPED and the rest goes on.
+func (s *Service) skipStepAtClaim(ctx context.Context, run *scanrun.Run, stepRun *scanrun.StepRun, reason, code string) error {
+	if stepRun != nil {
+		stepRun.SkipWithCode(reason, code)
+		if err := s.stepRunRepo.Update(ctx, stepRun); err != nil {
+			s.logger.Error("failed to record a step skipped at claim", "step_key", stepRun.StepKey, "error", err)
+		}
+		metrics.StepRunsTotal.WithLabelValues(stepRun.StepKey, "skipped").Inc()
+	}
+	template, err := s.runWorkflow(ctx, run)
+	if err != nil {
+		return err
+	}
 	return s.advanceRun(ctx, run, template)
 }
 
@@ -1646,6 +1718,18 @@ func failedRunMessage(run *scanrun.Run) string {
 			msg += " (" + sr.ErrorCode + ")"
 		}
 		return msg
+	}
+	// No step failed: the run failed because the claim refused its work
+	// (skipStepAtClaim). Name the first such step, its reason and code.
+	for _, sr := range run.StepRuns {
+		if sr == nil || sr.Status != scanrun.StepRunStatusSkipped || !scanrun.IsClaimSkipCode(sr.ErrorCode) {
+			continue
+		}
+		name := sr.StepName
+		if name == "" {
+			name = sr.StepKey
+		}
+		return fmt.Sprintf("Step %q was not run: %s (%s)", name, sr.SkipReason, sr.ErrorCode)
 	}
 	return "Scan run completed with failures"
 }
@@ -1794,6 +1878,11 @@ type runStats struct {
 	// unsupported: skipped steps no tool or sensor of the organization runs
 	// (counted in skipped too); the run is then partial, never completed.
 	unsupported int
+	// refusedAtClaim: skipped steps whose work the claim refused
+	// (SOURCE_RETIRED; counted in skipped and unsupported too). A run in
+	// which no step produced results and one was refused failed: nothing
+	// it was asked to run ran.
+	refusedAtClaim int
 }
 
 // settled is how many steps reached an outcome that counts towards the run
@@ -1809,6 +1898,8 @@ func (st runStats) outcome() scanrun.RunStatus {
 	switch {
 	case st.failed == 0 && st.partial == 0 && st.unsupported == 0:
 		return scanrun.RunStatusCompleted
+	case st.completed == 0 && st.partial == 0 && st.refusedAtClaim > 0:
+		return scanrun.RunStatusFailed
 	case st.failed == 0 && st.partial == 0:
 		return scanrun.RunStatusPartial
 	case st.completed == 0 && st.partial == 0:
@@ -1835,6 +1926,9 @@ func (s *Service) calculateRunStats(run *scanrun.Run) runStats {
 			st.skipped++
 			if sr.SkippedUnsupported() {
 				st.unsupported++
+			}
+			if scanrun.IsClaimSkipCode(sr.ErrorCode) {
+				st.refusedAtClaim++
 			}
 		}
 	}
@@ -2261,14 +2355,20 @@ func (s *Service) CancelRun(ctx context.Context, tenantID, runID string) error {
 	run.Cancel()
 	metrics.ScanRunsInProgress.WithLabelValues().Dec()
 	metrics.ScanRunsTotal.WithLabelValues(string(scanrun.RunStatusCanceled)).Inc()
-	s.recordScanRun(ctx, run, string(scanrun.RunStatusCanceled))
 
 	closure := s.closeCanceledRun(ctx, run)
 	s.notifyRun(run.TenantID, run.ID)
-	// A canceled run finished too: automations listening for finished runs
-	// hear about it (research/62 P0-11).
-	if s.runCompleted != nil {
-		s.runCompleted(ctx, run)
+	// A split run's zone runs are canceled with it (zone_split.go).
+	s.cancelZoneChildren(ctx, run)
+	if run.ParentRunID != nil {
+		s.settleSplitParent(ctx, run)
+	} else {
+		s.recordScanRun(ctx, run, string(scanrun.RunStatusCanceled))
+		// A canceled run finished too: automations listening for finished
+		// runs hear about it (research/62 P0-11).
+		if s.runCompleted != nil {
+			s.runCompleted(ctx, run)
+		}
 	}
 
 	event := NewSuccessEvent(audit.ActionScanRunCanceled, audit.ResourceTypeScanRun, runID).
@@ -2479,6 +2579,38 @@ func checkStepIntensity(run *scanrun.Run, step *scanworkflow.Step, resolved scan
 	return nil
 }
 
+// collapseRegistrable gives a registry-level stage (a registration lookup)
+// the registrable domain of each of its seed names, once: a registry has no
+// record of a subdomain, so planning every name of a scan scope gives most
+// of them an empty answer. A seed that is no domain name (an address) stays
+// as it is for the kind gate to have decided; the order of first appearance
+// is kept. A step with no explicit target list is left as is.
+func collapseRegistrable(resolved scanapp.StepTool, st *scanapp.StepTargets, runContext map[string]any) *scanapp.StepTargets {
+	if !resolved.HasStage || !stage.RegistryLevel(resolved.Stage.Key) {
+		return st
+	}
+	targets := chunkTargets(st, runContext)
+	if targets == nil {
+		return st
+	}
+	seen := make(map[string]bool, len(targets))
+	kept := make([]string, 0, len(targets))
+	for _, t := range targets {
+		if r, ok := stage.RegistrableDomain(t); ok {
+			t = r
+		}
+		if !seen[t] {
+			seen[t] = true
+			kept = append(kept, t)
+		}
+	}
+	out := &scanapp.StepTargets{Targets: kept}
+	if st != nil {
+		out.Refused, out.Reason = st.Refused, st.Reason
+	}
+	return out
+}
+
 // gateStepKinds keeps the step's targets whose kind its stage takes
 // (stage.AcceptsKind) and adds the rest to the step's refusals. A target
 // with a stored type (the run's target_types) is decided by the scanner type
@@ -2588,4 +2720,25 @@ func outputCount(output map[string]any, key string) int {
 		return max(int(n), 0)
 	}
 	return 0
+}
+
+// recordEffectiveConfig stores what the step's first command carries (its
+// standard params and where each came from) on the step run, so a run with
+// no findings can say what it looked for. Best effort: a failure is logged
+// and never stops the step.
+func (s *Service) recordEffectiveConfig(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step, resolved scanapp.StepTool, stepRun *scanrun.StepRun, cmd *command.Command) {
+	rec, ok := s.stepRunRepo.(scanrun.StepRunConfigRecorder)
+	if !ok {
+		return
+	}
+	var payload struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
+		return
+	}
+	cfg := scanapp.EffectiveConfigOf(run, step, resolved, payload.Config)
+	if err := rec.SetEffectiveConfig(ctx, run.TenantID, stepRun.ID, cfg); err != nil {
+		s.logger.Warn("failed to record the step's effective config", "step_key", logger.SanitizeValue(step.StepKey), "error", err)
+	}
 }

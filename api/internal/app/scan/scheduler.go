@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -165,7 +166,7 @@ func (s *ScanScheduler) checkAndTrigger() {
 		}
 
 		// Trigger scan in goroutine
-		go s.triggerScan(sc)
+		safego.Go(s.logger, "scan-scheduler:trigger", func() { s.triggerScan(sc) })
 		processed++
 	}
 
@@ -210,6 +211,7 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 			"scan_id", sc.ID.String(), "scheduled_for", occurrence, "next_run_at", nextRunAt)
 		s.scanService.recordScheduledOutcome(ctx, sc,
 			"Scheduled run skipped: its time was missed by more than one interval (the platform was unavailable)", nil)
+		s.recordMisfire(ctx, sc, occurrence, nextRunAt)
 		return
 	}
 
@@ -265,6 +267,9 @@ func (s *ScanScheduler) triggerScan(sc *scan.Scan) {
 		s.scanService.recordScheduledOutcome(ctx, sc, "Scheduled run could not start: "+err.Error(), err)
 		return
 	}
+
+	// A later scheduled run has started: the misfire note is history.
+	s.clearMisfire(ctx, sc)
 
 	// Record metric
 	metrics.ScansScheduled.WithLabelValues().Inc()

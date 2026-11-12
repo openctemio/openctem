@@ -37,17 +37,27 @@ const (
 	ResolveDNS          Key = "resolve.dns"
 	LookupRDAP          Key = "lookup.rdap"
 	LookupASN           Key = "lookup.asn"
-	DiscoverHosts       Key = "discover.hosts"
-	ScanPorts           Key = "scan.ports"
-	ProbeHTTP           Key = "probe.http"
-	CrawlWeb            Key = "crawl.web"
-	VulnTemplates       Key = "vuln.templates"
+	// LookupCT asks Certificate Transparency which certificates name a
+	// root domain. Cross-cutting: the platform's certificate monitoring runs
+	// it as a lookup job on a platform sensor, never as a workflow step.
+	LookupCT      Key = "lookup.ct"
+	DiscoverHosts Key = "discover.hosts"
+	ScanPorts     Key = "scan.ports"
+	ProbeHTTP     Key = "probe.http"
+	CrawlWeb      Key = "crawl.web"
+	// EnumerateWebPaths requests candidate paths the platform lists on a
+	// web origin, GET and HEAD only (path discovery).
+	EnumerateWebPaths Key = "enumerate.web_paths"
+	VulnTemplates     Key = "vuln.templates"
 	// CheckTakeover finds names whose alias points at an unclaimed
 	// third-party resource (nuclei's takeover templates).
 	CheckTakeover Key = "check.takeover"
 	// MonitorWebContent fetches listed URLs and reports the response so a
 	// change in a page or script can be detected (RFC-138).
-	MonitorWebContent  Key = "monitor.web_content"
+	MonitorWebContent Key = "monitor.web_content"
+	// CaptureScreenshot takes a picture of a web service; the result is the
+	// web_evidence property of the asset it was given (RFC-081).
+	CaptureScreenshot  Key = "capture.screenshot"
 	DASTWeb            Key = "dast.web"
 	SecretsCode        Key = "secrets.code"
 	SASTCode           Key = "sast.code"
@@ -56,6 +66,9 @@ const (
 	ContainerImage     Key = "container.image"
 	NetworkVAConnector Key = "network_va.connector"
 )
+
+// toolWebguess runs path discovery.
+const toolWebguess = "webguess"
 
 // Tier is how intrusive a stage is toward its targets.
 type Tier int
@@ -266,6 +279,18 @@ var catalog = []Stage{
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
+		Key: LookupCT, Name: "Certificate Transparency lookup",
+		Description: "Certificates that public Certificate Transparency search services list for a root domain and the names under it. Run by a platform sensor for certificate monitoring, not as a workflow step.",
+		Inputs:      []asset.TypeRef{tDomain},
+		Outputs:     []asset.TypeRef{tDomain},
+		Tier:        TierPassive,
+		Implementations: []Implementation{
+			{Tool: "ctlog", Default: true},
+		},
+		CrossCutting: true,
+		MaxFanout:    RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
 		Key: DiscoverHosts, Name: "Host discovery",
 		Description: "Find the live addresses of a range or an address list with light probes before deeper scans.",
 		Inputs:      []asset.TypeRef{tIP, tNetwork},
@@ -321,6 +346,23 @@ var catalog = []Stage{
 		Legacy:    []string{"crawler", "url_discovery"},
 	},
 	{
+		// Active (T1): GET and HEAD only, locked by the job's web scope,
+		// which also carries the per-origin request cap the sensor's
+		// forwarder enforces. The candidates are the platform's: a list
+		// derived from the organization's own inventory (contentpin), never
+		// the tool's own; the tool never recurses or follows redirects.
+		Key: EnumerateWebPaths, Name: "Web path discovery",
+		Description: "Request candidate paths the platform lists on a web origin with GET or HEAD, keeping the ones that answer differently from the origin's not-found response.",
+		Inputs:      []asset.TypeRef{tHTTPService},
+		Outputs:     []asset.TypeRef{tHTTPService},
+		Endpoints:   true,
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: toolWebguess, Default: true},
+		},
+		MaxFanout: webFanoutCap,
+	},
+	{
 		Key: VulnTemplates, Name: "Vulnerability templates",
 		Description: "Run non-intrusive vulnerability templates.",
 		Inputs: []asset.TypeRef{
@@ -361,6 +403,21 @@ var catalog = []Stage{
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: "httpx", Default: true, ByCapability: true},
+		},
+		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
+		// Active (T1): one GET per origin in a headless browser. The result
+		// is the web_evidence property of the origin the sensor re-reports,
+		// so the stage has no output port of its own. While the organization
+		// has screenshots off the capability is not planned for it (coverage
+		// readiness): no picture is taken.
+		Key: CaptureScreenshot, Name: "Screenshot",
+		Description: "Take a picture of a web page and keep it as evidence on the web service.",
+		Inputs:      []asset.TypeRef{tHTTPService},
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: toolWebshot, Default: true},
 		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},

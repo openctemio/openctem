@@ -46,7 +46,9 @@ type SensorControlV2Handler struct {
 	suppressions *SuppressionHandler
 	content      *SensorContentV2Handler
 	feedRelay    *FeedRelayHandler
+	lookupJobs   *LookupJobHandler
 	egress       *proxypoolapp.Service
+	secrets      TaskSecrets
 	limits       protov2.Limits
 	logger       *logger.Logger
 }
@@ -127,6 +129,12 @@ func (h *SensorControlV2Handler) SetFeedRelay(f *FeedRelayHandler) { h.feedRelay
 
 // FeedRelay is the feed relay handler (nil: not served).
 func (h *SensorControlV2Handler) FeedRelay() *FeedRelayHandler { return h.feedRelay }
+
+// SetLookupJobs serves the lookup job routes on this control plane.
+func (h *SensorControlV2Handler) SetLookupJobs(l *LookupJobHandler) { h.lookupJobs = l }
+
+// LookupJobs returns the lookup job routes (nil: not served).
+func (h *SensorControlV2Handler) LookupJobs() *LookupJobHandler { return h.lookupJobs }
 
 // HasSuppressions reports whether the suppressions route is served.
 func (h *SensorControlV2Handler) HasSuppressions() bool { return h.suppressions != nil }

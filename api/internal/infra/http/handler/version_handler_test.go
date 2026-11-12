@@ -28,19 +28,21 @@ func TestVersionHandler(t *testing.T) {
 	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("Cache-Control = %q", cc)
 	}
-	var body map[string]string
+	var body version.Info
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{
-		"version":    "v0.9.0",
-		"commit":     "4d2f4b02",
-		"build_time": "2026-10-02T10:00:00Z",
-		"channel":    "release",
+	want := version.Info{Version: "v0.9.0", Commit: "4d2f4b02", BuildTime: "2026-10-02T10:00:00Z", Channel: "release", ExtensionAPI: version.ExtensionAPI}
+	if body.Version != want.Version || body.Commit != want.Commit || body.BuildTime != want.BuildTime ||
+		body.Channel != want.Channel || body.ExtensionAPI != want.ExtensionAPI {
+		t.Errorf("body = %+v, want %+v", body, want)
 	}
-	for k, v := range want {
-		if body[k] != v {
-			t.Errorf("%s = %q, want %q", k, body[k], v)
-		}
+	// The Community build lists no extension: an empty list, never null.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if string(raw["extensions"]) != "[]" {
+		t.Errorf("extensions = %s, want []", raw["extensions"])
 	}
 }

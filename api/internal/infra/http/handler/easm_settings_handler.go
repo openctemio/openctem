@@ -43,8 +43,15 @@ type EASMSweeper interface {
 
 // EASMPlatform is what the platform runs at all, and its default cadence.
 type EASMPlatform struct {
-	CTAvailable  bool
-	DNSAvailable bool
+	CTAvailable bool
+	// CTUnavailableReason: why CT monitoring cannot run ("disabled",
+	// "needs_platform_sensor"; "" when it runs).
+	CTUnavailableReason string
+	// CTAvailability, when set, decides CTAvailable and CTUnavailableReason
+	// per request: CT monitoring is available only while a platform sensor
+	// serves CT lookups.
+	CTAvailability func(ctx context.Context) (bool, string)
+	DNSAvailable   bool
 	// EnrichmentAvailable: ASSET_ENRICHMENT_ENABLED.
 	EnrichmentAvailable bool
 	CTDefaultHrs        int
@@ -84,7 +91,8 @@ func NewEASMSettingsHandler(store EASMSettingsStore, freshness EASMFreshness, sw
 // EASMSettingsResponse is the organization's attack-surface monitoring.
 type EASMSettingsResponse struct {
 	// CTEnabled: the Certificate Transparency monitor runs for the
-	// organization (its domain names are sent to crt.sh and Cert Spotter).
+	// organization (its domain names are sent to crt.sh and Cert Spotter,
+	// only through a platform sensor).
 	CTEnabled bool `json:"ct_enabled"`
 	// DNSChecksEnabled: dangling CNAME/NS, lame delegation and email posture.
 	DNSChecksEnabled bool `json:"dns_checks_enabled"`
@@ -106,6 +114,10 @@ type EASMSettingsResponse struct {
 	// off for the whole platform; the switch then has no effect.
 	CTAvailable  bool `json:"ct_available"`
 	DNSAvailable bool `json:"dns_available"`
+	// CTUnavailableReason: why ct_available is false: "disabled" (the
+	// operator turned it off) or "needs_platform_sensor" (the platform makes
+	// no CT request itself and no platform sensor carries them).
+	CTUnavailableReason string `json:"ct_unavailable_reason,omitempty"`
 	// Freshness.
 	LastCTSweepAt     *time.Time `json:"last_ct_sweep_at,omitempty"`
 	LastDNSCheckAt    *time.Time `json:"last_dns_check_at,omitempty"`
@@ -117,6 +129,9 @@ type EASMSettingsResponse struct {
 	// WebScreenshotsEnabled: screenshots sent with web evidence are kept
 	// (30 days); off by default.
 	WebScreenshotsEnabled bool `json:"web_screenshots_enabled"`
+	// InfoMatchesAsFindings: info-severity template matches are filed as
+	// findings instead of info exposures; off by default.
+	InfoMatchesAsFindings bool `json:"info_matches_as_findings"`
 	// WeeklyDigestEnabled: the weekly "what changed" digest goes out.
 	WeeklyDigestEnabled bool `json:"weekly_digest_enabled"`
 	// DigestWeekday is the UTC weekday of the digest, 1..7 = Monday..Sunday.
@@ -145,6 +160,8 @@ type EASMSettingsUpdateRequest struct {
 	NetworkLookupsEnabled *bool `json:"network_lookups_enabled,omitempty"`
 	// WebScreenshotsEnabled omitted keeps it as it is.
 	WebScreenshotsEnabled *bool `json:"web_screenshots_enabled,omitempty"`
+	// InfoMatchesAsFindings omitted keeps it as it is.
+	InfoMatchesAsFindings *bool `json:"info_matches_as_findings,omitempty"`
 	// WeeklyDigestEnabled omitted keeps it as it is.
 	WeeklyDigestEnabled *bool `json:"weekly_digest_enabled,omitempty"`
 	// DigestWeekday omitted keeps it; 1..7 = Monday..Sunday.
@@ -186,6 +203,7 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		DNSEffectiveIntervalHours: effective(es.DNSIntervalHours, h.platform.DNSDefaultHrs),
 		MinIntervalHours:          tenant.MinEASMIntervalHours, MaxIntervalHours: tenant.MaxEASMIntervalHours,
 		CTAvailable: h.platform.CTAvailable, DNSAvailable: h.platform.DNSAvailable,
+		CTUnavailableReason:   h.platform.CTUnavailableReason,
 		LookalikeCTEnabled:    !es.LookalikeCTDisabled,
 		WeeklyDigestEnabled:   !es.WeeklyDigestDisabled,
 		DigestWeekday:         isoWeekday(easmchange.Weekday(es.DigestWeekday)),
@@ -193,6 +211,7 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		ReappearAfterDays:     int(es.ReappearAfter() / (24 * time.Hour)),
 		NetworkLookupsEnabled: !es.NetworkLookupsDisabled,
 		WebScreenshotsEnabled: es.WebScreenshotsEnabled,
+		InfoMatchesAsFindings: es.InfoMatchesAsFindings,
 	}
 	if h.digests != nil {
 		if last, err := h.digests.LastDigestAt(ctx, tenantID); err == nil {
@@ -210,6 +229,9 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		if until, err := h.freshness.RunNowAvailableAt(ctx, tenantID); err == nil && !until.IsZero() {
 			out.RunNowAvailableAt = &until
 		}
+	}
+	if h.platform.CTAvailability != nil {
+		out.CTAvailable, out.CTUnavailableReason = h.platform.CTAvailability(ctx)
 	}
 	return out
 }
@@ -283,6 +305,9 @@ func (h *EASMSettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.WebScreenshotsEnabled != nil {
 		es.WebScreenshotsEnabled = *req.WebScreenshotsEnabled
+	}
+	if req.InfoMatchesAsFindings != nil {
+		es.InfoMatchesAsFindings = *req.InfoMatchesAsFindings
 	}
 	if req.WeeklyDigestEnabled != nil {
 		es.WeeklyDigestDisabled = !*req.WeeklyDigestEnabled

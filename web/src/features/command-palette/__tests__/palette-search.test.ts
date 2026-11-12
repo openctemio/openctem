@@ -32,7 +32,7 @@ describe('paletteSearchUrls', () => {
   it('encodes the query and asks for five per type through the list APIs', () => {
     const u = paletteSearchUrls('a&b=c', all)
     expect(u.finding).toBe('/api/v1/findings?q=a%26b%3Dc&per_page=5')
-    expect(u.asset).toBe('/api/v1/assets?search=a%26b%3Dc&per_page=5')
+    expect(u.asset).toBe('/api/v1/assets?q=a%26b%3Dc&per_page=5')
     expect(u.task).toContain('/api/v1/remediation/tasks?')
     expect(u.task).toContain('search=a%26b%3Dc')
     expect(u.task).toContain('per_page=5')

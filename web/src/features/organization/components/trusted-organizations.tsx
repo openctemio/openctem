@@ -30,6 +30,7 @@ import {
   DialogForm,
   DialogBody,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -278,14 +279,10 @@ function CreateTrustDialog({
                 />
               </div>
               <TrustSettingsFields value={settings} onChange={setSettings} disabled={busy} />
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
             </div>
           </DialogBody>
+          <DialogSubmitError message={error} />
+
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={close}>
               {t('common.cancel', 'Cancel')}

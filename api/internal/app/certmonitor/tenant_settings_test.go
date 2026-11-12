@@ -39,7 +39,7 @@ func TestMonitorTenant_TenantSwitch(t *testing.T) {
 	defer srv.Close()
 	off, on := shared.NewID(), shared.NewID()
 	mk := func(tn shared.ID, ts TenantSettingsReader) *Service {
-		svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tn, "listed.com")}}, newFakeExposureRepo(), srv.URL, testLogger())
+		svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tn, "listed.com")}}, newFakeExposureRepo(), srv.URL)
 		svc.setHTTPClient(srv.Client())
 		svc.SetTenantSettings(ts)
 		return svc

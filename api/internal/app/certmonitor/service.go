@@ -4,18 +4,18 @@
 // domains and emits first-class ExposureEvents.
 //
 // This is CTEM Discovery breadth ("exposure != vulnerability") that needs no
-// credentials, no sensor and no traffic to the tenant's hosts: it reads only
-// public CT-log data. See docs/rfcs/RFC-019 and RFC-036 (P0: rotation through
-// every watched domain, retries, fallback, back-off).
+// credentials and no traffic to the tenant's hosts: it reads only public
+// CT-log data. See docs/rfcs/RFC-019 and RFC-036 (P0: rotation through every
+// watched domain, retries, fallback, back-off).
 //
 // The watched domains are the tenant's domain assets, verified domains and
 // active domain scope targets. Each run picks the ones due, oldest-queried
 // first, up to a per-run cap (selection.go); per-domain state lives in
 // ct_monitor_state so the rotation survives restarts.
 //
-// Outbound queries dial through httpsec.SafeDialContext (SSRF-guarded: private,
-// link-local and metadata addresses are refused even though the sources are
-// public — defense against DNS rebinding of the configurable URLs), are
+// The platform makes no CT request itself: every query goes through a
+// Fetcher that relays it through a platform-owned sensor (ctlog.go). Without
+// one the sweep is off and reports ReasonNeedsPlatformSensor. Queries are
 // body-bounded, retried with jittered back-off and politeness-delayed.
 //
 // Tenant isolation: the tenant is taken from the domain being queried, never
@@ -26,10 +26,8 @@ package certmonitor
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -41,32 +39,13 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
 
 const (
-	// DefaultFeedBaseURL is the public crt.sh CT-log aggregator. No auth.
-	DefaultFeedBaseURL = "https://crt.sh"
-
 	// Source is the exposure source tag for everything this connector emits.
 	Source = "cert_transparency"
-
-	// httpTimeout bounds a single CT query end to end. crt.sh can be slow for
-	// busy domains, so this is generous.
-	httpTimeout = 60 * time.Second
-
-	// responseHeaderTimeout is how long we wait for crt.sh to start answering.
-	// The shared SSRF-guarded client waits 15 s, which crt.sh's database
-	// routinely exceeds for any domain with a few thousand certificates.
-	responseHeaderTimeout = 50 * time.Second
-
-	// maxBodyBytes bounds a single CT JSON response.
-	maxBodyBytes = 48 << 20 // 48 MiB
-
-	// userAgent identifies OpenCTEM to the CT sources.
-	userAgent = "OpenCTEM/1.0 (+https://github.com/openctemio)"
 
 	// DefaultMaxDomainsPerRun caps how many of a tenant's domains one sweep
 	// queries, so a tenant with thousands of domains cannot make us hammer
@@ -159,11 +138,9 @@ type Service struct {
 	scopeTargets ScopeTargetLister
 	exclusions   ExclusionSource // nil = exclusions not wired (tests, minimal wiring)
 	state        StateStore
-	httpClient   *http.Client
-	feedBaseURL  string
-
-	// certSpotterBaseURL is the fallback source; empty disables it.
-	certSpotterBaseURL string
+	// source answers the CT queries through a platform sensor; nil: CT
+	// monitoring is unavailable (ReasonNeedsPlatformSensor).
+	source CTSource
 
 	// Promotion of CT names into assets (promote.go); nil = off.
 	ingester    AssetIngester
@@ -193,9 +170,6 @@ type Service struct {
 	tenantSettings TenantSettingsReader
 	// relinker moves stored CT exposures onto their host's asset.
 	relinker ExposureRelinker
-
-	// maxBody bounds one CT response (maxBodyBytes; tests lower it).
-	maxBody int64
 }
 
 // NewService constructs the CT discovery service. An empty feedBaseURL defaults
@@ -204,17 +178,11 @@ type Service struct {
 func NewService(
 	assetRepo AssetLister,
 	exposureRepo ExposureUpserter,
-	feedBaseURL string,
 	log *logger.Logger,
 ) *Service {
-	if strings.TrimSpace(feedBaseURL) == "" {
-		feedBaseURL = DefaultFeedBaseURL
-	}
 	return &Service{
 		assetRepo:       assetRepo,
 		exposureRepo:    exposureRepo,
-		httpClient:      newCTHTTPClient(),
-		feedBaseURL:     strings.TrimRight(feedBaseURL, "/"),
 		maxDomains:      DefaultMaxDomainsPerRun,
 		maxSubs:         defaultMaxSubdomainsPerDomain,
 		expiryWindow:    defaultExpiryWindow,
@@ -223,16 +191,27 @@ func NewService(
 		recheckAfter:    DefaultRecheckAfter,
 		sweepBudget:     DefaultSweepBudget,
 		maxPromotions:   DefaultMaxPromotionsPerRun,
-		maxBody:         maxBodyBytes,
 		now:             func() time.Time { return time.Now().UTC() },
 		logger:          log.With("service", "cert_monitor"),
 	}
 }
 
-// newCTHTTPClient is the SSRF-guarded client with a response-header timeout
-// long enough for crt.sh.
-func newCTHTTPClient() *http.Client {
-	return httpsec.SafeHTTPClientWithHeaderTimeout(httpTimeout, responseHeaderTimeout)
+// SetSource wires the CT source: lookup jobs on the platform's sensors
+// (nil: none, CT monitoring is unavailable).
+func (s *Service) SetSource(src CTSource) { s.source = src }
+
+// Available reports whether CT monitoring can run now: a platform sensor
+// that serves CT lookups is connected.
+func (s *Service) Available(ctx context.Context) bool {
+	return s != nil && s.source != nil && s.source.Available(ctx)
+}
+
+// UnavailableReason is why CT monitoring cannot run now ("" when it can).
+func (s *Service) UnavailableReason(ctx context.Context) string {
+	if s.Available(ctx) {
+		return ""
+	}
+	return ReasonNeedsPlatformSensor
 }
 
 // SetDomainSources adds verified domains and active domain scope targets to
@@ -245,16 +224,6 @@ func (s *Service) SetDomainSources(verified VerifiedDomainLister, targets ScopeT
 // SetStateStore enables the persisted rotation cursor and failure back-off.
 func (s *Service) SetStateStore(st StateStore) { s.state = st }
 
-// SetCertSpotterFallback sets the Cert Spotter base URL used when crt.sh keeps
-// failing. An empty string or "off" disables the fallback.
-func (s *Service) SetCertSpotterFallback(baseURL string) {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if strings.EqualFold(baseURL, "off") {
-		baseURL = ""
-	}
-	s.certSpotterBaseURL = baseURL
-}
-
 // SetLimits sets the per-run domain cap and the re-check age. Zero or negative
 // values keep the defaults.
 func (s *Service) SetLimits(maxDomainsPerRun int, recheckAfter time.Duration) {
@@ -264,19 +233,6 @@ func (s *Service) SetLimits(maxDomainsPerRun int, recheckAfter time.Duration) {
 	if recheckAfter > 0 {
 		s.recheckAfter = recheckAfter
 	}
-}
-
-// FeedBaseURL returns the configured crt.sh base URL (for diagnostics).
-func (s *Service) FeedBaseURL() string { return s.feedBaseURL }
-
-// setHTTPClient overrides the outbound client and disables the politeness delay
-// and retry waits. Test-only: production always uses the SSRF-guarded client
-// built in NewService, which (correctly) refuses the loopback address an
-// httptest server listens on.
-func (s *Service) setHTTPClient(c *http.Client) {
-	s.httpClient = c
-	s.requestDelay = 0
-	s.noSleep = true
 }
 
 // MonitorTenant runs one CT sweep for a single tenant: it gathers the tenant's
@@ -292,6 +248,11 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	}
 	if tenantID.IsZero() {
 		return 0, fmt.Errorf("%w: tenant ID is required", shared.ErrValidation)
+	}
+	if !s.Available(ctx) {
+		// No platform sensor carries CT requests: nothing is queried, and no
+		// domain's state changes (it is not a failure of the domain).
+		return 0, nil
 	}
 
 	if locker, ok := s.state.(TenantLocker); ok {
@@ -355,7 +316,7 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		return 0, nil
 	}
 
-	client := &sweepClient{s: s}
+	client := &sweepClient{s: s, tenant: tenantID}
 	found := make([]rootFinds, 0, len(due))
 	var promotions []promotion
 	failed, queried, excludedHosts := 0, 0, 0
@@ -383,6 +344,14 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 		st.LastCheckedAt = &attempted
 
 		res, err := client.fetch(ctx, root.name)
+		if errors.Is(err, ErrNeedsPlatformSensor) {
+			// The sensor went away mid-sweep: stop without marking the
+			// domain failed; the next run starts here.
+			s.logger.Warn("ct sweep: no platform sensor serves CT lookups any more; the remaining domains wait",
+				"tenant_id", tenantID.String(), "remaining", len(due)-i)
+			queried--
+			break
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return 0, ctx.Err()
@@ -390,7 +359,12 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 			failed++
 			st.ConsecutiveFailures++
 			st.LastError = truncate(err.Error(), 500)
-			next := attempted.Add(failureBackoff(st.ConsecutiveFailures))
+			wait := failureBackoff(st.ConsecutiveFailures)
+			var se *sourceError
+			if errors.As(err, &se) && se.retryAfter() > wait {
+				wait = se.retryAfter()
+			}
+			next := attempted.Add(wait)
 			st.NextAttemptAt = &next
 			s.saveState(ctx, tenantID, st)
 			s.logger.Warn("CT query failed; domain backed off",
@@ -399,6 +373,10 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 			continue
 		}
 
+		if res.dropped > 0 {
+			s.logger.Warn("ct sweep: the platform sensor's answer named hosts outside the queried domain; dropped",
+				"tenant_id", tenantID.String(), "domain", root.name, "dropped", res.dropped)
+		}
 		d := collectDiscoveries(root.name, res.entries, attempted, s.expiryWindow, s.expiredLookback, s.maxSubs)
 		if d.subdomainsCut > 0 {
 			s.logger.Info("ct sweep: subdomain exposures capped for this domain; every name is still promoted",
@@ -682,35 +660,8 @@ func certDetails(root rootDomain, ec expiringCert) map[string]any {
 	}
 }
 
-// queryCRTSH fetches and parses crt.sh JSON for one domain (one attempt).
-func (s *Service) queryCRTSH(ctx context.Context, domain string) ([]crtEntry, error) {
-	u, err := url.Parse(s.feedBaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid feed base URL: %w", err)
-	}
-	u.Path = "/"
-	q := url.Values{}
-	// "%.<domain>" is a SQL-LIKE wildcard: match the domain and every subdomain.
-	// url.Values.Encode percent-encodes the leading '%' to %25 as crt.sh expects.
-	q.Set("q", "%."+domain)
-	q.Set("output", "json")
-	// One row per certificate instead of a precertificate + certificate pair:
-	// halves the answer and the time crt.sh spends building it.
-	q.Set("deduplicate", "Y")
-	u.RawQuery = q.Encode()
-
-	body, err := s.get(ctx, u.String(), SourceCRTSH)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := parseCRTSH(body)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errNotRetryable, err)
-	}
-	return entries, nil
-}
-
-// crtEntry is one certificate record from crt.sh's JSON output.
+// crtEntry is one certificate record of a CT answer (crt.sh's field names;
+// the answer's records are mapped onto it).
 type crtEntry struct {
 	CommonName   string `json:"common_name"`
 	NameValue    string `json:"name_value"`
@@ -718,22 +669,6 @@ type crtEntry struct {
 	NotAfter     string `json:"not_after"`
 	IssuerName   string `json:"issuer_name"`
 	SerialNumber string `json:"serial_number"`
-}
-
-// parseCRTSH parses crt.sh JSON output. It is pure (no I/O) so the (quirky)
-// crt.sh response shape is unit-testable without the SSRF-guarded HTTP client.
-// crt.sh returns a bare JSON array; malformed individual entries are skipped
-// rather than failing the whole parse.
-func parseCRTSH(body []byte) ([]crtEntry, error) {
-	trimmed := strings.TrimSpace(string(body))
-	if trimmed == "" {
-		return nil, nil
-	}
-	var entries []crtEntry
-	if err := json.Unmarshal([]byte(trimmed), &entries); err != nil {
-		return nil, fmt.Errorf("failed to parse crt.sh JSON: %w", err)
-	}
-	return entries, nil
 }
 
 // expiringCert is a host whose most-recent CT certificate expires within the

@@ -88,6 +88,7 @@ const (
 	coverageNotScanCommand      = "not_scan_command"
 	coverageCommandNotCompleted = "command_not_completed"
 	coverageNonZeroExit         = "nonzero_exit"
+	coverageRunStopped          = "run_stopped"
 	coverageNoReports           = "no_reports"
 	coverageReportsPending      = "reports_pending"
 	coverageIntegrity           = "integrity_unverified"
@@ -143,11 +144,14 @@ func decideRunCoverage(c *ingestreport.CommandCoverage, repo bool) coverageDecis
 	if c.CommandStatus != string(command.CommandStatusCompleted) {
 		return coverageDecision{reason: coverageCommandNotCompleted}
 	}
-	var result struct {
-		ExitCode *int `json:"exit_code"`
-	}
-	if len(c.Result) > 0 && json.Unmarshal(c.Result, &result) == nil && result.ExitCode != nil && *result.ExitCode != 0 {
-		return coverageDecision{reason: coverageNonZeroExit}
+	// A run that exited non-zero, was killed or that the sensor says it
+	// stopped proves nothing, whatever its reports claim (research/467 F6:
+	// older sensors deliver a budget-killed run as full coverage).
+	if stopped, why := command.RunStopped(c.Result); stopped {
+		if why == command.StopNonZeroExit {
+			return coverageDecision{reason: coverageNonZeroExit}
+		}
+		return coverageDecision{reason: coverageRunStopped}
 	}
 	// A run that left some targets uncovered still proves the others when
 	// its result says how every target ended (not for repository runs,
@@ -449,6 +453,9 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 	// A finished filtered resolution marks the names it did not report
 	// (wildcard_dns.go), whatever the coverage mode.
 	s.evaluateWildcardDNS(ctx, tenantID, commandID, cov)
+	// The per-branch occurrence sweep of a bound run, whatever the coverage
+	// mode: only a run that ended by itself sweeps (branch_sweep.go).
+	s.sweepRunBranchOccurrences(ctx, tenantID, commandID, cov)
 	d := decideCoverage(cov)
 	if d.reason == coverageRepositoryScan {
 		return s.evaluateRepoCoverage(ctx, tenantID, commandID, cov, s.coverageGuard)
@@ -486,6 +493,7 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		"scanner": d.query.ToolName, "scan_id": commandID.String(), "profile_id": d.query.ProfileID,
 	})
 	d.query.CommandID = commandID
+	d.query.KeepInformational = s.infoMatchesRouted(ctx, tenantID, d.query.ToolName)
 	stale, open, err := repo.CoverageStaleFindings(ctx, tenantID, d.query)
 	if err != nil {
 		out.Reason = coverageCandidateError(err)
@@ -520,7 +528,10 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		s.logger.Warn("coverage auto-resolve held for review (blinding guard)", logArgs...)
 		if mode == CoverageAutoResolveEnforce {
 			// A held run closes nothing; a person decides in Ready to close.
-			out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, stale, true, vulnerability.ClosureMethodCoveredScan)
+			// The organization's closing mode still applies: off proposes
+			// nothing, and what it would close or propose is proposed.
+			closeIDs, proposed, _ := s.splitByClosureDecision(ctx, tenantID, stale, vulnerability.ClosureMethodCoveredScan)
+			out.Proposed = s.proposeClosures(ctx, tenantID, commandID, cov, d.query, append(closeIDs, proposed...), true, vulnerability.ClosureMethodCoveredScan)
 		}
 	case mode == CoverageAutoResolveDryRun:
 		metrics.FindingsCoverageAutoResolve.WithLabelValues(string(mode), "would_resolve").Add(float64(len(stale)))

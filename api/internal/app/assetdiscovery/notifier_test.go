@@ -269,7 +269,8 @@ func TestNotifier_ExistingAssetBecameExposed(t *testing.T) {
 	if sum.URL != ChangesURL {
 		t.Fatalf("mixed summary URL = %q", sum.URL)
 	}
-	if o.items[0].URL != ChangesURL+"?view=newly_exposed" {
+	// One asset links to the asset itself.
+	if o.items[0].URL != "/assets/"+host.ID().String() {
 		t.Fatalf("exposed-only URL = %q", o.items[0].URL)
 	}
 }

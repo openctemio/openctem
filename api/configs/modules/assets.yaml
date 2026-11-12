@@ -19,9 +19,12 @@
     - AssetTechnologyBackfillController
     - AssetChangeTimelineController
     - AssetLifecycleController
+    - AssetLivenessController
     - AssetPurgeController
     - AssetRiskScoreController
     - AssetRiskReconcileController
+    - AssetDomainMembershipController
+    - AssetPortsController
     - OwnerResolutionController
     - DataExpirationController
     - DomainReverifyController

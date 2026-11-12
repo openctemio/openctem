@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
+import { ErrorState } from '@/features/shared/components/error-state'
 import {
   PageHeader,
   PageStack,
@@ -112,10 +113,25 @@ export default function BusinessImpactPage() {
   const { t } = useTranslation()
   const buColumns = useMemo(() => buildColumns(t), [t])
   const { currentTenant } = useTenant()
-  const { stats, isLoading: statsLoading } = useDashboardStats(currentTenant?.id || null)
-  const { stats: assetStats, isLoading: assetStatsLoading } = useAssetStats()
+  const {
+    stats,
+    isLoading: statsLoading,
+    error: statsError,
+    mutate: retryStats,
+  } = useDashboardStats(currentTenant?.id || null)
+  const {
+    stats: assetStats,
+    isLoading: assetStatsLoading,
+    error: assetStatsError,
+    mutate: retryAssetStats,
+  } = useAssetStats()
   const { data: buData, isLoading: buLoading, error: buError, mutate: retryBu } = useBusinessUnits()
-  const { data: crownData, isLoading: crownLoading } = useCrownJewels()
+  const {
+    data: crownData,
+    isLoading: crownLoading,
+    error: crownError,
+    mutate: retryCrown,
+  } = useCrownJewels()
 
   const isLoading = statsLoading || assetStatsLoading || buLoading || crownLoading
 
@@ -164,41 +180,60 @@ export default function BusinessImpactPage() {
           )}
         />
 
-        <MetricStrip
-          loading={isLoading}
-          items={[
-            {
-              key: 'assets',
-              label: t('prioritization.businessImpact.stat.assets', 'Assets'),
-              value: assetStats.total,
-              hint: t('prioritization.businessImpact.stat.withFindings', '{count} with findings', {
-                count: assetStats.withFindings,
-              }),
-              href: '/assets',
-            },
-            {
-              key: 'critical',
-              label: t('prioritization.businessImpact.stat.critical', 'Critical findings'),
-              value: criticalFindings,
-              tone: 'danger',
-              hint: t('prioritization.businessImpact.stat.highSeverity', '{count} high severity', {
-                count: highFindings,
-              }),
-              href: '/findings?severity=critical',
-            },
-            {
-              key: 'criticalAssets',
-              label: t('prioritization.businessImpact.stat.criticalAssets', 'Critical assets'),
-              value: criticalAssets,
-              hint: t(
-                'prioritization.businessImpact.stat.highRisk',
-                '{count} high-risk (score ≥ 70)',
-                { count: assetStats.highRiskCount }
-              ),
-              href: '/assets?criticalities=critical',
-            },
-          ]}
-        />
+        {(statsError && !statsLoading) || (assetStatsError && !assetStatsLoading) ? (
+          <ErrorState
+            title={t('prioritization.businessImpact.stat.errorTitle', 'business impact figures')}
+            error={statsError ?? assetStatsError}
+            onRetry={() => {
+              void retryStats()
+              void retryAssetStats()
+            }}
+          />
+        ) : (
+          <MetricStrip
+            loading={isLoading}
+            items={[
+              {
+                key: 'assets',
+                label: t('prioritization.businessImpact.stat.assets', 'Assets'),
+                value: assetStats.total,
+                hint: t(
+                  'prioritization.businessImpact.stat.withFindings',
+                  '{count} with findings',
+                  {
+                    count: assetStats.withFindings,
+                  }
+                ),
+                href: '/assets',
+              },
+              {
+                key: 'critical',
+                label: t('prioritization.businessImpact.stat.critical', 'Critical findings'),
+                value: criticalFindings,
+                tone: 'danger',
+                hint: t(
+                  'prioritization.businessImpact.stat.highSeverity',
+                  '{count} high severity',
+                  {
+                    count: highFindings,
+                  }
+                ),
+                href: '/findings?severity=critical',
+              },
+              {
+                key: 'criticalAssets',
+                label: t('prioritization.businessImpact.stat.criticalAssets', 'Critical assets'),
+                value: criticalAssets,
+                hint: t(
+                  'prioritization.businessImpact.stat.highRisk',
+                  '{count} high-risk (score ≥ 70)',
+                  { count: assetStats.highRiskCount }
+                ),
+                href: '/assets?criticalities=critical',
+              },
+            ]}
+          />
+        )}
 
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <Card>
@@ -214,32 +249,43 @@ export default function BusinessImpactPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {assetStatsLoading
-                ? Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="space-y-2">
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-2 w-full" />
-                    </div>
-                  ))
-                : criticalityBreakdown.map(({ level, count, percentage }) => (
-                    <div key={level} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-2 text-sm font-medium">
-                          <span
-                            className={`size-2 shrink-0 rounded-full ${CRITICALITY_DOT_COLORS[level]}`}
-                          />
-                          {t(`criticality.${level}`, CRITICALITY_LABELS[level])}
+              {assetStatsError && !assetStatsLoading ? (
+                <ErrorState
+                  title={t(
+                    'prioritization.businessImpact.criticality.errorTitle',
+                    'asset criticality'
+                  )}
+                  error={assetStatsError}
+                  onRetry={() => void retryAssetStats()}
+                />
+              ) : assetStatsLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-2 w-full" />
+                  </div>
+                ))
+              ) : (
+                criticalityBreakdown.map(({ level, count, percentage }) => (
+                  <div key={level} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        <span
+                          className={`size-2 shrink-0 rounded-full ${CRITICALITY_DOT_COLORS[level]}`}
+                        />
+                        {t(`criticality.${level}`, CRITICALITY_LABELS[level])}
+                      </span>
+                      <span className="text-sm font-semibold tabular-nums">
+                        {count}{' '}
+                        <span className="text-xs font-normal text-muted-foreground">
+                          ({percentage}%)
                         </span>
-                        <span className="text-sm font-semibold tabular-nums">
-                          {count}{' '}
-                          <span className="text-xs font-normal text-muted-foreground">
-                            ({percentage}%)
-                          </span>
-                        </span>
-                      </div>
-                      <Progress value={percentage} className="h-2" />
+                      </span>
                     </div>
-                  ))}
+                    <Progress value={percentage} className="h-2" />
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
 
@@ -265,6 +311,12 @@ export default function BusinessImpactPage() {
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>
+              ) : crownError && !crownData ? (
+                <ErrorState
+                  title={t('prioritization.businessImpact.crown.errorTitle', 'crown jewels')}
+                  error={crownError}
+                  onRetry={() => void retryCrown()}
+                />
               ) : topCrownJewels.length === 0 ? (
                 <EmptyState
                   icon={Crown}

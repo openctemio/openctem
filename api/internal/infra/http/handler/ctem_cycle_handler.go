@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 
@@ -18,6 +22,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/ctemcycle"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -31,7 +36,23 @@ type CTEMCycleHandler struct {
 	metrics     ctemcycle.MetricsRepository
 	dataScope   *datascope.Enforcer
 	cyclePolicy CyclePolicyReader
-	logger      *logger.Logger
+	audit       cycleAuditWriter
+	// coverageQuery replaces the validation coverage query (tests); nil
+	// uses postgres.ValidationCoverageByPriority.
+	coverageQuery func(ctx context.Context, tenantID, startDate, endDate string) (validation.ValidationCoverage, error)
+	logger        *logger.Logger
+}
+
+// cycleAuditWriter records audit events (*auditapp.AuditService).
+type cycleAuditWriter interface {
+	LogEvent(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) error
+}
+
+// WithAudit records the audited cycle actions (a close that overrides a
+// failed coverage check). Without it such an override is refused.
+func (h *CTEMCycleHandler) WithAudit(a cycleAuditWriter) *CTEMCycleHandler {
+	h.audit = a
+	return h
 }
 
 // CyclePolicyReader reads an organization's CTEM cycle policy.
@@ -55,7 +76,7 @@ func (h *CTEMCycleHandler) WithDataScope(e *datascope.Enforcer) *CTEMCycleHandle
 
 // NewCTEMCycleHandler creates a new handler. metrics may be nil (metric
 // computation/serving is then disabled but the cycle lifecycle still
-// works); cmd/server wires the postgres implementation.
+// works); internal/server wires the postgres implementation.
 func NewCTEMCycleHandler(db *sql.DB, metrics ctemcycle.MetricsRepository, log *logger.Logger) *CTEMCycleHandler {
 	return &CTEMCycleHandler{db: db, metrics: metrics, logger: log}
 }
@@ -166,8 +187,12 @@ func (h *CTEMCycleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("name is required").WriteJSON(w)
 		return
 	}
+	description, ok := cycleDescription(w, req.Description)
+	if !ok {
+		return
+	}
 
-	charterJSON, err := json.Marshal(req.Charter)
+	charterJSON, err := charterObject(req.Charter)
 	if err != nil {
 		apierror.BadRequest("invalid charter JSON").WriteJSON(w)
 		return
@@ -175,11 +200,11 @@ func (h *CTEMCycleHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	row := h.db.QueryRowContext(r.Context(),
 		`INSERT INTO ctem_cycles
-		        (tenant_id, name, start_date, end_date, charter, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		        (tenant_id, name, start_date, end_date, charter, created_by, description)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+ctemCycleColumns,
 		tenantID, req.Name, nilString(req.StartDate), nilString(req.EndDate),
-		charterJSON, userID,
+		charterJSON, userID, description,
 	)
 	c, err := h.scanCycle(row)
 	if err != nil {
@@ -201,7 +226,18 @@ func (h *CTEMCycleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	charterJSON, err := json.Marshal(req.Charter)
+	// An omitted description keeps the stored one (the charter editor
+	// does not send it).
+	var description any
+	if req.Description != nil {
+		d, ok := cycleDescription(w, req.Description)
+		if !ok {
+			return
+		}
+		description = d
+	}
+
+	charterJSON, err := charterObject(req.Charter)
 	if err != nil {
 		apierror.BadRequest("invalid charter JSON").WriteJSON(w)
 		return
@@ -209,10 +245,11 @@ func (h *CTEMCycleHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	row := h.db.QueryRowContext(r.Context(),
 		`UPDATE ctem_cycles
-		    SET name = $3, start_date = $4, end_date = $5, charter = $6, updated_at = NOW()
+		    SET name = $3, start_date = $4, end_date = $5, charter = $6,
+		        description = COALESCE($7, description), updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2 AND status = 'planning'
 		 RETURNING `+ctemCycleColumns,
-		tenantID, id, req.Name, nilString(req.StartDate), nilString(req.EndDate), charterJSON,
+		tenantID, id, req.Name, nilString(req.StartDate), nilString(req.EndDate), charterJSON, description,
 	)
 	c, err := h.scanCycle(row)
 	if err != nil {
@@ -247,31 +284,41 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.MustGetTenantID(r.Context())
 	id := chi.URLParam(r, "id")
 
-	c, err := h.transitionStatus(r, w, tenantID, id, "planning", "active")
+	// The transition, the activation stamp and the scope snapshot are one
+	// transaction: a cycle is never active without its snapshot, and a
+	// failed snapshot leaves it in planning with a visible error.
+	tx, err := h.db.BeginTx(r.Context(), nil)
 	if err != nil {
-		return // error already written
+		h.logger.Error("ctem cycle activate: begin", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
 	}
+	defer func() { _ = tx.Rollback() }()
 
-	// Stamp the activation moment (first activation only) so per-cycle
+	// activated_at is stamped on the first activation only, so per-cycle
 	// metrics have a true window start [activated_at, closed_at].
-	if _, aerr := h.db.ExecContext(r.Context(),
-		`UPDATE ctem_cycles SET activated_at = NOW()
-		  WHERE id = $1 AND tenant_id = $2 AND activated_at IS NULL`,
-		id, tenantID,
-	); aerr != nil {
-		h.logger.Warn("cycle activated_at stamp failed", "cycle_id", sanitizeLogField(id), "error", aerr)
+	c, err := h.scanCycle(tx.QueryRowContext(r.Context(),
+		`UPDATE ctem_cycles
+		    SET status = 'active', activated_at = COALESCE(activated_at, NOW()), updated_at = NOW()
+		  WHERE tenant_id = $1 AND id = $2 AND status = 'planning'
+		 RETURNING `+ctemCycleColumns,
+		tenantID, id,
+	))
+	if err != nil {
+		if err == sql.ErrNoRows { //nolint:errorlint
+			apierror.BadRequest("cycle not found or not in planning status").WriteJSON(w)
+			return
+		}
+		h.logger.Error("ctem cycle activate", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
 	}
 
-	// Pull the Charter so we can read in_scope_services. The charter is
-	// stored as JSONB on ctem_cycles.
-	var charterRaw []byte
-	if err := h.db.QueryRowContext(r.Context(),
-		`SELECT charter FROM ctem_cycles WHERE id = $1 AND tenant_id = $2`,
-		id, tenantID,
-	).Scan(&charterRaw); err != nil {
-		h.logger.Warn("cycle charter fetch failed; falling back to all-assets snapshot",
-			"cycle_id", id, "error", err)
-		charterRaw = nil
+	charterRaw, err := json.Marshal(c.Charter)
+	if err != nil {
+		h.logger.Error("ctem cycle activate: charter", "cycle_id", sanitizeLogField(id), "error", logger.SanitizeError(err))
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
 	}
 	inScopeServices, droppedServices := partitionServiceIDs(extractInScopeServices(charterRaw))
 	if len(droppedServices) > 0 {
@@ -287,49 +334,45 @@ func (h *CTEMCycleHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	var (
-		result     sql.Result
-		snapErr    error
-		scopedRows int64
-	)
-
+	var result sql.Result
 	if len(inScopeServices) > 0 {
 		// Targeted scope: only assets linked to the named business services.
 		// scope_target_id = the business_service_id that selected the asset.
-		// ON CONFLICT (cycle_id, asset_id) keeps the first service that
-		// included the asset so a composite unique index would dedupe.
-		scopedQuery := `
+		result, err = tx.ExecContext(r.Context(), `
 			INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id, scope_target_id)
 			SELECT $1, bsa.asset_id, bsa.service_id
 			  FROM business_service_assets bsa
 			  JOIN business_services bs ON bs.id = bsa.service_id AND bs.tenant_id = $2
 			  JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $2
 			 WHERE bsa.service_id = ANY($3::uuid[])
-			ON CONFLICT DO NOTHING
-		`
-		result, snapErr = h.db.ExecContext(r.Context(), scopedQuery, id, tenantID, pq.Array(inScopeServices))
+			ON CONFLICT DO NOTHING`,
+			id, tenantID, pq.Array(inScopeServices))
 	} else {
-		// No scope filter declared → legacy behaviour: freeze every asset.
-		allQuery := `
+		// No scope filter declared: freeze every asset.
+		result, err = tx.ExecContext(r.Context(), `
 			INSERT INTO ctem_cycle_scope_snapshots (cycle_id, asset_id)
 			SELECT $1, id FROM assets WHERE deleted_at IS NULL AND tenant_id = $2
-			ON CONFLICT DO NOTHING
-		`
-		result, snapErr = h.db.ExecContext(r.Context(), allQuery, id, tenantID)
+			ON CONFLICT DO NOTHING`,
+			id, tenantID)
 	}
-
-	if snapErr != nil {
-		h.logger.Error("cycle scope snapshot failed", "cycle_id", id, "error", snapErr)
-		// Don't fail the transition — cycle is activated, snapshot can be retried
-	} else if result != nil {
-		scopedRows, _ = result.RowsAffected()
-		h.logger.Info("cycle activated with scope snapshot",
-			"cycle_id", id,
-			"assets_snapshotted", scopedRows,
-			"scope_mode", scopeModeLabel(inScopeServices),
-			"services_in_scope", len(inScopeServices),
-		)
+	if err != nil {
+		h.logger.Error("cycle scope snapshot failed; the cycle stays in planning",
+			"cycle_id", sanitizeLogField(id), "error", logger.SanitizeError(err))
+		apierror.InternalServerError("The scope snapshot could not be taken, so the cycle was not activated. Try again.").WriteJSON(w)
+		return
 	}
+	if err := tx.Commit(); err != nil {
+		h.logger.Error("ctem cycle activate: commit", "cycle_id", sanitizeLogField(id), "error", logger.SanitizeError(err))
+		apierror.InternalServerError("The scope snapshot could not be taken, so the cycle was not activated. Try again.").WriteJSON(w)
+		return
+	}
+	scopedRows, _ := result.RowsAffected()
+	h.logger.Info("cycle activated with scope snapshot",
+		"cycle_id", sanitizeLogField(id),
+		"assets_snapshotted", scopedRows,
+		"scope_mode", scopeModeLabel(inScopeServices),
+		"services_in_scope", len(inScopeServices),
+	)
 
 	writeJSON(w, http.StatusOK, c)
 }
@@ -436,6 +479,20 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	id := chi.URLParam(r, "id")
 
+	// The body is optional (no body = no override).
+	var req CloseCTEMCycleRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			apierror.BadRequest("invalid request body").WriteJSON(w)
+			return
+		}
+	}
+	req.OverrideReason = strings.TrimSpace(req.OverrideReason)
+	if req.OverrideCoverageCheck && (len([]rune(req.OverrideReason)) < minOverrideReason || len([]rune(req.OverrideReason)) > maxOverrideReason) {
+		apierror.BadRequest(fmt.Sprintf("an override needs a reason of %d to %d characters", minOverrideReason, maxOverrideReason)).WriteJSON(w)
+		return
+	}
+
 	// Load cycle window first — need start_date/end_date for coverage query.
 	var cycleStart, cycleEnd sql.NullString
 	if err := h.db.QueryRowContext(r.Context(),
@@ -455,8 +512,19 @@ func (h *CTEMCycleHandler) Close(w http.ResponseWriter, r *http.Request) {
 	// Compute coverage and apply SLO.
 	coverage, covErr := h.computeValidationCoverage(r.Context(), tenantID, cycleStart.String, cycleEnd.String)
 	if covErr != nil {
-		h.logger.Warn("validation coverage query failed; allowing close",
+		// The check could not run: refuse, unless a person overrides it
+		// with a reason, and the override is audited before the close.
+		h.logger.Error("ctem cycle close: validation coverage query failed",
 			"cycle_id", logger.SanitizeValue(id), "error", logger.SanitizeError(covErr))
+		if !req.OverrideCoverageCheck {
+			apierror.New(http.StatusConflict, CodeCoverageCheckFailed,
+				"The validation coverage check could not run, so the cycle was not closed. Try again, or close it with an override and a reason.").WriteJSON(w)
+			return
+		}
+		if !h.auditCloseOverride(r, id, req.OverrideReason) {
+			apierror.ServiceUnavailable("The override could not be recorded in the audit log, so the cycle was not closed. Try again.").WriteJSON(w)
+			return
+		}
 	} else if sloErr := validation.Enforce(coverage, validation.DefaultThresholds); sloErr != nil {
 		enforce := false
 		if h.cyclePolicy != nil {
@@ -529,7 +597,7 @@ func (h *CTEMCycleHandler) UpdateScopeRefinement(w http.ResponseWriter, r *http.
 
 	row := h.db.QueryRowContext(r.Context(),
 		`UPDATE ctem_cycles
-		    SET charter = jsonb_set(COALESCE(charter, '{}'::jsonb),
+		    SET charter = jsonb_set(CASE WHEN jsonb_typeof(charter) = 'object' THEN charter ELSE '{}'::jsonb END,
 		                            '{scope_refinement_notes}', to_jsonb($3::text), true),
 		        updated_at = NOW()
 		  WHERE tenant_id = $1 AND id = $2 AND status IN ('review', 'closed')
@@ -559,6 +627,9 @@ func (h *CTEMCycleHandler) computeValidationCoverage(
 	ctx context.Context,
 	tenantID, startDate, endDate string,
 ) (validation.ValidationCoverage, error) {
+	if h.coverageQuery != nil {
+		return h.coverageQuery(ctx, tenantID, startDate, endDate)
+	}
 	return postgres.ValidationCoverageByPriority(ctx, h.db, tenantID, startDate, endDate, nil)
 }
 
@@ -820,7 +891,7 @@ func (h *CTEMCycleHandler) transitionStatus(
 // ctemCycleColumns is the column list every cycle read/RETURNING uses; it
 // must stay in step with the Scan order in scanCycle.
 const ctemCycleColumns = `id, name, status, start_date, end_date, charter,
-	closed_by, closed_at, created_by, created_at, updated_at, charter_evaluation`
+	closed_by, closed_at, created_by, created_at, updated_at, charter_evaluation, description`
 
 // rowScanner abstracts *sql.Row and *sql.Rows for shared scan logic.
 type ctemRowScanner interface {
@@ -838,7 +909,7 @@ func (h *CTEMCycleHandler) scanCycle(scanner ctemRowScanner) (CTEMCycleResponse,
 	err := scanner.Scan(
 		&c.ID, &c.Name, &c.Status, &startDate, &endDate, &charter,
 		&closedBy, &closedAt, &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
-		&evaluation,
+		&evaluation, &c.Description,
 	)
 	if err != nil {
 		return c, err
@@ -867,14 +938,85 @@ func (h *CTEMCycleHandler) scanCycle(scanner ctemRowScanner) (CTEMCycleResponse,
 	return c, nil
 }
 
+// CodeCoverageCheckFailed: a close was refused because the validation
+// coverage check could not run; the client may retry with an override.
+const CodeCoverageCheckFailed apierror.Code = "COVERAGE_CHECK_FAILED"
+
+// Bounds of a close override reason and of a cycle description.
+const (
+	minOverrideReason   = 10
+	maxOverrideReason   = 1000
+	maxCycleDescription = 2000
+)
+
+// auditCloseOverride records a close that overrides a failed coverage
+// check. It reports false when no audit log is wired or the record fails:
+// an override that leaves no trace is refused.
+func (h *CTEMCycleHandler) auditCloseOverride(r *http.Request, cycleID, reason string) bool {
+	if h.audit == nil {
+		return false
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionCTEMCycleCloseOverridden, auditdom.ResourceTypeCTEMCycle, cycleID).
+		WithMessage("Cycle closed although its validation coverage check could not run").
+		WithMetadata("reason", reason).
+		WithSeverity(auditdom.SeverityHigh)
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  middleware.GetRequestID(r.Context()),
+	}
+	if err := h.audit.LogEvent(r.Context(), actx, event); err != nil {
+		h.logger.Error("ctem cycle close override: audit", "cycle_id", sanitizeLogField(cycleID), "error", logger.SanitizeError(err))
+		return false
+	}
+	return true
+}
+
+// cycleDescription trims and bounds a description; it writes the 400 and
+// reports false when it is too long.
+func cycleDescription(w http.ResponseWriter, d *string) (string, bool) {
+	if d == nil {
+		return "", true
+	}
+	v := strings.TrimSpace(*d)
+	if len([]rune(v)) > maxCycleDescription {
+		apierror.BadRequest(fmt.Sprintf("description is at most %d characters", maxCycleDescription)).WriteJSON(w)
+		return "", false
+	}
+	return v, true
+}
+
+// charterObject is the charter as stored: always a JSON object ({} when
+// the request has none), never JSON null.
+func charterObject(c map[string]any) ([]byte, error) {
+	if c == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(c)
+}
+
 // ─── Request/Response Types ───
 
 // CreateCTEMCycleRequest is the request body for creating/updating a CTEM cycle.
 type CreateCTEMCycleRequest struct {
-	Name      string         `json:"name"`
-	StartDate string         `json:"start_date"`
-	EndDate   string         `json:"end_date"`
-	Charter   map[string]any `json:"charter"`
+	Name string `json:"name"`
+	// Description is what the cycle is for. Omitted on update keeps the
+	// stored one.
+	Description *string        `json:"description,omitempty"`
+	StartDate   string         `json:"start_date"`
+	EndDate     string         `json:"end_date"`
+	Charter     map[string]any `json:"charter"`
+}
+
+// CloseCTEMCycleRequest is the optional body of a close. Override closes a
+// cycle whose validation-coverage check could not run; it needs a reason
+// and is audited. It never overrides an enforced coverage SLO breach.
+type CloseCTEMCycleRequest struct {
+	OverrideCoverageCheck bool   `json:"override_coverage_check,omitempty"`
+	OverrideReason        string `json:"override_reason,omitempty"`
 }
 
 // UpdateScopeRefinementRequest is the body for recording a cycle's
@@ -885,17 +1027,18 @@ type UpdateScopeRefinementRequest struct {
 
 // CTEMCycleResponse is the JSON response for a CTEM cycle.
 type CTEMCycleResponse struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Status    string         `json:"status"`
-	StartDate string         `json:"start_date,omitempty"`
-	EndDate   string         `json:"end_date,omitempty"`
-	Charter   map[string]any `json:"charter"`
-	ClosedBy  string         `json:"closed_by,omitempty"`
-	ClosedAt  *time.Time     `json:"closed_at,omitempty"`
-	CreatedBy string         `json:"created_by"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Status      string         `json:"status"`
+	StartDate   string         `json:"start_date,omitempty"`
+	EndDate     string         `json:"end_date,omitempty"`
+	Charter     map[string]any `json:"charter"`
+	ClosedBy    string         `json:"closed_by,omitempty"`
+	ClosedAt    *time.Time     `json:"closed_at,omitempty"`
+	CreatedBy   string         `json:"created_by"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 	// CharterEvaluation is the close-time verdict on each charter success
 	// criterion (met / unmet / not_measurable, with the measured value).
 	// Absent until the cycle is closed with at least one criterion.

@@ -233,6 +233,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SecretStoreRead,
     module: Module.Scans,
   },
+  '/settings/scanning/tool-sources': {
+    permission: Permission.SecretStoreRead,
+    module: Module.Scans,
+  },
 
   // ========================================
   // Discovery Phase - Scans (Module: scans)
@@ -528,6 +532,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   },
   '/settings/scanning/scan-approval': {
     permission: Permission.ScansRead,
+    module: Module.Scans,
+  },
+  // Exploration: the next steps; approving needs scans:approve (in the API).
+  '/exploration': {
+    permission: Permission.AssetsRead,
     module: Module.Scans,
   },
   '/ci-cd': {

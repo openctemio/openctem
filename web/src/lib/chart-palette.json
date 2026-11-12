@@ -61,6 +61,12 @@
     "light": ["#eb6834", "#2a78d6"],
     "dark": ["#d95926", "#3987e5"]
   },
+  "ink": {
+    "keys": ["ink", "ink-weak"],
+    "light": ["#4a5568", "#b8c0cc"],
+    "dark": ["#a9b4c4", "#3a4a63"],
+    "$comment": "One measure in one colour: neutral ink for the bar or fill, a weak step for its track. Teal never encodes data. The ink must read as text on the surface (4.5:1); the weak step is a track, not a mark."
+  },
   "sequential": {
     "light": ["#86b6ef", "#5598e7", "#256abf", "#184f95", "#0d366b"],
     "dark": ["#1a4a91", "#225db0", "#2f72cc", "#6aa3ec", "#9fc4f4"],

@@ -488,7 +488,7 @@ func WriteLimitError(w http.ResponseWriter, err error) bool {
 func LimitMessage(lim *limits.ErrLimitReached) string {
 	label := map[limits.Key]string{
 		limits.Seats: "seats", limits.Assets: "assets", limits.Sensors: "sensors", limits.APIKeys: "API keys",
-		limits.CITrusts: "CI trust configurations", limits.InvitesPerDay: "invitations a day",
+		limits.CITrusts: "CI trust configurations", limits.SSOConnections: "single sign-on connections", limits.InvitesPerDay: "invitations a day",
 		limits.OrgsPerUser: "organizations per person", limits.Findings: "findings",
 		limits.PlatformScansPerDay: "shared sensor scans a day", limits.PlatformScansConcurrent: "shared sensor jobs at a time",
 		limits.LifecycleSubStatuses: "finding sub-statuses", limits.LifecycleSchemes: "finding lifecycles",
@@ -524,8 +524,6 @@ func WriteFeatureDenied(w http.ResponseWriter, err error) bool {
 // FeatureMessage is the person-facing text of a feature refusal.
 func FeatureMessage(feature string) string {
 	label := map[string]string{
-		limits.FeatureSSOConnections:      "Single sign-on connections",
-		limits.FeatureSSOEnforcement:      "Requiring single sign-on",
 		limits.FeatureSCIM:                "SCIM provisioning",
 		limits.FeatureSSOGroupLinks:       "Identity provider group links",
 		limits.FeatureLDAP:                "LDAP sign-in",
