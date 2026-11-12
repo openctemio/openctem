@@ -193,6 +193,12 @@ func TestRoutesValidation(t *testing.T) {
 		"auth":               func(r *ext.Route) { r.Path = "/auth/login" },
 		"scim":               func(r *ext.Route) { r.Path = "/scim/v2/Users" },
 		"sensor":             func(r *ext.Route) { r.Path = "/sensor" },
+		"organization plane": func(r *ext.Route) { r.Path = "/tenants/{tenant}/custom" },
+		"ci token plane":     func(r *ext.Route) { r.Path = "/ci/custom" },
+		"mcp":                func(r *ext.Route) { r.Path = "/mcp" },
+		"oauth consent":      func(r *ext.Route) { r.Path = "/oauth/custom" },
+		"api keys":           func(r *ext.Route) { r.Path = "/api-keys/{id}/custom" },
+		"platform scanning":  func(r *ext.Route) { r.Path = "/platform/custom" },
 	}
 	for name, mutate := range bad {
 		t.Run(name, func(t *testing.T) {
