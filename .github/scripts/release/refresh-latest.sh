@@ -58,11 +58,20 @@ components() {
   done < <(grep -E '^[a-z0-9][a-z0-9-]*:[[:space:]]*(#.*)?$' "$MANIFEST" | sed 's/:.*//')
 }
 
+# A stale fallback never stops a release, so a failing read is retried
+# briefly (gh-retry.sh: 10s, 20s), not for the five minutes a publish step
+# waits: four unreadable components must not outlast the job's timeout.
+export GH_RETRY_ATTEMPTS="${GH_RETRY_ATTEMPTS:-3}"
+errlog="$(mktemp)"
+trap 'rm -f "$errlog"' EXIT
+
 while read -r section repo image; do
   have="$(rel_yaml_get "$MANIFEST" "$section.latest" 2>/dev/null || true)"
   rel_is_version "$have" || continue
-  if ! json="$(printf '%s %s %s\n' "$section" "$repo" "$image" | bash "$HERE/feed-components.sh" 2>/dev/null)"; then
-    echo "::warning::refresh-latest: no published release of $repo could be read; $section.latest stays $have" >&2
+  if ! json="$(printf '%s %s %s\n' "$section" "$repo" "$image" | bash "$HERE/feed-components.sh" 2>"$errlog")"; then
+    # Name the cause (for example gh without GH_TOKEN in a workflow step).
+    why="$(grep -v '^gh-retry: .* attempt ' "$errlog" | tail -n 1 | tr -d '\r' | cut -c1-200)"
+    echo "::warning::refresh-latest: no published release of $repo could be read${why:+ ($why)}; $section.latest stays $have" >&2
     continue
   fi
   want="$(jq -r '.[0].version // empty' <<<"$json")"
