@@ -106,12 +106,12 @@ func newXOStack(t *testing.T) *xoStack {
 	log := initLogger(cfg)
 	db, err := postgres.New(&cfg.Database)
 	if err != nil {
-		t.Skipf("database: %v", err)
+		xoUnavailable(t, "database", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	rc, err := redis.New(&cfg.Redis, log)
 	if err != nil {
-		t.Skipf("redis (REDIS_HOST/REDIS_PORT): %v", err)
+		xoUnavailable(t, "redis (REDIS_HOST/REDIS_PORT)", err)
 	}
 	t.Cleanup(func() { _ = rc.Close() })
 
@@ -144,6 +144,16 @@ func newXOStack(t *testing.T) *xoStack {
 	h := &xoStack{t: t, db: db.DB, srv: ts, gen: services.JWTGenerator, services: services, handlers: handlers, cfg: cfg}
 	h.seedOrganizations()
 	return h
+}
+
+// xoUnavailable skips when a dependency is missing, and fails when the run was
+// asked to hit the database (OPENCTEM_TEST_DB_REQUIRED, set in CI).
+func xoUnavailable(t *testing.T, what string, err error) {
+	t.Helper()
+	if testdb.Required() {
+		t.Fatalf("%s: %v", what, err)
+	}
+	t.Skipf("%s: %v", what, err)
 }
 
 func (h *xoStack) exec(q string, args ...any) {
