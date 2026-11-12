@@ -695,7 +695,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		IngestReceipt:          newIngestReceiptHandler(cfg, repos, svc, log),
 		SourceRetirement:       handler.NewSourceRetirementHandler(svc.SourceRetire, log),
 		Story:                  newStoryHandler(deps.DB, repos, svc, log),
-		ExplorationLeads:       newExplorationLeadHandler(deps.DB, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -982,6 +981,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	// Exploration leads need the scan policy service wired just above: built
+	// earlier it was nil and the routes were never registered.
+	handlers.ExplorationLeads = newExplorationLeadHandler(deps.DB, svc, log)
 	wireSharedSensorDefaults(svc, cfg, deps.RedisClient, log)
 	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
