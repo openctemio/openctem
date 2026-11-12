@@ -462,6 +462,18 @@ var (
 		[]string{"outcome"},
 	)
 
+	// PortScanPortsTotal counts port scans that named no ports, handed to a
+	// sensor whose local policy lists ports.allow: "filled" (the allowed
+	// ports were set on the job) or "refused" (no allowed port; failed at
+	// claim, its step skipped).
+	PortScanPortsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "sensor_port_scan_ports_total",
+			Help: "Port scans without ports for a sensor with ports.allow, by outcome (filled, refused)",
+		},
+		[]string{"outcome"},
+	)
+
 	// SignerRefusalsTotal counts the job signer's refusals by reason
 	// (out_of_ledger, tier_exceeds_ledger, target_excluded, rate limits,
 	// malformed statements; RFC-040 §5.11 detection A10). The signer's own

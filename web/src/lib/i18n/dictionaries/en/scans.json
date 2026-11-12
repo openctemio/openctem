@@ -1139,6 +1139,8 @@
   "scans.failure.PARSE_ERROR.text": "The tool's output could not be read.",
   "scans.failure.POLICY_REFUSED.fix": "The owner of the scanned network reviews the sensor's local policy.",
   "scans.failure.POLICY_REFUSED.text": "A sensor's local policy refused the work.",
+  "scans.failure.PORTS_NOT_ALLOWED.fix": "Ask the network owner to add the ports to ports.allow in the sensor's local policy, or name ports in the scan that the policy allows.",
+  "scans.failure.PORTS_NOT_ALLOWED.text": "Skipped: this is a port scan that names no ports, and the local policy (ports.allow) of every sensor that may run it allows none of the ports it would probe. The task was not sent.",
   "scans.failure.QUEUE_ERROR.fix": "Run the scan again; if it repeats, check the platform's logs.",
   "scans.failure.QUEUE_ERROR.text": "The step could not be queued.",
   "scans.failure.RESOURCE_EXHAUSTED.fix": "Free disk space or memory on the sensors, or add a larger sensor to the scan zone.",
