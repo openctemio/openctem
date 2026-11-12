@@ -1,7 +1,0 @@
-### Security: the government and military scope rule becomes a console setting with per-organization exceptions
-
-- The scope guardrails' block on government and military names is now the platform setting "Blocked target names", on by default on new and existing installs (nothing changes on upgrade). A platform owner can turn it off, add the operator's own blocked names next to `SCOPE_DENY_EXTRA`, and grant one organization an expiring exception for one name (reason, reference to the written authorisation, expiry required). An exception lifts only that rule, only for that organization and name; the name still needs a scope entry through every scope rule, and an expired or revoked exception is refused when an entry is added and at dispatch.
-- Only platform owners change it (new permission `platform.settings.scope_guardrails`), with a fresh authenticator code and a reason; with `MANAGED_SERVICE` set, a grant, an extension and turning the rule off need a second owner's approval. Every change is a critical admin audit row and every administrator is e-mailed.
-- Loopback, link-local and cloud metadata addresses, the whole address space, public suffixes, shared provider apexes and the CIDR caps stay hard-coded.
-- A refused government name now answers `400 GOVERNMENT_NAME` ("government and military domains are blocked on this installation; your platform administrator can grant an exception") instead of `DENY_LIST` "contact support".
-- Migration `20261111161146_scope_name_exceptions` adds the exceptions table and the owner permission.
