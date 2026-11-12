@@ -66,6 +66,9 @@ describe('RankedBars', () => {
     expect(top.className).toContain('min-h-11')
     const bars = screen.getAllByTestId('ranked-bar')
     expect(bars[0].style.width).toBe('100%')
+    // One measure is neutral ink: teal never encodes data.
+    expect(bars[0].className).toContain('bg-viz-ink')
+    expect(bars[0].className).not.toContain('bg-signal')
     expect(parseFloat(bars[1].style.width)).toBeCloseTo((100 * 12) / 59, 1)
     // No safe link: plain text in the same box, still focusable for its tooltip.
     expect(screen.queryByRole('link', { name: 'gamma 3' })).not.toBeInTheDocument()

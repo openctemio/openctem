@@ -1532,6 +1532,7 @@ its own validated steps), and components colour marks with those variables.
 | categorical (`--viz-cat-1` .. `8`, `--viz-cat-other`) | any other series, in fixed order |
 | diverging (`--viz-div-opened`, `--viz-div-fixed`) | flow pairs |
 | sequential (`--viz-seq-1` .. `5`, with `--viz-seq-ink-*`) | heatmap shading and the text printed on it |
+| ink (`--viz-ink`, `--viz-ink-weak`) | a chart of one measure: neutral ink for the bar or fill, the weak step for its track. Teal never encodes data. `--good` and `--bad` colour a delta by outcome, not direction |
 
 Status colours (good, warning, critical, unmeasured) stay the semantic
 `success` / `warning` / `destructive` / muted tokens and always come with an
