@@ -103,6 +103,12 @@ type V2Target struct {
 	// EpochPromised: the request names protov2.FeatureResultsLeaseEpoch,
 	// so a command-bound request without LeaseEpoch is refused.
 	EpochPromised bool
+	// LateCommand and LateLeaseEpoch are the command and lease epoch an
+	// unbound report states it was made for (protov2.HeaderLateCommand,
+	// HeaderLateLeaseEpoch): provenance, never a binding (v2_late.go).
+	// LateCommand is "" when not sent.
+	LateCommand    string
+	LateLeaseEpoch *int
 }
 
 // Problem returns a *V2ReportError for a problem type.
@@ -185,6 +191,11 @@ func (v *V2Receiver) bind(ctx context.Context, t V2Target) (shared.ID, *command.
 	if t.Sensor == nil || !t.Sensor.IsShared() {
 		tenantID, err := tenantOf(t.Sensor)
 		if err != nil {
+			return shared.ID{}, nil, err
+		}
+		// A late report of a run the platform handed out again is refused
+		// (v2_late.go); any other late report goes on unsolicited.
+		if err := v.checkLate(ctx, tenantID, t); err != nil {
 			return shared.ID{}, nil, err
 		}
 		cmd, err := v.openCommand(ctx, tenantID, t)

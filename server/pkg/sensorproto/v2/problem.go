@@ -65,6 +65,11 @@ const (
 	ProblemInternal    ProblemType = "internal"
 	ProblemUnavailable ProblemType = "unavailable"
 
+	// ProblemLeaseSuperseded refuses a late report (HeaderLateCommand) of a
+	// run the platform took back and handed out again: the replacing run's
+	// results are the record. Final: the sensor must not send it again.
+	ProblemLeaseSuperseded ProblemType = "lease-superseded"
+
 	// RFC-029 (ProblemTypeBaseSensor).
 	ProblemInvalidTransition  ProblemType = "invalid-transition"
 	ProblemCommandClaimed     ProblemType = "command-claimed"
@@ -154,6 +159,8 @@ var problemDefs = map[ProblemType]problemDef{
 	ProblemRateLimited:       {http.StatusTooManyRequests, "Rate limited", "Too many requests; retry after the advised delay.", true, ""},
 	ProblemQueueFull:         {http.StatusTooManyRequests, "Queue full", "The tenant's ingest queue is full; retry after the advised delay.", true, ""},
 	ProblemTooManyOpenReport: {http.StatusTooManyRequests, "Too many open reports", "This sensor has too many uncommitted reports; commit or delete one first.", true, ""},
+
+	ProblemLeaseSuperseded: {http.StatusConflict, "Lease superseded", "The report was made under a lease the platform took back and handed out again; the replacing run's results are the record. Do not send it again.", false, ""},
 
 	ProblemInternal:    {http.StatusInternalServerError, "Internal error", "The server failed to handle the request.", true, ""},
 	ProblemUnavailable: {http.StatusServiceUnavailable, "Unavailable", "The service is temporarily unavailable; retry after the advised delay.", true, ""},
