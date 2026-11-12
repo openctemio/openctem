@@ -49,6 +49,12 @@ func AllTaskStates() []TaskState {
 	}
 }
 
+// OpenTaskStates lists the states of a task that still needs work (not
+// terminal): the states of the Inbox's My tasks queue.
+func OpenTaskStates() []TaskState {
+	return []TaskState{TaskStateOpen, TaskStateInProgress, TaskStateVerifying, TaskStateOnHold}
+}
+
 // IsValid reports whether s is a known task state.
 func (s TaskState) IsValid() bool {
 	for _, v := range AllTaskStates() {
