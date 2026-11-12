@@ -178,6 +178,37 @@ describe('TenantEpochBoundary', () => {
     nav.mockRestore()
   })
 
+  it('a page that suspends never leaves a reader without its cache (crash seen after Back)', async () => {
+    nav.search = ''
+    const never = new Promise(() => {})
+    function Suspender({ on }: { on: boolean }) {
+      if (on) throw never
+      return null
+    }
+    function Page({ on, tick }: { on: boolean; tick: number }) {
+      return (
+        <React.Suspense fallback={<p>app loading</p>}>
+          <TenantEpochBoundary>
+            <Suspender on={on} />
+            <FindingsPage key={tick === -1 ? 'x' : 'page'} />
+          </TenantEpochBoundary>
+        </React.Suspense>
+      )
+    }
+    const errors: unknown[] = []
+    const onErr = (e: ErrorEvent) => errors.push(e.error)
+    window.addEventListener('error', onErr)
+    const view = render(<Page on={false} tick={0} />)
+    await waitFor(() => expect(screen.getByTestId('rows')).toHaveTextContent('rows of A'))
+    // An urgent update makes a page part suspend, then the tree renders again.
+    await act(async () => view.rerender(<Page on={true} tick={1} />))
+    await act(async () => view.rerender(<Page on={true} tick={2} />))
+    await act(async () => view.rerender(<Page on={false} tick={3} />))
+    window.removeEventListener('error', onErr)
+    expect(errors).toEqual([])
+    expect(screen.getByTestId('rows')).toHaveTextContent('rows of A')
+  })
+
   it('module-level mutate reaches the current epoch cache', async () => {
     nav.search = ''
     const view = render(<Shell epoch={tenant.epoch} />)

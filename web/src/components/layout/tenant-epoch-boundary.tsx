@@ -61,7 +61,28 @@ function BindEpochMutate() {
   return null
 }
 
-const freshCache = () => new Map()
+/**
+ * Stable config object: a new one per render would hand every SWR reader a
+ * new context value. The key (the epoch) is what creates a new cache.
+ */
+const EPOCH_SWR_CONFIG = { provider: () => new Map() }
+
+/**
+ * Shown while a page below suspends. It also shields the epoch cache: SWR
+ * drops a provider's state in the layout-effect cleanup of its SWRConfig,
+ * which React also runs when a Suspense boundary above hides the tree, and a
+ * reader rendered while hidden would then find no state. Suspending children
+ * stop here, below the SWRConfig.
+ */
+function PageLoading() {
+  const { t } = useTranslation()
+  return (
+    <div className="flex min-h-[400px] items-center justify-center" role="status">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
+      <span className="sr-only">{t('common.loading', 'Loading…')}</span>
+    </div>
+  )
+}
 
 export function TenantEpochBoundary({ children }: { children: React.ReactNode }) {
   const { epoch, epochKeepsLocation, currentTenant } = useTenant()
@@ -136,9 +157,9 @@ export function TenantEpochBoundary({ children }: { children: React.ReactNode })
   }
 
   return (
-    <SWRConfig key={epoch} value={{ provider: freshCache }}>
+    <SWRConfig key={epoch} value={EPOCH_SWR_CONFIG}>
       <BindEpochMutate />
-      {children}
+      <React.Suspense fallback={<PageLoading />}>{children}</React.Suspense>
     </SWRConfig>
   )
 }
