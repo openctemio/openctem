@@ -1049,11 +1049,14 @@ The release train groups the changelog fragments by these labels. The plan job r
 fragment and keeps its `notes:*` labels, and `server/scripts/changelog.py preview --labels FILE`
 prints an **Upgrade notes** block ahead of the categories: the section titles of the fragments
 under "Destructive migrations (read before upgrading)", "Database migrations", "Finding identity
-and fingerprint changes" and "API contract changes". The follow-up PR that folds the fragments
-into `server/CHANGELOG.md` does the same: `python3 .github/scripts/release/fragment-labels.py --out
-/tmp/labels.json` (with `GH_TOKEN` set), then `python3 server/scripts/changelog.py release vX.Y.Z
---labels /tmp/labels.json`. A fragment whose pull request cannot be found is named on stderr and
-only lacks its heading. Without `--labels` the notes are unchanged. The tests are
+and fingerprint changes" and "API contract changes". The block also lists
+every `**Upgrade note:**` line of the release's fragments and the titles of their Behaviour
+change, Removed and Deprecated sections, with or without labels. A release's fragments are the
+ones its tag's tree has and the previous release's lacks (`--ref vX.Y.Z --since-previous
+vX.Y.Z`): the GitHub Release prints them under "Changes in vX.Y.Z", and Release Publish's develop
+follow-up PR folds them into `server/CHANGELOG.md` in a commit of its own (`post-release.sh`;
+the format and the manual command are in `server/changelog.d/README.md`). A fragment whose pull
+request cannot be found is named on stderr and only lacks its heading. The tests are
 `.github/scripts/release/tests/test_release_note_sections.sh`, run by Release Tooling.
 
 ### CI image mirror
