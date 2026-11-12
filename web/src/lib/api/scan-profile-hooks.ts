@@ -219,7 +219,7 @@ export function useUpdateQualityGate(profileId: string) {
  * Invalidate scan profiles cache
  */
 export async function invalidateScanProfilesCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/scan-profiles'),
     undefined,

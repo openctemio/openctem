@@ -67,6 +67,14 @@ const eslintConfig = defineConfig([
               message: 'The tenant app must not import platform console code (web/console).',
             },
           ],
+          paths: [
+            {
+              name: 'swr',
+              importNames: ['mutate', 'preload'],
+              message:
+                "SWR's global mutate/preload reach only the default cache; the dashboard keeps one cache per organization epoch. Use mutate from '@/lib/swr-mutate' or useSWRConfig() (web/docs/organization-switch.md).",
+            },
+          ],
         },
       ],
     },

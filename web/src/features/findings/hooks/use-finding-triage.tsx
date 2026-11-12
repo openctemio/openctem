@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import { undoToast } from '@/lib/undo-toast'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { Severity } from '@/features/shared/types'
-import { mutate as mutateSWR } from 'swr'
+import { mutate as mutateSWR } from '@/lib/swr-mutate'
 import type { ApiFinding } from '../api/finding-api.types'
 import {
   findingDetailKey,

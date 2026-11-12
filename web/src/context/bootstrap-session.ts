@@ -15,7 +15,7 @@
  * A field the API left out (an older API, a count the caller may not read, a
  * source that failed) is not seeded, and its hook fetches as before.
  */
-import { mutate } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 
 import { notificationEndpoints, tenantEndpoints, userEndpoints } from '@/lib/api/endpoints'
 import type { TenantMembership } from '@/lib/api/user-tenant-types'

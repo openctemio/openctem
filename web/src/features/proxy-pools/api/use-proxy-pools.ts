@@ -72,7 +72,7 @@ export function useScannerAddresses(enabled = true) {
 
 /** Revalidates every proxy pool request (list, assignments), keeping the data on screen. */
 export async function invalidateProxyPools() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.startsWith(API_BASE.PROXY_POOLS))
 }
 

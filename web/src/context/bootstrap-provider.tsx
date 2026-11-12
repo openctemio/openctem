@@ -17,7 +17,7 @@
 
 import * as React from 'react'
 import { ServerCrash, Loader2 } from 'lucide-react'
-import { mutate as globalMutate } from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { get } from '@/lib/api/client'
 import { devLog } from '@/lib/logger'
 import { Button } from '@/components/ui/button'

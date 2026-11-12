@@ -160,6 +160,12 @@ The `PermissionProvider` (`src/context/permission-provider.tsx`) keeps permissio
 - Backend enforces `WHERE tenant_id = ?` on all data queries.
 - Permission cache keys include tenant ID to prevent cross-tenant data leaks.
 - Team switching exchanges tokens via `POST /api/auth/switch-team`.
+- A switch ends the tab's organization epoch: the address goes to the
+  section's list root without a query, the dashboard tree mounts again with a
+  fresh SWR cache, reads in flight are aborted, organization data in browser
+  storage is dropped, other tabs follow, and the API client sends nothing while
+  the session names another organization than the tab shows
+  ([organization-switch.md](organization-switch.md)).
 
 ---
 

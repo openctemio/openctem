@@ -3,7 +3,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { mutate } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import {
   Dialog,
   DialogContent,

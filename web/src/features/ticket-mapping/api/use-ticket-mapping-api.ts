@@ -5,7 +5,8 @@
  * (server/docs/rfcs/RFC-097-ticket-field-mapping.md). Tenant from the token.
  */
 
-import useSWR, { mutate, type SWRConfiguration } from 'swr'
+import useSWR, { type SWRConfiguration } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import { get, post, put, del } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import type {

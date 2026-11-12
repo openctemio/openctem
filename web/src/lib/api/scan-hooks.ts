@@ -367,7 +367,7 @@ export function useScanRuns(
  * Invalidate scan configs cache
  */
 export async function invalidateScanConfigsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/api/v1/scans'), undefined, {
     revalidate: true,
   })
@@ -377,7 +377,7 @@ export async function invalidateScanConfigsCache() {
  * Invalidate scan config stats cache
  */
 export async function invalidateScanConfigStatsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/api/v1/scans/stats'), undefined, {
     revalidate: true,
   })
