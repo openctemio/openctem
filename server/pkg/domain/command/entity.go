@@ -252,6 +252,9 @@ func NewCommand(tenantID shared.ID, cmdType CommandType, priority CommandPriorit
 	if cmdType == "" {
 		return nil, shared.NewDomainError("VALIDATION", "command type is required", shared.ErrValidation)
 	}
+	if err := CheckPayloadSize(payload); err != nil {
+		return nil, err
+	}
 
 	if priority == "" {
 		priority = CommandPriorityNormal
