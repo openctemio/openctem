@@ -291,6 +291,7 @@ sensor_events
 sensor_grants
 sensor_heartbeat_history
 sensor_keys
+sensor_lookup_jobs
 sensor_manifests
 sensor_pairings
 sensor_result_policies

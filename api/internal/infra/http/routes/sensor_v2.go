@@ -207,6 +207,12 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 			r.PUT("/feed-relay-rounds/{round_id}/files/{name}", f.Upload, controlWrite[0], middleware.BodyLimit(handler.FeedRelayUploadLimit))
 			r.POST("/feed-relay-rounds/{round_id}/done", f.Done, controlWrite[0], middleware.BodyLimit(1<<20))
 		}
+		if l := ctl.LookupJobs(); l != nil {
+			// Lookup jobs (lookup.ct@1): only a platform (instance-scope)
+			// sensor reporting the capability is served.
+			r.GET("/lookups/next", l.Next, controlRead...)
+			r.POST("/lookups/{job_id}/done", l.Done, controlWrite[0], middleware.BodyLimit(handler.LookupJobResultLimit))
+		}
 	}, middleware.V2Observe(v2RouteName), authenticate)
 }
 

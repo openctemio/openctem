@@ -797,6 +797,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
 		FeedRelay:           newFeedRelayHandler(svc, log),
+		LookupJobs:          newLookupJobHandler(svc, log),
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
@@ -1833,14 +1834,19 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 	return effects
 }
 
-// ctUnavailableReason is why the CT monitor cannot run: "disabled" when the
-// operator turned it off, the monitor's own reason (needs_platform_sensor)
-// otherwise, "" when it runs.
-func ctUnavailableReason(cfg *config.Config, svc *Services) string {
-	if !cfg.Worker.CertMonitorEnabled {
-		return "disabled"
+// ctAvailability reports whether the CT monitor can run now and why not:
+// "disabled" when the operator turned it off, the monitor's own reason
+// (needs_platform_sensor: no platform sensor serves CT lookups) otherwise.
+func ctAvailability(cfg *config.Config, svc *Services) func(ctx context.Context) (bool, string) {
+	return func(ctx context.Context) (bool, string) {
+		if !cfg.Worker.CertMonitorEnabled {
+			return false, "disabled"
+		}
+		if r := svc.CertMonitor.UnavailableReason(ctx); r != "" {
+			return false, r
+		}
+		return true, ""
 	}
-	return svc.CertMonitor.UnavailableReason()
 }
 
 // newEASMSettingsHandler builds the EASM settings and run-now handler
@@ -1855,8 +1861,7 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		sweeper = svc.EASMSweep
 	}
 	platform := handler.EASMPlatform{
-		CTAvailable:         cfg.Worker.CertMonitorEnabled && svc.CertMonitor.Available(),
-		CTUnavailableReason: ctUnavailableReason(cfg, svc),
+		CTAvailability:      ctAvailability(cfg, svc),
 		DNSAvailable:        svc.EASMDNS != nil,
 		EnrichmentAvailable: cfg.Worker.AssetEnrichmentEnabled,
 		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
