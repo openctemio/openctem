@@ -32,6 +32,15 @@ async function findingIds(page: Page): Promise<string[]> {
   return (body.data ?? []).map((f) => f.id)
 }
 
+/**
+ * A finding row's open button: "{title}, view details". The seed's findings
+ * read "Switch A finding NN" (rule switch-A-NN).
+ */
+function rowsOf(page: Page, org: 'A' | 'B') {
+  const title = `(Switch ${org} finding \\d+|switch-${org}-\\d+)`
+  return page.getByRole('button', { name: new RegExp(`^${title}, view details$`) })
+}
+
 async function signInToA(page: Page) {
   await page.goto('/login')
   await page.waitForLoadState('networkidle')
@@ -84,21 +93,15 @@ test.describe('organization switch', () => {
         const list = page.waitForResponse((r) => /\/api\/v1\/findings\?/.test(r.url()) && r.ok())
         // Page 4, then page 5: the back button returns to page 4 later.
         await page.goto('/findings?page=4&per_page=10')
-        await expect(page.locator('a[href^="/findings/"]').first()).toBeVisible({
-          timeout: 30_000,
-        })
+        await expect(rowsOf(page, 'A').first()).toBeVisible({ timeout: 30_000 })
         await page.goto('/findings?page=5&per_page=10&severity=high')
         await list
-        await expect(page.locator('a[href^="/findings/"]').first()).toBeVisible({
-          timeout: 30_000,
-        })
+        await expect(rowsOf(page, 'A').first()).toBeVisible({ timeout: 30_000 })
 
         // A second tab of the same browser, on another page of A.
         const other = await context.newPage()
         await other.goto('/findings?page=2&per_page=10')
-        await expect(other.locator('a[href^="/findings/"]').first()).toBeVisible({
-          timeout: 30_000,
-        })
+        await expect(rowsOf(other, 'A').first()).toBeVisible({ timeout: 30_000 })
 
         const after = recordRequests(page)
         const afterOther = recordRequests(other)
@@ -113,13 +116,9 @@ test.describe('organization switch', () => {
         expect(idsOfB.length).toBeGreaterThan(0)
         expect(idsOfB.filter((id) => idsOfA.includes(id))).toEqual([])
 
-        // B's rows on page 1; no row of A at any point after the landing.
-        await expect(page.locator(`a[href="/findings/${idsOfB[0]}"]`).first()).toBeVisible({
-          timeout: 30_000,
-        })
-        for (const id of idsOfA) {
-          await expect(page.locator(`a[href^="/findings/${id}"]`)).toHaveCount(0)
-        }
+        // B's rows on page 1; no row of A after the landing.
+        await expect(rowsOf(page, 'B').first()).toBeVisible({ timeout: 30_000 })
+        await expect(rowsOf(page, 'A')).toHaveCount(0)
         // Nothing sent after the switch named a finding of A or asked for page 5.
         const switchedAt = after.findIndex((r) => r.includes('/api/auth/switch-team'))
         const sinceSwitch = after.slice(switchedAt + 1)
@@ -134,9 +133,8 @@ test.describe('organization switch', () => {
         await expect(other.getByText(`Another tab switched to ${ORG_B}`)).toBeVisible({
           timeout: 15_000,
         })
-        for (const id of idsOfA.slice(0, 10)) {
-          await expect(other.locator(`a[href^="/findings/${id}"]`)).toHaveCount(0)
-        }
+        await expect(rowsOf(other, 'B').first()).toBeVisible({ timeout: 30_000 })
+        await expect(rowsOf(other, 'A')).toHaveCount(0)
         expect(carryingAny(afterOther, idsOfA)).toEqual([])
         await other.close()
 
@@ -145,9 +143,8 @@ test.describe('organization switch', () => {
         await expect(page).toHaveURL((url) => url.pathname === '/findings' && url.search === '', {
           timeout: 15_000,
         })
-        for (const id of idsOfA.slice(0, 10)) {
-          await expect(page.locator(`a[href^="/findings/${id}"]`)).toHaveCount(0)
-        }
+        await expect(rowsOf(page, 'B').first()).toBeVisible({ timeout: 30_000 })
+        await expect(rowsOf(page, 'A')).toHaveCount(0)
       })
 
       await test.step("a finding of B open -> switch to A lands on A's list", async () => {
