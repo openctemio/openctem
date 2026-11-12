@@ -317,8 +317,9 @@ type RunState struct {
 	// Unfinished are the targets the run did not finish.
 	Unfinished []string
 	QueuedAt   time.Time
-	// NoSensor: a step of the run ended NO_SENSOR (no sensor took its
-	// work before the run's deadline).
+	// NoSensor: no sensor held the run's work: a step ended NO_SENSOR, or
+	// the run ended with every command refused by the sensors that took it
+	// or never picked up.
 	NoSensor bool
 	// Unreachable: a step of the run ended TARGET_UNREACHABLE (the sensor
 	// reached none of the run's targets).

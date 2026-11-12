@@ -64,13 +64,15 @@ func sharedSensorConditions(alias string) string {
 // work), its hosts free in its organization (the same per-host politeness
 // keys as the organization's own sensors) and on the shared fleet
 // (sharedFleetHostFreePredicate), not refused by this sensor,
-// within the sensor's gates (sharedSensorGateSQL) and the capability gate.
+// within the sensor's gates (sharedSensorGateSQL) and the capability gate,
+// of no scan run that already ended (runOpenPredicate).
 var sharedClaimWhere = `commands.is_platform_job = TRUE
 		AND commands.status = 'pending'
 		AND commands.sensor_id IS NULL
 		AND commands.scan_zone_id IS NULL
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
 		AND ` + scheduledDuePredicate + `
+		AND ` + runOpenPredicate + `
 		AND ` + hostFreePredicate + `
 		AND ` + sharedFleetHostFreePredicate + `
 		AND ` + refusedByPredicate("$1") + `

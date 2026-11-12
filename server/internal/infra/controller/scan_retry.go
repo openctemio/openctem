@@ -44,6 +44,10 @@ var permanentDispatchCodes = map[string]bool{
 	"PIPELINE_EMPTY":       true,
 	"PIPELINE_NOT_SET":     true,
 	"SCAN_NOT_TRIGGERABLE": true,
+	// The scan has an active run (a scheduled run or a coverage pass started
+	// after the failure): that run does the work, a retry next to it would
+	// hand the sensors the same work twice.
+	"SCAN_RUN_IN_PROGRESS": true,
 }
 
 // isPermanentDispatchError reports whether a retry dispatch failed for a
