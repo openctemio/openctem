@@ -76,6 +76,19 @@ jobs:
       bump: ${{ steps.version.outputs.BUMP }}
       sha: ${{ steps.sha.outputs.sha }}
     steps:
+      # The jobs check out develop's scripts whatever ref the run uses, so a
+      # run started from another branch pairs develop's scripts with that
+      # branch's copy of this file (a run from main lacked the GH_TOKEN the
+      # scripts need and spent its whole timeout on retries). Run from develop.
+      - name: Run from develop
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != refs/heads/develop ]; then
+            echo "::error::Start the Release Train from develop ('Use workflow from: develop'), not $REF."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
