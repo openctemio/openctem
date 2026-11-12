@@ -76,7 +76,9 @@ describe('Sparkline', () => {
     expect(within(spark).getByText('43')).toBeInTheDocument()
     expect(within(spark).getByText('Sep 24')).toBeInTheDocument()
     expect(within(spark).getByText('Oct 23')).toBeInTheDocument()
-    expect(spark).toHaveTextContent('Trend from 43 on Sep 24 to 56 on Oct 23')
+    expect(within(spark).getByRole('img')).toHaveAccessibleName(
+      'Trend from 43 on Sep 24 to 56 on Oct 23'
+    )
     // The change names its base.
     expect(screen.getByText('vs 41 previous period')).toBeInTheDocument()
   })

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -85,7 +86,7 @@ func TestFindingQuickViews_CountsEqualTheirListsInScope(t *testing.T) {
 	admin := flCaller{"owner", h.owner, true}
 	memberA := flCaller{"memberA", h.memberA, false}
 	wantKeys := []string{"active", "needs_triage", "my_queue", "sla_breached", "pending_approval", "accepted_expiring", "closed",
-		"my_team", "my_due_soon", "my_accepted_expiring"}
+		"my_team", "my_due_soon", "my_accepted_expiring", "actionable", "known_exploited"}
 	got := map[string]map[string]int64{}
 	for _, c := range []flCaller{admin, memberA} {
 		qv, hdr := h.quickViews(t, c)
@@ -235,6 +236,72 @@ func TestFindingsList_RelatedToMyTeam(t *testing.T) {
 			_, n, _ := h.listIDs(t, memberA, v.Params)
 			if v.Count != n || n < 2 {
 				t.Errorf("my_team count = %d, list total = %d", v.Count, n)
+			}
+		}
+	}
+}
+
+// Actionable (open P0 and P1) and Known exploited (open, on the known
+// exploited list): each count is its list's total for the same caller, a
+// scoped member counts only their scope, and another tenant's rows never
+// count. Measured as the change a seed makes, so the harness's own rows do
+// not matter.
+func TestFindingQuickViews_ActionableAndKnownExploited(t *testing.T) {
+	h := newGroupScopeHarness(t)
+	admin := flCaller{"owner", h.owner, true}
+	memberA := flCaller{"memberA", h.memberA, false}
+	keys := []string{"actionable", "known_exploited"}
+	counts := func(c flCaller) map[string]int64 {
+		qv, _ := h.quickViews(t, c)
+		out := map[string]int64{}
+		for _, v := range qv.Views {
+			if !slices.Contains(keys, v.Key) {
+				continue
+			}
+			if _, total, _ := h.listIDs(t, c, v.Params); v.Count != total {
+				t.Errorf("%s %s count = %d, GET /findings?%s total = %d", c.name, v.Key, v.Count, v.Params, total)
+			}
+			out[v.Key] = v.Count
+		}
+		if len(out) != len(keys) {
+			t.Fatalf("%s quick views lack %v: %+v", c.name, keys, qv.Views)
+		}
+		return out
+	}
+	before := map[string]map[string]int64{"owner": counts(admin), "memberA": counts(memberA)}
+
+	tid := h.tenant.String()
+	ins := func(tenant, asset, status, priority string, kev bool) {
+		id := shared.NewID().String()
+		h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, priority_class, is_in_kev)
+			VALUES ($1::uuid, $2, $3, 'sast', 'board-tool', 'board finding', 'high', $1::text, $4, NULLIF($5, ''), $6)`,
+			id, tenant, asset, status, priority, kev)
+	}
+	for _, asset := range []string{h.assetA.String(), h.assetB.String()} {
+		ins(tid, asset, "confirmed", "P0", true)   // both views
+		ins(tid, asset, "new", "P1", false)        // actionable
+		ins(tid, asset, "in_progress", "P2", true) // known exploited
+		ins(tid, asset, "confirmed", "P3", false)  // neither
+		ins(tid, asset, "resolved", "P0", true)    // closed: neither
+		ins(tid, asset, "false_positive", "P1", true)
+	}
+	other, otherAsset := shared.NewID().String(), shared.NewID().String()
+	h.exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, other, "board-"+other)
+	t.Cleanup(func() { _, _ = h.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, other) })
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type) VALUES ($1, $2, 'board-other.example', 'domain')`, otherAsset, other)
+	ins(other, otherAsset, "confirmed", "P0", true)
+	ins(other, otherAsset, "new", "P1", true)
+
+	// Per asset: actionable 2 (P0, P1 open), known exploited 2 (P0, P2 open).
+	want := map[string]map[string]int64{
+		"owner":   {"actionable": 4, "known_exploited": 4}, // A1 and B1
+		"memberA": {"actionable": 2, "known_exploited": 2}, // A1 only
+	}
+	for _, c := range []flCaller{admin, memberA} {
+		after := counts(c)
+		for _, k := range keys {
+			if d := after[k] - before[c.name][k]; d != want[c.name][k] {
+				t.Errorf("%s %s grew by %d, want %d", c.name, k, d, want[c.name][k])
 			}
 		}
 	}

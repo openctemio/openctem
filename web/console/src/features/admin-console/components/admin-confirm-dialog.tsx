@@ -1,8 +1,7 @@
 'use client'
 
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -14,13 +13,14 @@ import {
   DialogForm,
   DialogBody,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { typedTextMatches } from '@/components/confirm-dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { StepUpCodeField, useReasonAndCode } from './step-up-code-hint'
 
 /** Shortest reason the console accepts for a sensitive action. */
 export const REASON_MIN = 10
@@ -99,26 +99,31 @@ export function AdminConfirmDialog({
   const codeId = useId()
   const typedId = useId()
   const [typed, setTyped] = useState('')
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
+  // The reason and the one-time code: cleared every time the dialog opens or closes.
+  const rc = useReasonAndCode(open)
+  const { reason, setReason, code, setCode, codeOptional } = rc
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const reasonOk = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX
-  const codeOk = !requireCode || stepUpCodeReady(code, codeOptional)
+  const codeOk = !requireCode || rc.codeOk
   const typedOk = !typeToConfirm || typedTextMatches(typed, typeToConfirm)
   const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
     '{text}'
   )
 
   const reset = () => {
-    setReason('')
-    setCode('')
+    rc.reset()
     setTyped('')
     setError(null)
     setBusy(false)
   }
+
+  useEffect(() => {
+    setTyped('')
+    setError(null)
+    setBusy(false)
+  }, [open])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -156,7 +161,12 @@ export function AdminConfirmDialog({
           <DialogBody className="space-y-4">
             {children}
             <div className="space-y-1.5">
-              <Label htmlFor={reasonId}>{t('admin.confirm.reason', 'Reason')}</Label>
+              <Label
+                htmlFor={reasonId}
+                className="after:ms-0.5 after:text-destructive after:content-['*']"
+              >
+                {t('admin.confirm.reason', 'Reason')}
+              </Label>
               <Textarea
                 id={reasonId}
                 value={reason}
@@ -208,12 +218,9 @@ export function AdminConfirmDialog({
                 optional={codeOptional}
               />
             )}
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
           </DialogBody>
+          <DialogSubmitError message={error} />
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel', 'Cancel')}

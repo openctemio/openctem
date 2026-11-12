@@ -37,10 +37,7 @@ func (s *Service) PlanCITrust(ctx context.Context, tenantID shared.ID, in CITrus
 			out = append(out, scopedom.CITrustSyncOutcome{Pattern: l.Pattern, Action: scopedom.CITrustRetired, TargetID: l.TargetID})
 		}
 	}
-	g := scopedom.DefaultGuardrails()
-	if s.guardrails != nil {
-		g = *s.guardrails
-	}
+	g := s.guardrailsFor(tenantID)
 	for _, p := range want {
 		if l, ok := have[p]; ok {
 			action := scopedom.CITrustKept

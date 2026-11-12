@@ -14,7 +14,7 @@ is built, where it lives and how to work on it.
 | Control stream `Subscribe`, push on command changes (one replica) | built | `sensortransport/subscribe.go`, `postgres/command_notify.go` |
 | Sensor CA, `IssueCertificate`, mTLS listener (gRPC binding), revocation | built | `sensortransport/ca.go`, `issuer.go`, `mtls.go`; `SensorService.SetStatusNotifier` |
 | Redis wake fan-out across replicas | built | `internal/infra/redis/sensor_wake.go` (`SensorWakeBus`, channel `sensor:v3:wake`) |
-| gRPC self-probe: endpoint advertised only while reachable; Console > Operations, metrics | built | `sensortransport/probe.go`, `handler/sensor_transport_status_handler.go`, `cmd/server/handlers.go` (`setupSensorGRPC`) |
+| gRPC self-probe: endpoint advertised only while reachable; Console > Operations, metrics | built | `sensortransport/probe.go`, `handler/sensor_transport_status_handler.go`, `internal/server/handlers.go` (`setupSensorGRPC`) |
 | Gateway SNI passthrough (Compose), PROXY protocol | built | `deploy/gateway/Dockerfile`, `deploy/gateway/sensors/*.wrappers`, `deploy/docker-compose.sensor-passthrough.yml`; `SENSOR_MTLS_TRUSTED_PROXIES` |
 | One port without a gateway: the API terminates TLS and splits by ALPN (`SERVER_TLS_CERT_FILE`) | built | `sensortransport/native.go` (`SplitTLS`), `internal/infra/http/tls.go` |
 

@@ -19,7 +19,7 @@ import (
 )
 
 // scimVerifiedDomain records domain as a DNS-verified SSO domain of tenantID
-// and returns the real verified-domain service, as cmd/server wires it.
+// and returns the real verified-domain service, as internal/server wires it.
 func scimVerifiedDomain(t *testing.T, db *postgres.DB, tenantID shared.ID, domain string) *domainverify.Service {
 	t.Helper()
 	repo := postgres.NewVerifiedDomainRepository(db)
@@ -39,7 +39,7 @@ func scimVerifiedDomain(t *testing.T, db *postgres.DB, tenantID shared.ID, domai
 }
 
 // scimMemberMgr adapts the real TenantService to scim.MembershipManager,
-// mirroring cmd/server's scimMembershipAdapter (zero inviter = system).
+// mirroring internal/server's scimMembershipAdapter (zero inviter = system).
 type scimMemberMgr struct{ svc *tenant.TenantService }
 
 func (a scimMemberMgr) AddMember(ctx context.Context, tenantID, userID shared.ID, role string) error {

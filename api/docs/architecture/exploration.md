@@ -99,6 +99,7 @@ seeded table):
 - `internal/infra/http/handler/exploration_story_handler.go`, `internal/infra/http/routes/exploration.go`.
 - `pkg/domain/exploration/lead.go`, `repository.go`: leads, links, verdicts.
 - `configs/lead-types.yaml`, `cmd/gen-lead-types`, `pkg/domain/exploration/catalog.go`: the lead type catalog.
+- `internal/app/exploration/rules.go`, `controller.go`; `pkg/domain/exploration/score.go`; `internal/infra/controller/exploration.go`.
 - `internal/infra/postgres/exploration_lead_repository.go`; migration `exploration_layer`.
 
 ## Leads, links and verdicts: storage
@@ -218,8 +219,184 @@ audit), `internal/infra/postgres/exploration_trigger_repository_db_test.go`
 asked subjects are left out, version-match thresholds, gone with open
 findings only).
 
+## Scoring and dispatch
+
+`ExplorationController` (`internal/infra/controller/exploration.go`, module
+Scans, every 2 minutes, one replica at a time) runs
+`internal/app/exploration/controller.go` for every tenant with assets:
+
+1. the rules open leads;
+2. blocked leads whose recheck time came reopen;
+3. running leads settle from their run;
+4. open leads are scored and the best are dispatched.
+
+**Score** (`pkg/domain/exploration/score.go`, code only):
+
+```
+score = P(useful) x value / cost
+P     = (prior x 4 + useful) / (4 + tried)       prior: low .1, medium .3, high .6
+value = criticality (critical 4, high 3, medium 2, else 1) x public 2 x open KEV or critical finding 3
+        x crown jewel 2 x the lead type's value weight
+cost  = the tool's learned mean duration for the tenant (tool_duration_stats), 60 s when unknown
+```
+
+`tried` and `useful` are the tenant's settled verdicts of the same (lead
+type, capability) cell (useful = proven). A cell whose last 10 outcomes were
+all useless is demoted (score x 0.2). The inputs are stored with the lead
+(`score_inputs`), so a person can see why it ranks where it does.
+
+**Selection.** 20 % of each pass's slots (at least one) go first to leads of
+cells the tenant never settled, so new kinds of step get tried; the rest go by
+score. At most one lead per subject and capability is picked, and none whose
+(subject, capability) is already running.
+
+**Caps.** 4 running leads per tenant; one running per subject and capability;
+every dispatch counts against the tenant's coverage daily budget
+(`ASSET_COVERAGE_DAILY_BUDGET`): the ledger's attempts and the leads' own
+dispatches of the last 24 hours share it.
+
+**Dispatch** goes only through the coverage planner's run path,
+`scan.Service.StartCoverage`, as the coverage policy's system authority:
+
+- the dispatch gate (`ResolveDispatchTargets`, fail closed): scope entries,
+  exclusions, guardrails, the active-scan ownership gate, zone routing;
+- the signed job and the sensor's local policy;
+- the target is always the subject asset's own stored name (the ledger's
+  target form), never anything a lead carries;
+- the subject's ledger pair, if the ledger holds one, is marked queued on the
+  run, so the ledger settles it too.
+
+Outcomes of a dispatch:
+
+| Gate answer | Lead |
+|---|---|
+| run started | `running`, `dispatched_as` link, attempts + 1 |
+| target refused (out of scope, excluded, guardrail...) | `blocked` with the gate's code, rechecked after 6 hours; nothing runs |
+| the capability cannot run now (readiness) | `blocked` with the readiness reason, retried after 30 minutes |
+| the capability's coverage run is still active | stays `open` (next pass) |
+
+Before dispatch the lead is checked again: an intrusive (T2) step is blocked
+(`intrusive_needs_person`) and never started by the system; an active (T1)
+step that no person approved moves back to `awaiting_approval` when automatic
+coverage is off (or unreadable); a subject removed or archived supersedes
+the lead; a lead at its type's attempt limit is exhausted; a catalog action
+that no longer applies to the subject's type blocks it.
+
+**Settlement.** When the run finishes, the lead type's settle mode answers:
+
+| Mode | Proven | Refuted | Otherwise |
+|---|---|---|---|
+| `finding` | the run reported a finding on the subject (`yields` links to it, `created` or `confirmed`) | the run completed without one (`yields` the subject, `not_found`) | |
+| `liveness` | the liveness ledger, checked after the run, holds the subject gone, unreachable or unresolvable | it answered (alive) | not checked since the run: inconclusive |
+| `match` | a cited version-match finding is now likely or was reported by a scanner | every cited finding closed | inconclusive |
+
+A failed, cancelled, timed-out or blocked run, a run that stalls past 24
+hours and an inconclusive answer are `inconclusive`: the lead waits 30
+minutes (`blocked`, then reopened) and is dispatched again until the type's
+attempt limit, then it is `exhausted`. Every verdict is `deterministic` with
+the run (and the findings) as evidence references.
+
+**Audit.** Every state change (`exploration.lead_state_changed`, with from,
+to and reason) and every verdict (`exploration.lead_verdict`) is audited with
+the controller as the actor and the lead's action hash.
+
+Tests: `internal/app/exploration/controller_test.go` (the subject's own name
+in the lead's tenant is the only target, a refused target never runs and is
+rechecked, gate errors block, approval tiers at dispatch, the daily budget
+and the running cap, busy capability, settlement by finding and liveness,
+failed runs exhaust, archived subjects supersede, tenant-bound passes),
+`pkg/domain/exploration/score_test.go`,
+`internal/infra/postgres/exploration_controller_repository_db_test.go`.
+
+## Approvals and people
+
+Who decides a step, by tier:
+
+| Tier | Example | Runs when |
+|---|---|---|
+| T0 passive | DNS resolution | at once, when the lead opens |
+| T1 active, non-intrusive | HTTP probe, takeover templates, host discovery | at once while the organization's automatic coverage is on (`coverage.GovernanceSwitch`: the organization's switch, off under the Strict scan approval mode); otherwise a person with `scans:approve` and step-up approves it. Checked again at dispatch. |
+| T2 intrusive | (no lead type uses one yet) | never started by the system. A person may approve the decision, but the controller blocks the lead (`intrusive_needs_person`); a person-attributed run is planned. |
+
+AI principals hold no approve permission, so they can never approve.
+
+| Route | Gate | Does |
+|---|---|---|
+| `GET /api/v1/exploration/leads` | `assets:read` | leads by group (`waiting`: awaiting approval, proposed, blocked; `next`: open; `running`; `done`), newest change first, keyset paging (`before`, `next_before`), `asset_id` for one asset |
+| `GET /api/v1/exploration/leads/{id}` | `assets:read` | one lead with its links and verdicts; a run is shown with `scans:read` only |
+| `POST /api/v1/exploration/leads` | `scans:execute` | opens a catalog question on an asset in the caller's data scope (`lead_type`, `asset_id`, `rationale`) |
+| `POST /api/v1/exploration/leads/approve` | `scans:approve` + step-up (critical tier: approving active scanning) | up to 100 leads waiting for approval move to `open` with the approver recorded |
+| `POST /api/v1/exploration/leads/reject` | `scans:approve` | up to 100 live leads close as `dismissed` (a running lead settles from its run) |
+
+Object checks (`internal/app/exploration/leads.go`): the tenant comes from
+the principal; every lead is read through the caller's data scope (its
+subject asset, or the subject finding's asset; a member with no scope row
+sees nothing); out of scope or another tenant's lead answers 404 (per lead
+`not_found` in a bulk result). The approver therefore always has the subject
+in their data scope, and the target of the step is the subject itself. An
+approval is never a dispatch: the step still passes the dispatch gate when
+it starts. Bulk results are per lead: `not_found`, `wrong_state`, `changed`.
+
+Audit: `exploration.lead_opened` (a person's lead), `exploration.lead_approved`,
+`exploration.lead_dismissed` (with the reason), each with the person, the
+lead's type, state, capability, tier and action hash.
+
+Tests: `internal/app/exploration/leads_test.go` (a person's lead and its
+first state, refusals: asset outside scope or tenant, unknown type, no action
+for the asset type; approve and dismiss per lead, cross-tenant and
+out-of-scope refused, audit; a run hidden without `scans:read`).
+
+## Rollups
+
+`exploration_rollups` (migration `exploration_rollups`) holds one row per
+exploration, recomputed by the exploration job at the end of every tenant
+pass (every 2 minutes) and by Refresh now: live leads by state (open,
+awaiting approval, running, blocked), leads settled in the last 30 days and
+how many were proven or refuted, dispatches in the last 30 days, the share of
+leads opened by rules, the median time from opening to the first verdict and
+the time of the last step. It is derived data, rebuilt from the leads in one
+statement.
+
+| Route | Gate | Answers |
+|---|---|---|
+| `GET /api/v1/exploration/summary` | `assets:read` | the figures, `scope: organization` with `computed_at`, or `scope: mine` |
+| `POST /api/v1/exploration/summary/refresh` | `assets:read` | recomputes organization-wide figures older than a minute, then answers as above |
+
+The figures follow the viewer (the dashboards rule): an unrestricted caller,
+or a restricted one who may view organization dashboards
+(`Enforcer.ViewerScope`), reads the precomputed organization-wide row; any
+other member gets live counts over the leads whose subject is in their data
+scope (`ScopedSummary`, the same scope condition as the lead list), so a
+count never reveals leads on assets they cannot see.
+
+Tests: `internal/infra/postgres/exploration_rollup_repository_db_test.go`
+(figures, tenant-bound, scoped counts, no scope row counts nothing),
+`internal/app/exploration/leads_test.go` (`TestLeadService_SummaryFollowsTheViewer`).
+
+## Web
+
+- **Exploration page** (`/exploration`, Discovery, `assets:read`, module Scans):
+  `web/src/features/exploration/components/exploration-page.tsx`. One status
+  sentence from `GET /exploration/summary` (Refresh now when the figures are
+  organization-wide), the groups Waiting for you, Next, Running and Done
+  recently (`?group=`), `?asset=` for one asset and `?lead=` for an open
+  step. Subject names resolve with one batched asset read per page. Bulk
+  Approve and Dismiss need `scans:approve`; approving goes through the shared
+  client's step-up.
+- **Step drawer**: `lead-detail-sheet.tsx` (rationale as plain text, links by
+  relation, answers with their tier, score inputs, blocked reason);
+  `lead-actions.tsx` (approve, dismiss with an optional reason, per-lead
+  results).
+- **Asset Next steps**: `asset-next-steps.tsx` on the asset page and drawer,
+  next to How we found this: up to three steps with their state, See all and
+  Ask (`ask-lead-dialog.tsx`, `scans:execute`).
+- Labels and helpers: `web/src/features/exploration/lib/leads.ts`; strings in
+  the `exploration` catalogs (lead types under `exploration.leadTypes`,
+  reasons under `exploration.reasons`).
+
 ## Not yet built
 
 - Retest outcomes and evidence items as steps.
-- Scoring and dispatch, approvals, leads opened by people and the
-  Exploration page: designed in RFC-153, not built.
+- An exploration metric in the dashboard metric catalog (widgets read the
+  rollup through the catalog).
+- A person-attributed run for an approved intrusive step; four-eyes approval.

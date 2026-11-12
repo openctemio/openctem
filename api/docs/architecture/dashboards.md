@@ -835,7 +835,9 @@ Opening a dashboard reads its stored snapshot (`dash_snapshots`, one row per
 dashboard); it does not compute. A snapshot is computed on open only when
 there is none, when the layout changed (`layout_hash`), or, for a personal
 dashboard, when the owner's scope changed since it was computed
-(`scope_key`). The data and preview routes of "Widget data" return the
+(`scope_key`), or when it was computed before the organization's dashboard
+facts were first built (`facts_built_at` empty: every widget "being built")
+and the facts exist now. The data and preview routes of "Widget data" return the
 snapshot with `computed_at`, the effective `refresh_schedule` (the
 organization default resolved), `next_refresh_at` (absent for manual or
 paused), `stale` (older than twice the schedule, or the last refresh failed)
@@ -1530,6 +1532,7 @@ its own validated steps), and components colour marks with those variables.
 | categorical (`--viz-cat-1` .. `8`, `--viz-cat-other`) | any other series, in fixed order |
 | diverging (`--viz-div-opened`, `--viz-div-fixed`) | flow pairs |
 | sequential (`--viz-seq-1` .. `5`, with `--viz-seq-ink-*`) | heatmap shading and the text printed on it |
+| ink (`--viz-ink`, `--viz-ink-weak`) | a chart of one measure: neutral ink for the bar or fill, the weak step for its track. Teal never encodes data. `--good` and `--bad` colour a delta by outcome, not direction |
 
 Status colours (good, warning, critical, unmeasured) stay the semantic
 `success` / `warning` / `destructive` / muted tokens and always come with an

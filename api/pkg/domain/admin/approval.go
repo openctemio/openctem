@@ -78,6 +78,14 @@ const (
 	// Password or sender changes on the same relay and turning e-mail off
 	// never need it.
 	ApprovalPlatformEmailRelay ApprovalAction = "platform_email.relay"
+	// ApprovalScopeNameException: on a hosted service (MANAGED_SERVICE), an
+	// organization gets or keeps longer an exception to the government and
+	// military scope rule. The target is the exception
+	// (ScopeNameExceptionTarget): organization, name, subdomains, expiry day.
+	ApprovalScopeNameException ApprovalAction = "scope_names.exception"
+	// ApprovalScopeGovernmentRuleOff: on a hosted service, the government and
+	// military scope rule is turned off ("off").
+	ApprovalScopeGovernmentRuleOff ApprovalAction = "scope_names.government_rule_off"
 )
 
 var (
@@ -110,6 +118,10 @@ func (a ApprovalAction) ValidTarget(target string) bool {
 		return validPlatformAIDestinationTarget(target)
 	case ApprovalPlatformEmailRelay:
 		return validPlatformEmailRelayTarget(target)
+	case ApprovalScopeNameException:
+		return validScopeNameExceptionTarget(target)
+	case ApprovalScopeGovernmentRuleOff:
+		return target == "off"
 	case ApprovalSignupOpen:
 		return approvalSignupTarget.MatchString(target)
 	case ApprovalAuditChainRebaseline, ApprovalOrgPurge:
@@ -126,7 +138,7 @@ func (a ApprovalAction) IsValid() bool {
 	case ApprovalGrantSuperAdmin, ApprovalRevokeSuperAdmin, ApprovalConsoleMFAOff,
 		ApprovalPlatformIdPRemove, ApprovalSignupOpen, ApprovalAuditChainRebaseline, ApprovalOrgPurge,
 		ApprovalPlatformIdPChange, ApprovalResetCredentials, ApprovalUserMFAReset, ApprovalPlatformAIDestination,
-		ApprovalPlatformEmailRelay:
+		ApprovalPlatformEmailRelay, ApprovalScopeNameException, ApprovalScopeGovernmentRuleOff:
 		return true
 	}
 	return false
@@ -456,4 +468,43 @@ type ApprovalRepository interface {
 	Consume(ctx context.Context, requestedBy shared.ID, action ApprovalAction, target string, now time.Time) (*Approval, error)
 	// Release makes a consumed approval usable again (the action failed).
 	Release(ctx context.Context, id shared.ID) error
+}
+
+// scopeNameException is the canonical form of a scope name exception target.
+type scopeNameException struct {
+	Tenant     string `json:"tenant"`
+	Name       string `json:"name"`
+	Subdomains bool   `json:"subdomains"`
+	Expires    string `json:"expires"`
+}
+
+// ScopeNameExceptionTarget is the approval target of a scope name exception:
+// the organization, the name, whether names under it are included and the
+// expiry day (UTC, YYYY-MM-DD), so an approval covers exactly that grant.
+func ScopeNameExceptionTarget(tenantID shared.ID, name string, subdomains bool, expires time.Time) string {
+	return canonicalTarget(scopeNameException{Tenant: tenantID.String(), Name: strings.ToLower(name),
+		Subdomains: subdomains, Expires: expires.UTC().Format(time.DateOnly)})
+}
+
+// validScopeNameExceptionTarget accepts only the exact output of
+// ScopeNameExceptionTarget.
+func validScopeNameExceptionTarget(target string) bool {
+	if approvalHashTarget.MatchString(target) {
+		return true
+	}
+	var c scopeNameException
+	dec := json.NewDecoder(strings.NewReader(target))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil || c.Name == "" {
+		return false
+	}
+	id, err := shared.IDFromString(c.Tenant)
+	if err != nil {
+		return false
+	}
+	day, err := time.Parse(time.DateOnly, c.Expires)
+	if err != nil {
+		return false
+	}
+	return ScopeNameExceptionTarget(id, c.Name, c.Subdomains, day) == target
 }

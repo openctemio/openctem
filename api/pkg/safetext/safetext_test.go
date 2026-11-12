@@ -182,3 +182,45 @@ func TestVendorToken(t *testing.T) {
 		}
 	}
 }
+
+func TestTruncateBytes_CutsOnACharacterBoundary(t *testing.T) {
+	// "ệ" is 3 bytes, "語" 3, "😀" 4: every cut that lands inside one backs
+	// off to the character's start, and the result is always valid UTF-8.
+	cases := []struct {
+		in       string
+		maxBytes int
+		want     string
+	}{
+		{"abc", 10, "abc"},
+		{"abc", 3, "abc"},
+		{"abcdef", 4, "abcd"},
+		{"Nguyễn Văn", 5, "Nguy"},  // inside "ễ" (bytes 4..6)
+		{"Nguyễn Văn", 7, "Nguyễ"}, // just after "ễ"
+		{"日本語", 4, "日"},
+		{"日本語", 6, "日本"},
+		{"日本語", 8, "日本"},
+		{"a😀b", 3, "a"},
+		{"a😀b", 5, "a😀"},
+		{"日本語", 0, ""},
+		{"bad\xffbyte", 100, "bad�byte"},
+	}
+	for _, c := range cases {
+		got := TruncateBytes(c.in, c.maxBytes)
+		if got != c.want {
+			t.Errorf("TruncateBytes(%q, %d) = %q, want %q", c.in, c.maxBytes, got, c.want)
+		}
+		if !utf8.ValidString(got) || len(got) > max(c.maxBytes, 0) {
+			t.Errorf("TruncateBytes(%q, %d) = %q: invalid UTF-8 or over the cap", c.in, c.maxBytes, got)
+		}
+	}
+}
+
+func TestTruncateBytes_EveryCutOfMixedTextIsValid(t *testing.T) {
+	s := strings.Repeat("Lỗ hổng bảo mật 脆弱性 취약점 🔒 ", 50)
+	for n := 0; n <= len(s); n++ {
+		got := TruncateBytes(s, n)
+		if !utf8.ValidString(got) || len(got) > n || !strings.HasPrefix(s, got) || len(got) < n-3 {
+			t.Fatalf("cut at %d: %d bytes, valid=%v", n, len(got), utf8.ValidString(got))
+		}
+	}
+}

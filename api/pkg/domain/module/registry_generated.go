@@ -92,7 +92,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "scans:read",
-		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CISweepController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController", "WebVerifyController", "AssetEnrichmentController", "AssetCoverageController", "WebEvidenceRetentionController"},
+		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CISweepController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController", "WebVerifyController", "AssetEnrichmentController", "AssetCoverageController", "ExplorationController", "WebEvidenceRetentionController"},
 	},
 	{
 		ID: ModuleAttackSurface, Slug: "attack-surface", Name: "Attack Surface",

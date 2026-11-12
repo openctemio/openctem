@@ -1,7 +1,7 @@
 package retestcheck
 
 // Adapters between the retest check service, the template library and the
-// retest service (wired in cmd/server).
+// retest service (wired in internal/server).
 
 import (
 	"context"

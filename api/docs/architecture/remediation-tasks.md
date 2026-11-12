@@ -329,13 +329,13 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   `SetMoveNotifier`; `internal/app/remediation/move_notify.go`) once per move, split, detach and once per merge
   source, with a `TaskMoveEvent`. `Comments()` (`pkg/domain/remediation/move.go`) words one comment per task
   touched from counts and task titles only. The task ticket integration implements the notifier for tasks with
-  an active issue; it must not block the request and logs its own failures. Not wired in `cmd/server` until then
+  an active issue; it must not block the request and logs its own failures. Not wired in `internal/server` until then
   (listed in the wiring guard's optional setters with that reason).
 
 ## Notices to task owners
 
 In-app notices (`internal/app/remediation/task_notify.go`, wired with `TaskService.SetNotifier` in
-`cmd/server/services.go`), type `remediation_task`, best effort (a failure is logged):
+`internal/server/services.go`), type `remediation_task`, best effort (a failure is logged):
 
 - `CreateTask` and an owner change in `UpdateTask`: "A remediation task was assigned to you" to the owner user
   (not when they are the actor) and to the owner group.

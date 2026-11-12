@@ -94,7 +94,7 @@ type ProgramTargetChecker interface {
 const codePlatformRefused = "PLATFORM_SENSOR_REFUSED"
 
 // programOnly lists the targets that only program entries cover. The
-// production gate (*easm.ActiveGate) is a checker (asserted in cmd/server);
+// production gate (*easm.ActiveGate) is a checker (asserted in internal/server);
 // with no gate at all nothing dispatches anyway (the dispatch gate fails
 // closed), and a gate without the check has no program entries to judge.
 func (s *Service) programOnly(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error) {

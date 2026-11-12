@@ -144,6 +144,7 @@ easm_tombstones
 easm_weekly_digests
 exploration_leads
 exploration_links
+exploration_rollups
 exploration_verdicts
 explorations
 exposure_disposition_requests
@@ -276,6 +277,7 @@ scim_tokens
 scm_app_installations
 scm_gitlab_connections
 scope_exclusions
+scope_name_exceptions
 scope_snapshots
 scope_target_approvals
 scope_target_ci_trusts

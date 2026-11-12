@@ -523,7 +523,7 @@ Every query includes `WHERE tenant_id = ?` to prevent cross-tenant data access:
 | `internal/infra/http/handler/assignment_rule_handler.go` | Assignment rule HTTP handler |
 | `internal/infra/http/handler/scope_rule_handler.go` | Scope rule HTTP handler |
 | `internal/infra/http/routes/access_control.go` | Route registration |
-| `cmd/server/services.go` | DI wiring (`AssignmentEngine` instantiation) |
+| `internal/server/services.go` | DI wiring (`AssignmentEngine` instantiation) |
 
 ### Migrations
 
