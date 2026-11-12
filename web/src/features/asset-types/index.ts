@@ -23,6 +23,7 @@ export {
   classLabel,
   lensLabel,
   classAndLensLabel,
+  isScannableAssetType,
   type AssetTypeRegistry,
 } from './lib/asset-registry'
 export type { AssetClass, AssetLens, LegacyAssetCategory } from './registry.generated'

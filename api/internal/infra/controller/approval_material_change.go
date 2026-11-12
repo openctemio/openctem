@@ -205,7 +205,7 @@ func (c *ApprovalMaterialChangeController) newDeadline(ctx context.Context, d vu
 	if !d.AssetID.IsZero() {
 		assetID = d.AssetID.String()
 	}
-	deadline, err := c.sla.CalculateSLADeadlineForPriority(ctx, d.TenantID.String(), assetID, d.PriorityClass, sev, now)
+	deadline, err := deadlineFor(ctx, c.sla, d.TenantID.String(), assetID, d.Practice, d.PriorityClass, sev, now)
 	if err != nil || deadline.IsZero() {
 		return nil
 	}

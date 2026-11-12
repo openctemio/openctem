@@ -188,6 +188,7 @@ var requiredFields = map[Key][]string{
 	ScanPorts:           []string{"host", "port", "protocol"},
 	ProbeHTTP:           []string{"url", "status_code", "title"},
 	CrawlWeb:            []string{"url", "parent_url"},
+	EnumerateWebPaths:   []string{"origin", "path", "status_code"},
 	VulnTemplates:       []string{"rule_id", "severity", "location", "evidence"},
 	CheckTakeover:       []string{"host", "provider", "evidence"},
 	MonitorWebContent:   []string{"url", "sha256"},
@@ -214,8 +215,10 @@ var chunkSizes = map[Key]int{
 	ScanPorts:           50,
 	ProbeHTTP:           200,
 	CrawlWeb:            10,
-	VulnTemplates:       25,
-	CheckTakeover:       100,
+	// One origin per task: the per-origin request cap is the job's.
+	EnumerateWebPaths: 1,
+	VulnTemplates:     25,
+	CheckTakeover:     100,
 	// Each capture carries a body of up to 512 KiB.
 	MonitorWebContent: 25,
 	// Each capture is an image of up to about 1 MiB and the platform keeps
@@ -317,6 +320,8 @@ var toolParams = map[string]map[string]string{
 	"rdap":      {"follow_registrar": "follow_registrar"},
 	"asn":       {"include_announced": "include_announced", "max_ranges": "max_ranges"},
 	"dnsx-enum": {"method": "method", "max_queries": "max_queries"},
+	toolWebguess: {"lists": "lists", "extensions": "extensions", "max_requests_per_origin": "max_requests",
+		"rate": "rate", "exclude_paths": "exclude_paths"},
 }
 
 // toolWebshot is the sensor tool that implements capture.screenshot.
@@ -338,7 +343,7 @@ var batchTools = map[string]bool{
 var capabilityJobTools = map[string]bool{
 	"subfinder": true, "dnsx": true, "naabu": true, "httpx": true, "katana": true,
 	"nuclei": true, "trivy": true, "semgrep": true, "opengrep": true, "codeql": true, "betterleaks": true, "gitleaks": true,
-	"rdap": true, "asn": true, toolWebshot: true,
+	"rdap": true, "asn": true, toolWebguess: true, toolWebshot: true,
 }
 
 // WordlistRequest is one wordlist a tool's job asks the platform for: the
@@ -353,7 +358,8 @@ type WordlistRequest struct {
 // descriptor (its content slots). A tool that reads a list has none of its
 // own: a job that does not ask carries none, and the sensor refuses it.
 var toolWordlists = map[string][]WordlistRequest{
-	"dnsx-enum": {{Slot: "labels", Purpose: "dns-labels"}},
+	"dnsx-enum":  {{Slot: "labels", Purpose: "dns-labels"}},
+	toolWebguess: {{Slot: "paths", Purpose: "web-paths"}},
 }
 
 // ToolWordlists are the wordlists a job of tool asks for (nil: none). The

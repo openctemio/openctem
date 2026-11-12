@@ -387,8 +387,9 @@ rules), so the badge no longer reads 1 for 25 addresses.
 
 | Route | Gate | What it does |
 |---|---|---|
-| `POST /easm/suggestions/addresses/add` | `attack_surface:scope:write` | adds addresses and own ranges as scope entries in one decision (origin `confirmed_asset`, the person as actor: guardrails, deny list, step-up, the approval policy, the signer ledger); a shared address only alone with `include_shared` |
-| `POST /easm/suggestions/addresses/reject` | `assets:write` | attribution `rejected` for the addresses (data scope applies) |
+| `POST /easm/suggestions/addresses/add` | `attack_surface:scope:write` | adds the selection (`addresses`, whole `groups` by key, or `all_waiting`: every waiting address, also past the card's list) and own ranges as scope entries in one decision (origin `confirmed_asset`, the person as actor: guardrails, deny list, step-up, the approval policy, the signer ledger). Chosen addresses next to each other become the exact cover of CIDR blocks: a block is used only when every address in it was chosen, so a range never reaches an address nobody chose. Third-party (shared, provider, declined) addresses join only with `include_shared`, each as its own exact entry, never merged into a range |
+| `POST /easm/suggestions/addresses/reject` | `assets:write` | attribution `rejected` for the selection (same shape; data scope applies) |
+| `POST /easm/suggestions/addresses/lookup` | `assets:write` | makes the network lookup (`lookup.asn`) of the selection's addresses whose network is still unknown due now (coverage ledger, tenant-scoped; a pair already queued is left alone). A sensor runs it: the platform looks nothing up |
 | `POST /easm/suggestions/networks/ours` | `attack_surface:scope:write` + step-up | the group's AS (or holder name) becomes a network seed; with `address_auto_add` the addresses it makes strong are added at once through the approval policy |
 | `POST /easm/suggestions/networks/not-ours` | `assets:write` | records the network in `easm_declined_networks` and rejects the group's addresses; its addresses are classified `declined` from then on and the question is not asked again |
 | `DELETE /easm/suggestions/declined-networks/{id}` | `assets:write` | undoes a "not ours" network answer |
@@ -398,8 +399,9 @@ The server never trusts the posted list: it rebuilds the caller's own card
 request (`400 DECISION_NOT_PENDING`, nothing written) when any address or
 range is not on it: another tenant's address, one outside the caller's data
 scope, one already covered, a computed block, a prefix the guardrails refuse.
-A shared, CDN or provider address in a bulk is `400 DECISION_SHARED`. At most
-200 items. Each decision writes one audit event listing its items
+A shared, CDN or provider address in a selection without `include_shared` is
+`400 DECISION_SHARED`. At most 2000 addresses per decision, written to the
+scope service in chunks of 200. Each decision writes one audit event listing its items
 (`easm_address_decision.added` / `.rejected`, `easm_declined_network.added` /
 `.deleted`, or `easm_network_seed.added` with `via=decisions_card`), and each
 entry it adds is audited as `scope_target.created`. Every decision is
@@ -419,6 +421,31 @@ in scope resolves to, even when no scope entry covers it (RFC-071 §6,
 `internal/app/easm/passive_address.go`): before that rule, an address with
 no network data was held by the unknown-network guardrail, so its lookup was
 refused (`no_entry`) and the Decisions card showed "Network unknown" for good.
+
+**Where the lookup stands.** An address whose network is still unknown
+carries `lookup` on the card, read from the coverage ledger pair
+(`asset_coverage`, capability `lookup.asn`): `pending` (no pair yet, due or
+queued: a sensor will look it up), `failed` (failed, blocked, paused or not
+applicable, with the ledger's `reason`) or `not_found` (the lookup ran and no
+routing data holds the address). A failure whose data source did not answer
+(the sensor's `source_unavailable` outcome, or the `asn` tool's "routing
+dataset" fetch error of older sensors) has reason `source_unavailable`: the
+source's outage, retried later, not a tool fault. The console says "Network
+lookup failed" (with "(source unavailable)" for that reason) only for
+`failed`, with a retry (`POST /easm/suggestions/addresses/lookup`). The card's
+`summary` counts the addresses behind in-scope names that an automatic entry
+already covers (`auto_added`, from `easm_address_auto_adds`), the third-party
+ones (`third_party`), the checked ones, the ones that need a person
+(`need_you`), and the waiting ones whose lookup is still running or failed.
+
+**Shared mail and SaaS providers.** The address classifier's dataset holds the
+Microsoft 365 Exchange front ends (the endpoint list's Exchange service area:
+Exchange Online, autodiscover, inbound and outbound mail protection) as
+`cloud_shared` ranges, and the network-holder names and host suffixes of the
+major shared mail and SaaS providers. The addresses `mail.*` and
+`autodiscover.*` names resolve to there are third-party: never offered, never
+added automatically, passive checks only, and names served by them are capped
+to web ports by the active gate, with or without network data.
 
 ## 4b3. Inventory triage (built, research/124)
 
@@ -779,10 +806,12 @@ resolved addresses" section, read through the asset view
 
 ## 4o. Discovery lineage (built)
 
-The asset page and the asset sheet show "How this asset was found": the chain
-of parent assets from the root down to the asset, the asset's discovery
-source and tool (`assets.discovery_source`, `discovery_tool`), when it was
-first found, and its attribution confidence. The reasons behind the
+The asset page and the asset sheet show "How we found this": the asset's
+discovery source and tool (`assets.discovery_source`, `discovery_tool`), when
+it was first found and its attribution confidence, then the chain from the
+asset's story ([exploration.md](exploration.md)): the scope entry, the parent
+assets from the root down to the asset, the run that derived it, the upload
+that created it and the latest run that scanned it. The reasons behind the
 confidence (`easm_evidence`) stay in the Ownership and scope section above it;
 both read the same `GET /api/v1/assets/{id}/attribution` response.
 

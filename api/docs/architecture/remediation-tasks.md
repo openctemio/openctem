@@ -335,7 +335,7 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
 ## Notices to task owners
 
 In-app notices (`internal/app/remediation/task_notify.go`, wired with `TaskService.SetNotifier` in
-`cmd/server/services.go`), type `remediation_task`, best effort (a failure is logged):
+`internal/server/services.go`), type `remediation_task`, best effort (a failure is logged):
 
 - `CreateTask` and an owner change in `UpdateTask`: "A remediation task was assigned to you" to the owner user
   (not when they are the actor) and to the owner group.

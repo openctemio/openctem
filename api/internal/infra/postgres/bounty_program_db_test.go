@@ -30,11 +30,12 @@ func TestBountyProgramRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	rules := bountyprogram.Rules{RateLimitRPS: 5, UserAgents: []string{"bb/1", "bb/2"}, IdentificationRequired: true}
 	p := &bountyprogram.Program{
 		ID: shared.NewID(), TenantID: tenant, Name: "Acme", Platform: "self", Handle: "jdoe",
 		ProgramURL: "https://acme.example/security", Status: bountyprogram.StatusActive,
-		ScopeSource: bountyprogram.ScopeSourcePaste, Rules: bountyprogram.Rules{RateLimitRPS: 5},
-		ScopeItems: items, TermsSHA256: bountyprogram.NewTerms("https://acme.example/security", bountyprogram.Rules{RateLimitRPS: 5}, items).SHA256(),
+		ScopeSource: bountyprogram.ScopeSourcePaste, Rules: rules,
+		ScopeItems: items, TermsSHA256: bountyprogram.NewTerms("https://acme.example/security", rules, items).SHA256(),
 		AcceptedBy: &importer, AcceptedAt: &now, CreatedBy: &importer, CreatedAt: now, UpdatedAt: now,
 	}
 	entry := func(pattern string) *scope.Target {
@@ -59,7 +60,8 @@ func TestBountyProgramRepository(t *testing.T) {
 	}
 
 	got, err := repo.GetByID(ctx, tenant, p.ID)
-	if err != nil || got.GroupID == nil || !got.GroupID.Equals(group.ID) || got.Rules.RateLimitRPS != 5 || len(got.ScopeItems) != 2 {
+	if err != nil || got.GroupID == nil || !got.GroupID.Equals(group.ID) || got.Rules.RateLimitRPS != 5 || len(got.ScopeItems) != 2 ||
+		len(got.Rules.UserAgents) != 2 || !got.Rules.IdentificationRequired {
 		t.Fatalf("get: %+v %v", got, err)
 	}
 	if _, err := repo.GetByID(ctx, other, p.ID); !errors.Is(err, bountyprogram.ErrNotFound) {

@@ -108,7 +108,7 @@ sequenceDiagram
   H-->>H: 201, audit ticket.created_below_threshold when confirmed below
 ```
 
-- The automatic path (`workflowJiraTicketAdapter` in `cmd/server/services.go`)
+- The automatic path (`workflowJiraTicketAdapter` in `internal/server/services.go`)
   calls `PolicyGate.AutoCreate` with `ticketing.RouteAutomation`: below the
   policy or over `daily_cap` it writes a hold and the step succeeds with
   `held: true`; a failed create releases the day's slot and fails the step

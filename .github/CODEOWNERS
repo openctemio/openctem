@@ -7,7 +7,6 @@
 # Go API
 /api/                               @0xmanhnv
 /api/migrations/                    @0xmanhnv
-/api/pkg/server/                   @0xmanhnv
 
 # Next.js web app
 /web/                               @0xmanhnv
@@ -102,6 +101,7 @@
 /api/internal/app/scopeauth/** @0xmanhnv
 /api/internal/app/scangov/gate.go @0xmanhnv
 /api/internal/app/scan/dispatch_gate.go @0xmanhnv
+/api/internal/app/exploration/controller.go @0xmanhnv
 /api/internal/app/command/scope_recheck.go @0xmanhnv
 /api/internal/app/scope/web_job.go @0xmanhnv
 /api/internal/infra/postgres/command_web_scope.go @0xmanhnv

@@ -10,8 +10,9 @@
  * points at them: a person decides. The addresses card is grouped by network
  * (easm-address-groups.tsx, research/425): one decision per group, a
  * selection or all waiting addresses, each after a dialog listing what
- * changes; shared and CDN addresses are listed apart and only added one at a
- * time; "Is this network yours?" is asked once per network. "Not now" hides a
+ * changes; shared and CDN addresses are listed apart and join an add only
+ * when the person ticks them in; "Is this network yours?" is asked once per
+ * network. "Not now" hides a
  * card on the overview for 30 days or until it shows something new. Only a
  * card that offers something is a decision; the badge counts address groups
  * that wait.

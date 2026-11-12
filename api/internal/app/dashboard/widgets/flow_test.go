@@ -125,12 +125,12 @@ func TestExposureFlow_OrganizationRead(t *testing.T) {
 		t.Errorf("last receipt %v", in.Totals.LastAt)
 	}
 	n := in.Noise
-	if n.New+n.Merged+n.NotStored != n.Received {
+	if n.New+n.Merged+n.Suppressed+n.NotStored != n.Received {
 		t.Errorf("noise parts %+v do not sum to received", n)
 	}
 	// new = created + reopened = 144 + 4, the receipt list's New plus
-	// Reopened; the 8 suppressed are inside it.
-	if n.New != 148 || n.New != in.Totals.Created+in.Totals.Reopened || n.Suppressed != 8 || n.NotStored != 18 || n.Merged != 602-144-4-18 {
+	// Reopened; the 8 suppressed are counted apart from created.
+	if n.New != 148 || n.New != in.Totals.Created+in.Totals.Reopened || n.Suppressed != 8 || n.NotStored != 18 || n.Merged != 602-144-4-8-18 {
 		t.Errorf("noise %+v", n)
 	}
 	if in.Drill != "/findings/imports?since=2026-09-26T00:00:00Z" {
@@ -197,8 +197,38 @@ func TestNoiseOf_ClampsAndSums(t *testing.T) {
 		t.Errorf("noise %+v", n)
 	}
 	n = noiseOf(IntakeSource{Received: 100, Created: 10, Reopened: 5, Suppressed: 3, NotStored: 2})
-	if n.New+n.Merged+n.NotStored != 100 || n.New != 15 || n.Suppressed != 3 {
+	if n.New+n.Merged+n.Suppressed+n.NotStored != 100 || n.New != 15 || n.Suppressed != 3 || n.Merged != 80 {
 		t.Errorf("noise %+v", n)
+	}
+}
+
+// The receipt counts suppressed apart from created: New (created plus
+// reopened) does not contain it, and the four parts sum to received.
+func TestNoiseOf_SuppressedIsItsOwnPart(t *testing.T) {
+	n := noiseOf(IntakeSource{Received: 22, Created: 8, Reopened: 2, Suppressed: 4, NotStored: 2, StillDetected: 6})
+	if n.New != 10 || n.Suppressed != 4 || n.NotStored != 2 || n.Merged != 6 {
+		t.Fatalf("noise %+v", n)
+	}
+	if n.New+n.Merged+n.Suppressed+n.NotStored != n.Received {
+		t.Fatalf("parts %+v do not sum to received %d", n, n.Received)
+	}
+}
+
+// The tooltip's full reconciliation: seen again, repeated in a report and
+// every other outcome, beside new and not stored, explain all received.
+func TestNoiseOf_Reconciliation(t *testing.T) {
+	n := noiseOf(IntakeSource{Received: 100, Created: 10, Reopened: 5, StillDetected: 40, Suppressed: 3, NotStored: 2,
+		Outcomes: map[string]int64{"merged": 30, "exposure": 9, "split": 1, "quarantined": 2}})
+	if n.SeenAgain != 40 || n.Repeated != 30 || n.Outcomes["exposure"] != 9 || n.Outcomes["split"] != 1 || n.Outcomes["merged"] != 0 {
+		t.Fatalf("noise %+v", n)
+	}
+	// 100 + 1 split = 15 new + 40 seen again + 30 repeated + 3 suppressed + 2 not stored + 9 exposure + 2 quarantined.
+	if n.Unaccounted != 0 {
+		t.Fatalf("unaccounted %d", n.Unaccounted)
+	}
+	n = noiseOf(IntakeSource{Received: 50, Created: 10, StillDetected: 20})
+	if n.Unaccounted != 20 {
+		t.Fatalf("receipts before outcomes were counted: unaccounted %d, want 20", n.Unaccounted)
 	}
 }
 
@@ -295,5 +325,48 @@ func TestIntake_KindsInstancesAndWorstHealth(t *testing.T) {
 	}
 	if in.Failing != 1 || in.Stale != 1 {
 		t.Errorf("failing %d stale %d", in.Failing, in.Stale)
+	}
+}
+
+// A source whose freshest sender reported 48 minutes ago but one of whose
+// other senders went quiet for days is stale because of that sender, and its
+// note must speak about that sender's last receipt, never "last receipt 48
+// minutes ago". A sender on a daily cadence that reported 48 minutes ago is
+// healthy.
+func TestIntake_StaleNoteNamesTheStaleSender(t *testing.T) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	day := 24 * time.Hour
+	fresh := now.Add(-48 * time.Minute)
+	quiet := now.Add(-5 * day)
+	facts := &ctemFacts{intake: []dashboard.IntakeRow{
+		{Origin: "sensor", Tool: "nuclei", Receipts: 9, Received: 20, LastAt: fresh, LastStatus: "completed",
+			MedianGap: ptrDur(day),
+			Instances: []dashboard.IntakeInstanceRow{
+				{Kind: "sensor", ID: "11111111-1111-1111-1111-111111111111", Received: 15, LastAt: fresh,
+					LastStatus: "completed", MedianGap: ptrDur(day)},
+				{Kind: "sensor", ID: "22222222-2222-2222-2222-222222222222", Received: 5, LastAt: quiet,
+					LastStatus: "completed", MedianGap: ptrDur(day)},
+			}},
+		{Origin: "sensor", Tool: "httpx", Receipts: 5, Received: 9, LastAt: fresh, LastStatus: "completed",
+			MedianGap: ptrDur(day),
+			Instances: []dashboard.IntakeInstanceRow{{Kind: "sensor", ID: "11111111-1111-1111-1111-111111111111",
+				Received: 9, LastAt: fresh, LastStatus: "completed", MedianGap: ptrDur(day)}}},
+	}}
+	s := NewService(nil, nil, facts, nil)
+	s.now = func() time.Time { return now }
+	in, err := s.intake(context.Background(), orgScope(shared.NewID()), now.Add(-30*day), FlowFigure{})
+	if err != nil {
+		t.Fatalf("intake: %v", err)
+	}
+	by := map[string]IntakeSource{}
+	for _, src := range in.Sources {
+		by[src.Tool] = src
+	}
+	nuc, httpx := by["nuclei"], by["httpx"]
+	if nuc.Health != HealthStale || !nuc.HealthLastAt.Equal(quiet) || !nuc.LastAt.Equal(fresh) {
+		t.Errorf("nuclei health %s, health_last_at %v, last_at %v", nuc.Health, nuc.HealthLastAt, nuc.LastAt)
+	}
+	if httpx.Health != HealthOK || !httpx.HealthLastAt.Equal(fresh) {
+		t.Errorf("a daily source that reported 48 minutes ago is %s (health_last_at %v)", httpx.Health, httpx.HealthLastAt)
 	}
 }

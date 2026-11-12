@@ -6,7 +6,21 @@ import {
   replaceEntryInLines,
   targetFileLines,
   targetKey,
+  splitCidr,
+  targetReasonText,
+  MAX_SPLIT_PIECES,
+  cidrAddressCount,
+  isLargeRange,
 } from '../target-format'
+import { readFileSync } from 'node:fs'
+import {
+  DENY_RANGES,
+  parsePrefix,
+  prefixesOverlap,
+  PRIVATE_RANGES,
+} from '@/features/scan-zones/lib/ranges'
+import { resolve } from 'node:path'
+import { enTranslate } from '../translate'
 
 describe('classifyTarget', () => {
   it.each([
@@ -50,8 +64,8 @@ describe('classifyTarget', () => {
 
 describe('the API rules, in the browser', () => {
   it.each([
-    ['10.0.0.0/8', 'larger than'],
-    ['2001:db8::/32', 'larger than'],
+    ['10.0.0.0/7', 'has 33,554,432 addresses'],
+    ['2001:db8::/32', 'has 79,228,162,514,264,337,593,543,950,336 addresses'],
     ['example.xn--p1ai', 'top-level domain'],
     ['[2001:db8::1]:99999', 'host:port'],
     ['[not-v6]:443', 'characters'],
@@ -182,4 +196,115 @@ describe('targetFileLines', () => {
       'b.example.com',
     ])
   })
+})
+
+describe('a range wider than one target', () => {
+  it('names the range, its address count and the widest accepted size', () => {
+    const c = classifyTarget('10.0.0.0/7')
+    expect(c.kind).toBe('invalid')
+    expect(c.reason).toBe(
+      '10.0.0.0/7 has 33,554,432 addresses; the most one target can hold is 16,777,216 (/8)'
+    )
+    expect(targetReasonText(enTranslate, c)).toBe(c.reason)
+    expect(c.split).toEqual({ bits: 8, count: 2 })
+  })
+
+  it('takes a /8 (IPv4) and a /104 (IPv6) as one target; a /16 is unchanged', () => {
+    expect(classifyTarget('10.0.0.0/8').kind).toBe('cidr')
+    expect(classifyTarget('172.16.0.0/12').kind).toBe('cidr')
+    expect(classifyTarget('10.0.0.0/16').kind).toBe('cidr')
+    expect(classifyTarget('2001:db8::/104').kind).toBe('cidr')
+    expect(classifyTarget('2001:db8::/112').kind).toBe('cidr')
+    expect(classifyTarget('2001:db8::/96').split).toEqual({ bits: 104, count: 256 })
+  })
+
+  it('takes a lower bound, as an organization may set', () => {
+    const c = classifyTarget('10.0.0.0/14', { maxHostBits: 16 })
+    expect(c.kind).toBe('invalid')
+    expect(c.split).toEqual({ bits: 16, count: 4 })
+    expect(classifyTarget('10.0.0.0/8', { maxHostBits: 16 }).split).toEqual({
+      bits: 16,
+      count: 256,
+    })
+    expect(classifyTarget('10.0.0.0/7', { maxHostBits: 16 }).split).toBeUndefined()
+  })
+
+  it('offers no one-click split past MAX_SPLIT_PIECES ranges', () => {
+    expect(MAX_SPLIT_PIECES).toBe(256)
+    expect(classifyTarget('2001:db8::/32').split).toBeUndefined()
+  })
+
+  it('splits into the covering ranges, ignoring host bits typed after the address', () => {
+    expect(splitCidr('10.1.2.3/14', 16)).toEqual([
+      '10.0.0.0/16',
+      '10.1.0.0/16',
+      '10.2.0.0/16',
+      '10.3.0.0/16',
+    ])
+    const eight = splitCidr('10.0.0.0/8', 16)
+    expect(eight).toHaveLength(256)
+    expect(eight[0]).toBe('10.0.0.0/16')
+    expect(eight[255]).toBe('10.255.0.0/16')
+    expect(eight.every((p) => classifyTarget(p).kind === 'cidr')).toBe(true)
+    expect(splitCidr('2001:db8::/111', 112)).toEqual(['2001:db8::/112', '2001:db8::1:0/112'])
+  })
+
+  it('refuses a split that is not narrower or too many', () => {
+    expect(splitCidr('10.0.0.0/16', 16)).toEqual([])
+    expect(splitCidr('10.0.0.0/7', 16)).toEqual([])
+    expect(splitCidr('not-a-range', 16)).toEqual([])
+  })
+
+  it('counts addresses and tells a large range (wider than a /16)', () => {
+    expect(cidrAddressCount('10.0.0.0/8')).toBe(BigInt(16777216))
+    expect(cidrAddressCount('a.example.com')).toBeNull()
+    expect(isLargeRange('10.0.0.0/15')).toBe(true)
+    expect(isLargeRange('10.0.0.0/16')).toBe(false)
+    expect(isLargeRange('2001:db8::/104')).toBe(true)
+    expect(isLargeRange('2001:db8::/112')).toBe(false)
+  })
+})
+
+// The CIDR bounds are one contract with the API validator: both suites read
+// api/pkg/validator/testdata/cidr_targets.json.
+describe('the CIDR bounds shared with the API', () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      resolve(__dirname, '../../../../../../api/pkg/validator/testdata/cidr_targets.json'),
+      'utf8'
+    )
+  ) as {
+    cases: {
+      target: string
+      max_host_bits: number
+      valid: boolean
+      reason?: string
+      internal?: boolean
+    }[]
+  }
+
+  it('has cases', () => {
+    expect(fixture.cases.length).toBeGreaterThan(5)
+  })
+
+  it.each(fixture.cases.map((c) => [c.target, c.max_host_bits, c] as const))(
+    '%s with at most %i host bits',
+    (_target, _bits, c) => {
+      const got = classifyTarget(c.target, { maxHostBits: c.max_host_bits })
+      expect(got.kind === 'cidr').toBe(c.valid)
+      if (!c.valid) expect(got.reason).toBe(c.reason)
+    }
+  )
+
+  // Internal = overlaps a private, link-local or loopback block at all
+  // (172.0.0.0/8 holds 172.16.0.0/12), the same answer as the API.
+  it.each(fixture.cases.filter((c) => c.internal !== undefined).map((c) => [c.target, c] as const))(
+    '%s is internal as the API says',
+    (_target, c) => {
+      const p = parsePrefix(c.target)
+      expect(p).not.toBeNull()
+      const internal = [...PRIVATE_RANGES, ...DENY_RANGES].some((q) => prefixesOverlap(q, p!))
+      expect(internal).toBe(c.internal)
+    }
+  )
 })

@@ -41,7 +41,10 @@ const (
 	ScanPorts           Key = "scan.ports"
 	ProbeHTTP           Key = "probe.http"
 	CrawlWeb            Key = "crawl.web"
-	VulnTemplates       Key = "vuln.templates"
+	// EnumerateWebPaths requests candidate paths the platform lists on a
+	// web origin, GET and HEAD only (path discovery).
+	EnumerateWebPaths Key = "enumerate.web_paths"
+	VulnTemplates     Key = "vuln.templates"
 	// CheckTakeover finds names whose alias points at an unclaimed
 	// third-party resource (nuclei's takeover templates).
 	CheckTakeover Key = "check.takeover"
@@ -59,6 +62,9 @@ const (
 	ContainerImage     Key = "container.image"
 	NetworkVAConnector Key = "network_va.connector"
 )
+
+// toolWebguess runs path discovery.
+const toolWebguess = "webguess"
 
 // Tier is how intrusive a stage is toward its targets.
 type Tier int
@@ -324,6 +330,23 @@ var catalog = []Stage{
 		Legacy:    []string{"crawler", "url_discovery"},
 	},
 	{
+		// Active (T1): GET and HEAD only, locked by the job's web scope,
+		// which also carries the per-origin request cap the sensor's
+		// forwarder enforces. The candidates are the platform's: a list
+		// derived from the organization's own inventory (contentpin), never
+		// the tool's own; the tool never recurses or follows redirects.
+		Key: EnumerateWebPaths, Name: "Web path discovery",
+		Description: "Request candidate paths the platform lists on a web origin with GET or HEAD, keeping the ones that answer differently from the origin's not-found response.",
+		Inputs:      []asset.TypeRef{tHTTPService},
+		Outputs:     []asset.TypeRef{tHTTPService},
+		Endpoints:   true,
+		Tier:        TierActive,
+		Implementations: []Implementation{
+			{Tool: toolWebguess, Default: true},
+		},
+		MaxFanout: webFanoutCap,
+	},
+	{
 		Key: VulnTemplates, Name: "Vulnerability templates",
 		Description: "Run non-intrusive vulnerability templates.",
 		Inputs: []asset.TypeRef{
@@ -369,14 +392,13 @@ var catalog = []Stage{
 	},
 	{
 		// Active (T1): one GET per origin in a headless browser. The result
-		// is the web_evidence property of the origin the sensor re-reports
-		// (the same service, annotated). While the organization
+		// is the web_evidence property of the origin the sensor re-reports,
+		// so the stage has no output port of its own. While the organization
 		// has screenshots off the capability is not planned for it (coverage
 		// readiness): no picture is taken.
 		Key: CaptureScreenshot, Name: "Screenshot",
 		Description: "Take a picture of a web page and keep it as evidence on the web service.",
 		Inputs:      []asset.TypeRef{tHTTPService},
-		Outputs:     []asset.TypeRef{tHTTPService},
 		Tier:        TierActive,
 		Implementations: []Implementation{
 			{Tool: toolWebshot, Default: true},

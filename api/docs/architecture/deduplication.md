@@ -57,7 +57,7 @@ flowchart TD
   correlation.
 - **Re-key**: on start, after the asset canonical pass, the server re-keys
   stored findings under an advisory lock in batches of 500
-  (`internal/app/refingerprint`, `cmd/server/finding_rekey.go`).
+  (`internal/app/refingerprint`, `internal/server/finding_rekey.go`).
 - **Isolation**: every lookup and the unique index are per tenant; the
   tenant comes from the stored report row, never the document.
 

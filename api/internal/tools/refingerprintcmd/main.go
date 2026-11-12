@@ -73,19 +73,21 @@
 //	                                   kept), else linked as the same issue as
 //	                                   the finding holding it (never merged);
 //	                                   dry run unless -apply
-//	refingerprint -mask-emails (-tenant <id>[,<id>...] | -all-tenants) [-apply] [-json] [-batch n]
-//	                                   mask the e-mail addresses left in
-//	                                   findings and evidence stored before
-//	                                   ingest masked them: the local part
-//	                                   becomes "***", the domain is kept; the
-//	                                   descriptive columns of tool-reported
-//	                                   findings only, never an identifier, and
-//	                                   every evidence item. Dry run (default)
-//	                                   and output are counts only, per tenant
-//	                                   and column; batched (one transaction
-//	                                   per batch), idempotent, safe to rerun
-//	                                   after a crash. Writes
-//	                                   findings.emails_masked per changed tenant
+//	refingerprint -info-exposures [-tenant <id>] [-apply] [-down]
+//	                                   move the open informational findings
+//	                                   of template scanners (nuclei) to the
+//	                                   asset's exposures, as ingest does for a
+//	                                   new match: same exposure event, the
+//	                                   finding resolved as reclassified_exposure
+//	                                   (never fixed), severity none -> info;
+//	                                   findings with a ticket, a task or a
+//	                                   pending decision are held; skips an
+//	                                   organization that files info matches as
+//	                                   findings; -down -apply reopens them
+//	                                   (status and severity from the timeline);
+//	                                   dry run unless -apply; one
+//	                                   findings.reclassified audit entry per
+//	                                   tenant changed
 //	refingerprint -correlate [-apply]  one-time cross-rule correlation of
 //	                                   existing DAST findings (injection points
 //	                                   from stored evidence); dry run reports
@@ -133,9 +135,7 @@ const (
 func Main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	apply := flag.Bool("apply", false, "commit the re-keys and merges (default is a dry run)")
-	tenantFlag := flag.String("tenant", "", "tenant id (default: every tenant with older keys); with -mask-emails a comma-separated list")
-	maskEmails := flag.Bool("mask-emails", false, "mask the e-mail addresses left in stored findings and evidence (needs -tenant or -all-tenants)")
-	allTenants := flag.Bool("all-tenants", false, "with -mask-emails: every tenant")
+	tenantFlag := flag.String("tenant", "", "tenant id (default: every tenant with older keys)")
 	batch := flag.Int("batch", refingerprint.DefaultBatchSize, "findings per batch")
 	maxBatches := flag.Int("max-batches", 0, "stop after this many batches per tenant (0 = until done; an applying run resumes later)")
 	asJSON := flag.Bool("json", false, "print reports as JSON")
@@ -148,6 +148,7 @@ func Main() {
 	clearLegacy := flag.Bool("clear-legacy-secret-fingerprints", false, "clear the unverifiable secret fingerprints written before the keyed fingerprint (the next sighting rewrites them)")
 	before := flag.String("before", "", "with -clear-legacy-secret-fingerprints: clear fingerprints of findings created before this RFC 3339 time (default: when the keyed fingerprint was introduced)")
 	resetMask := flag.Bool("reset-mask-secret-fingerprints", false, "clear the secret fingerprints derived from a mask, empty RE…ED previews and re-derive the rotation keys (needs -before)")
+	infoExposures := flag.Bool("info-exposures", false, "move stored informational template-scan findings to exposures (closure reason reclassified_exposure; with -down, undo)")
 	down := flag.Bool("down", false, "move findings keyed with the current version back to their previous key (rollback)")
 	foldRules := flag.String("fold-dast-rules", "", "comma-separated DAST rules whose fixed request paths are one issue per origin (with -dast-repair)")
 	flag.Parse()
@@ -176,12 +177,6 @@ func Main() {
 	store := postgres.NewFindingRekeyRepository(&postgres.DB{DB: sqlDB})
 	svc := refingerprint.NewService(store)
 
-	if *allTenants && !*maskEmails {
-		fail(2, "-all-tenants is used with -mask-emails only")
-	}
-	if *maskEmails {
-		os.Exit(runMaskEmails(ctx, sqlDB, *tenantFlag, *allTenants, *apply, *asJSON, *batch))
-	}
 	if *resetMask {
 		os.Exit(runResetMaskSecretFingerprints(ctx, sqlDB, *tenantFlag, *before, *apply, *asJSON, *batch))
 	}
@@ -196,6 +191,9 @@ func Main() {
 	}
 	if *links {
 		os.Exit(runIssueLinks(ctx, sqlDB, *tenantFlag, *apply, *asJSON, *batch))
+	}
+	if *infoExposures {
+		os.Exit(runInfoExposures(ctx, sqlDB, *tenantFlag, *apply, *down, *asJSON, *batch))
 	}
 	if *vulnAliases {
 		os.Exit(runVulnAliases(ctx, sqlDB, *tenantFlag, *apply, *asJSON, *batch))

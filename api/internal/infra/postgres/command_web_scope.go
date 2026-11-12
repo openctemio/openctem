@@ -46,3 +46,11 @@ func (r *CommandRepository) guardCreate(ctx context.Context, cmd *command.Comman
 	}
 	return nil
 }
+
+// releaseGuard gives back what the create guard recorded for a command the
+// repository then failed to store.
+func (r *CommandRepository) releaseGuard(ctx context.Context, cmd *command.Command) {
+	if rel, ok := r.guard.(command.CreateReleaser); ok {
+		rel.ReleaseCreate(ctx, cmd)
+	}
+}

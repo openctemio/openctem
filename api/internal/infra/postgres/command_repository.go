@@ -63,6 +63,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	// ...and its host keys: the hosts it holds while it runs, sent to the
 	// sensor in its payload so both sides admit it under the same keys.
 	if err := command.AssignHostKeys(cmd); err != nil {
+		r.releaseGuard(ctx, cmd)
 		return err
 	}
 	query := `
@@ -111,6 +112,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	)
 
 	if err != nil {
+		r.releaseGuard(ctx, cmd)
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("ALREADY_EXISTS", "command already exists", shared.ErrAlreadyExists)
 		}
@@ -1265,13 +1267,6 @@ func nullInt(i int) sql.NullInt32 {
 // Platform Job Queue Methods (v3.2)
 // =============================================================================
 
-// GetByAuthTokenHash retrieves a command by auth token hash.
-func (r *CommandRepository) GetByAuthTokenHash(ctx context.Context, hash string) (*command.Command, error) {
-	query := r.selectQuery() + " WHERE auth_token_hash = $1 AND is_platform_job = TRUE"
-	row := r.db.QueryRowContext(ctx, query, hash)
-	return r.scanCommand(row)
-}
-
 // CountActivePlatformJobsByTenant counts active platform jobs for a tenant.
 func (r *CommandRepository) CountActivePlatformJobsByTenant(ctx context.Context, tenantID shared.ID) (int, error) {
 	query := `
@@ -1469,43 +1464,6 @@ func (r *CommandRepository) ExpireIfUnchanged(ctx context.Context, cmd *command.
 		return false, fmt.Errorf("expire command: %w", err)
 	}
 	return n == 1, nil
-}
-
-// GetQueuePosition gets the queue position for a specific command.
-func (r *CommandRepository) GetQueuePosition(ctx context.Context, commandID shared.ID) (*command.QueuePosition, error) {
-	query := `
-		WITH ranked AS (
-			SELECT id, queue_priority, queued_at,
-				   ROW_NUMBER() OVER (ORDER BY queue_priority DESC, queued_at ASC) as position
-			FROM commands
-			WHERE is_platform_job = TRUE
-			AND status = 'pending'
-		),
-		total AS (
-			SELECT COUNT(*) as total_count
-			FROM commands
-			WHERE is_platform_job = TRUE
-			AND status = 'pending'
-		)
-		SELECT r.position, t.total_count, r.queue_priority
-		FROM ranked r, total t
-		WHERE r.id = $1
-	`
-
-	var pos command.QueuePosition
-	err := r.db.QueryRowContext(ctx, query, commandID.String()).Scan(
-		&pos.Position,
-		&pos.TotalQueued,
-		&pos.Priority,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // Not in queue
-		}
-		return nil, fmt.Errorf("failed to get queue position: %w", err)
-	}
-
-	return &pos, nil
 }
 
 // ListPlatformJobsByTenant lists platform jobs for a tenant with pagination.
@@ -1730,10 +1688,11 @@ func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, 
 		UPDATE commands
 		SET status = 'failed',
 		    error_message = CASE
-		        WHEN dispatch_attempts >= $1 AND jsonb_array_length(attempts) > 0 THEN
+		        WHEN dispatch_attempts >= $1 AND jsonb_array_length(attempts) > 0 THEN COALESCE(
 		            (SELECT 'Failed on ' || count(*) || ' sensor attempt(s) for infrastructure reasons, none about the target ('
 		                    || string_agg('sensor ' || left(a ->> 'sensor_id', 8) || ': ' || (a ->> 'class'), '; ' ORDER BY ord DESC) || ')'
-		             FROM jsonb_array_elements(attempts) WITH ORDINALITY AS t(a, ord))
+		             FROM jsonb_array_elements(attempts) WITH ORDINALITY AS t(a, ord)
+		             WHERE a ->> 'counted' IS DISTINCT FROM 'false'), 'Max dispatch attempts exceeded')
 		        WHEN dispatch_attempts >= $1 THEN 'Max dispatch attempts exceeded'
 		        ELSE $3::text END,
 		    failure_class = CASE WHEN jsonb_array_length(attempts) > 0 THEN attempts -> -1 ->> 'class' ELSE failure_class END,
@@ -1846,6 +1805,31 @@ func (r *CommandRepository) CancelByScanRunID(ctx context.Context, tenantID, run
 }
 
 var _ command.StepBatchGate = (*CommandRepository)(nil)
+
+var _ command.StepCommandCanceler = (*CommandRepository)(nil)
+
+// CancelOpenByStepRun cancels the open (pending, acknowledged, running)
+// commands of one step run of the tenant; a sensor holding one is told to
+// stop through the tenant's streams. Finished commands keep their results.
+func (r *CommandRepository) CancelOpenByStepRun(ctx context.Context, tenantID, stepRunID shared.ID) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'canceled', completed_at = NOW(), lease_expires_at = NULL
+		WHERE tenant_id = $1 AND scan_run_step_id = $2
+		  AND status IN ('pending', 'acknowledged', 'running')`,
+		tenantID.String(), stepRunID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to cancel the step's commands: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	if n > 0 {
+		r.changedTenant(tenantID)
+	}
+	return n, nil
+}
 
 // The expiration checker asserts this; without it, it refuses to expire.
 var _ command.ConditionalExpirer = (*CommandRepository)(nil)

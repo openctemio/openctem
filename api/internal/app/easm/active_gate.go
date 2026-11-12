@@ -172,8 +172,8 @@ func (g *ActiveGate) WithPlatformPolicy(gr scopedom.Guardrails) *ActiveGate {
 	return g
 }
 
-func (g *ActiveGate) denied(name string) bool {
-	return g.guardrails != nil && g.guardrails.Denies(name)
+func (g *ActiveGate) denied(tenantID shared.ID, name string) bool {
+	return g.guardrails != nil && g.guardrails.For(tenantID).Denies(name)
 }
 
 // CoverOf answers which of the tenant's authorities covers each target
@@ -826,7 +826,7 @@ func (g *ActiveGate) BlockedTargets(ctx context.Context, tenantID shared.ID, tar
 		}
 		var auth *scopeauth.Authority
 		for _, t := range free {
-			if g.denied(t) {
+			if g.denied(tenantID, t) {
 				out[t] = attribution.StatePlatformDenied
 				continue
 			}
@@ -911,7 +911,7 @@ func (g *ActiveGate) decide(ctx context.Context, tenantID shared.ID, ids []strin
 			certs = append(certs, a)
 			continue
 		}
-		if g.denied(a.Name()) {
+		if g.denied(tenantID, a.Name()) {
 			out[id] = attribution.StatePlatformDenied
 			continue
 		}

@@ -574,6 +574,8 @@ func strategyOf(f *vulnerability.Finding, chk *CustomCheck) (Strategy, string) {
 		return Strategy{Kind: StrategyVersionRecheck, Rule: strings.TrimSpace(f.RuleID())}, ""
 	case isHumanFinding(f):
 		return Strategy{Kind: StrategyNone}, ReasonNoAutomaticRetest
+	case isBroughtIn(f):
+		return Strategy{Kind: StrategyNone}, ReasonReimportToVerify
 	}
 	return Strategy{Kind: StrategyTemplate, Rule: strings.TrimSpace(f.RuleID()), Tool: recheckTool(f)}, ""
 }
@@ -618,6 +620,8 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID, m
 		// A leaked secret is not fixed by a check that stops matching it: only
 		// rotation or revocation is, and a person verifies that.
 		return c, ineligible(reason, fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible))
+	case ReasonReimportToVerify:
+		return c, ineligible(reason, fmt.Errorf("%w: an imported scanner report is re-checked by importing a newer report (or attach a retest check)", retestdom.ErrNotEligible))
 	default:
 		return c, ineligible(reason, fmt.Errorf("%w: a finding a person reported has no automatic retest (attach a retest check)", retestdom.ErrNotEligible))
 	}
@@ -1235,7 +1239,8 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 		if outcome == "" {
 			return retestdom.CheckResult{Missing: true}, true
 		}
-		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests}, true
+		stopped, _ := commanddom.RunStopped(cmd.Result)
+		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests, Stopped: stopped}, true
 	case commanddom.CommandStatusFailed, commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
 		return retestdom.CheckResult{Missing: true, Summary: cmd.ErrorMessage}, true
 	default:

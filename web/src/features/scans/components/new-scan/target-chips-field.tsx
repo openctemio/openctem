@@ -4,12 +4,14 @@
  * The targets field of a scan form: the selection as chips inside one field,
  * and an input at its end to type or paste more. Enter, comma, space or Tab
  * adds what is typed; a paste of many lines or a comma list adds them all;
- * Backspace on an empty input removes the last typed target. Each chip's
- * remove button has a 44 px tap area. Format only: whether a target may be
+ * Backspace on an empty input removes the last typed target. A typed chip
+ * (one with onEdit) is edited in place: click, Enter or F2 turns it into an
+ * input; Enter or blur commits, Escape cancels, an empty commit removes it.
+ * Each chip's remove button has a 44 px tap area. Format only: whether a target may be
  * scanned is the server's scope check.
  */
 
-import { useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { FolderOpen, X } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -21,6 +23,13 @@ export interface TargetChip {
   /** Why an invalid entry is invalid (shown as its title). */
   title?: string
   onRemove?: () => void
+  /**
+   * Replace this typed target with what was edited ('' removes it). Set only
+   * for typed text; asset and group chips are references and stay as they are.
+   */
+  onEdit?: (next: string) => void
+  /** The text to edit when it differs from the label. */
+  editValue?: string
 }
 
 /** Chips shown before "Show all". */
@@ -58,6 +67,22 @@ export function TargetChipsField({
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const [all, setAll] = useState(false)
+  const [editing, setEditing] = useState<{ key: string; text: string } | null>(null)
+  // Enter commits and unmounts the input, whose blur would commit again.
+  const finished = useRef(false)
+
+  const startEdit = (chip: TargetChip) => {
+    finished.current = false
+    setEditing({ key: chip.key, text: chip.editValue ?? chip.label })
+  }
+  const finishEdit = (chip: TargetChip, save: boolean, refocus: boolean) => {
+    if (finished.current) return
+    finished.current = true
+    const next = editing?.text.trim() ?? ''
+    setEditing(null)
+    if (save && next !== (chip.editValue ?? chip.label)) chip.onEdit?.(next)
+    if (refocus) document.getElementById(id)?.focus()
+  }
 
   const commit = (value: string) => {
     const tokens = splitTargetInput(value)
@@ -124,7 +149,50 @@ export function TargetChipsField({
             data-kind={chip.kind}
           >
             {chip.kind === 'group' && <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />}
-            <span className="min-w-0 truncate font-mono">{chip.label}</span>
+            {editing?.key === chip.key ? (
+              <input
+                autoFocus
+                value={editing.text}
+                onChange={(e) => setEditing({ key: chip.key, text: e.target.value })}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    finishEdit(chip, true, true)
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    finishEdit(chip, false, true)
+                  }
+                }}
+                onBlur={() => finishEdit(chip, true, false)}
+                aria-label={t('scans.targetsStep.editTarget', undefined, { name: chip.label })}
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                size={Math.max(editing.text.length, 8)}
+                className="h-6 min-w-0 max-w-full bg-transparent font-mono text-xs outline-hidden"
+                data-testid="target-chip-edit"
+              />
+            ) : chip.onEdit ? (
+              <button
+                type="button"
+                onClick={() => startEdit(chip)}
+                onKeyDown={(e) => {
+                  if (e.key === 'F2') {
+                    e.preventDefault()
+                    startEdit(chip)
+                  }
+                }}
+                aria-label={t('scans.targetsStep.editTarget', undefined, { name: chip.label })}
+                aria-keyshortcuts="F2"
+                className="min-w-0 truncate rounded font-mono hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
+              >
+                {chip.label}
+              </button>
+            ) : (
+              <span className="min-w-0 truncate font-mono">{chip.label}</span>
+            )}
             {chip.onRemove && (
               <button
                 type="button"

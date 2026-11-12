@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/api/pkg/validator"
 
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -203,7 +204,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 	validatedTargets, err := s.validateScanTargets(ctx, CreateScanInput{
 		TenantID: input.TenantID,
 		Targets:  input.Targets,
-	})
+	}, validator.DefaultCIDRHostBits)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +344,7 @@ func (s *Service) QuickScan(ctx context.Context, input QuickScanInput) (*QuickSc
 // quick scans started in the same second (409 "scan with this name already
 // exists", 22c B8); a short random suffix keeps every name unique.
 func quickScanName(now time.Time, nonce shared.ID) string {
-	return fmt.Sprintf("Quick Scan - %s-%s", now.Format("20060102-150405"), strings.ReplaceAll(nonce.String(), "-", "")[24:])
+	return fmt.Sprintf("Quick Scan - %s-%s", now.Format("20060102-150405"), strings.ReplaceAll(nonce.String(), "-", "")[20:])
 }
 
 // SaveQuickScan turns an ad-hoc quick scan into a saved configuration named

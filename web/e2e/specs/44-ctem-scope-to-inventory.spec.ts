@@ -89,7 +89,7 @@ test(
     const listed = await apiOk<{ data?: { name: string }[]; total?: number }>(
       page,
       'GET',
-      `/api/v1/assets?search=${encodeURIComponent(root)}&per_page=50`
+      `/api/v1/assets?q=${encodeURIComponent(root)}&per_page=50`
     )
     expect((listed.data ?? []).filter((a) => a.name === app)).toHaveLength(1)
 

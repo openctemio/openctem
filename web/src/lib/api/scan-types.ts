@@ -60,6 +60,9 @@ export const SCAN_CONFIG_STATUS_LABELS: Record<ScanConfigStatus, string> = {
  * A scanner_config value the API flagged as secret-looking (api RFC-032
  * Phase 0). Only the path and the reason; never the value.
  */
+/** A scan's per-step overrides of capability standard params: key = step key or `*:<capability>`. */
+export type ScanStepParams = Record<string, Record<string, unknown>>
+
 export interface ScannerConfigWarning {
   /** Dotted keys, [n] for list items ("headers.Authorization", "args[2]"). */
   path: string
@@ -145,6 +148,10 @@ export interface ScanConfig {
   target_options?: ScanTargetOptions
   /** The probe ceiling of every run (RFC-071). */
   intensity?: ScanIntensity
+  /** Per-step overrides of standard params (workflow scans). */
+  step_params?: ScanStepParams
+  /** How much of the workflow each run executes. */
+  depth?: 'passive' | 'standard' | 'deep'
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -164,6 +171,10 @@ export interface ScanConfig {
   /** The one run of a once schedule (RFC 3339, UTC). */
   schedule_run_at?: string
   next_run_at?: string
+  /** A scheduled occurrence the scheduler skipped (missed by more than one interval); cleared when a later scheduled run starts. */
+  last_missed_at?: string
+  /** Reason code of the skip (platform_unavailable, once_grace_exceeded). */
+  last_missed_reason?: string
   tags?: string[]
   run_on_tenant_runner: boolean
   sensor_preference: SensorPreference
@@ -276,6 +287,10 @@ export interface CreateScanConfigRequest {
   target_options?: ScanTargetOptions
   /** The probe ceiling; omitted = the tier the scanner or workflow probes at. */
   intensity?: ScanIntensity
+  /** Per-step overrides of standard params (workflow scans). */
+  step_params?: ScanStepParams
+  /** How much of the workflow each run executes. */
+  depth?: 'passive' | 'standard' | 'deep'
   scan_type: ScanType
   scan_workflow_id?: string
   scanner_name?: string
@@ -316,6 +331,11 @@ export interface CreateScanConfigRequest {
    * (RFC-054 §6.4).
    */
   skip_refused_targets?: boolean
+  /**
+   * Confirms targets that name a range wider than a /16. Required for such
+   * a scan: the API refuses it without (LARGE_RANGE_UNCONFIRMED).
+   */
+  confirm_large_range?: boolean
 }
 
 /**
@@ -334,6 +354,10 @@ export interface UpdateScanConfigRequest {
   target_options?: ScanTargetOptions
   /** Omitted = unchanged. */
   intensity?: ScanIntensity
+  /** Per-step overrides of standard params (workflow scans). */
+  step_params?: ScanStepParams
+  /** How much of the workflow each run executes. */
+  depth?: 'passive' | 'standard' | 'deep'
   scan_workflow_id?: string
   scanner_name?: string
   scanner_config?: Record<string, unknown>
@@ -362,6 +386,8 @@ export interface UpdateScanConfigRequest {
   max_retries?: number
   /** Initial backoff seconds between retries (10-86400) */
   retry_backoff_seconds?: number
+  /** Confirms new targets that name a range wider than a /16 (LARGE_RANGE_UNCONFIRMED without). */
+  confirm_large_range?: boolean
 }
 
 /**
@@ -414,8 +440,15 @@ export interface ScanConfigListFilters {
   scan_type?: ScanType
   schedule_type?: ScheduleType
   status?: ScanConfigStatus
-  tags?: string
-  search?: string
+  /** Scans with any of these tags (comma-separated). */
+  tag?: string
+  /** Search the name and the description. */
+  q?: string
+  /**
+   * A filter the page's controls cannot show (an OR across fields, a group), as query
+   * text. The list is fetched through POST /scans/search (features/scans/api).
+   */
+  fq?: string
   /** Also list one-off (ad-hoc quick) scans; hidden by default. */
   include_ad_hoc?: boolean
   /** Who owns the scan: people's scans (`user`) or the platform's managed scans (`system`). */

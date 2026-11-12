@@ -31,7 +31,7 @@ const scopeTargetSelectQuery = `
 	       expires_at, reason, max_tier, approvals_required, approved_at, rejected_by, rejected_at, origin, discovery,
 	       authorization_source, program_id, letter_id,
 	       approval_reminded_at, attested_at, attested_by, attestation_requested_at,
-	       ports, protocol
+	       ports, protocol, supersedes_id, superseded_by_id
 	FROM scope_targets
 `
 
@@ -66,6 +66,8 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		attestReqAt sql.NullTime
 		ports       string
 		protocol    string
+		supersedes  sql.NullString
+		supersededB sql.NullString
 	)
 
 	err := row.Scan(
@@ -74,7 +76,7 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 		&expiresAt, &reason, &maxTier, &approvals, &approvedAt, &rejectedBy, &rejectedAt, &origin, &discovery,
 		&authSource, &programID, &letterID,
 		&remindedAt, &attestedAt, &attestedBy, &attestReqAt,
-		&ports, &protocol,
+		&ports, &protocol, &supersedes, &supersededB,
 	)
 	if err != nil {
 		return nil, err
@@ -119,11 +121,30 @@ func (r *ScopeTargetRepository) scanTarget(row interface{ Scan(...any) error }) 
 	if err := t.SetConstraint(scope.Constraint{Ports: ports, Protocol: protocol}); err != nil {
 		return nil, fmt.Errorf("scope target %s: %w", id, err)
 	}
+	t.RestoreReplacement(scopeIDPtr(supersedes), scopeIDPtr(supersededB))
 	t.RestoreRemindedAt(scopeTimePtr(remindedAt))
 	t.RestoreAttestation(scope.AttestationState{
 		AttestedAt: scopeTimePtr(attestedAt), AttestedBy: attestedBy.String, RequestedAt: scopeTimePtr(attestReqAt),
 	})
 	return t, nil
+}
+
+func scopeIDPtr(s sql.NullString) *shared.ID {
+	if !s.Valid {
+		return nil
+	}
+	id, err := shared.IDFromString(s.String)
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+func scopeIDArg(id *shared.ID) any {
+	if id == nil {
+		return nil
+	}
+	return id.String()
 }
 
 func scopeTimePtr(t sql.NullTime) *time.Time {
@@ -210,8 +231,8 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 			id, tenant_id, target_type, pattern, description, priority, status, tags,
 			created_by, created_at, updated_at,
 			expires_at, reason, max_tier, approvals_required, approved_at, origin, discovery,
-			authorization_source, program_id, letter_id, ports, protocol
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+			authorization_source, program_id, letter_id, ports, protocol, supersedes_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
 	`
 	var programID, letterID any
 	if pid := target.ProgramID(); pid != nil {
@@ -244,8 +265,12 @@ func insertScopeTarget(ctx context.Context, exec sqlExecer, target *scope.Target
 		letterID,
 		target.Constraint().Ports,
 		target.Constraint().Protocol,
+		scopeIDArg(target.Supersedes()),
 	)
 	if err != nil {
+		if isPendingReplacementViolation(err) {
+			return scope.ErrReplacementPending
+		}
 		if isUniqueViolation(err) {
 			return scope.ErrTargetAlreadyExists
 		}
@@ -275,6 +300,69 @@ func (r *ScopeTargetRepository) GetByID(ctx context.Context, tenantID, id shared
 // Update updates an existing scope target and replaces its approvals, in
 // one transaction.
 func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin scope target update: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := r.updateInTx(ctx, tx, target); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SaveReplacement writes a pattern replacement in one transaction: it
+// creates created (nil: nothing to create) and updates every entry of
+// updated (the replacement taking effect, the entry it retires). Either all
+// of it is saved or none of it.
+func (r *ScopeTargetRepository) SaveReplacement(ctx context.Context, created *scope.Target, updated ...*scope.Target) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin scope replacement: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if created != nil {
+		if err := insertScopeTarget(ctx, tx, created); err != nil {
+			return err
+		}
+	}
+	for _, t := range updated {
+		if err := r.updateInTx(ctx, tx, t); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// PendingReplacement answers the id of the replacement of entry id that
+// waits for approval, nil when there is none.
+func (r *ScopeTargetRepository) PendingReplacement(ctx context.Context, tenantID, id shared.ID) (*shared.ID, error) {
+	var pending string
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM scope_targets
+		WHERE tenant_id = $1 AND supersedes_id = $2 AND status = 'pending'
+		LIMIT 1`, tenantID.String(), id.String()).Scan(&pending)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find pending scope replacement: %w", err)
+	}
+	pid, err := shared.IDFromString(pending)
+	if err != nil {
+		return nil, fmt.Errorf("find pending scope replacement: %w", err)
+	}
+	return &pid, nil
+}
+
+// isPendingReplacementViolation reports a second pending replacement of one
+// entry (ux_scope_targets_pending_replacement).
+func isPendingReplacementViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "ux_scope_targets_pending_replacement"
+}
+
+func (r *ScopeTargetRepository) updateInTx(ctx context.Context, tx *sql.Tx, target *scope.Target) error {
 	query := `
 		UPDATE scope_targets SET
 			description = $2,
@@ -293,15 +381,10 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 			discovery = $16,
 			attested_at = $17,
 			attested_by = $18,
-			attestation_requested_at = $19
+			attestation_requested_at = $19,
+			superseded_by_id = $20
 		WHERE id = $1 AND tenant_id = $7
 	`
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin scope target update: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	result, err := tx.ExecContext(ctx, query,
 		target.ID().String(),
 		nullString(target.Description()),
@@ -322,8 +405,12 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 		target.AttestedAt(),
 		nullString(target.AttestedBy()),
 		target.AttestationRequestedAt(),
+		scopeIDArg(target.SupersededBy()),
 	)
 	if err != nil {
+		if isPendingReplacementViolation(err) {
+			return scope.ErrReplacementPending
+		}
 		return fmt.Errorf("failed to update scope target: %w", err)
 	}
 
@@ -334,10 +421,7 @@ func (r *ScopeTargetRepository) Update(ctx context.Context, target *scope.Target
 	if rows == 0 {
 		return scope.ErrTargetNotFound
 	}
-	if err := r.saveApprovals(ctx, tx, target); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return r.saveApprovals(ctx, tx, target)
 }
 
 // MarkReminded records a reminder of the approvers of a pending entry when

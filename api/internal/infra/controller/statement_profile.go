@@ -32,6 +32,8 @@ var sqlProfiles = map[string]SQLProfile{
 	"FindingPriorityController":          SQLLong, // priority queue enqueue and batch writes
 	"FindingPriorityReconcileController": SQLLong, // per-tenant reconcile enqueue over all open findings
 	"DashboardFactsController":           SQLLong, // dirty-queue processing
+	"AssetDomainMembershipController":    SQLLong, // queue batch: SET LOCAL statement_timeout 60s in ProcessQueue
+	"AssetPortsController":               SQLLong, // queue batch: SET LOCAL statement_timeout 30s in ProcessQueue
 	"DashboardFactReconcileController":   SQLLong, // full run steps, partition upkeep
 
 	"VulnFeedImportController":            SQLLong,  // CVE corpus chunks and bundle finish
@@ -46,6 +48,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"IngestWorkerController":              SQLLong,  // asset and finding batch upserts, payload clearing
 	"EventRetentionController":            SQLLong,  // vuln event and sensor result prunes
 	"AssetTechnologyBackfillController":   SQLBatched,
+	"SourceRetirementController":          SQLBatched, // retired import sources: archive and restore batches of 1,000 findings
 	"DashboardSnapshotsController":        SQLBatched, // per-tenant widget reads over the fact tables, 5 s context timeout each
 	"EASMPostureController":               SQLLong,    // per-organization posture rebuild: SET LOCAL statement_timeout 2 min in Rebuild
 	"AssetIdentityBackfillController":     SQLBatched,
@@ -65,6 +68,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"AssetPurgeController":                SQLBatched,
 	"OneOffScanArchiveController":         SQLBatched,
 	"CoverageScheduler":                   SQLBatched, // keyset batches per tenant and capability
+	"ExplorationController":               SQLBatched, // per tenant: rule candidates, frontier reads and run findings under LIMIT; rollup over one exploration's leads
 	"AssetCoverageController":             SQLBatched,
 	"AssetRiskScoreController":            SQLBatched,
 	"AssetRiskReconcileController":        SQLBatched,
@@ -88,6 +92,7 @@ var sqlProfiles = map[string]SQLProfile{
 	"RemediationSuggestionController":     SQLBatched,
 	"RemediationTaskController":           SQLBatched,
 	"ScopeEffectsController":              SQLBatched,
+	"AssetLivenessController":             SQLBatched,
 	"RemediationTaskQueryController":      SQLBatched,
 	"ThreatAlertPlannerController":        SQLBatched,
 	"ThreatModelRefreshController":        SQLBatched,

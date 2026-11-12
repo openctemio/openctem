@@ -30,6 +30,7 @@ import type { ApiApproval, ApprovalStatus } from '../types/finding.types'
 import { ifMatchRowVersion, splitRowVersion, type WithRowVersion } from '../lib/finding-conflict'
 import type { ApprovalEvaluation, ApprovalPolicy } from '../lib/approval-policy'
 import { buildFindingsEndpoint, buildFindingsQuery } from './findings-query'
+import { fetchAdvancedFindings } from './advanced-fetch'
 
 // ============================================
 // SWR CONFIGURATION
@@ -94,6 +95,7 @@ function buildAssetFindingsEndpoint(
 // ============================================
 
 export async function fetchFindings(url: string): Promise<ApiFindingListResponse> {
+  if (/[?&]fq=/.test(url)) return fetchAdvancedFindings(url)
   return get<ApiFindingListResponse>(url)
 }
 

@@ -63,6 +63,11 @@ vi.mock('@/features/proxy-pools', () => ({ SensorNetworkPathSection: () => null 
 vi.mock('@/lib/api/tool-hooks', () => ({ useToolAvailability: () => ({ data: undefined }) }))
 // The grant panel has its own tests (sensor-grant-section.test.tsx).
 vi.mock('../sensor-grant-section', () => ({ SensorGrantSection: () => null }))
+vi.mock('../sensor-readiness', () => ({
+  SensorReadinessChecklist: ({ sensorId }: { sensorId: string }) => (
+    <div data-testid="readiness-stub">{sensorId}</div>
+  ),
+}))
 vi.mock('../sensor-activity', () => ({
   SensorRecentActivity: () => <p>recent activity</p>,
 }))

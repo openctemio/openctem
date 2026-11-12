@@ -6,6 +6,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -81,7 +82,87 @@ func (r *AttributionRepository) AddressesBehindNames(ctx context.Context, tenant
 	if err := r.fillAddressPorts(ctx, tenantID, out, nameIDs); err != nil {
 		return nil, err
 	}
+	if err := r.fillNetworkLookup(ctx, tenantID, out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// networkLookupCapability is the coverage capability that finds an
+// address's network (run by sensors).
+const networkLookupCapability = "lookup.asn"
+
+// fillNetworkLookup sets each row's Lookup from the coverage ledger,
+// tenant-scoped (no row: the lookup is not planned yet).
+func (r *AttributionRepository) fillNetworkLookup(ctx context.Context, tenantID shared.ID, rows []easm.AddressBehindNames) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(rows))
+	for _, a := range rows {
+		ids = append(ids, a.AssetID)
+	}
+	q, err := r.db.QueryContext(ctx, `
+		SELECT asset_id::text, state, COALESCE(NULLIF(reason, ''), last_outcome), last_error, last_attempt_at
+		FROM asset_coverage
+		WHERE tenant_id = $1 AND capability = $2 AND vantage = '' AND asset_id::text = ANY($3)`,
+		tenantID.String(), networkLookupCapability, pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("network lookups of addresses: %w", err)
+	}
+	defer q.Close()
+	byID := map[string]easm.LedgerLookup{}
+	for q.Next() {
+		var (
+			id string
+			l  easm.LedgerLookup
+			at sql.NullTime
+		)
+		if err := q.Scan(&id, &l.State, &l.Reason, &l.LastError, &at); err != nil {
+			return err
+		}
+		if at.Valid {
+			t := at.Time
+			l.LastAttemptAt = &t
+		}
+		byID[id] = l
+	}
+	if err := q.Err(); err != nil {
+		return err
+	}
+	for i := range rows {
+		rows[i].Lookup = byID[rows[i].AssetID]
+	}
+	return nil
+}
+
+// RequeueNetworkLookup makes the network lookup of the tenant's address
+// assets due now (a pair already queued is left alone; a missing pair is
+// created due). Only active, not deleted address assets of the tenant are
+// touched.
+func (r *AttributionRepository) RequeueNetworkLookup(ctx context.Context, tenantID shared.ID, assetIDs []string) (int, error) {
+	if len(assetIDs) == 0 {
+		return 0, nil
+	}
+	var n int
+	err := r.db.QueryRowContext(ctx, `
+		WITH a AS (
+			SELECT id FROM assets
+			WHERE tenant_id = $1 AND id::text = ANY($3) AND asset_type = 'ip_address'
+			  AND deleted_at IS NULL AND status = 'active'
+		), up AS (
+			INSERT INTO asset_coverage (tenant_id, asset_id, capability, vantage, state, next_due_at)
+			SELECT $1, a.id, $2, '', 'due', now() FROM a
+			ON CONFLICT (tenant_id, asset_id, capability, vantage) DO UPDATE
+			SET state = 'due', reason = '', next_due_at = now(), fail_streak = 0, updated_at = now()
+			WHERE asset_coverage.state <> 'queued'
+			RETURNING 1
+		)
+		SELECT count(*) FROM up`, tenantID.String(), networkLookupCapability, pq.Array(assetIDs)).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("requeue network lookups: %w", err)
+	}
+	return n, nil
 }
 
 // fillAddressPorts sets each row's Ports: the ports asset_services records

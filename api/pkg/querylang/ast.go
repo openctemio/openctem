@@ -62,6 +62,12 @@ const (
 	ValNumber                        // 12, -1.5
 	ValBool                          // true, false
 	ValRelative                      // -14d
+	// ValAge is an unsigned duration of the short form ("7d"): an age, so
+	// last_seen_at<7d is "seen less than 7 days ago".
+	ValAge
+	// ValWord is a bare value of the short form that is not a name: an
+	// address, a domain, a pattern, a date ("10.0.0.0/8", "*.example.com").
+	ValWord
 )
 
 // Value is a literal as written. Typing happens against the field when
@@ -86,6 +92,9 @@ type Compare struct {
 	OpPos Span
 	Value Value
 	Span  Span
+	// Implicit marks a bare word the short form typed (an address, a CVE
+	// id): when the caller may not use its field, it is a text search.
+	Implicit bool
 }
 
 // In is "path [not] in (v, ...)".
@@ -113,10 +122,12 @@ type IsEmpty struct {
 	Span   Span
 }
 
-// Text is `text ~ "words"`: the entity's text search.
+// Text is `text ~ "words"`: the entity's text search. Bare marks plain
+// words of the short form (adjacent bare words are one search).
 type Text struct {
 	Value Value
 	Span  Span
+	Bare  bool
 }
 
 func (e *Logic) exprSpan() Span   { return e.Span }

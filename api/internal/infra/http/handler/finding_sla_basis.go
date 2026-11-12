@@ -18,7 +18,7 @@ import (
 
 // FindingSLAExplainer explains a deadline from the governing policy.
 type FindingSLAExplainer interface {
-	ExplainDeadline(ctx context.Context, tenantID, assetID, priorityClass string, severity vulnerability.Severity) (*slaapp.Explanation, error)
+	ExplainDeadline(ctx context.Context, tenantID, assetID, practice, priorityClass string, severity vulnerability.Severity) (*slaapp.Explanation, error)
 }
 
 // FindingSLAClockReader reads when a finding's SLA clock started.
@@ -68,7 +68,11 @@ func (h *VulnerabilityHandler) enrichFindingWithSLABasis(ctx context.Context, te
 	if !f.AssetID().IsZero() {
 		assetID = f.AssetID().String()
 	}
-	e, err := h.slaExplainer.ExplainDeadline(ctx, tenantID, assetID, pc, f.Severity())
+	practice := ""
+	if f.Practice() == vulnerability.PracticeCompliance {
+		practice = string(vulnerability.PracticeCompliance)
+	}
+	e, err := h.slaExplainer.ExplainDeadline(ctx, tenantID, assetID, practice, pc, f.Severity())
 	if err != nil {
 		h.logger.Debug("sla basis: explain failed", "error", err)
 		return

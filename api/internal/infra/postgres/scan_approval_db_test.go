@@ -124,3 +124,46 @@ func TestScanApprovals_TenantScoped_DB(t *testing.T) {
 		t.Fatalf("facts of an unrelated root: %+v", f)
 	}
 }
+
+// The approval rules read each target's effective criticality: an asset whose
+// own criticality is low but whose business unit (through its parent) is
+// critical counts as critical, the same value finding priority uses. Deleted
+// assets are not targets, and another tenant never reads the asset.
+func TestScanApprovals_TargetFactsUseEffectiveCriticality_DB(t *testing.T) {
+	db := openScanDB(t)
+	ctx := context.Background()
+	repo := NewScanApprovalRepository(&DB{DB: db})
+	tenant := seedScanTriggerTenant(ctx, t, db)
+	other := seedScanTriggerTenant(ctx, t, db)
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("%v\n%s", err, q)
+		}
+	}
+	low, gone := shared.NewID().String(), shared.NewID().String()
+	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status) VALUES ($1, $2, 'pay.acme.vn', 'domain', 'low', 'active')`, low, tenant.String())
+	exec(`INSERT INTO assets (id, tenant_id, name, asset_type, criticality, status, deleted_at) VALUES ($1, $2, 'old.acme.vn', 'domain', 'critical', 'active', now())`, gone, tenant.String())
+
+	f, err := repo.TargetAssetFacts(ctx, tenant, []string{"pay.acme.vn", "old.acme.vn"}, nil, nil)
+	if err != nil || f.MaxCriticality != "low" {
+		t.Fatalf("own criticality, deleted asset ignored: %v %+v", err, f)
+	}
+
+	// Another tenant's critical unit raises nothing (a cross-tenant
+	// membership is refused by the (tenant, asset) foreign key, and the
+	// lookup filters on the tenant).
+	exec(`INSERT INTO business_units (id, tenant_id, name, criticality) VALUES ($1, $2, 'Foreign', 'critical')`, shared.NewID().String(), other.String())
+	if f, err := repo.TargetAssetFacts(ctx, other, []string{"pay.acme.vn"}, nil, nil); err != nil || f.MaxCriticality != "none" {
+		t.Fatalf("another tenant sees the asset: %v %+v", err, f)
+	}
+
+	// A child unit under a critical parent raises the asset to critical.
+	parent, child := shared.NewID().String(), shared.NewID().String()
+	exec(`INSERT INTO business_units (id, tenant_id, name, criticality) VALUES ($1, $2, 'Payments', 'critical')`, parent, tenant.String())
+	exec(`INSERT INTO business_units (id, tenant_id, name, criticality, parent_id) VALUES ($1, $2, 'Checkout', 'low', $3)`, child, tenant.String(), parent)
+	exec(`INSERT INTO business_unit_assets (id, tenant_id, business_unit_id, asset_id) VALUES ($1, $2, $3, $4)`, shared.NewID().String(), tenant.String(), child, low)
+	if f, err := repo.TargetAssetFacts(ctx, tenant, []string{"pay.acme.vn"}, nil, nil); err != nil || f.MaxCriticality != "critical" {
+		t.Fatalf("unit-raised asset: %v %+v", err, f)
+	}
+}

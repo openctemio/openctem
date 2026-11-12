@@ -63,9 +63,19 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// 1 from the assets an emerging-threat alert covers (threat_alert_assets) and
 	// 1 from asset risk change requests (asset_risk_requests) and
 	// 1 from name resolution states (asset_resolution) and
-	// 1 from monitored web pages (web_watches).
-	if n != 56 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 56 validated", n, allValid.Bool)
+	// 1 from monitored web pages (web_watches) and
+	// 2 from the domain membership ledger and its queue (asset_domain_memberships,
+	// asset_domain_queue) and
+	// 1 from the liveness ledger (asset_liveness).
+	// 1 from the services a version-match finding is observed on (finding_locations).
+	// 2 from compliance check states and their posture (compliance_check_states,
+	// compliance_posture).
+	// 3 from open ports of assets and their queue (asset_ports: the asset and
+	// the port asset; asset_port_queue).
+	// 2 from exploration leads and their typed links (exploration_leads.subject_asset_id,
+	// exploration_links.asset_id).
+	if n != 67 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 67 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing

@@ -36,6 +36,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { Input } from '@/components/ui/input'
 import { useAddRemediationStep } from '../../api/use-finding-evidence'
 import type { Remediation, RemediationStepStatus, FindingDetail } from '../../types'
+import { ScannerText } from '@/features/shared/components/scanner-text'
 import { CodeHighlighter } from './code-highlighter'
 import { MobilizationBriefCard } from './mobilization-brief-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
@@ -331,9 +332,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
           {t('findings.remediationTab.recommendation', 'Recommendation')}
         </h3>
         {recommendation && recommendation !== 'No recommendation provided by scanner.' ? (
-          <div className="rounded-lg border bg-muted/30 p-4">
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{recommendation}</p>
-          </div>
+          <ScannerText text={recommendation} />
         ) : (
           <div className="rounded-lg border border-dashed p-4 text-center">
             <p className="text-muted-foreground text-sm">

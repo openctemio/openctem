@@ -77,6 +77,25 @@ function makeAsset(overrides: Partial<Asset> = {}): Asset {
 }
 
 describe('RiskSummarySection', () => {
+  it('names open findings the breakdown does not place in a severity', () => {
+    render(<RiskSummarySection asset={makeAsset({ findingCount: 1, findingSeverityCounts: {} })} />)
+    expect(screen.getByText('1 open without a severity in this breakdown.')).toBeInTheDocument()
+  })
+
+  it('shows no gap when the breakdown adds up to the count', () => {
+    render(
+      <RiskSummarySection
+        asset={makeAsset({ findingCount: 1, findingSeverityCounts: { high: 1 } })}
+      />
+    )
+    expect(screen.queryByText(/without a severity/)).not.toBeInTheDocument()
+  })
+
+  it('offers no explanation for a subject that is not an inventory asset', () => {
+    render(<RiskSummarySection asset={makeAsset()} assetBacked={false} />)
+    expect(screen.queryByRole('button', { name: 'Why this score?' })).not.toBeInTheDocument()
+  })
+
   it('shows the risk score, finding count and severity breakdown', () => {
     render(<RiskSummarySection asset={makeAsset()} />)
     expect(screen.getByText(/^73$/)).toBeInTheDocument()

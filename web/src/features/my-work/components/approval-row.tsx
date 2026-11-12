@@ -8,7 +8,6 @@ import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import { MetaLine } from '@/features/shared/components/text-layout'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useTranslation } from '@/context/i18n-provider'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { approvalRequester } from '@/features/findings/lib/approvals'
@@ -47,8 +46,7 @@ export function ApprovalRow({
   onFocus?: () => void
   rowRef?: (el: HTMLLIElement | null) => void
 }) {
-  const { t, locale } = useTranslation()
-  const dateLocale = dateFnsLocaleFor(locale)
+  const { t } = useTranslation()
   const kind = t(
     `myWork.kind.${approval.requested_status}`,
     KIND_LABELS[approval.requested_status] ?? approval.requested_status

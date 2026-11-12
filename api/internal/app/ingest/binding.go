@@ -64,6 +64,9 @@ type Binding struct {
 	// StepRunID is the workflow step run the bound command belongs to (nil
 	// for a command outside a scan run): the scan run its results came from.
 	StepRunID *shared.ID
+	// ScanZoneID is the scan zone the bound command was routed to (nil:
+	// none): the vantage point of the sensor's DNS answers.
+	ScanZoneID *shared.ID
 	// CIRunID is the CI run the report belongs to (BindingCIRun only).
 	CIRunID *shared.ID
 	// DispatchedAt is when the bound command was handed to the sensor
@@ -96,7 +99,7 @@ func CommandBinding(cmd *command.Command) Binding {
 	}
 	ports, top := command.PayloadPortSettings(cmd.Payload)
 	return Binding{Kind: BindingCommand, CommandID: &id, Targets: CommandTargets(cmd), Tool: commandTool(cmd),
-		CommandType: cmd.Type, Capability: command.PayloadCapability(cmd.Payload), StepRunID: cmd.StepRunID,
+		CommandType: cmd.Type, Capability: command.PayloadCapability(cmd.Payload), StepRunID: cmd.StepRunID, ScanZoneID: cmd.ScanZoneID,
 		DispatchedAt: dispatched, JobPorts: ports, JobTopPorts: top}
 }
 
@@ -250,6 +253,14 @@ func (t coverTarget) namesLocator(host, path string) bool {
 // report's assets are processed.
 type alterScope struct {
 	all bool
+	// templatePosture is the http_posture each web origin's template info
+	// matches prove, by report asset ref (info_facts.go); applied by
+	// sanitizeHTTPPosture.
+	templatePosture map[string]map[string]any
+	// factStored holds the indexes of the report findings whose template
+	// fact left content on its asset (info_facts.go); routeInfoMatches
+	// takes only those out of the findings.
+	factStored map[int]bool
 	// commandBound: the report names a command assigned to the submitting
 	// sensor (BindingCommand). Only such reports may resolve findings on a
 	// source's say-so (source_resolve.go).

@@ -68,7 +68,7 @@ func (r *FindingMaterialChangeRepository) ListStandingDecisions(ctx context.Cont
 		SELECT s.id, s.tenant_id, s.finding_id, COALESCE(f.asset_id::text, ''), s.requested_status, s.tier,
 		       s.baseline, `+standingFactsSQL+`, s.expires_at,
 		       COALESCE(f.priority_class, ''), f.severity, f.sla_deadline, COALESCE(f.sla_status, ''),
-		       COALESCE(s.requested_by::text, ''),
+		       COALESCE(s.requested_by::text, ''), f.practice,
 		       ARRAY(SELECT DISTINCT x FROM (
 		           SELECT s.approved_by AS x WHERE s.approved_by IS NOT NULL
 		           UNION SELECT so.user_id FROM approval_signoffs so
@@ -113,7 +113,7 @@ func scanStandingDecision(rows *sql.Rows) (vulnerability.StandingDecision, error
 		approvers                            pq.StringArray
 	)
 	if err := rows.Scan(&id, &tenant, &findingID, &asset, &status, &d.Tier, &baseline, &current, &d.ExpiresAt,
-		&d.PriorityClass, &d.Severity, &d.SLADeadline, &d.SLAStatus, &requester, &approvers); err != nil {
+		&d.PriorityClass, &d.Severity, &d.SLADeadline, &d.SLAStatus, &requester, &d.Practice, &approvers); err != nil {
 		return d, fmt.Errorf("scan standing decision: %w", err)
 	}
 	d.ApprovalID, _ = shared.IDFromString(id)

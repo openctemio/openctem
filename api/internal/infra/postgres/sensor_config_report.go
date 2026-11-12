@@ -16,7 +16,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-var _ sensor.ConfigReportStore = (*SensorRepository)(nil)
+var (
+	_ sensor.ConfigReportStore = (*SensorRepository)(nil)
+	_ sensor.ConfigCheckLister = (*SensorRepository)(nil)
+)
 
 // SaveConfigReport implements sensor.ConfigReportStore.
 func (r *SensorRepository) SaveConfigReport(ctx context.Context, tenantID, sensorID shared.ID, rep *sensor.ConfigReport,
@@ -124,4 +127,50 @@ func (r *SensorRepository) GetConfigReport(ctx context.Context, tenantID, sensor
 		return nil, fmt.Errorf("failed to decode sensor config report: %w", err)
 	}
 	return &out, nil
+}
+
+// ListConfigChecks implements sensor.ConfigCheckLister: the tenant's active
+// sensors only (the join repeats the tenant guard on both tables).
+func (r *SensorRepository) ListConfigChecks(ctx context.Context, tenantID shared.ID, checkID string, limit int) ([]sensor.SensorConfigCheck, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT s.id, s.name, c.chk
+		FROM sensor_config_reports cr
+		JOIN sensors s ON s.id = cr.sensor_id AND s.tenant_id = cr.tenant_id
+		CROSS JOIN LATERAL jsonb_array_elements(
+			CASE WHEN jsonb_typeof(cr.report->'checks') = 'array' THEN cr.report->'checks' ELSE '[]'::jsonb END
+		) AS c(chk)
+		WHERE cr.tenant_id = $1 AND s.status = 'active' AND c.chk->>'id' = $2
+		ORDER BY s.name, s.id
+		LIMIT $3
+	`, tenantID.String(), checkID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list sensor config checks: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []sensor.SensorConfigCheck
+	for rows.Next() {
+		var (
+			id, name string
+			doc      []byte
+			item     sensor.SensorConfigCheck
+		)
+		if err := rows.Scan(&id, &name, &doc); err != nil {
+			return nil, fmt.Errorf("failed to scan sensor config check: %w", err)
+		}
+		if item.SensorID, err = shared.IDFromString(id); err != nil {
+			continue
+		}
+		if err := json.Unmarshal(doc, &item.Check); err != nil {
+			continue
+		}
+		item.SensorName = name
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list sensor config checks: %w", err)
+	}
+	return out, nil
 }

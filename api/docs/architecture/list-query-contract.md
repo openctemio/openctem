@@ -38,7 +38,14 @@ tenant predicate and, for a restricted caller, the data-scope predicate.
    the registry, and `TestOpenAPIDocumentsFilterParams` fails when the spec
    and the parser disagree.
 5. The registry test fails on suffix-ending names, missing enums or ops the
-   type cannot support.
+   type cannot support. `TestFindingTemplatesPinTenant` fails when a findings
+   template reads a tenant table without `{tenant}`.
+6. A value that needs checking or a canonical form (a domain, a name pattern)
+   gets `Normalize` (runs at parse time; its error is the reason returned) and,
+   when one value binds several, `Expand` (runs at compile time; the result is
+   still bound, never rendered). A pattern, contains or other costly leaf is
+   `Expensive`: a filter takes at most `MaxExpensiveLeaves` (2) of them, and
+   a third is refused with "narrow the filter".
 
 ## Findings (the first migrated resource)
 
@@ -52,6 +59,25 @@ tenant predicate and, for a restricted caller, the data-scope predicate.
 
 The registry also carries the findings visibility rule every non-admin
 caller gets: pentest findings only for members of their campaign.
+
+### Asset filters of findings
+
+| Param | Meaning | Served by |
+|---|---|---|
+| `asset_type`, `asset_type_not` | the stored type of the finding's asset (`domain`, `subdomain`, `ip_address`, `service`, `repository`, ...) | `(tenant_id, asset_type, ...)` index on assets |
+| `asset_domain`, `asset_domain_not` | `example.com`: the name and every asset that belongs under it; `*.example.com`: only under it. Upper case, a trailing dot and Unicode labels are normalised; a bare public suffix (`com.vn`) is refused; up to 20 values | the `(tenant_id, key)` primary key of `asset_domain_memberships` ([asset-domain-membership.md](asset-domain-membership.md)) |
+| `asset_ip` | the finding's asset is an `ip_address` asset inside an address or CIDR range (`10.0.0.0/8`, `2001:db8::/32`); up to 20 values; needs `assets:read` | `idx_assets_ip_addr (tenant_id, parse_asset_ip(name))`, one btree range per value ([database-notes.md](database-notes.md)) |
+| `asset_name`, `asset_name_not` | a name pattern: `*` any characters, `?` one, everything else literal (`%`, `_` and `\` too); at most 3 wildcards, 200 characters, and a run of 3 literal characters; up to 10 values. Expensive | the trigram index on `assets.name` |
+
+Every one is a tenant-pinned subquery that only narrows: the data scope, the
+pentest visibility rule and the hidden-asset rule still apply to the list,
+counts, groups, export, saved views and the MCP `list_findings` tool.
+
+Measured on a scratch database with 100k findings and 50k assets per tenant
+(two tenants): `asset_domain=<domain with 17k member assets>` counts 35k
+findings in 16 ms and pages them in 52 ms; one host's domain 0.1 ms;
+`asset_type=subdomain,repository` counts 40k findings in 19 ms;
+`asset_name=*.<domain>` pages in 28 ms.
 
 ### Quick views
 
@@ -120,6 +146,55 @@ counts the same filtered set by status. Both need `assets:read`. Subjects and
 issuers are chosen by whoever issued the certificate: clients render them as
 text.
 
+## Scans (`GET /scans`, `POST /scans/search`)
+
+The scans list reads the `scans` registry (`pkg/domain/scan/scan_fields.go`).
+A scan is tenant configuration (schedule, targets, tool), not an asset row, so
+the registry is `Unscoped` (the reason is in the registry): the tenant
+predicate is first, no data scope is added, and every caller with `scans:read`
+sees the tenant's saved scans, exactly as before the migration. Fields:
+`id`, `name` (a pattern with `*` and `?`, or `name_contains`), `status`,
+`scan_type`, `schedule_type`, `sensor_preference`, `origin` (`user` or
+`system`), `tag`, `asset_group_id` (the legacy single group and the list),
+`scan_workflow_id`, `profile_id`, `scan_zone_id`, `scanner_name`,
+`last_run_status`, `created_by`, `created_at`, `last_run_at`, `next_run_at`,
+`total_runs` and `failed_runs`. `q` searches the name and the description.
+Sortable: `name` (default), `created_at`, `last_run_at`, `next_run_at`,
+`total_runs`.
+
+Two rules are added by the server to every request, through registry fields a
+request can not name (`archived`, `ad_hoc`): archived scans are never listed,
+and quick scans that were never saved (`ad_hoc`) are listed only with
+`include_ad_hoc=true` or when the request asks for `origin=system` at the top
+level of its AND (the scans a platform policy manages are ad hoc by nature). A
+`origin=system` inside an OR or a NOT lifts nothing. `include_ad_hoc` is a list
+option, not a filter: `Options.Extra` on the route, a query parameter on
+`POST /scans/search` too.
+
+Old names: `search` (now `q`) and `tags` (now `tag`) are aliases with the
+`Deprecation`, `Sunset` and `Warning` headers and the
+`deprecated_query_param_requests_total` metric; `status`, `scan_type`,
+`schedule_type`, `origin`, `asset_group_id`, `scan_workflow_id`, `sort`, `page`
+and `per_page` are canonical names and need no alias. An unknown parameter is
+now `400 INVALID_FILTER` (strict mode). `POST /scans/search` takes the
+FilterDocument body with the same registry, permission (`scans:read`) and
+rules. The query language has a matching `scans` entity
+([query-language.md](query-language.md)).
+
+## Scan runs (`GET /scan-runs`)
+
+The tenant-wide runs list reads the `scan_runs` registry
+(`pkg/domain/scanrun/run_fields.go`, `Unscoped` for the same reason). Fields:
+`id`, `status`, `kind`, `trigger_type`, `scan_id`, `scan_workflow_id`,
+`asset_id`, `origin` (`user` or `system`: the scan of the run is managed by a
+platform policy, the scan pinned to the run's tenant on both sides),
+`created_at`, `started_at`, `completed_at`, `duration` (seconds) and
+`total_findings`; sortable by the time fields, `duration` and `total_findings`
+(default `-created_at`). Rules added by the server: system runs are left out
+unless `include_system=true` or the request names a `kind`, and a caller who
+may not read findings does not see retest and validation runs. The old
+parameters keep their names; an unknown parameter is `400 INVALID_FILTER`.
+
 ## Exposure items (`GET /attack-surface/exposures`)
 
 The Exposure Items view reads `exposure_events` joined to its live asset
@@ -151,6 +226,64 @@ with CVEs, with a known-exploited CVE, of unknown version, with open alerts).
 Both need `assets:read`. Names, versions and vendors are scan output: clients
 render them as text.
 
+## Asset inventory (`GET /assets`, `POST /assets/search`)
+
+The inventory reads its filter through the `assets` registry
+(`pkg/domain/assetlist`), compiled as the caller: the tenant predicate, the
+caller's data scope and the private program rule come first, then the
+filter; soft-deleted assets never match. The registry holds every inventory
+filter: the asset columns (`type`, `lens`, `criticality`, `exposure`,
+`environment`, `provider`, `risk_score`, times...), the relations (`tag`,
+`tag_all`, `technology`, `technology_category`, `business_unit`,
+`asset_group`, `owner`, `domain`, `under`, `ip`) and the derived states
+(`scope_status`, `monitoring_state`, `liveness`, `attribution`, `coverage`,
+`coverage_cause`, `freshness`, `resolution`, `primary`, `program_assets`).
+The derived states share their SQL with the other reads (dashboards,
+exposure items), so a figure and the list it opens agree. Every template
+that reads another table pins the caller's tenant.
+
+- `name` is the exact name or a pattern (`api-*`); `name_contains` is a
+  partial match. `technology` takes `name` or `name@version`. `domain` is
+  domain membership (names, the addresses they resolve to, services and
+  certificates, [asset-domain-membership.md](asset-domain-membership.md));
+  `under` is the name itself at or below a DNS name.
+- The tag fields count system tags of bug-bounty programs only for owners
+  and members of the program (RFC-065 §15.3).
+- `properties=key:value,...` (attribute filters) and `with_triage` are the
+  list's own params beside the filter.
+- The params the list took before (`types`, `criticalities`, `search`,
+  `min_risk_score`, `tags` with `tags_mode=all`, ...) are aliases until
+  2026-12-20 (`Deprecation`, `Sunset`, `Warning`).
+- Counts stop at 10,000: `total` is exact up to it, and above it
+  `total_capped` is true. Offsets stop at 10,000 too; `cursor` (empty for the
+  first page) pages in `last_seen desc, id desc` order with `next_cursor` and
+  no depth limit. A cursor carries a position only, never a tenant or scope.
+- `network` (the /24 of IPv4, the /64 of IPv6, `asset_ip_network`, index
+  `idx_assets_ip_network`), `port` and `service` (open ports,
+  [asset-ports.md](asset-ports.md)) filter the IP addresses tab. Every
+  address row carries `ip`: its network, up to 3 names resolving to it and up
+  to 5 open ports, with totals, counting only names and ports in the
+  caller's scope. `GET /assets/networks` groups the matching addresses by
+  network (at most 500).
+- `?view=<id>` runs a saved view of the `assets` page as the caller.
+- The asset inventory page (web) sends only these names. Its own URL keeps
+  the page's older params (`types`, `criticalities`, `tags`...) so no link
+  breaks, and carries the fields it has no control for (`ip`, `network`,
+  `port_gte`...) under the names above. Inside the External surface lens
+  (`?lens=external_surface`) the type is a tab (`?tab=ip_address`): a locked
+  `type` condition that is not part of the editable query text; an old
+  `types=<one type>` link opens the matching tab. The Query toggle edits the
+  same filter as text: a filter the chips can show is written back as flat
+  params, any other (an OR across fields, a group) is kept whole as `fq` and
+  runs as the document `POST /query/parse` made of it, through
+  `POST /assets/search`; the page never sends the text to a list endpoint.
+  Saved views of the `assets` page store the list's params, or the checked
+  document of an `fq` filter, with the tab's type. "Group by network" lists
+  `GET /assets/networks` for the same params (not for an `fq` filter), and
+  every total shows "10,000+" when `total_capped` is true.
+- List and count run in one read-only transaction under a 5 s statement
+  timeout.
+
 ## Errors
 
 A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the
@@ -167,6 +300,19 @@ A bad filter is `400` with code `INVALID_FILTER` and `details[]` naming the
   lists the accepted names.
 - Old names (`severities`, `search`, …) are aliases: they work, answer with
   `Deprecation`/`Sunset` and count in `deprecated_query_param_requests_total`.
+
+## Text query (search boxes)
+
+A search box may hold the short form of the query language
+(`severity>=high kev=true -status:accepted`, [query-language.md](query-language.md#short-form-search-boxes)).
+The list endpoints never receive the text: the page sends it to
+`POST /api/v1/query/parse`, which answers the version 1 filter document (and,
+when every condition is a chip, the flat params). A filter chips can show
+stays in today's flat params, so links keep their form; one they cannot (an
+OR across fields, a group) is `fq=<canonical text>` in the page URL, and the
+page sends its document to `POST /findings/search`. Requests that cannot
+carry it (stats, export, bulk by filter) fail closed: an `fq` param is an
+unknown param (400), never a wider read.
 
 ## Findings search (`q`)
 
@@ -197,7 +343,9 @@ limiter.
 ## Limits
 
 50 leaves, depth 3, 100 values per list (500 for id fields in POST), 200
-characters per value (`q` 255), 32 KB POST body.
+characters per value (`q` 255), 32 KB POST body, 2 expensive leaves (pattern,
+contains). List and count statements run under a 5 s statement timeout; a
+timeout is a 503 `QUERY_TIMEOUT` ("narrow the filter").
 
 ## Export
 
@@ -243,8 +391,8 @@ Saved views (UI contract D15) live in `saved_views` (migration 000777) and
   Members of the group use it; only the view's owner edits or deletes it
   (decision A1); others duplicate it. 100 views per person, 100 per group.
 - A view runs as the person using it (decision A5): `?view=<id>` on
-  `/findings`, `/findings/stats`, `/findings/groups` and `/findings/export`
-  compiles the view's filter as the caller, with the request's own params
+  `/findings`, `/findings/stats`, `/findings/groups`, `/findings/export` and
+  `/assets` (page `assets`, needs `assets:read`) compiles the view's filter as the caller, with the request's own params
   overriding it field by field (`filterspec.Overlay`). Sharing a view shares
   a query, not anyone's rows.
 - Every read and write is tenant-bound; a view the caller may not see (or of

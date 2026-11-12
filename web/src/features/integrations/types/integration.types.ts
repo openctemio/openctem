@@ -137,7 +137,8 @@ export interface NotificationExtension {
   enabled_severities: NotificationSeverity[] // Dynamic severity filtering
   enabled_event_types: string[] // Dynamic event type IDs (database-driven)
   message_template?: string
-  include_details: boolean
+  /** How much of an event the channel receives: minimal, standard or full. */
+  detail_level: 'minimal' | 'standard' | 'full'
   min_interval_minutes: number
 }
 
@@ -257,7 +258,7 @@ export interface CreateNotificationIntegrationRequest {
   enabled_severities?: NotificationSeverity[] // Severity levels to notify on
   enabled_event_types?: string[] // Event type IDs (database-driven)
   message_template?: string
-  include_details?: boolean
+  detail_level?: 'minimal' | 'standard' | 'full'
   min_interval_minutes?: number
   // Non-sensitive provider config (e.g. Splunk HEC hec_url / index / sourcetype).
   metadata?: Record<string, unknown>

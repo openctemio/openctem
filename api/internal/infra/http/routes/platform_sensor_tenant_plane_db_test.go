@@ -164,7 +164,7 @@ func TestPlatformSensors_TenantRoutesNotFound_DB(t *testing.T) {
 
 	// Lists and counts leave it out; a command cannot be pinned to it.
 	for _, path := range []string{"/api/v1/sensors?per_page=100", "/api/v1/sensors/stats",
-		"/api/v1/sensors/available-capabilities", "/api/v1/sensors/grant-summaries"} {
+		"/api/v1/sensors/available-capabilities", "/api/v1/sensors/grant-summaries", "/api/v1/sensors/core-addresses"} {
 		if body := h.expect(admin, http.MethodGet, path, "", http.StatusOK); strings.Contains(body, plat) ||
 			strings.Contains(body, "plat-node-7") || strings.Contains(body, "dast") {
 			t.Errorf("%s shows the platform sensor: %s", path, body)

@@ -27,7 +27,8 @@ export const SCOPE_REFUSAL_TEXT = {
   },
   deny_list: {
     label: 'Not allowed by the platform',
-    message: 'The platform does not allow this target.',
+    message:
+      'The platform does not allow this target. For a government or military domain, your platform administrator can grant an exception.',
   },
   excluded: {
     label: 'Excluded',
@@ -113,7 +114,12 @@ export const SCOPE_REFUSAL_TEXT = {
   unresolved: {
     label: 'Does not resolve',
     message:
-      'This name does not resolve in DNS from the platform. Fix its DNS record or scan its address.',
+      'This name does not resolve in DNS from the platform or from any of your sensors. Fix its DNS record, run a resolve step on a sensor that can resolve it, or scan its address.',
+  },
+  vantage_out_of_scope: {
+    label: 'Internal address not allowed',
+    message:
+      'A sensor resolves this name to a private address your organization excluded or rejected; it is not scanned.',
   },
   zone_no_sensor: {
     label: 'Zone has no sensor',
@@ -143,10 +149,14 @@ export const SCOPE_ERROR_TEXT = {
   EXCLUSION_REACHES_OUTSIDE_SCOPE:
     'This rule also matches assets you cannot see. Ask someone with access to them, or mark only the assets you see.',
   PUBLIC_SUFFIX:
-    'A public suffix (such as com.vn or azurewebsites.net) cannot be a scope entry. Enter a domain your organization registered.',
+    'A public suffix (such as com.vn or azurewebsites.net) is shared by many organizations and cannot be a scope entry. Enter a domain your organization registered.',
   DENY_LIST: 'The platform does not allow this target as a scope entry.',
+  GOVERNMENT_NAME:
+    'Government and military domains are blocked on this installation. Your platform administrator can grant an exception.',
+  SHARED_CODE_HOST:
+    'This code host is shared by many organizations. Name your own namespace, such as github.com/your-org/*.',
   CIDR_TOO_LARGE:
-    'This address range is larger than the platform allows. Split it into smaller ranges.',
+    'This public address range is larger than the platform allows. Split it into smaller ranges.',
   SCOPE_WILDCARD_NOT_ALLOWED:
     'This kind of scope entry takes no wildcard. Name one exact value, or add a domain such as *.example.com.',
   SCOPE_TARGET_TYPE_RETIRED:
@@ -178,6 +188,13 @@ export const SCOPE_ERROR_TEXT = {
   ENTRY_NOT_PENDING: 'This entry is not waiting for approval any more.',
   ENTRY_EXPIRED: 'This entry expired. Renew it with a new expiry instead.',
   ENTRY_REJECTED: 'This entry was rejected. Create a new one if it is still needed.',
+  ENTRY_SUPERSEDED: 'This entry was replaced by a new entry. Change the new entry instead.',
+  ENTRY_NOT_REPLACEABLE:
+    'Only an entry in effect can have its pattern replaced. Remove this one and add a new entry instead.',
+  REPLACEMENT_PENDING:
+    'A replacement of this entry is already waiting for approval. Approve, reject or delete it first.',
+  REPLACE_SAME_PATTERN: 'The new pattern is the same as the current one.',
+  REPLACE_REASON_REQUIRED: 'Say why the pattern changes. The reason is kept in the audit log.',
   STEP_UP_REQUIRED: 'Confirm your identity to make this change.',
   STEP_UP_UNAVAILABLE:
     'This change needs you to confirm your identity, and your account has no way to do that here. Sign out and sign in again, then retry.',

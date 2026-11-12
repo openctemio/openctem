@@ -13,6 +13,7 @@ import { get, post, put, del } from './client'
 import { handleApiError } from './error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import { scanEndpoints } from './endpoints'
+import { fetchAdvancedScans } from '@/features/scans/api/advanced-fetch'
 import type {
   ScanConfig,
   ScanConfigListResponse,
@@ -73,6 +74,7 @@ export const scanConfigKeys = {
 // ============================================
 
 async function fetchScanConfigs(url: string): Promise<ScanConfigListResponse> {
+  if (/[?&]fq=/.test(url)) return fetchAdvancedScans(url)
   return get<ScanConfigListResponse>(url)
 }
 

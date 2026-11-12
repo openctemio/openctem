@@ -13,12 +13,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const perms = vi.hoisted(() => ({ scope: true }))
 const workflow = vi.hoisted(() => ({ value: undefined as unknown }))
+const coreAddrs = vi.hoisted(() => ({ value: undefined as unknown }))
+const excluded = vi.hoisted(() => ({ calls: [] as unknown[] }))
 
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({
     can: (p: string) => (p === 'attack_surface:scope:read' ? perms.scope : true),
   }),
+}))
+vi.mock('@/lib/api/sensor-hooks', () => ({
+  useSensorCoreAddresses: () => ({ data: coreAddrs.value }),
+}))
+vi.mock('@/features/assets/api/triage-api', () => ({
+  createExclusions: async (items: { pattern: string }[], opts: unknown) => {
+    excluded.calls.push({ items, opts })
+    return {
+      results: items.map((i) => ({ ...i, result: 'created' })),
+      created: items.length,
+      existing: 0,
+      refused: 0,
+    }
+  },
 }))
 vi.mock('@/lib/api/scan-workflow-hooks', () => ({
   useScanWorkflow: () => ({ data: workflow.value }),
@@ -53,6 +69,11 @@ vi.mock('../../../hooks/use-coverage-expansion', () => ({
 }))
 vi.mock('../../../hooks/use-selector-preview', () => ({
   useSelectorPreview: () => ({ previews: [], isLoading: false, enabled: true }),
+}))
+// The organization's widest range, in host bits (16 = the /16 default).
+const rangeBits = vi.hoisted(() => ({ value: 16 }))
+vi.mock('../../../hooks/use-range-host-bits', () => ({
+  useRangeHostBits: () => rangeBits.value,
 }))
 vi.mock('../../target-picker/asset-source', () => ({ AssetSource: () => null }))
 vi.mock('../../target-picker/group-source', () => ({ GroupSource: () => null }))
@@ -90,6 +111,63 @@ describe('TargetsStep', () => {
   beforeEach(() => {
     perms.scope = true
     workflow.value = undefined
+    coreAddrs.value = undefined
+    excluded.calls = []
+    rangeBits.value = 16
+  })
+
+  it("holds a range to the organization's widest range: a /16 unless it opted in", () => {
+    const { unmount } = render(<Harness initial={withTargets(['10.0.0.0/8'])} />)
+    expect(screen.getByTestId('invalid-targets')).toHaveTextContent(
+      '10.0.0.0/8 has 16,777,216 addresses; the most one target can hold is 65,536 (/16)'
+    )
+    unmount()
+    rangeBits.value = 24
+    render(<Harness initial={withTargets(['10.0.0.0/8'])} />)
+    expect(screen.queryByTestId('invalid-targets')).toBeNull()
+  })
+
+  it('warns when range targets cover a sensor resolver, and excludes it on request', async () => {
+    const user = userEvent.setup()
+    coreAddrs.value = {
+      items: [
+        {
+          sensor_id: 's1',
+          sensor_name: 'scanner-hn',
+          addresses: [
+            { address: '10.0.0.53', role: 'resolver' },
+            { address: '192.0.2.1', role: 'gateway' },
+          ],
+        },
+      ],
+    }
+    render(<Harness initial={withTargets(['10.0.0.0/24', 'www.example.com'])} />)
+    const warning = screen.getByTestId('core-infra-warning')
+    expect(warning).toHaveTextContent('10.0.0.53')
+    expect(warning).toHaveTextContent('scanner-hn')
+    expect(warning).not.toHaveTextContent('192.0.2.1')
+    await user.click(within(warning).getByRole('button', { name: 'Exclude these' }))
+    expect(excluded.calls).toEqual([
+      {
+        items: [{ exclusion_type: 'ip_address', pattern: '10.0.0.53' }],
+        opts: expect.objectContaining({ kind: 'do_not_scan' }),
+      },
+    ])
+    expect(screen.queryByTestId('core-infra-warning')).not.toBeInTheDocument()
+  })
+
+  it('shows no core infrastructure warning when no target covers it', () => {
+    coreAddrs.value = {
+      items: [
+        {
+          sensor_id: 's1',
+          sensor_name: 'x',
+          addresses: [{ address: '10.0.0.53', role: 'resolver' }],
+        },
+      ],
+    }
+    render(<Harness initial={withTargets(['203.0.113.0/24'])} />)
+    expect(screen.queryByTestId('core-infra-warning')).not.toBeInTheDocument()
   })
 
   it('groups ranges on the result side with the ranges choice beside them, live hosts first for a new scan', () => {
@@ -140,5 +218,31 @@ describe('TargetsStep', () => {
     render(<Harness initial={withTargets(['example.com', '203.0.113.0/24'])} savedScan />)
     expect(screen.queryByTestId('coverage-choice')).not.toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Every address' })).toBeChecked()
+  })
+
+  it('edits a typed chip in place: re-validated like a new entry, empty removes it', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={withTargets(['203.0.113.0/24'])} />)
+    const field = screen.getByTestId('target-chips-field')
+    const kinds = () =>
+      within(field)
+        .getAllByRole('listitem')
+        .map((li) => li.dataset.kind)
+    expect(kinds()).toEqual(['typed'])
+
+    // A typo makes it an invalid entry (not silently kept), and fixing it restores it.
+    await user.click(within(field).getByRole('button', { name: 'Edit 203.0.113.0/24' }))
+    await user.clear(screen.getByTestId('target-chip-edit'))
+    await user.type(screen.getByTestId('target-chip-edit'), '203.0.113.0/99{Enter}')
+    expect(kinds()).toEqual(['invalid'])
+    await user.click(within(field).getByRole('button', { name: 'Edit 203.0.113.0/99' }))
+    await user.clear(screen.getByTestId('target-chip-edit'))
+    await user.type(screen.getByTestId('target-chip-edit'), '203.0.113.0/25{Enter}')
+    expect(kinds()).toEqual(['typed'])
+
+    await user.click(within(field).getByRole('button', { name: 'Edit 203.0.113.0/25' }))
+    await user.clear(screen.getByTestId('target-chip-edit'))
+    await user.keyboard('{Enter}')
+    expect(within(field).queryAllByRole('listitem')).toHaveLength(0)
   })
 })

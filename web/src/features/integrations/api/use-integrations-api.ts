@@ -623,3 +623,25 @@ export function useSetJiraWebhookSecretApi(integrationId: string) {
     async (url: string, { arg }: { arg: { secret: string } }) => put<JiraWebhookConfig>(url, arg)
   )
 }
+
+/** The preview of a channel message (POST /integrations/notifications/preview). */
+export interface NotificationPreview {
+  headline: string
+  severity: string
+  lines: { label?: string; value: string }[]
+  action_label: string
+  text: string
+  variables: string[]
+}
+
+export interface NotificationPreviewRequest {
+  detail_level?: string
+  message_template?: string
+  event_type?: string
+  locale?: string
+}
+
+/** Render a channel message from sample data; a bad template is refused (400). */
+export function previewNotificationMessage(req: NotificationPreviewRequest) {
+  return post<NotificationPreview>(`${BASE_URL}/notifications/preview`, req)
+}

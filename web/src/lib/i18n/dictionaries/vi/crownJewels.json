@@ -95,6 +95,7 @@
   "crownJewels.toast.designateFailed": "Không chỉ định được tài sản trọng yếu.",
   "crownJewels.toast.designated": "Đã chỉ định tài sản trọng yếu.",
   "crownJewels.toast.notesRequired": "Hãy nhập ghi chú tác động kinh doanh.",
+  "crownJewels.toast.removalPending": "Việc gỡ bỏ đang chờ phê duyệt. Tài sản vẫn là tài sản trọng yếu cho đến khi người thứ hai phê duyệt.",
   "crownJewels.toast.removeFailed": "Không gỡ được tài sản trọng yếu.",
   "crownJewels.toast.removed": "Đã gỡ tài sản trọng yếu.",
   "crownJewels.toast.required": "Hãy điền đủ các trường bắt buộc.",

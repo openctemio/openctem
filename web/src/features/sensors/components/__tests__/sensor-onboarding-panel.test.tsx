@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   expect: vi.fn(),
   expectation: { data: undefined as unknown },
   templateCodes: [] as (string | null)[],
+  intents: [] as unknown[],
   sensor: undefined as unknown,
   extra: {} as Record<string, unknown>,
 }))
@@ -46,8 +47,9 @@ vi.mock('@/lib/api/sensor-pairing-hooks', () => ({
   pairingSettled: (s?: string) => ['approved', 'completed', 'denied', 'expired'].includes(s ?? ''),
   usePairingExpectation: (id: string | null) =>
     id ? api.expectation : { data: undefined, error: undefined },
-  useSensorInstallTemplates: (code: string | null) => {
+  useSensorInstallTemplates: (code: string | null, _enabled?: boolean, intent?: unknown) => {
     api.templateCodes.push(code)
+    if (code) api.intents.push(intent)
     const c = code ? `\n  -e SENSOR_PAIRING_CODE='${code}' \\` : ''
     return {
       isLoading: false,
@@ -77,6 +79,7 @@ describe('SensorOnboardingPanel', () => {
     perms.granted = new Set(['sensors:pair', 'sensors:approve'])
     api.expectation = { data: undefined }
     api.templateCodes = []
+    api.intents = []
     api.sensor = undefined
     api.extra = {}
   })
@@ -348,5 +351,49 @@ describe('AddSensorButton', () => {
     perms.granted = new Set(['sensors:pair'])
     render(<AddSensorButton onClick={() => {}} />)
     expect(screen.getByRole('button', { name: 'Add sensor' })).toBeInTheDocument()
+  })
+
+  it('asks what the sensor scans first; only internal networks add the private switch', async () => {
+    api.expect.mockReset()
+    api.intents = []
+    api.expectation = { data: undefined }
+    api.expect.mockResolvedValue({
+      id: 'e1',
+      mode: 'reverse',
+      status: 'expecting',
+      code: 'K7QM4ZTD',
+      expires_at: future(),
+    })
+    const user = userEvent.setup()
+    render(<SensorOnboardingPanel />)
+    await screen.findByText(/SENSOR_PAIRING_CODE='K7QM-4ZTD'/)
+    // Internet-facing is the default: no switch, no networks field.
+    expect(screen.getByRole('radio', { name: /^Internet-facing/ })).toBeChecked()
+    expect(api.intents.at(-1)).toEqual({ purpose: 'internet' })
+    expect(screen.queryByLabelText('Networks it scans')).toBeNull()
+    expect(screen.queryByTestId('install-purpose-switch-note')).toBeNull()
+
+    await user.click(screen.getByRole('radio', { name: /^Internal networks/ }))
+    expect(api.intents.at(-1)).toEqual({ purpose: 'internal' })
+    expect(screen.getByTestId('install-purpose-switch-note')).toHaveTextContent(
+      'SENSOR_ALLOW_PRIVATE_TARGETS=1'
+    )
+    // The pin is opt-in and needs networks.
+    const pin = screen.getByRole('checkbox', { name: /restrict this host/ })
+    expect(pin).toBeDisabled()
+    await user.type(screen.getByLabelText('Networks it scans'), '10.0.0.0/16, 192.168.1.0/24')
+    expect(api.intents.at(-1)).toEqual({ purpose: 'internal' })
+    await user.click(pin)
+    expect(api.intents.at(-1)).toEqual({
+      purpose: 'internal',
+      allowed_ranges: ['10.0.0.0/16', '192.168.1.0/24'],
+    })
+
+    // Both: the switch, but never a pin (it would refuse public targets).
+    await user.click(screen.getByRole('radio', { name: /^Both/ }))
+    expect(api.intents.at(-1)).toEqual({ purpose: 'both' })
+    expect(screen.queryByRole('checkbox', { name: /restrict this host/ })).toBeNull()
+    // One code for the whole dialog, whatever the answer.
+    expect(api.expect).toHaveBeenCalledTimes(1)
   })
 })

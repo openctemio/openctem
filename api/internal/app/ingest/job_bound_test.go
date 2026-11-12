@@ -256,7 +256,8 @@ func TestJobBound_FindingsOutsideTargets(t *testing.T) {
 	}}
 	scope := newAlterScope(jobCmd("nuclei", command.CommandTypeScan, "app.example.com"))
 	err := p.processBatch(context.Background(), newTestSensor(t, tenantID), tenantID, report,
-		map[string]shared.ID{"kept": kept, "redirect": outside}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope)
+		map[string]shared.ID{"kept": kept, "redirect": outside}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope,
+		vulnerability.SourceIdentity{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,7 @@
 package integration
 
+import "github.com/openctemio/openctem/api/pkg/notifymsg"
+
 // ============================================================================
 // SEVERITY TYPES
 // ============================================================================
@@ -84,6 +86,7 @@ func AllEventCategories() []EventCategoryInfo {
 		{Category: EventCategoryApproval, Label: "Approval Events"},
 		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
 		{Category: EventCategoryExposure, Label: "Exposure Events"},
+		{Category: EventCategoryScan, Label: "Scan Events"},
 		{Category: EventCategorySensor, Label: "Sensors and CI pipelines"},
 	}
 }
@@ -171,6 +174,11 @@ const (
 	// what existing subscriptions store (migration 000230 rewrote
 	// agent.offline to it). Emitted once per offline transition, not per tick.
 	EventTypeSensorOffline EventType = "sensor.offline"
+
+	// EventTypeScanScheduleMissed fires once per scheduled occurrence the
+	// scheduler skipped because it was missed by more than one interval
+	// (research/468 D17); the scan keeps the note until a later run starts.
+	EventTypeScanScheduleMissed EventType = "scan.schedule_missed"
 
 	// CI pipeline signals (RFC-051 §10.6), emitted by the CI alert job once
 	// per scan workflow or repository while the condition holds, never per run.
@@ -272,6 +280,9 @@ func AllEventTypes() []EventTypeInfo {
 		// Sensor events - require 'sensors' module
 		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
 
+		// Scheduled scans - require 'scans' module
+		{Type: EventTypeScanScheduleMissed, Category: EventCategoryScan, Label: "Scheduled Scan Missed", Description: "A scheduled scan run was skipped because its time was missed by more than one interval (the platform was unavailable)", RequiredModule: ModuleScans},
+
 		// CI pipeline signals - require 'scans' module (CI runs live there)
 		{Type: EventTypeCIScheduleMissed, Category: EventCategorySensor, Label: "CI Scheduled Scan Missed", Description: "A CI pipeline with a schedule missed two expected runs", RequiredModule: ModuleScans},
 		{Type: EventTypeCICoverageRegression, Category: EventCategorySensor, Label: "CI Coverage Lost", Description: "A repository that had a fresh CI pipeline has none any more", RequiredModule: ModuleScans},
@@ -347,6 +358,8 @@ func DefaultEnabledEventTypes() []EventType {
 		EventTypeCIScheduleMissed,
 		EventTypeCICoverageRegression,
 		EventTypeCIRunnerOutdated,
+		// A scheduled scan that did not run is the failure nobody notices.
+		EventTypeScanScheduleMissed,
 		// Security signals about the CI gate itself.
 		EventTypeCIBreakGlass,
 		EventTypeCITokenRefusals,
@@ -395,7 +408,7 @@ func SeverityFilterApplies(eventType EventType) bool {
 		return false
 	// The CI signals carry a constant severity chosen by the CI alert job,
 	// not a finding's severity.
-	case EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated,
+	case EventTypeScanScheduleMissed, EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated,
 		EventTypeCIBreakGlass, EventTypeCITokenRefusals, EventTypeCIUngatedMerge:
 		return false
 	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
@@ -535,9 +548,10 @@ type NotificationExtension struct {
 	// Enabled event types (dynamic JSONB array - add new types without migration)
 	enabledEventTypes []EventType
 
-	// Message templates
+	// Message template (pkg/notifymsg closed variable set; empty: the
+	// default layout) and how much of an event the channel receives.
 	messageTemplate string
-	includeDetails  bool
+	detailLevel     notifymsg.Level
 
 	// Rate limiting
 	minIntervalMinutes int
@@ -549,7 +563,7 @@ func NewNotificationExtension(integrationID ID) *NotificationExtension {
 		integrationID:      integrationID,
 		enabledSeverities:  DefaultEnabledSeverities(),
 		enabledEventTypes:  DefaultEnabledEventTypes(),
-		includeDetails:     false,
+		detailLevel:        notifymsg.DefaultLevel,
 		minIntervalMinutes: 5,
 	}
 }
@@ -564,9 +578,14 @@ func ReconstructNotificationExtension(
 	enabledSeverities []Severity,
 	enabledEventTypes []EventType,
 	messageTemplate string,
-	includeDetails bool,
+	detailLevel string,
 	minIntervalMinutes int,
 ) *NotificationExtension {
+	level, err := notifymsg.ParseLevel(detailLevel)
+	if err != nil {
+		// An unreadable stored value sends the least.
+		level = notifymsg.LevelMinimal
+	}
 	if minIntervalMinutes <= 0 {
 		minIntervalMinutes = 5
 	}
@@ -583,52 +602,9 @@ func ReconstructNotificationExtension(
 		enabledSeverities:  enabledSeverities,
 		enabledEventTypes:  enabledEventTypes,
 		messageTemplate:    messageTemplate,
-		includeDetails:     includeDetails,
+		detailLevel:        level,
 		minIntervalMinutes: minIntervalMinutes,
 	}
-}
-
-// ReconstructNotificationExtensionFromBooleans creates extension from old boolean fields.
-// Used for backward compatibility during migration.
-// Note: channelID and channelName parameters are deprecated and ignored.
-func ReconstructNotificationExtensionFromBooleans(
-	integrationID ID,
-	_ string, // channelID - deprecated, now in integrations.metadata
-	_ string, // channelName - deprecated, now in integrations.metadata
-	notifyOnCritical bool,
-	notifyOnHigh bool,
-	notifyOnMedium bool,
-	notifyOnLow bool,
-	enabledEventTypes []EventType,
-	messageTemplate string,
-	includeDetails bool,
-	minIntervalMinutes int,
-) *NotificationExtension {
-	// Convert boolean flags to severity array
-	severities := make([]Severity, 0, 4)
-	if notifyOnCritical {
-		severities = append(severities, SeverityCritical)
-	}
-	if notifyOnHigh {
-		severities = append(severities, SeverityHigh)
-	}
-	if notifyOnMedium {
-		severities = append(severities, SeverityMedium)
-	}
-	if notifyOnLow {
-		severities = append(severities, SeverityLow)
-	}
-
-	return ReconstructNotificationExtension(
-		integrationID,
-		"", // channelID - deprecated
-		"", // channelName - deprecated
-		severities,
-		enabledEventTypes,
-		messageTemplate,
-		includeDetails,
-		minIntervalMinutes,
-	)
 }
 
 // Getters
@@ -643,7 +619,7 @@ func (n *NotificationExtension) ChannelName() string            { return "" }
 func (n *NotificationExtension) EnabledSeverities() []Severity  { return n.enabledSeverities }
 func (n *NotificationExtension) EnabledEventTypes() []EventType { return n.enabledEventTypes }
 func (n *NotificationExtension) MessageTemplate() string        { return n.messageTemplate }
-func (n *NotificationExtension) IncludeDetails() bool           { return n.includeDetails }
+func (n *NotificationExtension) DetailLevel() notifymsg.Level   { return n.detailLevel }
 func (n *NotificationExtension) MinIntervalMinutes() int        { return n.minIntervalMinutes }
 
 // Backward compatibility getters (derived from enabledSeverities)
@@ -708,12 +684,24 @@ func (n *NotificationExtension) SetEnabledEventTypes(types []EventType) {
 	n.enabledEventTypes = types
 }
 
-func (n *NotificationExtension) SetMessageTemplate(template string) {
+// SetMessageTemplate stores a template after validating it against the
+// closed variable set (notifymsg.ValidateTemplate); an empty one means the
+// default layout.
+func (n *NotificationExtension) SetMessageTemplate(template string) error {
+	if err := notifymsg.ValidateTemplate(template); err != nil {
+		return err
+	}
 	n.messageTemplate = template
+	return nil
 }
 
-func (n *NotificationExtension) SetIncludeDetails(include bool) {
-	n.includeDetails = include
+// SetDetailLevel sets how much of an event the channel receives.
+func (n *NotificationExtension) SetDetailLevel(level notifymsg.Level) error {
+	if _, err := notifymsg.ParseLevel(string(level)); err != nil {
+		return err
+	}
+	n.detailLevel = level
+	return nil
 }
 
 func (n *NotificationExtension) SetMinIntervalMinutes(minutes int) {

@@ -40,5 +40,7 @@ export function toStepRequest(s: ScanWorkflowStep, idx: number): CreateStepReque
     ...(s.condition ? { condition: s.condition } : {}),
     ...(pos ? { ui_position: pos } : {}),
     ...(s.config ? { config: s.config } : {}),
+    // The depth policy travels with the step: a save without it resets it.
+    ...(s.run_policy ? { run_policy: s.run_policy } : {}),
   }
 }

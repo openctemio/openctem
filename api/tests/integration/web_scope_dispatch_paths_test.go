@@ -337,6 +337,10 @@ func (failingScope) BuildWebScope(context.Context, shared.ID, []string) (*scopes
 	return nil, errors.New("exclusions unavailable")
 }
 
+func (failingScope) BuildDiscoveryWebScope(context.Context, shared.ID, []string, int) (*scopesvc.WebScope, error) {
+	return nil, errors.New("scope store down")
+}
+
 // SECURITY: fail closed. When the exclusions cannot be read, or the guard is
 // not wired while the tenant has a path exclusion, a web job is refused and
 // nothing is queued; a job without web requests is not affected.

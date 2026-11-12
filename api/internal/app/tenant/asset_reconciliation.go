@@ -62,7 +62,7 @@ func (s *TenantService) UpdateAssetReconciliationSettings(
 		}
 		if asset.DemotesAuthoritative(prev, next) {
 			demoted = true
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}

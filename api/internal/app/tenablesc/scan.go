@@ -106,7 +106,22 @@ type ScanPayload struct {
 	// the sensor by name; recycled first when RecycleRepository).
 	LicenseGuard       *LicenseGuard `json:"licence_guard,omitempty"` //nolint:misspell // the connector's published wire key
 	RotationRepository bool          `json:"rotation_repository,omitempty"`
+	RotationMode       string        `json:"rotation_mode,omitempty"`
 	RecycleRepository  bool          `json:"recycle_repository,omitempty"`
+	// Purge asks the sensor to remove the previous batch's addresses from
+	// the rotation repository first (rotation_mode purge).
+	Purge *PurgeRequest `json:"purge,omitempty"`
+	// ReimportScanResultID asks the sensor to import again a scan result
+	// whose import Tenable.sc Blocked, instead of scanning.
+	ReimportScanResultID int `json:"reimport_scan_result_id,omitempty"`
+}
+
+// PurgeRequest names the previous coverage batch whose addresses a purge
+// removes: its command (the sensor finds its scan result by it) and its
+// targets (the sensor refuses any host outside them).
+type PurgeRequest struct {
+	PreviousCommandID string   `json:"previous_command_id"`
+	Targets           []string `json:"targets"`
 }
 
 // LicenseGuard is the free license capacity a coverage batch needs.
@@ -119,6 +134,9 @@ type LicenseGuard struct {
 type batchExtras struct {
 	guard             *LicenseGuard
 	rotation, recycle bool
+	mode              string
+	purge             *PurgeRequest
+	reimport          int
 }
 
 // connectorFor loads a tenant's connector integration and validates the scan
@@ -214,7 +232,8 @@ func (s *Service) newScanCommand(ctx context.Context, tenantID shared.ID, cfg ma
 		MaxScanSeconds: sc.MaxScanSeconds, MinSeverity: cc.MinSeverity,
 		RunID: bk["run_id"], ScanID: bk["scan_id"], ScanRunID: bk["scan_run_id"],
 		StepKey: bk["step_key"], StepRunID: bk["scan_run_step_id"],
-		LicenseGuard: ex.guard, RotationRepository: ex.rotation, RecycleRepository: ex.recycle,
+		LicenseGuard: ex.guard, RotationRepository: ex.rotation, RotationMode: ex.mode, RecycleRepository: ex.recycle,
+		Purge: ex.purge, ReimportScanResultID: ex.reimport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode connector_scan payload: %w", err)

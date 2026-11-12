@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
@@ -102,6 +103,9 @@ type Plan struct {
 	actor     filterspec.Actor
 	filter    *filterspec.Spec
 	effective *filterspec.Spec
+	// raw is the caller's filter as a version 1 document with relative
+	// times as written (FilterDocument).
+	raw map[string]any
 
 	// Bucket is the time bucket, or nil.
 	Bucket *BucketRef
@@ -140,6 +144,17 @@ func (p *Plan) UserFilter() *filterspec.Spec { cp := *p.filter; return &cp }
 // the entity's mandatory filters. The tenant, data scope and member rule
 // are added when it is compiled with Actor.
 func (p *Plan) EffectiveFilter() *filterspec.Spec { cp := *p.effective; return &cp }
+
+// FilterDocument returns the caller's filter as a version 1 FilterDocument
+// ({"v":1,"filter":...,"q":...}) with relative times kept relative
+// ("-P7D"), the form a list endpoint, a saved view or a link stores.
+func (p *Plan) FilterDocument() map[string]any {
+	out := make(map[string]any, len(p.raw))
+	for k, v := range p.raw {
+		out[k] = v
+	}
+	return out
+}
 
 // Restricted reports whether the caller's data scope narrows the rows.
 func (p *Plan) Restricted() bool { return p.principal.Scope.Restricted() }
@@ -200,6 +215,7 @@ func Build(q *Query, src string, pr Principal, opts BuildOptions) (*Plan, error)
 	}
 	liftText(spec, ent)
 	p.filter = spec
+	p.raw = liftTextDoc(doc, ent)
 	eff := *spec
 	if m := ent.mandatoryNode(); m != nil {
 		if spec.Root == nil {
@@ -222,7 +238,7 @@ func Build(q *Query, src string, pr Principal, opts BuildOptions) (*Plan, error)
 	}
 	p.Score = score(p, len(spec.Leaves()))
 	if p.Score > MaxScore {
-		el.add(Span{0, len(src)}, "the query is too complex (score "+strconv.Itoa(p.Score)+", max "+strconv.Itoa(MaxScore)+"): use fewer conditions, relations or groups")
+		el.addc(Span{0, len(src)}, CodeTooComplex, "the query is too complex (score "+strconv.Itoa(p.Score)+", max "+strconv.Itoa(MaxScore)+"): use fewer conditions, relations or groups", nil)
 		return nil, el.err(src)
 	}
 	return p, nil
@@ -373,7 +389,7 @@ func (b *docBuilder) resolve(p Path) (*filterspec.Field, bool) {
 		if len(p.Name) <= 64 {
 			msg += ` "` + p.Name + `"`
 		}
-		b.errs.add(p.Span, msg+" on "+b.ent.Name)
+		b.errs.addc(p.Span, CodeUnknownField, msg+" on "+b.ent.Name, b.ent.SuggestFields(p.Name, b.may))
 	}
 	return f, ok
 }
@@ -403,12 +419,32 @@ func (b *docBuilder) leaf(path string, f *filterspec.Field, op filterspec.Op, va
 }
 
 func (b *docBuilder) opError(s Span, op string, p Path) {
-	b.errs.add(s, `"`+op+`" is not allowed on `+p.Name)
+	var allowed []string
+	if f, ok := b.ent.field(p.Name, b.may); ok {
+		allowed = textOperators(f)
+	}
+	b.errs.addc(s, CodeOperator, `"`+op+`" is not allowed on `+b.ent.Canonical(p.Name), allowed)
 }
 
 func (b *docBuilder) compare(n *Compare, path string) map[string]any {
+	if n.Implicit {
+		if _, ok := b.ent.field(n.Path.Name, b.may); !ok {
+			// A bare address or CVE id on a field the caller may not use is
+			// what it always was: text.
+			return b.text(&Text{Value: Value{Kind: ValString, Text: n.Value.Text, Span: n.Span}, Span: n.Span, Bare: true}, path)
+		}
+	}
 	f, ok := b.resolve(n.Path)
 	if !ok {
+		return nil
+	}
+	if n.Value.Kind == ValAge && f.Type == filterspec.TypeTime {
+		return b.age(n, f, path)
+	}
+	if f.Ordered && isRange(n.Op) {
+		return b.ordered(n, f, path)
+	}
+	if !b.valueOK(f, n.Value) {
 		return nil
 	}
 	var op filterspec.Op
@@ -426,7 +462,7 @@ func (b *docBuilder) compare(n *Compare, path string) map[string]any {
 		case f.Type == filterspec.TypeBool && allows(f, filterspec.OpEq):
 			bv, isBool := v.(bool)
 			if !isBool {
-				b.errs.add(n.Value.Span, "must be true or false")
+				b.errs.addc(n.Value.Span, CodeBadValue, "must be true or false", []string{litTrue, litFalse})
 				return nil
 			}
 			op, v = filterspec.OpEq, !bv
@@ -445,8 +481,8 @@ func (b *docBuilder) compare(n *Compare, path string) map[string]any {
 		op = filterspec.OpLte
 	case OpContains:
 		op = filterspec.OpContains
-		if strings.TrimSpace(n.Value.Text) == "" {
-			b.errs.add(n.Value.Span, `"~" needs some text`)
+		if utf8.RuneCountInString(strings.TrimSpace(n.Value.Text)) < minContainsRunes {
+			b.errs.addc(n.Value.Span, CodeBadValue, `"~" needs at least 3 characters`, nil)
 			return nil
 		}
 	}
@@ -455,6 +491,91 @@ func (b *docBuilder) compare(n *Compare, path string) map[string]any {
 		return nil
 	}
 	return b.leaf(path, f, op, v, n, n.Path, n.OpPos, []Value{n.Value})
+}
+
+func isRange(op CompareOp) bool {
+	return op == OpGt || op == OpGte || op == OpLt || op == OpLte
+}
+
+var rangeOps = map[CompareOp]filterspec.Op{OpGt: filterspec.OpGt, OpGte: filterspec.OpGte, OpLt: filterspec.OpLt, OpLte: filterspec.OpLte}
+
+// ageOps maps an age comparison to the comparison of the time with "now
+// minus the age": less than 7 days old is after 7 days ago.
+var ageOps = map[CompareOp]filterspec.Op{OpLt: filterspec.OpGt, OpLte: filterspec.OpGte, OpGt: filterspec.OpLt, OpGte: filterspec.OpLte}
+
+// age compiles "time < 7d" (an age) to "time > now - 7d".
+func (b *docBuilder) age(n *Compare, f *filterspec.Field, path string) map[string]any {
+	op, ok := ageOps[n.Op]
+	if !ok {
+		b.errs.addc(n.OpPos, CodeOperator, "an age takes <, <=, > or >= (last_seen_at<7d: seen in the last 7 days)", []string{"<", "<=", ">", ">="})
+		return nil
+	}
+	iso, ok := relativeISO("-" + n.Value.Text)
+	if !ok {
+		b.errs.addc(n.Value.Span, CodeBadValue, "an age is at most ten years", nil)
+		return nil
+	}
+	if !allows(f, op) {
+		b.opError(n.OpPos, string(n.Op), n.Path)
+		return nil
+	}
+	return b.leaf(path, f, op, iso, n, n.Path, n.OpPos, []Value{n.Value})
+}
+
+// ordered compiles "severity >= high" on an ordered enum to the list of
+// the values at least high.
+func (b *docBuilder) ordered(n *Compare, f *filterspec.Field, path string) map[string]any {
+	vals, ok := f.OrderedValues(rangeOps[n.Op], n.Value.Text)
+	if !ok {
+		b.unknownValue(f, n.Value)
+		return nil
+	}
+	if len(vals) == 0 {
+		b.errs.addc(n.Span, CodeBadValue, "no value is "+map[CompareOp]string{OpGt: "above", OpLt: "below"}[n.Op]+" this one", nil)
+		return nil
+	}
+	if !allows(f, filterspec.OpIn) {
+		b.opError(n.OpPos, string(n.Op), n.Path)
+		return nil
+	}
+	list := make([]any, len(vals))
+	for i, v := range vals {
+		list[i] = v
+	}
+	return b.leaf(path, f, filterspec.OpIn, list, n, n.Path, n.OpPos, []Value{n.Value})
+}
+
+// valueOK checks what filterspec cannot see: an enum value it does not know
+// (with the closest values as fixes) and a pattern on a field that matches
+// exact values.
+func (b *docBuilder) valueOK(f *filterspec.Field, v Value) bool {
+	switch {
+	case f.Type == filterspec.TypeEnum && (v.Kind == ValIdent || v.Kind == ValString || v.Kind == ValWord):
+		for _, e := range f.Enum {
+			if strings.EqualFold(e, v.Text) {
+				return true
+			}
+		}
+		if _, retired := f.EnumRetired[strings.ToLower(v.Text)]; retired {
+			return true // filterspec says what replaces it
+		}
+		b.unknownValue(f, v)
+		return false
+	case f.Type == filterspec.TypeString && !f.Glob && v.Kind == ValWord && strings.ContainsAny(v.Text, "*?"):
+		msg := "this field matches exact values; quote the value to match * or ? literally"
+		var fix []string
+		if allows(f, filterspec.OpContains) {
+			msg = "this field matches exact values; use ~ to search inside it"
+			fix = []string{"~"}
+		}
+		b.errs.addc(v.Span, CodePattern, msg, fix)
+		return false
+	}
+	return true
+}
+
+func (b *docBuilder) unknownValue(f *filterspec.Field, v Value) {
+	b.errs.addc(v.Span, CodeUnknownValue, "must be one of: "+strings.Join(f.Enum, ", "), closest(strings.ToLower(v.Text), f.Enum, 10))
 }
 
 func (b *docBuilder) in(n *In, path string) map[string]any {
@@ -472,6 +593,9 @@ func (b *docBuilder) in(n *In, path string) map[string]any {
 	}
 	vals := make([]any, 0, len(n.Values))
 	for _, v := range n.Values {
+		if !b.valueOK(f, v) {
+			return nil
+		}
 		vals = append(vals, b.value(f, v))
 	}
 	return b.leaf(path, f, op, vals, n, n.Path, n.OpPos, n.Values)
@@ -506,6 +630,13 @@ func (b *docBuilder) between(n *Between, loPath, hiPath string) (lo, hi map[stri
 // value converts a literal to the JSON scalar the FilterDocument parser
 // expects for the field's type; the parser does the real typing.
 func (b *docBuilder) value(f *filterspec.Field, v Value) any {
+	if f.Type == filterspec.TypeEnum {
+		for _, e := range f.Enum {
+			if strings.EqualFold(e, v.Text) {
+				return e // the registry's spelling
+			}
+		}
+	}
 	switch v.Kind {
 	case ValBool:
 		return v.Text == litTrue
@@ -542,7 +673,11 @@ func relativeISO(s string) (string, bool) {
 	}
 	n *= u.mul
 	if u.time {
-		if n > maxRelativeDays*24 {
+		limit := maxRelativeDays * 24
+		if u.des == "M" {
+			limit *= 60
+		}
+		if n > limit {
 			return "", false
 		}
 		return "-PT" + strconv.Itoa(n) + u.des, true
@@ -569,7 +704,7 @@ func (b *docBuilder) mapError(err error, q *Query) {
 		if path == "" {
 			path = d.Param
 		}
-		b.errs.add(b.spanOf(path, q), d.Reason)
+		b.errs.addc(b.spanOf(path, q), CodeBadValue, d.Reason, nil)
 	}
 }
 
@@ -631,4 +766,59 @@ func liftText(spec *filterspec.Spec, ent *Entity) {
 	default:
 		spec.Root = &filterspec.Node{All: kids}
 	}
+}
+
+// liftTextDoc is liftText on the raw document: a top-level text search
+// becomes the document's q.
+func liftTextDoc(doc map[string]any, ent *Entity) map[string]any {
+	out := map[string]any{"v": filterspec.DocumentVersion}
+	f, ok := doc["filter"].(map[string]any)
+	if !ok {
+		return out
+	}
+	out["filter"] = f
+	if ent.text == "" {
+		return out
+	}
+	textOf := func(n any) (string, bool) {
+		m, ok := n.(map[string]any)
+		if !ok || m["field"] != ent.text || m["op"] != string(filterspec.OpContains) {
+			return "", false
+		}
+		s, ok := m["value"].(string)
+		return s, ok && strings.TrimSpace(s) != ""
+	}
+	if s, ok := textOf(f); ok {
+		delete(out, "filter")
+		out["q"] = strings.TrimSpace(s)
+		return out
+	}
+	kids, ok := f["all"].([]any)
+	if !ok {
+		return out
+	}
+	idx := -1
+	for i, k := range kids {
+		if _, ok := textOf(k); ok {
+			if idx >= 0 {
+				return out // two text searches stay conditions
+			}
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return out
+	}
+	s, _ := textOf(kids[idx])
+	out["q"] = strings.TrimSpace(s)
+	rest := append(append([]any(nil), kids[:idx]...), kids[idx+1:]...)
+	switch len(rest) {
+	case 0:
+		delete(out, "filter")
+	case 1:
+		out["filter"] = rest[0]
+	default:
+		out["filter"] = map[string]any{"all": rest}
+	}
+	return out
 }

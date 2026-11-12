@@ -24,6 +24,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
 
@@ -112,6 +113,13 @@ func (h *SensorResultsV2Handler) Authenticate(next http.Handler) http.Handler {
 			}
 			id, err = h.sensors.AuthenticateIdentityFrom(r.Context(), key, getClientIP(r))
 		}
+		// A relayed request names the sensor of the route it came in on
+		// (X-Relay-Sensor, set by the relay connector). Whatever credential
+		// it carries, it must be that sensor's: the signed path refuses a
+		// mismatch already (authenticateSigned), and so does a bearer key.
+		if err == nil && relayedForAnother(r, id.Sensor) {
+			err = errSignedRefused
+		}
 		if err == nil && id.Paused && !isV2HeartbeatRequest(r) && !isV2HelloRequest(r) {
 			err = errSensorPaused
 		}
@@ -167,7 +175,8 @@ func (h *SensorResultsV2Handler) target(w http.ResponseWriter, r *http.Request) 
 		return ingest.V2Target{}, false
 	}
 	t := ingest.V2Target{Sensor: s, ReportID: chi.URLParam(r, "report_id"), CommandID: chi.URLParam(r, "command_id"),
-		UserAgent: r.UserAgent(), LeaseEpoch: leaseEpochHeader(r)}
+		UserAgent: r.UserAgent(), LeaseEpoch: leaseEpochHeader(r),
+		EpochPromised: protov2.HasFeature(r.Header.Values(protov2.HeaderSensorFeatures), protov2.FeatureResultsLeaseEpoch)}
 	if protov2.ValidateUUID(t.ReportID) != nil || (t.CommandID != "" && protov2.ValidateUUID(t.CommandID) != nil) {
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return ingest.V2Target{}, false
@@ -352,4 +361,12 @@ func decodeStrict(raw []byte, v any) error {
 		return errors.New("trailing data")
 	}
 	return nil
+}
+
+// relayedForAnother reports whether r is a relayed request (the relay
+// connector names the sensor of the route it arrived on) whose credential
+// belongs to a different sensor, or to none.
+func relayedForAnother(r *http.Request, s *sensor.Sensor) bool {
+	want := r.Header.Get(relay.HeaderRelaySensor)
+	return want != "" && (s == nil || want != s.ID.String())
 }

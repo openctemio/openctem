@@ -141,11 +141,11 @@ func registerCIRoutes(
 		// step-up; removing it is stricter.
 		r.GET("/gate-settings/{id}", admin.GetRepositorySettings, middleware.Require(permission.CIRead))
 		r.GET("/gate-baselines/{id}", admin.GetGateBaseline, middleware.Require(permission.CIRead))
-		r.PUT("/gate-baselines/{id}", admin.SetGateBaseline, middleware.Require(permission.CIPolicy), requireStepUp())
+		r.PUT("/gate-baselines/{id}", admin.SetGateBaseline, middleware.Require(permission.CIPolicy), requireStepUpSensitive())
 		r.DELETE("/gate-baselines/{id}", admin.DeleteGateBaseline, middleware.Require(permission.CIPolicy))
 
 		r.GET("/gate-overrides", admin.ListOverrides, middleware.Require(permission.CIRead))
-		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride), requireStepUp())
+		r.POST("/gate-overrides", admin.CreateOverride, middleware.Require(permission.CIOverride), requireStepUpSensitive())
 		r.POST("/gate-overrides/{id}/revoke", admin.RevokeOverride, middleware.Require(permission.CIOverride))
 	}, append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)...)
 }

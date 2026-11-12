@@ -172,9 +172,12 @@ type FileResult struct {
 	SkippedByPolicyTotal int                    `json:"skipped_by_policy_total,omitempty"`
 	// Candidates are the imported hosts the organization's scope does not
 	// cover: they wait for review and are never scanned.
-	Candidates int            `json:"candidates,omitempty"`
-	VEX        *VEXSummary    `json:"vex,omitempty"`
-	Ingest     *ingest.Output `json:"ingest,omitempty"`
+	Candidates int `json:"candidates,omitempty"`
+	// Coverage is what the file proves about the findings it does not hold
+	// (filecoverage.go); nil for a format that says nothing.
+	Coverage *importer.ImportCoverage `json:"-"`
+	VEX      *VEXSummary              `json:"vex,omitempty"`
+	Ingest   *ingest.Output           `json:"ingest,omitempty"`
 }
 
 // Service imports uploaded files.
@@ -253,7 +256,21 @@ func (s *Service) FinishUpload(ctx context.Context, req Request, results []FileR
 		return
 	}
 	res := &ingestreceipt.UploadResult{Status: ingestreceipt.StatusCompleted}
-	if req.Coverage.Full {
+	// A file that carries its own coverage decides what it closes; the
+	// uploader declares nothing (filecoverage.go).
+	if closing, note := s.closeByFileCoverage(ctx, req, results, complete); closing != nil {
+		res.Closing = closing
+		res.Coverage = ingestreceipt.CoveragePartial
+		// The coverage notes speak of a declared coverage; a file's own
+		// coverage that proved nothing is explained by Closing alone.
+		if note != noteIncomplete && note != noteError {
+			res.CoverageNote = note
+			res.Coverage = ingestreceipt.CoverageFull
+			untouched := closing.Considered - closing.ClosedTotal()
+			res.Untouched = &untouched
+		}
+	}
+	if req.Coverage.Full && declaredTools(results) {
 		note := noteIncomplete
 		var untouched *int
 		if complete {
@@ -374,6 +391,7 @@ func (s *Service) store(ctx context.Context, req Request, c Converted) FileResul
 	}
 	fr.Stats = res.Stats
 	fr.Issues = res.Issues
+	fr.Coverage = res.Coverage
 	fr.Unmapped = res.Unmapped
 	if len(fr.Unmapped) > MaxUnmappedListed {
 		fr.UnmappedTotal = len(fr.Unmapped)

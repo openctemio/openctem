@@ -54,6 +54,9 @@ type BulkExclusionsInput struct {
 	// ExpiresAt their end date (nil: until re-included).
 	Kind      string
 	ExpiresAt *time.Time
+	// ConfirmCritical: the caller confirmed closing critical-tier findings
+	// (critical_closures.go).
+	ConfirmCritical bool
 }
 
 // BulkExclusionOutcome is what happened to one item: Exclusion is the one it
@@ -113,6 +116,9 @@ func (s *Service) CreateExclusions(ctx context.Context, in BulkExclusionsInput) 
 	if reason == "" {
 		reason = bulkDefaultReason
 	}
+	if err := s.checkBulkCriticalClosures(ctx, in); err != nil {
+		return nil, err
+	}
 	out := make([]BulkExclusionOutcome, 0, len(in.Items))
 	for _, it := range in.Items {
 		o := BulkExclusionOutcome{Item: it}
@@ -125,6 +131,8 @@ func (s *Service) CreateExclusions(ctx context.Context, in BulkExclusionsInput) 
 			TenantID: in.TenantID, ExclusionType: it.ExclusionType, Pattern: it.Pattern,
 			Reason: reason, CreatedBy: in.CreatedBy, Origin: scopedom.OriginImport,
 			Kind: in.Kind, ExpiresAt: in.ExpiresAt,
+			// Checked for the whole request above.
+			ConfirmCritical: true,
 		})
 		out = append(out, o)
 	}
@@ -138,7 +146,11 @@ type ExclusionMatch struct {
 	// OpenFindings is how many open findings those assets have: what a
 	// permanent not_ours or retired exclusion would close.
 	OpenFindings int
-	Sample       []string
+	// CriticalFindings is how many of those are in the critical tier
+	// (critical severity, P0 or KEV): closing them needs a confirm
+	// (critical_closures.go).
+	CriticalFindings int
+	Sample           []string
 	// Names is how many of the caller's visible names (assets that are not
 	// addresses) an address, range or CIDR pattern also excludes because
 	// they resolve to an address inside it (AssetExclusionValues); shared

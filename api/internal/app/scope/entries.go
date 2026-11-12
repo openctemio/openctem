@@ -80,6 +80,16 @@ func (s *Service) SetEntryPolicy(settings SettingsReader, admins AdminDirectory,
 // every new entry, whoever creates it. Nil: the built-in guardrails.
 func (s *Service) SetGuardrails(g scopedom.Guardrails) { s.guardrails = &g }
 
+// guardrailsFor are the platform guardrails as one organization sees them:
+// its exceptions to the government and military rule apply.
+func (s *Service) guardrailsFor(tenantID shared.ID) scopedom.Guardrails {
+	g := scopedom.DefaultGuardrails()
+	if s.guardrails != nil {
+		g = *s.guardrails
+	}
+	return g.For(tenantID)
+}
+
 // SetStepUpGate wires step-up re-authentication for widening. Without it a
 // person's widening is refused (fail closed).
 func (s *Service) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
@@ -362,10 +372,7 @@ func (s *Service) PreviewTarget(ctx context.Context, input CreateTargetInput) (*
 	if err := scopedom.ValidatePattern(targetType, input.Pattern); err != nil {
 		return nil, err // wraps shared.ErrValidation
 	}
-	g := scopedom.DefaultGuardrails()
-	if s.guardrails != nil {
-		g = *s.guardrails
-	}
+	g := s.guardrailsFor(tenantID)
 	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
 		return nil, err
 	}
@@ -400,12 +407,9 @@ func (s *Service) ApproveTarget(ctx context.Context, targetID, tenantID string, 
 	if err != nil {
 		return nil, false, err
 	}
-	if err := s.commitEntry(ctx, before, t, false, func() error {
-		if err := s.targetRepo.Update(ctx, t); err != nil {
-			return fmt.Errorf("failed to approve scope target: %w", err)
-		}
-		return nil
-	}); err != nil {
+	// An approved replacement retires the entry it replaces in the same
+	// transaction (replace.go).
+	if err := s.commitEntryUpdate(ctx, before, t); err != nil {
 		return nil, false, err
 	}
 	if effective {

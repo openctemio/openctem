@@ -1,5 +1,0 @@
-### Security: e-mail addresses in findings stored before ingest masking can be masked
-
-- New maintenance mode `refingerprint -mask-emails (-tenant <id>[,<id>...] | -all-tenants) [-apply]` applies the ingest masking to findings and evidence stored before it: the local part of every address becomes `***`, the domain is kept. Tool-reported findings' descriptive text only (title, message, description, snippets, tags, remediation, metadata, source extras, type details, related locations, stacks, scanner output); identifiers are never changed, findings a person reported are left as written, and every evidence item is masked as it would be today.
-- A dry run by default, with counts only (no addresses or values); tenant by tenant, batched, idempotent and safe to rerun after a crash. An applying run writes one `findings.emails_masked` audit entry per changed tenant.
-- **Upgrade note:** run it once after upgrading (runbook `docs/operations/mask-stored-emails.md`). A masked finding's `updated_at` moves; its status and evidence version do not.

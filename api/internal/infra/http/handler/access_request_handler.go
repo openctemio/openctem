@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -24,6 +25,15 @@ import (
 type AccessRequestHandler struct {
 	svc    *accessrequest.Service
 	logger *logger.Logger
+	// appBaseURL is the web app's address: the console (another site) gets
+	// a new owner's one-time set-password link as a full address.
+	appBaseURL string
+}
+
+// WithAppBaseURL sets the web app's address for set-password links.
+func (h *AccessRequestHandler) WithAppBaseURL(base string) *AccessRequestHandler {
+	h.appBaseURL = strings.TrimSuffix(strings.TrimSpace(base), "/")
+	return h
 }
 
 // NewAccessRequestHandler creates the handler.
@@ -275,6 +285,9 @@ func (h *AccessRequestHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		if setup.SetupToken != "" {
 			exp := setup.SetupExpiresAt
 			resp.OwnerSetup.SetupExpiresAt = &exp
+			if h.appBaseURL != "" {
+				resp.OwnerSetup.SetupURL = h.appBaseURL + "/set-password#token=" + url.QueryEscape(setup.SetupToken)
+			}
 		}
 	}
 	w.Header().Set("Cache-Control", "no-store")

@@ -101,10 +101,10 @@ describe('AssetTechnologiesTab', () => {
     expect(await screen.findByText('nginx')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith('/api/v1/assets/a1/technologies')
     expect(screen.getByText('Confidence 80')).toBeInTheDocument()
-    expect(screen.getByText('Source: httpx')).toBeInTheDocument()
+    expect(screen.getByText('Source: HTTP probe (httpx)')).toBeInTheDocument()
     // One metadata line in one size under the name (research/244): the name is
     // never squeezed beside it.
-    const line = screen.getByText('Source: httpx').closest('[data-slot=meta-line]')
+    const line = screen.getByText('Source: HTTP probe (httpx)').closest('[data-slot=meta-line]')
     expect(line).toHaveClass('text-meta')
     expect(line?.textContent).toMatch(/First seen .*Last seen/)
     expect(screen.getByText('nginx').closest('[data-slot=list-item]')).toContainElement(

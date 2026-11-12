@@ -114,7 +114,7 @@ func TestReadOpsSnapshot_Unhardened(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	weakPosture := `{"platform_tls":{"pin":"none"},"sandbox":{"mode":"auto","sandboxed":true,"network_enforced":false}}`
+	weakPosture := `{"platform_tls":{"pin":"none"},"sandbox":{"mode":"off","sandboxed":false,"network_enforced":false,"unconfined":"acknowledged"}}`
 	strongPosture := `{"platform_tls":{"pin":"fingerprint"},"sandbox":{"mode":"required","sandboxed":true,"network_enforced":true}}`
 	manifest := func(id, digit, posture string, current bool) {
 		digest := "sha256:" + strings.Repeat(digit, 64)

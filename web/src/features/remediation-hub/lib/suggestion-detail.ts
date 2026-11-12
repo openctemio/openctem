@@ -15,6 +15,7 @@ export const BASIS_FACTORS = [
   'same_specific_solution_text',
   'same_rule',
   'same_finding_title',
+  'same_benchmark_control',
 ] as const
 export type BasisFactor = (typeof BASIS_FACTORS)[number]
 
@@ -31,6 +32,7 @@ export function basisFactors(
     if (s.key_kind === 'upgrade') got.add('same_package_target')
     else if (s.key_kind === 'rotate') got.add('same_secret_value')
     else if (s.key_kind === 'sol') got.add('same_specific_solution_text')
+    else if (s.key_kind === 'control') got.add('same_benchmark_control')
   }
   return BASIS_FACTORS.filter((f) => got.has(f))
 }

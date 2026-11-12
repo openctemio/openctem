@@ -4,11 +4,16 @@
  * private ranges, tiers) is the API's answer (POST /scope/check), never
  * decided here. The rules mirror the API's target validator
  * (api/pkg/validator/target.go) so that nothing accepted here is refused at
- * create: CIDRs of at most 2^16 addresses, `[v6]:port`, service names
+ * create: CIDRs of at most 2^24 addresses (an IPv4 /8, an IPv6 /104; the
+ * organization may set a lower bound), `[v6]:port`, service names
  * (`host:25/tcp`), and paths or repositories refused as network targets.
  * Unicode domain names are sent in their ASCII (punycode) form.
- * Design: research/418.
+ * The CIDR bounds and their words are one contract with the API:
+ * api/pkg/validator/testdata/cidr_targets.json is read by both test suites.
+ * Design: research/418; large ranges: api/docs/rfcs/RFC-151-large-range-targets.md.
  */
+
+import type { Translate } from './translate'
 
 export type TargetKind =
   'domain' | 'wildcard' | 'ipv4' | 'ipv6' | 'cidr' | 'url' | 'host:port' | 'repo' | 'invalid'
@@ -23,6 +28,14 @@ export interface ClassifiedTarget {
   reason?: string
   /** i18n key of the reason. */
   reasonKey?: string
+  /** Values the reason names (formatted numbers, the range). */
+  reasonVars?: Record<string, string>
+  /**
+   * A range wider than one target can hold, that fits in at most
+   * MAX_SPLIT_PIECES ranges of the widest accepted size: the prefix length
+   * of those ranges and how many there are (splitCidr cuts it).
+   */
+  split?: { bits: number; count: number }
 }
 
 export const TARGET_KIND_LABELS: Record<TargetKind, string> = {
@@ -50,7 +63,7 @@ const REASONS = {
   targetChars: 'Contains characters a target cannot have',
   wildcardForm: 'A wildcard is *. followed by a domain',
   badCidr: 'Not a valid CIDR range',
-  cidrTooLarge: 'The range is larger than 65,536 addresses (/16 for IPv4, /112 for IPv6)',
+  cidrTooLarge: '{cidr} has {count} addresses; the most one target can hold is {max} ({prefix})',
   badHostPort: 'Not a valid host:port',
   idnTld: 'A top-level domain in punycode (xn--) is not accepted yet',
   repo: 'Not a network target: a path or a repository. Add http:// or https:// for a web address; repositories are scanned from repository assets',
@@ -63,8 +76,110 @@ const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
 const IPV4 = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`)
 // Shell and markup characters never appear in a target.
 const UNSAFE = /[;&|`$(){}<>\\'"!\s]/
-// Largest range the API takes: 2^16 addresses.
-const MAX_HOST_BITS = 16
+// Largest range the API takes: 2^24 addresses (an IPv4 /8, an IPv6 /104).
+export const MAX_HOST_BITS = 24
+/**
+ * A range wider than this (2^16 addresses, an IPv4 /16) is a large range:
+ * cut into /16 chunks at dispatch and scanned live hosts first.
+ */
+export const LARGE_RANGE_HOST_BITS = 16
+/**
+ * The organization's widest range when it set none (scope setting
+ * max_range_prefix 16): a /16. Anything wider is opt-in.
+ */
+export const DEFAULT_RANGE_PREFIX = 16
+
+/** The widest range in host bits for a max_range_prefix (unset: the /16 default). */
+export function rangeHostBitsOf(maxRangePrefix: number | null | undefined): number {
+  const p = maxRangePrefix && maxRangePrefix > 0 ? maxRangePrefix : DEFAULT_RANGE_PREFIX
+  return Math.min(Math.max(32 - p, 0), MAX_HOST_BITS)
+}
+/** The most ranges a too-large range is offered to be split into in one click. */
+export const MAX_SPLIT_PIECES = 256
+
+/** `{name}` placeholders of an English reason filled in. */
+function fill(text: string, vars: Record<string, string>): string {
+  return text.replace(/\{(\w+)\}/g, (m, k: string) => vars[k] ?? m)
+}
+
+/** A range wider than maxHostBits: the reason with its numbers, and the split it allows. */
+function tooLarge(
+  input: string,
+  value: string,
+  totalBits: number,
+  prefix: number,
+  maxHostBits: number
+): ClassifiedTarget {
+  const maxBits = totalBits - maxHostBits
+  const reasonVars = {
+    cidr: value,
+    count: (BigInt(1) << BigInt(totalBits - prefix)).toLocaleString(),
+    max: (2 ** maxHostBits).toLocaleString(),
+    prefix: `/${maxBits}`,
+  }
+  const pieces = 2 ** (maxBits - prefix)
+  return {
+    input,
+    value: input,
+    kind: 'invalid',
+    reason: fill(REASONS.cidrTooLarge, reasonVars),
+    reasonKey: 'scans.targetReason.cidrTooLarge',
+    reasonVars,
+    ...(pieces <= MAX_SPLIT_PIECES ? { split: { bits: maxBits, count: pieces } } : {}),
+  }
+}
+
+/** The address of a parsed IPv4 or IPv6 text as a number. */
+function addrToBig(addr: string): bigint {
+  if (IPV4.test(addr)) {
+    return addr.split('.').reduce((acc, o) => (acc << BigInt(8)) | BigInt(Number(o)), BigInt(0))
+  }
+  // The browser's URL parser writes the canonical, fully expanded form.
+  const host = new URL(`http://[${addr}]/`).hostname.slice(1, -1)
+  const [head, tail = ''] = host.split('::')
+  const h = head ? head.split(':') : []
+  const tl = tail ? tail.split(':') : []
+  const groups = host.includes('::')
+    ? [...h, ...Array(8 - h.length - tl.length).fill('0'), ...tl]
+    : h
+  return groups.reduce((acc, g) => (acc << BigInt(16)) | BigInt(parseInt(g, 16)), BigInt(0))
+}
+
+function bigToV4(n: bigint): string {
+  return [24, 16, 8, 0].map((sh) => Number((n >> BigInt(sh)) & BigInt(255))).join('.')
+}
+
+function bigToV6(n: bigint): string {
+  const groups = [7, 6, 5, 4, 3, 2, 1, 0].map((i) =>
+    ((n >> BigInt(i * 16)) & BigInt(0xffff)).toString(16)
+  )
+  // The canonical short form, through the browser's URL parser.
+  return new URL(`http://[${groups.join(':')}]/`).hostname.slice(1, -1)
+}
+
+/**
+ * A CIDR range cut into the ranges of prefix length `bits` that cover it
+ * (`10.0.0.0/14`, 16 -> four /16 ranges). Host bits typed after the address
+ * are ignored, as the API does. Empty when `cidr` is not a range, `bits` is
+ * not narrower than its prefix, or there would be more than MAX_SPLIT_PIECES.
+ */
+export function splitCidr(cidr: string, bits: number): string[] {
+  const [addr, len] = cidr.trim().toLowerCase().split('/')
+  const prefix = Number(len)
+  const v4 = IPV4.test(addr ?? '')
+  if (!addr || !/^\d{1,3}$/.test(len ?? '') || (!v4 && !isIPv6(addr))) return []
+  const total = v4 ? 32 : 128
+  if (prefix > total || bits > total || bits <= prefix || bits - prefix > 8) return []
+  const hostBits = BigInt(total - prefix)
+  const base = (addrToBig(addr) >> hostBits) << hostBits
+  const step = BigInt(1) << BigInt(total - bits)
+  const out: string[] = []
+  for (let i = 0; i < 2 ** (bits - prefix); i++) {
+    const a = base + step * BigInt(i)
+    out.push(`${v4 ? bigToV4(a) : bigToV6(a)}/${bits}`)
+  }
+  return out
+}
 
 function isIPv6(s: string): boolean {
   if (!s.includes(':') || !/^[0-9a-f:.]+$/i.test(s)) return false
@@ -107,8 +222,14 @@ function looksLikeRepo(input: string): boolean {
   return false
 }
 
+export interface ClassifyOptions {
+  /** The widest range accepted, in host bits (MAX_HOST_BITS; the organization may set less). */
+  maxHostBits?: number
+}
+
 /** The format of one typed entry. */
-export function classifyTarget(raw: string): ClassifiedTarget {
+export function classifyTarget(raw: string, opts: ClassifyOptions = {}): ClassifiedTarget {
+  const maxHostBits = Math.min(Math.max(opts.maxHostBits ?? MAX_HOST_BITS, 0), MAX_HOST_BITS)
   const input = raw.trim()
   const refuse = (id: keyof typeof REASONS, kind: TargetKind = 'invalid'): ClassifiedTarget => ({
     input,
@@ -172,13 +293,13 @@ export function classifyTarget(raw: string): ClassifiedTarget {
     if (rest.length === 0 && /^\d{1,3}$/.test(bits ?? '')) {
       const n = Number(bits)
       if (IPV4.test(addr) && n <= 32) {
-        return 32 - n > MAX_HOST_BITS
-          ? refuse('cidrTooLarge')
+        return 32 - n > maxHostBits
+          ? tooLarge(input, lower, 32, n, maxHostBits)
           : { input, value: lower, kind: 'cidr' }
       }
       if (isIPv6(addr) && n <= 128) {
-        return 128 - n > MAX_HOST_BITS
-          ? refuse('cidrTooLarge')
+        return 128 - n > maxHostBits
+          ? tooLarge(input, lower, 128, n, maxHostBits)
           : { input, value: lower, kind: 'cidr' }
       }
       return refuse('badCidr')
@@ -205,6 +326,31 @@ export function classifyTarget(raw: string): ClassifiedTarget {
   if (host && punycodeTld(host)) return refuse('idnTld')
   if (host && DOMAIN.test(host)) return { input, value: host, kind: 'domain' }
   return refuse('unknown')
+}
+
+/**
+ * The address count of a CIDR target, or null when it is not one. Large
+ * counts stay exact (IPv6).
+ */
+export function cidrAddressCount(target: string): bigint | null {
+  const [addr, len] = target.trim().toLowerCase().split('/')
+  if (!addr || !/^\d{1,3}$/.test(len ?? '')) return null
+  const total = IPV4.test(addr) ? 32 : isIPv6(addr) ? 128 : 0
+  const n = Number(len)
+  if (!total || n > total) return null
+  return BigInt(1) << BigInt(total - n)
+}
+
+/** Whether a target is a range wider than a /16 (IPv6 /112): a large range. */
+export function isLargeRange(target: string): boolean {
+  const n = cidrAddressCount(target)
+  return n !== null && n > BigInt(1) << BigInt(LARGE_RANGE_HOST_BITS)
+}
+
+/** Why an entry is not added, in the active language, with its numbers. */
+export function targetReasonText(t: Translate, entry: ClassifiedTarget): string {
+  if (!entry.reasonKey) return entry.reason ?? ''
+  return t(entry.reasonKey, entry.reason, entry.reasonVars)
 }
 
 /** The key two entries are the same target by: the sent form, or the typed one lower-cased. */
@@ -243,7 +389,10 @@ export function splitEntries(lines: readonly string[]): string[] {
 }
 
 /** Classify, normalize and de-duplicate typed lines. */
-export function parsePastedTargets(lines: readonly string[]): PastedTargets {
+export function parsePastedTargets(
+  lines: readonly string[],
+  opts: ClassifyOptions = {}
+): PastedTargets {
   const out: PastedTargets = {
     lines: [],
     targets: [],
@@ -254,7 +403,7 @@ export function parsePastedTargets(lines: readonly string[]): PastedTargets {
   }
   const seen = new Set<string>()
   for (const raw of splitEntries(lines)) {
-    const c = classifyTarget(raw)
+    const c = classifyTarget(raw, opts)
     out.lines.push(c)
     if (isRefusedKind(c.kind)) {
       out.byKind[c.kind] = (out.byKind[c.kind] ?? 0) + 1

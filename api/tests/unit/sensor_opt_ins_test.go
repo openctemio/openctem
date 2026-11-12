@@ -79,11 +79,13 @@ func TestOptIns_DefaultOffWithholdsFromEverySensor(t *testing.T) {
 	}
 
 	// Enabled at the organization, refused by the sensor's own policy:
-	// still not sent (the platform never widens the sensor).
+	// custom templates are still not sent (the platform never widens the
+	// sensor); callbacks the policy turns off are sent, and the sensor runs
+	// the job without them.
 	absent.LocalPolicy = &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced, Summary: &sensor.LocalPolicySummary{TargetsAllow: -1}}
 	all := command.NewService(repo, newCmdTestLogger(), command.WithSensorLookup(lookup),
 		command.WithOptInPolicy(fixedOptIns{o: sensor.OptIns{AllowInteractsh: true, AllowCustomTemplates: true}}))
-	if got := poll(all); got[oast.ID] || got[tmpl.ID] || !got[plain.ID] {
+	if got := poll(all); !got[oast.ID] || got[tmpl.ID] || !got[plain.ID] {
 		t.Fatalf("enabled but refused locally: polled %v", got)
 	}
 
