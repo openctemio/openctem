@@ -58,6 +58,7 @@ var systemExposureTypes = map[exposure.EventType]bool{
 	exposure.EventTypeWebInterfaceExposed: true,
 	exposure.EventTypeAPIExposed:          true,
 	exposure.EventTypeMCPServerExposed:    true,
+	exposure.EventTypeRiskyServiceExposed: true,
 }
 
 // Map returns the CTEM-ID code of an exposure, or false when the data we hold

@@ -159,12 +159,17 @@ jobs:
             *) bash .github/scripts/check-private-keys.sh "" "" ;;
           esac
 
+      # Pinned and checksum-verified on every run; the archive comes from the
+      # Actions cache when it is there (.github/actions/fetch-tool).
       - name: Install Betterleaks (pinned, checksum-verified)
-        run: |
-          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o betterleaks.tgz \
-            "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/betterleaks_${BETTERLEAKS_VERSION}_linux_x64.tar.gz"
-          echo "${BETTERLEAKS_SHA256}  betterleaks.tgz" | sha256sum -c -
-          tar -xzf betterleaks.tgz betterleaks
+        id: betterleaks
+        uses: ./.github/actions/fetch-tool
+        with:
+          name: betterleaks
+          version: ${{ env.BETTERLEAKS_VERSION }}
+          url: https://github.com/betterleaks/betterleaks/releases/download/v${{ env.BETTERLEAKS_VERSION }}/betterleaks_${{ env.BETTERLEAKS_VERSION }}_linux_x64.tar.gz
+          sha256: ${{ env.BETTERLEAKS_SHA256 }}
+          extract: betterleaks
 
       - name: Scan scope
         id: scope
@@ -191,13 +196,14 @@ jobs:
       - name: Run Betterleaks
         env:
           RANGE: ${{ steps.scope.outputs.range }}
+          BETTERLEAKS: ${{ steps.betterleaks.outputs.path }}
         run: |
           # A pull request or merge group scans only the commits it adds and
           # BLOCKS on any finding. The full-history run (push, weekly) stays
           # report-only until a verified baseline ignore file covers history.
           args=(--exit-code 0)
           if [ -n "$RANGE" ]; then args=(--exit-code 1 --log-opts "$RANGE"); fi
-          ./betterleaks git --redact --no-banner \
+          "$BETTERLEAKS" git --redact --no-banner \
             --report-format sarif --report-path betterleaks.sarif "${args[@]}" .
 
       - name: Upload Betterleaks results
@@ -217,6 +223,15 @@ jobs:
     if: ${{ !cancelled() && needs.tree.outputs.verified != 'true' }}
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_LIGHT) || 'ubuntu-latest' }}
     timeout-minutes: 10
+    # Release tarballs pinned by version and SHA-256 (no curl | bash of a
+    # mutable script), fetched through .github/actions/fetch-tool.
+    env:
+      # tool-pin: rhysd/actionlint
+      ACTIONLINT_VERSION: 1.7.7
+      ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+      # tool-pin: zizmorcore/zizmor
+      ZIZMOR_VERSION: 1.31.1
+      ZIZMOR_SHA256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
     steps:
       # Branch policy: main only takes release and hotfix branches (the release
       # train opens them); everything else goes to develop. main is the default
@@ -239,18 +254,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install actionlint (pinned, checksum-verified)
+        id: actionlint
+        uses: ./.github/actions/fetch-tool
+        with:
+          name: actionlint
+          version: ${{ env.ACTIONLINT_VERSION }}
+          url: https://github.com/rhysd/actionlint/releases/download/v${{ env.ACTIONLINT_VERSION }}/actionlint_${{ env.ACTIONLINT_VERSION }}_linux_amd64.tar.gz
+          sha256: ${{ env.ACTIONLINT_SHA256 }}
+          extract: actionlint
       - name: actionlint
-        # Release tarball pinned by SHA-256 (no curl | bash of a mutable script).
         env:
-          # tool-pin: rhysd/actionlint
-          ACTIONLINT_VERSION: 1.7.7
-          ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
-        run: |
-          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o actionlint.tgz \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          echo "${ACTIONLINT_SHA256}  actionlint.tgz" | sha256sum -c -
-          tar -xzf actionlint.tgz actionlint
-          ./actionlint -color
+          ACTIONLINT: ${{ steps.actionlint.outputs.path }}
+        run: '"$ACTIONLINT" -color'
       # Every job has a timeout-minutes (a hung job otherwise holds a runner,
       # and a merge-queue group, for 360 minutes).
       - name: Job timeouts
@@ -260,18 +276,20 @@ jobs:
       # Workflow security audit (template injection, unsafe triggers, credential
       # persistence, unpinned or archived actions, over-broad permissions).
       # Configuration and every suppression with its reason: .github/zizmor.yml.
+      - name: Install zizmor (pinned, checksum-verified)
+        id: zizmor
+        uses: ./.github/actions/fetch-tool
+        with:
+          name: zizmor
+          version: ${{ env.ZIZMOR_VERSION }}
+          url: https://github.com/zizmorcore/zizmor/releases/download/v${{ env.ZIZMOR_VERSION }}/zizmor-x86_64-unknown-linux-gnu.tar.gz
+          sha256: ${{ env.ZIZMOR_SHA256 }}
+          extract: zizmor
       - name: zizmor
         env:
-          # tool-pin: zizmorcore/zizmor
-          ZIZMOR_VERSION: 1.31.1
-          ZIZMOR_SHA256: d185f726bdaf92df78273217dfdd24ebcd6b0ef48cf3ce776ff5762b6e138c99
+          ZIZMOR: ${{ steps.zizmor.outputs.path }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o zizmor.tgz \
-            "https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
-          echo "${ZIZMOR_SHA256}  zizmor.tgz" | sha256sum -c -
-          tar -xzf zizmor.tgz zizmor
-          ./zizmor --no-progress --format github .github
+        run: '"$ZIZMOR" --no-progress --format github .github'
       # Which languages CodeQL analyses for an event (develop pushes: the changed side).
       - name: CodeQL languages self-test
         run: bash .github/scripts/codeql-languages.test.sh

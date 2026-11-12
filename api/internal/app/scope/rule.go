@@ -19,6 +19,7 @@ type RuleBroadcaster interface {
 
 // RuleService handles scope rule business operations.
 type RuleService struct {
+	tagRules    TagRulesInvalidator
 	acRepo      accesscontrol.Repository
 	groupRepo   group.Repository
 	agValidator assetGroupValidator
@@ -108,6 +109,7 @@ func (s *RuleService) CreateRule(ctx context.Context, input CreateRuleInput, cre
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	defer s.tagRulesChanged(tenantID)
 	groupID, err := shared.IDFromString(input.GroupID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid group id", shared.ErrValidation)
@@ -252,6 +254,7 @@ func (s *RuleService) UpdateRule(ctx context.Context, tenantID, ruleID string, i
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	defer s.tagRulesChanged(tid)
 	id, err := shared.IDFromString(ruleID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid rule id", shared.ErrValidation)
@@ -357,6 +360,7 @@ func (s *RuleService) DeleteRule(ctx context.Context, tenantID, ruleID string) e
 	if err != nil {
 		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
+	defer s.tagRulesChanged(tid)
 	id, err := shared.IDFromString(ruleID)
 	if err != nil {
 		return fmt.Errorf("%w: invalid rule id", shared.ErrValidation)
@@ -990,4 +994,17 @@ func (s *RuleService) broadcastGroupChange(tenantID, groupID shared.ID, eventTyp
 		AssetsRemoved: removed,
 	}
 	s.broadcaster.BroadcastScopeChange(channel, event, tenantID.String())
+}
+
+// TagRulesInvalidator is told when a rule that decides which asset tags are
+// governing was saved, so the governing-tag set is not stale (taggov).
+type TagRulesInvalidator interface{ Invalidate(tenantID shared.ID) }
+
+// SetTagRulesInvalidator wires it.
+func (s *RuleService) SetTagRulesInvalidator(i TagRulesInvalidator) { s.tagRules = i }
+
+func (s *RuleService) tagRulesChanged(tenantID shared.ID) {
+	if s.tagRules != nil {
+		s.tagRules.Invalidate(tenantID)
+	}
 }

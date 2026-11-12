@@ -57,27 +57,22 @@ import { useTranslation } from '@/context/i18n-provider'
 import { CatalogSelect } from './catalog-select'
 
 const SEVERITIES = [
-  { value: 0, key: 'tenableSc.dialog.severity.info', label: 'Info and above' },
-  { value: 1, key: 'tenableSc.dialog.severity.low', label: 'Low and above' },
-  { value: 2, key: 'tenableSc.dialog.severity.medium', label: 'Medium and above' },
-  { value: 3, key: 'tenableSc.dialog.severity.high', label: 'High and above' },
-  { value: 4, key: 'tenableSc.dialog.severity.critical', label: 'Critical only' },
+  { value: 0, key: 'tenableSc.dialog.severity.info' },
+  { value: 1, key: 'tenableSc.dialog.severity.low' },
+  { value: 2, key: 'tenableSc.dialog.severity.medium' },
+  { value: 3, key: 'tenableSc.dialog.severity.high' },
+  { value: 4, key: 'tenableSc.dialog.severity.critical' },
 ]
 
-/** Each license rotation mode, with what it does (translated at render). */
-const ROTATION_TEXT: Record<CoverageRotation, { label: string; hint: string }> = {
-  off: {
-    label: 'Off',
-    hint: 'Covers what the license holds. Assets Tenable.sc already counts are rescanned; new ones only while the license has room.',
-  },
-  aging: {
-    label: 'Aging',
-    hint: "Tenable.sc's nightly cleanup frees the license from the rotation repository's data; the next batch is tried after the wait below.",
-  },
-  recycle: {
-    label: 'Recycle',
-    hint: 'The connector deletes and recreates its rotation repository before each batch, once the previous results are ingested.',
-  },
+/**
+ * The license rotation modes that state what they need besides the hint.
+ * The label, hint and need texts are the tenableSc.dialog.rotationMode,
+ * rotationHint and rotationNeeds catalog entries.
+ */
+const ROTATION_NEEDS: Partial<Record<CoverageRotation, true>> = {
+  aging: true,
+  purge: true,
+  recycle: true,
 }
 
 /** The connector image an administrator runs next to Tenable.sc. */
@@ -295,7 +290,7 @@ export function TenableConnectorDialog({
                   <SelectContent>
                     {SEVERITIES.map((s) => (
                       <SelectItem key={s.value} value={String(s.value)}>
-                        {t(s.key, s.label)}
+                        {t(s.key)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -462,14 +457,19 @@ export function RotationFields({
           <SelectContent>
             {COVERAGE_ROTATIONS.map((r) => (
               <SelectItem key={r} value={r}>
-                {t(`tenableSc.dialog.rotationMode.${r}`, ROTATION_TEXT[r].label)}
+                {t(`tenableSc.dialog.rotationMode.${r}`)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <p className="text-muted-foreground text-xs" data-testid="tsc-rotation-hint">
-          {t(`tenableSc.dialog.rotationHint.${rotation}`, ROTATION_TEXT[rotation].hint)}
+          {t(`tenableSc.dialog.rotationHint.${rotation}`)}
         </p>
+        {ROTATION_NEEDS[rotation] && (
+          <p className="text-muted-foreground text-xs" data-testid="tsc-rotation-needs">
+            {t(`tenableSc.dialog.rotationNeeds.${rotation}`)}
+          </p>
+        )}
       </div>
       {rotation !== 'off' && (
         <>
@@ -504,7 +504,7 @@ export function RotationFields({
               <p className="text-muted-foreground text-xs">
                 {t(
                   'tenableSc.dialog.rotationWaitHint',
-                  "1 to 72 hours, 12 by default. Match it to Tenable.sc's nightly cleanup; the license check before each batch confirms the capacity is free."
+                  "24 to 72 hours, 26 by default. Lifetimes apply only at Tenable.sc's nightly cleanup, so a shorter wait cannot see the license freed; the license check before each batch confirms the capacity."
                 )}
               </p>
             </div>

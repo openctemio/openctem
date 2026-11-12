@@ -143,7 +143,6 @@ func TestRequireRecentAuth_ExternalProviderToken(t *testing.T) {
 // RecentAuthGate is the same check for a service: it judges only the user
 // making the request, and answers with CheckRecentAuth's errors.
 func TestRecentAuthGate(t *testing.T) {
-	const window = 10 * time.Minute
 	now := time.Now()
 	session := func(ctx context.Context) context.Context {
 		ctx = context.WithValue(ctx, UserIDKey, "u1")
@@ -175,7 +174,7 @@ func TestRecentAuthGate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st, _ := tc.checker.(*stubRecentAuth)
-			err := RecentAuthGate{Checker: tc.checker, Window: window}.RequireRecentAuth(tc.ctx(context.Background()), tc.actor)
+			err := RecentAuthGate{Checker: tc.checker}.RequireRecentAuth(tc.ctx(context.Background()), tc.actor)
 			if !errors.Is(err, tc.want) || (tc.want == nil && err != nil) {
 				t.Fatalf("got %v, want %v", err, tc.want)
 			}

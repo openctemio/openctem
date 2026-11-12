@@ -7,8 +7,6 @@
 import type { ScanIntensity, ScanTargetOptions } from '@/lib/api/scan-types'
 import type { Translate } from './translate'
 import type { ScanReadiness } from '../components/target-picker/selection-summary'
-import type { CoverageLevel } from './coverage-expansion'
-import { describeTargetOptions, hasDynamicTargets } from './dynamic-targets'
 import { intensityTier, workflowTier, type ProbeTier } from './scan-intensity'
 
 /**
@@ -47,28 +45,29 @@ export function lowerIntensityAllowed(
 }
 
 /**
- * The one-line summary of the Targets step's options disclosure: the coverage
- * level (when offered), how ranges and wildcards are resolved, and whether
- * names that do not resolve are kept. Joined by commas, never a middle dot.
+ * The one-line summary of the options of what a run resolves again (the
+ * wildcards, inventory ranges): the freshness window, stale assets, and
+ * whether names that do not resolve are kept. Comma separated, never a
+ * middle dot. Ranges and coverage are not here: their choice is shown next
+ * to their group.
  */
-export function targetOptionsSummary(
+export function selectorOptionsSummary(
   t: Translate,
-  opts: {
-    coverage?: CoverageLevel
-    targets: readonly string[]
-    options: ScanTargetOptions | undefined
-  }
+  options: ScanTargetOptions | undefined
 ): string {
-  const parts: string[] = []
-  if (opts.coverage) parts.push(t(`scans.coverage.${opts.coverage}.label`))
-  parts.push(...describeTargetOptions(opts.targets, opts.options, t))
-  if (hasDynamicTargets(opts.targets, opts.options)) {
-    parts.push(
-      opts.options?.include_unresolved
-        ? t('scans.targetsStep.unresolvedOn')
-        : t('scans.targetsStep.unresolvedOff')
-    )
-  }
-  const line = parts.join(', ')
+  const parts: string[] = [
+    options?.seen_within_days
+      ? t('scans.targetOptions.seenWithin', undefined, { days: options.seen_within_days })
+      : t('scans.dynamic.anyTimeSummary'),
+  ]
+  if (options?.include_stale) parts.push(t('scans.targetOptions.includesStale'))
+  parts.push(
+    options?.include_unresolved
+      ? t('scans.targetsStep.unresolvedOn')
+      : t('scans.targetsStep.unresolvedOff')
+  )
+  const line = parts
+    .map((p, i) => (i === 0 ? p : p.charAt(0).toLocaleLowerCase() + p.slice(1)))
+    .join(', ')
   return line.charAt(0).toLocaleUpperCase() + line.slice(1)
 }

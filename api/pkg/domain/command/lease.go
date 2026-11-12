@@ -57,6 +57,19 @@ func LeaseRenewBefore(lease, interval time.Duration) time.Duration {
 // sensor that stopped renewing its lease.
 const LeaseExpiredMessage = "re-queued: the sensor holding it stopped renewing its lease"
 
+// SensorOfflineWaitMessage is stored on a routed command whose holder went
+// offline: it waits for an eligible sensor (that one when it comes back)
+// without using up a dispatch attempt (RequeueExpiredLeases). %s is the
+// sensor's name (SQL format()).
+const SensorOfflineWaitMessage = "waiting for sensor %s to come back: it went offline while running this task; the task runs again when an eligible sensor is online, and the wait does not use up an attempt"
+
+// MaxOfflineWaits is how many lost leases of offline holders one command
+// takes without using up a dispatch attempt. Past it, each one counts like
+// any lost lease: a command whose every run takes its sensor offline (it
+// crashes or wedges the host) still ends after MaxDispatchAttempts more.
+// MaxRequeues and the run's deadline bound the waits too.
+const MaxOfflineWaits = 8
+
 // RequeuedCommand is a command taken back from a sensor whose lease ran out.
 type RequeuedCommand struct {
 	ID       shared.ID

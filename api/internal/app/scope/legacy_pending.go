@@ -79,9 +79,7 @@ func (s *Service) settleTenantPending(ctx context.Context, tid shared.ID) (int, 
 		}
 		before := ledgerEntryOf(t, now)
 		t.Widen("", 0, now)
-		if err := s.commitEntry(ctx, before, t, false, func() error {
-			return s.targetRepo.Update(ctx, t)
-		}); err != nil {
+		if err := s.commitEntryUpdate(ctx, before, t); err != nil {
 			return done, fmt.Errorf("put pending scope entry %s into effect: %w", t.ID(), err)
 		}
 		done++

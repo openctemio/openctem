@@ -1,0 +1,8 @@
+### Security: tags that rules read can no longer be changed by `assets:write` alone, or by an import
+
+- A tag is governing when an enabled team access rule (tag match), scan approval rule, scan window or assignment rule names it. A governing `key:value` tag governs its whole key. Before, anyone with `assets:write` could remove such a tag to leave an approval (for example `production` on the Standard preset), or add one to pull an asset into a team's data scope, and any sensor report or CSV file could do the same.
+- Creating, updating or CSV-importing an asset with a changed governing tag now needs the permission that edits that kind of rule: `team:groups:write` (team access rule), `team:assignment_rules:write` (assignment rule), `scans:windows:manage` (scan window), an owner or administrator (scan approval rule). Otherwise the API answers 403 and names the tag and the kind of rule. If the rules cannot be read the change is refused (503).
+- Imports (sensor reports, connectors, importers) never set a governing tag: it is dropped and counted in `openctem_ingest_asset_tags_dropped_total{reason="protected"}`. If the rules cannot be read, the report's tags are dropped.
+- New audit action `asset.governed_tags_changed`: an allowed change lists the tags and the kinds of rule; a refused attempt is recorded with the result `denied`.
+- The set of governing tags is cached for 15 seconds per organization.
+- Jira routing reads the finding's tags, not the asset's, so it is not part of the set. The scan approval preset keeps reading the tags `production` and `prod`; the assets `environment` field has no write path today, so it is not used.

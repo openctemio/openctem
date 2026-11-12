@@ -14,6 +14,30 @@ A key works in two places:
 Sensor keys (`octs_…`, legacy `rda_…`; see [agent-identity.md](agent-identity.md#credential-formats)), SCIM tokens and the admin console
 are separate credentials and are not covered here.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as Member
+    participant C as Script or MCP client
+    box API
+    participant H as APIKeyHandler + apikey.Service
+    participant M as APIKeyAuthMiddleware.OrJWT
+    end
+    participant DB as Postgres api_keys, tenant_members
+    U->>H: POST /api/v1/api-keys (token-tenant chain, api-keys:write, requireStepUp, requireCredentialFactor)
+    H->>H: expires_in_days 1-365 and within the org maximum, each scope a read permission the caller holds
+    H->>DB: prefix (8 chars) + HMAC-SHA256 peppered with APP_ENCRYPTION_KEY
+    H->>H: audit api_key.created synchronously, else revoke and fail
+    H-->>U: oct_ key, once
+    C->>M: Authorization Bearer oct_ or X-API-Key (both equal when both sent, never the query)
+    M->>M: denied prefix (403), unsafe method (403 read-only)
+    M->>DB: Authenticate - prefix + hash, active, not expired, user_id set, user an active member, last_used best effort
+    M->>M: tenant from the key row, permissions = scopes held now, IsAdmin false, per-key token bucket (429)
+    M-->>C: handler response, audit with auth_method api_key
+```
+
 ## What a key carries
 
 | Field | Meaning |
@@ -83,7 +107,8 @@ On the REST API a key also:
 - is refused (`403`) on these areas, whatever the scopes: `/api/v1/api-keys`,
   `/api/v1/scim-tokens`, `/api/v1/me`, `/api/v1/notifications`, `/api/v1/ws`,
   `/api/v1/platform`, `/api/v1/users`, `/api/v1/auth`, `/api/v1/admin`,
-  `/api/v1/tenants`, `/api/v1/invitations`. A key can never mint, list or
+  `/api/v1/tenants`, `/api/v1/invitations`, `/api/v1/service-accounts`,
+  `/api/v1/oauth`, `/api/v1/mcp-access` (`apiKeyDeniedPrefixes`). A key can never mint, list or
   revoke keys, change a password or 2FA, or reach the admin console.
 - runs the same chain as a session after authentication: the key's user is
   loaded (UserSync), active membership is re-checked, the organization's IP
@@ -160,10 +185,11 @@ a permission gate is reachable by a key.
 
 ## Open decision: write access
 
-Keys are read-only on the REST API. Scopes can include write permissions
-(`assets:write`, `findings:status`, …), but every key minted so far was minted
-for the read-only MCP server, so honouring those scopes now would silently give
-existing keys write access. Allowing writes needs a design decision: either a
+Keys are read-only on the REST API, and minting refuses a scope that is not a
+read scope (`permission.IsReadScope`, "API keys are read-only"). Keys minted
+before that check may still carry write scopes; they are never honoured,
+because `OrJWT` refuses every unsafe method for a key. Allowing writes needs a
+design decision: either a
 per-key "allow writes" flag set at mint time, or honouring write scopes only
 for keys minted after the change. The denylist and the CSRF reasoning above
 already hold for writes; the read-only check in `OrJWT` is the one switch.

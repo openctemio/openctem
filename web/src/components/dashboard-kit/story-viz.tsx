@@ -51,7 +51,7 @@ export function KpiStripViz({ result }: { result: KpisResult }) {
       ),
     }
   })
-  return <MetricStrip items={items} className="border-0 bg-transparent" />
+  return <MetricStrip items={items} embedded />
 }
 
 /** The plain-words sentence of a lever (shared by the levers and the brief). */

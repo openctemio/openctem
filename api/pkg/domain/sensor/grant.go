@@ -209,6 +209,22 @@ func NewGrantFromProfile(tenantID, sensorID shared.ID, profile string, zones []s
 	return g, nil
 }
 
+// TrustableAtApproval reports whether a sensor of profile may be made
+// Trusted by the approval itself (research/466 D3): only profiles whose
+// grant carries no credentials and no push ingest, so trust adds active
+// scanning and nothing an attacker could carry off. Every other profile
+// keeps the separate promotion.
+func TrustableAtApproval(profile string) bool {
+	base, _, _ := strings.Cut(profile, ":")
+	switch base {
+	case ProfileInternalScanner, ProfileEASMExternal, ProfileScanConnector:
+	default:
+		return false
+	}
+	g, err := NewGrantFromProfile(shared.ID{}, shared.ID{}, profile, nil)
+	return err == nil && !g.AllowCredentials && !g.AllowPushIngest
+}
+
 // ParameterisedProfile reports whether a profile takes a ":<name>" (the one
 // connector or tool the sensor runs).
 func ParameterisedProfile(base string) bool {

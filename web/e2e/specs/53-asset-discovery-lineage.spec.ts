@@ -2,7 +2,7 @@ import { test, expect } from '../fixtures/authenticated-page'
 import type { Page } from '@playwright/test'
 
 /**
- * How this asset was found (api docs/architecture/easm.md, Discovery lineage):
+ * How we found this (api docs/architecture/exploration.md, the story chain):
  * a subdomain under a domain shows the chain root first, the domain as a
  * link, at desktop and phone width without sideways scroll. Each run uses
  * its own names under example.com.
@@ -55,9 +55,9 @@ test('the asset page shows how a subdomain was found', { tag: ['@assets'] }, asy
     ]) {
       await page.setViewportSize(viewport)
       await page.goto(`/assets/${childId}`)
-      const section = page.getByRole('region', { name: 'How this asset was found' })
+      const section = page.getByRole('region', { name: 'How we found this' })
       await expect(section).toBeVisible({ timeout: 30_000 })
-      const chain = section.getByRole('list', { name: 'Discovery chain' })
+      const chain = section.getByRole('list', { name: 'How we found this' })
       await expect(chain.getByRole('link', { name: root })).toHaveAttribute(
         'href',
         `/assets/${rootId}`

@@ -34,7 +34,7 @@ var Features = []Feature{
 		Stages:      []string{StageDiscovery, StagePrioritization, StageMobilization},
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
-			"registerFindingImportRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
+			"registerFindingImportRoutes", "registerSourceRetirementRoutes", "registerStoryRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
 			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAIKnowledgeRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
@@ -59,11 +59,11 @@ var Features = []Feature{
 	},
 	{
 		ID: "attack-surface", Title: "Attack surface and EASM",
-		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths and the scoping summary.",
+		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths, the scoping summary and exploration leads (next steps, approvals).",
 		Stages:      []string{StageScoping, StageDiscovery, StagePrioritization},
 		Registers: []string{
 			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerEASMDiscoveryRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes", "registerPageMonitorRoutes",
-			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes",
+			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes", "registerExplorationLeadRoutes",
 		},
 	},
 	{
@@ -109,7 +109,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerScanRoutes", "registerScanGovernanceRoutes", "registerScanApprovalRoutes", "registerScanWorkflowRoutes", "registerScanProfileRoutes", "registerScanWindowRoutes",
 			"registerScannerTemplateRoutes", "registerContentSourceRoutes", "registerContentSourceWebhookRoute", "registerContentPackRoutes", "registerPlatformContentPackRoutes", "registerContentCatalogRoutes", "registerWordlistRoutes", "registerContentRuleRoutes",
-			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes",
+			"registerToolRoutes", "registerToolCategoryRoutes", "registerCapabilityRoutes", "registerSecretStoreRoutes", "registerToolSourceRoutes",
 			"registerPlatformScanningRoutes", "registerCommandRoutes",
 		},
 	},
@@ -181,7 +181,7 @@ var Features = []Feature{
 		Description: "The organization, its settings (security, SSO, evidence, retests, asset sources), its limits, support access grants and the audit log.",
 		Registers: []string{
 			"registerTenantRoutes", "registerAuditRoutes", "registerOrganizationLimitsRoutes", "registerOrganizationSecurityOverviewRoutes", "registerOrganizationSupportAccessRoutes",
-			"registerEvidenceSettingsRoutes", "registerRetestSettingsRoutes", "registerClosureSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerEmergingThreatSettingsRoutes", "registerAISettingsRoutes", "registerLicensePolicySettingsRoutes",
+			"registerEvidenceSettingsRoutes", "registerCredentialSettingsRoutes", "registerRetestSettingsRoutes", "registerClosureSettingsRoutes", "registerVulnMatchingSettingsRoutes", "registerEmergingThreatSettingsRoutes", "registerAISettingsRoutes", "registerLicensePolicySettingsRoutes",
 			"registerAssetReconciliationSettingsRoutes", "registerCycleSettingsRoutes", "registerFindingCorrelationSettingsRoutes",
 			"registerFindingViewSettingsRoutes",
 			"registerSharedSensorsSettingsRoutes",

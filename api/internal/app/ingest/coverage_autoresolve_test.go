@@ -208,8 +208,11 @@ func TestParseCoverageAutoResolveMode(t *testing.T) {
 // any other call panics via the nil embedded interface.
 type coverageFindingRepo struct {
 	vulnerability.FindingRepository
-	cov      *ingestreport.CommandCoverage
-	tiers    map[shared.ID]vulnerability.RiskTier // absent: standard
+	cov   *ingestreport.CommandCoverage
+	tiers map[shared.ID]vulnerability.RiskTier // absent: standard
+	// unknown ids the tenant-scoped tier read does not return (another
+	// tenant's finding, or deleted).
+	unknown  map[shared.ID]bool
 	stale    []shared.ID
 	open     int
 	query    ingestreport.CoverageQuery
@@ -434,5 +437,44 @@ func TestDecideRepoCoverage(t *testing.T) {
 	// The non-repository decision hands such a run over.
 	if got := decideCoverage(repoRun()).reason; got != coverageRepositoryScan {
 		t.Fatalf("decideCoverage on a repository run = %q, want %q", got, coverageRepositoryScan)
+	}
+}
+
+// A run whose info matches went to exposures proves nothing about the
+// informational findings of its tool: the candidate query leaves them out.
+// With the organization filing them as findings, or no projection wired,
+// they stay candidates as before.
+func TestEvaluateCommandCoverage_KeepsInformationalWhenRouted(t *testing.T) {
+	asFindings, err := tenant.NewTenant("Org", "org", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := asFindings.TypedSettings()
+	st.EASM.InfoMatchesAsFindings = true
+	if err := asFindings.UpdateSettings(st); err != nil {
+		t.Fatal(err)
+	}
+	routed, err := tenant.NewTenant("Org2", "org2", "u")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		projector bool
+		tn        *tenant.Tenant
+		want      bool
+	}{
+		"routed to exposures": {projector: true, tn: routed, want: true},
+		"filed as findings":   {projector: true, tn: asFindings, want: false},
+		"no projection wired": {projector: false, tn: routed, want: false},
+	} {
+		svc, repo := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
+		svc.tenantRepo = settingsTenantRepo{t: tc.tn}
+		if tc.projector {
+			svc.templateMatches = &fakeTemplateMatches{}
+		}
+		svc.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID())
+		if repo.query.KeepInformational != tc.want {
+			t.Errorf("%s: KeepInformational = %v, want %v", name, repo.query.KeepInformational, tc.want)
+		}
 	}
 }

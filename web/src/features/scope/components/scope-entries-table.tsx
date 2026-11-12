@@ -95,6 +95,7 @@ export const IN_SCOPE_STATUSES: ScopeEntryStatus[] = [
   'expired',
   'inactive',
   'rejected',
+  'superseded',
 ]
 
 export interface ScopeListQuery {
@@ -187,14 +188,18 @@ export function ScopeEntriesTable({
         },
       ]
     }
-    const out: RowAction[] = [
-      {
-        label: t('scope.entries.act.edit', 'Edit'),
-        icon: Pencil,
-        onClick: () => setEditEntry(e),
-        permission: Permission.ScopeWrite,
-      },
-    ]
+    // A replaced entry keeps its history as it was: it is not edited.
+    const out: RowAction[] =
+      st === 'superseded'
+        ? []
+        : [
+            {
+              label: t('scope.entries.act.edit', 'Edit'),
+              icon: Pencil,
+              onClick: () => setEditEntry(e),
+              permission: Permission.ScopeWrite,
+            },
+          ]
     if (st === 'active') {
       out.push({
         label: t('scope.entries.act.deactivate', 'Deactivate'),
@@ -483,7 +488,7 @@ export function ScopeEntriesTable({
                 ? t('scope.filter.tryAnother', 'Try another search, kind or status.')
                 : t(
                     'scope.entries.emptyDescription',
-                    'Scans refuse every internet target no entry covers.'
+                    "Targets no entry covers get what Scan unclassified assets allows; an entry gives them the scan's full intensity."
                   )
             }
           />

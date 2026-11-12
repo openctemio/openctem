@@ -46,7 +46,8 @@ import {
 } from '../api/use-task-query'
 import { claimConflicts } from '../lib/claim-conflicts'
 import { ClaimConflictStep } from './claim-conflict-step'
-import { QueryBox } from './query-box'
+import { QueryInput } from '@/features/query/components/query-input'
+import type { ParseResult } from '@/features/query/api/query-api'
 import { QueryPreviewPanel } from './query-preview-panel'
 import { apiMessage } from './suggestions-inbox'
 
@@ -74,6 +75,10 @@ export function CreateTaskFromQueryDialog({
   const owners = useOwnerNames()
   const revalidate = useRevalidateHub()
   const [query, setQuery] = useState('')
+  // The box takes the short form too; tasks store the long form the
+  // server printed for it.
+  const [parsed, setParsed] = useState<ParseResult | null>(null)
+  const taskText = parsed?.valid && parsed.form === 'short' && parsed.query ? parsed.query : query
   const [preview, setPreview] = useState<QueryTaskPreview | null>(null)
   const [previewedText, setPreviewedText] = useState('')
   const [title, setTitle] = useState('')
@@ -109,7 +114,7 @@ export function CreateTaskFromQueryDialog({
     setBusy('preview')
     setError(null)
     try {
-      const p = await taskQueryApi.preview(query)
+      const p = await taskQueryApi.preview(taskText)
       setPreview(p)
       setPreviewedText(query)
       setMove(new Set())
@@ -124,7 +129,7 @@ export function CreateTaskFromQueryDialog({
     } finally {
       setBusy(null)
     }
-  }, [group, query, t, title, user])
+  }, [group, query, taskText, t, title, user])
 
   const stale = preview !== null && previewedText !== query
   const capN = Number(cap)
@@ -152,7 +157,7 @@ export function CreateTaskFromQueryDialog({
     try {
       const res = await taskQueryApi.create({
         title: title.trim(),
-        query,
+        query: taskText,
         mode,
         ...(mode === 'auto' ? { cap: capN } : {}),
         ...(user !== NONE ? { assignee_user_id: user } : {}),
@@ -201,11 +206,11 @@ export function CreateTaskFromQueryDialog({
     move,
     onOpenChange,
     preview,
-    query,
     reason,
     revalidate,
     router,
     t,
+    taskText,
     title,
     user,
   ])
@@ -220,7 +225,15 @@ export function CreateTaskFromQueryDialog({
         <DialogBody className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="task-query">{t('remediationQuery.create.queryLabel')}</Label>
-            <QueryBox id="task-query" value={query} onChange={setQuery} autoFocus />
+            <QueryInput
+              entity="findings"
+              id="task-query"
+              value={query}
+              onChange={setQuery}
+              onParsed={setParsed}
+              multiline
+              autoFocus
+            />
             {ignoredFilters && ignoredFilters.length > 0 && (
               <p className="text-xs text-warning">
                 {t('remediationQuery.create.ignoredFilters', undefined, {

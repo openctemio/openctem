@@ -25,12 +25,19 @@ import (
 //	                                           (critical audit, admins told)
 //	/admin/settings/email-relay    any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told)
+//	/admin/settings/leaked-secret-storage  any admin   PUT: super_admin + fresh step-up
+//	                                           + reason (critical audit, admins told)
 //	/admin/settings/ai             any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
 //	/admin/settings/social-login-providers   any admin   PUT /{provider}: super_admin + fresh step-up
 //	                                           + reason (critical audit, admins told);
 //	                                           test: super_admin
+//	/admin/settings/scope-blocked-names     any admin   PUT, exceptions POST: platform
+//	                                           owner + fresh step-up + reason (critical
+//	                                           audit, admins told; a second owner on a
+//	                                           hosted service for grants, extensions
+//	                                           and turning the government rule off)
 //
 // Secrets are never returned by any of them.
 func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlewares []Middleware,
@@ -93,6 +100,11 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.GET("/", on(emailRelay, ps.GetEmailRelay))
 		r.PUT("/", on(emailRelay, ps.UpdateEmailRelay), freshStepUp("settings.email_relay"))
 	}, adminMiddlewares...)
+	leakedSecrets := ps.LeakedSecretStorage != nil
+	router.Group("/api/v1/admin/settings/leaked-secret-storage", func(r Router) {
+		r.GET("/", on(leakedSecrets, ps.GetLeakedSecretStorage))
+		r.PUT("/", on(leakedSecrets, ps.UpdateLeakedSecretStorage), freshStepUp("settings.leaked_secret_storage"))
+	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/alerts", func(r Router) {
 		r.GET("/", on(alerts, ps.GetAlertWebhook))
 		r.PUT("/", on(alerts, ps.UpdateAlertWebhook), freshStepUp("settings.alerts"))
@@ -103,6 +115,16 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 		r.PUT("/", on(ai, ps.UpdatePlatformAI), freshStepUp("settings.ai"))
 		r.POST("/test", on(ai, ps.TestPlatformAI))
 		r.PUT("/org-policy", on(ai, ps.UpdateOrgAIPolicy), freshStepUp("settings.ai_org_policy"))
+	}, adminMiddlewares...)
+	// Blocked target names (RFC-154).
+	scopeNames := ps.ScopeNames != nil
+	router.Group("/api/v1/admin/settings/scope-blocked-names", func(r Router) {
+		r.GET("/", on(scopeNames, ps.GetScopeBlockedNames))
+		r.PUT("/", on(scopeNames, ps.UpdateScopeBlockedNames), freshStepUp("settings.scope_blocked_names"))
+		r.GET("/exceptions", on(scopeNames, ps.ListScopeNameExceptions))
+		r.POST("/exceptions", on(scopeNames, ps.GrantScopeNameException), freshStepUp("settings.scope_name_exception"))
+		r.POST("/exceptions/{id}/extend", on(scopeNames, ps.ExtendScopeNameException), freshStepUp("settings.scope_name_exception"))
+		r.POST("/exceptions/{id}/revoke", on(scopeNames, ps.RevokeScopeNameException), freshStepUp("settings.scope_name_exception"))
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
 		r.GET("/", on(social, ps.GetSocialLogin))

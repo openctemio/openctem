@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/ctis/v2"
@@ -33,6 +35,7 @@ type DedupReviewEnqueuer interface {
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
 	repo          asset.Repository
+	tagGovernor   TagGovernor // optional: governing tags an import may not set (nil = validator only)
 	repoExtRepo   asset.RepositoryExtensionRepository
 	relRepo       asset.RelationshipRepository
 	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
@@ -65,6 +68,8 @@ type AssetProcessor struct {
 
 	// webEvidence stores the reserved web_evidence captures (nil = dropped).
 	webEvidence WebEvidenceRecorder
+	// pageChange schedules a new capture of a web service whose page changed (nil = cadence only).
+	pageChange PageChangeNotifier
 	// webContent takes the reserved web_content fetches (nil = dropped).
 	webContent WebContentRecorder
 }
@@ -267,12 +272,17 @@ func (p *AssetProcessor) mergeTrackingExposure(
 	observedAt time.Time,
 	recovered *[]shared.ID,
 	becameExposed *[]*asset.Asset,
+	pageChanged *[]shared.ID,
 ) []*asset.AssetStateChange {
 	oldExposure := existing.Exposure()
 	oldInternet := existing.IsInternetAccessible()
 	wasFacing := oldInternet || oldExposure == asset.ExposurePublic
 
+	pageBefore := pageSignature(existing)
 	p.mergeCTISIntoAsset(existing, ctisAsset, tool, observedAt, recovered)
+	if pageChanged != nil && pageBefore != "" && pageSignature(existing) != pageBefore {
+		*pageChanged = append(*pageChanged, existing.ID())
+	}
 
 	if becameExposed != nil && !wasFacing &&
 		(existing.IsInternetAccessible() || existing.Exposure() == asset.ExposurePublic) {
@@ -369,7 +379,11 @@ func (p *AssetProcessor) processBatch(
 
 	// The response header posture of an origin keeps its allow-listed keys
 	// only (names and flags, never a header or cookie value).
-	sanitizeHTTPPosture(report)
+	sanitizeHTTPPosture(report, scope)
+
+	// Tags a rule reads (team access, approvals, scan windows, assignment)
+	// are set by people with the rule's permission, never by a report.
+	p.dropGoverningTags(ctx, tenantID, report)
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
@@ -388,6 +402,10 @@ func (p *AssetProcessor) processBatch(
 	// The addresses the report's in-bound assets vouch for (job_bound.go),
 	// read before any asset is dropped.
 	scope.primeJobBound(report)
+
+	// The source of the service protocols the report names, from the
+	// capability the platform bound it to (service_kind.go).
+	kindEvidence := serviceKindEvidence(report)
 
 	// Junk names from passive sources (a domain that is not a host name, the
 	// remnant of a percent-encoded delimiter) never become assets.
@@ -461,6 +479,8 @@ func (p *AssetProcessor) processBatch(
 	// Set once the upsert persisted the merges, so a failed upsert never
 	// announces an exposure that was not saved.
 	var exposedPersisted []*asset.Asset
+	// Web services whose page changed (title, status, redirect, favicon).
+	var pageChanged []shared.ID
 
 	cfg := p.defaultCorrelationConfig()
 	if tenantCfg != nil {
@@ -479,6 +499,10 @@ func (p *AssetProcessor) processBatch(
 	observedAt := reportObservedAt(report, time.Now())
 	isNew := map[string]bool{}
 	queued := map[string]bool{}
+	// Every asset entity a report asset landed on, and the ids the upsert
+	// stored (practice_facts.go).
+	var held []*asset.Asset
+	var persisted map[string]shared.ID
 	var renames []pendingRename
 
 	for i := range report.Assets {
@@ -495,19 +519,18 @@ func (p *AssetProcessor) processBatch(
 		if normalizedName == "" {
 			continue
 		}
-		// A scan command whose targets are all addresses and ranges reports
-		// only on them: an asset naming only other addresses is dropped,
-		// with its findings (RFC-088 output binding).
+		// An asset outside its command's addresses (an address-only scan)
+		// or outside its targets (a hostname-scoped scan) is recorded as a
+		// scan discovery, never dropped; past the per-report cap it is
+		// refused with its findings (job_bound.go).
 		if scope.outsideAddressChunk(normalizedName, ctisAsset.Properties) {
-			skipOutsideChunk(output, ctisAsset.ID)
-			continue
-		}
-		// A hostname-scoped command reports only at or under its target
-		// names, its target addresses and the addresses those names state:
-		// anything else is dropped with its findings (job_bound.go).
-		if scope.outsideJobTargets(normalizedName, coreType) {
-			skipOutsideJob(output, ctisAsset.ID)
-			continue
+			if !recordOutsideTargets(output, ctisAsset.ID, true) {
+				continue
+			}
+		} else if scope.outsideJobTargets(normalizedName, coreType) {
+			if !recordOutsideTargets(output, ctisAsset.ID, false) {
+				continue
+			}
 		}
 
 		// When the source last saw this asset (its last_seen, never later
@@ -526,9 +549,11 @@ func (p *AssetProcessor) processBatch(
 				skipOutOfScope(output, ctisAsset.ID)
 				return
 			}
+			held = append(held, existing)
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
-				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed)...)
+				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
+				classifyReportedService(existing, ctisAsset, kindEvidence)
 				alterRefs[ctisAsset.ID] = true
 			} else {
 				output.AssetsLimited++
@@ -577,6 +602,7 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			scope.dropUntrustedClaims(newAsset)
+			classifyReportedService(newAsset, ctisAsset, kindEvidence)
 			// Seen when its source saw it, so a later report observed earlier
 			// cannot pass it.
 			newAsset.MarkSeenAt(seenAt)
@@ -584,6 +610,7 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			newAssets = append(newAssets, newAsset)
+			held = append(held, newAsset)
 			assetMap[ctisAsset.ID] = newAsset.ID()
 			alterRefs[ctisAsset.ID] = true
 			existingMap[normalizedName] = newAsset
@@ -775,6 +802,7 @@ func (p *AssetProcessor) processBatch(
 		}
 		output.AssetsCreated = created
 		output.AssetsUpdated = updated
+		persisted = persistedIDs
 
 		// A new asset the database refused (the repository skips just that
 		// row) was never stored: unmap it so its findings are not linked to
@@ -830,6 +858,7 @@ func (p *AssetProcessor) processBatch(
 		p.flushIdentity(ctx, idx, finalID)
 		discovered = append(discovered, inserted...)
 		exposedPersisted = becameExposed
+		p.notifyPagesChanged(ctx, tenantID, pageChanged)
 	}
 
 	// Step 5: Create/update repository extensions for repository assets
@@ -890,7 +919,7 @@ func (p *AssetProcessor) processBatch(
 
 	// Step 9: Ports: address → port edges, host name → address, and ports a
 	// port scan no longer sees are closed (research/22 P0-6).
-	p.surfacePorts(ctx, tenantID, report, existingMap, mayChange)
+	p.surfacePorts(ctx, tenantID, report, existingMap, mayChange, scope.mayLinkName)
 
 	// Step 10: Web evidence (status, title, snippet, optional screenshot) of
 	// the assets this report may change (RFC-081).
@@ -902,6 +931,8 @@ func (p *AssetProcessor) processBatch(
 	if p.relRepo != nil {
 		p.createReportRelationships(ctx, tenantID, report, existingMap, assetMap, mayChange)
 	}
+
+	notePracticeFacts(output, tenantID, held, persisted, isNew, assetMap)
 
 	// What this ingest wrote, for attribution (scan_attribution.go): every
 	// asset it created (report assets, root domains, resolved addresses) and
@@ -1480,23 +1511,17 @@ func (p *AssetProcessor) createAssetFromCTIS(
 				"max_length", maxDescLength,
 				"asset_id", ctisAsset.ID,
 			)
-			desc = desc[:maxDescLength]
+			// Cut on a character boundary: half a multi-byte character is
+			// invalid UTF-8, which fails the whole asset batch.
+			desc = safetext.TruncateBytes(desc, maxDescLength)
 		}
 		newAsset.UpdateDescription(desc)
 	}
 
-	// Set tags (with limit) - log if truncated
-	tags := ctisAsset.Tags
-	if len(tags) > MaxTagsPerAsset {
-		p.logger.Warn("asset tags truncated",
-			"original_count", len(tags),
-			"max_count", MaxTagsPerAsset,
-			"asset_id", ctisAsset.ID,
-		)
-		tags = tags[:MaxTagsPerAsset]
-	}
-	for _, tag := range tags {
-		newAsset.AddTag(tag)
+	// Tags: the shared validator and the per-import cap (a report is not
+	// trusted with arbitrary strings: see importTags).
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		newAsset.AddTag(t)
 	}
 
 	// Discovery info: the report's tool, unless a server-side report (the
@@ -1644,15 +1669,20 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// owner_ref and data classification of an existing asset are decided
 	// by attribute reconciliation (attributes.go, RFC-069), not here.
 
-	// Merge tags
-	for _, tag := range ctisAsset.Tags {
-		existing.AddTag(tag)
+	// Merge tags (validated like a first sight)
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		existing.AddTag(t)
 	}
 
 	// Merge properties using deep merge
 	existingProps := existing.Properties()
 	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
+	if tool != nil && templateScanner(tool.Name) {
+		// A template scanner only fills the posture keys nothing stored
+		// decided (http_posture.go).
+		keepStoredPosture(existingProps, mergedProps)
+	}
 	// The stored asset's schema decides (the report asset may be of another
 	// type that landed here by name): technical blocks an older row still
 	// holds are promoted to flat keys, synonyms fold, and a key only another

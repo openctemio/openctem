@@ -1,0 +1,16 @@
+{
+  "chat_id": "42",
+  "text": "🟠 \u003cb\u003eNew exposure\u003c/b\u003e\n\u003cb\u003eSeverity:\u003c/b\u003e High\n\u003cb\u003eAsset:\u003c/b\u003e admin.example.com (subdomain)\n\u003cb\u003eWhat:\u003c/b\u003e Admin panel reachable on port 8443 (web interface exposed)\n\u003cb\u003eWhy it matters:\u003c/b\u003e An admin or login page is reachable from the internet\n\u003cb\u003eNext step:\u003c/b\u003e Restrict access to the interface, or confirm it is meant to be public.\n\u003cb\u003eOrganization:\u003c/b\u003e Example Corp",
+  "parse_mode": "HTML",
+  "disable_web_page_preview": true,
+  "reply_markup": {
+    "inline_keyboard": [
+      [
+        {
+          "text": "Open exposure",
+          "url": "https://ctem.example.com/exposures"
+        }
+      ]
+    ]
+  }
+}

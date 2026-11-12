@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, type ReactElement, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { AddFilterPopover } from './add-filter-popover'
 import { FilterChip } from './filter-chip'
+import { AdvancedChip, FQ_PARAM, FilterQueryEditor, QueryModeToggle } from './filter-query-mode'
 import {
   readFilters,
   viewFields,
@@ -45,6 +46,8 @@ interface FilterBarProps {
   onResetToView?: () => void
   /** "1,284 findings", pinned at the end of the row. */
   resultLabel?: string
+  /** The list's total, for the text mode's status line. */
+  resultCount?: number | null
 }
 
 /**
@@ -67,8 +70,12 @@ export function FilterBar({
   viewChanged,
   onResetToView,
   resultLabel,
+  resultCount,
 }: FilterBarProps) {
   const { t } = useTranslation()
+  const [textMode, setTextMode] = useState(false)
+  const toggleText = useCallback(() => setTextMode((v) => !v), [])
+  const fq = search.get(FQ_PARAM)
   const fieldOf = (name: string): FieldContract | undefined =>
     contract.fields.find((f) => f.name === name)
 
@@ -80,6 +87,16 @@ export function FilterBar({
   const lockedFields = useMemo(() => viewFields(viewFilter), [viewFilter])
 
   const chips: ReactElement[] = [
+    ...(fq
+      ? [
+          <AdvancedChip
+            key="advanced"
+            text={fq}
+            onOpen={() => setTextMode(true)}
+            onRemove={() => onSearchChange(withoutParam(search, FQ_PARAM))}
+          />,
+        ]
+      : []),
     ...(fromView.complex
       ? [
           <span
@@ -138,16 +155,18 @@ export function FilterBar({
     let next = search
     for (const f of filters) next = withoutParam(next, f.param)
     for (const p of unknown) next = withoutParam(next, p)
+    if (fq) next = withoutParam(next, FQ_PARAM)
     onSearchChange(next)
   }
 
-  return (
+  const row = (
     <FilterChipsRow
       data-testid="findings-filter-bar"
       leading={leading}
       chips={chips}
       trailing={
         <>
+          <QueryModeToggle active={textMode} onToggle={toggleText} />
           <AddFilterPopover
             contract={pickerContract}
             contractLoading={contractLoading}
@@ -168,7 +187,7 @@ export function FilterBar({
             >
               {t('findings.filter.resetToView', 'Reset to view')}
             </Button>
-          ) : filters.length + unknown.length > 1 ? (
+          ) : filters.length + unknown.length + (fq ? 1 : 0) > 1 ? (
             <Button
               variant="ghost"
               size="sm"
@@ -182,6 +201,21 @@ export function FilterBar({
       }
       end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
     />
+  )
+  if (!textMode) return row
+  return (
+    <div className="space-y-2">
+      <FilterQueryEditor
+        search={search}
+        skip={skip}
+        resultCount={resultCount}
+        onSearchChange={(next) => {
+          onSearchChange(next)
+          setTextMode(false)
+        }}
+      />
+      {row}
+    </div>
   )
 }
 

@@ -89,3 +89,14 @@ export interface UpdateCredentialStateInput {
   state: 'active' | 'resolved' | 'accepted' | 'false_positive'
   notes?: string
 }
+
+/**
+ * Settings > Leaked credentials (GET/PUT /api/v1/organization/settings/credentials):
+ * whether imported leaked secret values are kept. `store_secret_values`
+ * absent means the platform default applies.
+ */
+export interface ApiCredentialSettings {
+  store_secret_values?: boolean
+  platform_default: boolean
+  effective: boolean
+}

@@ -76,7 +76,7 @@ func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, ass
 	// Certificates are judged per host that served them (host_certificate.go).
 	pairs, served := pairHostCertificates(tenantID, assets)
 	now := time.Now().UTC()
-	var clearFPs, supersededFPs []string
+	var clearFPs, supersededFPs, staleRiskyFPs []string
 	hostEvents := map[shared.ID][]*exposure.ExposureEvent{}
 	for _, p := range pairs {
 		evs, clear := b.hostCertificateEvents(p, now)
@@ -102,6 +102,15 @@ func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, ass
 			supersededFPs = append(supersededFPs, b.legacyCertificateExpiryFingerprints(a)...)
 		}
 		events = append(events, hostEvents[a.ID()]...)
+		if a.Type() == asset.AssetTypeService && a.SubType() == subTypeOpenPort {
+			var risky *exposure.ExposureEvent
+			for _, ev := range events {
+				if ev != nil && ev.EventType() == exposure.EventTypeRiskyServiceExposed {
+					risky = ev
+				}
+			}
+			staleRiskyFPs = append(staleRiskyFPs, staleRiskyFingerprints(a, risky)...)
+		}
 		for _, ev := range events {
 			if err := upsertExposureEvent(ctx, b.exposureRepo, b.historyRepo, b.logger, ev,
 				fmt.Sprintf("asset: %s", a.ID().String())); err != nil {
@@ -120,6 +129,7 @@ func (b *AssetBridge) ProjectAssets(ctx context.Context, tenantID shared.ID, ass
 
 	b.resolveAuto(ctx, tenantID, clearFPs, AutoResolveCertNote)
 	b.resolveAuto(ctx, tenantID, supersededFPs, AutoResolveSupersededNote)
+	b.resolveAuto(ctx, tenantID, staleRiskyFPs, AutoResolveServiceKindNote)
 
 	if projected > 0 || failed > 0 {
 		b.logger.Info("projected recon assets into exposure store",
@@ -154,11 +164,11 @@ func (b *AssetBridge) resolveAuto(ctx context.Context, tenantID shared.ID, fps [
 	}
 	n, err := b.resolver.ResolveAuto(ctx, tenantID, SourceReconScan, fps, note)
 	if err != nil {
-		b.logger.Warn("failed to resolve certificate exposures", "tenant_id", tenantID.String(), "error", err)
+		b.logger.Warn("failed to resolve recon exposures", "tenant_id", tenantID.String(), "error", err)
 		return
 	}
 	if n > 0 {
-		b.logger.Info("resolved certificate exposures", "tenant_id", tenantID.String(), "resolved", n)
+		b.logger.Info("resolved recon exposures", "tenant_id", tenantID.String(), "resolved", n)
 	}
 }
 
@@ -171,10 +181,14 @@ func (b *AssetBridge) buildEventsForAsset(a *asset.Asset) []*exposure.ExposureEv
 		// Recon collapses open_port / http_service into the service core type
 		// via TypeAliases, distinguished by sub_type.
 		if a.SubType() == "open_port" {
+			var out []*exposure.ExposureEvent
 			if ev := b.buildPortEvent(a); ev != nil {
-				return []*exposure.ExposureEvent{ev}
+				out = append(out, ev)
 			}
-			return nil
+			if ev := b.buildRiskyServiceEvent(a); ev != nil {
+				out = append(out, ev)
+			}
+			return out
 		}
 		if ev := b.buildServiceEvent(a); ev != nil {
 			return []*exposure.ExposureEvent{ev}
@@ -197,10 +211,10 @@ func (b *AssetBridge) buildPortEvent(a *asset.Asset) *exposure.ExposureEvent {
 	if port <= 0 {
 		return nil // no port → nothing meaningful to track
 	}
-	protocol := propString(props, "protocol")
-	if protocol == "" {
-		protocol = "tcp"
-	}
+	// The transport is the dedupe key. Older port-scan ingest filed it under
+	// protocol, which now holds the application protocol: reading that would
+	// re-key the exposure once a detection names the protocol.
+	protocol := portTransport(props)
 	service := propString(props, "service")
 
 	title := fmt.Sprintf("Open port %d/%s", port, protocol)
@@ -221,6 +235,19 @@ func (b *AssetBridge) buildPortEvent(a *asset.Asset) *exposure.ExposureEvent {
 	}
 	if h := propString(props, "host"); h != "" {
 		details["host"] = h
+	}
+	// The service kind: a measured one by name, a port guess only as a
+	// guess (not dedupe keys).
+	if kind, src := asset.ServiceKindOf(props); kind != "" {
+		details[detailServiceKind] = kind
+		details[detailKindSource] = string(src)
+		if def, ok := asset.LookupServiceKind(kind); ok {
+			if src.IsGuess() {
+				details[detailServiceGuess] = def.Label
+			} else {
+				details[detailServiceLabel] = def.Label
+			}
+		}
 	}
 
 	return b.newEvent(a, exposure.EventTypePortOpen, exposure.SeverityInfo, title, details,

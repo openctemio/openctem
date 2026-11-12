@@ -344,6 +344,11 @@ func run() int {
 	// Console setting changes are told to every administrator (e-mail and
 	// the alert webhook).
 	services.SettingRecorder.SetNotifier(newAdminNotifier(cfg, repos, services, log))
+	// A first-party tool reporting a type its descriptor does not declare is
+	// told to the platform administrators, once per tool, type and version a day.
+	if n := newAdminNotifier(cfg, repos, services, log); n != nil && services.Ingest != nil {
+		services.Ingest.SetMismatchNotifier(n)
+	}
 
 	// Account security e-mails (2FA turned off, recovery code used, password
 	// changed) go to the user through the system SMTP server.
@@ -502,7 +507,10 @@ func run() int {
 	if handlers.AdminConsole != nil && services.PlatformCaptcha != nil {
 		handlers.AdminConsole.SetLoginGuard(services.PlatformCaptcha, newLoginFailureCounter(redisClient, log))
 	}
-	wireStepUpGate(&handlers, services)
+	// Each organization's re-verification policy, for the routes and the
+	// services' step-up gate alike.
+	handlers.StepUpPolicies = routes.NewStepUpPolicyProvider(repos.Tenant)
+	wireStepUpGate(&handlers, services, handlers.StepUpPolicies)
 
 	// ==========================================================================
 	// WebSocket Hub
@@ -646,8 +654,12 @@ func run() int {
 		}
 
 		// Seal leaked-credential secrets still stored in plaintext (rows written
-		// before secrets were encrypted, or without a key). Idempotent, batched,
-		// SKIP LOCKED: safe on every start and across replicas.
+		// before secrets were encrypted, or without a key), then move every
+		// leaked-secret fingerprint from the install-wide key to its
+		// organization's key, recomputed from the sealed value. Both are
+		// idempotent, batched and resumable: safe on every start and across
+		// replicas. The re-key's reversal: encrypt-credentials
+		// -revert-credential-fingerprints.
 		go func() {
 			n, err := postgres.BackfillLeakedCredentialSecrets(ctx, db.DB, services.CredentialSecrets)
 			if err != nil {
@@ -656,6 +668,15 @@ func run() int {
 			}
 			if n > 0 {
 				log.Info("leaked credential secrets sealed", "count", n, "aes_gcm", services.CredentialSecrets.Encrypts())
+			}
+			rep, err := postgres.RekeyLeakedCredentialFingerprints(ctx, db.DB, services.CredentialSecrets)
+			if err != nil {
+				log.Error("leaked credential fingerprint re-key failed", "error", err, "rekeyed", rep.Rekeyed)
+				return
+			}
+			if rep.Rekeyed > 0 || rep.Unrecomputable > 0 {
+				log.Info("leaked credential fingerprints keyed per organization",
+					"rekeyed", rep.Rekeyed, "unrecomputable", rep.Unrecomputable)
 			}
 		}()
 

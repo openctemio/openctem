@@ -138,21 +138,27 @@ export function isTenableSCConnector(integration: Integration | undefined): bool
 /**
  * How license capacity comes back between coverage batches (api research/143
  * §4): off (cover what the license holds), aging (Tenable.sc's nightly
- * cleanup frees it) or recycle (the connector recreates its rotation
- * repository). Anything but off needs the administrator's acknowledgement.
+ * cleanup frees it; recommended), purge (the connector removes the previous
+ * batch's addresses with an imported empty result) or recycle (the connector
+ * replaces its rotation repository by a verified copy; needs an Administrator
+ * key on the connector). Anything but off needs the administrator's
+ * acknowledgement.
  */
-export type CoverageRotation = 'off' | 'aging' | 'recycle'
+export type CoverageRotation = 'off' | 'aging' | 'purge' | 'recycle'
 
-export const COVERAGE_ROTATIONS: CoverageRotation[] = ['off', 'aging', 'recycle']
+export const COVERAGE_ROTATIONS: CoverageRotation[] = ['off', 'aging', 'purge', 'recycle']
 
-/** The aging wait the API uses when none is set, and its bounds. */
-export const DEFAULT_ROTATION_WAIT_HOURS = 12
-export const MIN_ROTATION_WAIT_HOURS = 1
+/**
+ * The aging wait the API uses when none is set, and its bounds: Tenable.sc
+ * frees aged data only at its nightly cleanup, so at least a day.
+ */
+export const DEFAULT_ROTATION_WAIT_HOURS = 26
+export const MIN_ROTATION_WAIT_HOURS = 24
 export const MAX_ROTATION_WAIT_HOURS = 72
 
 function rotationOf(v: unknown): CoverageRotation {
   const r = typeof v === 'string' ? v.trim().toLowerCase() : ''
-  return r === 'aging' || r === 'recycle' ? r : 'off'
+  return r === 'aging' || r === 'purge' || r === 'recycle' ? r : 'off'
 }
 
 export interface ConnectorSettings {
@@ -248,7 +254,7 @@ export function connectorSettingsError(s: ConnectorSettings): TenableMessage | n
     s.rotationWaitHours < MIN_ROTATION_WAIT_HOURS ||
     s.rotationWaitHours > MAX_ROTATION_WAIT_HOURS
   )
-    return msg('rotationWaitHours', 'Wait after a batch: 1 to 72 hours')
+    return msg('rotationWaitHours', 'Wait after a batch: 24 to 72 hours')
   return null
 }
 

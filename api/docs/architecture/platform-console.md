@@ -48,9 +48,20 @@ administrator's own platform roles, not the session's acting ones: an owner
 acting read-only sees every page, and a page that needs more shows "Elevate to
 see this page" with the elevate dialog one click away (`RoleRequiredNotice`).
 An administrator whose roles do not include it is told so; no retired tier
-name is shown. The sidebar header and the elevation bar name what the session
+name is shown. The sidebar header and the elevation control name what the session
 acts as in platform role words (`actingRoleLabel`). The API enforces the
 acting permissions either way.
+
+Elevation lives in the header row on every page: "Read-only" with an Elevate
+button, or the acting role and its end time with "End now". The elevate dialog
+asks for the role, the duration, the reason and the authenticator code in one
+form; the code goes in the step-up header of `POST /admin/auth/elevate`, which
+always needs a fresh proof (it never rides another action's step-up window). A
+refused code is shown under the code field. An administrator with a usable
+security key may leave the code empty, and a console that accepts only
+security keys shows no code field: the shared step-up dialog then asks for the
+key. The audit row (`console.elevated`, written before the elevation is
+granted) is unchanged.
 
 The Overview's "Needs attention" list includes the installation's own state
 from the Health page: a service that does not answer, a volume below 20%
@@ -91,6 +102,7 @@ reason, a step-up and an admin audit row:
 |---|---|---|
 | Copy reset link | `POST /api/v1/admin/platform-users/{id}/reset-link` | local accounts only; refused (`EMAIL_AVAILABLE`) while email works; one-hour link, returned once with `Cache-Control: no-store`, stored only as a hash, never written to the audit row or the logs; a new link replaces the old one; following it does not bypass the account's second factor |
 | Mark email verified | `POST .../mark-verified` | unverified local accounts, only while email does not work |
+| New setup link (organization Users tab) | `POST /api/v1/admin/platform-users/{id}/setup-link` with `organization_id` | ops_admin and up (`platform.tenants.owner_bootstrap`, the permission that created that owner), fresh step-up; only an organization's new owner who never set a password and belongs to no other organization (404 for another organization's account); 24-hour set-password link returned once as `setup_url`, `no-store`, stored only as a hash, never in the audit row or the logs; a new link replaces the old one; refused (`EMAIL_AVAILABLE`) while email works ([ownership invitations](organization-ownership-invitations.md#running-without-email)) |
 | Reset two-factor | `POST .../mfa/reset` | needs a second super admin's approval of that exact account (four-eyes, `user.reset_mfa`); removes the factor and recovery codes, ends every session, tells the user by email when email works; platform administrator accounts are refused |
 
 The link is a bearer secret: hand it over on a channel you trust. Organization
@@ -195,6 +207,47 @@ chart, the Ansible kit): mode (`port` | `host` | `off`), host name, port
 (default 8443) and client networks (private by default). Host mode is the
 recommended production setup. Details: [Docker deployment](../deployment/docker.md#platform-console).
 
+## Sign-in, elevation and break-glass flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Console browser (own site, ADMIN_LISTEN_ADDR)
+    box API, admin plane
+    participant H as AdminConsoleHandler
+    participant S as adminconsole.Service
+    participant L as admin_audit_logs (hash-chained)
+    end
+    participant DB as Postgres users, admin_users, admin_sessions
+    B->>H: POST /api/v1/admin/auth/login {email, password} (crossSite, 5/min, CAPTCHA after 3 failures per IP in 15 min)
+    H->>S: Start - same password and lockout counter as the account
+    alt unknown, wrong, not an administrator, inactive, locked, IdP required (non break-glass)
+        S-->>B: 401 Wrong email or password, audit console.login_failed
+    else
+        S-->>B: cookie admin_mfa (HttpOnly, Strict, path /api/v1/admin/auth, 5 min), methods
+        B->>H: POST /admin/auth/mfa {code} or WebAuthn assertion (403 WEBAUTHN_REQUIRED by policy)
+        S->>DB: openVerifiedSession - 8 h, 15 min idle, at most 3, cookies admin_session + admin_csrf
+        S->>L: console.login, or console.break_glass_sign_in (high) and an alert to the other administrators
+    end
+    B->>H: POST /admin/auth/elevate {role, reason, 15-60 min} (freshStepUpOpensWindow)
+    H->>L: console.elevated first, 503 AUDIT_UNAVAILABLE when it cannot be written
+    B->>H: any write (X-Admin-Step-Up when the route needs it)
+    H->>L: admin.write_started, then the handler, four-eyes routes answer 428 SECOND_APPROVAL_REQUIRED
+```
+
+Break-glass accounts come only from the `bootstrap-admin` CLI
+(`internal/tools/bootstrapadmin`, `internal/adminbootstrap`): `-email` makes
+the primary super administrator, and `-backup-email` (or an explicit
+`-no-backup`) a break-glass super administrator with its own `users` row and
+a 16-character temporary password; one-time credentials print only to a
+terminal (`-print-secrets` otherwise). A break-glass account keeps the
+password path when an IdP is required, still needs its second factor, cannot
+sign in on the main site (`platform_admin_gate.go`, also refused at refresh
+and token exchange), cannot join an organization (409
+`ACCOUNT_CANNOT_JOIN_ORGANIZATION`) and cannot approve a four-eyes request.
+Other administrators may also be members on the main site (one identity);
+only break-glass accounts are console-only.
+
 ## Security controls
 
 - Separate origin and process: the browser keeps tenant pages from reading
@@ -277,6 +330,8 @@ Shipped (design: [RFC-022 revision 24](../rfcs/RFC-022-platform-admin-console.md
 | Change the administrators' identity provider or the second factor it is trusted for | a new issuer or client id on an existing provider, or any trusted ACR/AMR value not trusted before (also on a first configuration); the target is the new issuer, client and trusted values |
 | Change where platform AI sends data | platform AI is saved turned on with a provider, server address, private-network switch or API key that differs from the last one applied while on (so a first enable, a key swap and enabling a destination changed while off all ask); the target is the provider, server address, private switch and a keyed fingerprint of the key, never the key. Model and allowed-model changes and turning it off never ask; removing the key of a platform that stays on does, because the server is then called without the credential; a backend that cannot fingerprint the key refuses the save |
 | Change the mail server platform e-mail is sent through | platform e-mail is saved turned on with a host, port, connection security or SMTP username that differs from the last one applied while on (so a first relay, a new host or port, a TLS downgrade and a different login ask); the target is host, port, security and username, never the password. Password rotation on the same login, sender changes, the test send and turning e-mail off never ask |
+| Let an organization scan a government or military name | on a hosted service (`MANAGED_SERVICE`) only: a scope name exception is granted or extended; the target is the organization, the name, whether names under it are included and the expiry day (RFC-154) |
+| Turn off the government and military name block | on a hosted service only: the blocked target names policy is saved with the rule off while it was on; target `off` |
 | Reset another administrator's console second factor | always (their next sign-in enrolls a new factor) |
 | Open sign-up | the stored sign-up policy opens wider than before |
 | Re-sign an organization's audit chain | always |

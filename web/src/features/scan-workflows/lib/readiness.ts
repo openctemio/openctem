@@ -30,6 +30,8 @@ export interface StepReadiness {
   state: StepReadinessState
   /** The run skips the step when no tool implements it. */
   optional?: boolean
+  /** A ready step: the tool that will run it (when the API names it). */
+  tool?: string
   code?: ReadinessReasonCode | string
   /** Tools the reason and the fix name. */
   tools?: string[]

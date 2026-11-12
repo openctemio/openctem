@@ -26,7 +26,8 @@ The organization owner mints a SCIM token (shown once); the IdP presents it as
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET | `/api/v1/scim-tokens` | JWT, owner/admin | list a tenant's SCIM tokens |
-| POST/DELETE | `/api/v1/scim-tokens` | JWT, **owner only** (mint: step-up) | mint (`expires_in_days` 1–365, required) / revoke a tenant's SCIM token |
+| POST | `/api/v1/scim-tokens` | JWT, **owner only**, step-up | mint (`expires_in_days` 1–365, required) |
+| DELETE | `/api/v1/scim-tokens/{id}` | JWT, **owner only** | revoke a tenant's SCIM token |
 | POST | `/api/v1/scim-tokens/{id}/rotate` | JWT, **owner only**, step-up | mint a replacement (shown once); the old token stops within 24 h |
 | GET | `/scim/v2/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas` | SCIM bearer | discovery |
 | GET | `/scim/v2/Users?filter=userName eq "x"` | SCIM bearer | list / filter |
@@ -58,6 +59,38 @@ like an API key:
   owner rotates them. After that they stop; rotate (or mint and revoke)
   before then.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D as Directory SCIM client
+    box API /scim/v2
+    participant AU as middleware.SCIMAuth
+    participant FG as middleware.SCIMFeatureGate
+    participant P as scim.ProvisioningService
+    end
+    participant T as TenantService
+    participant DB as Postgres scim_tokens, users, tenant_members
+    D->>AU: Authorization Bearer oct_scim_...
+    AU->>DB: HMAC-SHA256 peppered hash (APP_ENCRYPTION_KEY), active, not expired
+    AU-->>D: 401 invalid or revoked token, 403 organization suspended
+    AU->>FG: tenant from the token into the context, last_used best effort
+    FG-->>D: 403 feature unusable (leave-only mode still allows PUT, PATCH, DELETE on users), 503 limits unreadable
+    alt POST /Users
+        P->>DB: email domain DNS-verified by this tenant? else 400 invalidValue, nothing written
+        P->>T: find or create passwordless account, AddMember role viewer (403 seat limit, 409 existing account outside a verified domain)
+    else PATCH active false or true
+        P->>T: SuspendMember or Reactivate
+        T->>T: end IdP sessions of this tenant, drop caches, delete pending invitations, audit high
+    else DELETE /Users/{id}
+        P->>T: OffboardMember (revokes keys), account kept
+    else Groups
+        P->>DB: displayName or owner-configured mapping to role, owner never assigned
+    end
+    P-->>D: SCIM resource or error (404, 409, 400, 403)
+```
+
 ## Mapping to the domain
 
 - `id` is the OpenCTEM user id; every operation is scoped to the token's tenant
@@ -65,7 +98,7 @@ like an API key:
 - **Create** (`POST /Users`): `userName`/`emails` → normalised lowercase email →
   find-or-create a passwordless local user (the same "invited, not yet logged
   in" state, so SSO/SAML can later claim it) → add an active membership
-  (`role=member`). Idempotent: an existing active member returns `200`, a new
+  (`role=viewer`, least privilege; a mapped group raises it). Idempotent: an existing active member returns `200`, a new
   membership `201`. An email that **already has an account** but is not yet a
   member is attached only when the organization has DNS-verified its domain;
   otherwise the response is `409 uniqueness` and the person must be invited.
@@ -92,10 +125,16 @@ like an API key:
   an organization provisioned without that proof (for example by SCIM before
   the rule above) is refused with "registered with a different login method",
   so the address's real owner never lands in that organization.
-- **Deactivate** (`PATCH active:false`, `DELETE`): suspends the membership via
-  `TenantService.SuspendMember`, which **revokes the user's sessions immediately
-  and clears the permission cache** — true 0-second offboarding. The global user
-  record is retained (other tenants unaffected).
+- **Deactivate** (`PATCH active:false`): suspends the membership via
+  `TenantService.SuspendMember`, which ends the tenant's IdP-issued sessions,
+  clears the permission and membership caches and cancels pending invitations;
+  JWT routes re-check membership, so other sessions lose this organization at
+  the next request. The global user record is retained (other tenants
+  unaffected).
+- **Delete** (`DELETE /Users/{id}`): `ProvisioningService.Deprovision` offboards
+  the member (`TenantService.OffboardMember`, which also revokes their keys),
+  or disables them pending an administrator's offboarding when they own work
+  that needs a new owner. `204`; the account is kept.
 - **Reactivate** (`PATCH active:true`): un-suspends the membership.
 - `active` in any SCIM resource reflects the membership (suspended → `active:false`).
 
@@ -117,7 +156,7 @@ like an API key:
 | Piece | Where |
 |-------|-------|
 | Token entity + repo iface | `pkg/domain/scimtoken/entity.go` |
-| Token persistence | `internal/infra/postgres/scim_token_repository.go`, migrations `000179_scim_tokens`, `003300_scim_tokens_expiry` |
+| Token persistence | `internal/infra/postgres/scim_token_repository.go`, migrations `001146_baseline` (table), `003300_scim_tokens_expiry` |
 | Token service (mint/rotate/revoke/authenticate) | `internal/app/scim/token_service.go` |
 | Provisioning service | `internal/app/scim/provisioning.go` |
 | Bearer-token middleware | `internal/infra/http/middleware/scim_auth.go` |

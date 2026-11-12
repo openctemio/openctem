@@ -140,6 +140,18 @@ func (s *Service) UpdateZone(ctx context.Context, in UpdateInput, actx auditapp.
 	return z, nil
 }
 
+// SameRangeZones lists the tenant's other zones that hold one of z's
+// ranges exactly (scanzone.SameRangeZones): the warning shown when a zone
+// is saved, since targets there need the scan to pick a zone while the
+// zones' sensors differ. z must be the caller's tenant's zone.
+func (s *Service) SameRangeZones(ctx context.Context, z *zonedom.Zone) ([]*zonedom.Zone, error) {
+	zones, err := s.repo.List(ctx, z.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	return zonedom.SameRangeZones(z, zones), nil
+}
+
 // DeleteZone deletes a zone that has no active commands.
 func (s *Service) DeleteZone(ctx context.Context, tenantID, id string, actx auditapp.AuditContext) error {
 	tid, zid, err := parseIDs(tenantID, id)

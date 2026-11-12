@@ -2,6 +2,33 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MetricStrip, phoneSpan, smColumns } from '../metric-strip'
 
+describe('MetricStrip embedded', () => {
+  const items = [
+    { key: 'a', label: 'A', value: 1 },
+    { key: 'b', label: 'B', value: 2 },
+  ]
+  it('draws no border or fill of its own and bleeds into the frame padding', () => {
+    const { container } = render(<MetricStrip items={items} embedded />)
+    const strip = container.querySelector('[data-slot="metric-strip"]') as HTMLElement
+    expect(strip.className).not.toMatch(/(^|\s)border(\s|$)/)
+    expect(strip.className).not.toContain('bg-card')
+    expect(strip.className).toContain('-mx-3')
+    expect(strip.className).toContain('sm:-mx-4')
+    const tile = container.querySelector('[data-slot="metric-tile"]') as HTMLElement
+    expect(tile.className).toContain('py-1.5')
+  })
+  it('the standalone strip keeps its border, fill and cell height', () => {
+    const { container } = render(<MetricStrip items={items} />)
+    const strip = container.querySelector('[data-slot="metric-strip"]') as HTMLElement
+    expect(strip.className).toContain('border')
+    expect(strip.className).toContain('bg-card')
+    expect(strip.className).not.toContain('-mx-3')
+    expect(
+      (container.querySelector('[data-slot="metric-tile"]') as HTMLElement).className
+    ).toContain('py-2.5')
+  })
+})
+
 describe('MetricStrip', () => {
   it('renders each label and a locale-formatted value', () => {
     render(

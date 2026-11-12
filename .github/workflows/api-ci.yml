@@ -288,10 +288,36 @@ jobs:
       - name: Module Registry Drift
         run: GOWORK=off go run ./cmd/gen-modules -check
 
+      # buf for the step below, through .github/actions/fetch-tool (Actions
+      # cache first, SHA-256 checked on hit and miss). The pin stays in
+      # scripts/check-proto.sh, which skips its own download when the pinned
+      # buf is already in PROTO_TOOLS_DIR. The pinned asset is the x86_64
+      # binary; on another architecture the script builds buf itself.
+      - name: buf pin
+        id: bufpin
+        if: runner.arch == 'X64'
+        run: |
+          set -euo pipefail
+          v="$(sed -n 's/^BUF_VERSION=\([0-9.]*\)$/\1/p' scripts/check-proto.sh)"
+          sum="$(sed -n 's/^BUF_SHA256=\([0-9a-f]*\)$/\1/p' scripts/check-proto.sh)"
+          [ -n "$v" ] && [ -n "$sum" ] || { echo "::error::BUF_VERSION or BUF_SHA256 not found in scripts/check-proto.sh"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sum" >> "$GITHUB_OUTPUT"
+      - name: Install buf (pinned, checksum-verified)
+        id: buf
+        if: runner.arch == 'X64'
+        uses: ./.github/actions/fetch-tool
+        with:
+          name: buf
+          version: ${{ steps.bufpin.outputs.version }}
+          url: https://github.com/bufbuild/buf/releases/download/v${{ steps.bufpin.outputs.version }}/buf-Linux-x86_64
+          sha256: ${{ steps.bufpin.outputs.sha256 }}
+
       # Sensor protocol v3 (RFC-059): buf lint, buf breaking against the
       # base branch, and the committed Go code matches the .proto.
       - name: Sensor Protocol v3 (buf lint, breaking, generated code)
         env:
+          PROTO_TOOLS_DIR: ${{ steps.buf.outputs.dir }}
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           MG_BASE: ${{ github.event.merge_group.base_sha }}
@@ -635,6 +661,19 @@ jobs:
 
       - name: The app role can reach the database (so a skip cannot pass silently)
         run: psql "$APP_ROLE_URL" -X -v ON_ERROR_STOP=1 -c 'SELECT count(*) FROM tenants'
+
+      # The cross-tenant job isolation tests, by name, on one shard: they run
+      # whatever the shard split, and a renamed, deleted or skipped test fails
+      # the job (.github/scripts/cross-tenant-gate.sh).
+      - name: Security Gates (cross-tenant job isolation)
+        if: matrix.shard == 0
+        shell: bash
+        env:
+          OPENCTEM_TEST_DB_REQUIRED: "1"
+          DATABASE_URL: ${{ env.APP_ROLE_URL }}
+          DATABASE_MIGRATE_URL: ${{ env.MIGRATOR_URL }}
+          DATABASE_ADMIN_URL: ${{ env.SUPER_URL }}
+        run: bash ../.github/scripts/cross-tenant-gate.sh -timeout 10m
 
       # Explicit -timeout: the default 10m per package binary is too tight for
       # the -race suite on a slow or busy runner (it takes ~5m normally).

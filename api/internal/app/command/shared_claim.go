@@ -202,6 +202,10 @@ func (s *Service) ClaimShared(ctx context.Context, in SharedClaimInput) ([]*comm
 	if err != nil {
 		return handBack(err)
 	}
+	// The job's secret refs (task_secrets.go), before the signature.
+	if delivered, err = s.stampSecrets(ctx, sensorID.String(), delivered); err != nil {
+		return handBack(err)
+	}
 	// Signed per organization: the statement's tenant is the command's.
 	signedOrder, signedGroups := byTenant(delivered)
 	result := make([]*commanddom.Command, 0, len(delivered))

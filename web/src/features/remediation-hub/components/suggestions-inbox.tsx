@@ -405,7 +405,7 @@ export function SuggestionsInbox() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('remediationHub.suggestions.allFixes')}</SelectItem>
-                {['upgrade', 'rotate', 'sol'].map((k) => (
+                {['upgrade', 'rotate', 'sol', 'control'].map((k) => (
                   <SelectItem key={k} value={k}>
                     {t(`remediationHub.keyKind.${k}`)}
                   </SelectItem>

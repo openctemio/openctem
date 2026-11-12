@@ -66,9 +66,6 @@ type Repository interface {
 	// Platform Job Queue Methods (v3.2)
 	// ==========================================================================
 
-	// GetByAuthTokenHash retrieves a command by auth token hash.
-	GetByAuthTokenHash(ctx context.Context, hash string) (*Command, error)
-
 	// CountActivePlatformJobsByTenant counts active platform jobs for a tenant.
 	// Active = pending, acknowledged, or running.
 	CountActivePlatformJobsByTenant(ctx context.Context, tenantID shared.ID) (int, error)
@@ -100,9 +97,6 @@ type Repository interface {
 	// step that is already dead. A raw UPDATE here is what left scans hanging
 	// until an unrelated timeout controller reported a generic failure.
 	FindQueueExpiredPlatformJobs(ctx context.Context, maxQueueMinutes int) ([]*Command, error)
-
-	// GetQueuePosition gets the queue position for a specific command.
-	GetQueuePosition(ctx context.Context, commandID shared.ID) (*QueuePosition, error)
 
 	// ListPlatformJobsByTenant lists platform jobs for a tenant.
 	ListPlatformJobsByTenant(ctx context.Context, tenantID shared.ID, page pagination.Pagination) (pagination.Result[*Command], error)
@@ -176,6 +170,14 @@ type StepBatch struct {
 	Unreached    int
 }
 
+// StepCommandCanceler cancels the open commands of one step run (asserted,
+// not part of Repository, so its test doubles need not grow it).
+type StepCommandCanceler interface {
+	// CancelOpenByStepRun cancels every pending, acknowledged or running
+	// command of the step run, tenant-scoped, and returns how many.
+	CancelOpenByStepRun(ctx context.Context, tenantID, stepRunID shared.ID) (int64, error)
+}
+
 // ConditionalExpirer is implemented by the command repository. It is asserted
 // by the expiration checker (not part of Repository) so the many test doubles of
 // Repository do not all have to grow it.
@@ -213,6 +215,11 @@ type StepSensorShare struct {
 	Running    int // acknowledged or running
 	Completed  int
 	Failed     int // failed, expired or canceled
+	// Of Queued: waiting while another task of the organization scans
+	// their hosts (per-host politeness), and, of the rest, refused by a
+	// sensor's local policy and waiting for another sensor.
+	QueuedHostsBusy int
+	QueuedRefused   int
 }
 
 // StepShareReader is implemented by the command repository (asserted where

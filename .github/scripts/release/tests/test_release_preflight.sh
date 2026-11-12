@@ -17,7 +17,13 @@ case "$*" in
   *"actions/artifacts"*) exit 1 ;;
   *"repos/openctemio/sensor/releases/latest"*) echo "${SENSOR_PUBLISHED:-v0.2.0}" ;;
   *"repos/openctemio/sdk-go/releases/latest"*) echo "v0.5.0" ;;
+  *"repos/openctemio/ci/releases/latest"*) echo "v0.4.0" ;;
   *"releases/latest"*) exit 1 ;;
+  # releases/tags/<v>: published unless listed in $UNRELEASED ("repo@v ...").
+  *"releases/tags/"*)
+    a="$*"; a="${a#*repos/openctemio/}"; r="${a%%/*}"; v="${a#*/releases/tags/}"; v="${v%% *}"
+    [[ " ${UNRELEASED:-} " == *" $r@$v "* ]] && exit 1
+    echo true ;;
   *) echo "unexpected gh: $*" >&2; exit 2 ;;
 esac
 GH
@@ -65,17 +71,38 @@ mig 000009 late
 out="$(pre)"; rc=$?
 assert_eq "a migration below the last release's highest blocks" 1 "$rc"
 
-# Release lines: versions.yaml latest behind the published release blocks.
-printf 'sensor:\n  product: openctemio-sensor\n  latest: v0.2.0\n  image: ghcr.io/openctemio/sensor\nsdk:\n  latest: v0.5.0\n' >"$tmp/r/versions.yaml"
+# Release lines: only compatibility facts block; a stale latest never does.
+printf 'sensor:\n  product: openctemio-sensor\n  latest: v0.2.0\n  min: v0.1.0\n  image: ghcr.io/openctemio/sensor\nsdk:\n  latest: v0.5.0\n  min: ""\nci:\n  latest: v0.3.1\n  min: v0.3.0\n' >"$tmp/r/versions.yaml"
 git -C "$tmp/r" rm -q --cached -r api/migrations/000009_late.up.sql api/migrations/000009_late.down.sql >/dev/null 2>&1
 rm -f "$tmp/r/api/migrations/000009_late."*
 git -C "$tmp/r" add -A; git -C "$tmp/r" commit -q -m manifest
+git -C "$tmp/r" tag -a v0.1.1 -m v0.1.1
 out="$(pre)"; rc=$?
-assert_eq "release lines current: exit 0 ($out)" 0 "$rc"
+assert_eq "release lines: a stale ci.latest is not a blocker ($out)" 0 "$rc"
 assert_contains "the sensor line is reported" "sensor: v0.2.0 (current)" "$out"
+assert_contains "the stale ci line is only reported" "ci: built in v0.3.1, published v0.4.0" "$out"
+assert_not_contains "a stale line is never a blocker" "BLOCKER" "$out"
 out="$(SENSOR_PUBLISHED=v0.3.0 pre)"; rc=$?
-assert_eq "a product behind its published release blocks" 1 "$rc"
-assert_contains "the stale line is named" "sensor.latest is v0.2.0, openctemio/sensor published v0.3.0" "$out"
+assert_eq "a product behind its published release does not block" 0 "$rc"
+assert_contains "the stale sensor line is reported" "sensor: built in v0.2.0, published v0.3.0" "$out"
+
+# A latest newer than anything published blocks (installs would pin a missing release).
+sed -i 's/^  latest: v0.2.0/  latest: v0.9.0/' "$tmp/r/versions.yaml"
+git -C "$tmp/r" commit -q -am "unreleased latest"
+out="$(pre)"; rc=$?
+assert_eq "an unreleased latest blocks" 1 "$rc"
+assert_contains "the unreleased latest is named" "sensor.latest is v0.9.0, which openctemio/sensor has not released" "$out"
+sed -i 's/^  latest: v0.9.0/  latest: v0.2.0/' "$tmp/r/versions.yaml"
+
+# A min that is not a published release blocks, and a min change is listed.
+sed -i 's/^  min: v0.3.0/  min: v0.4.0/' "$tmp/r/versions.yaml"
+git -C "$tmp/r" commit -q -am "ci min"
+out="$(UNRELEASED="ci@v0.4.0" pre)"; rc=$?
+assert_eq "an unreleased min blocks" 1 "$rc"
+assert_contains "the unreleased min is named" "ci.min is v0.4.0, which openctemio/ci has not released" "$out"
+out="$(pre)"; rc=$?
+assert_eq "a released min above latest is not a stale-latest blocker" 0 "$rc"
+assert_contains "the min change is listed for review" "ci: min changed since v0.1.1: v0.3.0 -> v0.4.0" "$out"
 
 echo 'not json' >"$DEV_FILE"
 out="$(pre)"; rc=$?

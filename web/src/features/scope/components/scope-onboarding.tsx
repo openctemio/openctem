@@ -1,9 +1,9 @@
 'use client'
 
 /**
- * Empty In scope tab (research/53 §4.7): scans refuse every internet target
- * until something is in scope, so the empty state is the three steps to get
- * there. The proof step's wording follows the operator's active-proof mode.
+ * Empty In scope tab: targets no entry covers get only what the unclassified
+ * setting allows (RFC-054 §16), so the empty state is the three steps to give
+ * them the scan's full intensity. The proof step's wording follows the operator's active-proof mode.
  */
 
 import { Plus } from 'lucide-react'
@@ -71,7 +71,7 @@ export function ScopeOnboarding({
           <p className="text-sm text-muted-foreground">
             {t(
               'scope.onboarding.description',
-              'Scans refuse every internet target until a scope entry covers it.'
+              'Until a scope entry covers a target, it gets what Scan unclassified assets allows (low-impact checks by default).'
             )}
           </p>
         </div>

@@ -67,6 +67,7 @@ type Store interface {
 	ResolveAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)
 	ReopenAuto(ctx context.Context, tenantID shared.ID, source string, fingerprints []string, note string) (int, error)
 	TryLockTenant(ctx context.Context, tenantID shared.ID, kind string) (func(), bool, error)
+	LifecycleStore
 }
 
 // ExposureUpserter writes exposure events (fingerprint-deduped).
@@ -219,6 +220,9 @@ func (s *Service) checkDanglingTarget(ctx context.Context, tenantID shared.ID, t
 	if err != nil || d.Outcome == OutcomeUnknown {
 		return OutcomeUnknown, nil, nil, err
 	}
+	if d.Outcome == OutcomeDanglingCNAME {
+		d.ResponseClass = ClassNXDomainTarget
+	}
 	cname, err := danglingEvent(tenantID, t, exposuredom.EventTypeDanglingCNAME, d)
 	if err != nil {
 		return OutcomeUnknown, nil, nil, err
@@ -228,18 +232,95 @@ func (s *Service) checkDanglingTarget(ctx context.Context, tenantID shared.ID, t
 		return OutcomeUnknown, nil, nil, err
 	}
 	// A confirmed takeover of this name stays open while the CNAME dangles,
-	// and is resolved with it once the record is fixed or removed.
+	// and is resolved with it once the name points into the organization.
 	takeover, err := takeoverEvent(tenantID, t, nil, nil)
 	if err != nil {
 		return OutcomeUnknown, nil, nil, err
 	}
 	switch d.Outcome {
 	case OutcomeDanglingCNAME:
+		s.tag(ctx, tenantID, t, true)
 		return d.Outcome, []*exposuredom.ExposureEvent{cname}, []string{ns.Fingerprint()}, nil
 	case OutcomeDanglingNS:
 		return d.Outcome, []*exposuredom.ExposureEvent{ns}, []string{cname.Fingerprint(), takeover.Fingerprint()}, nil
-	default:
-		return OutcomeOK, nil, []string{cname.Fingerprint(), ns.Fingerprint(), takeover.Fingerprint()}, nil
+	}
+	return s.checkResolvingName(ctx, tenantID, t, d, cname, ns, takeover)
+}
+
+// checkResolvingName handles a name whose answer is ok: it resolves, or
+// points nowhere. See lifecycle.go for the rules.
+func (s *Service) checkResolvingName(ctx context.Context, tenantID shared.ID, t Target, d Dangling,
+	cname, ns, takeover *exposuredom.ExposureEvent,
+) (string, []*exposuredom.ExposureEvent, []string, error) {
+	everything := []string{cname.Fingerprint(), ns.Fingerprint(), takeover.Fingerprint()}
+	if t.AssetID.IsZero() {
+		return OutcomeOK, nil, everything, nil
+	}
+	owned, err := s.ownedResolution(ctx, tenantID, t.Name, d)
+	if err != nil {
+		return OutcomeUnknown, nil, nil, err
+	}
+	if owned {
+		s.tag(ctx, tenantID, t, false)
+		return OutcomeOK, nil, everything, nil
+	}
+	// A third party answers for the name.
+	open, err := s.store.OpenDanglingCNAMEs(ctx, tenantID, []shared.ID{t.AssetID})
+	if err != nil {
+		return OutcomeUnknown, nil, nil, err
+	}
+	var trouble []CertTrouble
+	if d.Provider != nil {
+		if trouble, err = s.store.HostCertificateTrouble(ctx, tenantID, t.Name); err != nil {
+			return OutcomeUnknown, nil, nil, err
+		}
+	}
+	var raise []*exposuredom.ExposureEvent
+	keepDangling := false
+	for _, o := range open {
+		switch {
+		case o.ResponseClass == "" || o.ResponseClass == ClassNXDomainTarget || !sameTarget(o.Target, d.Target):
+			// The target that did not exist now answers, or the name moved
+			// to another third party: what a takeover looks like.
+			ev, err := suspectedTakeoverEvent(tenantID, t, o, d)
+			if err != nil {
+				return OutcomeUnknown, nil, nil, err
+			}
+			raise = append(raise, ev)
+			keepDangling = true
+		case o.ResponseClass == ClassProviderRefuses && len(trouble) == 0:
+			// The provider serves the name a valid certificate again.
+		default:
+			keepDangling = true
+		}
+	}
+	if d.Provider != nil && len(trouble) > 0 && !keepDangling {
+		ev, err := providerRefusesEvent(tenantID, t, d, trouble)
+		if err != nil {
+			return OutcomeUnknown, nil, nil, err
+		}
+		raise = append(raise, ev)
+		keepDangling = true
+	}
+	clear := []string{ns.Fingerprint()}
+	if !keepDangling {
+		clear = append(clear, cname.Fingerprint())
+	}
+	s.tag(ctx, tenantID, t, keepDangling)
+	if keepDangling {
+		return OutcomeDanglingCNAME, raise, clear, nil
+	}
+	return OutcomeOK, raise, clear, nil
+}
+
+// tag keeps the dangling tag in step with the outcome. Best effort: the tag
+// is for people, decisions read the exposures.
+func (s *Service) tag(ctx context.Context, tenantID shared.ID, t Target, on bool) {
+	if t.AssetID.IsZero() {
+		return
+	}
+	if err := s.store.SetDanglingTag(ctx, tenantID, t.AssetID, on); err != nil {
+		s.logger.Warn("easm dns: failed to update the dangling tag", "tenant_id", tenantID.String(), "error", err)
 	}
 }
 
@@ -256,18 +337,32 @@ func danglingEvent(tenantID shared.ID, t Target, typ exposuredom.EventType, d Da
 		sev = exposuredom.SeverityLow
 	}
 	details := map[string]any{
-		"domain":       t.Name,
+		keyDomain:      t.Name,
 		"target":       d.Target,
 		"unregistered": d.Unregistered,
 		"reason":       d.Reason,
-		"check":        "dns_only",
+		keyCheck:       "dns_only",
+		"cname_chain":  d.Chain,
 		// A sensor takeover check (nuclei "takeover", T1) is what confirms
 		// it; until then this is a candidate (RFC-036 P1).
 		"confirmation": "pending",
 	}
+	if d.check == checkSensor {
+		details[keyConfirmation] = confirmConfirmed
+	}
 	if d.Provider != nil {
 		details["provider"] = d.Provider.Service
 		details["provider_status"] = d.Provider.Status
+		details["provider_claimable"] = claimability(d.Provider)
+	}
+	if d.ResponseClass != "" {
+		details["response_class"] = d.ResponseClass
+	}
+	if d.check != "" {
+		details[keyCheck] = d.check
+	}
+	if len(d.tlsState) > 0 {
+		details["tls_state"] = d.tlsState
 	}
 	if len(d.Missing) > 0 {
 		details["missing_name_servers"] = d.Missing

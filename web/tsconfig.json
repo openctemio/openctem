@@ -20,7 +20,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@console/*": ["./console/src/*"]
+      "@console/*": ["./console/src/*"],
+      "@extension/*": ["./src/extension-default/*"]
     }
   },
   "include": [

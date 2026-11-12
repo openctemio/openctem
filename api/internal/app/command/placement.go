@@ -425,8 +425,9 @@ func claimReasons(c commanddom.SensorClaim) []string {
 // featurePlacement is the placement code of each feature a command can
 // require (command.PayloadKeyRequiredFeatures).
 var featurePlacement = map[string]string{
-	sensordom.CapabilityNetConfined: commanddom.PlacementNotConfined,
-	sensordom.CapabilityRuleSources: commanddom.PlacementRuleSourcesUnsupported,
+	sensordom.CapabilityNetConfined:     commanddom.PlacementNotConfined,
+	sensordom.CapabilityRuleSources:     commanddom.PlacementRuleSourcesUnsupported,
+	sensordom.CapabilityIsolationStrong: commanddom.PlacementStrongIsolationMissing,
 }
 
 // missingFeatureReasons names the features cmd requires that sn did not

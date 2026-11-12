@@ -18,6 +18,35 @@ that numbers are precomputed into tables and read with the reader's scope.
 | Dashboard widget | metric `surface.posture` (shape and visualization `posture`) |
 | Web | Attack surface overview card, `/attack-surface/posture` |
 
+## Flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Reader
+  box API
+  participant H as GET /api/v1/attack-surface/posture
+  participant S as posture.Service
+  participant C as controller easm-posture, every minute
+  participant DB as Postgres
+  end
+  U->>H: read (assets:read, attack_surface module)
+  H->>S: Read(actor)
+  S->>DB: easm_posture_state for the tenant, created on first read and due at once
+  S->>DB: filterspec.Compile: p.tenant_id = $1 and the caller's data scope on p.asset_id
+  DB-->>S: per-asset points of visible assets only
+  S-->>H: score, grade, categories, fix plan, reductions, root domains, computed_at, stale
+  C->>DB: ClaimDueForPlatform FOR UPDATE SKIP LOCKED, 10 min lease
+  C->>S: rebuild one tenant
+  S->>DB: advisory lock, 2 min statement timeout, replace easm_posture_assets
+  alt rebuild fails
+    S->>DB: keep last facts, refresh_failed, retry in 15 min
+  else ok
+    S->>DB: score, grade, next refresh by schedule
+  end
+  U->>S: POST .../refresh: at most every 5 min (429), 409 while building, audited
+```
+
 ## What counts
 
 **Surface assets** are the attributed inventory (no `discovered`,

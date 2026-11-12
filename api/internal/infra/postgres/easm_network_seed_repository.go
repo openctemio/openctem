@@ -187,6 +187,29 @@ func (r *EASMNetworkSeedRepository) DueForExpansion(ctx context.Context, before 
 	return out, rows.Err()
 }
 
+// TenantsWithASNSeeds lists the tenants with at least one AS seed (a
+// worker's cross-tenant listing of ids only; each tenant is then read on its
+// own): the only tenants whose addresses can carry an ownership anchor.
+func (r *EASMNetworkSeedRepository) TenantsWithASNSeeds(ctx context.Context, limit int) ([]shared.ID, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT DISTINCT tenant_id FROM easm_network_seeds
+		WHERE kind = $1 ORDER BY tenant_id LIMIT $2`, string(easmseed.KindASN), limit)
+	if err != nil {
+		return nil, fmt.Errorf("tenants with network seeds: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var tid string
+		if err := rows.Scan(&tid); err != nil {
+			return nil, err
+		}
+		if t, err := shared.IDFromString(tid); err == nil {
+			out = append(out, t)
+		}
+	}
+	return out, rows.Err()
+}
+
 // Networks returns the tenant's seeded AS numbers, organization names and
 // announced prefixes.
 func (r *EASMNetworkSeedRepository) Networks(ctx context.Context, tenantID shared.ID) (easmseed.Networks, error) {

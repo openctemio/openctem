@@ -88,16 +88,24 @@ func (r *CommandRepository) RequeueRefused(ctx context.Context, tenantID, comman
 }
 
 // ForgetRefusalsOf lets a sensor of the tenant claim again the pending
-// commands it refused, after its reported local policy changed: the
-// refusal stays recorded (and counts toward command.MaxRefusals), only the
-// exclusion is lifted. Returns how many commands it applied to.
-func (r *CommandRepository) ForgetRefusalsOf(ctx context.Context, tenantID, sensorID shared.ID) (int64, error) {
+// commands it refused, after its reported local policy changed to the one
+// identified by policyKey: the refusal stays recorded (and counts toward
+// command.MaxRefusals), only the exclusion is lifted. A command the sensor
+// already refused under that same policy (the refusal's policy_digest) keeps
+// its exclusion: the same sensor under the same policy refuses it the same
+// way, and a policy report that flips between two values would otherwise
+// hand the job back to it at every flip. Returns how many commands it
+// applied to.
+func (r *CommandRepository) ForgetRefusalsOf(ctx context.Context, tenantID, sensorID shared.ID, policyKey string) (int64, error) {
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE commands
 		SET refused_by = array_remove(refused_by, $2::uuid)
 		WHERE tenant_id = $1 AND status = 'pending'
-		  AND refused_by @> ARRAY[$2::uuid]`,
-		tenantID.String(), sensorID.String())
+		  AND refused_by @> ARRAY[$2::uuid]
+		  AND NOT ($3::text <> '' AND EXISTS (
+		        SELECT 1 FROM jsonb_array_elements(COALESCE(refusals, '[]'::jsonb)) rf
+		        WHERE rf->>'sensor_id' = $2::text AND rf->>'policy_digest' = $3::text))`,
+		tenantID.String(), sensorID.String(), policyKey)
 	if err != nil {
 		return 0, fmt.Errorf("forget sensor refusals: %w", err)
 	}

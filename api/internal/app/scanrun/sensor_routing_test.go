@@ -94,3 +94,17 @@ func TestStepDispatchGate_PolicyRunHasNoActor(t *testing.T) {
 		t.Errorf("person gate = %+v", g)
 	}
 }
+
+// A caller of a workflow run cannot hand itself step params: they are
+// validated when a scan is saved and set only by the scan trigger.
+func TestGateRunContext_DropsCallerStepParams(t *testing.T) {
+	s := &Service{logger: logger.NewNop()}
+	out, err := s.gateRunContext(context.Background(), shared.NewID(), "",
+		map[string]any{scanrun.RunContextKeyStepParams: map[string]any{"*:vuln.templates": map[string]any{"tags": []any{"dos"}}}, "note": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out[scanrun.RunContextKeyStepParams]; ok || out["note"] != "x" {
+		t.Fatalf("context after gate = %v", out)
+	}
+}

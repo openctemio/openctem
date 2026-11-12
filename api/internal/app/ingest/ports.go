@@ -160,7 +160,7 @@ type portHost struct {
 // the same range of the address again without it. Best effort: the assets
 // are stored; a failure here is logged.
 func (p *AssetProcessor) surfacePorts(ctx context.Context, tenantID shared.ID, report *ctis.Report,
-	existingMap map[string]*asset.Asset, mayChange func(shared.ID) bool,
+	existingMap map[string]*asset.Asset, mayChange func(shared.ID) bool, mayAlterStored func(*asset.Asset) bool,
 ) {
 	byHost := servicePortsByHost(report)
 	hosts := make([]portHost, 0, len(report.Assets))
@@ -182,12 +182,19 @@ func (p *AssetProcessor) surfacePorts(ctx context.Context, tenantID shared.ID, r
 	if len(hosts) == 0 {
 		return
 	}
-	p.linkPorts(ctx, tenantID, hosts, existingMap)
+	p.linkPorts(ctx, tenantID, hosts, existingMap, mayChange, mayAlterStored)
 }
 
 // linkPorts creates address → port `exposes` edges and host name → address
-// `resolves_to` edges, between assets that exist.
-func (p *AssetProcessor) linkPorts(ctx context.Context, tenantID shared.ID, hosts []portHost, existingMap map[string]*asset.Asset) {
+// `resolves_to` edges, between assets that exist. An edge changes its source
+// (RFC-040 §5.3), so it is added only when this report may change that
+// source: an address outside a bound command's targets or that the
+// uploading actor may not change gains no port edge, and a stored host name
+// outside them gains no resolves_to edge. mayChange decides the report's own
+// assets; mayAlterStored decides a stored name the report only mentions.
+func (p *AssetProcessor) linkPorts(ctx context.Context, tenantID shared.ID, hosts []portHost,
+	existingMap map[string]*asset.Asset, mayChange func(shared.ID) bool, mayAlterStored func(*asset.Asset) bool,
+) {
 	if p.relRepo == nil {
 		return
 	}
@@ -209,7 +216,7 @@ func (p *AssetProcessor) linkPorts(ctx context.Context, tenantID shared.ID, host
 	}
 	for _, h := range hosts {
 		ipAsset, ok := existingMap[h.host]
-		if !ok {
+		if !ok || (mayChange != nil && !mayChange(ipAsset.ID())) {
 			continue
 		}
 		for name := range h.ports {
@@ -220,11 +227,14 @@ func (p *AssetProcessor) linkPorts(ctx context.Context, tenantID shared.ID, host
 			if rel, err := asset.NewRelationship(tenantID, ipAsset.ID(), portAsset.ID(), asset.RelTypeExposes); err == nil {
 				rel.SetDescription(fmt.Sprintf("%s exposes %s", h.host, name))
 				_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)
+				// Seen now: a rescan refreshes when the edge was last seen.
+				rel.Verify()
 				rels = append(rels, rel)
 			}
 		}
 		if n, ok := names[h.hostname]; ok && n != nil && n.TenantID() == tenantID &&
-			(n.Type() == asset.AssetTypeDomain || n.Type() == asset.AssetTypeSubdomain) {
+			(n.Type() == asset.AssetTypeDomain || n.Type() == asset.AssetTypeSubdomain) &&
+			(mayAlterStored == nil || mayAlterStored(n)) {
 			if rel, err := asset.NewRelationship(tenantID, n.ID(), ipAsset.ID(), asset.RelTypeResolvesTo); err == nil {
 				rel.SetDescription(fmt.Sprintf("%s resolves to %s", h.hostname, h.host))
 				_ = rel.SetDiscoveryMethod(asset.DiscoveryAutomatic)

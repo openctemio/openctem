@@ -25,6 +25,11 @@ import (
 // rate limit), and they count toward its fail streak.
 var observedOutcomes = []string{
 	string(outcome.EdgeBlocked), string(outcome.EdgeChallenged), string(outcome.RateLimited),
+	// OutcomeNotScanned: the run did its work but no task carried this
+	// pair's name or any address it resolves to (the scope gate or the
+	// step's target selection left it out). A gap the organization sees,
+	// not a platform fault.
+	OutcomeNotScanned,
 }
 
 // platformSideOutcomes is the closed list of known platform-side failure

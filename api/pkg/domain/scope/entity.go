@@ -54,6 +54,10 @@ type Target struct {
 
 	// constraint limits the entry to ports and a protocol (constraint.go).
 	constraint Constraint
+
+	// Pattern replacement links (replace.go).
+	supersedes   *shared.ID
+	supersededBy *shared.ID
 }
 
 // NewTarget creates a new scope target: active, permanent, t1.

@@ -98,10 +98,11 @@ domain. Userinfo is used only for the display name and groups.
 
 ### 4.2 Plan features
 
-The named features are `sso.connections`, `sso.enforcement`, `scim`,
+SSO sign-in and its enforcement are security controls and not features. The
+number of connections is the count limit `sso_connections`; only creating
+another connection is refused at the limit. The named features are `scim`,
 `sso.group_links` and `ldap`. A downgrade never locks anyone out: sign-in
-through configured connections keeps working, and enforcement is switched off
-after the read-only grace. [limits.md](../architecture/limits.md) lists the
+through configured connections keeps working and enforcement stays on. [limits.md](../architecture/limits.md) lists the
 seams.
 
 ## 5. Plan

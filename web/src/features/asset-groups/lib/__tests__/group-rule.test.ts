@@ -102,13 +102,12 @@ describe('rule draft and document', () => {
 describe('the Assets list filter as a rule', () => {
   it('maps the list parameters by name and type', () => {
     const { rule, unsupported } = filterParamsToRule({
-      types: 'domain,host',
-      tags: 'prod,edge',
-      tags_mode: 'all',
-      min_risk_score: '70',
+      type: 'domain,host',
+      tag_all: 'prod,edge',
+      risk_score_gte: '70',
       has_findings: 'true',
       internet_facing: 'false',
-      search: 'pti',
+      q: 'pti',
       attribution: 'confirmed,discovered',
       page: '3',
       per_page: '50',
@@ -134,12 +133,12 @@ describe('the Assets list filter as a rule', () => {
 
   it('names the parameters a rule cannot hold instead of dropping them silently', () => {
     const { rule, unsupported } = filterParamsToRule({
-      types: 'domain',
-      last_seen_after: '2026-10-01',
+      type: 'domain',
+      last_seen_gte: '2026-10-01',
       discovered_by: 'tenant_scanned',
       properties: 'port:443',
     })
-    expect(unsupported.sort()).toEqual(['discovered_by', 'last_seen_after', 'properties'])
+    expect(unsupported.sort()).toEqual(['discovered_by', 'last_seen_gte', 'properties'])
     expect(rule.filter).toEqual({ types: ['domain'] })
   })
 
@@ -150,7 +149,7 @@ describe('the Assets list filter as a rule', () => {
   })
 
   it('ignores a number or boolean that is not one', () => {
-    const { rule } = filterParamsToRule({ min_risk_score: 'x', has_owner: 'maybe', types: ' , ' })
+    const { rule } = filterParamsToRule({ risk_score_gte: 'x', has_owner: 'maybe', type: ' , ' })
     expect(rule.filter).toEqual({})
   })
 })

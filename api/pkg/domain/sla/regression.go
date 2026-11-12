@@ -20,9 +20,12 @@ type RegressionCandidate struct {
 	FindingID     shared.ID
 	AssetID       shared.ID
 	PriorityClass string
-	Severity      string
-	SLADeadline   *time.Time
-	SLAStatus     string
+	// Practice is the finding's practice (compliance takes the compliance
+	// policy, see Policy.Governs).
+	Practice    string
+	Severity    string
+	SLADeadline *time.Time
+	SLAStatus   string
 }
 
 // RegressionRestart is one deadline to write, with what it replaces.

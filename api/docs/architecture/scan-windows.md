@@ -74,6 +74,47 @@ covering each target). Programs covering a target that state testing windows
 become program sources. Every read is tenant-scoped; any read error is
 returned and the caller fails closed.
 
+## Flow
+
+Checked against the code of v0.19.1 and develop on 2026-11-05.
+
+```mermaid
+flowchart TD
+  subgraph Trigger["Trigger (scan.Service.checkWindows)"]
+    T0["Targets resolved and routed"] --> T1{"Any target whose<br/>windows never open?"}
+    T1 -- yes --> T2["409 SCAN_WINDOW_NEVER_OPENS,<br/>blocked run"]
+    T1 -- no --> T3{"Scheduled and<br/>every target closed now?"}
+    T3 -- yes --> T4["next_run_at moved to the<br/>next opening (no run row)"]
+    T3 -- no --> T5["Run created,<br/>window_waits in the context"]
+  end
+  subgraph Claim["Claim (command windowHold)"]
+    C0["Pending probing job<br/>of the run"] --> C1{"Window lookup ok?"}
+    C1 -- no --> C2["Withheld this poll<br/>(fail closed)"]
+    C1 -- yes --> C3{"Targets open now?"}
+    C3 -- all --> C4["Handed out, rate_limit capped<br/>by the allow sources"]
+    C3 -- some, run step --> C5["Split: open targets go,<br/>sibling job deferred"]
+    C3 -- none --> C6["Deferred: scheduled_at,<br/>window_hold, run deadline moved"]
+  end
+  subgraph Closing["Every minute (scan-window-closing)"]
+    W0["Held job outside<br/>its windows"] --> W1["window_closed_at marked"]
+    W1 --> W2{"Back inside<br/>within the grace?"}
+    W2 -- yes --> W3["Mark cleared"]
+    W2 -- no --> W4["RequeueForWindow: pending,<br/>unpinned, no attempt,<br/>deferred to the opening"]
+    W4 --> W5["Old holder gets it in<br/>cancel_command_ids, late reports<br/>fail the lease fence"]
+  end
+  T5 --> C0
+  C4 --> W0
+```
+
+- The trigger evaluates every target at the highest tier of all the run's
+  steps, including steps already skipped at trigger (no tool or sensor,
+  intensity, depth), so a window that allows only lower tiers can defer or
+  refuse a run whose runnable steps it would allow (`trigger.go`
+  `checkWindows`, `windows.go`).
+- An override (`scan_windows:override`) needs a fresh TOTP code
+  (`internal/app/scanwindow/service.go`); overrides and policy changes call
+  `ReleaseWindowHolds` so held jobs are offered again.
+
 ## Enforcement
 
 ### Claim (`internal/app/command/window_hold.go`)

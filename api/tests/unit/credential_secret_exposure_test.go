@@ -69,6 +69,9 @@ func TestCredentialReadPaths_DoNotReturnPlaintextSecret(t *testing.T) {
 	assertNoPlaintext(t, "GetExposuresForIdentity", byIdentity)
 }
 
+// fpTenant is the organization the unit tests seal for.
+var fpTenant = shared.NewID()
+
 const testEncKeyHex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 
 func testProtector(t *testing.T, keyHex string) *credential.SecretProtector {
@@ -83,7 +86,7 @@ func testProtector(t *testing.T, keyHex string) *credential.SecretProtector {
 func TestSecretProtector_SealOpenRoundTrip(t *testing.T) {
 	p := testProtector(t, testEncKeyHex)
 	details := map[string]any{credential.DetailSecretValue: leakedSecretForTest, "email": "a@b.c"}
-	if err := p.Seal(details); err != nil {
+	if err := p.Seal(fpTenant, details, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := details[credential.DetailSecretValue]; ok {
@@ -100,11 +103,11 @@ func TestSecretProtector_SealOpenRoundTrip(t *testing.T) {
 	if err != nil || !ok || got != leakedSecretForTest {
 		t.Fatalf("Open = %q %v %v", got, ok, err)
 	}
-	if details[credential.DetailSecretFingerprint] != p.Fingerprint(leakedSecretForTest) {
+	if details[credential.DetailSecretFingerprint] != p.Fingerprint(fpTenant, leakedSecretForTest) {
 		t.Fatal("fingerprint must be the keyed fingerprint of the secret")
 	}
 	other := testProtector(t, strings.Repeat("ab", 32))
-	if other.Fingerprint(leakedSecretForTest) == p.Fingerprint(leakedSecretForTest) {
+	if other.Fingerprint(fpTenant, leakedSecretForTest) == p.Fingerprint(fpTenant, leakedSecretForTest) {
 		t.Fatal("fingerprint must depend on the platform key (not a plain hash)")
 	}
 	if _, _, err := other.Open(details); !errors.Is(err, credential.ErrSecretUnreadable) {
@@ -132,7 +135,7 @@ func TestSecretProtector_LegacyPlaintextRowStaysReadableAndIsMasked(t *testing.T
 	if !p.NeedsSealing(legacy) {
 		t.Fatal("a legacy row needs sealing")
 	}
-	if err := p.Seal(legacy); err != nil || p.NeedsSealing(legacy) {
+	if err := p.Seal(fpTenant, legacy, true); err != nil || p.NeedsSealing(legacy) {
 		t.Fatalf("sealing is idempotent: err=%v needs=%v", err, p.NeedsSealing(legacy))
 	}
 }
@@ -140,7 +143,7 @@ func TestSecretProtector_LegacyPlaintextRowStaysReadableAndIsMasked(t *testing.T
 func TestSecretProtector_NoKeyRowsAreResealedOnceAKeyExists(t *testing.T) {
 	dev := credential.NewSecretProtector(nil, nil)
 	details := map[string]any{credential.DetailSecretValue: "dev-secret"}
-	if err := dev.Seal(details); err != nil {
+	if err := dev.Seal(fpTenant, details, true); err != nil {
 		t.Fatal(err)
 	}
 	if details[credential.DetailSecretScheme] != credential.SecretSchemeNone {
@@ -153,7 +156,7 @@ func TestSecretProtector_NoKeyRowsAreResealedOnceAKeyExists(t *testing.T) {
 	if !prod.NeedsSealing(details) {
 		t.Fatal("with a key, a scheme=none row must be resealed")
 	}
-	if err := prod.Seal(details); err != nil {
+	if err := prod.Seal(fpTenant, details, true); err != nil {
 		t.Fatal(err)
 	}
 	if details[credential.DetailSecretCiphertext] == "dev-secret" || details[credential.DetailSecretScheme] != credential.SecretSchemeAESGCM {

@@ -33,6 +33,9 @@ type ExposureService struct {
 	// stored. nil until SetSecretProtector; sealDetails then uses a no-key
 	// protector, which still keeps the plaintext out of read responses.
 	secrets *credential.SecretProtector
+	// storage says whether an organization keeps leaked secret values
+	// (nil: kept, the behavior of an unwired service).
+	storage credential.StoragePolicy
 	// dataScope narrows reads and by-id writes to the caller's Layer 2 data
 	// scope (nil = unrestricted).
 	dataScope *datascope.Enforcer
@@ -131,9 +134,14 @@ func (s *ExposureService) assertExposureScope(ctx context.Context, tenantID shar
 // endpoints are encrypted at rest like imported leaked credentials.
 func (s *ExposureService) SetSecretProtector(p *credential.SecretProtector) { s.secrets = p }
 
-// sealDetails returns details with any leaked secret sealed. The caller's map
-// is not modified.
-func (s *ExposureService) sealDetails(details map[string]any) (map[string]any, error) {
+// SetStoragePolicy installs the per-organization decision whether leaked
+// secret values are kept.
+func (s *ExposureService) SetStoragePolicy(p credential.StoragePolicy) { s.storage = p }
+
+// sealDetails returns details with any leaked secret sealed for the
+// organization (kept only when its policy says so). The caller's map is not
+// modified.
+func (s *ExposureService) sealDetails(ctx context.Context, tenantID shared.ID, details map[string]any) (map[string]any, error) {
 	if !credential.HasSecret(details) {
 		return details, nil
 	}
@@ -145,7 +153,8 @@ func (s *ExposureService) sealDetails(details map[string]any) (map[string]any, e
 	for k, v := range details {
 		out[k] = v
 	}
-	if err := p.Seal(out); err != nil {
+	store := s.storage == nil || s.storage.StoresSecretValues(ctx, tenantID)
+	if err := p.Seal(tenantID, out, store); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -221,7 +230,7 @@ func (s *ExposureService) CreateExposure(ctx context.Context, input CreateExposu
 		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
-	details, err := s.sealDetails(input.Details)
+	details, err := s.sealDetails(ctx, tenantID, input.Details)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +325,7 @@ func (s *ExposureService) IngestExposure(ctx context.Context, input CreateExposu
 		return nil, fmt.Errorf("%w: %w", shared.ErrValidation, err)
 	}
 
-	details, err := s.sealDetails(input.Details)
+	details, err := s.sealDetails(ctx, tenantID, input.Details)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +438,7 @@ func (s *ExposureService) BulkIngestExposuresReport(ctx context.Context, inputs 
 			continue
 		}
 
-		details, err := s.sealDetails(input.Details)
+		details, err := s.sealDetails(ctx, tenantID, input.Details)
 		if err != nil {
 			failures = append(failures, IngestItemError{Index: i, Reason: "secret could not be stored"})
 			continue

@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useId, useState, type FormEvent } from 'react'
-import { ShieldAlert, ShieldCheck } from 'lucide-react'
+import { ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -15,7 +14,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Label } from '@/components/ui/label'
+import { TonePill } from '@/features/shared/components/tone-pill'
 import {
   Select,
   SelectContent,
@@ -26,17 +27,20 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminElevate, adminEndElevation } from '../api/use-admin-session'
+import { useConsoleFactors } from '../api/use-console-factors'
 import { actingRoleLabel, adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
+import { StepUpCodeField, useReasonAndCode } from './step-up-code-hint'
 
 const DURATIONS = [15, 30, 60] as const
 
 /**
  * Time-boxed elevation: an administrator acts as read-only until they elevate
  * the console session to a role no higher than their own, for 15 to 60
- * minutes, with a reason and a fresh code. The bar shows which and until
- * when, and ends it on request. Hidden for a read-only administrator, and when
- * the installation does not require elevation (role already the own one).
+ * minutes, with a reason and a fresh code. A compact control in the header
+ * row says which role and until when, and ends it on request. Hidden for a
+ * read-only administrator, and when the installation does not require
+ * elevation (role already the own one).
  */
 export function AdminElevationBar({
   admin,
@@ -87,39 +91,54 @@ export function AdminElevationBar({
   const until = admin.elevated_until
     ? new Date(admin.elevated_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : ''
+  const activeText = t('admin.elevation.active', 'Acting as {role} until {until}.', {
+    role: t(acting.key, acting.fallback),
+    until,
+  })
 
   return (
-    <div className="px-4 pt-2">
+    <div className="flex items-center gap-2" data-testid="elevation-control">
       {elevated ? (
-        <Alert>
-          <ShieldCheck className="size-4" />
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>
-              {t('admin.elevation.active', 'Acting as {role} until {until}.', {
-                role: t(acting.key, acting.fallback),
-                until,
-              })}
-            </span>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void end()}>
-              {t('admin.elevation.end', 'End now')}
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <>
+          {/* Full sentence for screen readers; the chip shows the short form. */}
+          <span className="sr-only" role="status">
+            {activeText}
+          </span>
+          <TonePill
+            tone="warning"
+            title={activeText}
+            className="hidden sm:inline-flex"
+            label={t('admin.elevation.chip', '{role} until {until}', {
+              role: t(acting.key, acting.fallback),
+              until,
+            })}
+          />
+          <TonePill
+            tone="warning"
+            title={activeText}
+            className="sm:hidden"
+            label={t('admin.elevation.chipShort', 'Until {until}', { until })}
+          />
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void end()}>
+            {t('admin.elevation.end', 'End now')}
+          </Button>
+        </>
       ) : (
-        <Alert>
-          <ShieldAlert className="size-4" />
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>
-              {t(
-                'admin.elevation.readonly',
-                'You are acting as read-only. Elevate for a while to change anything.'
-              )}
-            </span>
-            <Button size="sm" onClick={() => setOpen(true)}>
-              {t('admin.elevation.elevate', 'Elevate')}
-            </Button>
-          </AlertDescription>
-        </Alert>
+        <>
+          <TonePill
+            tone="muted"
+            className="hidden sm:inline-flex"
+            title={t(
+              'admin.elevation.readonly',
+              'You are acting as read-only. Elevate for a while to change anything.'
+            )}
+            label={t('admin.elevation.readonlyChip', 'Read-only')}
+          />
+          <Button size="sm" onClick={() => setOpen(true)}>
+            <ShieldCheck className="size-4" aria-hidden />
+            {t('admin.elevation.elevate', 'Elevate')}
+          </Button>
+        </>
       )}
       <ElevateDialog
         open={open}
@@ -150,22 +169,38 @@ function ElevateDialog({
   const roles = choices
   const [role, setRole] = useState<string>(roles[0] ?? 'ops_admin')
   const [minutes, setMinutes] = useState<number>(30)
-  const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Reason and code: cleared every time the dialog opens or closes.
+  const rc = useReasonAndCode(open)
+  const { reason, setReason, code, setCode, codeError, setCodeError, codeOptional } = rc
+  // A security-key-only console confirms with the key after Elevate (the
+  // shared step-up dialog); everyone else types the code here, so the
+  // elevation needs one dialog. An administrator with a usable key may leave
+  // the code empty and confirm with the key instead.
+  const { data: factors } = useConsoleFactors(open)
+  const codeAllowed = factors?.totp_allowed ?? true
   const reasonOk = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX
+  const codeOk = !codeAllowed || rc.codeOk
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!reasonOk) return
+    if (!reasonOk || !codeOk) return
     setBusy(true)
     setError(null)
+    setCodeError(null)
     try {
-      await adminElevate(role, minutes, reason.trim())
-      setReason('')
+      await adminElevate(role, minutes, reason.trim(), codeAllowed ? code.trim() : '')
+      rc.reset()
       onElevated()
     } catch (err) {
-      setError(stepUpErrorMessage(err, t))
+      // A refused code is shown under the code field, which stays usable.
+      const message = stepUpErrorMessage(err, t)
+      if (codeAllowed && code.trim()) {
+        rc.refuseCode(message)
+      } else {
+        setError(message)
+      }
     } finally {
       setBusy(false)
     }
@@ -237,17 +272,32 @@ function ElevateDialog({
                 )}
               </p>
             </div>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+            {codeAllowed ? (
+              <StepUpCodeField
+                value={code}
+                onChange={(v) => {
+                  setCode(v)
+                  setCodeError(null)
+                }}
+                optional={codeOptional}
+                error={codeError}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {t(
+                  'admin.elevation.keyOnly',
+                  'After Elevate, confirm with your security key or passkey.'
+                )}
+              </p>
             )}
           </DialogBody>
+          <DialogSubmitError message={error} />
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button type="submit" disabled={busy || !reasonOk}>
+            <Button type="submit" disabled={busy || !reasonOk || !codeOk}>
               {t('admin.elevation.elevate', 'Elevate')}
             </Button>
           </DialogFooter>

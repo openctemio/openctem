@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/notifymsg"
+
 	emailpkg "github.com/openctemio/openctem/api/pkg/email"
 )
 
@@ -104,7 +106,9 @@ func (c *EmailClient) deliver(ctx context.Context, msg Message) error {
 	// smuggle headers (Bcc, Content-Type). See CodeQL rule
 	// go/email-content-injection.
 	subject := msg.Title
-	if msg.Severity != "" {
+	if msg.Card != nil {
+		subject = GetSeverityEmoji(msg.Card.Severity) + " " + msg.Card.Subjectline()
+	} else if msg.Severity != "" {
 		subject = fmt.Sprintf("%s [%s] %s", GetSeverityEmoji(msg.Severity), strings.ToUpper(msg.Severity), msg.Title)
 	}
 
@@ -181,6 +185,14 @@ func (c *EmailClient) sender() emailpkg.Sender {
 // buildTextEmail builds the text/plain alternative of the notification.
 func (c *EmailClient) buildTextEmail(msg Message) string {
 	var b strings.Builder
+	if card := msg.Card; card != nil {
+		b.WriteString(card.Headline + "\n\n" + card.Text() + "\n")
+		if card.Action.URL != "" {
+			// Plain text has no button: the link is written once.
+			b.WriteString("\n" + card.Action.Label + ": " + card.Action.URL + "\n")
+		}
+		return b.String()
+	}
 	if msg.Severity != "" {
 		b.WriteString("[" + strings.ToUpper(msg.Severity) + "] ")
 	}
@@ -208,6 +220,9 @@ func (c *EmailClient) buildTextEmail(msg Message) string {
 	return b.String()
 }
 
+// defaultActionLabel is the button of a message without a card.
+const defaultActionLabel = "View Details"
+
 // buildHTMLEmail builds an HTML email from the notification message.
 func (c *EmailClient) buildHTMLEmail(msg Message) (string, error) {
 	color := msg.Color
@@ -226,17 +241,31 @@ func (c *EmailClient) buildHTMLEmail(msg Message) (string, error) {
 		Timestamp  string
 		Product    string
 		ProductURL string
+		// Lines and ActionLabel are set for a notification card.
+		Lines       []notifymsg.Line
+		ActionLabel string
 	}{
-		Title:      msg.Title,
-		Body:       msg.Body,
-		Severity:   strings.ToUpper(msg.Severity),
-		Color:      color,
-		URL:        msg.URL,
-		Fields:     msg.Fields,
-		FooterText: msg.FooterText,
-		Timestamp:  time.Now().Format("2006-01-02 15:04:05 MST"),
-		Product:    c.product,
-		ProductURL: c.productURL,
+		Title:       msg.Title,
+		Body:        msg.Body,
+		Severity:    strings.ToUpper(msg.Severity),
+		Color:       color,
+		URL:         msg.URL,
+		Fields:      msg.Fields,
+		FooterText:  msg.FooterText,
+		Timestamp:   time.Now().Format("2006-01-02 15:04:05 MST"),
+		Product:     c.product,
+		ProductURL:  c.productURL,
+		ActionLabel: defaultActionLabel,
+	}
+	if card := msg.Card; card != nil {
+		data.Title, data.Body, data.Fields, data.URL = card.Headline, "", nil, card.Action.URL
+		data.Severity, data.Color = card.SeverityText(), GetSeverityColor(card.Severity)
+		data.ActionLabel = card.Action.Label
+		for _, l := range card.Lines() {
+			if l.Key != "severity" { // the badge shows it
+				data.Lines = append(data.Lines, l)
+			}
+		}
 	}
 
 	tmpl, err := template.New("email").Parse(emailHTMLTemplate)
@@ -296,7 +325,17 @@ const emailHTMLTemplate = `<!DOCTYPE html>
                 {{end}}
             </div>
             {{end}}
-            {{if .URL}}<a href="{{.URL}}" class="button">View Details</a>{{end}}
+            {{if .Lines}}
+            <div class="fields">
+                {{range .Lines}}
+                <div class="field">
+                    {{if .Label}}<div class="field-label">{{.Label}}</div>{{end}}
+                    <div class="field-value">{{.Value}}</div>
+                </div>
+                {{end}}
+            </div>
+            {{end}}
+            {{if .URL}}<a href="{{.URL}}" class="button">{{.ActionLabel}}</a>{{end}}
         </div>
         <div class="footer">
             {{if .FooterText}}{{.FooterText}}<br>{{end}}

@@ -17,12 +17,13 @@
 #
 # Compatibility versus availability (api/docs/rfcs/RFC-037 §12): the "min"
 # values and sdk.advisories are this platform's compatibility floor and change
-# only when the platform's contract does. The "latest" of a sensor product and
-# of the SDK is only the release this platform release was built with: a
-# running instance learns newer sensor and SDK releases from the signed
-# release feed, so a sensor or SDK release needs no change here and no
-# platform release. Move a "latest" forward when cutting a platform release
-# (the fallback of an instance without the feed), never per sensor release.
+# only when the platform's contract does. The "latest" of a sensor product, of
+# the SDK and of the CI runner is only the release this platform release was
+# built with: a running instance learns newer releases of each from the
+# signed release feed, so a sensor, SDK or CI runner release needs no change here and
+# no platform release. cut-release.sh moves every "latest" forward from the
+# public release lists when it cuts a platform release (the fallback of an
+# instance without the feed); nobody bumps one per component release.
 #
 # Format: two levels, "key: value" with values unquoted or double-quoted. ""
 # means "not set". Keep it that simple: the release scripts read it without a
@@ -52,7 +53,7 @@
 # The scanning sensor (openctemio/sensor).
 sensor:
   product: openctemio-sensor
-  latest: v0.36.0
+  latest: v0.37.0
   min: v0.36.0
   image: ghcr.io/openctemio/sensor
   install: sensor
@@ -80,15 +81,18 @@ connector-tenable:
 # advisory, separated by spaces; a sensor built with one is degraded with a
 # warning. "" = none.
 sdk:
-  latest: v0.46.1
+  latest: v0.46.3
   min: v0.46.0
   advisories: ""
 
 # CI runner (openctemio/ci: the openctem-ci action, image and templates). Its
-# own release line, separate from the sensor's. latest: the console's pipeline
-# snippets pin this release and older runners show "update available". min: the
-# token exchange refuses an older runner and its pipeline is degraded; "" = no
-# minimum.
+# own release line, separate from the sensor's. latest: the release this
+# platform release was built with; the release feed raises it (never lowers
+# it), the console's pipeline snippets pin the effective release and older
+# runners show "update available". min: the token exchange refuses an older
+# runner and its pipeline is degraded; "" = no minimum. v0.4.0 is the first
+# runner that speaks CTIS 2.0, a protocol floor: this platform refuses CTIS 1.x
+# runners, so it moves again only with the next protocol change.
 ci:
-  latest: v0.3.1
-  min: v0.3.0
+  latest: v0.4.0
+  min: v0.4.0

@@ -1,6 +1,6 @@
 import type { Sensor } from '@/lib/api/sensor-types'
 
-import { sensorCapacity } from './capabilities'
+import { sensorJobLoad } from './capabilities'
 import { contentStateLabel, worstContentState } from './content'
 import { agoShort, formatDurationShort, keyExpiry, type Tr } from './format'
 import {
@@ -83,11 +83,15 @@ export function sensorFacts(sensor: Sensor, ctx: SensorFactContext, t: Tr): Sens
     facts.push({ key: 'seen', text: agoShort(sensor.last_seen_at, now, t) })
   }
   if (!isOneShotSensor(sensor) && live) {
+    // Over capacity is said in words but carries no tone: it clears by
+    // itself as jobs finish, and the Status column keeps toned facts for
+    // what needs someone to act.
+    const jobs = sensorJobLoad(sensor)
     facts.push({
       key: 'jobs',
-      text: t('sensors.mobile.jobs', undefined, {
-        current: sensor.current_jobs ?? 0,
-        max: sensorCapacity(sensor).effective,
+      text: t(jobs.over > 0 ? 'sensors.mobile.jobsOver' : 'sensors.mobile.jobs', undefined, {
+        current: jobs.running,
+        max: jobs.capacity,
       }),
     })
   }

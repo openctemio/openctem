@@ -24,6 +24,10 @@ func TestMigrationFindingClosureReason_Backfill(t *testing.T) {
 	// drop resolution_method.
 	closure := testdb.MigrationVersion(t, dir, "finding_closure_columns")
 	validate := testdb.MigrationVersion(t, dir, "finding_closure_drop_resolution_method")
+	// The out-of-scope SLA trigger reads closure_reason; roll it back before
+	// the closure downs drop that column.
+	oos := testdb.MigrationVersion(t, dir, "out_of_scope_sla_not_applicable")
+	testdb.Migrate(t, db, dir, oos, oos, true)
 	testdb.Migrate(t, db, dir, closure, validate, true)
 
 	exec := func(q string, args ...any) {

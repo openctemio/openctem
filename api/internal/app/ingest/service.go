@@ -13,13 +13,16 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/assetdiscovery"
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
 	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
 	"github.com/openctemio/openctem/api/pkg/domain/assettech"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -112,8 +115,17 @@ type Service struct {
 	// stepOutputs records what command-bound reports of workflow steps
 	// wrote, for chained stages; commandIngested is told when a v2 report
 	// of a command finished (step_outputs.go). Nil-safe.
-	stepOutputs     StepOutputRecorder
-	commandIngested CommandIngestedHook
+	stepOutputs StepOutputRecorder
+	// templateMatches files template info matches as exposures and
+	// stepInfo counts them on their step run (info_matches.go).
+	templateMatches TemplateMatchProjector
+	stepInfo        StepInfoRecorder
+	// templateFacts is the mapping of template info matches to asset facts
+	// (info_facts.go); nil: the embedded mapping.
+	templateFacts TemplateFactsSource
+	// stepDispositions counts held and refused findings on their step run.
+	stepDispositions StepDispositionRecorder
+	commandIngested  CommandIngestedHook
 
 	// coverageMode and coverageGuard drive coverage-scoped auto-resolve of
 	// non-repository findings (coverage_autoresolve.go). The zero mode is
@@ -133,10 +145,19 @@ type Service struct {
 	// (name_probe.go).
 	nameProber      NameProber
 	resolutionStore assetresolution.Store
-	results         sensorresult.Repository
+	// vantage records the sensors' own DNS answers (vantage.go).
+	vantage scanzone.VantageWriter
+	results sensorresult.Repository
+	// release is the progress of the out-of-contract release sweeps
+	// (quarantine_release.go).
+	release releaseState
+	// mismatch tells the administrators of undeclared types (contract_mismatch.go).
+	mismatch mismatchNotices
 	// policyVersions and policies: the versioned policy snapshots.
 	policyVersions PolicyVersionReader
 	policies       policyCache
+	// retiredSources: the sources a tenant stopped using (policy snapshot).
+	retiredSources RetiredSourceReader
 	resultLimits   sensorresult.Limits
 	// grants and pushRefusals enforce the sensor's push-ingest grant before
 	// the unsolicited policy (RFC-052 §5.3); nil: not enforced.
@@ -276,6 +297,12 @@ func (s *Service) SetWebContentRecorder(r WebContentRecorder) {
 // SetWebEvidenceRecorder enables web evidence captures (RFC-081).
 func (s *Service) SetWebEvidenceRecorder(r WebEvidenceRecorder) {
 	s.assetProcessor.SetWebEvidenceRecorder(r)
+}
+
+// SetPageChangeNotifier schedules a new capture of a web service whose page
+// changed (RFC-081).
+func (s *Service) SetPageChangeNotifier(n PageChangeNotifier) {
+	s.assetProcessor.SetPageChangeNotifier(n)
 }
 
 // SetAssetsObservedCallback sets the callback for every asset an ingest
@@ -453,6 +480,9 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// stay two findings.
 	s.findingProcessor.keyRawSecrets(tenantID, report)
 	redactReportSecrets(report)
+	// PRIVACY: e-mail addresses in any tool's finding text and evidence are
+	// masked (local part), before anything is stored (email_mask.go).
+	maskReportEmails(report)
 	// Fill the normalized members a CTIS 1.4 report left empty from its
 	// typed ids and native identity (interop.go), before the CVE catalog
 	// step and the identity recipes read them.
@@ -504,7 +534,10 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 		s.ResultPolicy(ctx, tenantID).Mode == sensorresult.ModeWarn
 	// Output-type binding (research/27 G12): a command-bound report may
 	// carry only the asset types its tool produces or takes.
-	report = s.bindOutputTypes(ctx, agt, tenantID, binding, report, opts)
+	sentFindings := len(report.Findings)
+	sent := report
+	report, findingsHeld, findingsLost, holds, mismatched := s.bindOutputTypesFlagged(ctx, agt, tenantID, binding, report, opts)
+	outOfContract := sentFindings - len(report.Findings)
 	// Which channel reported the findings is the platform's to say, from
 	// the principal: a sensor's metadata.source_type is ignored, so it can
 	// never file its findings as a person's or an integration's.
@@ -526,16 +559,40 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	)
 
 	output := &Output{
+		FindingsReceived:  sentFindings + max(opts.FindingsRefusedBeforeIngest, 0),
 		ReportID:          reportID,
 		Binding:           binding.String(),
 		UnsolicitedWarned: unsolicitedWarned,
 		policy:            policy,
+		FindingsHeld:      findingsHeld,
+		FindingsLost:      findingsLost,
+		fileObserved:      opts.Receipt != nil && opts.Receipt.Kind == ingestreceipt.SourceUpload,
+	}
+	output.addOutcome(ingestreceipt.OutcomeUnresolvedRef, opts.FindingsRefusedBeforeIngest)
+	output.addOutcome(ingestreceipt.OutcomeOutOfContract, outOfContract)
+	if holds != nil {
+		output.HeldAssetRefs, output.HeldFindings, output.HoldLost = holds.assetRefs, holds.findings, holds.lost
+	}
+	addRefusedItems(output, sent, holds, opts.RefusedItems)
+	if mismatched != nil {
+		output.ContractMismatchTypes, output.ContractMismatchRefs = mismatched.Types, mismatched.AssetRefs
+	}
+	// A source the organization stopped using: nothing of its report is
+	// applied (no asset, no finding); the receipt counts every finding it
+	// sent as source_retired, so the refusal is never silent.
+	if s.refuseRetiredSource(ctx, agt, tenantID, binding, opts, reportID, report, output) {
+		return output, nil
 	}
 	// Web endpoints (and legacy discovered_url assets) go to the web surface
 	// sub-inventory under their origin asset, never one asset per URL.
 	// Detection rules read the web services before anything is stored
 	// (fingerprints join the assets' technologies).
-	report, detections := s.matchDetectionRules(ctx, tenantID, report)
+	// Detection rules run first, so a technology a rule detects keeps its
+	// rule source; the facts template info matches prove (technologies,
+	// header posture, web surface) then join their report assets without
+	// repeating it (info_facts.go).
+	factsMap := s.templateFactsMap(ctx)
+	report, detections := s.detectThenApplyFacts(ctx, tenantID, report, factsMap, scope)
 	report, endpoints := s.planEndpoints(report, binding, output)
 
 	// Load tenant settings once for both asset processing and finding processing
@@ -562,6 +619,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 
 	// Step 1: Process assets using batch operations
 	assetMap, err := s.assetProcessor.processBatch(assetdiscovery.WithStepRun(ctx, binding.StepRunID), tenantID, report, output, assetIdentityCfg, opts.RequireAssetForFindings, scope)
+	if err != nil && noteRetryable(output, err) {
+		// A database blip, timeout or write conflict: the asset upsert is
+		// one transaction, so nothing of it was written. Stop here and let
+		// the report run again; counting its findings as rejected would
+		// let the sensor delete data the platform never stored.
+		s.logger.Warn("asset batch hit a transient store error; the report is retried",
+			"report_id", reportID, "error", logger.SanitizeError(err))
+		return nil, retryLater("assets", err)
+	}
 	if err != nil {
 		s.logger.Error("failed to process assets batch", "error", logger.SanitizeError(err))
 		// Continue with partial results, but say so: the asset upsert is one
@@ -584,6 +650,7 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	}
 
 	output.AssetMap = assetMap
+	s.recordVantage(ctx, agt, tenantID, binding, report, observedAt)
 	s.recordCollectorSightings(ctx, collector, scope, observedAt, assetMap)
 
 	// The tracked values this report states (RFC-069), before findings are
@@ -661,6 +728,12 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	} else {
 		cveMap, cveErr = s.cveProcessor.ProcessBatch(ctx, report, output)
 	}
+	if cveErr != nil && noteRetryable(output, cveErr) {
+		// Findings stored now would lose their catalog link for good.
+		s.logger.Warn("CVE lookup hit a transient store error; the report is retried",
+			"report_id", reportID, "error", logger.SanitizeError(cveErr))
+		return nil, retryLater("cves", cveErr)
+	}
 	if cveErr != nil {
 		s.logger.Warn("CVE upsert failed; findings will not be linked to vulnerability catalog",
 			"error", cveErr)
@@ -677,14 +750,29 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// closed when software changes. A report claiming it is refused.
 	if report.Tool != nil && tooldom.SameTool(report.Tool.Name, softwarematch.ToolName) && len(report.Findings) > 0 {
 		addError(output, "findings: the tool name "+softwarematch.ToolName+" is reserved")
+		output.addOutcome(ingestreceipt.OutcomeReservedTool, len(report.Findings))
 		report.Findings = nil
 	}
 
+	// Step 2b: info matches of template scanners become exposures, not
+	// findings (info_matches.go).
+	s.routeInfoMatches(ctx, tenantID, report, assetMap, output, binding, factsMap, scope)
+
 	// Step 2c: Process findings using batch operations (if findingRepo is available)
 	if s.findingRepo != nil && len(report.Findings) > 0 {
-		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, opts.RequireAssetForFindings, scope); err != nil {
+		if err := s.findingProcessor.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap,
+			opts.RequireAssetForFindings, scope, sourceIdentity(agt, binding, opts, report)); err != nil {
 			s.logger.Error("failed to process findings batch", "error", err)
 			// Continue with partial results
+		}
+		if output.retryErr != nil {
+			// A finding write failed for a transient reason: the findings
+			// it kept out are not rejected, the report runs again (the
+			// ones already written are re-sighted by fingerprint, not
+			// duplicated), and no receipt is recorded for this attempt.
+			s.logger.Warn("findings batch hit a transient store error; the report is retried",
+				"report_id", reportID, "error", logger.SanitizeError(output.retryErr))
+			return nil, retryLater("findings", output.retryErr)
 		}
 		if report.Tool != nil {
 			s.auditSourceResolve(ctx, tenantID, binding, report.Tool.Name, output)
@@ -720,9 +808,15 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	// rows, never the finding's headline status. Best-effort.
 	// Skipped when this ingest could not record its occurrences: the sweep
 	// would mark the findings it did see as gone from the branch.
+	// A report bound to a command sweeps only when that command already
+	// completed by itself: a run that exited non-zero, was killed or that
+	// the sensor stopped proves nothing about what it did not report
+	// (research/467 F6), and a report that lists an unfinished target is
+	// not full.
 	if !opts.DeferAutoResolve && unsolicitedMayResolve && !output.BranchOccurrencesFailed && !scope.actorRestricted() && input.IsFullCoverage() && s.findingRepo != nil && s.branchRepo != nil &&
 		report.Tool != nil &&
-		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" {
+		report.Metadata.Branch != nil && report.Metadata.Branch.Name != "" &&
+		s.v1RunMaySweepBranch(ctx, tenantID, binding, report.Metadata) {
 		toolName := report.Tool.Name
 		scanID := reportID
 		branchName := report.Metadata.Branch.Name
@@ -976,7 +1070,7 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 	if sensorID.IsZero() {
 		return
 	}
-	go func() {
+	safego.Go(s.logger, "ingest:sensor-stats", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -992,7 +1086,7 @@ func (s *Service) updateSensorStatsAsync(sensorID shared.ID, output *Output) {
 		); err != nil {
 			s.logger.Warn("failed to update sensor stats", "sensor_id", sensorID.String(), "error", err)
 		}
-	}()
+	})
 }
 
 // recordV2ReportStats adds a completed protocol v2 report to its sensor's
@@ -1141,7 +1235,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 	// tenant are serialized exactly like synchronous request-path audit
 	// events. Detached from the request context — the audit must outlive
 	// the request — but capped so a stalled DB cannot pin the goroutine.
-	go func() {
+	safego.Go(s.logger, "ingest:audit-log", func() {
 		auditCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -1152,7 +1246,7 @@ func (s *Service) createIngestAuditLog(ctx context.Context, agt *sensor.Sensor, 
 				"report_id", logger.SanitizeValue(resourceID),
 			)
 		}
-	}()
+	})
 }
 
 // writeIngestAuditLog persists one ingest audit event.
@@ -1238,3 +1332,7 @@ func (s *Service) loadTenantIngestConfig(ctx context.Context, tenantID shared.ID
 	}
 	return tenantRules, assetIdentityCfg, reconcilePolicy
 }
+
+// SetTagGovernor wires the check that keeps a report from setting a tag that
+// a team access rule, approval rule, scan window or assignment rule reads.
+func (s *Service) SetTagGovernor(g TagGovernor) { s.assetProcessor.SetTagGovernor(g) }

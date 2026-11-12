@@ -65,6 +65,36 @@ func (s *Service) admitHostBusy(ctx context.Context, tenantID shared.ID, sensorI
 	return n
 }
 
+// HostSplitReady counts, changing nothing, the commands sensorID's next
+// claim would split: the first candidates admitHostBusy reads for one free
+// slot (a subset of what any claim with a free slot reads, in the same
+// order) whose split plan starts some targets now. The heartbeat doorbell
+// rings on them (sensor.HostSplitSource), so an idle sensor takes the free
+// targets within a heartbeat. Tenant-scoped like the claim: candidates and
+// holders are read in tenantID only.
+func (s *Service) HostSplitReady(ctx context.Context, tenantID, sensorID shared.ID, capabilities []string) (int, error) {
+	splitter, ok := s.repo.(commanddom.HostSplitter)
+	holders, ok2 := s.repo.(commanddom.HostHoldersReader)
+	if !ok || !ok2 {
+		return 0, nil
+	}
+	cands, err := splitter.HostSplitCandidates(ctx, tenantID, &sensorID, capabilities, 2)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, c := range cands {
+		split, err := s.planHostSplit(ctx, holders, c)
+		if err != nil {
+			return n, err
+		}
+		if split != nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
 // planHostSplit is the split of c by the hosts other tasks hold now; nil
 // when it should wait whole (no held host, most of its targets blocked, or
 // keys that cannot be attributed to targets).

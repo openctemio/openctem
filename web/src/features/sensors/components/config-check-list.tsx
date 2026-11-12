@@ -36,6 +36,7 @@ import {
   UntrustedTextBlock,
 } from '@/features/shared'
 import { useSensorConfigReport } from '@/lib/api/sensor-hooks'
+import { observedValueText } from '../lib/control-dns'
 import type {
   Sensor,
   SensorConfigCheck,
@@ -158,7 +159,7 @@ function CheckBody({
             items={observed.map((o, i) => ({
               key: `${o.label}:${i}`,
               label: toDisplayText(o.label, 64),
-              value: toDisplayText(o.value, 512),
+              value: toDisplayText(observedValueText(c.id, o.label, o.value), 512),
               token: true,
             }))}
           />

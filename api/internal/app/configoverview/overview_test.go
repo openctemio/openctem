@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	"github.com/openctemio/openctem/api/internal/config"
@@ -198,6 +199,19 @@ func TestConsoleSettingPagesAreLive(t *testing.T) {
 			t.Errorf("setting %s missing", key)
 		}
 	}
+}
+
+// The leaked secret value storage default is managed on its console page.
+func TestLeakedSecretStorageIsListed(t *testing.T) {
+	for _, s := range consoleSettings {
+		if s.key == leakedsecretpolicy.SettingKey {
+			if s.page != "/system/leaked-credentials" {
+				t.Errorf("page %s", s.page)
+			}
+			return
+		}
+	}
+	t.Errorf("setting %s missing", leakedsecretpolicy.SettingKey)
 }
 
 // The two-factor floor and the organization mail relay are managed on console

@@ -13,7 +13,8 @@ import {
 import type { StatusTone } from '@/lib/status-colors'
 import type { ApiScopeTarget } from '../api/scope-api.types'
 
-export type ScopeEntryStatus = 'active' | 'pending' | 'inactive' | 'rejected' | 'expired'
+export type ScopeEntryStatus =
+  'active' | 'pending' | 'inactive' | 'rejected' | 'expired' | 'superseded'
 
 export const SCOPE_ENTRY_STATUSES: ScopeEntryStatus[] = [
   'active',
@@ -21,6 +22,7 @@ export const SCOPE_ENTRY_STATUSES: ScopeEntryStatus[] = [
   'expired',
   'inactive',
   'rejected',
+  'superseded',
 ]
 
 export const SCOPE_ENTRY_STATUS_LABEL: Record<ScopeEntryStatus, string> = {
@@ -29,6 +31,7 @@ export const SCOPE_ENTRY_STATUS_LABEL: Record<ScopeEntryStatus, string> = {
   inactive: 'Inactive',
   rejected: 'Rejected',
   expired: 'Expired',
+  superseded: 'Replaced',
 }
 
 /**
@@ -45,6 +48,7 @@ export const SCOPE_ENTRY_STATUS_TONE: Record<
   inactive: { tone: 'closed', icon: SlashedCircleGlyph },
   rejected: { tone: 'closed', icon: SlashedCircleGlyph },
   expired: { tone: 'closed', icon: SlashedCircleGlyph },
+  superseded: { tone: 'closed', icon: SlashedCircleGlyph },
 }
 
 export const SCOPE_ENTRY_STATUS_HINT: Record<ScopeEntryStatus, string> = {
@@ -53,6 +57,7 @@ export const SCOPE_ENTRY_STATUS_HINT: Record<ScopeEntryStatus, string> = {
   inactive: 'Deactivated: authorizes nothing.',
   rejected: 'Declined: never took effect.',
   expired: 'Its time ran out: authorizes nothing.',
+  superseded: 'Its pattern was replaced by a new entry: authorizes nothing, kept for its history.',
 }
 
 export function entryStatus(e: Pick<ApiScopeTarget, 'status'>): ScopeEntryStatus {

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	compliancecheckapp "github.com/openctemio/openctem/api/internal/app/compliancecheck"
+
 	"github.com/openctemio/openctem/api/internal/testdb"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -142,6 +144,7 @@ func newGroupScopeHarness(t *testing.T) *gsHarness {
 	intel := postgres.NewThreatIntelRepository(db)
 	vulnHandler.SetIntelFeeds(intel.EPSS(), intel.KEV())
 	vulnHandler.SetSavedViews(viewSvc)
+	vulnHandler.SetComplianceChecks(compliancecheckapp.NewService(postgres.NewComplianceCheckRepository(db), enforcer))
 	vulnHandler.SetSLABasis(slaapp.NewService(postgres.NewSLAPolicyRepository(db), log), postgres.NewFindingSLARestartRepository(db))
 	actionsHandler := handler.NewFindingActionsHandler(actionsSvc, log)
 	actionsHandler.SetSavedViews(viewSvc)

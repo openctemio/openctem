@@ -12,6 +12,7 @@ PROV="$RELEASE_DIR/../release-provenance.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 scenario "$tmp"
+stub_release_lists "$tmp/stub"
 w="$tmp/work"
 dev="$(git -C "$w" rev-parse develop)"
 export CHECK_RUNS_DIR="$tmp/runs" REQUIRED_CHECKS="API CI OK"
@@ -32,6 +33,30 @@ green "$dev"
 out="$(prov release/v0.3.0 "$head")"; rc=$?
 assert_eq "train: verified ($out)" 0 "$rc"
 assert_contains "train: names the develop commit" "${dev:0:12}" "$out"
+
+# A version commit that also refreshes the built-in latest releases (and their
+# consumers) is verified; one that moves a min is not.
+git -C "$w" branch -q -D release/v0.3.0
+git -C "$w" push -q origin :refs/heads/release/v0.3.0
+echo '[{"tagName":"v0.4.0","publishedAt":"2026-11-05T00:00:00Z"}]' >"$tmp/stub/releases/ci.json"
+echo "sha256:$(printf 'c%.0s' {1..64})" >"$tmp/stub/images/ghcr.io_openctemio_ci_v0.4.0"
+echo '[{"tagName":"v0.7.0","publishedAt":"2026-11-05T00:00:00Z"}]' >"$tmp/stub/releases/sensor.json"
+echo "sha256:$(printf 'd%.0s' {1..64})" >"$tmp/stub/images/ghcr.io_openctemio_sensor_v0.7.0"
+out="$(bash "$CUT" --repo "$w" --version v0.3.0 --sha "$dev" --push 2>/dev/null)"
+head="$(sed -n 's/^HEAD=//p' <<<"$out")"
+assert_contains "refresh: the version commit moved ci.latest" "CI_RELEASE_FALLBACK = 'v0.4.0'" "$(git -C "$w" show "$head:web/src/features/ci-runners/lib/ci.ts")"
+out="$(prov release/v0.3.0 "$head")"; rc=$?
+assert_eq "train with refreshed latest: verified ($out)" 0 "$rc"
+git -C "$w" switch -q -c minmove "$head^1"
+sed -i 's/^  min: ""/  min: v0.1.0/' "$w/versions.yaml" "$w/api/internal/versions/versions.yaml"
+git -C "$w" add -A; git -C "$w" commit -q --amend --no-edit
+git -C "$w" merge -q -s ours --no-edit origin/main >/dev/null
+minmove="$(git -C "$w" rev-parse HEAD)"
+out="$(prov release/v0.3.0 "$minmove")"; rc=$?
+assert_eq "train: a min moved in the version commit is not verified" 1 "$rc"
+assert_contains "train: names the manifest" "versions.yaml" "$out"
+git -C "$w" switch -q develop
+find "$tmp/stub/releases" "$tmp/stub/images" -type f -delete
 
 red "$dev"
 out="$(prov release/v0.3.0 "$head")"; rc=$?

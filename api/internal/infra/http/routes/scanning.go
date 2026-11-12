@@ -146,6 +146,10 @@ func registerSensorManagementRoutes(
 		// no key; a pairing code, when given, travels in the body.
 		r.GET("/install-templates", h.InstallTemplatesRead, middleware.Require(permission.SensorsPair))
 		r.POST("/install-templates", h.InstallTemplates, middleware.Require(permission.SensorsPair))
+		// Core infrastructure addresses the tenant's sensors reported (their
+		// resolvers, gateways, own and platform addresses): the scan form
+		// warns when targets cover them. Before /{id}.
+		r.GET("/core-addresses", h.CoreAddresses, middleware.Require(permission.SensorsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.SensorsRead), own)
 		// Signing keys of key-bound sensors (RFC-052).
 		r.GET("/{id}/keys", h.ListSigningKeys, middleware.Require(permission.SensorsRead), own)
@@ -178,6 +182,10 @@ func registerSensorManagementRoutes(
 		// Setup checklist (research/26): the sensor's config report, explained
 		// from the platform catalog.
 		r.GET("/{id}/config-report", h.ConfigReport, middleware.Require(permission.SensorsWrite), own)
+		// Readiness checklist (research/466): what still stops the sensor
+		// from scanning, each item with its fix. Reads only; the
+		// confinement item needs sensors:write (the handler checks it).
+		r.GET("/{id}/readiness", h.Readiness, middleware.Require(permission.SensorsRead), own)
 
 		// Available capabilities for tenant (aggregated from all accessible sensors)
 		r.GET("/available-capabilities", h.GetAvailableCapabilities, middleware.Require(permission.SensorsRead))
@@ -204,7 +212,7 @@ func registerSensorManagementRoutes(
 		// Deleting removes the sensor and its history and cannot be undone:
 		// a recent sign-in. Revoking (above) stays the fast way to cut a
 		// sensor off.
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), requireStepUp(), own)
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.SensorsDelete), requireStepUpSensitive(), own)
 	}, tenantMiddlewares...)
 
 }
@@ -234,6 +242,26 @@ func registerScanZoneRoutes(
 		r.DELETE("/{id}/sensors/{sensorId}", h.UnassignSensor, middleware.Require(permission.ScanZonesWrite))
 
 		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ScanZonesDelete))
+	}, tenantMiddlewares...)
+}
+
+// registerToolSourceRoutes mounts the organization's tool source keys
+// (docs/architecture/tool-source-keys.md). A key authenticates the
+// organization to a paid outside service, so every change is gated like a
+// secret store write: administrator, fresh step-up, credential factor.
+func registerToolSourceRoutes(
+	router Router,
+	h *handler.ToolSourceHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+
+	router.Group("/api/v1/tool-sources", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.SecretStoreRead))
+		r.PUT("/{source}/key", h.SetKey, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.PATCH("/{source}", h.Update, middleware.Require(permission.SecretStoreWrite), middleware.RequireAdmin(), requireStepUp(), requireCredentialFactor())
+		r.DELETE("/{source}/key", h.DeleteKey, middleware.Require(permission.SecretStoreDelete), middleware.RequireAdmin(), requireStepUp())
 	}, tenantMiddlewares...)
 }
 
@@ -543,6 +571,8 @@ func registerScanRoutes(
 		r.GET("/sensor-opt-in-impact", h.SensorOptInImpact, middleware.Require(permission.ScansRead))
 		// Next occurrences of a schedule (stateless; the wizard and the scan page)
 		r.POST("/schedule-preview", h.PreviewSchedule, middleware.Require(permission.ScansRead))
+		// What the organization may scan (passive only or not), for the wizard
+		r.GET("/capabilities", h.GetCapabilities, middleware.Require(permission.ScansRead))
 		// What a workflow scan would do, before it is saved or started
 		r.POST("/workflow-preview", h.PreviewWorkflow, middleware.Require(permission.ScansWrite))
 		// What a quick scan of the typed targets would do (read-only)
@@ -581,6 +611,8 @@ func registerScanRoutes(
 
 		// Read operations
 		r.GET("/", h.ListScans, middleware.Require(permission.ScansRead))
+		// The same list as a FilterDocument (OR, nesting, long id lists); must be before /{id}
+		r.POST("/search", h.SearchScans, middleware.Require(permission.ScansRead))
 		r.GET("/{id}", h.GetScan, middleware.Require(permission.ScansRead))
 
 		// Write operations
@@ -678,8 +710,8 @@ func registerContentPackRoutes(
 		r.GET("/", h.List, middleware.Require(permission.ContentPacksRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.ContentPacksRead))
 		r.GET("/{id}/download", h.Download, middleware.Require(permission.ContentPacksRead))
-		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUp())
-		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUp())
+		r.POST("/", h.Upload, middleware.Require(permission.ContentPacksWrite), requireStepUpSensitive())
+		r.POST("/{id}/revoke", h.Revoke, middleware.Require(permission.ContentPacksWrite), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }
 
@@ -764,22 +796,22 @@ func registerContentSourceRoutes(
 
 	router.Group("/api/v1/content-sources", func(r Router) {
 		r.GET("/", h.List, middleware.Require(permission.ContentSourcesRead))
-		r.POST("/", h.Create, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
-		r.POST("/test", h.Test, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
+		r.POST("/test", h.Test, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ContentSourcesRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentSourcesDelete), requireStepUp())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.ContentSourcesDelete), requireStepUpSensitive())
 		r.PUT("/{id}/credential", h.SetCredential, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
 		r.DELETE("/{id}/credential", h.ClearCredential, middleware.Require(permission.ContentSourcesWrite))
 		r.POST("/{id}/webhook", h.RotateWebhook, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
 		r.DELETE("/{id}/webhook", h.DisableWebhook, middleware.Require(permission.ContentSourcesWrite))
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.ContentSourcesWrite))
-		r.POST("/{id}/test", h.TestExisting, middleware.Require(permission.ContentSourcesWrite), requireStepUp())
+		r.POST("/{id}/test", h.TestExisting, middleware.Require(permission.ContentSourcesWrite), requireStepUpSensitive())
 		r.GET("/{id}/snapshots", h.ListSnapshots, middleware.Require(permission.ContentSourcesRead))
 		r.GET("/{id}/snapshots/{snapshot_id}", h.GetSnapshot, middleware.Require(permission.ContentSourcesRead))
-		r.POST("/{id}/snapshots/{snapshot_id}/approve", h.Promote, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
+		r.POST("/{id}/snapshots/{snapshot_id}/approve", h.Promote, middleware.Require(permission.ContentSourcesApprove), requireStepUpSensitive())
 		r.POST("/{id}/snapshots/{snapshot_id}/reject", h.Reject, middleware.Require(permission.ContentSourcesApprove))
-		r.POST("/{id}/rollback", h.Rollback, middleware.Require(permission.ContentSourcesApprove), requireStepUp())
+		r.POST("/{id}/rollback", h.Rollback, middleware.Require(permission.ContentSourcesApprove), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }
 

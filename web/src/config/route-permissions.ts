@@ -233,6 +233,10 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.SecretStoreRead,
     module: Module.Scans,
   },
+  '/settings/scanning/tool-sources': {
+    permission: Permission.SecretStoreRead,
+    module: Module.Scans,
+  },
 
   // ========================================
   // Discovery Phase - Scans (Module: scans)
@@ -750,6 +754,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Vulnerability matching policy (RFC-066): owners and admins.
   '/settings/vulnerability-matching': {
     permission: Permission.TeamUpdate,
+  },
+  // Leaked-credential policy (whether secret values are kept): owners and admins.
+  '/settings/leaked-credentials': {
+    permission: Permission.TeamUpdate,
+    module: Module.Credentials,
   },
   // Emerging-threat alert policy: owners and admins.
   '/settings/emerging-threats': {

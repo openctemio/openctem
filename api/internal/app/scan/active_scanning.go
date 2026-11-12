@@ -53,3 +53,16 @@ func (s *Service) requireActiveScanning(ctx context.Context, sc *scan.Scan) erro
 	}
 	return nil
 }
+
+// ActiveScanningAllowed reports whether the organization may run scans above
+// passive, for the wizard to offer only what will be accepted. It is advice
+// to the console only: create, change and run still refuse a scan above
+// passive through requireActiveScanning and the dispatch re-check. Without a
+// gate wired every organization may (an instance without entitlements). A
+// lookup error is returned, never read as allowed.
+func (s *Service) ActiveScanningAllowed(ctx context.Context, tenantID shared.ID) (bool, error) {
+	if s.activeScan == nil {
+		return true, nil
+	}
+	return s.activeScan.Allowed(ctx, tenantID, limits.FeatureActiveScanning)
+}

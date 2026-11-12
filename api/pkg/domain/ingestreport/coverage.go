@@ -60,6 +60,10 @@ type CoverageQuery struct {
 	// sighting recorded another release is not proven fixed (research/18
 	// O6): it becomes stale (observation) instead.
 	TemplatesDigest string
+	// KeepInformational leaves the informational findings (severity info or
+	// none) out of the candidates: the run filed its info matches as
+	// exposures, so not reporting one as a finding proves nothing.
+	KeepInformational bool
 }
 
 // ErrReceiptIncomplete means the receipt that decides absence is missing or

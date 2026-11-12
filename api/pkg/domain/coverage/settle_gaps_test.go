@@ -108,3 +108,44 @@ func TestVerdicts_VendorFromOutcomes(t *testing.T) {
 		t.Errorf("c = %+v", c)
 	}
 }
+
+// Path discovery: an origin is never covered on edge_protected, throttled
+// or budget, even with a done outcome; catch_all, auth_wall,
+// unstable_baseline and scope_filtered say what the result means and the
+// origin is covered. A covering reason never hides an uncovering one.
+func TestVerdicts_PathDiscoveryGaps(t *testing.T) {
+	origins := []string{"https://edge.example.test", "https://slow.example.test", "https://budget.example.test",
+		"https://spa.example.test", "https://login.example.test", "https://flap.example.test",
+		"https://filtered.example.test", "https://both.example.test"}
+	outcomes := ""
+	for i, o := range origins {
+		if i > 0 {
+			outcomes += ","
+		}
+		outcomes += `{"target": "` + o + `", "state": "done"}`
+	}
+	v := Verdicts(gapTask(origins, `{"target_outcomes": [`+outcomes+`],
+		"metadata": {"coverage_gaps_total": 9, "coverage_gaps": [
+		{"host": "edge.example.test", "reason": "edge_protected"},
+		{"host": "slow.example.test", "reason": "throttled"},
+		{"host": "budget.example.test", "reason": "budget"},
+		{"host": "spa.example.test", "reason": "catch_all"},
+		{"host": "login.example.test", "reason": "auth_wall"},
+		{"host": "flap.example.test", "reason": "unstable_baseline"},
+		{"host": "filtered.example.test", "reason": "scope_filtered:12"},
+		{"host": "both.example.test", "reason": "catch_all"},
+		{"host": "both.example.test", "reason": "budget"}]}}`), nil)
+	for _, o := range origins[:3] {
+		if v[o].Kind == VerdictCovered {
+			t.Errorf("%s covered: %+v", o, v[o])
+		}
+	}
+	if v["https://both.example.test"].Kind == VerdictCovered {
+		t.Errorf("a catch_all gap hid the budget gap: %+v", v["https://both.example.test"])
+	}
+	for _, o := range origins[3:7] {
+		if v[o].Kind != VerdictCovered {
+			t.Errorf("%s = %+v, want covered", o, v[o])
+		}
+	}
+}

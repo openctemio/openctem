@@ -103,3 +103,29 @@ func TestWithSharedScanLimits_WiresActiveScanning(t *testing.T) {
 		t.Fatal("active scanning gate not wired from the entitlement service")
 	}
 }
+
+// SECURITY: the capability read answers for the organization asked about
+// only (another one is unaffected at the same time), returns a failed lookup
+// as an error (never as allowed), and allows when no gate is wired.
+func TestActiveScanningAllowed(t *testing.T) {
+	a, b := shared.NewID(), shared.NewID()
+	f := &fakeFeatures{denied: map[shared.ID]bool{a: true}}
+	s := &Service{activeScan: f, logger: logger.NewNop()}
+	ctx := context.Background()
+	if ok, err := s.ActiveScanningAllowed(ctx, a); err != nil || ok {
+		t.Fatalf("passive-only organization: ok=%v err=%v", ok, err)
+	}
+	if ok, err := s.ActiveScanningAllowed(ctx, b); err != nil || !ok {
+		t.Fatalf("other organization: ok=%v err=%v", ok, err)
+	}
+	if f.asked[0] != a || f.asked[1] != b {
+		t.Fatalf("lookups: %v", f.asked)
+	}
+	failing := &Service{activeScan: &fakeFeatures{err: errors.New("db down")}, logger: logger.NewNop()}
+	if ok, err := failing.ActiveScanningAllowed(ctx, a); err == nil || ok {
+		t.Fatalf("failed lookup: ok=%v err=%v", ok, err)
+	}
+	if ok, err := (&Service{}).ActiveScanningAllowed(ctx, a); err != nil || !ok {
+		t.Fatalf("unwired gate: ok=%v err=%v", ok, err)
+	}
+}

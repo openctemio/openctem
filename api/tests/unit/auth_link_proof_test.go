@@ -199,3 +199,7 @@ func TestLinkProof(t *testing.T) {
 		})
 	}
 }
+
+func (*linkProofSessions) SpendRecentAuth(context.Context, shared.ID, shared.ID, time.Time) (bool, error) {
+	return false, nil
+}

@@ -151,10 +151,12 @@ func (s *AssetService) UpdateAssetGoverned(ctx context.Context, assetID, tenantI
 	return s.updateAsset(ctx, assetID, tenantID, input, &rc)
 }
 
-// UpdateCrownJewelGoverned is UpdateCrownJewel for a person's edit: removing
-// the flag from a crown jewel may wait for approval; the business impact is
-// recorded either way.
-func (s *AssetService) UpdateCrownJewelGoverned(ctx context.Context, tenantID, assetID string, isCrownJewel bool, impactScore float64, impactNotes, actorID string, rc RiskContext) (*assetdom.Asset, *assetdom.RiskChangeRequest, error) {
+// UpdateCrownJewelGoverned is UpdateCrownJewel for a person's edit. Removing
+// the flag from a crown jewel may wait for approval: then nothing is written
+// (the flag and the business impact stay as they are until the request is
+// approved) and the request is returned. A nil impact score or notes keeps
+// the stored value.
+func (s *AssetService) UpdateCrownJewelGoverned(ctx context.Context, tenantID, assetID string, isCrownJewel bool, impactScore *float64, impactNotes *string, actorID string, rc RiskContext) (*assetdom.Asset, *assetdom.RiskChangeRequest, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -174,9 +176,17 @@ func (s *AssetService) UpdateCrownJewelGoverned(ctx context.Context, tenantID, a
 		return nil, nil, err
 	}
 	if heldField(held, "crown_jewel") {
-		isCrownJewel = a.IsCrownJewel()
+		// Waiting for approval: the asset is unchanged.
+		return a, held, nil
 	}
-	if err := s.repo.SetCrownJewel(ctx, parsedTenantID, parsedID, isCrownJewel, impactScore, impactNotes); err != nil {
+	score, notes := crownJewelImpact(a)
+	if impactScore != nil {
+		score = *impactScore
+	}
+	if impactNotes != nil {
+		notes = *impactNotes
+	}
+	if err := s.repo.SetCrownJewel(ctx, parsedTenantID, parsedID, isCrownJewel, score, notes); err != nil {
 		return nil, nil, err
 	}
 	out, err := s.repo.GetByID(ctx, parsedTenantID, parsedID)

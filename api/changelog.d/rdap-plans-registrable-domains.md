@@ -1,0 +1,3 @@
+### Fixed: The registration lookup is planned per registered domain, and a run that skipped its targets says why
+- A registration lookup (`lookup.rdap`) takes the registrable domain of each name once (public suffix list, ICANN section) instead of every subdomain of a scan: a registry has no record of a subdomain, so most of a large scope ended with nothing. This applies to the scan's own targets and to the names an earlier step found.
+- A finished step with no output whose sensor skipped targets now says why in the run map warning (for example that its targets were refused because the name does not resolve) instead of only "produced nothing". The run map step outcome carries `no_longer_resolve_count`.

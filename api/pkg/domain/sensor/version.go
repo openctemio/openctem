@@ -119,3 +119,21 @@ func CompareVersions(a, b string) int {
 	}
 	return strings.Compare(NormalizeVersion(a), NormalizeVersion(b))
 }
+
+// ReadsWildcardDenyPaths reports whether a sensor of this version reads a "*"
+// segment of a web scope's deny paths (contract webpath 1.3.1: "/tenants/*/admin"
+// denies the admin path of every tenant): v0.38.2 and v0.37.2 or later. An
+// older sensor compares "*" literally, so it is sent the cut form (everything
+// under "/tenants/"), which over-blocks but never lets the path through. An
+// unknown, development or pre-release version counts as older.
+func ReadsWildcardDenyPaths(version string) bool {
+	v := comparableVersion(version)
+	if v == "" || semver.Prerelease(v) != "" {
+		return false
+	}
+	if semver.Compare(v, "v0.39.0") >= 0 {
+		return true
+	}
+	mm := semver.MajorMinor(v)
+	return (mm == "v0.38" || mm == "v0.37") && semver.Compare(v, mm+".2") >= 0
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 )
 
@@ -26,7 +27,8 @@ import (
 //     target local-policy requirement turned off, the administrators'
 //     two-factor requirement turned off (while 2FA is not required of
 //     everyone), the personal-account policy made less strict, JIT approval
-//     turned off, a sign-in exception added.
+//     turned off, a sign-in exception added, required scan identification
+//     turned off.
 func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Severity {
 	switch {
 	case before.MFARequired && !after.MFARequired,
@@ -40,6 +42,8 @@ func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Seve
 		before.EmailVerificationMode != tenantdom.EmailVerificationNever && after.EmailVerificationMode == tenantdom.EmailVerificationNever,
 		before.RequireSensorLocalPolicyForPrivateTargets && !after.RequireSensorLocalPolicyForPrivateTargets,
 		before.ForbidToolInsecureTLS && !after.ForbidToolInsecureTLS,
+		// Scans no longer have to identify themselves on every request.
+		before.ToolHTTPIdentificationRequired && !after.ToolHTTPIdentificationRequired,
 		// Opening who may be invited, or dropping the required end of access.
 		before.EffectiveInvitees() != tenantdom.InviteesAny && after.EffectiveInvitees() == tenantdom.InviteesAny,
 		before.ExternalAccessEndRequired && !after.ExternalAccessEndRequired,
@@ -47,7 +51,8 @@ func securityChangeSeverity(before, after tenantdom.SecuritySettings) audit.Seve
 		personalPolicyRank(after.PersonalAccounts) < personalPolicyRank(before.PersonalAccounts),
 		before.JITRequiresApproval && !after.JITRequiresApproval,
 		before.SSORequireMFAEvidence && !after.SSORequireMFAEvidence,
-		addsSSOExceptions(before.SSOExceptions, after.SSOExceptions):
+		addsSSOExceptions(before.SSOExceptions, after.SSOExceptions),
+		stepup.Looser(before.EffectiveStepUp(), after.EffectiveStepUp()):
 		return audit.SeverityHigh
 	default:
 		return audit.SeverityMedium
@@ -113,6 +118,7 @@ func loosenedParts(before, after tenantdom.SecuritySettings) (signIn, sensorJobs
 	add(&signIn, addsSSOExceptions(before.SSOExceptions, after.SSOExceptions), "single sign-on exception added")
 	add(&signIn, before.EffectiveInvitees() != tenantdom.InviteesAny && after.EffectiveInvitees() == tenantdom.InviteesAny, "anyone may be invited")
 	add(&signIn, before.ExternalAccessEndRequired && !after.ExternalAccessEndRequired, "end date no longer required for external access")
+	add(&signIn, stepup.Looser(before.EffectiveStepUp(), after.EffectiveStepUp()), "re-verification asked less often")
 	add(&sensorJobs, !before.AllowSensorInteractsh && after.AllowSensorInteractsh, "sensor out-of-band interaction allowed")
 	add(&sensorJobs, !before.AllowSensorCustomTemplates && after.AllowSensorCustomTemplates, "sensor custom templates allowed")
 	add(&sensorJobs, before.RequireSensorLocalPolicyForPrivateTargets && !after.RequireSensorLocalPolicyForPrivateTargets, "sensor local policy no longer required for private targets")
@@ -226,4 +232,23 @@ func (s *TenantService) notifySecurityLoosened(ctx context.Context, tenantID str
 	s.notifyAdminsAbout(ctx, tid, adminNotice{
 		Type: notificationdom.TypeSystemAlert, ResourceType: "tenant_settings", URL: url,
 	}, title, body, notificationdom.SeverityHigh)
+}
+
+// auditStepUpPolicy records a change of the re-verification policy with the
+// rule of every tier before and after; asking less often is audited high
+// (the owners and administrators are also told, notifySecurityLoosened).
+func (s *TenantService) auditStepUpPolicy(ctx context.Context, actx auditapp.AuditContext, before, after stepup.Policy) {
+	if before == after {
+		return
+	}
+	severity := audit.SeverityMedium
+	if stepup.Looser(before, after) {
+		severity = audit.SeverityHigh
+	}
+	event := auditapp.NewSuccessEvent(audit.ActionTenantStepUpPolicyChanged, audit.ResourceTypeTenant, actx.TenantID).
+		WithSeverity(severity).
+		WithMessage("Re-verification policy changed").
+		WithMetadata("before", before).
+		WithMetadata("after", after)
+	s.logAudit(ctx, actx, event)
 }

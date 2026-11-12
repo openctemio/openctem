@@ -58,11 +58,12 @@ func newRevealFixture(t *testing.T) (*CredentialImportHandler, *exposure.Exposur
 	}
 	p := credential.NewSecretProtector(c, []byte("k"))
 	details := map[string]any{"credential_type": "password", credential.DetailSecretValue: revealTestSecret}
-	if err := p.Seal(details); err != nil {
+	tenantID := shared.NewID()
+	if err := p.Seal(tenantID, details, true); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	ev := exposure.Reconstitute(shared.NewID(), shared.NewID(), nil,
+	ev := exposure.Reconstitute(shared.NewID(), tenantID, nil,
 		exposure.EventTypeCredentialLeaked, exposure.SeverityHigh, exposure.StateActive,
 		"alice@corp.test", "", details, "fp", "data_breach", now, now, nil, nil, "", now, now)
 	svc := integration.NewCredentialImportService(&revealStubRepo{ev: ev}, nil, logger.NewNop())

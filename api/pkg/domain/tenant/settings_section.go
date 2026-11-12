@@ -28,6 +28,7 @@ const (
 	SectionAssetLifecycle = "asset_lifecycle"
 	SectionRetest         = "retest"
 	SectionEvidence       = "evidence"
+	SectionCredentials    = "credentials"
 	SectionEASM           = "easm"
 	SectionScope          = "scope"
 	SectionMCP            = "mcp"
@@ -70,6 +71,7 @@ func settingsSectionTargets(s *Settings) map[string]any {
 		SectionEmergingThreats:     &s.EmergingThreats,
 		SectionFindingViews:        &s.FindingViews,
 		SectionAPIKeys:             &s.APIKeys,
+		SectionCredentials:         &s.Credentials,
 	}
 }
 

@@ -319,6 +319,10 @@ func registerIntegrationRoutes(
 		// Create notification integration
 		r.POST("/notifications", h.CreateNotification, middleware.Require(permission.IntegrationsManage), requireStepUp(), requireCredentialFactor())
 
+		// Preview a channel message from sample data (reads no organization
+		// data; same permission as editing a channel).
+		r.POST("/notifications/preview", h.PreviewNotification, middleware.Require(permission.IntegrationsManage))
+
 		// Test credentials without creating (must be before /{id} routes)
 		// A probe of a caller-chosen URL answers differently for reachable and
 		// unreachable hosts, so it is rate limited per tenant.
@@ -343,12 +347,12 @@ func registerIntegrationRoutes(
 			r.GET("/ticket-mappings", ticketMapping.List, read)
 			r.POST("/ticket-mappings", ticketMapping.Create, manage)
 			r.GET("/ticket-mappings/{mapping_id}", ticketMapping.Get, read)
-			r.DELETE("/ticket-mappings/{mapping_id}", ticketMapping.Delete, manage, requireStepUp())
+			r.DELETE("/ticket-mappings/{mapping_id}", ticketMapping.Delete, manage, requireStepUpSensitive())
 			r.PUT("/ticket-mappings/{mapping_id}/draft", ticketMapping.SaveDraft, manage)
 			r.DELETE("/ticket-mappings/{mapping_id}/draft", ticketMapping.DiscardDraft, manage)
-			r.POST("/ticket-mappings/{mapping_id}/publish", ticketMapping.Publish, manage, requireStepUp())
+			r.POST("/ticket-mappings/{mapping_id}/publish", ticketMapping.Publish, manage, requireStepUpSensitive())
 			r.POST("/ticket-mappings/{mapping_id}/rollback", ticketMapping.Rollback, manage)
-			r.POST("/ticket-mappings/{mapping_id}/dry-run", ticketMapping.SetDryRun, manage, requireStepUp())
+			r.POST("/ticket-mappings/{mapping_id}/dry-run", ticketMapping.SetDryRun, manage, requireStepUpSensitive())
 			r.GET("/ticket-mappings/{mapping_id}/versions", ticketMapping.Versions, read)
 			r.GET("/ticket-mappings/{mapping_id}/diff", ticketMapping.Diff, read)
 			r.POST("/ticket-mappings/{mapping_id}/verify", ticketMapping.Validate, read)

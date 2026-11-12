@@ -107,7 +107,7 @@ func TestGuardrails_RepositoryEntries(t *testing.T) {
 		{"github.com/acme/app", nil},
 		{"git.example.com/*", nil},
 		{"git.example.com:8443/*", nil},
-		{"git.agency.gov/*", ErrDenyList}, // the deny list applies to code hosts too
+		{"git.agency.gov/*", ErrGovernmentName}, // the government rule applies to code hosts too
 	}
 	for _, c := range cases {
 		if err := g.CheckPattern(TargetTypeRepository, c.pattern); !errors.Is(err, c.want) && err != c.want { //nolint:errorlint // nil case

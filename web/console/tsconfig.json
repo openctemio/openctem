@@ -3,7 +3,8 @@
   "compilerOptions": {
     "paths": {
       "@/*": ["../src/*"],
-      "@console/*": ["./src/*"]
+      "@console/*": ["./src/*"],
+      "@extension/*": ["../src/extension-default/*"]
     }
   },
   "include": [

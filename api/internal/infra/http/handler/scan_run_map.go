@@ -42,6 +42,13 @@ type RunMapChunks struct {
 	Running   int `json:"running"`
 	Completed int `json:"completed"`
 	Failed    int `json:"failed"`
+	// Of Queued: HostsBusy wait while another task of the organization
+	// scans their hosts (one task per host at a time); Refused, of the
+	// rest, were refused by a sensor's local policy and wait for a sensor
+	// that accepts them. The remaining queued chunks wait for a free
+	// sensor that has the tool.
+	HostsBusy int `json:"hosts_busy,omitempty"`
+	Refused   int `json:"refused,omitempty"`
 }
 
 // RunMapOutputs counts what a step produced, by asset type, in the caller's
@@ -67,7 +74,10 @@ type RunMapNode struct {
 	// skipped or canceled.
 	State string `json:"state"`
 	// Reason says why a waiting, skipped or failed step is so: for a
-	// waiting step "waiting_for_sensor"; otherwise the step's error code.
+	// waiting step waiting_for_hosts (every queued chunk waits for hosts
+	// another task scans), waiting_after_refusal (every one was refused by
+	// a sensor's local policy) or waiting_for_sensor; otherwise the step's
+	// error code.
 	Reason       string `json:"reason,omitempty"`
 	ErrorClass   string `json:"error_class,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
@@ -78,10 +88,16 @@ type RunMapNode struct {
 	StartedAt   string `json:"started_at,omitempty"`
 	CompletedAt string `json:"completed_at,omitempty"`
 	// TimeoutSeconds is the step's timeout in the run's workflow version.
-	TimeoutSeconds int           `json:"timeout_seconds,omitempty"`
-	Findings       int           `json:"findings"`
-	Chunks         RunMapChunks  `json:"chunks"`
-	Outputs        RunMapOutputs `json:"outputs"`
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	Findings       int `json:"findings"`
+	// InfoObservations: template scanner info matches filed as exposures.
+	InfoObservations int `json:"info_observations,omitempty"`
+	// FindingsHeld: reported findings held for review; FindingsRefused:
+	// reported findings not stored.
+	FindingsHeld    int           `json:"findings_held,omitempty"`
+	FindingsRefused int           `json:"findings_refused,omitempty"`
+	Chunks          RunMapChunks  `json:"chunks"`
+	Outputs         RunMapOutputs `json:"outputs"`
 	// Inputs and Planned: how many targets the stage considered and was
 	// handed (absent before the stage is planned).
 	Inputs  *int `json:"inputs,omitempty"`
@@ -93,6 +109,47 @@ type RunMapNode struct {
 	// Result is what a completed retest step concluded (inconclusive,
 	// still_exposed_elsewhere) with its reason code; the step succeeded.
 	Result *RunResult `json:"result,omitempty"`
+	// RanWith is what the step ran with: the severities and tags its
+	// command carried (each with the layer that set it) and the config keys
+	// the sensor ignored. Absent for a step not dispatched yet.
+	RanWith *RunMapRanWith `json:"ran_with,omitempty"`
+}
+
+// RunMapRanWith summarizes a step's effective config for the run map.
+// Severity, Tags and ExcludeTags are standard params of the capability
+// (platform record at dispatch); SensorIgnoredKeys is sensor-reported text.
+type RunMapRanWith struct {
+	Depth             string                 `json:"depth,omitempty"`
+	Severity          *scanrundom.ParamValue `json:"severity,omitempty"`
+	Tags              *scanrundom.ParamValue `json:"tags,omitempty"`
+	ExcludeTags       *scanrundom.ParamValue `json:"exclude_tags,omitempty"`
+	SensorIgnoredKeys []string               `json:"sensor_ignored_keys,omitempty"`
+}
+
+// ranWithOf is the node's summary (nil when the step recorded nothing
+// worth showing).
+func ranWithOf(sr *scanrundom.StepRun) *RunMapRanWith {
+	if sr == nil {
+		return nil
+	}
+	out := &RunMapRanWith{}
+	if c := sr.EffectiveConfig; c != nil {
+		out.Depth = c.Depth
+		pick := func(name string) *scanrundom.ParamValue {
+			if v, ok := c.Params[name]; ok {
+				return &v
+			}
+			return nil
+		}
+		out.Severity, out.Tags, out.ExcludeTags = pick("severity"), pick("tags"), pick("exclude_tags")
+	}
+	if ss := sr.SensorSettings; ss != nil {
+		out.SensorIgnoredKeys = ss.IgnoredConfigKeys
+	}
+	if out.Severity == nil && out.Tags == nil && out.ExcludeTags == nil && len(out.SensorIgnoredKeys) == 0 {
+		return nil
+	}
+	return out
 }
 
 // RunMapOutcome is a step's structured outcome.
@@ -105,6 +162,12 @@ type RunMapOutcome struct {
 	Unfinished       int                 `json:"unfinished_target_count,omitempty"`
 	Unreachable      int                 `json:"unreachable_target_count,omitempty"`
 	Skipped          int                 `json:"skipped_target_count,omitempty"`
+	// NoLongerResolve is how many of the skipped targets are names that do
+	// not resolve (a part of Skipped).
+	NoLongerResolve int `json:"no_longer_resolve_count,omitempty"`
+	// NotResolvingSkipped counts the names the platform knows do not
+	// resolve that an active step left out (passive steps still take them).
+	NotResolvingSkipped int `json:"not_resolving_skipped_count,omitempty"`
 }
 
 // RunMapCoverageGap is one host and why it was not fully covered
@@ -198,6 +261,8 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		c.Queued += sh.Queued
 		c.Running += sh.Running
 		c.Completed += sh.Completed
+		c.HostsBusy += sh.QueuedHostsBusy
+		c.Refused += sh.QueuedRefused
 		c.Failed += sh.Failed
 		chunks[sh.StepKey] = c
 	}
@@ -264,6 +329,7 @@ func toRunMapResponse(m *scanrunapp.RunMap) RunMapResponse {
 		}
 		if sr := stepRuns[st.StepKey]; sr != nil {
 			fillNodeFromStepRun(&n, sr, platform[st.StepKey])
+			n.RanWith = ranWithOf(sr)
 		} else {
 			n.State = mapStatePending
 		}
@@ -383,10 +449,13 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 		n.Name = sr.StepName
 	}
 	n.Findings = sr.FindingsCount
+	n.InfoObservations = sr.InfoObservations
+	n.FindingsHeld = sr.FindingsHeld
+	n.FindingsRefused = sr.FindingsRefused
 	n.State = mapNodeState(sr.Status, n.Chunks)
 	switch n.State {
 	case mapStateWaiting:
-		n.Reason = "waiting_for_sensor"
+		n.Reason = waitingReason(n.Chunks)
 	case mapStateFailed, mapStatePartial, mapStateSkipped, mapStateCanceled:
 		n.Reason = sr.ErrorCode
 		n.ErrorClass = stepErrorClass(sr.ErrorCode)
@@ -405,6 +474,32 @@ func fillNodeFromStepRun(n *RunMapNode, sr *scanrundom.StepRun, platform bool) {
 	}
 	if sr.CompletedAt != nil {
 		n.CompletedAt = sr.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
+	}
+}
+
+// Reasons of a waiting node (RunMapNode.Reason).
+const (
+	// waitReasonSensor: its chunks wait for a free sensor with the tool.
+	waitReasonSensor = "waiting_for_sensor"
+	// waitReasonHosts: every queued chunk waits while another task of the
+	// organization scans its hosts.
+	waitReasonHosts = "waiting_for_hosts"
+	// waitReasonRefused: every queued chunk was refused by a sensor's
+	// local policy and waits for a sensor that accepts it.
+	waitReasonRefused = "waiting_after_refusal"
+)
+
+// waitingReason says why a waiting node's queued chunks wait: one gate when
+// it holds them all, else waiting for a sensor (the chunk counts say how
+// many each gate holds).
+func waitingReason(c RunMapChunks) string {
+	switch {
+	case c.Queued > 0 && c.HostsBusy == c.Queued:
+		return waitReasonHosts
+	case c.Queued > 0 && c.Refused == c.Queued:
+		return waitReasonRefused
+	default:
+		return waitReasonSensor
 	}
 }
 
@@ -454,6 +549,9 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 		Unfinished:       num(scanrunapp.StepOutputUnfinished),
 		Unreachable:      num(scanrunapp.StepOutputUnreachable),
 		Skipped:          num(scanrunapp.StepOutputSkipped),
+		NoLongerResolve:  min(num(scanrunapp.StepOutputNoLongerResolve), num(scanrunapp.StepOutputSkipped)),
+
+		NotResolvingSkipped: num(scanrunapp.StepOutputNotResolvingSkipped),
 	}
 	appendGap := func(host, reason, cause, cert, edge, vendor any) {
 		h, _ := host.(string)
@@ -482,7 +580,7 @@ func stepOutcome(output map[string]any) *RunMapOutcome {
 	if o.CoverageGapCount < len(o.CoverageGaps) {
 		o.CoverageGapCount = len(o.CoverageGaps)
 	}
-	if o.CoverageGapCount == 0 && o.Unfinished == 0 && o.Unreachable == 0 && o.Skipped == 0 {
+	if o.CoverageGapCount == 0 && o.Unfinished == 0 && o.Unreachable == 0 && o.Skipped == 0 && o.NotResolvingSkipped == 0 {
 		return nil
 	}
 	return &o

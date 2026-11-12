@@ -31,6 +31,74 @@ func PayloadTool(payload json.RawMessage) string {
 	return p.PreferredTool
 }
 
+// PayloadKeyDiscoveryMaxRequests is the scanner config key of a path
+// discovery job's per-origin request budget (the webguess mapping of the
+// contract's max_requests_per_origin).
+const PayloadKeyDiscoveryMaxRequests = "max_requests"
+
+// MaxDiscoveryRequests bounds what a payload may ask for as a path discovery
+// request budget; the platform's per-origin budget bounds it further when the
+// job is dispatched (the web job guard).
+const MaxDiscoveryRequests = 100_000
+
+// PayloadScanRunID is the scan run a command payload belongs to (the
+// "scan_run_id" key a workflow step carries, else the "run_id" of a single
+// scan), or "" when it names none.
+func PayloadScanRunID(payload json.RawMessage) string {
+	var p struct {
+		ScanRunID string `json:"scan_run_id"`
+		RunID     string `json:"run_id"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	if id := strings.TrimSpace(p.ScanRunID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(p.RunID)
+}
+
+// PayloadDiscoveryMaxRequests is a path discovery job's per-origin request
+// budget from its "config" or "scanner_config" (0 when it names none; at
+// most MaxDiscoveryRequests).
+func PayloadDiscoveryMaxRequests(payload json.RawMessage) int {
+	var p struct {
+		Config        map[string]any `json:"config"`
+		ScannerConfig map[string]any `json:"scanner_config"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return 0
+	}
+	for _, cfg := range []map[string]any{p.ScannerConfig, p.Config} {
+		switch v := cfg[PayloadKeyDiscoveryMaxRequests].(type) {
+		case float64:
+			if v > 0 {
+				return int(min(v, MaxDiscoveryRequests))
+			}
+		case int:
+			if v > 0 {
+				return min(v, MaxDiscoveryRequests)
+			}
+		}
+	}
+	return 0
+}
+
+// PayloadCapability is the capability a scan payload names ("capability",
+// e.g. "enumerate.web_paths@1"), trimmed; "" when it names none.
+func PayloadCapability(payload json.RawMessage) string {
+	if len(payload) == 0 || !bytes.Contains(payload, []byte(`"capability"`)) {
+		return ""
+	}
+	var p struct {
+		Capability string `json:"capability"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	return strings.TrimSpace(p.Capability)
+}
+
 // PayloadTargets are the targets a command payload names ("targets" and
 // "target", the keys sensors read), trimmed and de-duplicated, in order.
 func PayloadTargets(payload json.RawMessage) []string {

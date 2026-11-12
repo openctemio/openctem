@@ -1,0 +1,2 @@
+### Fixed: console e2e and tooling resolve the default extension module
+- The `@extension/*` alias is now also in the `tsconfig` paths of the web app and the console app, so Playwright (which loads the console navigation through the e2e helpers) finds the default `@extension/console` stub; the Console E2E workflow no longer fails with `Cannot find module '@extension/console'`. A test keeps the three alias configs (bundler, vitest, tsconfig) pointing at the same default module.

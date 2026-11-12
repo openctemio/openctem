@@ -65,6 +65,9 @@ type CreatePolicyInput struct {
 	// KEVCapDays is the known exploited deadline cap in days, 0 = off. Nil =
 	// the default (DefaultKEVCapDays).
 	KEVCapDays *int
+	// Practice is "" (governs every finding except compliance) or
+	// "compliance" (governs only compliance findings). Fixed at create.
+	Practice string
 }
 
 // CreateSLAPolicy creates a new SLA policy.
@@ -86,6 +89,9 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 	if err != nil {
 		return nil, err
 	}
+	if err := policy.SetPractice(input.Practice); err != nil {
+		return nil, err
+	}
 
 	if input.AssetID != "" {
 		assetID, err := shared.IDFromString(input.AssetID)
@@ -104,10 +110,11 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 	// tenant-wide policy may become the default on create; replacing an
 	// existing default is the explicit make-default update.
 	if input.IsDefault && input.AssetID == "" {
-		if _, derr := s.repo.GetTenantDefault(ctx, tenantID); derr != nil {
-			if !errors.Is(derr, sladom.ErrNotFound) && !errors.Is(derr, shared.ErrNotFound) {
-				return nil, derr
-			}
+		has, derr := s.hasTenantDefault(ctx, tenantID, policy.Practice())
+		if derr != nil {
+			return nil, derr
+		}
+		if !has {
 			policy.SetDefault(true)
 		}
 	}
@@ -141,6 +148,31 @@ func (s *Service) CreateSLAPolicy(ctx context.Context, input CreatePolicyInput) 
 
 	s.logger.Info("SLA policy created", "id", policy.ID().String(), "name", policy.Name())
 	return policy, nil
+}
+
+// hasTenantDefault reports whether the tenant has a default policy of the
+// practice ("" or compliance).
+func (s *Service) hasTenantDefault(ctx context.Context, tenantID shared.ID, practice string) (bool, error) {
+	if practice == "" {
+		_, err := s.repo.GetTenantDefault(ctx, tenantID)
+		if err == nil {
+			return true, nil
+		}
+		if errors.Is(err, sladom.ErrNotFound) || errors.Is(err, shared.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	policies, err := s.repo.ListByTenant(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range policies {
+		if p.TenantID() == tenantID && p.AssetID() == nil && p.IsDefault() && p.Practice() == practice {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // GetSLAPolicy retrieves an SLA policy by ID, scoped to the caller's tenant.
@@ -468,6 +500,27 @@ func (s *Service) CalculateSLADeadlineForPriority(
 	severity vulnerability.Severity,
 	detectedAt time.Time,
 ) (time.Time, error) {
+	return s.CalculateSLADeadlineForPractice(ctx, tenantID, assetID, "", priorityClass, severity, detectedAt)
+}
+
+// CalculateSLADeadlineForPractice is CalculateSLADeadlineForPriority for a
+// finding of a practice (docs/architecture/finding-practices.md). A
+// compliance finding is governed only by compliance policies: the asset's,
+// else the tenant's default, else the platform's compliance windows. Every
+// other finding keeps the vulnerability policy choice.
+func (s *Service) CalculateSLADeadlineForPractice(
+	ctx context.Context,
+	tenantID, assetID, practice, priorityClass string,
+	severity vulnerability.Severity,
+	detectedAt time.Time,
+) (time.Time, error) {
+	if practice == sladom.PracticeCompliance {
+		resolve, err := s.policyResolver(ctx, tenantID)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("read sla policy: %w", err)
+		}
+		return deadlineForPriority(resolve(assetID, practice), practice, priorityClass, severity, detectedAt)
+	}
 	var policy *sladom.Policy
 	var err error
 	if assetID != "" {
@@ -484,12 +537,12 @@ func (s *Service) CalculateSLADeadlineForPriority(
 		}
 		policy = nil
 	}
-	return deadlineForPriority(policy, priorityClass, severity, detectedAt)
+	return deadlineForPriority(policy, "", priorityClass, severity, detectedAt)
 }
 
 // deadlineForPriority computes a deadline from the effective policy (nil when
-// none is configured).
-func deadlineForPriority(policy *sladom.Policy, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+// none is configured: the platform windows of the finding's practice).
+func deadlineForPriority(policy *sladom.Policy, practice, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
 	if policy == nil {
 		// No policy configured: an informational finding gets no SLA (the
 		// default info days are sladom.NoSLA); every other finding honors
@@ -497,10 +550,14 @@ func deadlineForPriority(policy *sladom.Policy, priorityClass string, severity v
 		if severity.IsInformational() {
 			return time.Time{}, nil
 		}
-		if days, ok := sladom.DefaultPriorityDays[priorityClass]; ok && days > 0 {
+		priorityDays, severityDays := sladom.DefaultPriorityDays, sladom.DefaultSLADays
+		if practice == sladom.PracticeCompliance {
+			priorityDays, severityDays = sladom.DefaultCompliancePriorityDays, sladom.DefaultComplianceSLADays
+		}
+		if days, ok := priorityDays[priorityClass]; ok && days > 0 {
 			return detectedAt.Add(time.Duration(days) * 24 * time.Hour), nil
 		}
-		defaultDays, ok := sladom.DefaultSLADays[severity.String()]
+		defaultDays, ok := severityDays[severity.String()]
 		if !ok {
 			return time.Time{}, fmt.Errorf("%w: invalid severity", shared.ErrValidation)
 		}
@@ -510,7 +567,8 @@ func deadlineForPriority(policy *sladom.Policy, priorityClass string, severity v
 }
 
 // DeadlineFunc computes a finding's SLA deadline from policies loaded once.
-type DeadlineFunc func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
+// practice is the finding's practice ("" reads as a vulnerability).
+type DeadlineFunc func(assetID, practice, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error)
 
 // KEVCapFunc returns the known exploited deadline cap in days (0 = off) of
 // the policy that governs a finding on assetID ("" = no asset), from
@@ -543,10 +601,10 @@ func (s *Service) SLABatchFuncs(ctx context.Context, tenantID string) (DeadlineF
 	if err != nil {
 		return nil, nil, err
 	}
-	deadline := func(assetID, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
-		return deadlineForPriority(resolve(assetID), priorityClass, severity, detectedAt)
+	deadline := func(assetID, practice, priorityClass string, severity vulnerability.Severity, detectedAt time.Time) (time.Time, error) {
+		return deadlineForPriority(resolve(assetID, practice), practice, priorityClass, severity, detectedAt)
 	}
-	kevCap := func(assetID string) int { return kevCapDays(resolve(assetID)) }
+	kevCap := func(assetID string) int { return kevCapDays(resolve(assetID, "")) }
 	return deadline, kevCap, nil
 }
 
@@ -579,7 +637,7 @@ func isPolicyNotFound(err error) bool {
 
 // policyResolver loads the tenant's policies once and returns the in-memory
 // choice of a finding's effective policy (nil = none configured).
-func (s *Service) policyResolver(ctx context.Context, tenantID string) (func(assetID string) *sladom.Policy, error) {
+func (s *Service) policyResolver(ctx context.Context, tenantID string) (func(assetID, practice string) *sladom.Policy, error) {
 	parsedID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -591,33 +649,40 @@ func (s *Service) policyResolver(ctx context.Context, tenantID string) (func(ass
 	// Earliest first, so ties resolve to the oldest policy, as
 	// GetTenantDefault does.
 	sort.SliceStable(policies, func(i, j int) bool { return policies[i].CreatedAt().Before(policies[j].CreatedAt()) })
+	// Keyed by the policy's practice ("" or compliance): a policy governs
+	// only findings of its own kind (Policy.Governs).
 	byAsset := make(map[string]*sladom.Policy)
-	var activeDefault *sladom.Policy
+	activeDefault := make(map[string]*sladom.Policy)
 	for _, p := range policies {
 		if p.TenantID() != parsedID {
 			continue // defensive: never apply another tenant's policy
 		}
 		if aid := p.AssetID(); aid != nil {
-			if _, seen := byAsset[aid.String()]; !seen && p.IsActive() {
-				byAsset[aid.String()] = p
+			key := p.Practice() + "/" + aid.String()
+			if _, seen := byAsset[key]; !seen && p.IsActive() {
+				byAsset[key] = p
 			}
 			continue
 		}
 		if !p.IsDefault() {
 			continue
 		}
-		if activeDefault == nil && p.IsActive() {
-			activeDefault = p
+		if _, seen := activeDefault[p.Practice()]; !seen && p.IsActive() {
+			activeDefault[p.Practice()] = p
 		}
 	}
-	return func(assetID string) *sladom.Policy {
+	return func(assetID, practice string) *sladom.Policy {
+		kind := ""
+		if practice == sladom.PracticeCompliance {
+			kind = sladom.PracticeCompliance
+		}
 		// An inactive default never governs, with or without an asset.
 		if assetID != "" {
-			if p, ok := byAsset[assetID]; ok {
+			if p, ok := byAsset[kind+"/"+assetID]; ok {
 				return p
 			}
 		}
-		return activeDefault
+		return activeDefault[kind]
 	}, nil
 }
 

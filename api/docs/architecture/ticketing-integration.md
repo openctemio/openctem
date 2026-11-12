@@ -62,8 +62,122 @@ OpenCTEM links findings to external tickets and keeps status in sync **both ways
   the linked Jira issue to match. **Opt-in per integration** (`sync_enabled`,
   default off).
 
-A finding ↔ ticket link is stored as a URL in `finding.WorkItemURIs()` (the Jira
-issue key is parsed from the `/browse/<KEY>` URL).
+A finding ↔ ticket link is a `ticket_links` row (integration, issue id and
+key, state) and, for display and the inbound lookup, the issue's browse URL in
+`finding.WorkItemURIs()`.
+
+## Flow
+
+Behaviour is the same in v0.19.1 and on develop (no change to these paths
+since that release).
+
+### Create a finding issue
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box Platform (tenant from the session)
+    participant H as JiraWebhookHandler.CreateTicket
+    participant G as jira.PolicyGate
+    participant S as jira.SyncService
+    participant E as ticketing.EgressGate
+    participant R as IntegrationClientResolver
+  end
+  box Tracker
+    participant J as Jira REST v2
+  end
+  H->>G: ManualCreate(in, confirm) after findings:write + data scope guard
+  G->>R: clientFor(tenant, integration_id or default)
+  R-->>G: client of a connected integration (AES-GCM credentials decrypted)
+  G->>G: LockFinding advisory lock (8 per process, 2 per tenant, wait 2 min)
+  G->>G: Policy.Evaluate below and no confirm: 409 TICKET_BELOW_THRESHOLD
+  G->>S: CreateTicketFromFinding(in)
+  S->>E: Check(tenant, route, finding)
+  E-->>S: refused: 403 TICKET_EGRESS_REFUSED with reason
+  S->>S: project: request, else RouteFor(routing), else project_key, else 400
+  S->>S: work_item_uris has /browse/PROJECT- : return it
+  S->>J: GET /rest/api/2/search labels = openctem-ref-id (findMarked)
+  alt marker of this object, kind and integration found
+    J-->>S: adopt that issue
+  else none
+    S->>J: POST /rest/api/2/issue (profile fields or built-in, marker property)
+    J-->>S: key, id, browse URL
+  end
+  S->>S: recordCreatedLink (ticket_links) and UpdateWorkItemURIs
+  G->>G: clear the hold, unlock
+  H-->>H: 201, audit ticket.created_below_threshold when confirmed below
+```
+
+- The automatic path (`workflowJiraTicketAdapter` in `internal/server/services.go`)
+  calls `PolicyGate.AutoCreate` with `ticketing.RouteAutomation`: below the
+  policy or over `daily_cap` it writes a hold and the step succeeds with
+  `held: true`; a failed create releases the day's slot and fails the step
+  (only the release job writes `create_failed` holds). See
+  [ticket create policy](ticket-create-policy.md).
+- GitHub (`provider: "github"`) goes to `ticketing.GitHubTicketService`
+  instead, with no create policy. See
+  [GitHub issue ticketing](github-issue-ticketing.md).
+
+### Inbound Jira delivery
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant J as Jira
+  box Platform (public route, no session)
+    participant L as Rate limiters
+    participant H as JiraWebhookHandler.IncomingJiraWebhook
+    participant I as IntegrationService.VerifyJiraDelivery
+    participant D as Redis delivery guard
+    participant S as jira.SyncService
+    participant V as VulnerabilityService.ApplyTicketStatus
+  end
+  J->>L: POST /hooks/jira-integrations/integration_id
+  L->>H: per IP 50/s burst 500, per URL 20/s burst 200
+  H->>H: body at most 2 MiB
+  H->>I: GetByID (unscoped by design), provider jira, not disabled
+  I->>I: X-Hub-Signature sha256 HMAC of the raw body, constant time
+  I-->>H: tenant of that integration, or 401 (one message)
+  H->>H: organization access gate (suspended: refused)
+  H->>H: payload timestamp at most 1 h old, 5 min skew
+  H->>D: FirstDelivery body-sha256 and X-Atlassian-Webhook-Identifier, 24 h
+  D-->>H: seen: 200 and ignored. Store down: 503
+  H->>S: RecordExternalChange (assignee, status category)
+  H->>S: HandleJiraWebhook(tenant, integration, payload)
+  S->>S: campaign epic? HandleEpicStatusChange and stop
+  S->>S: inboundProjectAllowed, profile intent or StatusInbound map
+  S->>V: linked finding ids (ticket_links by issue id then key, work_item_uris, task members, max 500)
+  V->>V: WithTicketInbound ctx, TicketPath legal steps, BulkUpdateFindingsStatus
+  V-->>S: applied, unchanged, refused
+  S->>S: postFixHook per fix claim (proof of fix)
+  S->>J: one refusal comment per issue, status and body per hour
+  H-->>J: 200. Failure: keys released, 500, Jira retries
+```
+
+### Outbound status push
+
+```mermaid
+sequenceDiagram
+  autonumber
+  box Platform
+    participant V as VulnerabilityService status write
+    participant T as durable_jobs
+    participant C as DurableJobsController
+    participant S as jira.SyncService
+  end
+  participant J as Jira
+  V->>V: ticketSyncCtx: linked finding and ctx not TicketInbound
+  V->>T: jira_status_sync and github_status_sync rows in the status write's tx
+  C->>T: claim (lease 2 min, run timeout 1 min)
+  C->>S: SyncFindingStatus(tenant, finding)
+  S->>S: statusPushAllowed (egress gate, RouteStatusSync)
+  S->>S: published profile? runStatusPath. Else SyncEnabled and status_outbound target
+  S->>J: GET issue status. Already at target: done
+  S->>J: transitions then POST transition, or a comment when none reaches it
+  alt error
+    C->>T: retry 30 s doubling to 1 h, 8 attempts. Permanent(): buried at once
+  end
+```
 
 ## Per-tenant client resolution
 
@@ -169,7 +283,7 @@ VulnerabilityService.UpdateFindingStatus / BulkUpdateFindingsStatus
         │                                    (status actually changed AND finding has a ticket link)
         ▼  same transaction as the status write
 durable_jobs row  kind = jira_status_sync (and github_status_sync)
-        ▼  durable-jobs controller (FOR UPDATE SKIP LOCKED, retry with backoff)
+        ▼  durable-jobs controller (FOR UPDATE SKIP LOCKED, 30 s doubling to 1 h, 8 attempts)
 SyncService.SyncFindingStatus(tenantID, findingID)
    ├─ MappingResolver.ResolveMapping(tenantID)   → per-tenant status maps + sync_enabled
    │      (no Jira integration → no-op)
@@ -181,10 +295,20 @@ SyncService.SyncFindingStatus(tenantID, findingID)
         └─ no workflow transition to target       → AddComment (never hard-fail)
 ```
 
-**Echo-safe by construction:** the inbound webhook updates findings via a
-*different* path (`finding.TransitionStatus` + `findingRepo.Update`), **not**
-`UpdateFindingStatus` — so a Jira-driven change never re-triggers an outbound
-push. A `GetIssueStatus`-equals-target check is the secondary guard.
+**Echo-safe by construction:** the inbound webhook applies its change through
+the finding service (`VulnerabilityService.ApplyTicketStatus`) with the context
+marked `vulnerability.WithTicketInbound`, and `ticketSyncCtx`
+(`internal/app/finding/status_effects.go`) queues no push for a move made under
+that mark, so a Jira-driven change never re-triggers an outbound push. A
+`GetIssueStatus`-equals-target check is the secondary guard.
+
+An outbound push does come back as an inbound delivery when Jira sends it.
+With the default maps a `confirmed`, `in_progress` or `fix_applied` finding
+maps back to its own status (no-op); a `new` finding pushed to To Do comes
+back as `confirmed` and moves one step. For a closed finding pushed to Done (default `resolved → Done`) the delivery
+maps to `fix_applied`, `ApplyTicketStatus` refuses the closed finding, and the
+refusal comment is posted on the issue (once per hour per issue, status and
+body).
 
 **Why a durable job, not the notification outbox:** the notification outbox fans
 events out to Slack/email by subscription; performing a Jira *transition* is an
@@ -285,9 +409,9 @@ specify; invalid targets skipped). Defaults:
 
 | Direction | Default mapping |
 |-----------|-----------------|
-| severity → Jira priority | critical→Highest, high→High, medium→Medium, low→Low |
-| Jira status → finding (inbound) | done/resolved/closed/verified→fix_applied; in progress/in review→in_progress; open/to do/backlog/reopened→confirmed; duplicate→duplicate |
-| finding → Jira status (outbound) | confirmed→To Do; in_progress→In Progress; fix_applied/resolved/verified→Done (false_positive/accepted unset by default) |
+| severity → Jira priority | critical→Highest, high→High, medium→Medium, low→Low, info/none→Lowest; anything else `default_priority` (Medium) |
+| Jira status → finding (inbound) | done/resolved/closed/completed/fixed/verified→fix_applied; in progress/in review/in development/reviewing→in_progress; open/to do/backlog/selected/reopened→confirmed. `duplicate` is not mapped (marking a duplicate is a triage decision). Only `confirmed`, `in_progress` and `fix_applied` may be inbound targets, in the defaults or an overlay |
+| finding → Jira status (outbound) | new/confirmed→To Do; in_progress→In Progress; fix_applied/resolved→Done (false_positive, accepted, duplicate unset by default) |
 
 Customers with custom workflows (`In Dev / QA / Shipped / Won't Do`) set their
 own names via `config.ticketing`.
@@ -488,7 +612,7 @@ nothing to remove; erasure on a tracker-side signal comes with OAuth.
 | 2b | Wire mapping into **create** (project/issue-type/priority) + default project + project picker | **Done** (#207, openctemio/ui#184) |
 | 3 | Outbound status sync (durable job + echo-guard, opt-in) | **Done** (#167, #171) |
 | 4a | Routing rules (severity/tag/asset scope/criticality → project_key) | **Done** (#209; UI in openctemio/ui#189; asset_group dimension deferred) |
-| 4b | 2nd provider (ServiceNow/GitHub) + typed `ticket_links` table | Planned (optional) |
+| 4b | 2nd provider (GitHub Issues) + typed `ticket_links` table | **Done** (GitHub Issues: create, inbound, close/reopen push; ServiceNow not built) |
 
 ### UI surfaces (shipped)
 
@@ -502,8 +626,9 @@ The full operator UI is in the `ui` repo:
 | **Routing rules editor** (severity/scope/criticality/tag → project) | "Routing" dialog on the integration card | openctemio/ui#189 |
 | **Create ticket from a finding** | findings table row menu + finding **detail drawer** | openctemio/ui#189 (row), openctemio/ui#192 (drawer) |
 
-> Inbound status-name mapping editor (arbitrary Jira status → finding status) is the
-> one remaining UI gap; stock-Jira inbound defaults cover the common case.
+> The Configure dialog also edits the inbound status-name mapping
+> (`config.ticketing.status_inbound`, Jira status → confirmed, in progress or
+> fix applied).
 
 Related future work (its own RFC): **Jira Assets / JSM CMDB** — pull asset
 business-context to enrich prioritization, push discovered assets, link CI
@@ -522,6 +647,10 @@ internal/infra/jira/client.go                 Jira REST client (CreateIssue/GetI
 internal/infra/jira/resolver.go               IntegrationClientResolver: ClientResolver + MappingResolver + adapter
 internal/infra/jira/asset_route_resolver.go   AssetRouteResolver: asset scope/criticality for routing rules
 internal/infra/jobs/durable_jobs.go           durable-job handlers (status sync, invitation e-mail)
+internal/infra/controller/durable_jobs.go     DurableJobsController: lease, timeout, backoff, bury
+internal/app/finding/ticket_inbound.go        ApplyTicketStatus / RequestTicketDisposition (inbound rules)
+internal/app/finding/status_effects.go        ticketSyncCtx: queues the pushes, skips ticket-inbound moves
+internal/app/jira/create_policy.go            PolicyGate: create policy, holds, per-finding lock
 internal/infra/http/handler/jira_webhook_handler.go   create-ticket + inbound webhook
 internal/app/finding/vulnerability_service.go  status writes queue the outbound sync (EnableTicketStatusSync)
 internal/server/{services,workers,main}.go         wiring (resolvers, worker handler, enqueue hook)

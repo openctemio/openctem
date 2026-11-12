@@ -32,6 +32,7 @@ import {
   byReadiness,
   firstProblem,
   isRunnable,
+  skippedSteps,
   readinessFixHref,
   problemText,
   readinessLabel,
@@ -425,6 +426,9 @@ function ChoiceCard({
   const fixHref = readinessFixHref(readiness)
   const problemReason = problem ? stepReason(problem, t) : undefined
   const problemFix = problem ? stepFix(problem, t) : undefined
+  // Optional steps no tool runs yet: said up front, so a run without them
+  // does not look broken later.
+  const skipped = off ? [] : skippedSteps(readiness)
   return (
     <Label
       htmlFor={id}
@@ -461,6 +465,14 @@ function ChoiceCard({
                 </Link>
               </>
             )}
+          </span>
+        )}
+        {skipped.length > 0 && (
+          <span className="block text-xs text-muted-foreground" data-testid="skipped-note">
+            {t('scans.readiness.skippedSome', undefined, {
+              count: skipped.length,
+              capabilities: skipped.map((x) => x.capability ?? x.name).join(', '),
+            })}
           </span>
         )}
         {stages && stages.length > 0 && (

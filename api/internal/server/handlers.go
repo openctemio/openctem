@@ -4,6 +4,8 @@ import (
 	"io/fs"
 	"os"
 
+	compliancecheckapp "github.com/openctemio/openctem/api/internal/app/compliancecheck"
+
 	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
@@ -51,6 +53,7 @@ import (
 	commandapp "github.com/openctemio/openctem/api/internal/app/command"
 	"github.com/openctemio/openctem/api/internal/app/commandlog"
 	easmapp "github.com/openctemio/openctem/api/internal/app/easm"
+	explorationapp "github.com/openctemio/openctem/api/internal/app/exploration"
 	"github.com/openctemio/openctem/api/internal/app/findingimport"
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
@@ -68,8 +71,10 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/cirun"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
 	relationshipdom "github.com/openctemio/openctem/api/pkg/domain/relationship"
+	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
@@ -275,10 +280,12 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 
 	// Asset handler with integration service wired
 	assetHandler := handler.NewAssetHandler(svc.Asset, v, log)
+	assetHandler.SetSavedViews(svc.SavedView) // GET /assets?view=<id>
 	assetHandler.SetIntegrationService(svc.Integration)
 	assetHandler.SetAccessControlRepo(repos.AccessControl)
 	assetHandler.SetTechnologyReader(repos.AssetTechnology)
 	assetHandler.SetAuditService(svc.Audit)
+	assetHandler.SetTagGovernor(svc.TagGovernor)
 	assetHandler.SetRiskGovernance(svc.AssetRiskGovernance)
 
 	// Command handler with scan run service wired
@@ -286,11 +293,24 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	platformCA := newPlatformCASource(cfg, log)
 	sensorHandler := newSensorHandlerWithTemplates(svc.Sensor, cfg, v, log)
 	sensorHandler.SetPlatformCA(platformCA)
+	if svc.SensorPairing != nil && platformCA.Configured() {
+		// The signed pairing grant names the platform's TLS roots, so a
+		// sensor refuses a pairing connection that verified another one.
+		svc.SensorPairing.SetTLSAnchors(func() []string {
+			ca, err := platformCA.Get()
+			if err != nil {
+				return nil
+			}
+			return ca.TLSAnchors(time.Now())
+		})
+	}
 	sensorHandler.SetContentPolicySource(svc.SensorContent)
 	sensorHandler.SetPolicyPrefill(&handler.SensorPolicyPrefill{
 		Zones: repos.ScanZone, Targets: repos.ScopeTarget, Exclusions: repos.ScopeExcl, Log: log,
 	})
 	sensorHandler.SetGrantService(svc.SensorGrant)
+	sensorHandler.SetReadiness(sensor.NewReadinessService(svc.Sensor, repos.SensorGrant, repos.ScanZone,
+		sensor.ScopeByStatus{Repo: repos.ScopeTarget}))
 	if svc.JobSigner != nil {
 		sensorHandler.SetJobSigningRoot(svc.JobSigner.RootKeyID)
 	}
@@ -329,6 +349,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Gated actions (rotate_key) ring only when the sensor's grant lists
 	// them (RFC-052 §5.3).
 	doorbell.SetGrants(repos.SensorGrant)
+	// Commands whose hosts are only partly busy start their free targets
+	// when a sensor claims (host split): the doorbell rings for them too.
+	doorbell.SetHostSplits(svc.Command)
 	// A new job-signing key set changes config_version, so sensors re-read
 	// hello and pick it up (RFC-040 §5.6).
 	if svc.JobSigner != nil {
@@ -366,6 +389,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	if svc.ScanIdentity != nil {
 		tenantHandler.SetScanIdentity(svc.ScanIdentity)
+	}
+	if svc.LeakedSecretPolicy != nil {
+		tenantHandler.SetLeakedSecretDefault(svc.LeakedSecretPolicy)
 	}
 	if svc.Entitlement != nil {
 		tenantHandler.SetSelfServiceLimits(svc.Entitlement)
@@ -412,6 +438,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 	vulnHandler.SetComponentService(svc.Component)
 	vulnHandler.SetSavedViews(svc.SavedView)
+	// Compliance check reads (posture, controls, a control's assets, a
+	// finding's control history), in the caller's data scope.
+	vulnHandler.SetComplianceChecks(compliancecheckapp.NewService(repos.ComplianceChecks, svc.DataScope))
 	if svc.SLA != nil && repos.FindingSLARestart != nil {
 		vulnHandler.SetSLABasis(svc.SLA, repos.FindingSLARestart)
 	}
@@ -664,6 +693,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AssetImport:            newAssetImportHandler(svc, log),
 		FindingImport:          newFindingImportHandler(cfg, repos, svc, log),
 		IngestReceipt:          newIngestReceiptHandler(cfg, repos, svc, log),
+		SourceRetirement:       handler.NewSourceRetirementHandler(svc.SourceRetire, log),
+		Story:                  newStoryHandler(deps.DB, repos, svc, log),
+		ExplorationLeads:       newExplorationLeadHandler(deps.DB, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -728,6 +760,8 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		SensorResults:    handler.NewSensorResultHandler(svc.Ingest, sensorHandler, log),
 		ScanZone:         handler.NewScanZoneHandler(svc.ScanZone, svc.Scan, log),
 		ProxyPool:        handler.NewProxyPoolHandler(svc.ProxyPool, log),
+		ToolSource:       handler.NewToolSourceHandler(svc.ToolSource, log),
+		TaskSecrets:      svc.TaskSecrets,
 		ScanWindow:       newScanWindowHandler(svc, log),
 		FindingLifecycle: handler.NewFindingLifecycleHandler(svc.FindingLifecycle, log),
 		Ingest:           ingestHandler,
@@ -855,8 +889,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		Docs: handler.NewDocsHandler("api/openapi/swagger.yaml"),
 
 		// Admin Auth (API Key authentication for Admin UI)
-		AdminAuth:         handler.NewAdminAuthHandler(log),
-		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning).WithStepUp(adminConsoleSvc),
+		AdminAuth: handler.NewAdminAuthHandler(log),
+		AdminOrganization: handler.NewAdminOrganizationHandler(repos.AdminOrg, svc.Tenant, repos.User, v, log).WithUserProvisioning(svc.UserProvisioning).WithStepUp(adminConsoleSvc).
+			WithEmailDelivery(func() bool { return svc.Email != nil && svc.Email.IsConfigured() }).
+			WithAppBaseURL(cfg.SMTP.BaseURL),
 		AdminOverview: handler.NewAdminOverviewHandler(
 			func(ctx context.Context, now time.Time) (postgres.AdminOverviewCounts, error) {
 				return postgres.ReadAdminOverview(ctx, deps.DB.DB, now)
@@ -913,7 +949,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		// CTEM RFC-005: Compensating Controls, Attacker Profiles, CTEM Cycles
 		CompensatingControl:   newCompensatingControlHandlerWithWiring(deps.DB.DB, log, svc),
 		AttackerProfile:       handler.NewAttackerProfileHandler(deps.DB.DB, log),
-		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant),
+		CTEMCycle:             handler.NewCTEMCycleHandler(deps.DB.DB, postgres.NewCTEMCycleMetricsRepository(deps.DB), log).WithDataScope(svc.DataScope).WithCyclePolicy(svc.Tenant).WithAudit(svc.Audit),
 		VerificationChecklist: newVerificationChecklistHandler(deps.DB.DB, log, svc),
 		PriorityRule:          newPriorityRuleHandlerWithWiring(deps.DB.DB, log, svc),
 		ThreatModel:           newThreatModelHandler(svc, log),
@@ -966,6 +1002,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	svc.BountyProgram.SetOwnerCheck(middleware.IsOwner)
 	// Program asset flags on asset responses (RFC-065 §16.5).
 	handlers.Asset.SetProgramFlags(postgres.NewProgramAssetFlagRepository(deps.DB))
+	handlers.Asset.SetLiveness(postgres.NewAssetLivenessRepository(deps.DB))
 	if svc.ActiveGate != nil {
 		// Triage fields on list rows: the dispatcher's own gate (research/124).
 		handlers.Asset.SetTriage(svc.ActiveGate, repos.Attribution, svc.Scope)
@@ -1074,7 +1111,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	}
 
 	if svc.AccessRequest != nil {
-		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log)
+		handlers.AccessRequest = handler.NewAccessRequestHandler(svc.AccessRequest, log).WithAppBaseURL(cfg.SMTP.BaseURL)
 	}
 	if svc.SignupEvents != nil {
 		handlers.AdminSignupEvents = handler.NewAdminSignupEventHandler(svc.SignupEvents, adminConsoleSvc, log)
@@ -1324,7 +1361,7 @@ func InitLocalAuthHandler(
 		// Widening a sensor's grant needs a recent sign-in or step-up.
 		if svc.SensorGrant != nil {
 			svc.SensorGrant.SetWideningApprover(handler.StepUpWideningApprover{
-				Checker: handlers.LocalAuth.RecentAuthChecker(), Window: authapp.StepUpWindow,
+				Checker: handlers.LocalAuth.RecentAuthChecker(), Policies: routes.NewStepUpPolicyProvider(repos.Tenant),
 			})
 		}
 	}
@@ -1336,12 +1373,12 @@ func InitLocalAuthHandler(
 // (docs/architecture/step-up-reauth.md). Without local auth there is no
 // session store: platform sessions then cannot step up (fail closed) and
 // external provider tokens are judged by their auth_time.
-func wireStepUpGate(handlers *routes.Handlers, svc *Services) {
+func wireStepUpGate(handlers *routes.Handlers, svc *Services, policies middleware.StepUpPolicyProvider) {
 	var checker middleware.RecentAuthChecker
 	if handlers.LocalAuth != nil {
 		checker = handlers.LocalAuth.RecentAuthChecker()
 	}
-	gate := middleware.RecentAuthGate{Checker: checker, Window: authapp.StepUpWindow}
+	gate := middleware.RecentAuthGate{Checker: checker, Policies: policies}
 	if svc.Role != nil {
 		svc.Role.SetStepUpGate(gate)
 	}
@@ -1518,15 +1555,23 @@ func sensorHealthPolicy(cfg *config.Config) sensordom.HealthPolicy {
 // judged against at the token exchange and in pipeline health. It is their
 // own line, never the sensor's: the two are versioned apart, and the sensor
 // minimum would refuse every CI runner release.
-func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusPolicy {
+//
+// The returned function resolves the line per use: the latest release is the
+// built-in ci.latest raised by the verified release feed
+// (versions.CIRunnerLatest), so a CI runner release reaches the snippets,
+// the "update available" verdicts and the alerts without a restart. An
+// operator's CI_RUNNER_LATEST_VERSION keeps winning when set ("none" turns
+// the comparison off). The settings are validated (and a bad one logged)
+// once, here.
+func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) func() cirun.StatusPolicy {
 	sc := cfg.SensorConfig
-	var pol cirun.StatusPolicy
+	var fixed cirun.StatusPolicy
 	for _, s := range []struct {
 		name, value string
 		dst         *string
 	}{
-		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &pol.LatestVersion},
-		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &pol.MinVersion},
+		{"CI_RUNNER_LATEST_VERSION", sc.CIRunnerLatestVersion, &fixed.LatestVersion},
+		{"CI_RUNNER_MIN_VERSION", sc.CIRunnerMinVersion, &fixed.MinVersion},
 	} {
 		if s.value == "" {
 			continue
@@ -1539,7 +1584,14 @@ func ciRunnerVersionPolicy(cfg *config.Config, log *logger.Logger) cirun.StatusP
 		}
 		*s.dst = v
 	}
-	return pol
+	if sc.CIRunnerLatestPinned {
+		return func() cirun.StatusPolicy { return fixed }
+	}
+	return func() cirun.StatusPolicy {
+		pol := fixed
+		pol.LatestVersion = versions.CIRunnerLatest()
+		return pol
+	}
 }
 
 // newAttachmentHandlerWithAccessCheck creates an AttachmentHandler with campaign
@@ -1669,22 +1721,19 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 	h.SetReview(review, audit)
 	// Suggestion cards (research/117): addresses behind in-scope names and
 	// confirmed assets no entry covers; read only.
-	if svc.ActiveGate != nil {
-		suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
-			func(ctx context.Context, tenantID shared.ID) (string, error) {
-				t, err := repos.Tenant.GetByID(ctx, tenantID)
-				if err != nil {
-					return "", err
-				}
-				return t.Name(), nil
-			}, seededNetworks(repos))
-		// The organization's own prefixes are offered only when the platform
-		// guardrails accept them as entries.
-		suggestions.SetGuardrails(svc.ScopeGuardrails)
-		// Addresses the unclassified-scans mode already checks need no
-		// decision: the same mode the active gate reads.
-		suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	if suggestions := newEASMSuggestions(repos, svc); suggestions != nil {
 		h.SetSuggestions(suggestions)
+		// Bulk decisions on the addresses card (research/425): checked
+		// against the caller's own card, applied through the scope, review
+		// and network seed services.
+		if svc.Scope != nil && svc.EASMNetworkSeeds != nil && repos.EASMDeclinedNetwork != nil {
+			decisions := easmapp.NewAddressDecisions(suggestions, svc.Scope, review,
+				svc.EASMNetworkSeeds, repos.EASMDeclinedNetwork, newAddressAutoAdd(repos, svc, log))
+			// "Retry" makes an address's network lookup due again; a
+			// sensor runs it (the platform looks nothing up).
+			decisions.SetLookupQueue(repos.Attribution)
+			h.SetAddressDecisions(decisions)
+		}
 	}
 	// Review by rule (RFC-054 §6.7): rules are scope entries and exclusions.
 	if svc.ScopeJoin != nil && svc.ActiveGate != nil && svc.Scope != nil {
@@ -1695,6 +1744,66 @@ func newEASMHandler(repos *Repositories, svc *Services, log *logger.Logger) *han
 
 // seededNetworks reads the organization's network seeds (RFC-082); nil
 // when they are not wired.
+// newEASMSuggestions builds the suggestion cards (nil without the active
+// gate): the Review tab reads them, and the address auto add works from the
+// same address card.
+func newEASMSuggestions(repos *Repositories, svc *Services) *easmapp.SuggestionService {
+	if svc.ActiveGate == nil {
+		return nil
+	}
+	suggestions := easmapp.NewSuggestionService(repos.Attribution, svc.ActiveGate, svc.DataScope,
+		func(ctx context.Context, tenantID shared.ID) (string, error) {
+			t, err := repos.Tenant.GetByID(ctx, tenantID)
+			if err != nil {
+				return "", err
+			}
+			return t.Name(), nil
+		}, seededNetworks(repos))
+	// The organization's own prefixes are offered only when the platform
+	// guardrails accept them as entries.
+	suggestions.SetGuardrails(svc.ScopeGuardrails)
+	// Addresses the unclassified-scans mode already checks need no
+	// decision: the same mode the active gate reads.
+	suggestions.SetUnclassified(svc.ActiveGate.UnclassifiedMode)
+	// Networks the organization answered "not ours" are not offered again.
+	if repos.EASMDeclinedNetwork != nil {
+		suggestions.SetDeclined(repos.EASMDeclinedNetwork)
+	}
+	// The summary counts the addresses that joined scope automatically.
+	if repos.EASMAddressAutoAdd != nil {
+		suggestions.SetAutoAdded(repos.EASMAddressAutoAdd)
+	}
+	// The organization's address setting in force (never hides the card;
+	// Strict scan approval turns automatic adds into ask).
+	if svc.Tenant != nil && svc.Scope != nil {
+		suggestions.SetAddressMode(func(ctx context.Context, tenantID shared.ID) (string, error) {
+			ss, err := svc.Tenant.GetScopeSettings(ctx, tenantID.String())
+			if err != nil || ss == nil {
+				return "", err
+			}
+			mode, _ := svc.Scope.ApprovalPolicy(ctx, tenantID.String())
+			return ss.AddressModeIn(mode.Normalized() == scangov.ModeStrict), nil
+		})
+	}
+	return suggestions
+}
+
+// newAddressAutoAdd builds the address auto add (nil when a dependency is
+// missing): strong addresses behind in-scope names become scope entries
+// through the scope service (research/425).
+func newAddressAutoAdd(repos *Repositories, svc *Services, log *logger.Logger) *easmapp.AddressAutoAdd {
+	cards := newEASMSuggestions(repos, svc)
+	if cards == nil || svc.Scope == nil || svc.Tenant == nil || repos.EASMNetworkSeed == nil || repos.EASMAddressAutoAdd == nil {
+		return nil
+	}
+	var audit easmapp.ScopeJoinAudit
+	if svc.Audit != nil {
+		audit = svc.Audit
+	}
+	return easmapp.NewAddressAutoAdd(cards, svc.Scope, svc.Tenant, repos.EASMNetworkSeed,
+		repos.EASMAddressAutoAdd, svc.Scope, audit, log)
+}
+
 func seededNetworks(repos *Repositories) easmapp.SeededNetworks {
 	if repos.EASMNetworkSeed == nil {
 		return nil
@@ -1799,6 +1908,7 @@ func newConfirmScope(repos *Repositories, svc *Services) *easmapp.ConfirmScope {
 func newAssetImportHandler(svc *Services, log *logger.Logger) *handler.AssetImportHandler {
 	h := handler.NewAssetImportHandler(svc.AssetImport, log)
 	h.SetAuditService(svc.Audit)
+	h.SetTagGovernor(svc.TagGovernor)
 	return h
 }
 
@@ -1823,6 +1933,38 @@ func newFindingImportHandler(cfg *config.Config, repos *Repositories, svc *Servi
 		h.SetMappingResolver(svc.ImportMapping)
 	}
 	return h
+}
+
+// newStoryHandler builds "how we found this" for findings and assets
+// (docs/architecture/exploration.md).
+func newStoryHandler(db *postgres.DB, repos *Repositories, svc *Services, log *logger.Logger) *handler.StoryHandler {
+	if svc.Vulnerability == nil || svc.Asset == nil {
+		return nil
+	}
+	var scope explorationapp.ScopeMatchers
+	if svc.Scope != nil {
+		scope = func(ctx context.Context, tenantID string) (explorationapp.ScopeMatcher, error) {
+			return svc.Scope.NewExplainer(ctx, tenantID)
+		}
+	}
+	var sightings ingestreceipt.SightingReader
+	if repos.IngestReceipt != nil {
+		sightings = repos.IngestReceipt
+	}
+	return handler.NewStoryHandler(explorationapp.NewStoryService(svc.Vulnerability, svc.Asset, sightings,
+		postgres.NewStoryRepository(db), scope), log)
+}
+
+// newExplorationLeadHandler serves exploration leads to people
+// (docs/architecture/exploration.md). Without the data scope enforcer or
+// the asset service it is not mounted (fail closed).
+func newExplorationLeadHandler(db *postgres.DB, svc *Services, log *logger.Logger) *handler.ExplorationLeadHandler {
+	if svc.DataScope == nil || svc.Asset == nil || svc.ScanPolicy == nil {
+		return nil
+	}
+	sw := coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant}
+	return handler.NewExplorationLeadHandler(explorationapp.NewLeadService(postgres.NewExplorationRepository(db),
+		svc.DataScope, svc.Asset, sw, svc.Audit, log), log)
 }
 
 // newIngestReceiptHandler builds the receipt reads, with the per-file
@@ -1963,7 +2105,7 @@ func newCIRunService(cfg *config.Config, repos *Repositories, svc *Services, log
 		Units:    repos.CIRun,
 		Audit:    audit,
 		Alerts:   ciAlerts,
-	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, Versions: ciRunnerVersionPolicy(cfg, log)}, log)
+	}, cirunapp.Config{WebBaseURL: cfg.SMTP.BaseURL, VersionSource: ciRunnerVersionPolicy(cfg, log)}, log)
 	// No CI run token is issued or accepted for a suspended organization.
 	ciSvc.SetOrganizationGate(svc.OrganizationGate)
 	if svc.Suppression != nil {
@@ -2022,6 +2164,7 @@ func bootstrapSession(cfg *config.Config, svc *Services, h routes.Handlers) hand
 	if h.User != nil {
 		boot.Me = h.User.MeResponse
 		boot.MyTenants = h.User.MyTenantsResponse
+		boot.OwnershipInvitations = h.User.MyOwnerInvitationsResponse
 	}
 	if svc.Notification != nil {
 		boot.UnreadCount = svc.Notification.GetUnreadCount

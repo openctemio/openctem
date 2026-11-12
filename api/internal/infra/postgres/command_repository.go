@@ -43,6 +43,9 @@ type CommandRepository struct {
 	// guard completes every command before it is stored: the web scope of
 	// a web job (command_web_scope.go).
 	guard command.CreateGuard
+	// strongTools says which tools need strong isolation (their jobs carry
+	// required_features isolation.strong@1); nil: none does.
+	strongTools command.StrongIsolationTools
 }
 
 // NewCommandRepository creates a new CommandRepository.
@@ -60,6 +63,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	// ...and its host keys: the hosts it holds while it runs, sent to the
 	// sensor in its payload so both sides admit it under the same keys.
 	if err := command.AssignHostKeys(cmd); err != nil {
+		r.releaseGuard(ctx, cmd)
 		return err
 	}
 	query := `
@@ -108,6 +112,7 @@ func (r *CommandRepository) Create(ctx context.Context, cmd *command.Command) er
 	)
 
 	if err != nil {
+		r.releaseGuard(ctx, cmd)
 		if isUniqueViolation(err) {
 			return shared.NewDomainError("ALREADY_EXISTS", "command already exists", shared.ErrAlreadyExists)
 		}
@@ -164,7 +169,7 @@ func (r *CommandRepository) GetPendingForSensorExcluding(ctx context.Context, te
 		where += fmt.Sprintf(" AND commands.id <> ALL($%d::uuid[])", len(args)+1)
 		args = append(args, pq.Array(commandIDStrings(exclude)))
 	}
-	query := fairPendingQuery(r.selectQuery(), where, limit)
+	query := fairPendingQuery(r.selectQuery(), where, sensorID != nil, limit)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -225,8 +230,8 @@ func sensorWhere(ready string, tenantID shared.ID, sensorID *shared.ID, capabili
 const claimAgingSeconds = 1800
 
 // fairCandidateWindow bounds the candidates ranked for fairness on one poll:
-// the oldest pending commands of each class, so the ranking stays cheap on a
-// deep queue.
+// the first pending commands in (class, lane, age) order across all
+// classes, so the ranking stays cheap on a deep queue.
 const fairCandidateWindow = 1000
 
 // claimClassSQL is a command's priority class for dispatch, 1 (critical)
@@ -242,27 +247,44 @@ var claimClassSQL = fmt.Sprintf(`(CASE commands.priority
 	END)`, claimAgingSeconds)
 
 // fairPendingQuery orders the commands matching where for dispatch (RFC-046
-// §11): by priority class (with aging), then round-robin across runs (the
-// first pending command of every run before the second of any), then age.
-// One large run therefore no longer starves a small run queued after it.
-// selectSQL is the repository's column list FROM commands.
-func fairPendingQuery(selectSQL, where string, limit int) string {
+// §11): by priority class (with aging), short work before long work on the
+// claiming sensor while short work used no more than half of its time
+// (command_claim_lanes.go), then round-robin across runs (a run's commands
+// already held count as served, so a run with nothing running goes before
+// one that has jobs running), then age. One large run therefore no longer
+// starves a small run queued after it. selectSQL is the repository's column
+// list FROM commands; withSensor: where binds the claiming sensor as $2.
+func fairPendingQuery(selectSQL, where string, withSensor bool, limit int) string {
+	lanes := noLaneCTEs
+	if withSensor {
+		lanes = laneSensorCTE + `,
+		` + laneBusyCTE
+	}
 	return `
-		WITH cand AS (
-			SELECT commands.id AS c_id, ` + claimClassSQL + ` AS c_cls, commands.created_at AS c_at,
+		WITH ` + lanes + `,
+		lane_pref AS (SELECT short_s <= long_s AS short_first FROM lane_busy),
+		cand AS (
+			SELECT commands.id AS c_id,
+			       (CASE WHEN commands.priority <> 'critical' AND lane.short AND lane_pref.short_first THEN 2
+			             ELSE ` + claimClassSQL + ` END) AS c_cls,
+			       (lane.short IS DISTINCT FROM lane_pref.short_first) AS c_lane,
+			       commands.created_at AS c_at,
 			       COALESCE(commands.payload->>'scan_run_id', commands.id::text) AS c_run
 			FROM commands
+			CROSS JOIN lane_sensor
+			CROSS JOIN lane_pref
+			CROSS JOIN LATERAL (SELECT ` + shortJobSQL("commands") + ` AS short) lane
 			WHERE ` + where + `
-			ORDER BY c_cls, c_at
+			ORDER BY c_cls, c_lane, c_at
 			LIMIT ` + fmt.Sprint(fairCandidateWindow) + `
-		), ranked AS (
-			SELECT c_id, c_cls, c_at,
-			       ROW_NUMBER() OVER (PARTITION BY c_cls, c_run ORDER BY c_at, c_id) AS c_rn
-			FROM cand
+		), ` + runHeldCTE + `, ranked AS (
+			SELECT c_id, c_cls, c_lane, c_at,
+			       ROW_NUMBER() OVER (PARTITION BY c_cls, cand.c_run ORDER BY c_at, c_id) + COALESCE(run_held.n, 0) AS c_rn
+			FROM cand LEFT JOIN run_held ON run_held.c_run = cand.c_run
 		)
 		` + selectSQL + `
 		JOIN ranked ON ranked.c_id = commands.id
-		ORDER BY ranked.c_cls, ranked.c_rn, ranked.c_at, commands.id
+		ORDER BY ranked.c_cls, ranked.c_lane, ranked.c_rn, ranked.c_at, commands.id
 		LIMIT ` + fmt.Sprint(limit)
 }
 
@@ -1245,13 +1267,6 @@ func nullInt(i int) sql.NullInt32 {
 // Platform Job Queue Methods (v3.2)
 // =============================================================================
 
-// GetByAuthTokenHash retrieves a command by auth token hash.
-func (r *CommandRepository) GetByAuthTokenHash(ctx context.Context, hash string) (*command.Command, error) {
-	query := r.selectQuery() + " WHERE auth_token_hash = $1 AND is_platform_job = TRUE"
-	row := r.db.QueryRowContext(ctx, query, hash)
-	return r.scanCommand(row)
-}
-
 // CountActivePlatformJobsByTenant counts active platform jobs for a tenant.
 func (r *CommandRepository) CountActivePlatformJobsByTenant(ctx context.Context, tenantID shared.ID) (int, error) {
 	query := `
@@ -1449,43 +1464,6 @@ func (r *CommandRepository) ExpireIfUnchanged(ctx context.Context, cmd *command.
 		return false, fmt.Errorf("expire command: %w", err)
 	}
 	return n == 1, nil
-}
-
-// GetQueuePosition gets the queue position for a specific command.
-func (r *CommandRepository) GetQueuePosition(ctx context.Context, commandID shared.ID) (*command.QueuePosition, error) {
-	query := `
-		WITH ranked AS (
-			SELECT id, queue_priority, queued_at,
-				   ROW_NUMBER() OVER (ORDER BY queue_priority DESC, queued_at ASC) as position
-			FROM commands
-			WHERE is_platform_job = TRUE
-			AND status = 'pending'
-		),
-		total AS (
-			SELECT COUNT(*) as total_count
-			FROM commands
-			WHERE is_platform_job = TRUE
-			AND status = 'pending'
-		)
-		SELECT r.position, t.total_count, r.queue_priority
-		FROM ranked r, total t
-		WHERE r.id = $1
-	`
-
-	var pos command.QueuePosition
-	err := r.db.QueryRowContext(ctx, query, commandID.String()).Scan(
-		&pos.Position,
-		&pos.TotalQueued,
-		&pos.Priority,
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // Not in queue
-		}
-		return nil, fmt.Errorf("failed to get queue position: %w", err)
-	}
-
-	return &pos, nil
 }
 
 // ListPlatformJobsByTenant lists platform jobs for a tenant with pagination.
@@ -1710,10 +1688,11 @@ func (r *CommandRepository) FailExhaustedCommandsReturning(ctx context.Context, 
 		UPDATE commands
 		SET status = 'failed',
 		    error_message = CASE
-		        WHEN dispatch_attempts >= $1 AND jsonb_array_length(attempts) > 0 THEN
+		        WHEN dispatch_attempts >= $1 AND jsonb_array_length(attempts) > 0 THEN COALESCE(
 		            (SELECT 'Failed on ' || count(*) || ' sensor attempt(s) for infrastructure reasons, none about the target ('
 		                    || string_agg('sensor ' || left(a ->> 'sensor_id', 8) || ': ' || (a ->> 'class'), '; ' ORDER BY ord DESC) || ')'
-		             FROM jsonb_array_elements(attempts) WITH ORDINALITY AS t(a, ord))
+		             FROM jsonb_array_elements(attempts) WITH ORDINALITY AS t(a, ord)
+		             WHERE a ->> 'counted' IS DISTINCT FROM 'false'), 'Max dispatch attempts exceeded')
 		        WHEN dispatch_attempts >= $1 THEN 'Max dispatch attempts exceeded'
 		        ELSE $3::text END,
 		    failure_class = CASE WHEN jsonb_array_length(attempts) > 0 THEN attempts -> -1 ->> 'class' ELSE failure_class END,
@@ -1827,6 +1806,31 @@ func (r *CommandRepository) CancelByScanRunID(ctx context.Context, tenantID, run
 
 var _ command.StepBatchGate = (*CommandRepository)(nil)
 
+var _ command.StepCommandCanceler = (*CommandRepository)(nil)
+
+// CancelOpenByStepRun cancels the open (pending, acknowledged, running)
+// commands of one step run of the tenant; a sensor holding one is told to
+// stop through the tenant's streams. Finished commands keep their results.
+func (r *CommandRepository) CancelOpenByStepRun(ctx context.Context, tenantID, stepRunID shared.ID) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE commands
+		SET status = 'canceled', completed_at = NOW(), lease_expires_at = NULL
+		WHERE tenant_id = $1 AND scan_run_step_id = $2
+		  AND status IN ('pending', 'acknowledged', 'running')`,
+		tenantID.String(), stepRunID.String())
+	if err != nil {
+		return 0, fmt.Errorf("failed to cancel the step's commands: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+	if n > 0 {
+		r.changedTenant(tenantID)
+	}
+	return n, nil
+}
+
 // The expiration checker asserts this; without it, it refuses to expire.
 var _ command.ConditionalExpirer = (*CommandRepository)(nil)
 
@@ -1898,23 +1902,28 @@ func (r *CommandRepository) StepBatchState(ctx context.Context, tenantID, stepRu
 // sensor that holds or ran them, with their states. Tenant-scoped on the
 // commands, the run and the sensor; a platform job is counted as platform
 // without naming the platform sensor; a command nobody holds counts under no
-// sensor.
+// sensor. Of the pending ones it counts why they wait: hosts another task of
+// the tenant holds (hostFreePredicate, the claim's own gate), and, of the
+// rest, a refusal by a sensor's local policy.
 func (r *CommandRepository) StepSensorShares(ctx context.Context, tenantID, runID shared.ID) ([]command.StepSensorShare, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT sr.step_key,
-		       CASE WHEN c.is_platform_job THEN NULL ELSE s.id END,
-		       CASE WHEN c.is_platform_job THEN '' ELSE COALESCE(s.name, '') END,
-		       c.is_platform_job,
+		       CASE WHEN commands.is_platform_job THEN NULL ELSE s.id END,
+		       CASE WHEN commands.is_platform_job THEN '' ELSE COALESCE(s.name, '') END,
+		       commands.is_platform_job,
 		       count(*),
-		       count(*) FILTER (WHERE c.status = 'pending'),
-		       count(*) FILTER (WHERE c.status IN ('acknowledged', 'running')),
-		       count(*) FILTER (WHERE c.status = 'completed'),
-		       count(*) FILTER (WHERE c.status IN ('failed', 'expired', 'canceled'))
-		FROM commands c
-		JOIN scan_run_steps sr ON sr.id = c.scan_run_step_id
-		JOIN scan_runs pr ON pr.id = sr.scan_run_id AND pr.tenant_id = c.tenant_id
-		LEFT JOIN sensors s ON s.id = c.sensor_id AND s.tenant_id = c.tenant_id
-		WHERE c.tenant_id = $1 AND pr.id = $2
+		       count(*) FILTER (WHERE commands.status = 'pending'),
+		       count(*) FILTER (WHERE commands.status IN ('acknowledged', 'running')),
+		       count(*) FILTER (WHERE commands.status = 'completed'),
+		       count(*) FILTER (WHERE commands.status IN ('failed', 'expired', 'canceled')),
+		       count(*) FILTER (WHERE commands.status = 'pending' AND NOT `+hostFreePredicate+`),
+		       count(*) FILTER (WHERE commands.status = 'pending' AND COALESCE(cardinality(commands.refused_by), 0) > 0
+		                          AND `+hostFreePredicate+`)
+		FROM commands
+		JOIN scan_run_steps sr ON sr.id = commands.scan_run_step_id
+		JOIN scan_runs pr ON pr.id = sr.scan_run_id AND pr.tenant_id = commands.tenant_id
+		LEFT JOIN sensors s ON s.id = commands.sensor_id AND s.tenant_id = commands.tenant_id
+		WHERE commands.tenant_id = $1 AND pr.id = $2
 		GROUP BY 1, 2, 3, 4
 		ORDER BY 1, 3`,
 		tenantID.String(), runID.String())
@@ -1927,7 +1936,8 @@ func (r *CommandRepository) StepSensorShares(ctx context.Context, tenantID, runI
 		var sh command.StepSensorShare
 		var sensorID sql.NullString
 		if err := rows.Scan(&sh.StepKey, &sensorID, &sh.SensorName, &sh.Platform,
-			&sh.Total, &sh.Queued, &sh.Running, &sh.Completed, &sh.Failed); err != nil {
+			&sh.Total, &sh.Queued, &sh.Running, &sh.Completed, &sh.Failed,
+			&sh.QueuedHostsBusy, &sh.QueuedRefused); err != nil {
 			return nil, fmt.Errorf("step sensor shares: %w", err)
 		}
 		if sensorID.Valid {

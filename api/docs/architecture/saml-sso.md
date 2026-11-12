@@ -45,7 +45,7 @@ flowchart LR
     B -- "4 SAMLResponse" --> ACS
     IMP -- "https only, SSRF guard, 1 MiB, 10 s" --> IDP
     ACS --- CFG
-    IMP -. "admin saves via PUT /sso/saml<br/>(owner approval)" .-> CFG
+    IMP -. "admin saves via PUT /sso/saml<br/>(owner approval when the org has an owner)" .-> CFG
 ```
 
 OpenCTEM holds no IdP secret for SAML: only public certificates. The API never
@@ -57,28 +57,40 @@ access ends through SCIM, member removal or session expiry.
 sequenceDiagram
     autonumber
     participant B as Browser
-    participant API as OpenCTEM API
-    participant E as Entra ID
-    B->>API: GET /auth/saml/{org}/login
-    API-->>B: 302 to the IdP sign-in URL, request id in a short-lived cookie
-    B->>E: AuthnRequest
+    box OpenCTEM API
+    participant API as SAMLHandler and SSOService
+    participant R as Replay store (Redis or in-process)
+    end
+    box Identity provider
+    participant E as SAML IdP (Entra ID)
+    end
+    B->>API: GET /api/v1/auth/saml/{org}/login (loginRL)
+    API->>API: org to tenant, saml_providers row exists and enabled (else ErrSAMLDisabled)
+    API-->>B: 302 HTTP-Redirect binding, cookie saml_authn_{org} = request id, 300 s, SameSite=None
+    B->>E: AuthnRequest (ForceAuthn when reauth=true)
     E-->>B: SAMLResponse (auto-submitting form)
-    B->>API: POST /auth/saml/{org}/acs
-    API->>API: exactly one signed assertion, signature by a configured cert,<br/>no SHA-1, audience, destination, conditions, InResponseTo
-    break any check fails, or the assertion id was seen before
+    B->>API: POST /api/v1/auth/saml/{org}/acs (body 1 MiB, no CSRF, no crossSite)
+    API->>API: parseStrictResponse - one Assertion with its own signature by one of 1-5 certs, no SHA-1, no EncryptedAssertion
+    API->>API: audience = SP entityID, destination = ACS, NotBefore and NotOnOrAfter (180 s skew), InResponseTo in cookie
+    API->>R: SET NX saml:aid:{tenant}:{sha256(id)}, fail closed
+    break any check fails, replay, stale ForceAuthn, Entra tid mismatch, or provider disabled
         API-->>B: /login?error=saml_failed (reason only in the log)
     end
-    API->>API: identity = Entra tenantid/objectidentifier (else persistent NameID),<br/>scoped to the organization; email for matching under proof rules
-    break another subject bound to the email, password account, not a member and no JIT
-        API-->>B: /login?error=... (stable code)
+    API->>API: identity key = tenantid/objectidentifier (Entra) else persistent NameID, scope_tenant_id = org
+    API->>API: completeFederatedLogin(key) - member, or email match with DNS-verified domain, or JIT (auto_provision, verified domain, AllowedDomains)
+    break password account, not a member and no JIT, domain not verified, awaiting approval
+        API-->>B: /login?error=link_required, not_member, domain_not_allowed or awaiting_approval
     end
-    API->>API: session federated for this organization,<br/>MFA evidence when AuthnContext is multi-factor
-    API-->>B: session cookies, redirect into the app
+    break email already bound to another subject at this IdP (ErrFederatedIdentityConflict, not mapped)
+        API-->>B: /login?error=saml_failed
+    end
+    API->>API: createSession(auth_method saml, idp_tenant = org), MFA evidence when AuthnContext is multi-factor, audit auth.login
+    API-->>B: refresh, access and tenant cookies, 302 into the app
 ```
 
 ## Config (9d)
 
-`saml_providers` (migration 000182), one row per tenant, **disabled by
+`saml_providers` (in the `001146_baseline` migration), one row per tenant, **disabled by
 default** — an operator enables SAML only after validating it against their IdP:
 
 | Field | Meaning |
@@ -86,7 +98,7 @@ default** — an operator enables SAML only after validating it against their Id
 | `idp_entity_id`, `idp_sso_url` | IdP issuer + SSO redirect endpoint |
 | `idp_certificate` | IdP signing certificates (one to five concatenated PEM blocks) — the trust anchors for assertion signatures; any one verifies |
 | `allowed_domains` | email-domain allow-list (empty = any) |
-| `default_role` | role for auto-provisioned users (`admin`/`member`/`viewer`; never `owner`) |
+| `default_role` | role for auto-provisioned users: `member` or `viewer` (anything else is refused on save) |
 | `auto_provision`, `enabled` | provision-on-login + master switch |
 
 Admin API (platform admin console, RFC-022):
@@ -177,7 +189,13 @@ posted form itself (`r.ParseForm`, body capped at 1 MB): crewjam reads
 `SAMLResponse` from `r.PostForm`, and before RFC-025 the form was never parsed,
 so no SAML sign-in could succeed. The crypto
 (XML-dsig signature verification) is handled by `github.com/crewjam/saml`, not
-hand-rolled.
+hand-rolled. The API imports it as `github.com/openctemio/saml`, a public fork
+of v0.5.1 (BSD 2-Clause licence and attribution kept) with one patch that
+binds the subject identifier and condition elements by namespace and checks
+the optional ones for nil (GO-2026-6909, sent upstream as crewjam/saml#674).
+The fork is imported directly, not through a `replace` directive, so a custom
+build that depends on the core gets the patched code too. Move back to the
+upstream module once a release carries the fix.
 
 ## Response hardening
 
@@ -191,6 +209,13 @@ The library validates the signature, conditions, audience, destination and
 | One assertion | the `samlp:Response` holds exactly one plaintext `saml:Assertion` and no `EncryptedAssertion` | the library returns the first of several, a signature-wrapping surface |
 | Signed assertion | the assertion carries its own enveloped signature, verified against the configured certificate, even when the response is signed too | the library checks either the response or the assertion signature, not both |
 | No SHA-1 | any `SignatureMethod` or `DigestMethod` based on SHA-1, anywhere in the document, refuses the response (also enforced in the library's signature hook) | SHA-1 collisions are practical |
+| Assertion shape | exactly one `saml:Issuer` (not empty), one `saml:Subject` and one `saml:Conditions` as direct children of the assertion; at least one `SubjectConfirmation`, each with exactly one `SubjectConfirmationData`; at most one subject identifier; no `NameID`, `EncryptedID`, `BaseID`, `Conditions`, `AudienceRestriction`, `Audience`, `SubjectConfirmation`, `SubjectConfirmationData` or authentication-context element outside the assertion namespace | the library dereferenced the missing elements without a nil check (a panic after the signature check), and bound those elements by local name in any namespace, so a foreign `NameID` became the subject (GO-2026-6909) |
+| Statements in the SAML namespace | `AuthnStatement`, `AttributeStatement`, `Attribute` and `AttributeValue` outside the assertion namespace refuse the response | the authentication time, the second-factor evidence and the identity attributes are read from these elements |
+| Audience | the `Conditions` hold at least one `AudienceRestriction`, and every one of them names this service provider's entity ID | the profile requires the restriction, and several restrictions apply together; the library accepts an assertion with none, or with any one that matches |
+| Bearer confirmation | every `SubjectConfirmation` uses `urn:oasis:names:tc:SAML:2.0:cm:bearer` | the Web Browser SSO profile; this service provider proves no other method |
+| Issue time | an assertion issued more than the 180 s clock skew in the future is refused | the library checks only that it is not too old |
+| One binding per prefix, no DTD | a namespace prefix declared for two different namespaces anywhere in the document, or a document type declaration, refuses the response | every reader of the response (these checks, the signature library, the SAML library) then binds each element to the same namespace; SAML has no use for a DTD |
+| No panic | a panic inside the library parse is a refusal, not a server error | defence for any other unchecked path in the library |
 | Replay cache | the assertion ID is recorded with `SET NX` under `saml:aid:{tenant}:{sha256(id)}` until the latest of `IssueInstant` + 90 s and every `NotOnOrAfter`, plus the 180 s clock skew and 2 min (capped at 24 h); a second sighting is refused | `InResponseTo` and the single-use cookie bind a response to one browser, the cache to one use |
 | HTTP-POST only | a `SAMLart` artifact is refused | resolving one makes the server call out; no artifact endpoint is advertised |
 
@@ -203,6 +228,16 @@ Signature-wrapping regression cases live in `TestSAMLXSWCorpus`
 (`internal/app/auth/saml_strict_test.go`). A comment inside a signed NameID
 (dropped by canonicalization, so the signature still verifies) never truncates
 it: the whole signed value is read (`TestSAMLNameIDCommentInjectionReadsWholeValue`).
+Assertion-shape cases (missing Issuer, Subject, Conditions or confirmation
+data; foreign-namespace identifiers and conditions) are in
+`internal/app/auth/saml_shape_test.go`: each response is signed by the IdP
+key, since only a signing-key holder can send one. The audience, bearer,
+issue-time, statement-namespace, prefix and DTD cases are in
+`internal/app/auth/saml_hardening_test.go`.
+
+The ACS binds `InResponseTo` to the AuthnRequest ID in the request-tracking
+cookie. A missing or empty ID binds nothing, so a response that answers no
+request (an unsolicited, IdP-initiated one) is refused.
 
 ## Certificate expiry
 
@@ -233,7 +268,7 @@ expiry stops every SAML sign-in.
 | Response hardening, replay cache | `internal/app/auth/saml_strict.go` |
 | IdP metadata import | `internal/app/auth/saml_idp_metadata.go` |
 | Certificate expiry alerts | `internal/app/auth/saml_cert_expiry.go`, `internal/infra/controller/saml_cert_expiry.go` |
-| Migration | `000182_saml_providers`, `003295_saml_cert_expiry_notice` |
+| Migration | `001146_baseline` (table), `003295_saml_cert_expiry_notice` |
 
 ## Default role of just-in-time members
 

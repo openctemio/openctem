@@ -168,13 +168,27 @@ type SyncState struct {
 	CoverageWait    string     `json:"coverage_wait,omitempty"`
 	RecycleNext     bool       `json:"recycle_next,omitempty"`
 	RotationStalled string     `json:"rotation_stalled,omitempty"`
-	LastBatchAt     *time.Time `json:"last_batch_at,omitempty"`
-	LastBatchAdded  int        `json:"last_batch_added,omitempty"`
-	Cycle           int        `json:"cycle,omitempty"`
-	CycleStartedAt  *time.Time `json:"cycle_started_at,omitempty"`
-	CycleAssessed   int        `json:"cycle_assessed,omitempty"`
-	CycleEligible   int        `json:"cycle_eligible,omitempty"`
-	CycleETA        *time.Time `json:"cycle_eta,omitempty"`
+	// PurgeFrom is the completed, ingested batch whose addresses the next
+	// purge batch removes (its command id).
+	PurgeFrom string `json:"purge_from,omitempty"`
+	// Reimport is a coverage batch whose import Tenable.sc Blocked (nothing
+	// was imported): the next batch imports that scan result again, with
+	// the blocked batch's targets, once the license guard sees capacity.
+	Reimport       *ReimportState `json:"reimport,omitempty"`
+	LastBatchAt    *time.Time     `json:"last_batch_at,omitempty"`
+	LastBatchAdded int            `json:"last_batch_added,omitempty"`
+	Cycle          int            `json:"cycle,omitempty"`
+	CycleStartedAt *time.Time     `json:"cycle_started_at,omitempty"`
+	CycleAssessed  int            `json:"cycle_assessed,omitempty"`
+	CycleEligible  int            `json:"cycle_eligible,omitempty"`
+	CycleETA       *time.Time     `json:"cycle_eta,omitempty"`
+}
+
+// ReimportState is a Blocked coverage batch waiting to be imported again.
+type ReimportState struct {
+	ScanResultID int      `json:"scan_result_id"`
+	Targets      []string `json:"targets"`
+	NewAddresses int      `json:"new_addresses"`
 }
 
 // ScopeAdder adds a connector's synced assets to scope (*easm.ConnectorScope).

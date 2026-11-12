@@ -62,6 +62,28 @@ describe('RunStepPanel for a skipped step', () => {
     expect(screen.getByText(/needs the results of step "iac"/)).toBeInTheDocument()
   })
 
+  it('explains a step whose tool is retired as a source on the sensor', () => {
+    render(
+      <RunStepPanel
+        runId="r1"
+        onClose={() => {}}
+        node={skipped(
+          'SOURCE_RETIRED',
+          'SOURCE_RETIRED: the organization stopped using this tool on the sensor as a source of findings'
+        )}
+      />
+    )
+    expect(
+      screen.getByText(
+        /stopped using this tool on the sensor as a source of findings, and no other/
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open retired sources' })).toHaveAttribute(
+      'href',
+      '/findings/imports'
+    )
+  })
+
   it('shows no skip reason on a step that ran', () => {
     render(
       <RunStepPanel
