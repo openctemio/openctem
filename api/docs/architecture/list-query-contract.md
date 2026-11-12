@@ -94,6 +94,11 @@ list's built-in views in display order, each with the caller's count and the
 | `pending_approval` | `pending_approval=true` |
 | `accepted_expiring` | `status=accepted&acceptance_expires_at_lte=P30D` |
 | `closed` | `state=closed` (fixed and dispositioned) |
+| `my_team` | `state=open&related_to=my_team` (+ `&informational=false`) |
+| `my_due_soon` | `state=open&related_to=me&sla_deadline_lte=P3D` (+ `&informational=false`) |
+| `my_accepted_expiring` | `status=accepted&acceptance_expires_at_lte=P30D&related_to=me` |
+| `actionable` | `state=open&priority_class=P0,P1` |
+| `known_exploited` | `state=open&is_in_kev=true` |
 
 The work views (`active`, `my_queue`, `sla_breached`) leave informational
 findings out unless the caller's preference, else the organization's default,
