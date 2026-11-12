@@ -39,7 +39,7 @@ func TestRetestDB_EveryRetestIsARun(t *testing.T) {
 		t.Fatalf("finding_retests.run_id = %v, want %s", stored.RunID, rt.RunID)
 	}
 
-	run, err := runs.GetRunWithStepsForTenant(context.Background(), fx.tenant.String(), rt.RunID.String())
+	run, err := runs.GetRunWithSteps(context.Background(), fx.tenant.String(), rt.RunID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestRetestDB_EveryRetestIsARun(t *testing.T) {
 	fx.finishAttempt(rt.CheckCommandID, "detected", "https://shop.example.com/admin", 200)
 	fx.finish(rt.ReachCommandID, "detected", "target answered")
 	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
-	run, err = runs.GetRunWithStepsForTenant(context.Background(), fx.tenant.String(), rt.RunID.String())
+	run, err = runs.GetRunWithSteps(context.Background(), fx.tenant.String(), rt.RunID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestRetestDB_EveryRetestIsARun(t *testing.T) {
 	if res := list(other); res.Total != 0 {
 		t.Fatalf("another tenant lists %d retest runs, want 0", res.Total)
 	}
-	if _, err := runs.GetRunWithStepsForTenant(context.Background(), other.String(), rt.RunID.String()); err == nil {
+	if _, err := runs.GetRunWithSteps(context.Background(), other.String(), rt.RunID.String()); err == nil {
 		t.Fatal("another tenant read the retest run")
 	}
 }

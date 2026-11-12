@@ -532,24 +532,31 @@ func (s *IntegrationService) createIntegrationWithNotification(ctx context.Conte
 	return nil
 }
 
-// GetIntegration retrieves an integration by ID.
-func (s *IntegrationService) GetIntegration(ctx context.Context, id string) (*integrationdom.Integration, error) {
+// GetIntegration retrieves an integration of tenantID by ID. An integration
+// of another tenant is not found: the tenant is part of the signature, so a
+// caller cannot read an integration by its id alone.
+func (s *IntegrationService) GetIntegration(ctx context.Context, tenantID, id string) (*integrationdom.Integration, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant ID", shared.ErrValidation)
+	}
 	intgID, err := shared.IDFromString(id)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
 	}
 
-	return s.repo.GetByID(ctx, intgID)
+	return s.repo.GetByTenantAndID(ctx, tid, intgID)
 }
 
-// GetIntegrationWithSCM retrieves an SCM integration with its extension.
-func (s *IntegrationService) GetIntegrationWithSCM(ctx context.Context, id string) (*integrationdom.IntegrationWithSCM, error) {
-	intgID, err := shared.IDFromString(id)
+// GetIntegrationWithSCM retrieves an SCM integration of tenantID with its
+// extension; another tenant's integration is not found.
+func (s *IntegrationService) GetIntegrationWithSCM(ctx context.Context, tenantID, id string) (*integrationdom.IntegrationWithSCM, error) {
+	intg, err := s.GetIntegration(ctx, tenantID, id)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid ID", shared.ErrValidation)
+		return nil, err
 	}
 
-	return s.scmExtRepo.GetIntegrationWithSCM(ctx, intgID)
+	return s.scmExtRepo.GetIntegrationWithSCM(ctx, intg.ID())
 }
 
 // UpdateIntegrationInput represents the input for updating an integration.
