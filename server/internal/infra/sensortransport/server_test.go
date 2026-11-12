@@ -251,6 +251,30 @@ func TestCallsBecomeV2Requests(t *testing.T) {
 		t.Fatalf("negative epoch: %v", err)
 	}
 
+	// A late report's provenance reaches the v2 handler as the late
+	// headers, on the unbound PUT and commit; a malformed id is refused.
+	late, lateEpoch := shared.NewID().String(), int64(2)
+	if _, err := c.PutResult(ctx, connect.NewRequest(&sensorv3.PutResultRequest{ReportId: report,
+		Content: []byte("x"), ContentType: protov2.MediaTypeCTIS, LateCommandId: &late, LateLeaseEpoch: &lateEpoch})); err != nil {
+		t.Fatal(err)
+	}
+	if f.got.URL.Path != "/api/v2/sensor/results/"+report || f.got.Header.Get(protov2.HeaderLateCommand) != late ||
+		f.got.Header.Get(protov2.HeaderLateLeaseEpoch) != "2" {
+		t.Fatalf("late put %s %v", f.got.URL.Path, f.got.Header)
+	}
+	if _, err := c.CommitResult(ctx, connect.NewRequest(&sensorv3.CommitResultRequest{ReportId: report,
+		BodyJson: []byte(`{}`), LateCommandId: &late, LateLeaseEpoch: &lateEpoch})); err != nil {
+		t.Fatal(err)
+	}
+	if f.got.Header.Get(protov2.HeaderLateCommand) != late || f.got.Header.Get(protov2.HeaderLateLeaseEpoch) != "2" {
+		t.Fatalf("late commit %v", f.got.Header)
+	}
+	bad := "x\r\nX-Evil: 1"
+	if _, err := c.CommitResult(ctx, connect.NewRequest(&sensorv3.CommitResultRequest{ReportId: report,
+		LateCommandId: &bad})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("malformed late command id: %v", err)
+	}
+
 	epoch := int64(4)
 	f.status, f.body = 200, `{}`
 	if _, err := c.TransitionCommand(ctx, connect.NewRequest(&sensorv3.TransitionCommandRequest{CommandId: cmd,

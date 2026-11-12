@@ -980,9 +980,17 @@ type PutResultRequest struct {
 	// When set it must be the command's current epoch, else the call fails
 	// as command-not-found; set, it also commits the sensor to sending it on
 	// every call of a command-bound report (v2 feature results_lease_epoch).
-	LeaseEpoch    *int64 `protobuf:"varint,8,opt,name=lease_epoch,json=leaseEpoch,proto3,oneof" json:"lease_epoch,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LeaseEpoch *int64 `protobuf:"varint,8,opt,name=lease_epoch,json=leaseEpoch,proto3,oneof" json:"lease_epoch,omitempty"`
+	// A late report (v2: X-OpenCTEM-Late-Command, X-OpenCTEM-Late-Lease-Epoch):
+	// a report of no command that names the command and lease epoch it was
+	// made for, after the command was refused as command-not-found. Provenance,
+	// never a binding: when the platform handed the command out again since,
+	// the call fails with the problem lease-superseded (final). Set only with
+	// command_id "".
+	LateCommandId  *string `protobuf:"bytes,9,opt,name=late_command_id,json=lateCommandId,proto3,oneof" json:"late_command_id,omitempty"`
+	LateLeaseEpoch *int64  `protobuf:"varint,10,opt,name=late_lease_epoch,json=lateLeaseEpoch,proto3,oneof" json:"late_lease_epoch,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *PutResultRequest) Reset() {
@@ -1071,6 +1079,20 @@ func (x *PutResultRequest) GetLeaseEpoch() int64 {
 	return 0
 }
 
+func (x *PutResultRequest) GetLateCommandId() string {
+	if x != nil && x.LateCommandId != nil {
+		return *x.LateCommandId
+	}
+	return ""
+}
+
+func (x *PutResultRequest) GetLateLeaseEpoch() int64 {
+	if x != nil && x.LateLeaseEpoch != nil {
+		return *x.LateLeaseEpoch
+	}
+	return 0
+}
+
 type PutResultResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// True when this call created the report or segment (v2: 202).
@@ -1141,9 +1163,12 @@ type CommitResultRequest struct {
 	// The protocol v2 commit body, application/json.
 	BodyJson []byte `protobuf:"bytes,3,opt,name=body_json,json=bodyJson,proto3" json:"body_json,omitempty"`
 	// The lease epoch of the report's command, as on PutResultRequest.
-	LeaseEpoch    *int64 `protobuf:"varint,4,opt,name=lease_epoch,json=leaseEpoch,proto3,oneof" json:"lease_epoch,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LeaseEpoch *int64 `protobuf:"varint,4,opt,name=lease_epoch,json=leaseEpoch,proto3,oneof" json:"lease_epoch,omitempty"`
+	// The late report provenance, as on PutResultRequest.
+	LateCommandId  *string `protobuf:"bytes,5,opt,name=late_command_id,json=lateCommandId,proto3,oneof" json:"late_command_id,omitempty"`
+	LateLeaseEpoch *int64  `protobuf:"varint,6,opt,name=late_lease_epoch,json=lateLeaseEpoch,proto3,oneof" json:"late_lease_epoch,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CommitResultRequest) Reset() {
@@ -1200,6 +1225,20 @@ func (x *CommitResultRequest) GetBodyJson() []byte {
 func (x *CommitResultRequest) GetLeaseEpoch() int64 {
 	if x != nil && x.LeaseEpoch != nil {
 		return *x.LeaseEpoch
+	}
+	return 0
+}
+
+func (x *CommitResultRequest) GetLateCommandId() string {
+	if x != nil && x.LateCommandId != nil {
+		return *x.LateCommandId
+	}
+	return ""
+}
+
+func (x *CommitResultRequest) GetLateLeaseEpoch() int64 {
+	if x != nil && x.LateLeaseEpoch != nil {
+		return *x.LateLeaseEpoch
 	}
 	return 0
 }
@@ -2163,7 +2202,7 @@ const file_openctem_sensor_v3_sensor_proto_rawDesc = "" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x1b\n" +
 	"\tbody_json\x18\x02 \x01(\fR\bbodyJson\"@\n" +
 	"\x19AppendCommandLogsResponse\x12#\n" +
-	"\rresponse_json\x18\x01 \x01(\fR\fresponseJson\"\xbe\x02\n" +
+	"\rresponse_json\x18\x01 \x01(\fR\fresponseJson\"\xc3\x03\n" +
 	"\x10PutResultRequest\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12\x1d\n" +
 	"\n" +
@@ -2174,23 +2213,32 @@ const file_openctem_sensor_v3_sensor_proto_rawDesc = "" +
 	"\x10content_encoding\x18\x06 \x01(\tR\x0fcontentEncoding\x12%\n" +
 	"\x0econtent_digest\x18\a \x01(\tR\rcontentDigest\x12$\n" +
 	"\vlease_epoch\x18\b \x01(\x03H\x01R\n" +
-	"leaseEpoch\x88\x01\x01B\n" +
+	"leaseEpoch\x88\x01\x01\x12+\n" +
+	"\x0flate_command_id\x18\t \x01(\tH\x02R\rlateCommandId\x88\x01\x01\x12-\n" +
+	"\x10late_lease_epoch\x18\n" +
+	" \x01(\x03H\x03R\x0elateLeaseEpoch\x88\x01\x01B\n" +
 	"\n" +
 	"\b_segmentB\x0e\n" +
-	"\f_lease_epoch\"~\n" +
+	"\f_lease_epochB\x12\n" +
+	"\x10_late_command_idB\x13\n" +
+	"\x11_late_lease_epoch\"~\n" +
 	"\x11PutResultResponse\x12\x18\n" +
 	"\acreated\x18\x01 \x01(\bR\acreated\x12\x1f\n" +
 	"\vstatus_json\x18\x02 \x01(\fR\n" +
 	"statusJson\x12.\n" +
-	"\x13retry_after_seconds\x18\x03 \x01(\x05R\x11retryAfterSeconds\"\xa4\x01\n" +
+	"\x13retry_after_seconds\x18\x03 \x01(\x05R\x11retryAfterSeconds\"\xa9\x02\n" +
 	"\x13CommitResultRequest\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x02 \x01(\tR\tcommandId\x12\x1b\n" +
 	"\tbody_json\x18\x03 \x01(\fR\bbodyJson\x12$\n" +
 	"\vlease_epoch\x18\x04 \x01(\x03H\x00R\n" +
-	"leaseEpoch\x88\x01\x01B\x0e\n" +
-	"\f_lease_epoch\"\x81\x01\n" +
+	"leaseEpoch\x88\x01\x01\x12+\n" +
+	"\x0flate_command_id\x18\x05 \x01(\tH\x01R\rlateCommandId\x88\x01\x01\x12-\n" +
+	"\x10late_lease_epoch\x18\x06 \x01(\x03H\x02R\x0elateLeaseEpoch\x88\x01\x01B\x0e\n" +
+	"\f_lease_epochB\x12\n" +
+	"\x10_late_command_idB\x13\n" +
+	"\x11_late_lease_epoch\"\x81\x01\n" +
 	"\x14CommitResultResponse\x12\x18\n" +
 	"\acreated\x18\x01 \x01(\bR\acreated\x12\x1f\n" +
 	"\vstatus_json\x18\x02 \x01(\fR\n" +

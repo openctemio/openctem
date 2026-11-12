@@ -406,7 +406,7 @@ Rules:
 | `TransitionCommand` | `POST /commands/{id}/claim\|start\|complete\|fail\|release` (+ `X-OpenCTEM-Lease-Epoch`) |
 | `AppendCommandLogs` | `POST /commands/{id}/logs` |
 | `PutResult` | `PUT /results/{report}` or `/results/{report}/segments/{n}` (and the command-bound forms) |
-| `CommitResult` | `POST /results/{report}/commit` |
+| `CommitResult` | `POST /results/{report}/commit` (`late_command_id`, `late_lease_epoch` of both result calls: `X-OpenCTEM-Late-Command`, `X-OpenCTEM-Late-Lease-Epoch`) |
 | `GetResultStatus` | `GET /results/{report}` |
 | `AbandonResult` | `DELETE /results/{report}` |
 | `PutManifest`, `GetManifest` | `PUT`, `GET /manifest` |
