@@ -1,0 +1,1228 @@
+// Package command implements the application service for the command bounded context — orchestrates pkg/domain/command entities and cross-cutting concerns (audit, notifications, RBAC).
+package command
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+	"unicode/utf8"
+
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/toolbudget"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+)
+
+// Service handles command-related business operations.
+type Service struct {
+	instanceZones  InstanceZoneSource
+	sharedFailures SharedFailureObserver
+	repo           commanddom.Repository
+	sensors        SensorLookup
+	templates      TemplateSigner
+	// jobs signs every claimed command (job_signing.go); nil: claims
+	// carry no signed job.
+	jobs JobSigner
+	// content plans the packs and generated lists a job pins and
+	// contentCheck says which digests an organization's job may pin
+	// (content_pin.go); nil: jobs carry no content.
+	content      ContentSource
+	contentCheck ContentChecker
+	// contentRecorder stores what each signed job pinned (nil: not stored).
+	contentRecorder ContentPinRecorder
+	// durations learns each completed scan command's time per target
+	// (duration_learning.go); nil: nothing is learned.
+	durations toolbudget.StatsStore
+	logger    *logger.Logger
+	// pathClaims gives back the ledger claim of a path discovery job that
+	// sent no request (path_claim_release.go); nil: the claim stands.
+	pathClaims PathClaimReleaser
+	// refusals hears about failed commands (local_policy.go); nil: none.
+	refusals RefusalObserver
+	// privatePolicy keeps private targets from sensors without a local
+	// policy when the tenant asks (local_policy.go); nil: never.
+	privatePolicy PrivateTargetPolicy
+	// optIns withholds commands asking for an opt-in the tenant has not
+	// enabled (local_policy.go, research/25 D3); nil: not applied.
+	optIns OptInPolicy
+	// grants enforces each sensor's grant (local_policy.go, RFC-052 §5);
+	// nil: not enforced. grantRefusals hears about refused claims by id.
+	grants GrantReader
+	// contracts are the sensors' manifests, whose tool contracts set each
+	// job's tier (local_policy.go, RFC-055).
+	contracts     ToolContractSource
+	grantRefusals GrantRefusalObserver
+	// scopeGate re-checks the targets of every command a sensor gets
+	// (scope_recheck.go); nil: not re-checked. failures hears about a
+	// command the re-check failed.
+	scopeGate ScopeGate
+	failures  FailureObserver
+	// limits computes the scope limits a signed job carries for an
+	// enforcing sensor (scope_limits.go); nil: none.
+	limits ScopeLimitSource
+	// sharedLimits reads each organization's limit of shared jobs in flight
+	// (shared_claim.go); nil: the shared claim hands out nothing.
+	sharedLimits SharedLimitSource
+	// activeScan reads the organization's active scanning entitlement
+	// (active_scanning.go); nil allows.
+	activeScan FeatureAllower
+	// sharedAccess is the shared sensor access policy applied at claim
+	// time (shared_claim.go); nil: the shared claim hands out nothing.
+	sharedAccess SharedAccessPolicy
+	// now is the clock (tests replace it).
+	now func() time.Time
+	// programRules applies bug-bounty program rules at delivery
+	// (program_rules.go); nil: not applied.
+	programRules ProgramRuleSource
+	// windows applies scan windows at the claim (window_hold.go); nil: not
+	// applied.
+	windows WindowSource
+	// httpPolicy is the tenant's tool HTTP layer (WithHTTPPolicy).
+	httpPolicy HTTPPolicySource
+	// platformIdentity is the platform layer of the scan identification
+	// markers (WithPlatformIdentity).
+	platformIdentity PlatformIdentitySource
+	egress           EgressSource
+	// proxyRequired is the organization's "Proxy required" switch
+	// (WithProxyRequirement); nil: not required.
+	proxyRequired ProxyRequirement
+	// toolSettings is the per-sensor tool settings layer (WithToolSettings).
+	toolSettings ToolSettingsSource
+	// retiredSources are the organization's retired sources: a scan job of
+	// a sensor tool retired on the claiming sensor is never handed to it
+	// (retired_source.go, WithRetiredSources); nil: not checked.
+	retiredSources RetiredSourceReader
+	// secrets lists a claimed job's secret refs (WithTaskSecrets).
+	secrets SecretsGranter
+	// balanceWindow is how long a fresh job is left to less-loaded sensors
+	// (claim_balance.go); balanceSet: WithClaimBalanceWindow was given.
+	balanceWindow time.Duration
+	balanceSet    bool
+	// withheld rate-limits the record and log of dispatch-gate refusals
+	// (withheld.go).
+	withheld withheldNotes
+}
+
+// TemplateSigner signs the custom templates embedded in a command payload
+// for the command's tenant, the sensor that polled it and the command, as
+// the command leaves for that sensor (template.PayloadSigner).
+type TemplateSigner interface {
+	SignTemplates(tenantID, sensorID, commandID string, payload json.RawMessage) json.RawMessage
+}
+
+// WithTemplateSigner makes Poll sign the custom templates of every command
+// it hands a sensor. Without it they go unsigned and sensors refuse them.
+func WithTemplateSigner(t TemplateSigner) Option {
+	return func(s *Service) { s.templates = t }
+}
+
+// HTTPPolicySource returns a tenant's tool HTTP layer (RFC-060 §4.1).
+// Satisfied by the tenant service.
+type HTTPPolicySource interface {
+	ToolHTTPPolicy(ctx context.Context, tenantID shared.ID) (sensordom.ToolHTTPPolicy, error)
+}
+
+// WithHTTPPolicy makes Poll and Claim put the tenant's tool HTTP layer in
+// every scan command they hand a sensor ("http_policy"), as it is at
+// delivery: a queued job gets the policy in force when it leaves.
+func WithHTTPPolicy(p HTTPPolicySource) Option {
+	return func(s *Service) { s.httpPolicy = p }
+}
+
+// SensorLookup resolves a sensor inside one tenant. Satisfied by the sensor
+// repository.
+type SensorLookup interface {
+	GetByTenantAndID(ctx context.Context, tenantID, id shared.ID) (*sensordom.Sensor, error)
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithSensorLookup makes Create check that a command's sensor belongs to the
+// command's tenant.
+func WithSensorLookup(l SensorLookup) Option {
+	return func(s *Service) { s.sensors = l }
+}
+
+// NewService creates a new Service.
+func NewService(repo commanddom.Repository, log *logger.Logger, opts ...Option) *Service {
+	s := &Service{
+		repo:   repo,
+		logger: log.With("service", "command"),
+		now:    time.Now,
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// CreateInput represents the input for creating a command.
+type CreateInput struct {
+	TenantID  string          `json:"tenant_id" validate:"required,uuid"`
+	SensorID  string          `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
+	Type      string          `json:"type" validate:"required,oneof=scan collect health_check config_update cancel"`
+	Priority  string          `json:"priority" validate:"omitempty,oneof=low normal high critical"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
+	ExpiresIn int             `json:"expires_in,omitempty"` // Seconds until expiration
+	// ScanZoneID restricts the command to one scan zone's sensors. Set by
+	// the caller after it routed the command's targets (scan commands
+	// from POST /api/v1/commands go through scan.Service.GateCommandPayload).
+	ScanZoneID *shared.ID `json:"-"`
+	// DispatchGate is what the caller gated the targets with; the claim
+	// re-checks them with it (scope_recheck.go). Server-side only.
+	DispatchGate *commanddom.DispatchGate `json:"-"`
+}
+
+// Create creates a new command.
+func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Command, error) {
+	s.logger.Info("creating command", "type", input.Type, "priority", input.Priority)
+
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cmdType := commanddom.CommandType(input.Type)
+	priority := commanddom.CommandPriority(input.Priority)
+	if priority == "" {
+		priority = commanddom.CommandPriorityNormal
+	}
+
+	cmd, err := commanddom.NewCommand(tenantID, cmdType, priority, input.Payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.SensorID != "" {
+		sensorID, err := shared.IDFromString(input.SensorID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+		}
+		// The sensor must belong to this tenant. Without the check a command
+		// could be pinned to another tenant's sensor (stored, never claimable),
+		// and an unknown id failed on the foreign key with a 500 — together an
+		// oracle for which sensor ids exist in other tenants.
+		if s.sensors != nil {
+			if _, err := s.sensors.GetByTenantAndID(ctx, tenantID, sensorID); err != nil {
+				if errors.Is(err, shared.ErrNotFound) {
+					return nil, shared.NewDomainError("SENSOR_NOT_FOUND", "sensor_id: no such sensor in this tenant", shared.ErrValidation)
+				}
+				return nil, fmt.Errorf("look up sensor: %w", err)
+			}
+		}
+		cmd.SetSensorID(sensorID)
+	}
+	if input.ScanZoneID != nil && !input.ScanZoneID.IsZero() {
+		cmd.SetScanZone(*input.ScanZoneID)
+	}
+	cmd.DispatchGate = input.DispatchGate
+
+	if input.ExpiresIn > 0 {
+		expiresAt := time.Now().Add(time.Duration(input.ExpiresIn) * time.Second)
+		cmd.SetExpiration(expiresAt)
+	}
+
+	if err := s.repo.Create(ctx, cmd); err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// Get retrieves a command by ID.
+func (s *Service) Get(ctx context.Context, tenantID, commandID string) (*commanddom.Command, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cid, err := shared.IDFromString(commandID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid command id", shared.ErrValidation)
+	}
+
+	return s.repo.GetByTenantAndID(ctx, tid, cid)
+}
+
+// ListInput represents the input for listing commands.
+type ListInput struct {
+	TenantID string `json:"tenant_id" validate:"required,uuid"`
+	SensorID string `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
+	Type     string `json:"type" validate:"omitempty,oneof=scan collect health_check config_update cancel"`
+	Status   string `json:"status" validate:"omitempty,oneof=pending acknowledged running completed failed canceled expired"`
+	Priority string `json:"priority" validate:"omitempty,oneof=low normal high critical"`
+	Page     int    `json:"page"`
+	PerPage  int    `json:"per_page"`
+}
+
+// List lists commands with filters.
+func (s *Service) List(ctx context.Context, input ListInput) (pagination.Result[*commanddom.Command], error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return pagination.Result[*commanddom.Command]{}, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	filter := commanddom.Filter{
+		TenantID: &tenantID,
+	}
+
+	if input.SensorID != "" {
+		sensorID, err := shared.IDFromString(input.SensorID)
+		if err != nil {
+			return pagination.Result[*commanddom.Command]{}, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+		}
+		filter.SensorID = &sensorID
+	}
+
+	if input.Type != "" {
+		t := commanddom.CommandType(input.Type)
+		filter.Type = &t
+	}
+
+	if input.Status != "" {
+		st := commanddom.CommandStatus(input.Status)
+		filter.Status = &st
+	}
+
+	if input.Priority != "" {
+		p := commanddom.CommandPriority(input.Priority)
+		filter.Priority = &p
+	}
+
+	page := pagination.New(input.Page, input.PerPage)
+	return s.repo.List(ctx, filter, page)
+}
+
+// PollInput represents the input for polling commands.
+type PollInput struct {
+	TenantID string `json:"tenant_id" validate:"required,uuid"`
+	SensorID string `json:"sensor_id,omitempty" validate:"omitempty,uuid"`
+	// Capabilities is the polling sensor's advertised capability set. It gates
+	// which capability-scoped commands the sensor may claim (see
+	// command.Repository.GetPendingForSensor). Empty = only unscoped commands.
+	Capabilities []string `json:"capabilities,omitempty"`
+	Limit        int      `json:"limit" validate:"min=1,max=100"`
+	// MaxScanCommands caps how many scan commands the poll returns: the
+	// sensor's free slots (sensor.FreeSlots), so a sensor is never offered
+	// more scans than it can run — an SDK that claims everything it polls
+	// cannot pile up acknowledged commands for the reaper to re-dispatch
+	// (RFC-030 B6, D5). Other commands (validate, collect, config) are not
+	// capped. nil: no cap.
+	MaxScanCommands *int `json:"-"`
+}
+
+// Poll retrieves pending commands for a sensor.
+func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Command, error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	var sensorID *shared.ID
+	if input.SensorID != "" {
+		aid, err := shared.IDFromString(input.SensorID)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+		}
+		sensorID = &aid
+	}
+
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	cmds, err := s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, candidateLimit(limit))
+	if err != nil {
+		return nil, err
+	}
+	if input.MaxScanCommands != nil &&
+		s.admitHostBusy(ctx, tenantID, sensorID, input.Capabilities, *input.MaxScanCommands-scanCount(cmds)) > 0 {
+		if cmds, err = s.repo.GetPendingForSensor(ctx, tenantID, sensorID, input.Capabilities, candidateLimit(limit)); err != nil {
+			return nil, err
+		}
+	}
+	// A sensor never gets a command its reported local policy refuses, nor
+	// one with private targets when the tenant requires a local policy for
+	// them (RFC-040 §5.7, research/25 §3.6): those stay pending for a
+	// sensor that accepts them.
+	if sensorID != nil {
+		cmds = s.keepAccepted(ctx, tenantID, *sensorID, s.gateFor(ctx, tenantID, sensorID, cmds), cmds)
+		// A sensor tool the organization retired as a source
+		// (retired_source.go) never gets its scan jobs.
+		cmds = s.retiredHold(ctx, *sensorID, cmds)
+	}
+	if len(cmds) > limit {
+		cmds = cmds[:limit]
+	}
+	if input.MaxScanCommands != nil {
+		cmds = capScanCommands(cmds, *input.MaxScanCommands)
+	}
+	// Scope may have changed since the jobs were queued (scope_recheck.go).
+	cmds = s.recheckScope(ctx, tenantID, sensorID, cmds)
+	// Scan windows: jobs outside their windows wait (window_hold.go).
+	cmds, rates := s.windowHold(ctx, tenantID, cmds)
+	// Program rules: conflicts, headers and rate caps (program_rules.go).
+	cmds, rules := s.programHold(ctx, tenantID, sensorID, cmds)
+	// Tool settings of the sensor: checked against its current manifest
+	// (tool_settings.go).
+	cmds, layers := s.settingsHold(ctx, tenantID, sensorID, cmds)
+	// Proxy pool (egress.go): kept from a sensor that cannot honor it,
+	// else carried by every scan and retest job.
+	eg, err := s.egressFor(ctx, tenantID, input.SensorID, cmds)
+	if err != nil {
+		return nil, err
+	}
+	if cmds, err = eg.stamp(eg.withoutEgressJobs(cmds)); err != nil {
+		return nil, err
+	}
+	return s.deliver(ctx, input.SensorID, cmds, withWindowRates(rules, rates), layers)
+}
+
+// ClaimInput is a claim-N poll: the sensor takes its work in one request.
+type ClaimInput struct {
+	TenantID     string
+	SensorID     string
+	Capabilities []string
+	// Limit caps the commands returned (1..100, default 10).
+	Limit int
+	// MaxJobs is the sensor's effective job limit; the scan commands
+	// claimed never exceed MaxJobs minus the scans it already holds, counted
+	// from the commands themselves rather than from its last heartbeat.
+	MaxJobs int
+	// ReportedFree, when set, is the free slots the sensor last reported;
+	// the claim takes the smaller of the two.
+	ReportedFree *int
+}
+
+// Claim is the claim-N poll (RFC-046 §11, RFC-030 §5.3): it selects what the
+// sensor may run in the fair dispatch order (priority class with aging,
+// round-robin across runs), withholds what the sensor's reported local
+// policy refuses (and private targets from a sensor without one), caps scans at the sensor's free slots, and claims the lot in
+// one statement. The commands returned are already acknowledged to the
+// sensor with a lease; its later claim of each is a replay. Commands another
+// sensor took in the meantime are simply not returned.
+//
+// Falls back to Poll (nothing claimed) when the repository cannot claim in
+// batch.
+func (s *Service) Claim(ctx context.Context, input ClaimInput) ([]*commanddom.Command, error) {
+	claimer, ok := s.repo.(commanddom.BatchClaimer)
+	if !ok || input.SensorID == "" {
+		return s.Poll(ctx, PollInput{TenantID: input.TenantID, SensorID: input.SensorID,
+			Capabilities: input.Capabilities, Limit: input.Limit, MaxScanCommands: input.ReportedFree})
+	}
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	sensorID, err := shared.IDFromString(input.SensorID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid sensor id", shared.ErrValidation)
+	}
+	defer observeClaimDuration(claimModePoll, time.Now())
+
+	held, err := claimer.CountHeldScans(ctx, tenantID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	slots := freeScanSlots(input.MaxJobs, held, input.ReportedFree)
+
+	limit := input.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	limit = min(limit, 100)
+	cands, rules, layers, err := s.claimCandidates(ctx, tenantID, sensorID, input.Capabilities, limit, slots)
+	if err != nil {
+		return nil, err
+	}
+	// Proxy pool (egress.go): a sensor that cannot honor its pool claims
+	// no scan or retest job; the others carry the pool.
+	eg, err := s.egressFor(ctx, tenantID, input.SensorID, cands)
+	if err != nil {
+		return nil, err
+	}
+	cands = eg.withoutEgressJobs(cands)
+	// Leave the fresh jobs a less-loaded sensor of the organization should
+	// take to it (claim_balance.go).
+	cands = s.balanceClaim(ctx, tenantID, sensorID, input.Capabilities, cands, slots, input.MaxJobs)
+	if len(cands) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]shared.ID, len(cands))
+	pinned := make(map[shared.ID]bool, len(cands))
+	for i, c := range cands {
+		ids[i] = c.ID
+		pinned[c.ID] = c.SensorID != nil
+	}
+	claimed, err := claimer.ClaimManyForSensor(ctx, tenantID, sensorID, input.Capabilities, ids)
+	if err != nil {
+		return nil, err
+	}
+	s.extendRunDeadlines(ctx, tenantID, sensorID, claimed)
+	// From here on a failure is the platform's, not the sensor's: every
+	// claimed command is handed back at once (as an unsigned claim is),
+	// never left to expire as if the sensor had gone offline.
+	handBack := func(err error) ([]*commanddom.Command, error) {
+		for _, id := range claimed {
+			s.unclaim(ctx, tenantID, id, input.SensorID, pinned[id])
+		}
+		return nil, err
+	}
+	won := make(map[shared.ID]bool, len(claimed))
+	for _, id := range claimed {
+		won[id] = true
+	}
+	out := make([]*commanddom.Command, 0, len(claimed))
+	for _, c := range cands {
+		if !won[c.ID] {
+			continue
+		}
+		// Re-read: the claim set the sensor, the lease and its epoch.
+		cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, c.ID)
+		if err != nil {
+			return handBack(err)
+		}
+		out = append(out, cmd)
+	}
+	claimSkipped(skipTaken, len(ids), len(claimed))
+	observeClaimed(claimModePoll, out, time.Now())
+	// The proxy pool, the organization's HTTP policy and the template
+	// signatures go into the payload first, so the job signature covers them.
+	if out, err = eg.stamp(out); err != nil {
+		return handBack(err)
+	}
+	delivered, err := s.deliver(ctx, input.SensorID, out, rules, layers)
+	if err != nil {
+		return handBack(err)
+	}
+	s.recordEgress(ctx, out)
+	// The job's secret refs (task_secrets.go) go in last, so the signature
+	// covers them.
+	if delivered, err = s.stampSecrets(ctx, input.SensorID, delivered); err != nil {
+		return handBack(err)
+	}
+	return s.signClaimed(ctx, tenantID, input.SensorID, delivered, pinned), nil
+}
+
+// extendRunDeadlines gives the runs of the tasks a sensor just claimed the
+// time those tasks need (commanddom.RunDeadlineExtender), before the tasks
+// are read back and signed, so their payload carries the new deadline. A
+// failure keeps the old deadline and never fails the claim.
+func (s *Service) extendRunDeadlines(ctx context.Context, tenantID, sensorID shared.ID, ids []shared.ID) {
+	ext, ok := s.repo.(commanddom.RunDeadlineExtender)
+	if !ok || len(ids) == 0 {
+		return
+	}
+	if err := ext.ExtendRunDeadlinesAtClaim(ctx, tenantID, sensorID, ids); err != nil {
+		s.logger.Warn("run deadlines not extended at claim", "tenant_id", tenantID.String(),
+			"sensor_id", sensorID.String(), "error", err)
+	}
+}
+
+// freeScanSlots is how many more scans a sensor may take: its job limit
+// (at least 1) minus what it holds, and no more than it reported free.
+func freeScanSlots(maxJobs, held int, reportedFree *int) int {
+	if maxJobs <= 0 {
+		maxJobs = 1
+	}
+	free := maxJobs - held
+	if reportedFree != nil {
+		free = min(free, *reportedFree)
+	}
+	return max(free, 0)
+}
+
+// deliver prepares the commands a sensor gets: the tool HTTP layer (the
+// platform's and the organization's, merged) on every scan, retest and
+// validate command, the bug-bounty program rules over it, then the
+// custom template signatures. All work on copies; the stored commands are
+// never changed. A tenant policy that cannot be read fails the delivery (the
+// caller hands the claimed commands back at once): a job never leaves
+// without the organization's layer.
+func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commanddom.Command, rules map[shared.ID]*bp.JobRules,
+	layers map[shared.ID]settingsLayers,
+) ([]*commanddom.Command, error) {
+	if s.httpPolicy != nil || s.platformIdentity != nil {
+		for i, c := range cmds {
+			if !egressBound(c.Type) {
+				continue
+			}
+			pol, err := s.jobHTTPPolicy(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			payload, err := withHTTPPolicy(c.Payload, pol)
+			if err != nil {
+				return nil, err
+			}
+			cp := *c
+			cp.Payload = payload
+			cmds[i] = &cp
+		}
+	}
+	// Bug-bounty program rules go over the organization's layer: a
+	// program's headers and User-Agent win (program_rules.go).
+	cmds = s.withProgramRules(cmds, rules)
+	// The sensor's tool settings (settings_layers): the field belongs to the
+	// platform, whatever a command's creator put there.
+	cmds, err := withToolSettings(cmds, layers)
+	if err != nil {
+		return nil, err
+	}
+	return s.signTemplates(sensorID, cmds), nil
+}
+
+// withHTTPPolicy sets the payload's http_policy to the tenant's layer, or
+// removes it when the tenant sets none: the field belongs to the platform,
+// whatever a command's creator put there.
+func withHTTPPolicy(payload json.RawMessage, pol sensordom.ToolHTTPPolicy) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if len(payload) == 0 || string(payload) == "null" {
+		fields = map[string]json.RawMessage{}
+	} else if err := json.Unmarshal(payload, &fields); err != nil {
+		return nil, fmt.Errorf("scan command payload: %w", err)
+	}
+	if pol.IsZero() {
+		if _, ok := fields["http_policy"]; !ok {
+			return payload, nil
+		}
+		delete(fields, "http_policy")
+	} else {
+		b, err := json.Marshal(pol)
+		if err != nil {
+			return nil, err
+		}
+		fields["http_policy"] = b
+	}
+	return json.Marshal(fields)
+}
+
+// signTemplates signs the custom templates of each command for sensorID, on
+// a copy: the stored command is never changed, and every delivery is
+// signed afresh (a new issue and expiry time, the polling sensor's id).
+func (s *Service) signTemplates(sensorID string, cmds []*commanddom.Command) []*commanddom.Command {
+	if s.templates == nil {
+		return cmds
+	}
+	for i, c := range cmds {
+		signed := s.templates.SignTemplates(c.TenantID.String(), sensorID, c.ID.String(), c.Payload)
+		if bytes.Equal(signed, c.Payload) {
+			continue
+		}
+		cp := *c
+		cp.Payload = signed
+		cmds[i] = &cp
+	}
+	return cmds
+}
+
+// capScanCommands keeps every non-scan command and at most n scan commands,
+// in poll order.
+func capScanCommands(cmds []*commanddom.Command, n int) []*commanddom.Command {
+	out := cmds[:0:0]
+	for _, c := range cmds {
+		if c.Type == commanddom.CommandTypeScan {
+			if n <= 0 {
+				continue
+			}
+			n--
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// Acknowledge marks a command as acknowledged.
+func (s *Service) Acknowledge(ctx context.Context, tenantID, sensorID, commandID string) (*commanddom.Command, error) {
+	defer observeClaimDuration(claimModeByID, time.Now())
+	cmd, err := s.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, sensorID); err != nil {
+		return nil, err
+	}
+
+	var rules *bp.JobRules
+	var layer settingsLayers
+	if !cmd.CanBeAcknowledged() {
+		return nil, shared.NewDomainError("INVALID_STATE", "command cannot be acknowledged", shared.ErrValidation)
+	}
+	if sid, err := shared.IDFromString(sensorID); err == nil {
+		cmds := []*commanddom.Command{cmd}
+		gate := s.gateFor(ctx, cmd.TenantID, &sid, cmds)
+		if err := gate.claimError(cmd); err != nil {
+			if r := gate.refusal(cmd); r != nil {
+				s.noteWithheld(ctx, cmd.TenantID, sid, map[shared.ID]string{cmd.ID: gateReason(r)})
+			}
+			if errors.Is(err, ErrOutOfGrant) && s.grantRefusals != nil {
+				s.grantRefusals.ObserveGrantRefusal(ctx, cmd.TenantID, sid, cmd.ID.String(), gate.grantRefusal(cmd))
+			}
+			return nil, err
+		}
+		// A sensor tool the organization retired as a source never gets
+		// its scan jobs (retired_source.go).
+		if err := s.retiredHoldOne(ctx, sid, cmd); err != nil {
+			return nil, err
+		}
+		// Scope may have changed since the job was queued, or polled
+		// (scope_recheck.go): its targets pass the dispatch gate again.
+		if cmd, err = s.recheckOne(ctx, sid, cmd); err != nil {
+			return nil, err
+		}
+		// Scan windows (window_hold.go): outside its windows the job waits.
+		var rate int
+		if cmd, rate, err = s.windowHoldOne(ctx, cmd); err != nil {
+			return nil, err
+		}
+		if rules, err = s.programHoldOne(ctx, sid, cmd); err != nil {
+			return nil, err
+		}
+		if layer, err = s.settingsHoldOne(ctx, sid, cmd); err != nil {
+			return nil, err
+		}
+		if rate > 0 {
+			rules = withWindowRates(map[shared.ID]*bp.JobRules{cmd.ID: rules}, map[shared.ID]int{cmd.ID: rate})[cmd.ID]
+		}
+	}
+
+	// Atomic claim: only one concurrent poller can transition a pending
+	// command to acknowledged. A read-modify-write via Update would let two
+	// sensors that both polled the same unassigned command each "win",
+	// double-dispatching it. cmd was just fetched tenant-scoped, so reuse its
+	// already-parsed IDs.
+	claimed, err := s.repo.ClaimForSensor(ctx, cmd.TenantID, cmd.ID, sensorID)
+	if err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return nil, shared.NewDomainError("CONFLICT", "command already claimed by another sensor", shared.ErrConflict)
+	}
+	if sid, err := shared.IDFromString(sensorID); err == nil {
+		s.extendRunDeadlines(ctx, cmd.TenantID, sid, []shared.ID{cmd.ID})
+	}
+	observeClaimed(claimModeByID, []*commanddom.Command{cmd}, time.Now())
+
+	// Return the freshly-claimed state, with its programs' rules and the
+	// sensor's tool settings.
+	got, err := s.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return got, err
+	}
+	withLayer, err := withToolSettings([]*commanddom.Command{got}, map[shared.ID]settingsLayers{got.ID: layer})
+	if err != nil {
+		return nil, err
+	}
+	got = withLayer[0]
+	if rules == nil {
+		return got, nil
+	}
+	out := s.withProgramRules([]*commanddom.Command{got}, map[shared.ID]*bp.JobRules{got.ID: rules})
+	if len(out) != 1 {
+		return nil, ErrScopeRecheckUnavailable
+	}
+	return out[0], nil
+}
+
+// Start marks a command as running.
+func (s *Service) Start(ctx context.Context, tenantID, sensorID, commandID string) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, sensorID); err != nil {
+		return nil, err
+	}
+
+	if cmd.Status != commanddom.CommandStatusAcknowledged {
+		return nil, shared.NewDomainError("INVALID_STATE", "command must be acknowledged before starting", shared.ErrValidation)
+	}
+
+	fence := fenceOf(cmd, sensorID)
+	cmd.Start()
+	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
+}
+
+// fenceOf is what a sensor-side change of cmd, as just read, expects to
+// still hold when it is written.
+func fenceOf(cmd *commanddom.Command, sensorID string) commanddom.Fence {
+	return commanddom.Fence{SensorID: sensorID, Status: cmd.Status, Epoch: cmd.LeaseEpoch}
+}
+
+// ErrLeaseLost: the command changed hands between the read and the write of
+// a sensor-side change (its lease ran out and it was re-queued, maybe
+// claimed again). The change is not applied.
+var ErrLeaseLost = shared.NewDomainError("CONFLICT", "the command is no longer held under this lease", shared.ErrConflict)
+
+// saveSensorChange writes a sensor-side state change (start, complete,
+// fail) of a command the sensor holds, under the fence: with a repository
+// that supports it, the write applies only if the command is still held by
+// that sensor in the state and lease epoch that were read. A command
+// re-queued after its lease ran out can therefore never be completed by the
+// sensor that lost it (RFC-035 D6). Commands nobody holds use Update.
+func (s *Service) saveSensorChange(ctx context.Context, cmd *commanddom.Command, fence commanddom.Fence) error {
+	f, ok := s.repo.(commanddom.FencedUpdater)
+	if !ok || cmd.SensorID == nil {
+		return s.repo.Update(ctx, cmd)
+	}
+	applied, err := f.FencedUpdate(ctx, cmd, fence)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return ErrLeaseLost
+	}
+	return nil
+}
+
+// ensureSensorOwnsCommand rejects lifecycle operations on a command assigned to
+// a DIFFERENT sensor (anti-tampering: otherwise any sensor in the tenant could
+// acknowledge/complete/fail another sensor's command and inject forged
+// results). Unassigned/broadcast commands (SensorID == nil) remain operable by
+// any sensor in the tenant. Returns a not-found-style error to avoid leaking
+// the command's existence to a non-owning sensor.
+func ensureSensorOwnsCommand(cmd *commanddom.Command, sensorID string) error {
+	if cmd.SensorID != nil && cmd.SensorID.String() != sensorID {
+		return shared.NewDomainError("NOT_FOUND", "command not found", shared.ErrNotFound)
+	}
+	return nil
+}
+
+// CompleteInput represents the input for completing a command.
+type CompleteInput struct {
+	TenantID  string          `json:"tenant_id" validate:"required,uuid"`
+	SensorID  string          `json:"sensor_id" validate:"required,uuid"`
+	CommandID string          `json:"command_id" validate:"required,uuid"`
+	Result    json.RawMessage `json:"result,omitempty"`
+	// LeaseEpoch, when the sensor sent it, is the lease epoch it ran the
+	// command under; a different current epoch refuses the change.
+	LeaseEpoch *int `json:"-"`
+}
+
+// Complete marks a command as completed.
+func (s *Service) Complete(ctx context.Context, input CompleteInput) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, input.TenantID, input.CommandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, input.SensorID); err != nil {
+		return nil, err
+	}
+
+	if cmd.Status != commanddom.CommandStatusRunning {
+		return nil, shared.NewDomainError("INVALID_STATE", "command must be running to complete", shared.ErrValidation)
+	}
+	if input.LeaseEpoch != nil && *input.LeaseEpoch != cmd.LeaseEpoch {
+		return nil, ErrLeaseLost
+	}
+
+	fence := fenceOf(cmd, input.SensorID)
+	cmd.Complete(input.Result)
+	if err := s.completeWithFollowUp(ctx, cmd, fence); err != nil {
+		return nil, err
+	}
+	s.learnDuration(ctx, cmd)
+	s.observeEgressVerdict(ctx, cmd, proxypool.CompletedVerdict(cmd.Result))
+	s.releaseEmptyPathDiscovery(ctx, cmd)
+
+	return cmd, nil
+}
+
+// completeWithFollowUp saves a sensor's completion. A scan whose result
+// leaves targets unfinished is followed, in the same transaction, by a new
+// command carrying only those targets (research/125): the settled targets
+// stay done and are never run again. Without a follow-up-capable
+// repository, or with nothing unfinished, it is saveSensorChange.
+func (s *Service) completeWithFollowUp(ctx context.Context, cmd *commanddom.Command, fence commanddom.Fence) error {
+	f, ok := s.repo.(commanddom.FollowUpCompleter)
+	if !ok || cmd.SensorID == nil {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	unfinished, sensorSide, settled, ok := commanddom.SplitUnfinished(cmd)
+	if !ok {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	remaining := unfinished
+	excludeParent := false
+	// Targets the sensor's own network or resolver failed go out again on
+	// another sensor, only when one could take them; otherwise they stay
+	// settled as before (the same sensor would fail them the same way), and
+	// when the attempt budget every cause shares has room for one more.
+	if len(sensorSide) > 0 && commanddom.FollowUpAttempts(cmd.DispatchAttempts, settled) < commanddom.MaxDispatchAttempts && s.otherSensorCanTake(ctx, cmd) {
+		remaining = inPayloadOrder(cmd, unfinished, sensorSide)
+		excludeParent = true
+	} else {
+		settled += len(sensorSide)
+	}
+	if len(remaining) == 0 {
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	followUp, err := commanddom.NewFollowUp(cmd, remaining, settled)
+	if err == nil {
+		followUp.ExcludeParentSensor = excludeParent
+	}
+	if err != nil {
+		// The completion stands; the unfinished targets are reported
+		// partial by the run (the result says so).
+		s.logger.Error("failed to build the follow-up of a partial command", "command_id", cmd.ID.String(), "error", err)
+		return s.saveSensorChange(ctx, cmd, fence)
+	}
+	applied, err := f.CompleteWithFollowUp(ctx, cmd, fence, followUp)
+	if err != nil {
+		return err
+	}
+	if !applied {
+		return ErrLeaseLost
+	}
+	s.logger.Info("command completed with unfinished targets; follow-up queued",
+		"command_id", cmd.ID.String(), "follow_up_id", followUp.ID.String(),
+		"settled", settled, "unfinished", len(remaining), "sensor_side", len(sensorSide), "dispatch_attempts", followUp.DispatchAttempts)
+	return nil
+}
+
+// FailInput represents the input for failing a command.
+type FailInput struct {
+	TenantID     string `json:"tenant_id" validate:"required,uuid"`
+	SensorID     string `json:"sensor_id" validate:"required,uuid"`
+	CommandID    string `json:"command_id" validate:"required,uuid"`
+	ErrorMessage string `json:"error_message"`
+	// LeaseEpoch: see CompleteInput.LeaseEpoch.
+	LeaseEpoch *int `json:"-"`
+	// Refusal is the structured policy refusal a v2 sensor reported, or
+	// nil (then a failure reason with the local-policy prefix still counts
+	// as one). research/25 §3.6.
+	Refusal *sensordom.DispatchRefusal `json:"-"`
+	// Infra is the sensor's own class of the failure (research/302), or
+	// nil: then the platform reads the error code, else the message.
+	Infra *InfraReport `json:"-"`
+}
+
+// MaxFailErrorMessageBytes caps the sensor-supplied error message stored on a
+// failed command (it is persisted and rendered in the UI / scan runs).
+const MaxFailErrorMessageBytes = 4 << 10 // 4 KiB
+
+// Fail marks a command as failed.
+//
+// Only a command the sensor is actually working on can be failed: acknowledged
+// or running, or still pending when it is explicitly assigned to the calling
+// sensor (a sensor rejecting a job it was handed before claiming it). Before,
+// Fail had no state check, so any tenant sensor could flip an unassigned
+// pending command — or a completed one — to failed.
+func (s *Service) Fail(ctx context.Context, input FailInput) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, input.TenantID, input.CommandID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSensorOwnsCommand(cmd, input.SensorID); err != nil {
+		return nil, err
+	}
+
+	switch cmd.Status {
+	case commanddom.CommandStatusAcknowledged, commanddom.CommandStatusRunning:
+	case commanddom.CommandStatusPending:
+		if cmd.SensorID == nil || cmd.SensorID.String() != input.SensorID {
+			return nil, shared.NewDomainError("INVALID_STATE", "command must be claimed before it can be failed", shared.ErrValidation)
+		}
+	default:
+		return nil, shared.NewDomainError("INVALID_STATE", "command is already finished", shared.ErrConflict)
+	}
+
+	if input.LeaseEpoch != nil && *input.LeaseEpoch != cmd.LeaseEpoch {
+		return nil, ErrLeaseLost
+	}
+
+	// A policy refusal (research/25 D8): routed work goes to another
+	// eligible sensor, the refuser is excluded; the timeline and audit
+	// hear about every refusal.
+	if ref := sensordom.RefusalOf(input.Refusal, input.ErrorMessage); ref != nil {
+		sensorID := cmd.SensorID
+		// A shared job's refusal is not reported into the organization's
+		// timeline and audit: they never name a shared sensor.
+		if s.refusals != nil && sensorID != nil && !cmd.IsPlatformJob {
+			s.refusals.ObserveLocalPolicyRefusal(ctx, cmd.TenantID, *sensorID, cmd.ID.String(), ref.Message())
+		}
+		out, done, err := s.handleRefusal(ctx, cmd, input, ref)
+		if done {
+			return out, err
+		}
+		fence := fenceOf(cmd, input.SensorID)
+		cmd.Fail(truncateUTF8(ref.Message(), MaxFailErrorMessageBytes))
+		if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
+			return nil, err
+		}
+		s.observeSharedFailure(ctx, cmd)
+		return cmd, nil
+	}
+
+	fence := fenceOf(cmd, input.SensorID)
+	msg := truncateUTF8(input.ErrorMessage, MaxFailErrorMessageBytes)
+	// A task the platform asked to stop as stalled that stopped with
+	// nothing finished has not failed: it is re-queued, as a stall was.
+	if r, ok := s.repo.(commanddom.StopRequeuer); ok && cmd.SensorID != nil {
+		requeued, err := r.RequeueStopped(ctx, cmd, fence, truncateUTF8(commanddom.StoppedEmptyMessage+": "+msg, MaxFailErrorMessageBytes))
+		if err != nil {
+			return nil, err
+		}
+		if requeued {
+			cmd.Status, cmd.SensorID, cmd.StartedAt, cmd.AcknowledgedAt = commanddom.CommandStatusPending, nil, nil, nil
+			cmd.DispatchAttempts++
+			return cmd, nil
+		}
+	}
+	// A job whose proxy pool carried nothing charges the path it was
+	// handed (egress.go); any other failure says nothing about the pool.
+	if class, _, _ := infraClassOf(input, msg); class != "" {
+		if v, ok := proxypool.FailedVerdict(string(class)); ok {
+			s.observeEgressVerdict(ctx, cmd, v)
+		}
+	}
+	// A failure that is not about the target (research/302): routed work
+	// goes to another eligible sensor, the failing one excluded.
+	if class, ev, ok := infraClassOf(input, msg); ok {
+		out, done, err := s.handleInfraFailure(ctx, cmd, input, class, ev, msg)
+		if done {
+			return out, err
+		}
+	}
+	cmd.Fail(msg)
+	if err := s.saveSensorChange(ctx, cmd, fence); err != nil {
+		return nil, err
+	}
+	s.observeSharedFailure(ctx, cmd)
+
+	return cmd, nil
+}
+
+// SharedFailureObserver counts failed shared jobs per organization
+// (*scanpolicy.Service, anomaly signals of
+// docs/rfcs/RFC-100-shared-sensors.md §9). It never refuses and never blocks.
+type SharedFailureObserver interface {
+	ObserveSharedFailure(ctx context.Context, tenantID shared.ID)
+}
+
+// SetSharedFailureObserver wires the observer; nil: none.
+func (s *Service) SetSharedFailureObserver(o SharedFailureObserver) { s.sharedFailures = o }
+
+func (s *Service) observeSharedFailure(ctx context.Context, cmd *commanddom.Command) {
+	if s.sharedFailures != nil && cmd.IsPlatformJob {
+		s.sharedFailures.ObserveSharedFailure(ctx, cmd.TenantID)
+	}
+}
+
+// truncateUTF8 cuts s to at most maxBytes without splitting a UTF-8 rune.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
+// CancelCommand cancels an open command (pending, acknowledged, running).
+// Canceling a canceled command is a no-op; a finished one (completed,
+// failed, expired) cannot be canceled. The write is conditional, so a
+// result the sensor got accepted after the read is not overwritten. The
+// sensor learns about it on its next heartbeat (cancel_command_ids).
+func (s *Service) CancelCommand(ctx context.Context, tenantID, commandID string) (*commanddom.Command, error) {
+	cmd, err := s.Get(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+
+	switch cmd.Status {
+	case commanddom.CommandStatusCanceled:
+		return cmd, nil
+	case commanddom.CommandStatusPending, commanddom.CommandStatusAcknowledged, commanddom.CommandStatusRunning:
+	default:
+		return nil, cannotCancel(cmd.Status)
+	}
+
+	cmd.Cancel()
+	c, ok := s.repo.(commanddom.OpenCanceler)
+	if !ok {
+		if err := s.repo.Update(ctx, cmd); err != nil {
+			return nil, err
+		}
+		return cmd, nil
+	}
+	applied, err := c.CancelIfOpen(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+	if !applied {
+		// It finished between the read and the write.
+		now, err := s.Get(ctx, tenantID, commandID)
+		if err != nil {
+			return nil, err
+		}
+		if now.Status == commanddom.CommandStatusCanceled {
+			return now, nil
+		}
+		return nil, cannotCancel(now.Status)
+	}
+	return cmd, nil
+}
+
+func cannotCancel(st commanddom.CommandStatus) error {
+	return shared.NewDomainError("INVALID_STATE", "cannot cancel a "+string(st)+" command", shared.ErrValidation)
+}
+
+// DeleteCommand deletes a command.
+func (s *Service) DeleteCommand(ctx context.Context, tenantID, commandID string) error {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	cid, err := shared.IDFromString(commandID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid command id", shared.ErrValidation)
+	}
+
+	// Verify command belongs to tenant
+	if _, err := s.repo.GetByTenantAndID(ctx, tid, cid); err != nil {
+		return err
+	}
+
+	return s.repo.Delete(ctx, tid, cid)
+}
+
+// maxClaimPages bounds the candidate pages one claim reads.
+const maxClaimPages = 3
+
+// PendingPager reads the next page of a sensor's pending commands, without
+// the ones already read (postgres.CommandRepository). Optional: without it a
+// claim reads one page.
+type PendingPager interface {
+	GetPendingForSensorExcluding(ctx context.Context, tenantID shared.ID, sensorID *shared.ID, capabilities []string, limit int, exclude []shared.ID) ([]*commanddom.Command, error)
+}
+
+// claimCandidates picks what the sensor may claim now: the candidates in
+// dispatch order, minus what the checks after the query withhold (the
+// sensor's local policy and grant, the scope re-check, scan windows,
+// program rules, tool settings); then the free scan slots and limit, last.
+//
+// The checks run in Go after the query and record nothing, so withheld jobs
+// come back as the top candidates on every poll. When they fill a page, the
+// claim reads the next one without them (up to maxClaimPages), so a sensor
+// does not idle while work it may run waits behind them (research/191 W-2).
+func (s *Service) claimCandidates(ctx context.Context, tenantID, sensorID shared.ID, caps []string, limit, slots int) ([]*commanddom.Command, map[shared.ID]*bp.JobRules, map[shared.ID]settingsLayers, error) {
+	page := candidateLimit(limit)
+	cands, err := s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, caps, page)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// Free slots the queue cannot fill: split commands whose hosts are
+	// only partly busy, so their free targets start now (host_split.go).
+	if s.admitHostBusy(ctx, tenantID, &sensorID, caps, slots-scanCount(cands)) > 0 {
+		if cands, err = s.repo.GetPendingForSensor(ctx, tenantID, &sensorID, caps, page); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	pager, canPage := s.repo.(PendingPager)
+	var (
+		kept   []*commanddom.Command
+		seen   []shared.ID
+		rules  map[shared.ID]*bp.JobRules
+		layers map[shared.ID]settingsLayers
+	)
+	for p := 0; ; p++ {
+		for _, c := range cands {
+			seen = append(seen, c.ID)
+		}
+		got, r, l := s.holdForSensor(ctx, tenantID, sensorID, cands)
+		kept = append(kept, got...)
+		rules, layers = mergeRules(rules, r), mergeLayers(layers, l)
+		if !canPage || p+1 >= maxClaimPages || len(cands) < page || len(kept) >= limit || scanCount(kept) >= slots {
+			break
+		}
+		claimPaged(claimModePoll)
+		if cands, err = pager.GetPendingForSensorExcluding(ctx, tenantID, &sensorID, caps, page, seen); err != nil {
+			return nil, nil, nil, err
+		}
+		if len(cands) == 0 {
+			break
+		}
+	}
+	n := len(kept)
+	kept = capScanCommands(kept, slots)
+	claimSkipped(skipNoSlot, n, len(kept))
+	if len(kept) > limit {
+		kept = kept[:limit]
+	}
+	return kept, rules, layers, nil
+}
+
+// holdForSensor applies the checks that run after the query to one page of
+// candidates for an organization sensor, in claim order.
+func (s *Service) holdForSensor(ctx context.Context, tenantID, sensorID shared.ID, cands []*commanddom.Command) ([]*commanddom.Command, map[shared.ID]*bp.JobRules, map[shared.ID]settingsLayers) {
+	n := len(cands)
+	cands = s.keepAccepted(ctx, tenantID, sensorID, s.gateFor(ctx, tenantID, &sensorID, cands), cands)
+	claimSkipped(skipLocalPolicy, n, len(cands))
+	// A sensor tool the organization retired as a source never gets its
+	// scan jobs (retired_source.go).
+	n = len(cands)
+	cands = s.retiredHold(ctx, sensorID, cands)
+	claimSkipped(skipSourceRetired, n, len(cands))
+	// The scope may have changed since the jobs were queued: their targets
+	// pass the dispatch gate again before the claim (scope_recheck.go).
+	n = len(cands)
+	cands = s.recheckScope(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipScopeChanged, n, len(cands))
+	n = len(cands)
+	cands, rates := s.windowHold(ctx, tenantID, cands)
+	claimSkipped(skipWindowHold, n, len(cands))
+	n = len(cands)
+	cands, rules := s.programHold(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipProgramHold, n, len(cands))
+	n = len(cands)
+	cands, layers := s.settingsHold(ctx, tenantID, &sensorID, cands)
+	claimSkipped(skipToolSettings, n, len(cands))
+	return cands, withWindowRates(rules, rates), layers
+}
+
+func mergeRules(dst, src map[shared.ID]*bp.JobRules) map[shared.ID]*bp.JobRules {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[shared.ID]*bp.JobRules, len(src))
+	}
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func mergeLayers(dst, src map[shared.ID]settingsLayers) map[shared.ID]settingsLayers {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[shared.ID]settingsLayers, len(src))
+	}
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}

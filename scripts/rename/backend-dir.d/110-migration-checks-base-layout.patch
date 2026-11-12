@@ -1,0 +1,82 @@
+--- a/.github/scripts/check-migration-versions.sh
++++ b/.github/scripts/check-migration-versions.sh
+@@ -41,6 +41,16 @@
+ 
+ dir="${MIGRATIONS_DIR:-server/migrations}"
+ base="${1:-}"
++
++# The base's own layout: the base of the backend directory rename (server/ to
++# server/) still keeps its migrations under server/. base_ls and base_diff read
++# the base in its layout and print paths in this tree's ($dir/...).
++bdir="$dir"
++if [[ -n "$base" ]] && ! git cat-file -e "$base:$dir" 2>/dev/null && git cat-file -e "$base:api/${dir#server/}" 2>/dev/null; then bdir="api/${dir#server/}"; fi # rename-guard: allow
++base_ls() { if [[ "$bdir" == "$dir" ]]; then git ls-tree --name-only "$base" -- "$dir/"; else git ls-tree --name-only "$base:$bdir"; fi; }
++base_diff() { # base_diff <git diff options>
++  if [[ "$bdir" == "$dir" ]]; then git diff "$@" "$base" HEAD -- "$dir/"; else git diff "$@" "$base:$bdir" "HEAD:$dir" | sed -E "s#^([A-Z][0-9]*\t)?#\1$dir/#"; fi
++}
+ pattern='^([0-9]+)_(.+)\.(up|down)\.sql$'
+ fail=0
+ dup_mode="${MIGRATION_DUPLICATE:-error}"
+@@ -73,9 +83,9 @@
+ base_has_stamp=0
+ if [[ -n "$base" ]]; then
+   # --no-renames: a renamed migration shows as removed + added.
+-  added="$(git diff --no-renames --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
+-  base_legacy_max="$(git ls-tree --name-only "$base" -- "$dir/" | versions | awk 'length($3) < 14 {m = $1} END {print m + 0}')"
+-  if git ls-tree --name-only "$base" -- "$dir/" | versions | awk 'length($3) >= 14 {f = 1} END {exit !f}'; then base_has_stamp=1; fi
++  added="$(base_diff --no-renames --name-only --diff-filter=A | versions)"
++  base_legacy_max="$(base_ls | versions | awk 'length($3) < 14 {m = $1} END {print m + 0}')"
++  if base_ls | versions | awk 'length($3) >= 14 {f = 1} END {exit !f}'; then base_has_stamp=1; fi
+ fi
+ 
+ # 1. One name per version (the .up/.down pair share it).
+@@ -126,7 +136,7 @@
+       *) what="changed ($status)" ;;
+     esac
+     err "$path is $what, but it has merged: databases that applied it never run it again. Revert that and put the change in a new migration (make -C server migration-new name=...)."
+-  done < <(git diff --no-renames --name-status --diff-filter=MDT "$base" HEAD -- "$dir/")
++  done < <(base_diff --no-renames --name-status --diff-filter=MDT)
+   echo "base $base: added: $(awk '{printf "%s_%s ", $3, $2}' <<<"$added")"
+ fi
+ 
+--- a/.github/scripts/pr-migration-renumber.sh
++++ b/.github/scripts/pr-migration-renumber.sh
+@@ -49,6 +49,16 @@
+   exit 0
+ fi
+ 
++# The base's own layout: the base of the backend directory rename (server/ to
++# server/) still keeps its migrations under server/. base_ls and base_diff read
++# the base in its layout and print paths in this tree's ($dir/...).
++bdir="$dir"
++if [[ -n "$base" ]] && ! git cat-file -e "$base:$dir" 2>/dev/null && git cat-file -e "$base:api/${dir#server/}" 2>/dev/null; then bdir="api/${dir#server/}"; fi # rename-guard: allow
++base_ls() { if [[ "$bdir" == "$dir" ]]; then git ls-tree --name-only "$base" -- "$dir/"; else git ls-tree --name-only "$base:$bdir"; fi; }
++base_diff() { # base_diff <git diff options>
++  if [[ "$bdir" == "$dir" ]]; then git diff "$@" "$base" HEAD -- "$dir/"; else git diff "$@" "$base:$bdir" "HEAD:$dir" | sed -E "s#^([A-Z][0-9]*\t)?#\1$dir/#"; fi
++}
++
+ # versions: "version name raw" per migration, numerically sorted, unique.
+ versions() {
+   local f
+@@ -58,8 +68,8 @@
+   done | sort -n -k1,1 -k2 | uniq
+ }
+ 
+-base_list="$(git ls-tree --name-only "$base" -- "$dir/" | versions)"
+-added="$(git diff --no-renames --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
++base_list="$(base_ls | versions)"
++added="$(base_diff --no-renames --name-only --diff-filter=A | versions)"
+ 
+ # 1. Byte-identical copies of a base migration (same name, other number).
+ own=()
+@@ -67,8 +77,8 @@
+   [[ -n "$v" ]] || continue
+   b_raw="$(awk -v n="$name" '$2 == n {print $3; exit}' <<<"$base_list")"
+   if [[ -n "$b_raw" && "$b_raw" != "$raw" ]] \
+-    && cmp -s "$dir/${raw}_${name}.up.sql" <(git show "${base}:${dir}/${b_raw}_${name}.up.sql" 2>/dev/null) \
+-    && cmp -s "$dir/${raw}_${name}.down.sql" <(git show "${base}:${dir}/${b_raw}_${name}.down.sql" 2>/dev/null); then
++    && cmp -s "$dir/${raw}_${name}.up.sql" <(git show "${base}:${bdir}/${b_raw}_${name}.up.sql" 2>/dev/null) \
++    && cmp -s "$dir/${raw}_${name}.down.sql" <(git show "${base}:${bdir}/${b_raw}_${name}.down.sql" 2>/dev/null); then
+     rm -f "$dir/${raw}_${name}.up.sql" "$dir/${raw}_${name}.down.sql"
+     echo "::warning::${dir}/${raw}_${name} is a copy of ${b_raw}_${name}, already on the base; ignored in this run"
+     continue

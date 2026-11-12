@@ -1,8 +1,8 @@
 name: API Authorization Matrix
 
-# Nightly authorization regression suite (api/tests/authzmatrix): seeds two
+# Nightly authorization regression suite (server/tests/authzmatrix): seeds two
 # organizations with one principal per role kind through the public API on a
-# scratch stack (Postgres and Redis from api/tests/authzmatrix/ci/compose.yml,
+# scratch stack (Postgres and Redis from server/tests/authzmatrix/ci/compose.yml,
 # the API built from this commit), sends every route as every principal with
 # its own and with the other organization's ids, and runs the role-management
 # scenarios. Expected outcomes come from the route gates in the source
@@ -48,13 +48,13 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Run the matrix
         run: |
           mkdir -p "$(dirname "$MATRIX_REPORT")"
-          make -C api authz-matrix
+          make -C server authz-matrix
       - name: Upload the report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

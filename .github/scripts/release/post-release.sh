@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # post-release.sh: the follow-up branch for develop after vX.Y.Z is tagged
-# (api/docs/rfcs/RFC-037 §4.2).
+# (server/docs/rfcs/RFC-037 §4.2).
 #
 #   post-release.sh --version vX.Y.Z [--mode train|hotfix]
 #                   [--push] [--remote origin] [--develop develop] [--main main]
@@ -13,9 +13,9 @@
 # §3.3) and the next cut has nothing on main to drop.
 #
 # What lands on develop is main's side minus what never belongs there:
-#   - api/deploy/VERSION (the install version lives on the release branch and
+#   - server/deploy/VERSION (the install version lives on the release branch and
 #     main only; develop's state of the file is kept);
-#   - a changelog fragment that develop already folded into api/CHANGELOG.md
+#   - a changelog fragment that develop already folded into server/CHANGELOG.md
 #     (its heading is there), so a released entry is not listed twice.
 # A train normally changes no file (its tree is develop's plus the version
 # file). A hotfix whose picks are on develop already changes no file either;
@@ -129,9 +129,9 @@ else
   rm -f "$worktree/$VERSION_FILE"
 fi
 # A fragment develop already folded into the changelog is released: drop it.
-changelog="api/CHANGELOG.md"
+changelog="server/CHANGELOG.md"
 while IFS= read -r path; do
-  [[ "$path" == api/changelog.d/*.md ]] || continue
+  [[ "$path" == server/changelog.d/*.md ]] || continue
   heading="$(head -n 1 "$worktree/$path")"
   [[ "$heading" == "### "* ]] || continue
   if g show "$dev_ref:$changelog" 2>/dev/null | grep -qxF -- "$heading"; then

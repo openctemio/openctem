@@ -17,7 +17,7 @@ Next.js server (Node.js)
   src/app/api/v1/[...path]/route.ts   API proxy: session cookie -> Bearer token
         |  BACKEND_API_URL (server-side only)
         v
-OpenCTEM API (Go, api/)
+OpenCTEM API (Go, server/)
   business logic, authorization, PostgreSQL, Redis
 ```
 

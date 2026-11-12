@@ -1,7 +1,7 @@
 # =============================================================================
 # OpenCTEM operator monitoring: metrics, alert rules, Telegram/Slack alerts
 # =============================================================================
-# Runbook and every alert: api/docs/operations/monitoring.md
+# Runbook and every alert: server/docs/operations/monitoring.md
 #
 # Joins the network of a running OpenCTEM compose stack (OBS_APP_NETWORK) and
 # scrapes it from inside. Nothing is published on a public interface: the

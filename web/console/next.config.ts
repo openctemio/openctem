@@ -20,7 +20,7 @@ const DEFAULT_ROOT = '../src/extension-default'
 const EXTENSION_DIR = path.join(webRoot, 'src', 'extensions')
 
 /**
- * Extension switch (api/docs/development/editions.md, "Web"). The `@extension/*`
+ * Extension switch (server/docs/development/editions.md, "Web"). The `@extension/*`
  * modules resolve to the empty default in src/extension-default, or with
  * EXTENSIONS=on to the extension mounted at src/extensions. Any other value
  * than unset or "on" is refused. A production build without the switch

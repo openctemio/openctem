@@ -6,7 +6,7 @@
  * a rough duration of the host discovery pass, which always runs first.
  * Display and consent only: scope, exclusions, zones and the per-tenant
  * range limit are the API's answer. Design:
- * api/docs/rfcs/RFC-151-large-range-targets.md.
+ * server/docs/rfcs/RFC-151-large-range-targets.md.
  */
 
 import { useId } from 'react'

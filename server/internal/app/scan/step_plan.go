@@ -1,0 +1,535 @@
+package scan
+
+// One planner for every workflow step (research/27 P0-2;
+// docs/architecture/scan-stages.md): the tool a step runs and the command
+// payload a sensor receives are decided here, for both the scan trigger and
+// the scan run service. Two dispatchers used to build their own payloads and
+// drifted apart.
+//
+// F1: a step that named only a capability passed validation (a tool matched
+// it) but its command carried no `scanner`, so every sensor failed it with
+// "scanner not found: ". The planner now resolves capability -> tool once,
+// with the same rule validation uses, and the payload always names the tool.
+// Owner decision G10: a pinned tool is strict; a capability-only step may
+// run any active implementation of its stage, the catalog default first.
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/openctemio/contract/outcome"
+
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/toolbudget"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+)
+
+// Error codes of the planner.
+const (
+	codeNoMatchingTool       = "NO_MATCHING_TOOL"
+	codeStepCapabilityUnsure = "STEP_CAPABILITY_AMBIGUOUS"
+	codeStepInvalid          = "STEP_INVALID"
+)
+
+// StepTool is the tool a step runs.
+type StepTool struct {
+	// Name is the tool registry name the command's `scanner` carries.
+	Name string
+	// Pinned: the step names the tool itself (strict, G10).
+	Pinned bool
+	// Stage is the catalog stage the step runs; HasStage is false for a
+	// step the catalog cannot place (a tenant tool), which never chains.
+	Stage    stage.Stage
+	HasStage bool
+	// Candidates are the tools the step could run, in the order tried
+	// (the pin alone for a pinned step).
+	Candidates []string
+	// Declared: the tool is one the organization's sensors declare
+	// (tool.Tool.IsDeclared). The catalog does not list it, so its
+	// standard params map through its descriptor (params) and the step's
+	// command always names the capability (CommandPayload).
+	Declared bool
+	params   map[string]string
+}
+
+// Capability is the versioned capability the step runs ("scan.ports@1"),
+// empty for a step the catalog cannot place.
+func (t StepTool) Capability() string {
+	if !t.HasStage {
+		return ""
+	}
+	return t.Stage.ID()
+}
+
+// StepToolLookup is the slice of the tool registry the planner reads.
+type StepToolLookup interface {
+	GetPlatformToolByName(ctx context.Context, name string) (*tool.Tool, error)
+	FindByCapabilities(ctx context.Context, tenantID shared.ID, capabilities []string) (*tool.Tool, error)
+	// ListTenantCustomTools lists the organization's own tools (never
+	// another organization's, never a platform tool).
+	ListTenantCustomTools(ctx context.Context, tenantID shared.ID, filter tool.ToolFilter, page pagination.Pagination) (pagination.Result[*tool.Tool], error)
+}
+
+// ResolveStepTool decides the tool a step runs:
+//
+//   - a step that names a tool runs that tool (whether it exists and is
+//     active is the caller's strict check, as before);
+//   - a step that names a catalog capability (a stage key such as
+//     "scan.ports", or a word that names one stage, such as "portscan") runs
+//     the first active platform implementation of that stage that accepts
+//     the step's standard params: in the step's prefer_tools order when it
+//     has one, else the catalog order, the default first. A tool that does
+//     not take a param the step sets is skipped, never handed the step with
+//     that value dropped. None left is NO_MATCHING_TOOL, with the reasons;
+//   - after the catalog's implementations, the organization's declared
+//     tools (a tool its sensors report with a valid contract) that
+//     implement the stage's capability@major, by name; a step's
+//     prefer_tools may name them too. Their standard params map through
+//     their descriptor, and a param a tool does not take skips it the same
+//     way. They run at the tier the platform assigns them (an
+//     operator-installed tool is T2), so being picked grants nothing;
+//   - a pinned tool the catalog does not know runs its step's capability
+//     when it is a declared tool that implements it;
+//   - capabilities that name more than one stage are refused
+//     (STEP_CAPABILITY_AMBIGUOUS), never guessed;
+//   - capabilities the catalog does not know fall back to the tenant's
+//     active tool with all of them (platform tools first), as before.
+//
+// A collector or connector is never picked for a capability. The tenant id
+// scopes the fallback lookup; a platform implementation is read by name
+// among platform tools only, never another tenant's tool of that name.
+func ResolveStepTool(ctx context.Context, tools StepToolLookup, tenantID shared.ID, step *scanworkflow.Step) (StepTool, error) {
+	if step == nil {
+		return StepTool{}, shared.NewDomainError(codeStepInvalid, "step is missing", shared.ErrValidation)
+	}
+	if name := strings.TrimSpace(step.Tool); name != "" {
+		st, ok := stage.ForStep(name, step.Capabilities)
+		if !ok && tools != nil {
+			dt, found, err := pinnedDeclaredTool(ctx, tools, tenantID, name, step.Capabilities)
+			if err != nil {
+				return StepTool{}, fmt.Errorf("step %s: %w", step.StepKey, err)
+			}
+			if found {
+				return dt, nil
+			}
+		}
+		return StepTool{Name: name, Pinned: true, Stage: st, HasStage: ok, Candidates: []string{name}}, nil
+	}
+	if len(step.Capabilities) == 0 {
+		return StepTool{}, shared.NewDomainError(codeStepInvalid,
+			fmt.Sprintf("Step '%s' has no tool or capabilities configured. Edit the scan workflow and configure a scanner for this step.", step.StepKey),
+			shared.ErrValidation)
+	}
+	if tools == nil {
+		return StepTool{}, fmt.Errorf("step %s: tool registry is not configured; nothing dispatched", step.StepKey)
+	}
+	st, err := stage.ForCapabilities(step.Capabilities)
+	switch {
+	case err == nil:
+		declared, derr := declaredImplementations(ctx, tools, tenantID, st)
+		if derr != nil {
+			return StepTool{}, fmt.Errorf("step %s: %w", step.StepKey, derr)
+		}
+		candidates := stepCandidates(st, step, declared)
+		var skipped []string
+		for _, name := range candidates {
+			if dt, ok := declared[name]; ok {
+				params, _ := dt.DeclaredImplements(st.ID())
+				if missing := stage.UnsupportedParamsFor(st, params, step.Config); len(missing) > 0 {
+					skipped = append(skipped, fmt.Sprintf("%s does not take %s", name, strings.Join(missing, ", ")))
+					continue
+				}
+				return StepTool{Name: dt.Name, Stage: st, HasStage: true, Candidates: candidates, Declared: true, params: params}, nil
+			}
+			if missing := stage.UnsupportedParams(st, name, step.Config); len(missing) > 0 {
+				skipped = append(skipped, fmt.Sprintf("%s does not take %s", name, strings.Join(missing, ", ")))
+				continue
+			}
+			t, lerr := tools.GetPlatformToolByName(ctx, name)
+			if lerr != nil {
+				if errors.Is(lerr, shared.ErrNotFound) {
+					continue
+				}
+				return StepTool{}, fmt.Errorf("step %s: look up tool %q: %w", step.StepKey, name, lerr)
+			}
+			if usableScanner(t) {
+				return StepTool{Name: t.Name, Stage: st, HasStage: true, Candidates: candidates}, nil
+			}
+		}
+		reason := ""
+		if len(skipped) > 0 {
+			reason = " (" + strings.Join(skipped, "; ") + ")"
+		}
+		return StepTool{}, shared.NewDomainError(codeNoMatchingTool,
+			fmt.Sprintf("No active tool runs '%s' for step '%s' (it can run on %s)%s. Enable one of them, change the settings or pin a tool.",
+				st.Key, step.StepKey, strings.Join(candidates, ", "), reason),
+			shared.ErrValidation)
+	case errors.Is(err, stage.ErrAmbiguousCapability):
+		return StepTool{}, shared.NewDomainError(codeStepCapabilityUnsure,
+			fmt.Sprintf("Step '%s' names capabilities %v that match more than one kind of scan; pin a tool or keep one capability.",
+				step.StepKey, step.Capabilities),
+			shared.ErrValidation)
+	}
+	t, err := tools.FindByCapabilities(ctx, tenantID, step.Capabilities)
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
+		return StepTool{}, fmt.Errorf("step %s: find tool by capabilities: %w", step.StepKey, err)
+	}
+	// No tool with these capabilities (nil, or a lookup's not-found) is
+	// NO_MATCHING_TOOL below: an optional step is then skipped with the
+	// reason, and a required one refuses the run naming the step.
+	if !usableScanner(t) {
+		return StepTool{}, shared.NewDomainError(codeNoMatchingTool,
+			fmt.Sprintf("No active tool found for step '%s' with capabilities %v. Please configure a tool for this step.", step.StepKey, step.Capabilities),
+			shared.ErrValidation)
+	}
+	return StepTool{Name: t.Name}, nil
+}
+
+// stepCandidates are the tools a capability step may run, in the order
+// tried: its prefer_tools (those that implement the capability, catalog or
+// declared), or the catalog order, the default first, then the
+// organization's declared implementations by name.
+func stepCandidates(st stage.Stage, step *scanworkflow.Step, declared map[string]*tool.Tool) []string {
+	if len(step.PreferTools) == 0 {
+		out := st.Tools()
+		names := make([]string, 0, len(declared))
+		for name := range declared {
+			if !slices.Contains(out, name) {
+				names = append(names, name)
+			}
+		}
+		slices.Sort(names)
+		return append(out, names...)
+	}
+	out := make([]string, 0, len(step.PreferTools))
+	for _, t := range step.PreferTools {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if _, ok := declared[t]; (ok || st.Implements(t)) && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// maxDeclaredCandidates bounds the declared tools read for one step (an
+// organization holds at most tool.MaxDeclaredToolsPerTenant).
+const maxDeclaredCandidates = tool.MaxDeclaredToolsPerTenant
+
+// declaredImplementations are the organization's active declared tools
+// that implement the stage's capability@major, by name. Only that
+// organization's own tools are read, and a tool named like a catalog
+// implementation is left to the catalog path (its platform tool).
+func declaredImplementations(ctx context.Context, tools StepToolLookup, tenantID shared.ID, st stage.Stage) (map[string]*tool.Tool, error) {
+	if tools == nil || tenantID.IsZero() {
+		return nil, nil
+	}
+	active := true
+	res, err := tools.ListTenantCustomTools(ctx, tenantID,
+		tool.ToolFilter{Capabilities: []string{string(st.Key)}, IsActive: &active},
+		pagination.Pagination{Page: 1, PerPage: maxDeclaredCandidates})
+	if err != nil {
+		return nil, fmt.Errorf("list declared tools for %s: %w", st.ID(), err)
+	}
+	out := map[string]*tool.Tool{}
+	for _, t := range res.Data {
+		if t == nil || t.TenantID == nil || *t.TenantID != tenantID || !usableScanner(t) || st.Implements(t.Name) {
+			continue
+		}
+		if _, ok := t.DeclaredImplements(st.ID()); ok {
+			out[strings.ToLower(t.Name)] = t
+		}
+	}
+	return out, nil
+}
+
+// pinnedDeclaredTool resolves a pinned step whose tool the catalog does not
+// know: when it is one of the organization's declared tools and implements
+// the one stage its capabilities name, the step runs that capability.
+func pinnedDeclaredTool(ctx context.Context, tools StepToolLookup, tenantID shared.ID, name string, caps []string) (StepTool, bool, error) {
+	if len(caps) == 0 {
+		return StepTool{}, false, nil
+	}
+	st, err := stage.ForCapabilities(caps)
+	if err != nil {
+		// No single stage: the pin runs without a capability, as before.
+		return StepTool{}, false, nil //nolint:nilerr // not an error for a pinned step
+	}
+	declared, err := declaredImplementations(ctx, tools, tenantID, st)
+	if err != nil {
+		return StepTool{}, false, err
+	}
+	dt, ok := declared[strings.ToLower(name)]
+	if !ok {
+		return StepTool{}, false, nil
+	}
+	params, _ := dt.DeclaredImplements(st.ID())
+	return StepTool{Name: dt.Name, Pinned: true, Stage: st, HasStage: true, Candidates: []string{dt.Name}, Declared: true, params: params}, true, nil
+}
+
+// usableScanner reports whether a tool can run a dispatched scan step.
+func usableScanner(t *tool.Tool) bool {
+	return t != nil && t.IsActive && !t.IsCollector() && !t.IsConnector()
+}
+
+// WithTool returns a copy of the step that runs the resolved tool, for the
+// checks and payload that read step.Tool and step.Config: the config is the
+// one that tool receives (its keys for the standard params, its extras).
+func (t StepTool) WithTool(step *scanworkflow.Step) *scanworkflow.Step {
+	cp := *step
+	cp.Tool = t.Name
+	switch {
+	case t.HasStage && t.Declared:
+		cp.Config = stage.ToolConfigFor(t.Stage, t.Name, t.params, step.Config, t.Pinned)
+	case t.HasStage:
+		cp.Config = stage.ToolConfig(t.Stage, t.Name, step.Config, t.Pinned)
+	}
+	return &cp
+}
+
+// CommandPayload is StepCommandPayload for the resolved tool. A declared
+// tool's command always names its capability (the catalog does not list
+// the tool, so StepCommandPayload cannot tell): the sensor then checks
+// that the tool implements it and checks its output against it, and the
+// platform's grant check applies the capability's tier floor.
+func (t StepTool) CommandPayload(run *scanrun.Run, step *scanworkflow.Step, stepRunID string, st *StepTargets) (map[string]any, error) {
+	payload, err := StepCommandPayload(run, step, t.Name, stepRunID, st)
+	if err != nil {
+		return nil, err
+	}
+	if t.Declared && t.HasStage {
+		payload[PayloadKeyCapability] = t.Stage.ID()
+		// A declared tool gets the platform's port set through the keys
+		// its descriptor maps, as a catalog tool does.
+		cfg, _ := payload[scanworkflow.PayloadKeyConfig].(map[string]any)
+		keyOf := func(p string) (string, bool) { k, ok := t.params[p]; return k, ok }
+		if c := stage.WithDefaultPortSet(t.Stage, keyOf, cfg); c != nil {
+			payload[scanworkflow.PayloadKeyConfig] = c
+		}
+	}
+	return payload, nil
+}
+
+// StepCommandPayload is the command payload of one workflow step, built the
+// same way for every dispatcher. The resolved tool is always named in
+// `scanner` (the key the sensor SDK runs, ScanCommandPayload) and in
+// `preferred_tool` (the platform's tool gate and older readers). The step's
+// settings go under PayloadKeyConfig, normalized for that tool; a setting
+// the sensor would refuse fails here, before any command exists. The step's
+// targets (the type-gated run targets, or the hop router's plan) are at the
+// top level, where sensors read them; the run context goes along without
+// platform bookkeeping (StepRunContext).
+func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, stepRunID string, st *StepTargets) (map[string]any, error) {
+	toolName = strings.TrimSpace(toolName)
+	if toolName == "" {
+		return nil, shared.NewDomainError(codeNoMatchingTool,
+			fmt.Sprintf("step %s has no tool to run", step.StepKey), shared.ErrValidation)
+	}
+	// A step saved before the save-time check, or written around it, must
+	// not put a credential in a command.
+	if err := scan.RefuseConfigSecrets(step.Config); err != nil {
+		return nil, err
+	}
+	config, err := scanworkflow.NormalizeStepConfig(toolName, step.Config)
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{
+		scanrun.PayloadKeyScanRunID:   run.ID.String(),
+		scanrun.PayloadKeyStepRunID:   stepRunID,
+		scanrun.PayloadKeyStepKey:     step.StepKey,
+		"step_id":                     step.ID.String(),
+		scanworkflow.PayloadKeyConfig: config,
+		"required_capabilities":       step.Capabilities,
+		"preferred_tool":              toolName,
+		"scanner":                     toolName,
+		"timeout_seconds":             step.TimeoutSeconds,
+		"context":                     StepRunContext(run.Context, st),
+	}
+	if targets, ok := run.Context["targets"]; ok {
+		payload["targets"] = targets
+		if st != nil && st.Targets != nil {
+			payload["targets"] = st.Targets
+		}
+	}
+	// The task's layered budget (research/122): the sensor bounds each
+	// target with it and stops the task at the step's timeout_seconds when
+	// set, else at twice its expected time (the platform's overrun re-queue
+	// waits for the same deadline);
+	// the platform calls the task stalled when no target finishes within
+	// the stall window.
+	payload[PayloadKeyBudget] = toolbudget.ForTask(toolName, payloadTargetCount(payload["targets"]))
+	withRunDeadline(payload, run)
+	withOutcomeRevision(payload)
+	withWordlistRequests(payload, toolName)
+	if run.AssetID != nil {
+		payload["asset_id"] = run.AssetID.String()
+	}
+	// The platform decides the port set of a port scan that names none
+	// (stage.DefaultTopPorts), pinned tool or capability step alike.
+	stg, hasStage := stage.ForStep(toolName, step.Capabilities)
+	if hasStage {
+		if c := stg.DefaultPortSet(toolName, config); c != nil {
+			config = c
+			payload[scanworkflow.PayloadKeyConfig] = config
+		}
+		// Settings the tool always runs this capability with (nuclei on a
+		// takeover check: only its takeover templates), over the step's.
+		config = stg.WithStageToolConfig(toolName, config)
+		payload[scanworkflow.PayloadKeyConfig] = config
+	}
+	// A capability job (RFC-055): the sensor checks that the tool implements
+	// the capability, checks the output against its contract and stamps it
+	// in the provenance; the platform's grant check applies the
+	// capability's tier floor. The settings stay in config, mapped to the
+	// tool's keys as before, so an older sensor runs the step unchanged.
+	if hasStage && stage.TakesCapabilityJobs(stg, toolName) {
+		payload[PayloadKeyCapability] = stg.ID()
+		// The platform decides how hosts are probed: a host discovery step
+		// that names no ports probes the platform's set, never a default
+		// a sensor picks.
+		if stg.Key == stage.DiscoverHosts {
+			if key, ok := stg.ToolParamKey(toolName, "ports"); ok {
+				if config == nil {
+					config = map[string]any{}
+				}
+				if _, set := config[key]; !set {
+					config[key] = stage.HostProbePorts
+					payload[scanworkflow.PayloadKeyConfig] = config
+				}
+			}
+		}
+	}
+	if c := withWildcardFilter(toolName, config); c != nil {
+		payload[scanworkflow.PayloadKeyConfig] = c
+	}
+	return payload, nil
+}
+
+// PayloadKeyBudget is the command payload key of the task's budget
+// (toolbudget.Task; sdk-go ScanCommandPayload.Budget).
+const PayloadKeyBudget = "budget"
+
+// PayloadKeyDeadline is the command payload key of the run's deadline
+// (sdk-go ScanCommandPayload.Deadline): when the platform settles the run
+// if it is still open. The sensor ends the job's time budget a margin
+// before it, so what the tool settled is reported before the run is
+// settled without it. It can only shorten a job on the sensor.
+const PayloadKeyDeadline = "deadline"
+
+// PayloadKeyWordlists is the command payload key a job names the wordlists
+// its tool reads in (contentpin.PayloadKeyWordlists): the platform pins the
+// pack the run's depth selects and the labels learned from the
+// organization's own names when the job is signed.
+const PayloadKeyWordlists = "wordlists"
+
+// withWordlistRequests asks for the wordlists the tool reads
+// (stage.ToolWordlists). It is a request only: what the sensor trusts is
+// the content the platform pins and signs into the job.
+func withWordlistRequests(payload map[string]any, tool string) {
+	if reqs := stage.ToolWordlists(tool); len(reqs) > 0 {
+		payload[PayloadKeyWordlists] = reqs
+	} else {
+		delete(payload, PayloadKeyWordlists)
+	}
+}
+
+// PayloadKeyOutcomeRevision is the command payload key of the highest
+// per-target outcome revision the platform reads (sdk-go
+// ScanCommandPayload.OutcomeRevision, ctis outcome.Revision). A sensor sends
+// the classes that say why a target was not covered (edge_blocked,
+// edge_challenged, rate_limited, name_gone, resolver_failed,
+// sensor_network_fault) only when the payload names revision 2 or more.
+// Without it the sensor sends the closest revision 1 class: a host behind an
+// edge protection that answered 403, or a target that pushed back, then
+// arrived as tool_error, a platform-side failure that fed the coverage
+// platform-failure streak and the operator alert.
+const PayloadKeyOutcomeRevision = "outcome_revision"
+
+// withOutcomeRevision names the outcome revision the platform reads in
+// payload (the field belongs to the platform, whatever the config says).
+func withOutcomeRevision(payload map[string]any) {
+	payload[PayloadKeyOutcomeRevision] = outcome.Revision
+}
+
+// withRunDeadline puts the run's deadline in payload (nothing for a run
+// whose deadline is not fixed yet).
+func withRunDeadline(payload map[string]any, run *scanrun.Run) {
+	if run != nil && run.DeadlineAt != nil {
+		payload[PayloadKeyDeadline] = run.DeadlineAt.UTC().Format(time.RFC3339)
+	}
+}
+
+// payloadTargetCount is how many targets a payload's "targets" holds.
+func payloadTargetCount(v any) int {
+	switch ts := v.(type) {
+	case []string:
+		return len(ts)
+	case []any:
+		return len(ts)
+	}
+	return 1
+}
+
+// wildcardFilterKey is dnsx's setting that drops names resolving only
+// through a wildcard record.
+const wildcardFilterKey = "wildcard_filter"
+
+// withWildcardFilter turns the wildcard-DNS filter on for a dnsx job that
+// does not set it (RFC-088 decision A4): the platform decides it, so a
+// wildcard zone never floods the inventory with names that only resolve
+// through it, whatever a sensor's own default is. nil when unchanged.
+func withWildcardFilter(tool string, config map[string]any) map[string]any {
+	if !strings.EqualFold(strings.TrimSpace(tool), "dnsx") {
+		return nil
+	}
+	if _, set := config[wildcardFilterKey]; set {
+		return nil
+	}
+	out := make(map[string]any, len(config)+1)
+	for k, v := range config {
+		out[k] = v
+	}
+	out[wildcardFilterKey] = true
+	return out
+}
+
+// PayloadKeyCapability is the command payload key of a capability job's
+// capability ("scan.ports@1"; sdk-go ScanCommandPayload.Capability).
+const PayloadKeyCapability = "capability"
+
+// StepQueuer queues one step of a run on the scan run service's dispatcher
+// (*scanrun.Service): the one path every step command is created on.
+type StepQueuer interface {
+	QueueRunStep(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step) error
+}
+
+// RunAdvancer re-evaluates a run whose first steps were just handed to the
+// StepQueuer: steps that could not be queued are failed already, dependents
+// that can no longer run are skipped, and a run with nothing left to run
+// settles. The scan run service implements it.
+type RunAdvancer interface {
+	AdvanceRun(ctx context.Context, run *scanrun.Run) error
+}
+
+// SetStepQueuer wires the step dispatcher the scan trigger hands workflow
+// steps to. A setter because the scan run service is built after the scan
+// service. Without it a workflow scan is refused (fail closed).
+func (s *Service) SetStepQueuer(q StepQueuer) { s.stepQueuer = q }
+
+// SetWorkflowVersions pins each workflow run to the scan workflow version
+// it starts with (research/62 P0-10); the scan run service then reads that
+// version for every later step.
+func (s *Service) SetWorkflowVersions(store scanworkflow.VersionStore) { s.workflowVersions = store }
+
+// ErrStepQueuerUnavailable: no step dispatcher is wired.
+var ErrStepQueuerUnavailable = errors.New("workflow step dispatcher is not configured; nothing dispatched")

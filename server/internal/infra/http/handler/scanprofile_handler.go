@@ -1,0 +1,822 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
+)
+
+// ScanProfileHandler handles HTTP requests for scan profiles.
+type ScanProfileHandler struct {
+	service   *scan.ScanProfileService
+	audit     *auditsvc.AuditService
+	validator *validator.Validator
+	logger    *logger.Logger
+}
+
+// SetAuditService records scan profile changes in the tenant's audit log. A
+// profile decides which tools run, how hard, and the quality gate that can
+// fail a CI pipeline, so who changed it matters.
+func (h *ScanProfileHandler) SetAuditService(svc *auditsvc.AuditService) {
+	h.audit = svc
+}
+
+func scanProfileAuditEvent(action audit.Action, p *scanprofile.ScanProfile, message string) auditsvc.AuditEvent {
+	return auditsvc.NewSuccessEvent(action, audit.ResourceTypeScanProfile, p.ID.String()).
+		WithResourceName(p.Name).
+		WithMessage(message)
+}
+
+// scanProfileChangeEvent is scanProfileAuditEvent with a field-level
+// before/after diff, so the audit log says what an update, a quality-gate
+// change or a new default changed, not only that it happened. before is the
+// profile as it was; nil (it could not be read) leaves the diff out.
+func scanProfileChangeEvent(action audit.Action, before, after *scanprofile.ScanProfile, message string) auditsvc.AuditEvent {
+	ev := scanProfileAuditEvent(action, after, message)
+	if before != nil {
+		ev = ev.WithChanges(auditsvc.DiffChanges(scanProfileAuditView(before), scanProfileAuditView(after)))
+	}
+	return ev
+}
+
+// scanProfileAuditFields is the part of a profile an audit diff compares.
+type scanProfileAuditFields struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	IsDefault   bool     `json:"is_default"`
+	Tags        []string `json:"tags"`
+	RuleSources string   `json:"rule_sources"`
+	QualityGate any      `json:"quality_gate"`
+}
+
+func scanProfileAuditView(p *scanprofile.ScanProfile) scanProfileAuditFields {
+	return scanProfileAuditFields{
+		Name: p.Name, Description: p.Description, IsDefault: p.IsDefault, Tags: p.Tags,
+		RuleSources: string(p.RuleSources), QualityGate: p.QualityGate,
+	}
+}
+
+// profileBefore reads the profile as it is now, for the audit diff of a change
+// about to be made. A failed read only drops the diff: the change itself is
+// authorized and tenant-checked by the service.
+func (h *ScanProfileHandler) profileBefore(r *http.Request, tenantID, profileID string) *scanprofile.ScanProfile {
+	p, err := h.service.GetOwnScanProfile(r.Context(), tenantID, profileID)
+	if err != nil {
+		return nil
+	}
+	return p
+}
+
+// NewScanProfileHandler creates a new ScanProfileHandler.
+func NewScanProfileHandler(service *scan.ScanProfileService, v *validator.Validator, log *logger.Logger) *ScanProfileHandler {
+	return &ScanProfileHandler{
+		service:   service,
+		validator: v,
+		logger:    log.With("handler", "scan_profile"),
+	}
+}
+
+// removedProfileFields holds the settings a scan profile no longer carries.
+// They are read only to refuse them: a profile is the quality gate (the
+// pass/fail rule) and nothing else, because dispatch never applied these
+// fields. A client that still sends one is told so instead of being ignored.
+type removedProfileFields struct {
+	ToolsConfig        json.RawMessage `json:"tools_config,omitempty" swaggerignore:"true"`
+	Intensity          json.RawMessage `json:"intensity,omitempty" swaggerignore:"true"`
+	MaxConcurrentScans json.RawMessage `json:"max_concurrent_scans,omitempty" swaggerignore:"true"`
+	TimeoutSeconds     json.RawMessage `json:"timeout_seconds,omitempty" swaggerignore:"true"`
+}
+
+// errProfileRemovedFields is the answer to a request that sets a removed field.
+const errProfileRemovedFields = "a scan profile is a quality gate (pass/fail rule) and the rule sources its scans run: tools_config, intensity, max_concurrent_scans and timeout_seconds are not supported; choose intensity and tools on the scan or its workflow"
+
+// removed reports whether the request sets any removed field (a JSON null
+// counts as not set).
+func (r removedProfileFields) removed() bool {
+	for _, v := range []json.RawMessage{r.ToolsConfig, r.Intensity, r.MaxConcurrentScans, r.TimeoutSeconds} {
+		if len(v) > 0 && string(v) != "null" {
+			return true
+		}
+	}
+	return false
+}
+
+// QualityGateRequest represents quality gate configuration in request.
+type QualityGateRequest struct {
+	Enabled         bool   `json:"enabled"`
+	FailOnCritical  bool   `json:"fail_on_critical"`
+	FailOnHigh      bool   `json:"fail_on_high"`
+	MaxCritical     int    `json:"max_critical"`
+	MaxHigh         int    `json:"max_high"`
+	MaxMedium       int    `json:"max_medium"`
+	MaxTotal        int    `json:"max_total"`
+	NewFindingsOnly bool   `json:"new_findings_only,omitempty"`
+	BaselineBranch  string `json:"baseline_branch,omitempty"`
+}
+
+// CreateScanProfileRequest represents the request body for creating a scan profile.
+type CreateScanProfileRequest struct {
+	Name        string `json:"name" validate:"required,min=1,max=100"`
+	Description string `json:"description" validate:"max=500"`
+	removedProfileFields
+	Tags        []string            `json:"tags" validate:"max=20,dive,max=50"`
+	IsDefault   bool                `json:"is_default"`
+	QualityGate *QualityGateRequest `json:"quality_gate,omitempty"`
+	// RuleSources is which detection rules the profile's scans run unless a
+	// scan sets its own: both (default), platform or tenant.
+	RuleSources string `json:"rule_sources" validate:"omitempty,oneof=both platform tenant"`
+}
+
+// UpdateScanProfileRequest represents the request body for updating a scan profile.
+type UpdateScanProfileRequest struct {
+	Name        string `json:"name" validate:"omitempty,min=1,max=100"`
+	Description string `json:"description" validate:"max=500"`
+	removedProfileFields
+	Tags        []string            `json:"tags" validate:"max=20,dive,max=50"`
+	QualityGate *QualityGateRequest `json:"quality_gate,omitempty"`
+	// RuleSources: omitted = unchanged, else both, platform or tenant.
+	RuleSources *string `json:"rule_sources" validate:"omitempty,oneof=both platform tenant"`
+}
+
+// UpdateQualityGateRequest represents the request body for updating quality gate.
+type UpdateQualityGateRequest struct {
+	Enabled         bool   `json:"enabled"`
+	FailOnCritical  bool   `json:"fail_on_critical"`
+	FailOnHigh      bool   `json:"fail_on_high"`
+	MaxCritical     int    `json:"max_critical"`
+	MaxHigh         int    `json:"max_high"`
+	MaxMedium       int    `json:"max_medium"`
+	MaxTotal        int    `json:"max_total"`
+	NewFindingsOnly bool   `json:"new_findings_only,omitempty"`
+	BaselineBranch  string `json:"baseline_branch,omitempty"`
+}
+
+// CloneScanProfileRequest represents the request body for cloning a scan profile.
+type CloneScanProfileRequest struct {
+	NewName string `json:"new_name" validate:"required,min=1,max=100"`
+}
+
+// EvaluateQualityGateRequest represents the request body for evaluating quality gate.
+type EvaluateQualityGateRequest struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
+	Info     int `json:"info"`
+}
+
+// QualityGateResultResponse represents the result of quality gate evaluation.
+type QualityGateResultResponse struct {
+	Passed   bool                        `json:"passed"`
+	Reason   string                      `json:"reason,omitempty"`
+	Breaches []QualityGateBreachResponse `json:"breaches,omitempty"`
+	Counts   FindingCountsResponse       `json:"counts"`
+}
+
+// QualityGateBreachResponse represents a single threshold violation.
+type QualityGateBreachResponse struct {
+	Metric string `json:"metric"`
+	Limit  int    `json:"limit"`
+	Actual int    `json:"actual"`
+}
+
+// FindingCountsResponse represents finding counts by severity.
+type FindingCountsResponse struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
+	Info     int `json:"info"`
+	Total    int `json:"total"`
+}
+
+// QualityGateResponse represents quality gate configuration in response.
+type QualityGateResponse struct {
+	Enabled         bool   `json:"enabled"`
+	FailOnCritical  bool   `json:"fail_on_critical"`
+	FailOnHigh      bool   `json:"fail_on_high"`
+	MaxCritical     int    `json:"max_critical"`
+	MaxHigh         int    `json:"max_high"`
+	MaxMedium       int    `json:"max_medium"`
+	MaxTotal        int    `json:"max_total"`
+	NewFindingsOnly bool   `json:"new_findings_only,omitempty"`
+	BaselineBranch  string `json:"baseline_branch,omitempty"`
+}
+
+// ScanProfileResponse represents the response for a scan profile.
+type ScanProfileResponse struct {
+	ID          string              `json:"id"`
+	TenantID    string              `json:"tenant_id"`
+	Name        string              `json:"name"`
+	Description string              `json:"description,omitempty"`
+	IsDefault   bool                `json:"is_default"`
+	IsSystem    bool                `json:"is_system"`
+	Tags        []string            `json:"tags"`
+	Metadata    map[string]any      `json:"metadata,omitempty"`
+	QualityGate QualityGateResponse `json:"quality_gate"`
+	RuleSources string              `json:"rule_sources"`
+	CreatedBy   *string             `json:"created_by,omitempty"`
+	CreatedAt   string              `json:"created_at"`
+	UpdatedAt   string              `json:"updated_at"`
+}
+
+// Create handles POST /api/v1/scan-profiles
+// @Summary      Create scan profile
+// @Description  Create a new scan profile with tool configurations
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        body  body      CreateScanProfileRequest  true  "Scan profile data"
+// @Success      201   {object}  ScanProfileResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      409   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles [post]
+func (h *ScanProfileHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var req CreateScanProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if req.removed() {
+		apierror.BadRequest(errProfileRemovedFields).WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+
+	input := scan.CreateScanProfileInput{
+		TenantID:      tenantID,
+		UserID:        userID,
+		Name:          req.Name,
+		Description:   req.Description,
+		Tags:          req.Tags,
+		IsDefault:     req.IsDefault,
+		QualityGate:   toQualityGateDomain(req.QualityGate),
+		RuleSources:   req.RuleSources,
+		CallerIsAdmin: middleware.IsAdmin(r.Context()),
+	}
+
+	profile, err := h.service.CreateScanProfile(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileCreated, profile,
+		"Scan profile "+profile.Name+" created"))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
+}
+
+// Get handles GET /api/v1/scan-profiles/{id}
+// @Summary      Get scan profile
+// @Description  Get a single scan profile by ID
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Scan Profile ID"
+// @Success      200  {object}  ScanProfileResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/{id} [get]
+func (h *ScanProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	profile, err := h.service.GetScanProfile(r.Context(), tenantID, profileID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
+}
+
+// GetDefault handles GET /api/v1/scan-profiles/default
+// @Summary      Get default scan profile
+// @Description  Get the default scan profile for the current tenant
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  ScanProfileResponse
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/default [get]
+func (h *ScanProfileHandler) GetDefault(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	profile, err := h.service.GetDefaultScanProfile(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
+}
+
+// List handles GET /api/v1/scan-profiles
+// @Summary      List scan profiles
+// @Description  Get a paginated list of scan profiles for the current tenant
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        is_default      query     boolean  false  "Filter by default status"
+// @Param        is_system       query     boolean  false  "Filter by system status"
+// @Param        include_system  query     boolean  false  "Include system profiles in results (default: true)"
+// @Param        tags            query     string   false  "Filter by tags (comma-separated)"
+// @Param        search          query     string   false  "Search by name or description"
+// @Param        page            query     int      false  "Page number" default(1)
+// @Param        per_page        query     int      false  "Items per page" default(20)
+// @Success      200  {object}  ListResponse[ScanProfileResponse]
+// @Failure      400  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles [get]
+func (h *ScanProfileHandler) List(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	// Default to include system profiles unless explicitly set to false
+	includeSystem := true
+	if includeSystemParam := r.URL.Query().Get("include_system"); includeSystemParam == "false" {
+		includeSystem = false
+	}
+
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := scan.ListScanProfilesInput{
+		TenantID:      tenantID,
+		Search:        r.URL.Query().Get("search"),
+		Page:          paging.Page,
+		PerPage:       paging.PerPage,
+		IncludeSystem: includeSystem,
+	}
+
+	if isDefault := r.URL.Query().Get("is_default"); isDefault != "" {
+		val := isDefault == queryParamTrue
+		input.IsDefault = &val
+	}
+
+	if isSystem := r.URL.Query().Get("is_system"); isSystem != "" {
+		val := isSystem == queryParamTrue
+		input.IsSystem = &val
+	}
+
+	if tags := r.URL.Query().Get("tags"); tags != "" {
+		input.Tags = parseQueryArray(tags)
+	}
+
+	result, err := h.service.ListScanProfiles(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	items := make([]*ScanProfileResponse, len(result.Data))
+	for i, profile := range result.Data {
+		items[i] = toScanProfileResponse(profile)
+	}
+
+	resp := map[string]any{
+		"items":    items,
+		"total":    result.Total,
+		"page":     result.Page,
+		"per_page": result.PerPage,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// Update handles PUT /api/v1/scan-profiles/{id}
+// @Summary      Update scan profile
+// @Description  Update an existing scan profile
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                    true  "Scan Profile ID"
+// @Param        body  body      UpdateScanProfileRequest  true  "Update data"
+// @Success      200   {object}  ScanProfileResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      403   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/{id} [put]
+func (h *ScanProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	var req UpdateScanProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if req.removed() {
+		apierror.BadRequest(errProfileRemovedFields).WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	input := scan.UpdateScanProfileInput{
+		TenantID:      tenantID,
+		ProfileID:     profileID,
+		Name:          req.Name,
+		Description:   req.Description,
+		Tags:          req.Tags,
+		QualityGate:   toQualityGateDomain(req.QualityGate),
+		RuleSources:   req.RuleSources,
+		CallerIsAdmin: middleware.IsAdmin(r.Context()),
+	}
+
+	before := h.profileBefore(r, tenantID, profileID)
+	profile, err := h.service.UpdateScanProfile(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	logRequestChange(h.audit, h.logger, r, scanProfileChangeEvent(audit.ActionScanProfileUpdated, before, profile,
+		"Scan profile "+profile.Name+" updated"))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
+}
+
+// Delete handles DELETE /api/v1/scan-profiles/{id}
+// @Summary      Delete scan profile
+// @Description  Delete a scan profile (system profiles cannot be deleted)
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Scan Profile ID"
+// @Success      204  "No Content"
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/{id} [delete]
+func (h *ScanProfileHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	if err := h.service.DeleteScanProfile(r.Context(), tenantID, profileID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	logRequestChange(h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionScanProfileDeleted, audit.ResourceTypeScanProfile, profileID).
+		WithMessage("Scan profile deleted"))
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SetDefault handles POST /api/v1/scan-profiles/{id}/set-default
+// @Summary      Set default scan profile
+// @Description  Set a scan profile as the default for the tenant
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Scan Profile ID"
+// @Success      200  {object}  ScanProfileResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/{id}/set-default [post]
+func (h *ScanProfileHandler) SetDefault(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	before := h.profileBefore(r, tenantID, profileID)
+	profile, err := h.service.SetDefaultScanProfile(r.Context(), tenantID, profileID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	logRequestChange(h.audit, h.logger, r, scanProfileChangeEvent(audit.ActionScanProfileDefaultSet, before, profile,
+		"Scan profile "+profile.Name+" set as the default"))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
+}
+
+// Clone handles POST /api/v1/scan-profiles/{id}/clone
+// @Summary      Clone scan profile
+// @Description  Create a copy of an existing scan profile with a new name
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                   true  "Scan Profile ID to clone"
+// @Param        body  body      CloneScanProfileRequest  true  "Clone data"
+// @Success      201   {object}  ScanProfileResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      409   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/{id}/clone [post]
+func (h *ScanProfileHandler) Clone(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+
+	var req CloneScanProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	input := scan.CloneScanProfileInput{
+		TenantID:  tenantID,
+		ProfileID: profileID,
+		NewName:   req.NewName,
+		UserID:    userID,
+	}
+
+	profile, err := h.service.CloneScanProfile(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	logRequestChange(h.audit, h.logger, r, scanProfileAuditEvent(audit.ActionScanProfileCloned, profile,
+		"Scan profile "+profile.Name+" cloned from "+profileID))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
+}
+
+// UpdateQualityGate handles PUT /api/v1/scan-profiles/{id}/quality-gate
+// @Summary      Update quality gate
+// @Description  Update the quality gate configuration for a scan profile
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                    true  "Scan Profile ID"
+// @Param        body  body      UpdateQualityGateRequest  true  "Quality gate configuration"
+// @Success      200   {object}  ScanProfileResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      403   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/{id}/quality-gate [put]
+func (h *ScanProfileHandler) UpdateQualityGate(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	var req UpdateQualityGateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	input := scan.UpdateQualityGateInput{
+		TenantID:  tenantID,
+		ProfileID: profileID,
+		QualityGate: scanprofile.QualityGate{
+			Enabled:         req.Enabled,
+			FailOnCritical:  req.FailOnCritical,
+			FailOnHigh:      req.FailOnHigh,
+			MaxCritical:     req.MaxCritical,
+			MaxHigh:         req.MaxHigh,
+			MaxMedium:       req.MaxMedium,
+			MaxTotal:        req.MaxTotal,
+			NewFindingsOnly: req.NewFindingsOnly,
+			BaselineBranch:  req.BaselineBranch,
+		},
+	}
+
+	before := h.profileBefore(r, tenantID, profileID)
+	profile, err := h.service.UpdateQualityGate(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	logRequestChange(h.audit, h.logger, r, scanProfileChangeEvent(audit.ActionScanProfileQualityGateUpdated, before, profile,
+		"Quality gate of scan profile "+profile.Name+" updated"))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toScanProfileResponse(profile))
+}
+
+// EvaluateQualityGate handles POST /api/v1/scan-profiles/{id}/evaluate-quality-gate
+// @Summary      Evaluate quality gate
+// @Description  Evaluate finding counts against a scan profile's quality gate
+// @Tags         Scan Profiles
+// @Accept       json
+// @Produce      json
+// @Param        id    path      string                       true  "Scan Profile ID"
+// @Param        body  body      EvaluateQualityGateRequest   true  "Finding counts"
+// @Success      200   {object}  QualityGateResultResponse
+// @Failure      400   {object}  apierror.Error
+// @Failure      404   {object}  apierror.Error
+// @Failure      500   {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-profiles/{id}/evaluate-quality-gate [post]
+func (h *ScanProfileHandler) EvaluateQualityGate(w http.ResponseWriter, r *http.Request) {
+	profileID := chi.URLParam(r, "id")
+	tenantID := middleware.GetTenantID(r.Context())
+
+	var req EvaluateQualityGateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	counts := scanprofile.FindingCounts{
+		Critical: req.Critical,
+		High:     req.High,
+		Medium:   req.Medium,
+		Low:      req.Low,
+		Info:     req.Info,
+		Total:    req.Critical + req.High + req.Medium + req.Low + req.Info,
+	}
+
+	input := scan.EvaluateQualityGateInput{
+		TenantID:  tenantID,
+		ProfileID: profileID,
+		Counts:    counts,
+	}
+
+	result, err := h.service.EvaluateQualityGate(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toQualityGateResultResponse(result))
+}
+
+// toQualityGateResultResponse converts domain QualityGateResult to response format.
+func toQualityGateResultResponse(result *scanprofile.QualityGateResult) *QualityGateResultResponse {
+	resp := &QualityGateResultResponse{
+		Passed: result.Passed,
+		Reason: result.Reason,
+		Counts: FindingCountsResponse{
+			Critical: result.Counts.Critical,
+			High:     result.Counts.High,
+			Medium:   result.Counts.Medium,
+			Low:      result.Counts.Low,
+			Info:     result.Counts.Info,
+			Total:    result.Counts.Total,
+		},
+	}
+
+	if len(result.Breaches) > 0 {
+		resp.Breaches = make([]QualityGateBreachResponse, len(result.Breaches))
+		for i, b := range result.Breaches {
+			resp.Breaches[i] = QualityGateBreachResponse{
+				Metric: b.Metric,
+				Limit:  b.Limit,
+				Actual: b.Actual,
+			}
+		}
+	}
+
+	return resp
+}
+
+// toScanProfileResponse converts a scan profile entity to response.
+func toScanProfileResponse(p *scanprofile.ScanProfile) *ScanProfileResponse {
+	resp := &ScanProfileResponse{
+		ID:          p.ID.String(),
+		TenantID:    p.TenantID.String(),
+		Name:        p.Name,
+		Description: p.Description,
+		IsDefault:   p.IsDefault,
+		IsSystem:    p.IsSystem,
+		Tags:        p.Tags,
+		Metadata:    p.Metadata,
+		QualityGate: toQualityGateResponse(p.QualityGate),
+		RuleSources: string(scannertemplate.EffectiveRuleSources(p.RuleSources, "")),
+		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+
+	if p.CreatedBy != nil {
+		createdByStr := p.CreatedBy.String()
+		resp.CreatedBy = &createdByStr
+	}
+
+	if resp.Tags == nil {
+		resp.Tags = []string{}
+	}
+
+	return resp
+}
+
+// toQualityGateDomain converts request QualityGate to domain format.
+func toQualityGateDomain(req *QualityGateRequest) *scanprofile.QualityGate {
+	if req == nil {
+		return nil
+	}
+
+	return &scanprofile.QualityGate{
+		Enabled:         req.Enabled,
+		FailOnCritical:  req.FailOnCritical,
+		FailOnHigh:      req.FailOnHigh,
+		MaxCritical:     req.MaxCritical,
+		MaxHigh:         req.MaxHigh,
+		MaxMedium:       req.MaxMedium,
+		MaxTotal:        req.MaxTotal,
+		NewFindingsOnly: req.NewFindingsOnly,
+		BaselineBranch:  req.BaselineBranch,
+	}
+}
+
+// toQualityGateResponse converts domain QualityGate to response format.
+func toQualityGateResponse(gate scanprofile.QualityGate) QualityGateResponse {
+	return QualityGateResponse{
+		Enabled:         gate.Enabled,
+		FailOnCritical:  gate.FailOnCritical,
+		FailOnHigh:      gate.FailOnHigh,
+		MaxCritical:     gate.MaxCritical,
+		MaxHigh:         gate.MaxHigh,
+		MaxMedium:       gate.MaxMedium,
+		MaxTotal:        gate.MaxTotal,
+		NewFindingsOnly: gate.NewFindingsOnly,
+		BaselineBranch:  gate.BaselineBranch,
+	}
+}
+
+// handleValidationError converts validation errors to API errors.
+func (h *ScanProfileHandler) handleValidationError(w http.ResponseWriter, err error) {
+	var validationErrors validator.ValidationErrors
+	if errors.As(err, &validationErrors) {
+		apiErrors := make([]apierror.ValidationError, len(validationErrors))
+		for i, ve := range validationErrors {
+			apiErrors[i] = apierror.ValidationError{
+				Field:   ve.Field,
+				Message: ve.Message,
+			}
+		}
+		apierror.ValidationFailed("Validation failed", apiErrors).WriteJSON(w)
+		return
+	}
+	apierror.BadRequest("Validation error").WriteJSON(w)
+}
+
+// handleServiceError converts service errors to API errors.
+func (h *ScanProfileHandler) handleServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Scan profile").WriteJSON(w)
+	case errors.Is(err, shared.ErrAlreadyExists):
+		apierror.Conflict("Scan profile already exists").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrUnauthorized):
+		apierror.Unauthorized("").WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		// The domain says why (a system profile, another organization, or a
+		// change only an owner or admin may make).
+		msg := "System profiles cannot be modified"
+		var de *shared.DomainError
+		if errors.As(err, &de) && de.Message != "" {
+			msg = de.Message
+		}
+		apierror.Forbidden(msg).WriteJSON(w)
+	default:
+		h.logger.Error("service error", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+	}
+}

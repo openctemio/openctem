@@ -83,48 +83,48 @@ check "missing database settings fail" "1" "$rc"
 case "$out" in *"SUPER_URL is required"*) echo "ok: message names the variable";; *) echo "FAIL: message: $out"; fails=$((fails + 1));; esac
 
 # --check-order: when the previous release still shipped golang-migrate,
-# api/migrations/released.json must list it with exactly the versions it
+# server/migrations/released.json must list it with exactly the versions it
 # shipped (openctem-migrate's takeover records those as applied and runs every
 # other file). A legacy-numbered migration below the release's highest that
 # the release lacks is then simply run; timestamp versions pass.
 mig="$tmp/mig"
-mkdir -p "$mig/.github/scripts" "$mig/api/migrations"
+mkdir -p "$mig/.github/scripts" "$mig/server/migrations"
 cp "$here/upgrade-test.sh" "$mig/.github/scripts/"
 git -C "$mig" init -q -b develop
 git -C "$mig" config user.name test
 git -C "$mig" config user.email test@example.invalid
 git -C "$mig" config commit.gpgsign false
 git -C "$mig" config tag.gpgsign false
-for n in 000001_a 000002_b 000005_c; do : >"$mig/api/migrations/$n.up.sql"; done
+for n in 000001_a 000002_b 000005_c; do : >"$mig/server/migrations/$n.up.sql"; done
 git -C "$mig" add -A; git -C "$mig" commit -q -m rel; git -C "$mig" tag v1.0.0
-: >"$mig/api/migrations/000006_d.up.sql"
+: >"$mig/server/migrations/000006_d.up.sql"
 git -C "$mig" add -A; git -C "$mig" commit -q -m unlisted
 set +e
 out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
 set -e
 check "a release missing from released.json fails" "1" "$rc"
 case "$out" in *"released.json does not list v1.0.0"*) echo "ok: message names the release";; *) echo "FAIL: message: $out"; fails=$((fails + 1));; esac
-printf '{"releases": [\n    {"tags": ["v1.0.0"], "versions": [1,2]}\n]}\n' >"$mig/api/migrations/released.json"
+printf '{"releases": [\n    {"tags": ["v1.0.0"], "versions": [1,2]}\n]}\n' >"$mig/server/migrations/released.json"
 git -C "$mig" add -A; git -C "$mig" commit -q -m wrong-list
 set +e
 out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
 set -e
 check "released.json with other versions than the release shipped fails" "1" "$rc"
-printf '{"releases": [\n    {"tags": ["v1.0.0"], "versions": [1,2,5]}\n]}\n' >"$mig/api/migrations/released.json"
-git -C "$mig" mv api/migrations/000002_b.up.sql api/migrations/000002_renamed.up.sql
+printf '{"releases": [\n    {"tags": ["v1.0.0"], "versions": [1,2,5]}\n]}\n' >"$mig/server/migrations/released.json"
+git -C "$mig" mv server/migrations/000002_b.up.sql server/migrations/000002_renamed.up.sql
 git -C "$mig" add -A; git -C "$mig" commit -q -m next
 set +e
 out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
 set -e
 check "new migrations above the release, and a renamed released one, pass" "0" "$rc"
-: >"$mig/api/migrations/000003_late.up.sql"
+: >"$mig/server/migrations/000003_late.up.sql"
 git -C "$mig" add -A; git -C "$mig" commit -q -m late
 set +e
 out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?
 set -e
 check "a migration below the release's highest that it lacks passes (it is run)" "0" "$rc"
-git -C "$mig" rm -q api/migrations/000003_late.up.sql
-: >"$mig/api/migrations/20261027101500_ts.up.sql"
+git -C "$mig" rm -q server/migrations/000003_late.up.sql
+: >"$mig/server/migrations/20261027101500_ts.up.sql"
 git -C "$mig" add -A; git -C "$mig" commit -q -m timestamp
 set +e
 out="$(bash "$mig/.github/scripts/upgrade-test.sh" --check-order 2>&1)"; rc=$?

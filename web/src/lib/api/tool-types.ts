@@ -260,7 +260,7 @@ export const INSTALL_METHOD_DISPLAY_NAMES: Record<InstallMethod, string> = {
 
 // ============================================
 // TOOL AVAILABILITY (GET /api/v1/tools?include=availability)
-// api/docs/architecture/tool-availability.md
+// server/docs/architecture/tool-availability.md
 // ============================================
 
 /** A tool's availability for the organization, derived by the API. */

@@ -7,8 +7,8 @@ name: Web CI
 # The web compiles against contract files generated from the Go API: the
 # OpenAPI spec (-> web/src/lib/api/generated/api.types.ts), the route
 # permission map (web/src/config/api-route-permissions.json) and the route
-# manifest (api/api/openapi/routes.txt). None of them is committed, so pull
-# requests never conflict on them (api/docs/development/ci-cd.md, "Generated
+# manifest (server/api/openapi/routes.txt). None of them is committed, so pull
+# requests never conflict on them (server/docs/development/ci-cd.md, "Generated
 # contract files"). The `contract` job generates them once per run and hands
 # them to the other jobs as an artifact. For an API change it also generates
 # the base's contract and:
@@ -114,10 +114,10 @@ jobs:
           MG_BASE: ${{ github.event.merge_group.base_sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-          # Area reuse: web/ and the shared files, plus api/ (the contract this
+          # Area reuse: web/ and the shared files, plus server/ (the contract this
           # workflow generates and the image it builds come from it).
           TREE_AREA: Web CI
-          TREE_PATHS: web api Makefile go.work go.work.sum .github deploy
+          TREE_PATHS: web server Makefile go.work go.work.sum .github deploy
           TREE_CHECKS: Web CI OK
           TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
@@ -180,7 +180,7 @@ jobs:
       - name: Collect them
         run: |
           mkdir -p "$RUNNER_TEMP/contract/head"
-          cp api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json "$RUNNER_TEMP/contract/head/"
+          cp server/api/openapi/swagger.yaml server/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json "$RUNNER_TEMP/contract/head/"
 
       # The recorded run time of each test file (the newest full run), so the
       # test shards are balanced by time. Travels with the contract files.
@@ -231,7 +231,11 @@ jobs:
           GOWORK: 'off'
         run: |
           git worktree add --quiet --detach "$RUNNER_TEMP/base-src" "$SHA"
-          cd "$RUNNER_TEMP/base-src/api"
+          # The base has its own layout: server/ from the backend directory
+          # rename on, server/ before it (the rename pull request itself).
+          bdir="$RUNNER_TEMP/base-src/server"
+          [ -d "$bdir" ] || bdir="$RUNNER_TEMP/base-src/api" # rename-guard: allow
+          cd "$bdir"
           make swagger >/dev/null
           UPDATE_ROUTE_MANIFEST=1 go test ./tools/lint/openapicontract/ -run '^TestWriteRouteManifest$' -count=1 >/dev/null
           UPDATE_ROUTE_PERMISSIONS=1 go test ./tests/unit -run '^TestRoutePermissionMap' -count=1 >/dev/null
@@ -258,7 +262,7 @@ jobs:
                cmp -s "$c/base/api-route-permissions.json" "$c/head/api-route-permissions.json"; then
               changed=false
             fi
-            (cd api && GOWORK=off go run ./tools/openapidiff -base "$c/base" -head "$c/head" \
+            (cd server && GOWORK=off go run ./tools/openapidiff -base "$c/base" -head "$c/head" \
               -base-label "${BASE_SHA:0:9}" -head-label "${HEAD_SHA:0:9}") > "$c/report/report.md"
           else
             {
@@ -402,7 +406,7 @@ jobs:
       - name: Place the generated contract files
         working-directory: .
         run: |
-          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" server/api/openapi/
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
@@ -518,7 +522,7 @@ jobs:
       - name: Place the generated contract files
         working-directory: .
         run: |
-          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" server/api/openapi/
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
@@ -531,7 +535,7 @@ jobs:
           npx vitest run --passWithNoTests src/lib/i18n "${files[@]}"
 
   # The Vitest suite, in three parallel shards (vitest --shard). Same setup as
-  # `Web checks`; the endpoint check reads api/api/openapi/routes.txt.
+  # `Web checks`; the endpoint check reads server/api/openapi/routes.txt.
   tests:
     name: Web tests
     # actions: write lets the fail-fast step cancel doomed runs (.github/actions/fail-fast).
@@ -573,7 +577,7 @@ jobs:
       - name: Place the generated contract files
         working-directory: .
         run: |
-          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" server/api/openapi/
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
 
@@ -708,7 +712,7 @@ jobs:
       - name: Place the generated contract files
         working-directory: .
         run: |
-          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" api/api/openapi/
+          cp "$RUNNER_TEMP/contract/swagger.yaml" "$RUNNER_TEMP/contract/routes.txt" server/api/openapi/
           cp "$RUNNER_TEMP/contract/api-route-permissions.json" "$RUNNER_TEMP/contract/authz-matrix.json" web/src/config/
           (cd web && npm run generate:api-types)
       - name: Cache Next.js build

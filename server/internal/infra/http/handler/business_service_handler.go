@@ -1,0 +1,716 @@
+package handler
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+)
+
+// BusinessServiceHandler handles business service CRUD endpoints.
+// A business service represents a business capability (Payment Processing,
+// Customer Login) that spans multiple assets and is distinct from a
+// business unit (which is an organizational grouping).
+type BusinessServiceHandler struct {
+	configAuditor
+	db        *sql.DB
+	dataScope *datascope.Enforcer
+	logger    *logger.Logger
+}
+
+// WithDataScope applies the caller's data scope (Layer 2) to the service's
+// asset links: the list shows only in-scope assets, and linking or unlinking
+// an out-of-scope asset answers 404 (a link changes the asset's effective
+// criticality). Nil leaves them tenant-wide.
+func (h *BusinessServiceHandler) WithDataScope(e *datascope.Enforcer) *BusinessServiceHandler {
+	h.dataScope = e
+	return h
+}
+
+// assetInScope reports whether the request's caller may see the asset.
+func (h *BusinessServiceHandler) assetInScope(r *http.Request, tenantID, assetID string) bool {
+	if h.dataScope == nil {
+		return true
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return false
+	}
+	aid, err := shared.IDFromString(assetID)
+	if err != nil {
+		return false
+	}
+	return h.dataScope.AssertAsset(r.Context(), tid, aid) == nil
+}
+
+// requireActOnLinks refuses (403, written) a change to a service that links
+// assets outside the caller's data scope: the service's criticality raises
+// that of every linked asset (owner decision A8).
+func (h *BusinessServiceHandler) requireActOnLinks(w http.ResponseWriter, r *http.Request, tenantID, serviceID string) bool {
+	if h.dataScope == nil {
+		return true
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.NotFound("business service").WriteJSON(w)
+		return false
+	}
+	if !h.requireWritable(w, r, tenantID, serviceID) {
+		return false
+	}
+	rows, err := h.db.QueryContext(r.Context(),
+		`SELECT bsa.asset_id FROM business_service_assets bsa
+		   JOIN business_services bs ON bs.id = bsa.service_id
+		  WHERE bs.tenant_id = $1 AND bsa.service_id = $2`, tenantID, serviceID)
+	if err != nil {
+		h.logger.Error("business service link scan", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []shared.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			continue
+		}
+		if id, perr := shared.IDFromString(raw); perr == nil {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		h.logger.Error("business service link rows", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	switch err := h.dataScope.RequireActOnAssets(r.Context(), tid, ids); {
+	case err == nil:
+		return true
+	case errors.Is(err, datascope.ErrActOutOfScope):
+		apierror.Forbidden("this service links assets outside your data scope").WriteJSON(w)
+	default:
+		h.logger.Error("business service scope check", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+	}
+	return false
+}
+
+// requireWritable answers 404 (written) unless the service is in the tenant
+// and the caller may change it: an unrestricted caller any service, a
+// restricted one a service visible to them or one with no linked asset (a
+// service they just created). A service they cannot see answers as an
+// unknown id does, never 403, so a write cannot probe for it.
+func (h *BusinessServiceHandler) requireWritable(w http.ResponseWriter, r *http.Request, tenantID, serviceID string) bool {
+	scope, err := h.readerScope(r, tenantID)
+	if err != nil {
+		h.logger.Error("business service write scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return false
+	}
+	visible, _, scopeArgs := serviceReadFrame(scope, 3)
+	var ok bool
+	if err := h.db.QueryRowContext(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM business_services
+		  WHERE tenant_id = $1 AND id = $2
+		    AND (`+visible+` OR NOT EXISTS (
+		        SELECT 1 FROM business_service_assets e
+		         WHERE e.tenant_id = $1 AND e.service_id = business_services.id)))`,
+		append([]any{tenantID, serviceID}, scopeArgs...)...,
+	).Scan(&ok); err != nil || !ok {
+		apierror.NotFound("business service").WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// readerScope returns the caller's data scope in tenantID (nil when the
+// caller is unrestricted or no enforcer is wired).
+func (h *BusinessServiceHandler) readerScope(r *http.Request, tenantID string) (*shared.DataScope, error) {
+	if h.dataScope == nil {
+		return nil, nil
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return h.dataScope.Resolve(r.Context(), tid)
+}
+
+// serviceReadFrame is how a read of business_services rows follows the
+// reader's scope, with its placeholders at $first (user id) and $first+1
+// (tenant id) and those arguments (none for a nil scope):
+//   - visible: the row predicate, research/233 D4 (TRUE unless the scope
+//     is restricted): a restricted reader sees a service only when it links
+//     an asset in their scope;
+//   - countCol: asset_count counting only the linked assets in the scope.
+func serviceReadFrame(scope *shared.DataScope, first int) (visible, countCol string, args []any) {
+	if scope == nil {
+		return "TRUE", businessServiceAssetCountColumn, nil
+	}
+	cond, args := filterspec.ScopeSQL("bsa.asset_id", scope, first)
+	countCol = `(SELECT COUNT(DISTINCT bsa.asset_id)
+		   FROM business_service_assets bsa
+		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = business_services.tenant_id
+		  WHERE bsa.service_id = business_services.id AND ` + cond + `) AS asset_count`
+	visible = "TRUE"
+	if scope.Restricted() {
+		visible, _ = filterspec.BusinessServiceVisibleSQL("business_services.id", scope, first)
+	}
+	return visible, countCol, args
+}
+
+// presentService prepares a service for the caller: a restricted reader
+// never gets the owner email (personal data).
+func presentService(bs *BusinessServiceResponse, scope *shared.DataScope) {
+	if scope.Restricted() {
+		bs.OwnerEmail = ""
+	}
+}
+
+// NewBusinessServiceHandler creates a new BusinessServiceHandler.
+func NewBusinessServiceHandler(db *sql.DB, log *logger.Logger) *BusinessServiceHandler {
+	return &BusinessServiceHandler{db: db, logger: log}
+}
+
+// List lists business services for the tenant.
+func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	page, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+
+	scope, err := h.readerScope(r, tenantID)
+	if err != nil {
+		h.logger.Error("business service list scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	// The list and its total hold only the services the reader sees.
+	totalVisible, _, totalArgs := serviceReadFrame(scope, 2)
+	var total int64
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT COUNT(*) FROM business_services WHERE tenant_id = $1 AND "+totalVisible,
+		append([]any{tenantID}, totalArgs...)...,
+	).Scan(&total); err != nil {
+		h.logger.Error("business service list count", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	visible, countCol, scopeArgs := serviceReadFrame(scope, 4)
+	rows, err := h.db.QueryContext(r.Context(),
+		`SELECT id, name, description, criticality, compliance_scope,
+		        handles_pii, handles_phi, handles_financial,
+		        availability_target, rpo_minutes, rto_minutes,
+		        owner_name, owner_email, created_at, updated_at,
+		        `+countCol+`
+		   FROM business_services
+		  WHERE tenant_id = $1 AND `+visible+`
+		  ORDER BY created_at DESC
+		  LIMIT $2 OFFSET $3`,
+		append([]any{tenantID, page.Limit(), page.Offset()}, scopeArgs...)...,
+	)
+	if err != nil {
+		h.logger.Error("business service list", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]BusinessServiceResponse, 0, pagination.MaxPerPage)
+	for rows.Next() {
+		bs, err := scanBusinessService(rows)
+		if err != nil {
+			h.logger.Error("business service scan", "error", err)
+			apierror.InternalServerError("internal error").WriteJSON(w)
+			return
+		}
+		presentService(&bs, scope)
+		items = append(items, bs)
+	}
+	if err := rows.Err(); err != nil {
+		h.logger.Error("business service rows", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pagination.NewResult(items, total, page))
+}
+
+// Get retrieves a single business service.
+func (h *BusinessServiceHandler) Get(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	scope, err := h.readerScope(r, tenantID)
+	if err != nil {
+		h.logger.Error("business service get scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	// A service the reader cannot see answers 404, as an unknown id does.
+	visible, countCol, scopeArgs := serviceReadFrame(scope, 3)
+	row := h.db.QueryRowContext(r.Context(),
+		`SELECT id, name, description, criticality, compliance_scope,
+		        handles_pii, handles_phi, handles_financial,
+		        availability_target, rpo_minutes, rto_minutes,
+		        owner_name, owner_email, created_at, updated_at,
+		        `+countCol+`
+		   FROM business_services
+		  WHERE tenant_id = $1 AND id = $2 AND `+visible,
+		append([]any{tenantID, id}, scopeArgs...)...,
+	)
+
+	bs, err := scanBusinessService(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			apierror.NotFound("business service").WriteJSON(w)
+			return
+		}
+		h.logger.Error("business service get", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	presentService(&bs, scope)
+
+	writeJSON(w, http.StatusOK, bs)
+}
+
+// Create creates a new business service.
+func (h *BusinessServiceHandler) Create(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req CreateBusinessServiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if req.Name == "" {
+		apierror.BadRequest("name is required").WriteJSON(w)
+		return
+	}
+
+	row := h.db.QueryRowContext(r.Context(),
+		`INSERT INTO business_services
+		        (tenant_id, name, description, criticality, compliance_scope,
+		         handles_pii, handles_phi, handles_financial,
+		         availability_target, rpo_minutes, rto_minutes,
+		         owner_name, owner_email)
+		 VALUES ($1, $2, $3, COALESCE(NULLIF($4,''), 'medium'), $5,
+		         COALESCE($6, false), COALESCE($7, false), COALESCE($8, false),
+		         $9, $10, $11, $12, $13)
+		 RETURNING id, name, description, criticality, compliance_scope,
+		           handles_pii, handles_phi, handles_financial,
+		           availability_target, rpo_minutes, rto_minutes,
+		           owner_name, owner_email, created_at, updated_at,
+		           `+businessServiceAssetCountColumn,
+		tenantID, req.Name, req.Description, req.Criticality,
+		pq.StringArray(req.ComplianceScope),
+		req.HandlesPII, req.HandlesPHI, req.HandlesFinancial,
+		nilFloat64(req.AvailabilityTarget), nilInt(req.RPOMinutes), nilInt(req.RTOMinutes),
+		req.OwnerName, req.OwnerEmail,
+	)
+
+	bs, err := scanBusinessService(row)
+	if err != nil {
+		h.logger.Error("business service create", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	if scope, err := h.readerScope(r, tenantID); err != nil || scope.Restricted() {
+		bs.OwnerEmail = ""
+	}
+
+	writeJSON(w, http.StatusCreated, bs)
+}
+
+// Update updates an existing business service.
+func (h *BusinessServiceHandler) Update(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req CreateBusinessServiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if req.Name == "" {
+		apierror.BadRequest("name is required").WriteJSON(w)
+		return
+	}
+	if !h.requireActOnLinks(w, r, tenantID, id) {
+		return
+	}
+	scope, err := h.readerScope(r, tenantID)
+	if err != nil {
+		h.logger.Error("business service update scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	// The owner email is hidden from a restricted caller, so their edit
+	// form never holds it: $15 keeps the stored value.
+	_, countCol, scopeArgs := serviceReadFrame(scope, 16)
+
+	row := h.db.QueryRowContext(r.Context(),
+		`UPDATE business_services
+		    SET name = $3, description = $4,
+		        criticality = COALESCE(NULLIF($5,''), criticality),
+		        compliance_scope = $6,
+		        handles_pii = COALESCE($7, handles_pii),
+		        handles_phi = COALESCE($8, handles_phi),
+		        handles_financial = COALESCE($9, handles_financial),
+		        availability_target = $10,
+		        rpo_minutes = $11,
+		        rto_minutes = $12,
+		        owner_name = $13,
+		        owner_email = CASE WHEN $15::boolean THEN owner_email ELSE $14 END,
+		        updated_at = NOW()
+		  WHERE tenant_id = $1 AND id = $2
+		 RETURNING id, name, description, criticality, compliance_scope,
+		           handles_pii, handles_phi, handles_financial,
+		           availability_target, rpo_minutes, rto_minutes,
+		           owner_name, owner_email, created_at, updated_at,
+		           `+countCol,
+		append([]any{tenantID, id, req.Name, req.Description, req.Criticality,
+			pq.StringArray(req.ComplianceScope),
+			req.HandlesPII, req.HandlesPHI, req.HandlesFinancial,
+			nilFloat64(req.AvailabilityTarget), nilInt(req.RPOMinutes), nilInt(req.RTOMinutes),
+			req.OwnerName, req.OwnerEmail, scope.Restricted()}, scopeArgs...)...,
+	)
+
+	bs, err := scanBusinessService(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			apierror.NotFound("business service").WriteJSON(w)
+			return
+		}
+		h.logger.Error("business service update", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	presentService(&bs, scope)
+
+	writeJSON(w, http.StatusOK, bs)
+}
+
+// Delete deletes a business service.
+func (h *BusinessServiceHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+	if !h.requireActOnLinks(w, r, tenantID, id) {
+		return
+	}
+
+	// RETURNING gives the stored name of the row this tenant owned.
+	var name string
+	err := h.db.QueryRowContext(r.Context(),
+		"DELETE FROM business_services WHERE tenant_id = $1 AND id = $2 RETURNING name",
+		tenantID, id,
+	).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		apierror.NotFound("business service").WriteJSON(w)
+		return
+	}
+	if err != nil {
+		h.logger.Error("business service delete", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	h.recordDeleted(r, h.logger, auditdom.ActionBusinessServiceDeleted, auditdom.ResourceTypeBusinessService,
+		id, name, "Business service deleted")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// LinkAsset links an asset to a business service.
+// Validates both the service and the asset belong to the tenant.
+func (h *BusinessServiceHandler) LinkAsset(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	var req struct {
+		AssetID        string `json:"asset_id"`
+		DependencyType string `json:"dependency_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if req.AssetID == "" {
+		apierror.BadRequest("asset_id is required").WriteJSON(w)
+		return
+	}
+	// Mirrors the business_service_assets.dependency_type CHECK; empty means
+	// the column default (runs_on).
+	switch req.DependencyType {
+	case "", "runs_on", "depends_on", "stores_data_in", "authenticates_via", "monitors":
+	default:
+		apierror.BadRequest("dependency_type must be one of: runs_on, depends_on, stores_data_in, authenticates_via, monitors").WriteJSON(w)
+		return
+	}
+
+	// Verify the service belongs to the tenant and the caller may change it.
+	if !h.requireWritable(w, r, tenantID, id) {
+		return
+	}
+
+	// Verify asset belongs to the same tenant before linking.
+	var assetExists bool
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT EXISTS(SELECT 1 FROM assets WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL)",
+		tenantID, req.AssetID,
+	).Scan(&assetExists); err != nil || !assetExists || !h.assetInScope(r, tenantID, req.AssetID) {
+		apierror.NotFound("asset not found").WriteJSON(w)
+		return
+	}
+
+	_, err := h.db.ExecContext(r.Context(),
+		`INSERT INTO business_service_assets (tenant_id, service_id, asset_id, dependency_type)
+		 VALUES ($1, $2, $3, COALESCE(NULLIF($4,''), 'runs_on'))
+		 ON CONFLICT DO NOTHING`,
+		tenantID, id, req.AssetID, req.DependencyType,
+	)
+	if err != nil {
+		h.logger.Error("business service link asset", "error", err, "asset_id", req.AssetID)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UnlinkAsset removes an asset-service link.
+func (h *BusinessServiceHandler) UnlinkAsset(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+	assetID := chi.URLParam(r, "assetId")
+
+	// Verify the service belongs to the tenant and the caller may change it
+	// before any mutation.
+	if !h.requireWritable(w, r, tenantID, id) {
+		return
+	}
+	if !h.assetInScope(r, tenantID, assetID) {
+		apierror.NotFound("link not found").WriteJSON(w)
+		return
+	}
+
+	res, err := h.db.ExecContext(r.Context(),
+		`DELETE FROM business_service_assets
+		  WHERE tenant_id = $1 AND service_id = $2 AND asset_id = $3`,
+		tenantID, id, assetID,
+	)
+	if err != nil {
+		h.logger.Error("business service unlink asset", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		apierror.NotFound("link not found").WriteJSON(w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListAssets lists assets linked to a business service.
+func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	// Verify the service belongs to the tenant and is visible to the reader.
+	scope, err := h.readerScope(r, tenantID)
+	if err != nil {
+		h.logger.Error("business service list assets scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	visible, _, scopeArgs := serviceReadFrame(scope, 3)
+	var serviceExists bool
+	if err := h.db.QueryRowContext(r.Context(),
+		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2 AND "+visible+")",
+		append([]any{tenantID, id}, scopeArgs...)...,
+	).Scan(&serviceExists); err != nil || !serviceExists {
+		apierror.NotFound("business service").WriteJSON(w)
+		return
+	}
+
+	items, err := listBusinessServiceAssets(r.Context(), h.db, tenantID, id, maxBusinessServiceAssets)
+	if err != nil {
+		h.logger.Error("business service list assets", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+
+	items, err = filterLinksInScope(r, h.dataScope, tenantID, items, func(l BusinessServiceAssetLink) string { return l.AssetID })
+	if err != nil {
+		h.logger.Error("business service asset scope", "error", err)
+		apierror.InternalServerError("internal error").WriteJSON(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+// maxBusinessServiceAssets bounds the assets one business service lists.
+const maxBusinessServiceAssets = 1000
+
+// listBusinessServiceAssets reads at most limit asset links of one business
+// service of the tenant, newest first.
+func listBusinessServiceAssets(ctx context.Context, db *sql.DB, tenantID, serviceID string, limit int) ([]BusinessServiceAssetLink, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT bsa.asset_id, bsa.dependency_type, bsa.created_at,
+		        a.name, a.asset_type
+		   FROM business_service_assets bsa
+		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL
+		  WHERE bsa.tenant_id = $1 AND bsa.service_id = $2
+		  ORDER BY bsa.created_at DESC, bsa.id DESC
+		  LIMIT $3`,
+		tenantID, serviceID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]BusinessServiceAssetLink, 0)
+	for rows.Next() {
+		var link BusinessServiceAssetLink
+		if err := rows.Scan(
+			&link.AssetID, &link.DependencyType, &link.CreatedAt,
+			&link.AssetName, &link.AssetType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, link)
+	}
+	return items, rows.Err()
+}
+
+// ─── Request/Response Types ───
+
+// CreateBusinessServiceRequest is the request body for create/update.
+type CreateBusinessServiceRequest struct {
+	Name               string   `json:"name"`
+	Description        string   `json:"description"`
+	Criticality        string   `json:"criticality"`
+	ComplianceScope    []string `json:"compliance_scope"`
+	HandlesPII         *bool    `json:"handles_pii"`
+	HandlesPHI         *bool    `json:"handles_phi"`
+	HandlesFinancial   *bool    `json:"handles_financial"`
+	AvailabilityTarget *float64 `json:"availability_target"`
+	RPOMinutes         *int     `json:"rpo_minutes"`
+	RTOMinutes         *int     `json:"rto_minutes"`
+	OwnerName          string   `json:"owner_name"`
+	OwnerEmail         string   `json:"owner_email"`
+}
+
+// BusinessServiceResponse is the JSON response for a business service.
+type BusinessServiceResponse struct {
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description"`
+	Criticality        string    `json:"criticality"`
+	ComplianceScope    []string  `json:"compliance_scope"`
+	HandlesPII         bool      `json:"handles_pii"`
+	HandlesPHI         bool      `json:"handles_phi"`
+	HandlesFinancial   bool      `json:"handles_financial"`
+	AvailabilityTarget float64   `json:"availability_target,omitempty"`
+	RPOMinutes         int       `json:"rpo_minutes,omitempty"`
+	RTOMinutes         int       `json:"rto_minutes,omitempty"`
+	OwnerName          string    `json:"owner_name,omitempty"`
+	OwnerEmail         string    `json:"owner_email,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	// AssetCount is the number of distinct assets linked to the service.
+	AssetCount int `json:"asset_count"`
+}
+
+// BusinessServiceAssetLink is the JSON response describing an asset link.
+type BusinessServiceAssetLink struct {
+	AssetID        string    `json:"asset_id"`
+	AssetName      string    `json:"asset_name"`
+	AssetType      string    `json:"asset_type"`
+	DependencyType string    `json:"dependency_type"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// businessServiceAssetCountColumn is the number of distinct tenant assets
+// linked to the service, as a correlated subquery on the business_services
+// row (List, Get, and the RETURNING of Create/Update), so a list page costs
+// one query. scanBusinessService reads it last.
+const businessServiceAssetCountColumn = `(SELECT COUNT(DISTINCT bsa.asset_id)
+		   FROM business_service_assets bsa
+		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = business_services.tenant_id
+		  WHERE bsa.service_id = business_services.id) AS asset_count`
+
+// rowScanner matches both *sql.Row and *sql.Rows Scan signatures.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanBusinessService scans a business service row into a response DTO.
+func scanBusinessService(s rowScanner) (BusinessServiceResponse, error) {
+	var bs BusinessServiceResponse
+	var (
+		desc, criticality, ownerName, ownerEmail sql.NullString
+		complianceScope                          pq.StringArray
+		availabilityTarget                       sql.NullFloat64
+		rpoMinutes, rtoMinutes                   sql.NullInt64
+	)
+
+	err := s.Scan(
+		&bs.ID, &bs.Name, &desc, &criticality, &complianceScope,
+		&bs.HandlesPII, &bs.HandlesPHI, &bs.HandlesFinancial,
+		&availabilityTarget, &rpoMinutes, &rtoMinutes,
+		&ownerName, &ownerEmail, &bs.CreatedAt, &bs.UpdatedAt,
+		&bs.AssetCount,
+	)
+	if err != nil {
+		return bs, err
+	}
+
+	bs.Description = desc.String
+	bs.Criticality = criticality.String
+	bs.ComplianceScope = []string(complianceScope)
+	if bs.ComplianceScope == nil {
+		bs.ComplianceScope = []string{}
+	}
+	bs.AvailabilityTarget = availabilityTarget.Float64
+	bs.RPOMinutes = int(rpoMinutes.Int64)
+	bs.RTOMinutes = int(rtoMinutes.Int64)
+	bs.OwnerName = ownerName.String
+	bs.OwnerEmail = ownerEmail.String
+	return bs, nil
+}
+
+// nilFloat64 returns nil interface if pointer is nil, otherwise the value.
+func nilFloat64(f *float64) any {
+	if f == nil {
+		return nil
+	}
+	return *f
+}
+
+// nilInt returns nil interface if pointer is nil, otherwise the value.
+func nilInt(i *int) any {
+	if i == nil {
+		return nil
+	}
+	return *i
+}

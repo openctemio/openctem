@@ -33,7 +33,7 @@ export PATH="$tmp/bin:$PATH" DEV_FILE="$tmp/dev.json" MAIN_FILE="$tmp/main.json"
 new_repo "$tmp/r"
 git -C "$tmp/r" checkout -q -b develop
 commit "$tmp/r" "init" a.txt
-mig() { mkdir -p "$tmp/r/api/migrations"; : >"$tmp/r/api/migrations/$1_$2.up.sql"; : >"$tmp/r/api/migrations/$1_$2.down.sql"; git -C "$tmp/r" add -A; git -C "$tmp/r" commit -q -m "migration $1"; }
+mig() { mkdir -p "$tmp/r/server/migrations"; : >"$tmp/r/server/migrations/$1_$2.up.sql"; : >"$tmp/r/server/migrations/$1_$2.down.sql"; git -C "$tmp/r" add -A; git -C "$tmp/r" commit -q -m "migration $1"; }
 mig 000010 first
 git -C "$tmp/r" tag -a v0.1.0 -m v0.1.0
 alert() { echo "{\"number\":$1,\"html_url\":\"https://example.invalid/$1\",\"rule\":{\"id\":\"go/x$1\",\"security_severity_level\":\"$2\"},\"most_recent_instance\":{\"location\":{\"path\":\"a.go\",\"start_line\":3}}}"; }
@@ -73,8 +73,8 @@ assert_eq "a migration below the last release's highest blocks" 1 "$rc"
 
 # Release lines: only compatibility facts block; a stale latest never does.
 printf 'sensor:\n  product: openctemio-sensor\n  latest: v0.2.0\n  min: v0.1.0\n  image: ghcr.io/openctemio/sensor\nsdk:\n  latest: v0.5.0\n  min: ""\nci:\n  latest: v0.3.1\n  min: v0.3.0\n' >"$tmp/r/versions.yaml"
-git -C "$tmp/r" rm -q --cached -r api/migrations/000009_late.up.sql api/migrations/000009_late.down.sql >/dev/null 2>&1
-rm -f "$tmp/r/api/migrations/000009_late."*
+git -C "$tmp/r" rm -q --cached -r server/migrations/000009_late.up.sql server/migrations/000009_late.down.sql >/dev/null 2>&1
+rm -f "$tmp/r/server/migrations/000009_late."*
 git -C "$tmp/r" add -A; git -C "$tmp/r" commit -q -m manifest
 git -C "$tmp/r" tag -a v0.1.1 -m v0.1.1
 out="$(pre)"; rc=$?

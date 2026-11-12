@@ -1,0 +1,27 @@
+--- a/.github/scripts/codeql-new-alerts.sh
++++ b/.github/scripts/codeql-new-alerts.sh
+@@ -47,6 +47,24 @@
+ 
+ new="$(jq -n --slurpfile pr "$work/pr.json" --slurpfile base "$work/base.json" \
+   '($base[0] | map(.number)) as $b | $pr[0] | map(select(.number as $n | $b | index($n) | not))')"
++# The backend directory rename (old directory to server/) moves every Go file,
++# and code scanning fingerprints include the path, so every existing alert
++# would look new on that one pull request. An alert whose rule and file (read
++# with server/ as the old directory) the base already has, open or dismissed,
++# as often, is the base's own. Base paths are not mapped: once the base has server/ too, this
++# matches nothing and the gate is as strict as before.
++# Alerts dismissed on the base (a reviewed false positive) open again under the
++# new path, so they count as the base's own as well.
++gh api --paginate "repos/${REPO}/code-scanning/alerts?ref=refs/heads/${BASE_REF}&state=dismissed&per_page=100" \
++  | jq -s "add // [] | ${sev}" >"$work/base-dismissed.json" 2>/dev/null || echo '[]' >"$work/base-dismissed.json"
++new="$(jq -n --arg od "api" --argjson new "$new" --slurpfile base "$work/base.json" --slurpfile dis "$work/base-dismissed.json" '
++  def key: .rule.id + "|" + (.most_recent_instance.location.path // "");
++  def oldkey: .rule.id + "|" + ((.most_recent_instance.location.path // "") | sub("^server/"; $od + "/"));
++  (($base[0] + $dis[0]) | map(key) | group_by(.) | map({key: .[0], value: length}) | from_entries) as $have
++  | ($new | group_by(oldkey)) | map(
++      (.[0] | oldkey) as $k
++      | if (.[0].most_recent_instance.location.path // "" | startswith("server/")) and (($have[$k] // 0) >= length)
++        then [] else . end) | add // []')"
+ count="$(jq 'length' <<<"$new")"
+ 
+ if [[ "$count" -eq 0 ]]; then

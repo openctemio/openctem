@@ -32,7 +32,7 @@ interface InformationalChipProps {
  * Informational findings are never hidden silently: while the list leaves them
  * out, a quiet chip says how many and offers Show (for this view). After Show,
  * it offers Hide again and to keep showing them as the person's own default
- * (api/docs/architecture/findings-work-views.md).
+ * (server/docs/architecture/findings-work-views.md).
  */
 export function InformationalChip({
   filters,

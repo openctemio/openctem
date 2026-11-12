@@ -1,0 +1,34 @@
+package scanrun
+
+import "github.com/openctemio/openctem/server/pkg/domain/shared"
+
+// RunContextKeyScanZoneID is the run-context key carrying the scan zone a
+// workflow run was routed to (RFC-023). Every step command of such a run is
+// stamped with the zone, so only sensors assigned to it can claim the step.
+const RunContextKeyScanZoneID = "scan_zone_id"
+
+// ScanZoneFromContext returns the zone a run was routed to, or nil.
+func ScanZoneFromContext(runContext map[string]any) *shared.ID {
+	raw, ok := runContext[RunContextKeyScanZoneID].(string)
+	if !ok || raw == "" {
+		return nil
+	}
+	id, err := shared.IDFromString(raw)
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+// RunContextKeyIntensity holds the scan intensity a run started with
+// (RFC-071): "passive", "active" or "intrusive". Absent: no ceiling beyond
+// the dispatch gate (a workflow run started without a scan).
+const RunContextKeyIntensity = "intensity"
+
+// RunContextKeyDepth holds the depth a run started with ("passive",
+// "standard" or "deep"; scanworkflow.Depth). Absent: standard.
+const RunContextKeyDepth = "depth"
+
+// RunContextKeyStepParams holds the scan's per-step overrides of standard
+// params at the time the run started (scan.StepParams).
+const RunContextKeyStepParams = "step_params"

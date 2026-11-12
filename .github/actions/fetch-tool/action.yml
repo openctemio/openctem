@@ -16,7 +16,7 @@
 #
 # The download is kept in the GitHub Actions cache, so a run downloads it only
 # on a cache miss and an outage of GitHub release downloads does not fail CI
-# (api/docs/development/ci-cd.md, "Pinned tool downloads").
+# (server/docs/development/ci-cd.md, "Pinned tool downloads").
 #
 # Threat model: the download is executable code. It is checked against the
 # pinned SHA-256 on every run, cache hit or miss, before anything is extracted

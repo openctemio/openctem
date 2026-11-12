@@ -1,0 +1,192 @@
+package handler
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+type fakeEASMSettingsStore struct {
+	es      tenant.EASMSettings
+	tenants []string
+	saved   int
+}
+
+func (f *fakeEASMSettingsStore) GetEASMSettings(_ context.Context, id string) (*tenant.EASMSettings, error) {
+	f.tenants = append(f.tenants, id)
+	es := f.es
+	return &es, nil
+}
+
+func (f *fakeEASMSettingsStore) UpdateEASMSettings(_ context.Context, id string, es tenant.EASMSettings, _ auditapp.AuditContext) (*tenant.EASMSettings, error) {
+	f.tenants = append(f.tenants, id)
+	f.saved++
+	f.es = es
+	return &es, nil
+}
+
+type fakeSweeper struct {
+	until   time.Time
+	tooSoon bool
+	tenants []shared.ID
+}
+
+func (f *fakeSweeper) RunNow(_ context.Context, id shared.ID) (*easmapp.SweepTicket, time.Time, error) {
+	f.tenants = append(f.tenants, id)
+	if f.tooSoon {
+		return nil, f.until, easmapp.ErrSweepTooSoon
+	}
+	return &easmapp.SweepTicket{StartedAt: time.Now(), CTIncluded: true, DNSIncluded: true}, time.Time{}, nil
+}
+
+// research/22 P0-11: settings are read and written for the token's tenant,
+// the floor is enforced (1 h → 400, nothing saved), run-now answers 202 and
+// is audited, and a second one within 15 minutes is 429 with Retry-After.
+func TestEASMSettingsHandler(t *testing.T) {
+	tenantID := shared.NewID()
+	store := &fakeEASMSettingsStore{es: tenant.EASMSettings{CTDisabled: true}}
+	sw := &fakeSweeper{}
+	aud := &settingsAudit{}
+	h := NewEASMSettingsHandler(store, nil, sw, EASMPlatform{CTAvailable: true, DNSAvailable: true, CTDefaultHrs: 24, DNSDefaultHrs: 24}, aud, logger.NewNop())
+
+	w := httptest.NewRecorder()
+	h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ct_enabled":false`) ||
+		!strings.Contains(w.Body.String(), `"dns_checks_enabled":true`) || !strings.Contains(w.Body.String(), `"ct_effective_interval_hours":24`) {
+		t.Fatalf("get: %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true,"ct_interval_hours":1}`, tenantID, "u1"))
+	if w.Code != http.StatusBadRequest || store.saved != 0 {
+		t.Fatalf("floor: %d saved=%d", w.Code, store.saved)
+	}
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":false,"ct_interval_hours":6}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || store.es.CTDisabled || !store.es.DNSChecksDisabled || store.es.CTIntervalHours != 6 {
+		t.Fatalf("update: %d %+v", w.Code, store.es)
+	}
+	for _, id := range store.tenants {
+		if id != tenantID.String() {
+			t.Fatal("another tenant reached the store")
+		}
+	}
+
+	w = httptest.NewRecorder()
+	h.RunNow(w, seedReq(http.MethodPost, "/", "", tenantID, "u1"))
+	if w.Code != http.StatusAccepted || len(sw.tenants) != 1 || sw.tenants[0] != tenantID {
+		t.Fatalf("run-now: %d %v", w.Code, sw.tenants)
+	}
+	if len(aud.actions) != 1 || aud.actions[0] != auditdom.ActionEASMSweepRequested {
+		t.Fatalf("audit = %v", aud.actions)
+	}
+	sw.tooSoon, sw.until = true, time.Now().Add(10*time.Minute)
+	w = httptest.NewRecorder()
+	h.RunNow(w, seedReq(http.MethodPost, "/", "", tenantID, "u1"))
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" || len(aud.actions) != 1 {
+		t.Fatalf("second run-now: %d %q audits=%d", w.Code, w.Header().Get("Retry-After"), len(aud.actions))
+	}
+}
+
+// CT monitoring the platform cannot run says why: the platform makes no CT
+// request itself, so without a platform sensor the switch has no effect.
+func TestEASMSettingsHandler_CTUnavailableReason(t *testing.T) {
+	tenantID := shared.NewID()
+	h := NewEASMSettingsHandler(&fakeEASMSettingsStore{}, nil, &fakeSweeper{},
+		EASMPlatform{CTUnavailableReason: "needs_platform_sensor", DNSAvailable: true}, &settingsAudit{}, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ct_available":false`) ||
+		!strings.Contains(w.Body.String(), `"ct_unavailable_reason":"needs_platform_sensor"`) {
+		t.Fatalf("get: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// CT availability follows the platform sensors per request: a sensor that
+// serves CT lookups connecting later turns it on without a restart.
+func TestEASMSettingsHandler_CTAvailabilityIsLive(t *testing.T) {
+	tenantID := shared.NewID()
+	sensorUp := false
+	h := NewEASMSettingsHandler(&fakeEASMSettingsStore{}, nil, &fakeSweeper{},
+		EASMPlatform{DNSAvailable: true, CTAvailability: func(context.Context) (bool, string) {
+			if sensorUp {
+				return true, ""
+			}
+			return false, "needs_platform_sensor"
+		}}, &settingsAudit{}, logger.NewNop())
+	get := func() string {
+		w := httptest.NewRecorder()
+		h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+		return w.Body.String()
+	}
+	if b := get(); !strings.Contains(b, `"ct_available":false`) || !strings.Contains(b, `"ct_unavailable_reason":"needs_platform_sensor"`) {
+		t.Fatalf("no sensor: %s", b)
+	}
+	sensorUp = true
+	if b := get(); !strings.Contains(b, `"ct_available":true`) || strings.Contains(b, `ct_unavailable_reason`) {
+		t.Fatalf("sensor connected: %s", b)
+	}
+}
+
+type settingsAudit struct{ actions []auditdom.Action }
+
+func (c *settingsAudit) LogEvent(_ context.Context, _ auditapp.AuditContext, e auditapp.AuditEvent) error {
+	c.actions = append(c.actions, e.Action)
+	return nil
+}
+
+func seedReq(method, target, body string, tenant shared.ID, user string) *http.Request {
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenant.String())
+	ctx = context.WithValue(ctx, middleware.UserIDKey, user)
+	return req.WithContext(ctx)
+}
+
+// Automatic enrichment (docs/architecture/asset-freshness.md): on by
+// default; a PUT without the field keeps the stored value (older clients
+// never turn it off by omission); an explicit false turns it off.
+func TestEASMSettingsHandler_Enrichment(t *testing.T) {
+	tenantID := shared.NewID()
+	store := &fakeEASMSettingsStore{}
+	h := NewEASMSettingsHandler(store, nil, &fakeSweeper{}, EASMPlatform{EnrichmentAvailable: true}, &settingsAudit{}, logger.NewNop())
+
+	w := httptest.NewRecorder()
+	h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+	if !strings.Contains(w.Body.String(), `"enrichment_enabled":true`) || !strings.Contains(w.Body.String(), `"enrichment_available":true`) {
+		t.Fatalf("default: %s", w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true,"enrichment_enabled":false}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || !store.es.EnrichmentDisabled {
+		t.Fatalf("turn off: %d %+v", w.Code, store.es)
+	}
+
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || !store.es.EnrichmentDisabled {
+		t.Fatalf("omitted field changed the stored value: %d %+v", w.Code, store.es)
+	}
+
+	w = httptest.NewRecorder()
+	h.Update(w, seedReq(http.MethodPut, "/", `{"ct_enabled":true,"dns_checks_enabled":true,"enrichment_enabled":true}`, tenantID, "u1"))
+	if w.Code != http.StatusOK || store.es.EnrichmentDisabled {
+		t.Fatalf("turn on: %d %+v", w.Code, store.es)
+	}
+	for _, id := range store.tenants {
+		if id != tenantID.String() {
+			t.Fatalf("settings of tenant %s touched", id)
+		}
+	}
+}

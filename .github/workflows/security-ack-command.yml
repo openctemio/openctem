@@ -3,7 +3,7 @@ name: Security Ack Command
 # `/security-ack` and `/security-unack` as a pull request comment: a listed
 # acker adds or removes the `security-ack` label from the GitHub mobile app or
 # an e-mail reply, and the workflow reacts +1 (ack) or -1 (unack) to the
-# comment. Guide: api/docs/development/ci-cd.md#security-gate.
+# comment. Guide: server/docs/development/ci-cd.md#security-gate.
 #
 # Safety:
 # - `issue_comment` runs THIS FILE FROM THE DEFAULT BRANCH, never from the pull

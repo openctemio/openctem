@@ -24,7 +24,7 @@
 # Area mode (TREE_AREA and TREE_PATHS set; used by API CI, Web CI and Web E2E).
 # The tree of the whole repository rarely repeats, because the merge queue keeps
 # adding other pull requests. What a workflow tests is only the part it watches
-# (for API CI: api/ and the shared files). In area mode the "tree" is the list
+# (for API CI: server/ and the shared files). In area mode the "tree" is the list
 # of the git object ids of TREE_PATHS (the area id), and the record is
 # `openctem-tested-area <TREE_AREA> <area id>`. A candidate then also covers a
 # commit of the queue ahead of us or of develop that differs elsewhere (a
@@ -46,7 +46,7 @@
 # Trust: only check runs of the github-actions app count (a status or check run
 # posted by any other integration is ignored), annotations are read only from
 # those runs, and a fork pull request never reaches the queue. See
-# api/docs/development/ci-cd.md ("Reusing a verified tree").
+# server/docs/development/ci-cd.md ("Reusing a verified tree").
 #
 # Env: EVENT (github.event_name), SHA (github.sha), HEAD_REF (merge_group.head_ref),
 #   REPO, GH_TOKEN (checks: read, pull-requests: read), TREE_EVENTS (default

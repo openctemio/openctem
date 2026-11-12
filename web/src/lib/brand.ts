@@ -1,7 +1,7 @@
 /**
  * The product brand of this installation: the name, logos, color and links
  * people see. The API serves it at the public GET /api/v1/brand (server
- * configuration, the same for every organization; api/docs/architecture/brand.md).
+ * configuration, the same for every organization; server/docs/architecture/brand.md).
  * The web reads it on the server per request (short cache) and hands it to
  * the client through BrandProvider. When the API cannot be reached, or a
  * value is not safe to use, the OpenCTEM defaults apply.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # create-repositories.sh <nexus-url>: creates the Nexus Repository 3
 # repositories of this folder through the REST API.
-# Guide: api/docs/deployment/air-gapped.md ("Nexus proxies").
+# Guide: server/docs/deployment/air-gapped.md ("Nexus proxies").
 #
 #   NEXUS_USER=admin NEXUS_PASSWORD_FILE=/run/secrets/nexus ./create-repositories.sh https://nexus.example.internal
 #

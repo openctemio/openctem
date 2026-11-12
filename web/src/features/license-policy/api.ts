@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The organization's license policy (api/docs/rfcs/RFC-070-software-components-inventory.md,
+ * The organization's license policy (server/docs/rfcs/RFC-070-software-components-inventory.md,
  * "License policy"). Reading needs settings:read, saving settings:write;
  * a save re-evaluates every package and its license findings.
  */

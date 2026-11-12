@@ -343,7 +343,7 @@ nothing runs:
   `sso_state` cookie set when this browser started the flow, so a callback
   URL from another browser's flow is refused.
 - **API.** The `/api/v1` proxy forwards the pair, and the API's own
-  double-submit check (`api/internal/infra/http/middleware/csrf.go`) runs on
+  double-submit check (`server/internal/infra/http/middleware/csrf.go`) runs on
   every cookie-authenticated write.
 
 ---

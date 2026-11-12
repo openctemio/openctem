@@ -1,6 +1,6 @@
 name: Release Reminder
 
-# Every other Monday (api/docs/rfcs/RFC-037 §4.1): open or update the issue
+# Every other Monday (server/docs/rfcs/RFC-037 §4.1): open or update the issue
 # "Release train vX.Y.Z" with the proposed version, the develop commit the
 # train would take, a changelog preview and the checklist. It never releases:
 # the owner runs Release Train.
@@ -114,7 +114,7 @@ jobs:
             echo "- [ ] Read the changelog preview below. A feature merged with a \`fix:\` title counts as a patch: override the version if needed."
             echo "- [ ] [Run Release Train](${run_url}) (\`dry_run\` first if you want to see the plan). Use the workflow from \`develop\` until a release has brought it to \`main\`."
             echo "- [ ] The release PR merges through the merge queue (merge commit, never squash)."
-            echo "- [ ] In the follow-up PR to develop run \`GH_TOKEN=\$(gh auth token) python3 .github/scripts/release/fragment-labels.py --out /tmp/labels.json\`, then \`python3 api/scripts/changelog.py release ${VERSION} --labels /tmp/labels.json\` (the labels add an Upgrade notes block for migrations, destructive migrations, identity and API contract changes), so every fragment in \`api/changelog.d/\` is folded into \`api/CHANGELOG.md\` and deleted."
+            echo "- [ ] In the follow-up PR to develop run \`GH_TOKEN=\$(gh auth token) python3 .github/scripts/release/fragment-labels.py --out /tmp/labels.json\`, then \`python3 server/scripts/changelog.py release ${VERSION} --labels /tmp/labels.json\` (the labels add an Upgrade notes block for migrations, destructive migrations, identity and API contract changes), so every fragment in \`server/changelog.d/\` is folded into \`server/CHANGELOG.md\` and deleted."
             echo "- [ ] Merge the follow-up PRs: develop (main merged back, no file change; trains only) and helm-charts (appVersion)."
             echo "- [ ] Release notes or an upgrade page in openctemio/docs, if this release needs one."
             echo

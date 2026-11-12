@@ -1,0 +1,322 @@
+package storage
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"os"
+	"path"
+	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+// S3Storage stores files in S3-compatible object storage (AWS S3, MinIO, etc).
+// Object key layout: {tenantID}/{storageKey}
+type S3Storage struct {
+	client   *s3.Client
+	bucket   string
+	endpoint string // empty: AWS S3
+	// Server-side encryption asked for on every write (operator storage).
+	sse      types.ServerSideEncryption
+	sseKMSID string
+}
+
+// SetServerSideEncryption asks the bucket to encrypt every object written:
+// mode "AES256" (keys managed by the store) or "aws:kms" (kmsKeyID optional:
+// the bucket's default KMS key when empty); "" leaves it to the bucket's
+// default encryption.
+func (s *S3Storage) SetServerSideEncryption(mode, kmsKeyID string) error {
+	if (mode != "" || kmsKeyID != "") && attachment.IsR2Endpoint(s.endpoint) {
+		return errors.New(attachment.ErrR2SSE)
+	}
+	switch mode {
+	case "":
+		if kmsKeyID != "" {
+			return fmt.Errorf("a KMS key id needs server-side encryption aws:kms")
+		}
+		s.sse, s.sseKMSID = "", ""
+	case string(types.ServerSideEncryptionAes256):
+		if kmsKeyID != "" {
+			return fmt.Errorf("a KMS key id needs server-side encryption aws:kms, not AES256")
+		}
+		s.sse, s.sseKMSID = types.ServerSideEncryptionAes256, ""
+	case string(types.ServerSideEncryptionAwsKms):
+		s.sse, s.sseKMSID = types.ServerSideEncryptionAwsKms, kmsKeyID
+	default:
+		return fmt.Errorf("server-side encryption must be AES256 or aws:kms, got %q", mode)
+	}
+	return nil
+}
+
+// NewS3Storage creates an S3 storage provider for a tenant-configured bucket.
+// For MinIO: set endpoint to MinIO URL (e.g., "https://minio.corp:9000").
+// For AWS S3: leave endpoint empty (uses default AWS endpoint).
+//
+// The tenant's keys are required and nothing is loaded from the server's
+// environment (no default credential chain, profiles or AWS_ENDPOINT_URL);
+// the endpoint is checked by the SSRF guard and every request is dialed
+// through it.
+func NewS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Storage, error) {
+	if bucket == "" {
+		return nil, fmt.Errorf("S3 bucket name is required")
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("S3 storage requires the tenant's access key and secret key")
+	}
+	if endpoint != "" {
+		if err := checkS3Endpoint(endpoint); err != nil {
+			return nil, fmt.Errorf("S3 endpoint blocked: %w", err)
+		}
+	}
+	return newS3Storage(bucket, region, endpoint, accessKey, secretKey, s3HTTPClient()), nil
+}
+
+// NewOperatorS3Storage creates the server-wide attachment storage the operator
+// configured (STORAGE_PROVIDER=s3|minio, STORAGE_BUCKET, STORAGE_REGION,
+// STORAGE_ENDPOINT, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY). Unlike a tenant
+// bucket, the endpoint is the operator's own configuration, so it may be a
+// private address (an in-cluster MinIO) and is not run through the SSRF guard.
+// Static keys are required: nothing is taken from the ambient AWS environment.
+func NewOperatorS3Storage(bucket, region, endpoint, accessKey, secretKey string) (*S3Storage, error) {
+	if bucket == "" {
+		return nil, fmt.Errorf("STORAGE_BUCKET is required for STORAGE_PROVIDER=s3/minio")
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY are required for STORAGE_PROVIDER=s3/minio")
+	}
+	return newS3Storage(bucket, region, endpoint, accessKey, secretKey, nil), nil
+}
+
+// newS3Storage builds the client. httpClient nil = the SDK's default client.
+func newS3Storage(bucket, region, endpoint, accessKey, secretKey string, httpClient aws.HTTPClient) *S3Storage {
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	cfg := aws.Config{
+		Region:      region,
+		Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	}
+	if endpoint != "" {
+		// S3-compatible stores (R2, MinIO, ...) reject the aws-chunked
+		// trailing CRC32 the SDK sends by default over HTTPS; compute and
+		// validate checksums only where an operation requires them. AWS
+		// S3 (no endpoint) keeps the SDK defaults.
+		cfg.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+		cfg.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+	}
+	if httpClient != nil {
+		cfg.HTTPClient = httpClient
+	}
+
+	clientOpts := []func(*s3.Options){}
+	if endpoint != "" {
+		// MinIO or custom S3-compatible endpoint
+		clientOpts = append(clientOpts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(endpoint)
+			o.UsePathStyle = true // MinIO requires path-style
+		})
+	}
+
+	return &S3Storage{client: s3.NewFromConfig(cfg, clientOpts...), bucket: bucket, endpoint: endpoint}
+}
+
+func (s *S3Storage) Upload(ctx context.Context, tenantID, filename, contentType string, reader io.Reader) (string, error) {
+	if err := checkNamespace(tenantID); err != nil {
+		return "", err
+	}
+	safe := sanitizeFilename(filename)
+	key := fmt.Sprintf("%s_%s", shared.NewID().String(), safe)
+	objectKey := path.Join(tenantID, key)
+
+	// The request is signed over its payload, which needs a body that can
+	// be read twice: a stream is spooled to a temporary file first (never
+	// held in memory) and removed afterwards.
+	body, size, cleanup, err := seekableBody(reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to buffer upload: %w", err)
+	}
+	defer cleanup()
+
+	if err := s.putObject(ctx, objectKey, contentType, body, size); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// putObject writes one object, with the configured server-side encryption.
+func (s *S3Storage) putObject(ctx context.Context, objectKey, contentType string, body io.ReadSeeker, size int64) error {
+	in := &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(objectKey),
+		Body:          body,
+		ContentLength: aws.Int64(size),
+		ContentType:   aws.String(contentType),
+	}
+	if s.sse != "" {
+		in.ServerSideEncryption = s.sse
+		if s.sseKMSID != "" {
+			in.SSEKMSKeyId = aws.String(s.sseKMSID)
+		}
+	}
+	if _, err := s.client.PutObject(ctx, in); err != nil {
+		return fmt.Errorf("failed to upload to S3: %w", err)
+	}
+	return nil
+}
+
+func (s *S3Storage) Download(ctx context.Context, tenantID, storageKey string) (io.ReadCloser, string, error) {
+	objectKey := path.Join(tenantID, storageKey)
+
+	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return nil, "", attachment.ErrNotFound
+		}
+		return nil, "", fmt.Errorf("S3 download failed: %w", err)
+	}
+
+	ct := ""
+	if result.ContentType != nil {
+		ct = *result.ContentType
+	}
+
+	return result.Body, ct, nil
+}
+
+func (s *S3Storage) Delete(ctx context.Context, tenantID, storageKey string) error {
+	objectKey := path.Join(tenantID, storageKey)
+
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	})
+	// Idempotent — S3 DeleteObject doesn't error on missing keys
+	if err != nil {
+		return fmt.Errorf("failed to delete from S3: %w", err)
+	}
+	return nil
+}
+
+var _ attachment.DirectDownloader = (*S3Storage)(nil)
+
+// PresignDownload signs a GET of one object of the tenant, valid for ttl,
+// that makes the bucket answer with Content-Disposition: attachment (the
+// given name) and the given type, whatever the object's metadata says. Only
+// an HTTPS endpoint (or AWS S3) is signed: the URL goes to a browser.
+func (s *S3Storage) PresignDownload(ctx context.Context, tenantID, storageKey, filename, contentType string, ttl time.Duration) (string, error) {
+	if err := checkNamespace(tenantID); err != nil {
+		return "", err
+	}
+	if storageKey == "" || strings.ContainsAny(storageKey, "/\\") || storageKey == "." || storageKey == ".." {
+		return "", fmt.Errorf("invalid storage key")
+	}
+	if s.endpoint != "" && !strings.HasPrefix(strings.ToLower(s.endpoint), "https://") {
+		return "", fmt.Errorf("%w: the bucket endpoint is not HTTPS", attachment.ErrDirectDownloadUnavailable)
+	}
+	if ttl <= 0 || ttl > 15*time.Minute {
+		return "", fmt.Errorf("signed URL lifetime must be between 1 s and 15 min")
+	}
+	return s.presignGet(ctx, path.Join(tenantID, storageKey), filename, contentType, ttl)
+}
+
+// presignGet signs a GET of objectKey with the response headers forced.
+func (s *S3Storage) presignGet(ctx context.Context, objectKey, filename, contentType string, ttl time.Duration) (string, error) {
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	if disposition == "" {
+		disposition = "attachment"
+	}
+	req, err := s3.NewPresignClient(s.client).PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket:                     aws.String(s.bucket),
+		Key:                        aws.String(objectKey),
+		ResponseContentDisposition: aws.String(disposition),
+		ResponseContentType:        aws.String(contentType),
+		ResponseCacheControl:       aws.String("private, no-store"),
+	}, s3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", fmt.Errorf("sign download: %w", err)
+	}
+	return req.URL, nil
+}
+
+// EraseTenant deletes every object under "{tenantID}/" in the bucket, page by
+// page. The prefix ends in a slash and tenant ids have a fixed length, so no
+// other tenant's key can match it.
+func (s *S3Storage) EraseTenant(ctx context.Context, tenantID string) (int, error) {
+	if err := attachment.ValidateTenantNamespace(tenantID); err != nil {
+		return 0, err
+	}
+	prefix := tenantID + "/"
+	pages := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(prefix),
+	})
+	n := 0
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			return n, fmt.Errorf("list tenant objects: %w", err)
+		}
+		for _, obj := range page.Contents {
+			key := aws.ToString(obj.Key)
+			if !strings.HasPrefix(key, prefix) {
+				continue // the listing is not trusted to apply the prefix
+			}
+			if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(s.bucket),
+				Key:    aws.String(key),
+			}); err != nil {
+				return n, fmt.Errorf("delete tenant object: %w", err)
+			}
+			n++
+		}
+	}
+	return n, nil
+}
+
+// seekableBody returns r as a ReadSeeker with its length: r itself when it
+// already seeks, else a temporary file r was copied to. cleanup removes the
+// file.
+func seekableBody(r io.Reader) (io.ReadSeeker, int64, func(), error) {
+	if rs, ok := r.(io.ReadSeeker); ok {
+		size, err := rs.Seek(0, io.SeekEnd)
+		if err == nil {
+			_, err = rs.Seek(0, io.SeekStart)
+		}
+		if err != nil {
+			return nil, 0, func() {}, err
+		}
+		return rs, size, func() {}, nil
+	}
+	f, err := os.CreateTemp("", "openctem-upload-*")
+	if err != nil {
+		return nil, 0, func() {}, err
+	}
+	cleanup := func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}
+	size, err := io.Copy(f, r)
+	if err == nil {
+		_, err = f.Seek(0, io.SeekStart)
+	}
+	if err != nil {
+		cleanup()
+		return nil, 0, func() {}, err
+	}
+	return f, size, cleanup, nil
+}

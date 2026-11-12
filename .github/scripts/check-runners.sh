@@ -12,7 +12,7 @@
 #   - `${{ matrix.<key> }}` when every `runner:` value in that file is such a
 #     literal (the release builds that need a native arm64 runner);
 #   - one of the approved selector expressions below, character for character
-#     apart from white space (api/docs/development/ci-cd.md, "Self-hosted
+#     apart from white space (server/docs/development/ci-cd.md, "Self-hosted
 #     runner (opt-in)").
 #
 # Each approved expression is also evaluated for every event and every
