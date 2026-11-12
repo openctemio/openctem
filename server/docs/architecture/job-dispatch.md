@@ -128,6 +128,20 @@ DNS tool active again),
 `dispatch_gate` (what the target gate decided), optional `scheduled_at` (a
 scan window not open yet) and `expires_at`.
 
+### Payload size
+
+A sensor reads at most 10 MiB from one commands poll answer, and a claim adds
+delivery fields (HTTP policy, program rules, settings layers, template
+signatures, secret refs) and the signed job to the stored payload. One
+command over that limit stops the sensor's intake until it fails the command.
+So every command is built with `command.NewCommand`, which refuses a payload
+over `command.MaxPayloadBytes` (4 MiB, `pkg/domain/command/payload_size.go`)
+with `COMMAND_PAYLOAD_TOO_LARGE` (a validation error: `400` on
+`POST /api/v1/commands`, the run or step fails with the reason for a scan).
+Nothing is truncated or split silently: a producer splits its work itself
+(the scan planner's `targets_per_job` and host chunks keep a job far under
+the cap). Refusals are counted in `command_payload_refused_total`.
+
 Chunk sizes are fixed at creation. Two things adapt them later:
 
 - **Host-busy split at claim** (`internal/app/command/host_split.go`): when a
