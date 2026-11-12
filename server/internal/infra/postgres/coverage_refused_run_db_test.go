@@ -12,7 +12,8 @@ import (
 // its egress) or never picked up, and that then ended at its deadline, is a
 // run no sensor took: the capability's hold counts it and backs off, instead
 // of the planner queueing the same work again the moment it ends (research
-// 511, mechanism C). A run a sensor did hold, or one still open, is not.
+// 511, mechanism C). A run a sensor did hold, one that failed on its own,
+// or one still open, is not.
 // Requires DATABASE_URL.
 func TestQueuedRuns_RunEveryoneRefusedCountsAsUnclaimed(t *testing.T) {
 	ctx := context.Background()
@@ -45,6 +46,11 @@ func TestQueuedRuns_RunEveryoneRefusedCountsAsUnclaimed(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE commands SET refused_by = ARRAY[gen_random_uuid()] WHERE id = $1`, cmd.String()); err != nil {
 		t.Fatal(err)
 	}
+	// Failed on its own (a dispatch error, a step failure) before any
+	// sensor held its work: a failure, counted by the planner's failure
+	// rules, never "no sensor took it".
+	failedAlone := ended("failed")
+	seedRunCommand(ctx, t, db, tenantID, failedAlone, "failed", false, 0)
 	// A sensor held and ran it.
 	held := ended("timeout")
 	seedRunCommand(ctx, t, db, tenantID, held, "completed", true, 1)
@@ -63,6 +69,9 @@ func TestQueuedRuns_RunEveryoneRefusedCountsAsUnclaimed(t *testing.T) {
 	}
 	if !got[refused] {
 		t.Fatal("a run every sensor refused was not counted as unclaimed: coverage would queue it again at once")
+	}
+	if got[failedAlone] {
+		t.Fatal("a run that failed on its own was counted as unclaimed: the coverage failure rules would never see it")
 	}
 	if got[held] {
 		t.Fatal("a run a sensor held was counted as unclaimed")

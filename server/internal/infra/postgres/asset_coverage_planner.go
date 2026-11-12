@@ -267,15 +267,20 @@ func (r *AssetCoverageRepository) MarkBlocked(ctx context.Context, tenantID shar
 	return nil
 }
 
-// runNothingClaimedSQL is true for a run (alias r) that ended with work
-// and none of it ever held by a sensor: every command was refused by the
-// sensors that took it (their local policy, their egress) and handed back,
-// or never picked up, until the run's deadline closed it. For the coverage
-// hold it counts as a run no sensor took, like one the unclaimed reaper
-// ended (NO_SENSOR): the capability backs off instead of queueing the same
-// work again the moment the run ends, while the cause is unchanged.
+// runNothingClaimedSQL is true for a run (alias r) that ended because nobody
+// took its work: it reached its deadline (status timeout, set only by the
+// deadline reaper) with work, and none of that work was ever held by a
+// sensor: every command was refused by the sensors that took it (their local
+// policy, their egress) and handed back, or never picked up. For the
+// coverage hold it counts as a run no sensor took, like one the unclaimed
+// reaper ended (NO_SENSOR): the capability backs off instead of queueing the
+// same work again the moment the run ends, while the cause is unchanged.
+// A run that failed on its own (a dispatch or planner error, a step failure)
+// is not this, even when no sensor held a command: it stays a failure, which
+// the planner's own failure rules (the deep onboarding fallback, the failure
+// streak) count.
 func runNothingClaimedSQL(r string) string {
-	return `(` + r + `.status IN ` + terminalRunStatusesSQL + `
+	return `(` + r + `.status = 'timeout'
 		        AND EXISTS (SELECT 1 FROM commands rc
 		                    WHERE rc.tenant_id = ` + r + `.tenant_id AND rc.payload->>'scan_run_id' = ` + r + `.id::text)
 		        AND NOT EXISTS (SELECT 1 FROM commands rc

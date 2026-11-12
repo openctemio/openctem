@@ -12,9 +12,9 @@
   command whose run has ended, so leftovers of an earlier run (kept up to 48 h
   before) are never run next to the scan's next run. Another organization's
   commands are judged by their own organization's runs only.
-- Coverage: a run that ended with every command refused by the sensor (its
-  local policy, its egress) or never picked up now counts as a run no sensor
-  took, so the capability backs off (paused `not_claimed` after 3 such runs,
+- Coverage: a run that reached its deadline with every command refused by
+  the sensor (its local policy, its egress) or never picked up now counts as
+  a run no sensor took (a run that failed on its own stays a failure), so the capability backs off (paused `not_claimed` after 3 such runs,
   probe after 2 h doubling to 48 h, lifted at once when the sensors change)
   instead of queueing the same work again the moment the run timed out.
 - No migration.
