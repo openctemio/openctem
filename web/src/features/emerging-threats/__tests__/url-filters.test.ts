@@ -10,6 +10,7 @@ describe('emerging-threat list filters in the URL', () => {
       state: 'open',
       tier: undefined,
       internetOnly: false,
+      kevOnly: false,
       search: '',
       page: 1,
       perPage: 25,
@@ -19,13 +20,14 @@ describe('emerging-threat list filters in the URL', () => {
   it('reads every filter with the list API names', () => {
     expect(
       parse(
-        'level=immediate&state=resolved&tier=possible&exposure=internet&search=CVE-1&page=4&per_page=50'
+        'level=immediate&state=resolved&tier=possible&exposure=internet&kev=true&search=CVE-1&page=4&per_page=50'
       )
     ).toEqual({
       level: 'immediate',
       state: 'resolved',
       tier: 'possible',
       internetOnly: true,
+      kevOnly: true,
       search: 'CVE-1',
       page: 4,
       perPage: 50,
@@ -60,12 +62,13 @@ describe('emerging-threat list filters in the URL', () => {
         state: 'all',
         tier: 'confirmed',
         internetOnly: true,
+        kevOnly: true,
         search: 'log4j',
         page: 2,
         perPage: 50,
       }).toString()
     ).toBe(
-      'keep=1&level=immediate&state=all&tier=confirmed&exposure=internet&search=log4j&page=2&per_page=50'
+      'keep=1&level=immediate&state=all&tier=confirmed&exposure=internet&kev=true&search=log4j&page=2&per_page=50'
     )
   })
 

@@ -168,6 +168,49 @@ describe('VersionMatchPanel', () => {
     },
   }
 
+  it('lists the services of the host by state', () => {
+    const at = '2026-11-05T00:00:00Z'
+    render(
+      <VersionMatchPanel
+        metadata={metadata}
+        locations={[
+          {
+            assetId: 'a',
+            assetName: 'http://h',
+            label: 'http:80',
+            state: 'affected',
+            stateAt: at,
+            lastSeenAt: at,
+          },
+          {
+            assetId: 'b',
+            assetName: 'https://h',
+            label: 'https:443',
+            state: 'affected',
+            stateAt: at,
+            lastSeenAt: at,
+          },
+          {
+            assetId: 'c',
+            assetName: 'http://h:8080',
+            label: 'http:8080',
+            state: 'fixed',
+            stateAt: at,
+            lastSeenAt: at,
+          },
+        ]}
+      />
+    )
+    expect(screen.getByText('Affected on 2 services: http:80, https:443')).toBeInTheDocument()
+    expect(screen.getByText('Fixed on: http:8080')).toBeInTheDocument()
+    expect(screen.queryByText(/Not affected on/)).not.toBeInTheDocument()
+  })
+
+  it('says nothing about services when the finding has no locations', () => {
+    render(<VersionMatchPanel metadata={metadata} />)
+    expect(screen.queryByTestId('version-match-locations')).not.toBeInTheDocument()
+  })
+
   it('shows why the finding exists', () => {
     render(<VersionMatchPanel metadata={metadata} />)
     expect(screen.getByText('Why this finding')).toBeInTheDocument()

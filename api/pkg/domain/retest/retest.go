@@ -231,6 +231,10 @@ type CheckResult struct {
 	Outcome string
 	Summary string
 	Missing bool
+	// Stopped: the check's command completed, but its result says the run
+	// did not finish by itself (command.RunStopped). A non-match from it
+	// proves nothing.
+	Stopped bool
 	// TemplateDigest is the sha256 of the template the re-run used
 	// (evidence.template_digest, sensor#134); "" when not reported.
 	TemplateDigest string
@@ -256,7 +260,18 @@ const (
 // target it is inconclusive. nuclei prints nothing and exits 0 when a host
 // does not answer, and a template run with the wrong input never requests the
 // endpoint, so a bare "not detected" proves nothing.
+//
+// A re-run whose result says it stopped (check.Stopped) never proves a fix:
+// a confirmed-fixed or not-reproduced verdict from it is inconclusive.
 func Decide(check, reach CheckResult, matchedAt string, cls ...Class) Verdict {
+	v := decide(check, reach, matchedAt, cls...)
+	if check.Stopped && (v.Outcome == OutcomeConfirmedFixed || v.Outcome == OutcomeNotReproduced) {
+		return inconclusive(ReasonError, "the template re-run did not finish (non-zero exit or stopped); a non-match proves nothing")
+	}
+	return v
+}
+
+func decide(check, reach CheckResult, matchedAt string, cls ...Class) Verdict {
 	if check.Missing {
 		return inconclusive(ReasonNoResult, "no result from the template re-run")
 	}

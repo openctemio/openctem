@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"net/netip"
+	"strings"
+	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
@@ -10,10 +13,13 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
 	"github.com/openctemio/openctem/api/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
+	"github.com/openctemio/openctem/api/internal/app/scopenames"
 	"github.com/openctemio/openctem/api/internal/app/systemstatus"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/llm"
+	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -103,5 +109,34 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	}
 	h.EmailRelay = svc.OrgRelay
 	h.LeakedSecretStorage = svc.LeakedSecretPolicy
+	h.ScopeNames = svc.ScopeNames
 	return h
+}
+
+// initScopeNames builds the blocked target names policy (RFC-154) and makes
+// it the platform's: every scope guardrails built afterwards reads it. Without
+// the settings store the built-in rule stays on with no exceptions.
+func (s *Services) initScopeNames(cfg *config.Config, repos *Repositories, deps *ServiceDeps, log *logger.Logger) {
+	if repos.PlatformSetting == nil || deps.DB == nil || repos.Tenant == nil {
+		return
+	}
+	policy := scopedom.NewNamePolicy()
+	scopedom.SetPlatformNamePolicy(policy)
+	var envNames []string
+	for _, e := range cfg.Scope.DenyExtra {
+		e = strings.TrimSpace(e)
+		if _, err := netip.ParsePrefix(e); err == nil {
+			continue
+		}
+		if _, err := netip.ParseAddr(e); err == nil || e == "" {
+			continue
+		}
+		envNames = append(envNames, strings.ToLower(e))
+	}
+	s.ScopeNames = scopenames.NewService(repos.PlatformSetting,
+		postgres.NewScopeNameExceptionRepository(&postgres.DB{DB: deps.DB}),
+		tenantNames{repo: repos.Tenant}, s.SettingRecorder, policy, envNames, cfg.App.ManagedService, log)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s.ScopeNames.Start(ctx)
 }

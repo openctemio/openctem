@@ -58,18 +58,15 @@ describe('toggling a tag', () => {
 })
 
 describe('tag filter on the API query', () => {
-  it('sends tags, tags_mode=all and exclude_tags', async () => {
+  it('sends tag_all for every tag, tag for any, and tag_not', async () => {
     const { buildAssetQueryParams } = await import('../hooks/use-assets')
-    expect(
-      buildAssetQueryParams({ tags: ['a', 'b'], tagsMode: 'all', excludeTags: ['c'] })
-    ).toMatchObject({
-      tags: 'a,b',
-      tags_mode: 'all',
-      exclude_tags: 'c',
-    })
+    const all = buildAssetQueryParams({ tags: ['a', 'b'], tagsMode: 'all', excludeTags: ['c'] })
+    expect(all).toMatchObject({ tag_all: 'a,b', tag_not: 'c' })
+    expect(all.tag).toBeUndefined()
     const any = buildAssetQueryParams({ tags: ['a'], tagsMode: 'any' })
-    expect(any.tags_mode).toBeUndefined()
+    expect(any).toMatchObject({ tag: 'a' })
+    expect(any.tag_all).toBeUndefined()
     // A mode without tags is not sent.
-    expect(buildAssetQueryParams({ tagsMode: 'all' }).tags_mode).toBeUndefined()
+    expect(buildAssetQueryParams({ tagsMode: 'all' }).tag_all).toBeUndefined()
   })
 })

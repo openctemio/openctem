@@ -61,6 +61,9 @@ type PlatformCACert struct {
 	Root bool `json:"root"`
 	// NotAfter is when the certificate expires.
 	NotAfter time.Time `json:"not_after"`
+	// spki is the SHA-256 of the certificate's SubjectPublicKeyInfo, as a
+	// sensor pins the anchor of its verified chain (TLSAnchors).
+	spki []byte
 }
 
 // PlatformCA is the parsed platform CA bundle.
@@ -93,6 +96,25 @@ func (c *PlatformCA) Pins(now time.Time) string {
 		return strings.Join(roots, ",")
 	}
 	return strings.Join(others, ",")
+}
+
+// TLSAnchors are the roots of the bundle that have not expired, each as
+// "sha256:<hex>" of its SubjectPublicKeyInfo: what the platform's signed
+// pairing grant names as the anchors of its TLS certificate, and what a
+// sensor's pairing connection must have verified (the sensor pins the
+// anchor's key, which survives a re-issued root). A bundle without a root
+// names none: the anchor a sensor verifies is then outside the bundle.
+func (c *PlatformCA) TLSAnchors(now time.Time) []string {
+	if c == nil {
+		return nil
+	}
+	var out []string
+	for _, x := range c.Certs {
+		if x.Root && x.NotAfter.After(now) && len(x.spki) > 0 {
+			out = append(out, "sha256:"+hex.EncodeToString(x.spki))
+		}
+	}
+	return out
 }
 
 // Fingerprint is the colon-hex SHA-256 of the first root (else the first
@@ -146,7 +168,9 @@ func ParsePlatformCA(raw []byte) (*PlatformCA, error) {
 			continue // a leaf certificate is not a CA anyone should pin
 		}
 		sum := sha256.Sum256(cert.Raw)
+		spki := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
 		out.Certs = append(out.Certs, PlatformCACert{
+			spki:       spki[:],
 			CommonName: commonName(cert),
 			SHA256:     colonHex(sum[:]),
 			SHA256Hex:  hex.EncodeToString(sum[:]),

@@ -69,10 +69,6 @@ func (r *recordingCommandRepo) FindExpired(context.Context) ([]*command.Command,
 	return nil, nil
 }
 
-func (r *recordingCommandRepo) GetByAuthTokenHash(context.Context, string) (*command.Command, error) {
-	return nil, nil
-}
-
 func (r *recordingCommandRepo) CountActivePlatformJobsByTenant(context.Context, shared.ID) (int, error) {
 	return 0, nil
 }
@@ -86,9 +82,6 @@ func (r *recordingCommandRepo) GetQueuedPlatformJobs(context.Context, int) ([]*c
 }
 
 func (r *recordingCommandRepo) UpdateQueuePriorities(context.Context) (int64, error) { return 0, nil }
-func (r *recordingCommandRepo) GetQueuePosition(context.Context, shared.ID) (*command.QueuePosition, error) {
-	return nil, nil
-}
 
 func (r *recordingCommandRepo) ListPlatformJobsByTenant(context.Context, shared.ID, pagination.Pagination) (pagination.Result[*command.Command], error) {
 	return pagination.Result[*command.Command]{}, nil

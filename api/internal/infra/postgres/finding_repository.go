@@ -156,6 +156,9 @@ func (r *FindingRepository) Create(ctx context.Context, finding *vulnerability.F
 	if err := r.checkLimit(ctx, finding.TenantID(), limits.Findings, 1); err != nil {
 		return err
 	}
+	if err := derivePractices(ctx, r.db, []*vulnerability.Finding{finding}); err != nil {
+		return err
+	}
 
 	args, err := findingCreateArgs(finding, metadata)
 	if err != nil {
@@ -190,6 +193,9 @@ func (r *FindingRepository) CreateInTx(ctx context.Context, tx *sql.Tx, finding 
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
+	if err := derivePractices(ctx, tx, []*vulnerability.Finding{finding}); err != nil {
+		return err
+	}
 	args, err := findingCreateArgs(finding, metadata)
 	if err != nil {
 		return err
@@ -238,7 +244,9 @@ var findingCreateSQL = `
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingIdentityColumnsSQL + `,
-			` + findingSLAKEVColumnsSQL + `
+			` + findingSLAKEVColumnsSQL + `,
+			` + findingObservedColumnsSQL + `,
+			` + findingPracticeColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
@@ -249,7 +257,9 @@ var findingCreateSQL = `
 	findingNetworkPlaceholders(95+findingTypeColumnCount) +
 	findingScannerPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount) +
 	findingIdentityPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount) +
-	findingSLAKEVPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount) + `)
+	findingSLAKEVPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount) +
+	findingObservedPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount+findingSLAKEVColumnCount) +
+	findingPracticePlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount+findingSLAKEVColumnCount+findingObservedColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -379,6 +389,8 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 	args = append(args, findingScannerArgs(finding)...)
 	args = append(args, findingIdentityArgs(finding)...)
 	args = append(args, findingSLAKEVArgs(finding)...)
+	args = append(args, findingObservedArgs(finding)...)
+	args = append(args, findingPracticeArgs(finding)...)
 	return args, nil
 }
 
@@ -394,6 +406,9 @@ func (r *FindingRepository) CreateBatch(ctx context.Context, findings []*vulnera
 	}
 	if len(refused) > 0 {
 		return fmt.Errorf("%w: %d new findings over the findings plan limit", shared.ErrForbidden, len(refused))
+	}
+	if err := derivePractices(ctx, r.db, findings); err != nil {
+		return err
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -476,6 +491,9 @@ func (r *FindingRepository) CreateBatchWithResult(ctx context.Context, findings 
 		for i := range findings {
 			positions = append(positions, i)
 		}
+	}
+	if err := derivePractices(ctx, r.db, findings); err != nil {
+		return nil, err
 	}
 
 	// Write in fingerprint order: concurrent uploads of overlapping findings
@@ -791,7 +809,9 @@ func findingInsertColumnsSQL() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingIdentityColumnsSQL + `,
-			` + findingSLAKEVColumnsSQL + `
+			` + findingSLAKEVColumnsSQL + `,
+			` + findingObservedColumnsSQL + `,
+			` + findingPracticeColumnsSQL + `
 		)`
 }
 
@@ -818,12 +838,14 @@ func findingUpsertConflictSQL() string {
 			-- sighting by another tool must not pair its version with it.
 			tool_version = CASE WHEN findings.tool_name = EXCLUDED.tool_name
 				THEN EXCLUDED.tool_version ELSE findings.tool_version END,
-			snippet = COALESCE(EXCLUDED.snippet, findings.snippet),
+			-- Text: the primary (first reporting) tool refreshes it, another
+			-- tool only fills an empty value (finding-source-records.md).
+			snippet = ` + primaryTextSQL("snippet") + `,
 			context_snippet = COALESCE(EXCLUDED.context_snippet, findings.context_snippet),
 			context_start_line = COALESCE(EXCLUDED.context_start_line, findings.context_start_line),
-			title = COALESCE(EXCLUDED.title, findings.title),
-			description = COALESCE(EXCLUDED.description, findings.description),
-			message = EXCLUDED.message,
+			title = ` + primaryTextSQL("title") + `,
+			description = ` + primaryTextSQL("description") + `,
+			message = ` + primaryTextSQL("message") + `,
 			-- An agent's severity override stands: the reported severity
 			-- then moves source_severity only.
 			` + reportedSeveritySetSQL("findings.", "EXCLUDED.severity") + `,
@@ -895,7 +917,7 @@ func findingUpsertConflictSQL() string {
 			asvs_control_id = COALESCE(EXCLUDED.asvs_control_id, findings.asvs_control_id),
 			asvs_control_url = COALESCE(EXCLUDED.asvs_control_url, findings.asvs_control_url),
 			asvs_level = COALESCE(EXCLUDED.asvs_level, findings.asvs_level),
-			remediation = COALESCE(EXCLUDED.remediation, findings.remediation),
+			remediation = ` + primaryJSONSQL("remediation") + `,
 			-- Denormalized classification columns: refresh on re-ingest, mirroring
 			-- severity/epss/kev above. This is what backfills the NULLs a first
 			-- sighting left, and lets a re-classified CVE/CVSS overwrite the stale
@@ -928,7 +950,25 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + findingSLAKEVConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + findingSLAKEVConflictSQL() + findingPracticeConflictSQL() + "\n\t"
+}
+
+// primaryToolSQL is true when the incoming row comes from the stored
+// finding's primary source, its first reporting tool
+// (vulnerability.IsPrimaryTool).
+const primaryToolSQL = `(btrim(findings.tool_name) <> '' AND lower(btrim(findings.tool_name)) = lower(btrim(EXCLUDED.tool_name)))`
+
+// primaryTextSQL merges a text column of a re-sighting: the primary tool
+// replaces it with a non-empty value, another tool only fills an empty one.
+func primaryTextSQL(col string) string {
+	return `CASE WHEN ` + primaryToolSQL + ` THEN COALESCE(NULLIF(EXCLUDED.` + col + `, ''), findings.` + col + `)
+				ELSE COALESCE(NULLIF(findings.` + col + `, ''), EXCLUDED.` + col + `) END`
+}
+
+// primaryJSONSQL is primaryTextSQL for a jsonb column (NULL is empty).
+func primaryJSONSQL(col string) string {
+	return `CASE WHEN ` + primaryToolSQL + ` THEN COALESCE(EXCLUDED.` + col + `, findings.` + col + `)
+				ELSE COALESCE(findings.` + col + `, EXCLUDED.` + col + `) END`
 }
 
 // findingTagsMergeSQL is the SQL expression merging a stored and an incoming
@@ -961,7 +1001,8 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
-const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount + findingSLAKEVColumnCount
+const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount + findingSLAKEVColumnCount +
+	findingObservedColumnCount + findingPracticeColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -1096,7 +1137,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
 		nullJSON(finding.IdentityKey()),
-	}, append(append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...), findingSLAKEVArgs(finding)...)...), nil
+	}, append(append(append(append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...), findingSLAKEVArgs(finding)...), findingObservedArgs(finding)...), findingPracticeArgs(finding)...)...), nil
 }
 
 // PentestCampaignRole returns the user's role in a pentest campaign of the
@@ -1264,6 +1305,11 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	args = append(args, finding.SLAKEVCapped())
 	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
 		fmt.Sprintf(",\n\t\t\tsla_kev_capped = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)), 1)
+	// The practice travels with the row: it changes only when the type
+	// does (SetFindingType), and a row never derived keeps its NULL reason.
+	args = append(args, findingPracticeArgs(finding)...)
+	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
+		fmt.Sprintf(",\n\t\t\tpractice = $%d, practice_reason = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)-1, len(args)), 1)
 	if !strings.Contains(query, "sub_status_id = $") {
 		return errors.New("finding update: the sub-status column was not bound")
 	}
@@ -2353,7 +2399,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only, row_version, sla_kev_capped,
+			branch_only, row_version, sla_kev_capped, ` + findingPracticeColumnsSQL + `,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2531,7 +2577,9 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, scanCols.dests()...)
 	var rowVersion int64
 	dests = append(dests, sevCols.dests()...)
-	dests = append(dests, &branchOnly, &rowVersion, &slaKEVCapped, &hasDataFlow)
+	var practice string
+	var practiceReason sql.NullString
+	dests = append(dests, &branchOnly, &rowVersion, &slaKEVCapped, &practice, &practiceReason, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
 	}
@@ -2581,6 +2629,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreSeverityProvenance(sevCols.provenance())
 	f.RestoreBranchOnly(branchOnly)
 	f.RestoreSLAKEVCapped(slaKEVCapped)
+	f.RestorePractice(vulnerability.Practice(practice), practiceReason.String)
 	f.RestoreRowVersion(rowVersion)
 	return f, nil
 }
@@ -4021,7 +4070,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingNetworkColumnsSQL + `,
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
-			branch_only, row_version, sla_kev_capped,
+			branch_only, row_version, sla_kev_capped, ` + findingPracticeColumnsSQL + `,
 			FALSE AS has_data_flow
 		FROM findings
 	`
@@ -4431,6 +4480,12 @@ func buildBatchEnrichQuery(rowCount int) string {
 		sb.WriteString(col)
 		if col == "type_details" {
 			sb.WriteString(" = COALESCE(d.type_details, f.type_details)")
+			continue
+		}
+		if col == "last_seen_at" {
+			// Last seen only moves forward: a file observed before the
+			// stored sighting (an older scan uploaded later) keeps it.
+			sb.WriteString(" = GREATEST(f.last_seen_at, d.last_seen_at)")
 			continue
 		}
 		if col == "occurrence_count" {

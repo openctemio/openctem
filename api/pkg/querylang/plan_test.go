@@ -66,7 +66,7 @@ func TestBuildErrors(t *testing.T) {
 		{"assets where deleted = true", "deleted", "unknown field"},
 		{"assets where program_only = false", "program_only", "unknown field"},
 		{"findings where severity = bogus", "bogus", "must be one of"},
-		{"findings where severity > high", ">", `">" is not allowed`},
+		{"findings where status > new", ">", `">" is not allowed`},
 		{"findings where cve_id ~ \"log4j\"", "~", `"~" is not allowed`},
 		{"findings where state in (open, fixed)", "in", `"in" is not allowed`},
 		{"findings where epss_score > abc", "abc", "must be a number"},

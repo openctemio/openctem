@@ -8,6 +8,8 @@
  *   secret  the masked value, its kind and whether it was verified — never
  *           the value itself (revealing stays on the full page, audited)
  *   web     the scanner's HTTP evidence (request / response, masked)
+ *   compliance  the configuration check: result, expected vs actual value,
+ *           the sub-checks and the mapped controls
  *
  * Other types have no extra band: their facts are in Fix and Intelligence.
  */
@@ -29,6 +31,8 @@ import { DATA_FLOW_LOCATION_CONFIG, type FindingDetail } from '../../types'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { foldEvidence, primaryEvidence } from '../../lib/evidence-view'
 import { FindingEvidenceItems } from './finding-evidence-items'
+import { complianceCheckOf } from '../../lib/compliance-check'
+import { ComplianceCheckSection } from './compliance-check-section'
 
 /** Steps shown in the drawer; the page's Data flow tab has the rest. */
 export const TRACE_STEPS_SHOWN = 6
@@ -234,6 +238,10 @@ export function FindingTypePanel({ finding, onOpenTrace, onOpenEvidence }: Findi
   }
   if (finding.dataFlow?.steps?.length) {
     return <TracePanel finding={finding} onOpenTrace={onOpenTrace} />
+  }
+  const check = complianceCheckOf(finding)
+  if (check) {
+    return <ComplianceCheckSection check={check} compact findingId={finding.id} />
   }
   if (WEB_SOURCES.has(finding.source)) {
     return <WebEvidencePanel finding={finding} onOpenEvidence={onOpenEvidence} />

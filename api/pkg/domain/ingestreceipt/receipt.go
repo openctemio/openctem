@@ -137,6 +137,18 @@ const (
 	// ReasonOutsideJob: the item's asset lies outside the targets of the
 	// command the report is bound to.
 	ReasonOutsideJob = "outside_job_targets"
+	// ReasonOverCap: the item's asset lies outside the bound command's
+	// targets and the report had already recorded as many such assets as
+	// one report may (research 436).
+	ReasonOverCap = "over_cap"
+	// ReasonHeldForReview: the output-type binding held the item (its type,
+	// or its asset's, is not one the command's tool produces); it waits in
+	// the results quarantine.
+	ReasonHeldForReview = "held_for_review"
+	// ReasonQuarantineFull: held, but the quarantine could not keep it.
+	ReasonQuarantineFull = "quarantine_full"
+	// ReasonUnresolvedRef: the finding names no asset of its segment.
+	ReasonUnresolvedRef = "unresolved_ref"
 )
 
 // Item is one item a receipt did not turn into a finding. Key is a stable
@@ -221,6 +233,9 @@ const (
 const (
 	ErrorStoreFailed  = "store_failed"
 	ErrorFileRejected = "file_rejected"
+	// ErrorContractMismatch: the finding's tool reported a type its signed
+	// descriptor does not declare; the finding was ingested and flagged.
+	ErrorContractMismatch = "contract_mismatch"
 )
 
 // ErrorEntry is one problem of a receipt: the index of the finding (or of
@@ -269,9 +284,18 @@ type Receipt struct {
 	ActionsRecorded  int
 	ActionsTruncated bool
 	Errors           []ErrorEntry
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	FinishedAt       *time.Time
+	// Outcomes counts the received findings that went elsewhere than the
+	// action counts (Outcome* codes).
+	Outcomes map[string]int
+	// ReleasedFromQuarantine: a report held in the results quarantine and
+	// applied later is part of this receipt (its sender is the original
+	// sensor).
+	ReleasedFromQuarantine bool
+	// Closing is what a scan file's own coverage closed (nil: none did).
+	Closing    *Closing
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	FinishedAt *time.Time
 }
 
 // Source names the receipt a delta belongs to. For a command, CommandID is
@@ -291,6 +315,8 @@ type Delta struct {
 	TenantID shared.ID
 	Source   Source
 	Tool     string
+	// ToolVersion is the reporting tool's version, kept on the sightings.
+	ToolVersion string
 	// Instance is what sent the report (a sensor, a CI repository, a
 	// connector, the platform); empty for a coverage decision, which adds to
 	// the receipt's own counts only.
@@ -303,6 +329,18 @@ type Delta struct {
 	Skipped       int
 	Failed        int
 	Suppressed    int
+	// Outcomes counts where the received findings went beyond the action
+	// counts (Outcome* codes). The repository adds OutcomeMerged for the
+	// findings an earlier delta of the receipt already acted on.
+	Outcomes map[string]int
+	// Released marks a report applied from the results quarantine: the
+	// receipt and the sender's row carry the marker, nothing else changes.
+	Released bool
+	// ReleasedFindings is the findings of a released report: the receipt
+	// counted them as received (outcome quarantined) when the report was held,
+	// so the release moves them out of the quarantined outcome and out of
+	// received instead of counting them a second time. Zero for any other delta.
+	ReleasedFindings int
 
 	Created  []shared.ID
 	Reopened []shared.ID
@@ -324,6 +362,83 @@ type Delta struct {
 
 	Errors []ErrorEntry
 	At     time.Time
+}
+
+// Outcome codes: where a received finding went when it is none of created,
+// still detected, reopened, suppressed, failed or skipped. A receipt
+// reconciles: received + split = created + still detected + reopened +
+// suppressed + failed + skipped + every other outcome (research 436).
+const (
+	// OutcomeSplit: extra findings a finding naming several CVEs became
+	// (one per CVE); the only outcome that adds to received.
+	OutcomeSplit = "split"
+	// OutcomeMerged: a repeat of a finding the same report or an earlier
+	// report of the receipt already named (one observation, last seen
+	// updated).
+	OutcomeMerged = "merged"
+	// OutcomeExposure: a template scanner's info match, filed as an
+	// exposure instead of a finding.
+	OutcomeExposure = "exposure"
+	// OutcomeSourceMitigated: the source reported it mitigated; it resolves
+	// a finding instead of sighting one.
+	OutcomeSourceMitigated = "source_mitigated"
+	// OutcomeUnresolvedRef: the finding named no asset of its document
+	// (malformed; refused before ingest).
+	OutcomeUnresolvedRef = "unresolved_ref"
+	// OutcomeOutOfContract: the finding was held with its asset by the
+	// output contract of the report's tool (quarantined for review).
+	OutcomeOutOfContract = "out_of_contract"
+	// OutcomeReservedTool: the report claimed the tool name of the
+	// platform's own inventory matcher; its findings are refused.
+	OutcomeReservedTool = "reserved_tool"
+	// OutcomeCompliancePassed: a compliance check that passed. It is no
+	// finding and no sighting of the failed result of the same check; an
+	// upload resolves that open failure with it.
+	OutcomeCompliancePassed = "compliance_passed"
+	// OutcomeComplianceState: a compliance check that was not applicable or
+	// could not run. It is kept as the state of its control, not as a
+	// finding.
+	OutcomeComplianceState = "compliance_state"
+	// OutcomeQuarantined: the report came without a command and waits in
+	// the results quarantine; a person releases or discards it.
+	OutcomeQuarantined = "quarantined"
+	// OutcomeSourceRetired: the report came from a source the organization
+	// stopped using (docs/architecture/source-retirement.md); nothing of
+	// it is applied.
+	OutcomeSourceRetired = "source_retired"
+)
+
+// AllOutcomes lists the outcome codes, in display order.
+func AllOutcomes() []string {
+	return []string{OutcomeMerged, OutcomeExposure, OutcomeSourceMitigated, OutcomeUnresolvedRef,
+		OutcomeOutOfContract, OutcomeReservedTool, OutcomeCompliancePassed, OutcomeComplianceState, OutcomeQuarantined, OutcomeSourceRetired, OutcomeSplit}
+}
+
+// Unaccounted is how many received findings no count and no outcome
+// explains: received + split - (created + still detected + reopened +
+// suppressed + failed + skipped + the other outcomes). A reconciled receipt
+// has 0; closed and untouched findings are decisions about findings the
+// source did not report, so they are not part of the sum.
+func Unaccounted(received int, c Counts, outcomes map[string]int) int {
+	n := received - c.Created - c.StillDetected - c.Reopened - c.Suppressed - c.Failed - c.Skipped
+	for code, v := range outcomes {
+		if code == OutcomeSplit {
+			n += v
+			continue
+		}
+		n -= v
+	}
+	return n
+}
+
+// IsOutcome reports whether c is an outcome code.
+func IsOutcome(c string) bool {
+	for _, o := range AllOutcomes() {
+		if o == c {
+			return true
+		}
+	}
+	return false
 }
 
 // Instance kinds: what sent a report.
@@ -357,7 +472,7 @@ type Instance struct {
 // Empty reports whether the delta changes nothing.
 func (d *Delta) Empty() bool {
 	return d.Reports == 0 && d.Received == 0 && d.AssetsCreated == 0 && d.AssetsUpdated == 0 &&
-		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Created) == 0 &&
+		d.Skipped == 0 && d.Failed == 0 && d.Suppressed == 0 && len(d.Outcomes) == 0 && !d.Released && len(d.Created) == 0 &&
 		len(d.Reopened) == 0 && len(d.Closed) == 0 && len(d.StillDetected) == 0 &&
 		len(d.Decided) == 0 && len(d.Items) == 0 &&
 		d.Coverage == "" && d.Untouched == nil && len(d.Errors) == 0
@@ -378,8 +493,11 @@ type Upload struct {
 // UploadResult is what an upload adds when it finishes, beyond what its
 // ingests recorded.
 type UploadResult struct {
-	Status       string
-	Format       string
+	Status string
+	Format string
+	// Skipped is the records the parser skipped and the files of a bundle
+	// it did not read: received with the upload and not imported, so they
+	// count as received and skipped.
 	Skipped      int
 	Components   int
 	Statements   int
@@ -391,6 +509,80 @@ type UploadResult struct {
 	Coverage     string
 	CoverageNote string
 	Untouched    *int
+	// Closing is what a scan file's own coverage closed and why the rest
+	// stayed open (nil when no file carried its coverage).
+	Closing *Closing
+}
+
+// Closing reasons: why an open finding a scan file did not report was
+// closed, or kept open (docs/architecture/finding-import.md, "What a Nessus
+// import closes").
+const (
+	// ClosedNotInScan: the check ran on the finished host and did not find it.
+	ClosedNotInScan = "not_in_scan"
+	// ClosedCompliancePassed: the same compliance check passed.
+	ClosedCompliancePassed = "compliance_passed"
+
+	// KeptHostNotFinished: the file does not record the end of the host's scan.
+	KeptHostNotFinished = "host_not_finished"
+	// KeptLocalChecksNotRun: a local check, and the scan did not log in to
+	// the host or authentication failed.
+	KeptLocalChecksNotRun = "local_checks_not_run"
+	// KeptCheckNotRun: the check (plugin or its family) was not part of the scan.
+	KeptCheckNotRun = "check_not_run"
+	// KeptSeenLater: the finding was seen after the file's scan of the host.
+	KeptSeenLater = "seen_later"
+	// KeptFileIncomplete: the file cannot prove an absence (no plugin
+	// selection or plugin details), or a file or row of the upload failed.
+	KeptFileIncomplete = "file_incomplete"
+	// KeptNeedsVerify: the uploader may not verify fixes (findings:verify).
+	KeptNeedsVerify = "needs_verify"
+	// KeptGuard: a guard keeps it (critical or known exploited, a leaked
+	// secret, last seen by a platform sensor, a compliance result missing
+	// from the file, the organization's closing mode, or it changed meanwhile).
+	KeptGuard = "guard"
+)
+
+// Closing counts the outcome of every open finding a scan file's coverage
+// considered. It reconciles: Considered = sum(Closed) + Proposed + sum(Kept).
+type Closing struct {
+	Considered int            `json:"considered"`
+	Closed     map[string]int `json:"closed"`
+	// Proposed went to Ready to close for a person to confirm (the closing
+	// mode, or the mass-close guard held them).
+	Proposed int            `json:"proposed"`
+	Kept     map[string]int `json:"kept"`
+	// Hosts of the files; HostsUnfinished have no recorded scan end,
+	// HostsLocalChecksFailed were not logged in to (or authentication failed).
+	Hosts                  int `json:"hosts"`
+	HostsUnfinished        int `json:"hosts_unfinished"`
+	HostsLocalChecksFailed int `json:"hosts_local_checks_failed"`
+}
+
+// NewClosing returns an empty Closing.
+func NewClosing() *Closing {
+	return &Closing{Closed: map[string]int{}, Kept: map[string]int{}}
+}
+
+// Reconciles reports whether every considered finding has one outcome.
+func (c *Closing) Reconciles() bool {
+	n := c.Proposed
+	for _, v := range c.Closed {
+		n += v
+	}
+	for _, v := range c.Kept {
+		n += v
+	}
+	return n == c.Considered
+}
+
+// ClosedTotal is the number of findings closed.
+func (c *Closing) ClosedTotal() int {
+	n := 0
+	for _, v := range c.Closed {
+		n += v
+	}
+	return n
 }
 
 // Filter narrows a receipt list.

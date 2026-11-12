@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/controllerlease"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -254,7 +255,7 @@ func (m *Manager) reconcileOnce(ctx context.Context, c Controller) {
 		defer release()
 	}
 
-	count, err := c.Reconcile(reconcileCtx)
+	count, err := m.reconcileRecovered(reconcileCtx, c)
 	duration := time.Since(start)
 
 	if err != nil {
@@ -284,6 +285,20 @@ func (m *Manager) reconcileOnce(ctx context.Context, c Controller) {
 	if m.metrics != nil {
 		m.metrics.SetLastReconcileTime(name, time.Now())
 	}
+}
+
+// reconcileRecovered runs c.Reconcile and turns a panic in it into a
+// failed run: logged with the controller's name and the stack, counted in
+// openctem_panics_recovered_total and in the controller's reconcile errors.
+// Without it one panicking controller killed the whole API process, and a
+// deterministic panic crash-looped every replica; now the controller runs
+// again on its next tick.
+func (m *Manager) reconcileRecovered(ctx context.Context, c Controller) (count int, err error) {
+	var rerr error
+	if perr := safego.Run(m.logger, "controller:"+c.Name(), func() { count, rerr = c.Reconcile(ctx) }); perr != nil {
+		return 0, perr
+	}
+	return count, rerr
 }
 
 // holdLease takes c's lease when c is Exclusive and the manager has a lease

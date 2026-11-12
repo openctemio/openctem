@@ -34,8 +34,9 @@ type Translate = ReturnType<typeof useTranslation>['t']
 
 const ROTATION_LABEL: Record<CoverageRotation, string> = {
   off: 'Off',
-  aging: 'Aging',
-  recycle: 'Recycle',
+  aging: 'Aging (recommended)',
+  purge: 'Purge (Beta, unverified)',
+  recycle: 'Recycle (Beta, unverified)',
 }
 
 /** The API's wait reasons (tenablesc afterBatch), translated; another text is shown as sent. */
@@ -51,6 +52,19 @@ const WAIT_REASONS: Record<string, { key: string; fallback: string }> = {
   'the previous batch failed': {
     key: 'tenableSc.coverage.wait.failed',
     fallback: 'the previous batch failed',
+  },
+  'Tenable.sc blocked the import for the license; it is imported again once capacity is free': {
+    key: 'tenableSc.coverage.wait.blocked',
+    fallback:
+      'Tenable.sc blocked the import for the license; it is imported again once capacity is free',
+  },
+  'the purge of the previous batch could not be confirmed': {
+    key: 'tenableSc.coverage.wait.purgeUnverified',
+    fallback: 'the purge of the previous batch could not be confirmed',
+  },
+  'the previous batch was refused by the sensor': {
+    key: 'tenableSc.coverage.wait.refused',
+    fallback: 'the previous batch was refused by the sensor',
   },
 }
 
@@ -232,8 +246,21 @@ export function TenableCoveragePanel({
   )
 }
 
-const STALLED_MESSAGE =
-  'rotation stalled: the previous batch failed after it launched, so its results may not be ingested; an administrator resumes rotation to recycle the rotation repository'
+/** The API's stall reasons (tenablesc afterBatch), translated. */
+const STALLED_MESSAGES: Record<string, { key: string; fallback: string }> = {
+  'rotation stalled: the previous batch failed after it launched, so its results may not be ingested; an administrator resumes rotation':
+    {
+      key: 'tenableSc.coverage.stalled',
+      fallback:
+        'Rotation stalled: the previous batch failed after it launched, so its results may not be ingested. Resuming goes on with the next batch.',
+    },
+  "rotation stalled: purge_unverified: the sensor imported the purge file but could not confirm that the previous batch's addresses left the rotation repository or that the license count dropped; check the rotation repository in Tenable.sc, then an administrator resumes rotation":
+    {
+      key: 'tenableSc.coverage.stalledPurge',
+      fallback:
+        "Rotation stalled: the connector could not confirm that the purge removed the previous batch's addresses or lowered the license count. Check the rotation repository in Tenable.sc, then resume.",
+    },
+}
 
 /** A stalled recycle rotation: why, and Resume rotation for integrations:manage. */
 function RotationStalled({
@@ -248,13 +275,8 @@ function RotationStalled({
   const { t } = useTranslation()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const { trigger, isMutating } = useResumeCoverageRotationApi(integration.id)
-  const text =
-    message === STALLED_MESSAGE
-      ? t(
-          'tenableSc.coverage.stalled',
-          'Rotation stalled: the previous batch failed after it launched, so its results may not be ingested. Resuming recycles the rotation repository before the next batch.'
-        )
-      : toDisplayText(message, 500)
+  const known = STALLED_MESSAGES[message]
+  const text = known ? t(known.key, known.fallback) : toDisplayText(message, 500)
 
   const resume = async () => {
     try {
@@ -285,7 +307,7 @@ function RotationStalled({
           title={t('tenableSc.coverage.resumeTitle', 'Resume license rotation?')}
           desc={t(
             'tenableSc.coverage.resumeDesc',
-            'The next batch deletes and recreates the rotation repository in Tenable.sc. Results of the failed batch that were not ingested are lost; its assets are due again and are scanned anew.'
+            'The next batch goes on with rotation (a recycle or purge removes data from the rotation repository in Tenable.sc). Results of the failed batch that were not ingested are lost; its assets are due again and are scanned anew.'
           )}
           confirmText={t('tenableSc.coverage.resume', 'Resume rotation')}
           handleConfirm={resume}

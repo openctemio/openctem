@@ -43,6 +43,8 @@ export const OWNED_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'pending_approval',
   'acceptance_expires_at_lte',
   'informational',
+  // The practice switch (lib/practice.ts).
+  'practice',
 ])
 
 /** Params the context chips draw (an asset, a scan, a CVE group's "View"...). */
@@ -67,6 +69,8 @@ export const CONTEXT_FILTER_PARAMS: ReadonlySet<string> = new Set([
 export const FILTER_BAR_SKIP_PARAMS: ReadonlySet<string> = new Set([
   ...CONTEXT_FILTER_PARAMS,
   'informational',
+  // Shown by the practice switch above the list, not as a chip.
+  'practice',
 ])
 
 const IN_OPS = ['in', 'not_in'] as const

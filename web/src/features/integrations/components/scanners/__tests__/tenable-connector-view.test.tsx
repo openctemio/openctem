@@ -55,6 +55,10 @@ vi.mock('@/lib/api/scan-coverage-hooks', () => ({
   }),
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The retire action has its own tests (findings source-retirement).
+vi.mock('@/features/findings/components/source-retirement', () => ({
+  RetireSourceButton: () => null,
+}))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children, permission }: { children: React.ReactNode; permission: string | string[] }) => {
     const needs = Array.isArray(permission) ? permission : [permission]

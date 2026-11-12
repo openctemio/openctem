@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/crewjam/saml"
+	"github.com/openctemio/saml"
 
 	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -97,9 +97,6 @@ func (s *SAMLService) UpsertConfig(ctx context.Context, tenantID shared.ID, in S
 // that waits for an owner's approval is validated with it when submitted and
 // rebuilt with it when approved.
 func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SAMLConfigInput) (*samldom.SAMLProvider, error) {
-	if err := s.sso.requireConnections(ctx, tenantID); err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(in.IDPEntityID) == "" || strings.TrimSpace(in.IDPSSOURL) == "" {
 		return nil, samlValidationErr("idp_entity_id and idp_sso_url are required")
 	}
@@ -126,6 +123,9 @@ func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SA
 	id := shared.NewID()
 	if existing, err := s.repo.GetByTenant(ctx, tenantID); err == nil && existing != nil {
 		id = existing.ID()
+	} else if err := s.sso.requireRoomForConnection(ctx, tenantID); err != nil {
+		// Only the first SAML configuration adds a connection.
+		return nil, err
 	}
 	return samldom.Reconstruct(id, tenantID, in.IDPEntityID, in.IDPSSOURL, in.IDPCertificate,
 		in.AllowedDomains, role, in.AutoProvision, in.Enabled, time.Now().UTC(), time.Now().UTC()), nil
@@ -348,12 +348,14 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 	if err != nil {
 		return nil, err
 	}
-	strict, err := checkSAMLResponseStrict(raw, certs, saml.Clock)
+	strict, err := checkSAMLResponseStrict(raw, certs, saml.Clock, sp.EntityID)
 	if err != nil {
 		return nil, err
 	}
 	sp.SignatureVerifier = samlNoWeakAlgorithmsVerifier{}
-	assertion, err := sp.ParseXMLResponse(raw, possibleRequestIDs, *r.URL)
+	assertion, err := parseSAMLWithoutPanic(func() (*saml.Assertion, error) {
+		return sp.ParseXMLResponse(raw, possibleRequestIDs, *r.URL)
+	})
 	if err != nil {
 		var ire *saml.InvalidResponseError
 		if errors.As(err, &ire) && ire.PrivateErr != nil {
@@ -368,6 +370,19 @@ func (s *SAMLService) parseStrictResponse(ctx context.Context, sp *saml.ServiceP
 		return nil, err
 	}
 	return assertion, nil
+}
+
+// parseSAMLWithoutPanic runs the library's parse and turns a panic inside it
+// into a refusal. The library dereferences optional elements of a signed
+// assertion without nil checks; the shape checks refuse those first, and this
+// keeps any other such path a failed sign-in instead of a server error.
+func parseSAMLWithoutPanic(parse func() (*saml.Assertion, error)) (a *saml.Assertion, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			a, err = nil, samlStrictErr("saml library panicked: %v", rec)
+		}
+	}()
+	return parse()
 }
 
 // Entra ID's immutable user id and directory id, sent by default in every

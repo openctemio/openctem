@@ -17,6 +17,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	"github.com/openctemio/openctem/api/pkg/domain/attribution"
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -1444,31 +1445,10 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	}
 
 	// Properties filter — AND across keys, OR within values per key.
-	// Uses ->> text comparison for consistent matching across all value types.
-	// For array JSONB values, also checks if the array contains the value.
-	for key, vals := range filter.PropertiesFilter {
-		if len(vals) == 1 {
-			// Single value: simple equality or array containment
-			conditions = append(conditions, fmt.Sprintf(
-				"(a.properties ->> $%d = $%d OR a.properties -> $%d @> to_jsonb($%d::text))",
-				argIndex, argIndex+1, argIndex, argIndex+1))
-			args = append(args, key, vals[0])
-			argIndex += 2
-		} else if len(vals) > 0 {
-			// Multiple values: OR within this key
-			orParts := make([]string, 0, len(vals))
-			keyIdx := argIndex
-			args = append(args, key)
-			argIndex++
-			for _, v := range vals {
-				orParts = append(orParts, fmt.Sprintf(
-					"(a.properties ->> $%d = $%d OR a.properties -> $%d @> to_jsonb($%d::text))",
-					keyIdx, argIndex, keyIdx, argIndex))
-				args = append(args, v)
-				argIndex++
-			}
-			conditions = append(conditions, "("+strings.Join(orParts, " OR ")+")")
-		}
+	if cond, propArgs := propertiesCondition(filter.PropertiesFilter, argIndex); cond != "" {
+		conditions = append(conditions, cond)
+		args = append(args, propArgs...)
+		argIndex += len(propArgs)
 	}
 
 	// Batch lookup by id (the caller's tenant and data scope still apply).
@@ -1620,6 +1600,13 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		args = append(args, pq.Array(filter.MonitoringStates), filter.UnclassifiedScanned)
 		argIndex += 2
 	}
+	if len(filter.LivenessStates) > 0 {
+		// Pinned to the asset's tenant; an asset with no row is unknown.
+		conditions = append(conditions, fmt.Sprintf(`COALESCE((SELECT lv.state FROM asset_liveness lv
+			WHERE lv.tenant_id = a.tenant_id AND lv.asset_id = a.id), 'unknown') = ANY($%d)`, argIndex))
+		args = append(args, pq.Array(filter.LivenessStates))
+		argIndex++
+	}
 	if filter.Primary {
 		// Constant SQL; every subquery is pinned to the asset's tenant.
 		conditions = append(conditions, asset.PrimarySQL("a"))
@@ -1730,6 +1717,11 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 	if filter.CreatedAfter != nil {
 		conditions = append(conditions, fmt.Sprintf("a.created_at >= $%d", argIndex))
 		args = append(args, *filter.CreatedAfter)
+		argIndex++
+	}
+	if filter.CreatedBefore != nil {
+		conditions = append(conditions, fmt.Sprintf("a.created_at <= $%d", argIndex))
+		args = append(args, *filter.CreatedBefore)
 		argIndex++
 	}
 	if filter.ExposureChangedOrCreatedAfter != nil {
@@ -2323,27 +2315,9 @@ func (r *AssetRepository) upsertBatchPerRow(ctx context.Context, assets []*asset
 	return created, updated, persistedIDs, nil
 }
 
-// assetHasAnyTagSQL is the condition "asset a carries a tag of array arr"
-// (a SQL text[] expression), counting the system tags; with viewerArg (a
-// uuid placeholder) only the system tags of programs not hidden from that
-// user count.
-func assetHasAnyTagSQL(arr, viewerArg string) string {
-	if viewerArg == "" {
-		return fmt.Sprintf("(a.tags && %s OR a.system_tags && %s)", arr, arr)
-	}
-	return fmt.Sprintf("(a.tags && %s OR (a.system_tags && %s AND %s))", arr, arr,
-		visibleProgramLinkSQL("a.id", "a.tenant_id", viewerArg, "AND t = ANY("+arr+")"))
-}
+func assetHasAnyTagSQL(arr, viewerArg string) string { return assetlist.HasAnyTagSQL(arr, viewerArg) }
 
-// assetHasTagSQL is the condition "asset a carries tag tag" (a SQL text
-// expression), with the same system tag rule as assetHasAnyTagSQL.
-func assetHasTagSQL(tag, viewerArg string) string {
-	if viewerArg == "" {
-		return fmt.Sprintf("(%s = ANY(a.tags) OR %s = ANY(a.system_tags))", tag, tag)
-	}
-	return fmt.Sprintf("(%s = ANY(a.tags) OR (%s = ANY(a.system_tags) AND %s))", tag, tag,
-		visibleProgramLinkSQL("a.id", "a.tenant_id", viewerArg, "AND t = "+tag))
-}
+func assetHasTagSQL(tag, viewerArg string) string { return assetlist.HasTagSQL(tag, viewerArg) }
 
 // ListDistinctTags returns the tags of the assets of a tenant that access
 // admits, most used first (ties by name), and, with q.IncludeSystem, the
@@ -3164,4 +3138,38 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 		return nil, fmt.Errorf("iterate nodes: %w", err)
 	}
 	return nodes, nil
+}
+
+// propertiesCondition is the attribute filter (the properties param): AND
+// across keys, OR within a key's values, each value matching the property
+// as text or as an element of an array property. Keys and values are bound
+// from $argIndex; "" when there is nothing to filter.
+func propertiesCondition(props map[string][]string, argIndex int) (string, []any) {
+	keys := make([]string, 0, len(props))
+	for k, vals := range props {
+		if len(vals) > 0 {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return "", nil
+	}
+	sort.Strings(keys)
+	conds := make([]string, 0, len(keys))
+	var args []any
+	for _, key := range keys {
+		keyIdx := argIndex
+		args = append(args, key)
+		argIndex++
+		orParts := make([]string, 0, len(props[key]))
+		for _, v := range props[key] {
+			orParts = append(orParts, fmt.Sprintf(
+				"(a.properties ->> $%d = $%d OR a.properties -> $%d @> to_jsonb($%d::text))",
+				keyIdx, argIndex, keyIdx, argIndex))
+			args = append(args, v)
+			argIndex++
+		}
+		conds = append(conds, "("+strings.Join(orParts, " OR ")+")")
+	}
+	return strings.Join(conds, " AND "), args
 }

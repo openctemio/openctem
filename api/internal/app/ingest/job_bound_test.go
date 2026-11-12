@@ -2,7 +2,7 @@ package ingest
 
 import (
 	"context"
-	"strings"
+	"fmt"
 	"testing"
 
 	"github.com/openctemio/ctis/v2"
@@ -49,17 +49,24 @@ func wantKept(t *testing.T, got map[string]bool, names ...string) {
 	}
 }
 
-func wantDropped(t *testing.T, got map[string]bool, names ...string) {
+// wantOutside checks that each name lies outside the job's targets and was
+// recorded anyway (research 436), and that its report ref is marked.
+func wantOutside(t *testing.T, got map[string]bool, out *Output, refs []string, names ...string) {
 	t.Helper()
 	for _, n := range names {
-		if got[n] {
-			t.Errorf("%s lies outside the job's targets and was created", n)
+		if !got[n] {
+			t.Errorf("%s lies outside the job's targets and was dropped; it must be recorded (stored: %v)", n, got)
+		}
+	}
+	for _, r := range refs {
+		if !out.OutsideJobAssetRefs[r] {
+			t.Errorf("ref %s is not marked outside the targets (%v)", r, out.OutsideJobAssetRefs)
 		}
 	}
 }
 
-// Subdomain discovery may add names under the target root, never a name
-// outside it; a finding on a dropped asset goes with it.
+// Subdomain discovery under the target root is inside the job; a name
+// outside it is recorded and marked outside the targets.
 func TestJobBound_SubdomainDiscoveryStaysUnderTheRoot(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "subfinder"},
@@ -73,15 +80,15 @@ func TestJobBound_SubdomainDiscoveryStaysUnderTheRoot(t *testing.T) {
 	}
 	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("subfinder", command.CommandTypeScan, "example.com"), report)
 	wantKept(t, got, "example.com", "api.example.com", "a.b.example.com")
-	wantDropped(t, got, "evil-example.net", "notexample.com")
-	if out.AssetsOutsideJob != 2 || !out.OutsideJobAssetRefs["evil"] || !out.OutsideJobAssetRefs["suffix"] {
-		t.Fatalf("outside job = %d, refs %v", out.AssetsOutsideJob, out.OutsideJobAssetRefs)
+	wantOutside(t, got, out, []string{"evil", "suffix"}, "evil-example.net", "notexample.com")
+	if out.AssetsOutsideJob != 2 || out.OutsideJobAssetRefs["sub"] || out.AssetsOverCap != 0 {
+		t.Fatalf("outside job = %d, over cap %d, refs %v", out.AssetsOutsideJob, out.AssetsOverCap, out.OutsideJobAssetRefs)
 	}
 }
 
 // A port scan of a target name keeps the address the name resolves to and
-// the services on it; an address no in-bound asset vouches for, and a host
-// name outside the targets, are dropped.
+// the services on it inside the job; an address no in-bound asset vouches
+// for, its port, and a host name outside the targets are recorded outside.
 func TestJobBound_PortScanKeepsServicesOnTargetHosts(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "naabu"},
@@ -102,20 +109,17 @@ func TestJobBound_PortScanKeepsServicesOnTargetHosts(t *testing.T) {
 	}
 	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("naabu", command.CommandTypeScan, "app.example.com"), report)
 	wantKept(t, got, "198.51.100.10", "app.example.com")
-	wantDropped(t, got, "203.0.113.77", "victim.example.org")
-	for name := range got {
-		if strings.HasPrefix(name, "203.0.113.77:22") {
-			t.Errorf("a port on an unvouched address was created: %s", name)
+	wantOutside(t, got, out, []string{"stray", "straysvc", "other"}, "203.0.113.77", "victim.example.org")
+	for _, ref := range []string{"ip", "svc", "host"} {
+		if out.OutsideJobAssetRefs[ref] {
+			t.Errorf("%s is inside the job and was marked outside", ref)
 		}
-	}
-	if out.AssetsOutsideJob < 2 {
-		t.Fatalf("outside job = %d, want at least 2", out.AssetsOutsideJob)
 	}
 }
 
-// DNS resolution keeps the address a target name states in its records; an
-// address the report lists on its own is dropped, and a vouched address
-// cannot vouch for a name outside the targets.
+// DNS resolution vouches only for the addresses a target name states; an
+// address the report lists on its own, and a name outside the targets that
+// claims a vouched address, are recorded outside the targets.
 func TestJobBound_ResolutionVouchesOnlyStatedAddresses(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "dnsx"},
@@ -132,13 +136,17 @@ func TestJobBound_ResolutionVouchesOnlyStatedAddresses(t *testing.T) {
 			{ID: "planted", Type: ctis.AssetTypeDomainName, Value: "www.example.com", Properties: ctis.Properties{"ip_addresses": []any{"192.0.2.99"}}},
 		},
 	}
-	got, _ := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("dnsx", command.CommandTypeScan, "www.example.com"), report)
+	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("dnsx", command.CommandTypeScan, "www.example.com"), report)
 	wantKept(t, got, "www.example.com", "192.0.2.10")
-	wantDropped(t, got, "192.0.2.99", "attacker.example.net")
+	wantOutside(t, got, out, []string{"b", "chain"}, "192.0.2.99", "attacker.example.net")
+	if out.OutsideJobAssetRefs["a"] || out.OutsideJobAssetRefs["name"] {
+		t.Fatalf("a vouched asset was marked outside: %v", out.OutsideJobAssetRefs)
+	}
 }
 
 // An HTTP probe keeps services on the target and assets that name no host
-// (a certificate); a service on another host is dropped.
+// (a certificate) inside the job; a service on another host is recorded
+// outside the targets.
 func TestJobBound_ProbeKeepsOnlyTargetServices(t *testing.T) {
 	report := &ctis.Report{
 		Tool: &ctis.Tool{Name: "httpx"},
@@ -149,8 +157,8 @@ func TestJobBound_ProbeKeepsOnlyTargetServices(t *testing.T) {
 		},
 	}
 	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("httpx", command.CommandTypeScan, "https://app.example.com"), report)
-	wantDropped(t, got, "https://evil.example.net")
-	if out.AssetsOutsideJob != 1 || !out.OutsideJobAssetRefs["evil"] || out.OutsideJobAssetRefs["cert"] || out.OutsideJobAssetRefs["svc"] {
+	wantOutside(t, got, out, []string{"evil"}, "https://evil.example.net")
+	if out.AssetsOutsideJob != 1 || out.OutsideJobAssetRefs["cert"] || out.OutsideJobAssetRefs["svc"] {
 		t.Fatalf("outside job = %d, refs %v", out.AssetsOutsideJob, out.OutsideJobAssetRefs)
 	}
 }
@@ -178,8 +186,9 @@ func TestJobBound_WhichBindingsAreBound(t *testing.T) {
 	}
 }
 
-// Tenant isolation: a report bound to tenant A's job never touches tenant
-// B's asset of the same out-of-bounds name, and creates nothing in A.
+// Tenant isolation: a report bound to tenant A's job records the
+// out-of-bounds name in A only; tenant B's asset of the same name is never
+// read, merged or changed.
 func TestJobBound_CrossTenant(t *testing.T) {
 	repo := newMemAssetRepo()
 	tenantA, tenantB := shared.NewID(), shared.NewID()
@@ -188,46 +197,109 @@ func TestJobBound_CrossTenant(t *testing.T) {
 	}}); !got["victim.example.org"] {
 		t.Fatal("seed asset of tenant B missing")
 	}
-	before := repo.rows[tenantB]["victim.example.org"].LastSeen()
-	got, out := runJobBound(t, repo, tenantA, jobCmd("subfinder", command.CommandTypeScan, "example.com"), &ctis.Report{Assets: []ctis.Asset{
+	seed := repo.rows[tenantB]["victim.example.org"]
+	before := seed.LastSeen()
+	_, out := runJobBound(t, repo, tenantA, jobCmd("subfinder", command.CommandTypeScan, "example.com"), &ctis.Report{Assets: []ctis.Asset{
 		{ID: "v", Type: ctis.AssetTypeDomainName, Value: "victim.example.org"},
 	}})
-	if len(got) != 0 || out.AssetsOutsideJob != 1 {
-		t.Fatalf("tenant A stored %v, outside job %d", got, out.AssetsOutsideJob)
+	mine := repo.rows[tenantA]["victim.example.org"]
+	if mine == nil || out.AssetsOutsideJob != 1 {
+		t.Fatalf("tenant A: recorded %v, outside job %d", mine, out.AssetsOutsideJob)
+	}
+	if mine.ID() == seed.ID() || !mine.TenantID().Equals(tenantA) {
+		t.Fatal("tenant A's report resolved to tenant B's asset")
 	}
 	if len(repo.rows[tenantB]) != 1 || !repo.rows[tenantB]["victim.example.org"].LastSeen().Equal(before) {
 		t.Fatal("tenant B's asset was changed by tenant A's report")
 	}
 }
 
-// Findings on a dropped asset are dropped with a receipt that names the
-// binding, and nothing lands on the one asset that was kept.
-func TestJobBound_FindingsOnDroppedAssetsAreSkipped(t *testing.T) {
+// A report records at most maxOutsideTargetAssets assets outside its
+// targets; the rest are refused, counted and marked, and the assets inside
+// the targets are unaffected.
+func TestJobBound_OutsideTargetsCap(t *testing.T) {
+	report := &ctis.Report{Tool: &ctis.Tool{Name: "subfinder"}, Assets: []ctis.Asset{
+		{ID: "in", Type: ctis.AssetTypeDomainName, Value: "api.example.com"},
+	}}
+	extra := 5
+	for i := 0; i < maxOutsideTargetAssets+extra; i++ {
+		report.Assets = append(report.Assets, ctis.Asset{ID: fmt.Sprintf("o%d", i), Type: ctis.AssetTypeDomainName,
+			Value: fmt.Sprintf("h%d.example.net", i)})
+	}
+	got, out := runJobBound(t, newMemAssetRepo(), shared.NewID(), jobCmd("subfinder", command.CommandTypeScan, "example.com"), report)
+	if out.AssetsOutsideJob != maxOutsideTargetAssets || out.AssetsOverCap != extra || len(out.OverCapAssetRefs) != extra {
+		t.Fatalf("recorded %d, refused %d (%d refs)", out.AssetsOutsideJob, out.AssetsOverCap, len(out.OverCapAssetRefs))
+	}
+	if !got["api.example.com"] || len(got) != maxOutsideTargetAssets+1 {
+		t.Fatalf("stored %d names, want %d", len(got), maxOutsideTargetAssets+1)
+	}
+	last := fmt.Sprintf("o%d", maxOutsideTargetAssets+extra-1)
+	if !out.OverCapAssetRefs[last] || out.OutsideJobAssetRefs[last] || got[fmt.Sprintf("h%d.example.net", maxOutsideTargetAssets+extra-1)] {
+		t.Fatal("an asset over the cap was recorded")
+	}
+}
+
+// Findings on an asset recorded outside the targets are kept and counted;
+// findings on an asset refused over the cap are refused with a receipt item
+// that names the binding and the cap.
+func TestJobBound_FindingsOutsideTargets(t *testing.T) {
 	tenantID := shared.NewID()
 	repo := &interopRepo{}
 	p := NewFindingProcessor(repo, nil, nil, logger.NewNop())
-	out := &Output{OutsideJobAssetRefs: map[string]bool{"evil": true}, AssetsOutsideJob: 1}
+	outside, kept := shared.NewID(), shared.NewID()
+	out := &Output{OutsideJobAssetRefs: map[string]bool{"redirect": true}, AssetsOutsideJob: 1,
+		OverCapAssetRefs: map[string]bool{"flood": true}, AssetsOverCap: 1}
 	report := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "nuclei"}, Findings: []ctis.Finding{
-		{Type: ctis.FindingTypeVulnerability, Title: "planted", Severity: ctis.SeverityHigh, AssetRef: "evil", RuleID: "r1"},
-		{Type: ctis.FindingTypeVulnerability, Title: "no ref", Severity: ctis.SeverityHigh, RuleID: "r2"},
+		{Type: ctis.FindingTypeVulnerability, Title: "seen after a redirect", Severity: ctis.SeverityHigh, AssetRef: "redirect", RuleID: "r1"},
+		{Type: ctis.FindingTypeVulnerability, Title: "flood", Severity: ctis.SeverityHigh, AssetRef: "flood", RuleID: "r2"},
+		{Type: ctis.FindingTypeVulnerability, Title: "on target", Severity: ctis.SeverityHigh, AssetRef: "kept", RuleID: "r3"},
 	}}
 	scope := newAlterScope(jobCmd("nuclei", command.CommandTypeScan, "app.example.com"))
 	err := p.processBatch(context.Background(), newTestSensor(t, tenantID), tenantID, report,
-		map[string]shared.ID{"kept": shared.NewID()}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope)
+		map[string]shared.ID{"kept": kept, "redirect": outside}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope,
+		vulnerability.SourceIdentity{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.FindingsOutsideJob != 1 || out.FindingsCreated != 0 || out.FindingsSkipped != 2 {
-		t.Fatalf("outside job %d, created %d, skipped %d", out.FindingsOutsideJob, out.FindingsCreated, out.FindingsSkipped)
+	if out.FindingsOutsideJob != 1 || out.FindingsOverCap != 1 || out.FindingsSkipped != 1 || out.FindingsCreated != 2 {
+		t.Fatalf("outside %d, over cap %d, skipped %d, created %d", out.FindingsOutsideJob, out.FindingsOverCap, out.FindingsSkipped, out.FindingsCreated)
+	}
+	if !out.OutsideTargetAssetIDs[outside] || out.OutsideTargetAssetIDs[kept] {
+		t.Fatalf("outside asset ids %v", out.OutsideTargetAssetIDs)
 	}
 	found := false
 	for _, it := range out.Items {
-		if it.ReasonCode == ingestreceipt.ReasonOutsideJob && it.Policy == ingestreceipt.PolicyBinding {
+		if it.ReasonCode == ingestreceipt.ReasonOverCap && it.Policy == ingestreceipt.PolicyBinding &&
+			it.Disposition == ingestreceipt.DispositionRejected {
 			found = true
+		}
+		if it.ReasonCode == ingestreceipt.ReasonOutsideJob {
+			t.Fatal("a recorded finding has a refusal item")
 		}
 	}
 	if !found {
-		t.Fatal("no receipt item names the job binding")
+		t.Fatal("no receipt item names the cap")
+	}
+}
+
+// New findings on assets recorded outside the targets run no automations.
+func TestWithoutOutsideTargets(t *testing.T) {
+	tenantID := shared.NewID()
+	outside, kept := shared.NewID(), shared.NewID()
+	mk := func(assetID shared.ID) *vulnerability.Finding {
+		f, err := vulnerability.NewFinding(tenantID, assetID, vulnerability.FindingSourceDAST, "nuclei", vulnerability.SeverityHigh, "t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	all := []*vulnerability.Finding{mk(outside), mk(kept)}
+	got := withoutOutsideTargets(all, &Output{OutsideTargetAssetIDs: map[shared.ID]bool{outside: true}})
+	if len(got) != 1 || got[0].AssetID() != kept {
+		t.Fatalf("kept %d findings", len(got))
+	}
+	if len(withoutOutsideTargets(all, &Output{})) != 2 {
+		t.Fatal("nothing outside: every finding runs its automations")
 	}
 }
 

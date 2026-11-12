@@ -1031,6 +1031,21 @@ export type ComplianceFramework =
 
 export type ComplianceResult = 'pass' | 'fail' | 'manual' | 'not_applicable'
 
+/** PASSED / FAILED / … as a benchmark audit reports it. */
+export type ComplianceOutcome = 'PASSED' | 'FAILED' | 'WARNING' | 'ERROR' | 'SKIPPED'
+
+/** One sub-check of a check that needs several conditions to pass. */
+export interface ComplianceSubCheck {
+  outcome: ComplianceOutcome
+  name: string
+  /** The file the sub-check read, when it names one. */
+  file?: string
+  /** The expression the file or the output had to match. */
+  expect?: string
+  /** What the sub-check found (the matched lines or the command output). */
+  detail: string
+}
+
 export interface ComplianceDetails {
   framework?: ComplianceFramework
   frameworkVersion?: string
@@ -1164,8 +1179,22 @@ export interface FindingSourceData {
   locationKey?: string
 }
 
+/** One service a version-match finding is observed on, with its own state. */
+export interface FindingServiceLocation {
+  assetId: string
+  assetName: string
+  /** Scheme (or transport) and port: "https:443". */
+  label: string
+  state: 'affected' | 'fixed' | 'not_affected'
+  stateAt: string
+  version?: string
+  lastSeenAt: string
+}
+
 export interface FindingDetail extends Finding {
   activities: Activity[]
+  /** Version-match findings: the services of the host it is observed on. */
+  locations?: FindingServiceLocation[]
   scannerFacts?: FindingScannerFacts
   scannerOutput?: FindingScannerOutput
   sourceData?: FindingSourceData

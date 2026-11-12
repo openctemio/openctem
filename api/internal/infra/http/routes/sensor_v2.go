@@ -176,9 +176,13 @@ func mountSensorV2(router Router, h *handler.SensorResultsV2Handler, ctl *handle
 		}
 		if ctl.HasEgress() {
 			// Proxy pools (docs/architecture/sensor-proxies.md): the leasing
-			// sensor's pool credentials and its health report.
-			r.POST("/commands/{command_id}/"+protov2.EgressCredentialsAction, ctl.EgressCredentials, controlWrite...)
+			// sensor's health report of its job's pool.
 			r.POST("/commands/{command_id}/"+protov2.EgressReportAction, ctl.EgressReport, controlWrite...)
+		}
+		if ctl.HasTaskSecrets() {
+			// Task secrets (docs/architecture/task-secrets.md): the sealed
+			// values of a claimed job's secret refs, for one task.
+			r.POST("/commands/{command_id}/"+protov2.SecretsAction, ctl.TaskSecrets, controlWrite...)
 		}
 		if ctl.HasLogs() {
 			// Per-task logs (RFC-029 §4.4.1): the control write budget, a
@@ -223,8 +227,8 @@ var v2RouteNames = map[string]string{
 	protov2.PathPrefix + "/commands/{command_id}/complete":                      "complete",
 	protov2.PathPrefix + "/commands/{command_id}/fail":                          "fail",
 	protov2.PathPrefix + "/commands/{command_id}/logs":                          "logs",
-	protov2.PathPrefix + "/commands/{command_id}/egress-credentials":            "egress_credentials",
 	protov2.PathPrefix + "/commands/{command_id}/egress-report":                 "egress_report",
+	protov2.PathPrefix + "/commands/{command_id}/secrets":                       "secrets",
 	protov2.PathPrefix + protov2.SuppressionsPath:                               "suppressions",
 	protov2.PathPrefix + protov2.ContentPath + "/desired":                       "content_desired",
 	protov2.PathPrefix + protov2.ContentPath + "/packs/{digest}":                "content_pack",
@@ -258,6 +262,9 @@ func sensorControlV2Handler(h Handlers, log *logger.Logger) *handler.SensorContr
 	ctl := handler.NewSensorControlV2Handler(h.Ingest, h.Command, h.Suppression, log)
 	if h.ProxyPool != nil {
 		ctl.SetEgress(h.ProxyPool.Service())
+	}
+	if h.TaskSecrets != nil {
+		ctl.SetTaskSecrets(h.TaskSecrets)
 	}
 	return ctl
 }

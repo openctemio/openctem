@@ -53,7 +53,7 @@ export function paletteSearchUrls(
   const enc = encodeURIComponent(q)
   const out: Partial<Record<PaletteEntityKind, string>> = {}
   if (access.findings) out.finding = `/api/v1/findings?q=${enc}&per_page=${PALETTE_PER_TYPE}`
-  if (access.assets) out.asset = `/api/v1/assets?search=${enc}&per_page=${PALETTE_PER_TYPE}`
+  if (access.assets) out.asset = `/api/v1/assets?q=${enc}&per_page=${PALETTE_PER_TYPE}`
   if (access.tasks) out.task = taskListUrl({ search: q, perPage: PALETTE_PER_TYPE })
   return out
 }

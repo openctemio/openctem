@@ -95,6 +95,39 @@ test(
       await sheet.getByRole('button', { name: 'Show all' }).click()
       await expect(canvas.getByText(ips[9], { exact: true })).toBeVisible()
       await expect(canvas.getByTestId('flow-node').filter({ hasText: '9 assets' })).toHaveCount(0)
+
+      // Full screen: the same graph (expanded group included) in a
+      // full-viewport dialog, with the hops selector; f and Escape.
+      await sheet.getByRole('button', { name: '3', exact: true }).click()
+      await canvas.getByTestId('flow-fullscreen-toggle').click()
+      const full = page.getByRole('dialog', { name: `Related assets of ${ips[0]}` })
+      await expect(full).toBeVisible()
+      const fullCanvas = full.getByRole('application', { name: 'Related assets graph' })
+      await expect(fullCanvas.getByText(root, { exact: true })).toBeVisible()
+      await expect(full.getByRole('button', { name: '3', exact: true })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+      // The dialog opens with a zoom-in animation, and boundingBox reports the
+      // transformed box: poll until it has settled at the full viewport.
+      const vp = page.viewportSize()
+      await expect
+        .poll(
+          async () => {
+            const box = await full.boundingBox()
+            return !!(box && vp && box.width >= vp.width - 2 && box.height >= vp.height - 2)
+          },
+          { message: 'the full-screen graph fills the viewport once it has opened' }
+        )
+        .toBe(true)
+      await page.keyboard.press('Escape')
+      await expect(full).toBeHidden()
+      await expect(canvas).toBeVisible()
+      await canvas.getByTestId('flow-node').first().focus()
+      await page.keyboard.press('f')
+      await expect(full).toBeVisible()
+      await page.keyboard.press('f')
+      await expect(full).toBeHidden()
     } finally {
       for (const id of [...ipIds, mailId, rootId]) await api(page, 'DELETE', `/api/v1/assets/${id}`)
     }

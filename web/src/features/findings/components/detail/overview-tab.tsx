@@ -46,6 +46,8 @@ import {
   DetailSections,
 } from '@/features/shared/components/detail-sheet'
 import { UntrustedTextBlock } from '@/features/shared/components/untrusted-text-block'
+import { ScannerText } from '@/features/shared/components/scanner-text'
+import { complianceCheckOf, complianceDescriptionText } from '../../lib/compliance-check'
 import { useTriageResult } from '@/features/ai-triage/api'
 import { AIBadge } from '@/features/shared/components/ai-badge'
 import { useRelatedCVEs } from '../../api/use-finding-groups'
@@ -105,6 +107,12 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   }, [triageResult])
 
   const desc = findingDescription(finding)
+  // A configuration check shows its policy value, actual value and mapped
+  // controls in its own section: the description does not repeat them.
+  const check = complianceCheckOf(finding)
+  const descText = check && desc.text ? complianceDescriptionText(desc.text, check) : desc.text
+  const actualFromOutput =
+    !!check?.actualValue && check.actualValue === finding.scannerOutput?.text.trim()
   const adv = finding.advisory
   const hasContext =
     finding.confidence !== undefined ||
@@ -128,11 +136,11 @@ export function OverviewTab({ finding }: OverviewTabProps) {
       {triage && <AITriageSummary data={triage} />}
 
       <DetailSection title={t('findings.overviewTab.description', 'Description')} icon={FileText}>
-        {desc.text ? (
+        {descText ? (
           isHuman ? (
-            <MarkdownPreview content={desc.text} />
+            <MarkdownPreview content={descText} />
           ) : (
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">{desc.text}</p>
+            <ScannerText text={descText} />
           )
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -154,12 +162,20 @@ export function OverviewTab({ finding }: OverviewTabProps) {
 
       <FindingIssueGroupSection findingId={finding.id} />
 
-      {finding.scannerOutput && <ScannerOutputSection output={finding.scannerOutput} />}
+      {finding.scannerOutput && !actualFromOutput && (
+        <ScannerOutputSection output={finding.scannerOutput} />
+      )}
 
-      {finding.toolName === VERSION_MATCH_TOOL && <VersionMatchPanel metadata={finding.metadata} />}
+      {finding.toolName === VERSION_MATCH_TOOL && (
+        <VersionMatchPanel metadata={finding.metadata} locations={finding.locations} />
+      )}
 
       {finding.sourceData && (
-        <SourceDataSection data={finding.sourceData} ruleName={finding.ruleName} />
+        <SourceDataSection
+          data={finding.sourceData}
+          ruleName={finding.ruleName}
+          hideExtraKeys={check?.shownExtraKeys}
+        />
       )}
 
       {extraAssets.length > 0 && (

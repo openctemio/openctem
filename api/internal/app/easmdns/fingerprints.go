@@ -14,6 +14,13 @@ import (
 //go:embed fingerprints/can-i-take-over-xyz.json
 var fingerprintsJSON []byte
 
+// The project's own provider list (fingerprints/NOTICE.md): hosting
+// services the list above does not know, measured by this project. An entry
+// here wins over the same suffix in the list above.
+//
+//go:embed fingerprints/openctem-providers.json
+var ownProvidersJSON []byte
+
 // Provider is a hosting service whose CNAME suffixes the fingerprint list
 // names.
 type Provider struct {
@@ -25,6 +32,12 @@ type Provider struct {
 	// claimable from DNS alone (the target answers NXDOMAIN until someone
 	// registers it).
 	NXDomain bool
+	// Hosted is true for a provider that serves every customer name from
+	// shared front ends: a name it no longer serves still resolves (the
+	// CNAME target exists), so the DNS answer alone shows nothing and the
+	// provider's own answer for the name (its "not configured" page, a
+	// refused connection, a stale certificate) is the evidence.
+	Hosted bool
 }
 
 // Takeoverable reports whether the list marks the provider vulnerable.
@@ -35,6 +48,7 @@ type fingerprintRow struct {
 	CNAME    []string `json:"cname"`
 	Status   string   `json:"status"`
 	NXDomain bool     `json:"nxdomain"`
+	Hosted   bool     `json:"hosted"`
 }
 
 var (
@@ -46,29 +60,18 @@ var (
 
 func loadProviders() (map[string]Provider, []string, error) {
 	providersOnce.Do(func() {
-		var rows []fingerprintRow
+		var rows, own []fingerprintRow
 		if err := json.Unmarshal(fingerprintsJSON, &rows); err != nil {
 			providersErr = fmt.Errorf("parse takeover fingerprints: %w", err)
 			return
 		}
-		providers = map[string]Provider{}
-		for _, r := range rows {
-			for _, c := range r.CNAME {
-				s := strings.Trim(strings.ToLower(strings.TrimSpace(c)), ".")
-				// Entries are DNS suffixes; the list also holds a few IPs and
-				// URLs (an A-record target, a probe URL), which a CNAME can
-				// never match.
-				if s == "" || strings.ContainsAny(s, "/:") || !strings.Contains(s, ".") || isIPLiteral(s) {
-					continue
-				}
-				// When two services claim one suffix, keep the more
-				// actionable verdict.
-				cur, ok := providers[s]
-				if !ok || rank(r.Status, r.NXDomain) > rank(cur.Status, cur.NXDomain) {
-					providers[s] = Provider{Service: r.Service, Status: r.Status, NXDomain: r.NXDomain}
-				}
-			}
+		if err := json.Unmarshal(ownProvidersJSON, &own); err != nil {
+			providersErr = fmt.Errorf("parse own provider list: %w", err)
+			return
 		}
+		providers = map[string]Provider{}
+		addRows(rows, false)
+		addRows(own, true)
 		for s := range providers {
 			suffixes = append(suffixes, s)
 		}
@@ -80,6 +83,26 @@ func loadProviders() (map[string]Provider, []string, error) {
 		})
 	})
 	return providers, suffixes, providersErr
+}
+
+// addRows adds a list's suffixes. Entries are DNS suffixes; the list also
+// holds a few IPs and URLs (an A-record target, a probe URL), which a CNAME
+// can never match. When two services of one list claim a suffix, the more
+// actionable verdict is kept; an entry of the own list (override) replaces
+// whatever the third-party list said.
+func addRows(rows []fingerprintRow, override bool) {
+	for _, r := range rows {
+		for _, c := range r.CNAME {
+			s := strings.Trim(strings.ToLower(strings.TrimSpace(c)), ".")
+			if s == "" || strings.ContainsAny(s, "/:") || !strings.Contains(s, ".") || isIPLiteral(s) {
+				continue
+			}
+			cur, ok := providers[s]
+			if override || !ok || rank(r.Status, r.NXDomain) > rank(cur.Status, cur.NXDomain) {
+				providers[s] = Provider{Service: r.Service, Status: r.Status, NXDomain: r.NXDomain, Hosted: r.Hosted}
+			}
+		}
+	}
 }
 
 func rank(status string, nx bool) int {

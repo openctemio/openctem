@@ -147,6 +147,12 @@ change-ticket lookup in the Jira integration; approver-added constraints
 
 ### 4.2 Presets
 
+A tag that an enabled approval rule reads (for example `production`) is a
+governing tag: only an owner or administrator can add or remove it on an
+asset, and no import can set it (asset-schema.md, "Governing tags"). Removing
+the tag to avoid the approval therefore needs the same authority as editing
+the rule.
+
 Off (default) · Light (intrusive scans, one approval, justification) ·
 Standard (Light + active scans on production-tagged, high-criticality or
 crown-jewel assets, and active scans of more than 500 targets) · Strict

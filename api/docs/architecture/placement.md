@@ -25,16 +25,18 @@ it, instead of "Waiting for a sensor".
 | Claim SQL | not reserved for another sensor | `pinned_elsewhere` |
 | Claim SQL | in the task's scan zone, with the tool | `outside_zone` |
 | Claim SQL | the sensor reported the tool installed | `tool_missing` |
-| Claim SQL | the sensor has not refused this task | `refused_earlier` |
+| Claim SQL | the sensor has not refused this task (a change of its reported local policy lifts this once per policy digest: a task it already refused under that digest stays excluded, so a policy report that flips back and forth never hands the task back) | `refused_earlier` |
 | Claim SQL | the sensor has not failed this task for an infrastructure reason or lost its lease | `failed_here_earlier` |
 | Claim SQL | every required capability offered | `capability_missing` |
 | Claim SQL | every required feature *reported by the sensor* (`required_features`: `net.confined@1` for a web-scoped nuclei job) | `not_confined` |
+| Claim SQL | a tool that needs strong isolation (`isolation: strong` in its manifest) has `required_features: ["isolation.strong@1"]`, which only a sensor that proved a strong isolation backend at start-up reports | `strong_isolation_missing` |
 | Dispatch gate | the sensor grant admits the task | `grant_<dimension>` (`grant_tools`, `grant_tier_ceiling`, `grant_target_network`, …) |
 | Dispatch gate | the job's tier on this sensor is within the scan's intensity | `intensity` |
 | Dispatch gate | the grant and policy could be read (fail closed) | `policy_unavailable` |
 | Dispatch gate | private targets: the sensor enforces a local policy when the organization requires one | `private_needs_local_policy` |
 | Dispatch gate | the organization enabled the opt-in the task uses | `opt_in_disabled` |
 | Dispatch gate | the sensor's own local policy accepts the task | `local_policy_refuses` |
+| Retired source | the organization has not retired the task's tool as a source on this sensor ([source retirement](source-retirement.md)); another sensor with the tool takes the task, and a task pinned to this sensor, or one no other sensor may run, fails with `SOURCE_RETIRED` | `source_retired` |
 | Delivery (proxy pools) | the sensor's jobs go through a proxy pool and the sensor reports it can honor one (`egress.upstream@1`, `net.confined@1`); scan and retest jobs only | `egress_unsupported` |
 | Delivery (proxy pools) | the same, and for a validate job the sensor's validate executor goes through the pool (`egress.validate@1`) | `egress_validate_unsupported` |
 | Delivery (proxy pools) | the sensor's owner set it to scan direct on its host (`egress.host-direct@1`) and the job needs a pool: the organization requires a proxy, or a pool is named for the sensor | `egress_host_direct` |
@@ -156,6 +158,22 @@ limit ("its hosts are busy on this sensor") is stored as the release code
   decides nothing; the claim stays the only authority.
 - Gate checks run only for sensors that pass the claim SQL, as the poll
   does; a sensor blocked by the SQL lists those reasons only.
+
+## Jobs that need strong isolation
+
+A tool whose manifest says `isolation: strong` (sdk-go `tool.IsolationStrong`;
+the default is `process`) needs a sensor that proved a strong isolation
+backend. The command repository stamps `required_features:
+["isolation.strong@1"]` on every command of such a tool when it is created
+(scan, retest, validate, follow-up, host split), and the same feature gate as
+above offers it only to a sensor whose own report lists the capability. The
+sensor advertises it only after a start-up probe that really ran a confined
+task on a strong backend (sdk-go `Kit.ProbeIsolation`); no setting or
+administrator declaration adds it. The job is stored and waits with
+`strong_isolation_missing`; it is never run on the process sandbox and never
+refused at creation. No bundled tool needs strong isolation yet and no strong
+backend ships yet (the list of such tools is empty in production), so today
+the gate only holds jobs of a placeholder tool in tests.
 
 ## Jobs that need a confined sensor
 

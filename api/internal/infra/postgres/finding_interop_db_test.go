@@ -105,9 +105,20 @@ func TestFindingInterop_DB(t *testing.T) {
 		t.Errorf("members the sighting did not carry were lost: %+v", got)
 	}
 
-	// Hostile values are bounded before storage.
+	// Another tool never replaces a stored member; it fills only an empty one.
+	_, err = repo.UpdateInteropBatch(ctx, f.tenant, []vulnerability.InteropUpdate{{Fingerprint: "fp-shared", Tool: "openvas",
+		Data: vulnerability.InteropData{Native: &vulnerability.InteropNative{VulnID: "1.3.6.1"}, LocationKey: "net:2222/tcp"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = repo.GetInterop(ctx, f.tenant, mine)
+	if got.Native == nil || got.Native.VulnID != "201194" || got.LocationKey != "net:22/tcp" {
+		t.Errorf("another tool replaced the primary's data: %+v", got)
+	}
+
+	// Hostile values are bounded before storage (the primary tool's sighting).
 	huge := strings.Repeat("x", 10000)
-	_, err = repo.UpdateInteropBatch(ctx, f.tenant, []vulnerability.InteropUpdate{{Fingerprint: "fp-shared", Data: vulnerability.InteropData{
+	_, err = repo.UpdateInteropBatch(ctx, f.tenant, []vulnerability.InteropUpdate{{Fingerprint: "fp-shared", Tool: "nessus", Data: vulnerability.InteropData{
 		Native:      &vulnerability.InteropNative{VulnID: huge},
 		SourceExtra: map[string]string{"k\x00": "v", "ok": huge},
 	}}})
@@ -237,7 +248,7 @@ func TestFindingInterop_SkipsUnchanged_DB(t *testing.T) {
 	}
 	upd := func(d vulnerability.InteropData) int64 {
 		t.Helper()
-		n, err := repo.UpdateInteropBatch(ctx, f.tenant, []vulnerability.InteropUpdate{{Fingerprint: "fp-noop", Data: d}})
+		n, err := repo.UpdateInteropBatch(ctx, f.tenant, []vulnerability.InteropUpdate{{Fingerprint: "fp-noop", Tool: "nessus", Data: d}})
 		if err != nil {
 			t.Fatalf("update: %v", err)
 		}

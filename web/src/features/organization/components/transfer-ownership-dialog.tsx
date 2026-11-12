@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState, type FormEvent } from 'react'
-import { AlertCircle, AlertTriangle, Check, Crown, Loader2, X } from 'lucide-react'
+import { AlertTriangle, Check, Crown, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -17,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -209,15 +209,10 @@ export function TransferOwnershipDialog({
                   </div>
                 </div>
               )}
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
             </div>
           </DialogBody>
+          <DialogSubmitError message={error} />
+
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               {t('common.cancel', 'Cancel')}

@@ -187,7 +187,7 @@ var ownerAcceptanceQuery = `
 			(fa.changes->>'assignee_id')::uuid AS assignee_id,
 			f.sla_deadline, f.resolved_at
 		FROM finding_activities fa
-		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only /*FX:f*/ AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
+		JOIN findings f ON f.id = fa.finding_id AND f.tenant_id = $1 AND NOT f.branch_only AND f.practice <> 'compliance' /*FX:f*/ AND (($3::bool AND ` + programVisibleSQL("f.asset_id") + `) OR NOT EXISTS (SELECT 1 FROM assets pa WHERE pa.tenant_id = $1 AND pa.id = f.asset_id AND pa.program_only))
 		WHERE fa.tenant_id = $1
 			AND fa.activity_type = 'assigned'
 			AND fa.created_at >= NOW() - make_interval(days => $2::int)

@@ -92,8 +92,23 @@ image and the Helm chart; the API-only and web-only Compose files are removed.
 `make docker-prod` only prints how to start `api/deploy`. Operators follow
 [docs.openctem.io/install](https://docs.openctem.io/install/).
 
-In `api/deploy` the API starts only after the `migrate` one-shot service
-succeeds (`depends_on: migrate: { condition: service_completed_successfully }`),
+Start order in `api/deploy/docker-compose.yml` (`depends_on`):
+
+```mermaid
+flowchart LR
+    SETUP["setup.sh: .env 0600, generated passwords, APP_ENCRYPTION_KEY, FINGERPRINT_KEY, METRICS_TOKEN, sensor enrollment token"] --> TLS["datastore-tls one-shot: private CA in volume datastore-tls"]
+    TLS --> PG["postgres healthy, redis"]
+    PG --> ROLES["db-roles: least-privilege-roles.sql as superuser"]
+    ROLES --> MIG["migrate: openctem-migrate up as DB_MIGRATE_USER"]
+    MIG --> GR["db-grants: same script after migrate"]
+    GR --> API["api: needs db-grants completed, signer healthy, redis"]
+    SIG["signer: network none, signer-keys volume, socket volume shared with api"] --> API
+    API --> GW["gateway: the only published port"]
+    MIG -.-> BA["bootstrap-admin (profile tools): docker compose run --rm, no container log"]
+```
+
+The API starts only after the `migrate` one-shot service and `db-grants`
+succeed (`condition: service_completed_successfully`),
 and `OPENCTEM_VERSION` tags every platform image, so the migrations always match
 the API. There is no default: `./setup.sh` writes it into `.env` from the
 release you checked out (`api/deploy/VERSION` in a tag's checkout), or from

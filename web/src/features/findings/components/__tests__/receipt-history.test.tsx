@@ -12,6 +12,8 @@ const swr = vi.hoisted(() => ({
 }))
 
 vi.mock('@/context/tenant-provider', () => ({ useCurrentTenantId: () => 't1' }))
+// The retired sources section has its own tests (source-retirement).
+vi.mock('../source-retirement', () => ({ RetiredSourcesSection: () => null }))
 vi.mock('swr', () => ({
   default: (key: string | null) => {
     swr.key = key

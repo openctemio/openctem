@@ -4,6 +4,7 @@ import {
   formatWindow,
   parseHeaderLines,
   parseWindowLines,
+  programRequiresWithoutHeader,
   rulesFromForm,
   shortHash,
   summarizePreview,
@@ -24,6 +25,37 @@ describe('parseHeaderLines', () => {
 })
 
 describe('rulesFromForm', () => {
+  it('carries the rotation list and the requirement', () => {
+    const r = rulesFromForm({
+      rateLimit: '',
+      headers: '',
+      userAgent: '',
+      userAgents: ' a/1 \n\nb/2\n',
+      identificationRequired: true,
+      forbidden: [],
+      notes: '',
+    })
+    expect(r.user_agents).toEqual(['a/1', 'b/2'])
+    expect(r.identification_required).toBe(true)
+  })
+
+  it('warns when the program requires identification without a header', () => {
+    const base = { rateLimit: '', userAgent: '', forbidden: [], notes: '' }
+    expect(
+      programRequiresWithoutHeader({ ...base, headers: '', identificationRequired: true })
+    ).toBe(true)
+    expect(
+      programRequiresWithoutHeader({
+        ...base,
+        headers: 'X-Bug-Bounty: me',
+        identificationRequired: true,
+      })
+    ).toBe(false)
+    expect(
+      programRequiresWithoutHeader({ ...base, headers: '', identificationRequired: false })
+    ).toBe(false)
+  })
+
   it('normalizes the form', () => {
     expect(
       rulesFromForm({
@@ -37,6 +69,8 @@ describe('rulesFromForm', () => {
       rate_limit_rps: 5,
       required_headers: [{ name: 'X-A', value: '1' }],
       user_agent: 'ua',
+      user_agents: [],
+      identification_required: false,
       forbidden: ['dos', 'physical'],
       notes: 'n',
       testing_windows: [],

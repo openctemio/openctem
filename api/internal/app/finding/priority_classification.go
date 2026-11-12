@@ -858,6 +858,7 @@ func (s *PriorityClassificationService) buildPriorityContext(
 	hasOwner map[shared.ID]bool,
 ) vulnerability.PriorityContext {
 	ctx := vulnerability.PriorityContext{
+		Compliance:           f.FindingType() == vulnerability.FindingTypeCompliance,
 		Severity:             f.Severity(),
 		CVEID:                f.CVEID(),
 		EPSSScore:            f.EPSSScore(),

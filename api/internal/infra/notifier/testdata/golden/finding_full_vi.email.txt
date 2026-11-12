@@ -1,0 +1,11 @@
+Phát hiện mới
+
+Mức độ: Nghiêm trọng
+Tài sản: shop.example.com (domain)
+Nội dung: CVE-2026-12345: Remote code execution in the file upload handler
+Vì sao quan trọng: Đã bị khai thác thực tế (CISA KEV); EPSS 42%: có khả năng sớm bị khai thác
+Bước tiếp theo: Vá hoặc giảm thiểu trước tiên: lỗ hổng đang bị khai thác.
+Chi tiết: The upload endpoint accepts a crafted archive that writes outside the upload directory.
+Tổ chức: Example Corp
+
+Mở phát hiện: https://ctem.example.com/findings

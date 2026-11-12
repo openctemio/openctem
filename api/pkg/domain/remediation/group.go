@@ -44,6 +44,14 @@ type KeyInput struct {
 	// RuleID is the scanner rule that raised the finding. Code and
 	// configuration findings group by solution text only within one rule.
 	RuleID string
+
+	// Benchmark control of a compliance finding (its check state): the
+	// benchmark key and name, and the control id and name. One fix of a
+	// control covers every asset that fails it.
+	BenchmarkKey  string
+	BenchmarkName string
+	ControlID     string
+	ControlName   string
 }
 
 // KeyAlgorithmVersion is the version of DeriveKey's rules. A stored key with
@@ -51,16 +59,20 @@ type KeyInput struct {
 // suggestion generator trusts it: version 1 grouped any solution text, so
 // unrelated findings with the same boilerplate advice shared one key.
 //
+// Version 5 groups compliance findings by benchmark control and never by
+// solution text or package.
+//
 // Version 4 reads fixed versions from an upgrade advice that names the
 // package when the scanner gave no list, and gives every open finding of one
 // package version the same upgrade target (the highest any of them needs).
-const KeyAlgorithmVersion = 4
+const KeyAlgorithmVersion = 5
 
 // Key kinds: the part of a key before the first colon.
 const (
 	KindRotate  = "rotate"
 	KindUpgrade = "upgrade"
 	KindSol     = "sol"
+	KindControl = "control"
 )
 
 // KeyKind returns the kind of a key ("upgrade" for "upgrade:pypi:django:4.2.30").
@@ -82,6 +94,10 @@ func KeyKind(key string) string {
 //  2. A package with a known fix: "upgrade:<ecosystem>:<name>:<target>",
 //     where target is the nearest fixed version for the installed version.
 //     Two installed versions that the same upgrade fixes share one key.
+//  0. A compliance finding (a benchmark check result):
+//     "control:<benchmark>:<control>", one group per control across assets.
+//     It never gets a package or solution key (a hardening control is never
+//     mixed with vulnerability fixes); without a benchmark control, no key.
 //  3. A specific solution text: "sol:<source>:<sha256>". Only the sentences
 //     that name something concrete (a version or an advisory id) count;
 //     boilerplate ("Apply the suggested fix code.") never forms a group. For
@@ -92,6 +108,9 @@ func DeriveKey(in KeyInput) (key, title string, ok bool) {
 	if source == string(vulnerability.FindingSourcePentest) {
 		// Pentest findings own their lifecycle and are never grouped.
 		return "", "", false
+	}
+	if strings.EqualFold(strings.TrimSpace(in.FindingType), string(vulnerability.FindingTypeCompliance)) {
+		return controlKey(in)
 	}
 	if source == string(vulnerability.FindingSourceSecret) || strings.EqualFold(in.FindingType, "secret") ||
 		in.SecretFingerprint != "" {
@@ -303,3 +322,23 @@ func clip(s string, n int) string {
 }
 
 func utf8RuneStart(b byte) bool { return b&0xC0 != 0x80 }
+
+// controlKey is the key of a compliance finding's benchmark control.
+func controlKey(in KeyInput) (key, title string, ok bool) {
+	bench := keyPart(strings.TrimSpace(in.BenchmarkKey))
+	control := keyPart(strings.TrimSpace(in.ControlID))
+	if bench == "" || control == "" {
+		return "", "", false
+	}
+	name := strings.TrimSpace(in.BenchmarkName)
+	if name == "" {
+		name = in.BenchmarkKey
+	}
+	label := strings.TrimSpace(in.ControlName)
+	if label == "" {
+		label = in.ControlID
+	} else if !strings.HasPrefix(label, strings.TrimSpace(in.ControlID)) {
+		label = strings.TrimSpace(in.ControlID) + " " + label
+	}
+	return KindControl + ":" + bench + ":" + control, clip(name+", "+label, maxTitle), true
+}

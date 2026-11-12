@@ -40,10 +40,14 @@ func TestResolveDispatchTargets_AllowNonNetworkTargets(t *testing.T) {
 	if !reflect.DeepEqual(strict.Allowed, []string{"100.64.0.1", "app.example.com"}) {
 		t.Fatalf("default: allowed = %v", strict.Allowed)
 	}
-	for _, r := range []string{"github.com/acme/app", "nginx:1.25", "10.0.0.5"} {
+	for _, r := range []string{"github.com/acme/app", "nginx:1.25"} {
 		if refusalCodes(strict)[r] != scopedom.RefusalInvalidTarget {
 			t.Fatalf("default: %s refused %v, want invalid_target", r, strict.Refused)
 		}
+	}
+	// A private address no zone covers needs a zone, not a different target.
+	if refusalCodes(strict)["10.0.0.5"] != scopedom.RefusalZoneNone {
+		t.Fatalf("default: 10.0.0.5 refused %v, want zone_none", strict.Refused)
 	}
 
 	// On, no zones: non-network names pass; every internal address
@@ -262,5 +266,30 @@ func TestResolveScanTargets_UnwiredChecksFailClosed(t *testing.T) {
 	svc.scopeExclusions = nil
 	if _, err := svc.resolveScanTargets(context.Background(), testScan("nuclei", "app.example.com")); !errors.Is(err, ErrDispatchGateUnavailable) {
 		t.Fatalf("err = %v, want ErrDispatchGateUnavailable", err)
+	}
+}
+
+func TestResolveDispatchTargets_PrivateRangeNoZoneIsZoneNone(t *testing.T) {
+	ctx, tenant := context.Background(), shared.NewID()
+	svc := &Service{scopeExclusions: &stubExclusions{}, attributionGate: &stubGate{}, zones: &gateZones{}, logger: logger.NewNop()}
+	got, err := svc.ResolveDispatchTargets(ctx, DispatchTargetsInput{
+		TenantID: tenant,
+		Targets:  []string{"10.0.0.0/16", "192.0.2.0/24", "127.0.0.1", "169.254.169.254", "not a target!"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := refusalCodes(got)
+	if codes["10.0.0.0/16"] != scopedom.RefusalZoneNone {
+		t.Fatalf("10.0.0.0/16 refused %v, want zone_none", got.Refused)
+	}
+	for _, bad := range []string{"127.0.0.1", "169.254.169.254", "not a target!"} {
+		if c, refused := codes[bad]; refused && c == scopedom.RefusalZoneNone {
+			t.Fatalf("%s must stay invalid, got zone_none", bad)
+		}
+	}
+	fixes := scopedom.FixesFor(scopedom.RefusalZoneNone, "10.0.0.0/16", nil, 0)
+	if len(fixes) != 1 || fixes[0].Action != scopedom.FixAddZone {
+		t.Fatalf("zone_none fixes = %v, want add_zone", fixes)
 	}
 }

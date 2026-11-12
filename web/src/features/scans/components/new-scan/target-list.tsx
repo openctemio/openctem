@@ -20,7 +20,14 @@ import { VirtualList } from '@/components/ui/virtual-list'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { scopeRefusalLabel, scopeRefusalMessage, type ApiScopeCheckResult } from '@/features/scope'
-import { isRefusedKind, TARGET_KIND_LABELS, type ClassifiedTarget } from '../../lib/target-format'
+import {
+  isRefusedKind,
+  TARGET_KIND_LABELS,
+  targetReasonText,
+  type ClassifiedTarget,
+} from '../../lib/target-format'
+import { SplitRangeButton } from './invalid-targets-note'
+import type { Translate } from '../../lib/translate'
 
 const ROW = 52
 
@@ -38,12 +45,49 @@ interface TargetListProps {
   onReplace: (entry: ClassifiedTarget, next: string) => void
 }
 
-type RowState =
+export type RowState =
   | { kind: 'invalid'; text: string }
   | { kind: 'allowed'; text: string }
   | { kind: 'refused'; text: string; title?: string }
   | { kind: 'checking' }
   | { kind: 'unchecked' }
+
+/**
+ * A sent target's scope answer as a row state: in scope (and by which rule),
+ * refused (and why), on its way, or not checked (no scope:read). Shared by
+ * this list and the Targets step's groups.
+ */
+export function targetVerdict(
+  t: Translate,
+  r: ApiScopeCheckResult | undefined,
+  opts: { checking?: boolean; checkAvailable?: boolean }
+): RowState {
+  if (r?.allowed) {
+    return {
+      kind: 'allowed',
+      text: r.via?.pattern
+        ? t('scans.targetList.inScopeVia', undefined, { rule: r.via.pattern })
+        : t('scope.check.inScope', 'In scope'),
+    }
+  }
+  if (r) {
+    return {
+      kind: 'refused',
+      text: scopeRefusalLabel(t, r.code),
+      title: scopeRefusalMessage(t, r.code, r.message),
+    }
+  }
+  return (opts.checkAvailable ?? true) && opts.checking
+    ? { kind: 'checking' }
+    : { kind: 'unchecked' }
+}
+
+/** The words of a row state. */
+export function verdictText(t: Translate, state: RowState): string {
+  if (state.kind === 'checking') return t('scans.targetList.checking')
+  if (state.kind === 'unchecked') return t('scans.targetList.unchecked')
+  return state.text
+}
 
 export function TargetList({
   entries,
@@ -61,34 +105,15 @@ export function TargetList({
 
   const rows = useMemo(
     () =>
-      entries.map((entry) => {
-        let state: RowState
-        if (isRefusedKind(entry.kind)) {
-          state = {
-            kind: 'invalid',
-            text: entry.reasonKey ? t(entry.reasonKey, entry.reason) : (entry.reason ?? ''),
-          }
-        } else {
-          const r = resultFor?.(entry.value)
-          if (r?.allowed) {
-            state = {
-              kind: 'allowed',
-              text: r.via?.pattern
-                ? t('scans.targetList.inScopeVia', undefined, { rule: r.via.pattern })
-                : t('scope.check.inScope', 'In scope'),
-            }
-          } else if (r) {
-            state = {
-              kind: 'refused',
-              text: scopeRefusalLabel(t, r.code),
-              title: scopeRefusalMessage(t, r.code, r.message),
-            }
-          } else {
-            state = checkAvailable && checking ? { kind: 'checking' } : { kind: 'unchecked' }
-          }
-        }
-        return { entry, state }
-      }),
+      entries.map((entry) => ({
+        entry,
+        state: isRefusedKind(entry.kind)
+          ? ({
+              kind: 'invalid',
+              text: targetReasonText(t, entry),
+            } as const)
+          : targetVerdict(t, resultFor?.(entry.value), { checking, checkAvailable }),
+      })),
     [entries, resultFor, checking, checkAvailable, t]
   )
   const attention = rows.filter((r) => r.state.kind === 'invalid' || r.state.kind === 'refused')
@@ -178,18 +203,24 @@ export function TargetList({
                       'block truncate text-xs',
                       state.kind === 'invalid' ? 'text-destructive' : 'text-muted-foreground'
                     )}
-                    title={state.kind === 'refused' ? state.title : undefined}
+                    title={
+                      state.kind === 'refused'
+                        ? state.title
+                        : state.kind === 'invalid'
+                          ? state.text
+                          : undefined
+                    }
                   >
                     {isRefusedKind(entry.kind)
                       ? null
                       : `${t(`scans.kind.${entry.kind}`, TARGET_KIND_LABELS[entry.kind])}, `}
-                    {state.kind === 'checking'
-                      ? t('scans.targetList.checking')
-                      : state.kind === 'unchecked'
-                        ? t('scans.targetList.unchecked')
-                        : state.text}
+                    {verdictText(t, state)}
                   </span>
                 </span>
+                <SplitRangeButton
+                  entry={entry}
+                  onSplit={(e, pieces) => onReplace(e, pieces.join(', '))}
+                />
                 {isRefusedKind(entry.kind) && (
                   <Button
                     type="button"
@@ -224,7 +255,7 @@ export function TargetList({
   )
 }
 
-function StateIcon({ state }: { state: RowState }) {
+export function StateIcon({ state }: { state: RowState }) {
   switch (state.kind) {
     case 'invalid':
       return <AlertCircle className="h-4 w-4 shrink-0 text-destructive" aria-hidden />

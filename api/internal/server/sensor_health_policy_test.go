@@ -92,21 +92,48 @@ func TestCollectorInstallImage(t *testing.T) {
 
 // CI runners are judged against their own release settings, never the
 // sensor's: the sensor minimum (v0.9.0) is above every CI runner release.
+// CI_RUNNER_LATEST_VERSION set by the operator wins over the release feed.
 func TestCIRunnerVersionPolicy_FromConfig(t *testing.T) {
+	t.Cleanup(func() { versions.SetLearned(nil) })
+	versions.SetLearned(map[string]versions.Learned{versions.CIKey: {Version: "v99.0.0"}})
 	cfg := &config.Config{}
 	cfg.SensorConfig.CIRunnerLatestVersion = "0.2.0"
+	cfg.SensorConfig.CIRunnerLatestPinned = true
 	cfg.SensorConfig.CIRunnerMinVersion = "latest" // not a version: ignored with a warning
-	p := ciRunnerVersionPolicy(cfg, logger.NewNop())
+	p := ciRunnerVersionPolicy(cfg, logger.NewNop())()
 	if p.LatestVersion != "v0.2.0" || p.MinVersion != "" {
-		t.Fatalf("CI runner policy = %+v, want latest v0.2.0 and no minimum", p)
+		t.Fatalf("CI runner policy = %+v, want the pinned latest v0.2.0 and no minimum", p)
 	}
 	cfg.SensorConfig.CIRunnerMinVersion = "v0.3.0"
-	if p := ciRunnerVersionPolicy(cfg, logger.NewNop()); p.MinVersion != "v0.3.0" {
+	if p := ciRunnerVersionPolicy(cfg, logger.NewNop())(); p.MinVersion != "v0.3.0" {
 		t.Fatalf("CI runner minimum = %q", p.MinVersion)
 	}
 	cfg.SensorConfig.CIRunnerLatestVersion, cfg.SensorConfig.CIRunnerMinVersion = "", ""
-	if p := ciRunnerVersionPolicy(cfg, logger.NewNop()); p.LatestVersion != "" || p.MinVersion != "" {
-		t.Fatalf("CI runner settings off, policy = %+v: the sensor settings leaked in", p)
+	if p := ciRunnerVersionPolicy(cfg, logger.NewNop())(); p.LatestVersion != "" || p.MinVersion != "" {
+		t.Fatalf("CI runner settings off, policy = %+v: the sensor settings or the feed leaked in", p)
+	}
+}
+
+// Without CI_RUNNER_LATEST_VERSION the latest CI runner release is resolved
+// per use: the built-in ci.latest, raised (never lowered) by the release feed
+// while the server runs.
+func TestCIRunnerVersionPolicy_FollowsFeed(t *testing.T) {
+	t.Cleanup(func() { versions.SetLearned(nil) })
+	versions.SetLearned(nil)
+	cfg := &config.Config{}
+	cfg.SensorConfig.CIRunnerLatestVersion = versions.CIRunnerBaseline()
+	cfg.SensorConfig.CIRunnerMinVersion = "v0.4.0"
+	pol := ciRunnerVersionPolicy(cfg, logger.NewNop())
+	if p := pol(); p.LatestVersion != versions.CIRunnerBaseline() || p.MinVersion != "v0.4.0" {
+		t.Fatalf("without a feed: %+v", p)
+	}
+	versions.SetLearned(map[string]versions.Learned{versions.CIKey: {Version: "v99.2.0"}})
+	if p := pol(); p.LatestVersion != "v99.2.0" || p.MinVersion != "v0.4.0" {
+		t.Fatalf("after the feed learned v99.2.0: %+v", p)
+	}
+	versions.SetLearned(map[string]versions.Learned{versions.CIKey: {Version: "v0.0.1"}})
+	if p := pol(); p.LatestVersion != versions.CIRunnerBaseline() {
+		t.Fatalf("an older learned release lowered the baseline: %+v", p)
 	}
 }
 
