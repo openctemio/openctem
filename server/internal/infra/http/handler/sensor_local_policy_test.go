@@ -35,7 +35,7 @@ func TestLocalPolicyResponse(t *testing.T) {
 // The sensor page reads posture: always present, unhardened never null.
 func TestPostureResponse(t *testing.T) {
 	raw, _ := json.Marshal(postureResponse(&sensor.Sensor{}))
-	if string(raw) != `{"local_policy":"unknown","platform_pin":"unknown","network_enforced":null,"unhardened":[]}` {
+	if string(raw) != `{"local_policy":"unknown","platform_pin":"unknown","network_enforced":null,"signed_jobs":"unknown","unhardened":[]}` {
 		t.Fatalf("never connected: %s", raw)
 	}
 	seen := time.Now()
@@ -43,7 +43,7 @@ func TestPostureResponse(t *testing.T) {
 		LocalPolicy: &sensor.LocalPolicyReport{State: sensor.LocalPolicyAbsent},
 		Posture:     &sensor.ManifestPosture{Sandbox: &sensor.SandboxPosture{NetworkEnforced: false}}})
 	raw, _ = json.Marshal(got)
-	if string(raw) != `{"local_policy":"absent_legacy","platform_pin":"unknown","network_enforced":false,"unhardened":["policy_none","network_unenforced"]}` {
+	if string(raw) != `{"local_policy":"absent_legacy","platform_pin":"unknown","network_enforced":false,"signed_jobs":"unknown","unhardened":["policy_none","network_unenforced"]}` {
 		t.Fatalf("legacy: %s", raw)
 	}
 }

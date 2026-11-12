@@ -31,6 +31,12 @@ const ISSUES: Record<SensorUnhardenedReason, Omit<PostureIssue, 'reason'>> = {
     fixKey: 'sensors.posture.fix.pinNone',
     fix: 'Pin the platform CA with SENSOR_CA_FINGERPRINT.',
   },
+  jobs_unsigned: {
+    labelKey: 'sensors.posture.issue.jobsUnsigned',
+    label: 'Signed jobs off',
+    fixKey: 'sensors.posture.fix.jobsUnsigned',
+    fix: 'The sensor checks no job signature and refuses jobs that need platform secrets: pair it again, or set SENSOR_JOB_SIGNING_ROOT on its host.',
+  },
   tools_unconfined: {
     labelKey: 'sensors.posture.issue.toolsUnconfined',
     label: 'Tools run without the sandbox',

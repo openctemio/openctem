@@ -60,6 +60,11 @@ const (
 	// targets, custom templates or callbacks on a sensor that requires a
 	// local policy and has none.
 	RuleNoLocalPolicy = "no_local_policy"
+	// RuleSecretsUnverified is the sensor's built-in rule for a job that
+	// needs platform secrets while the sensor verified no signature on it
+	// (signed jobs off): it would run without its credentials, so it is
+	// refused (sdk-go core.RefusalRuleSecretsUnverified).
+	RuleSecretsUnverified = "secrets_unverified"
 )
 
 // DispatchRefusal says why a sensor must not get a job: the layer and rule

@@ -114,8 +114,8 @@ func TestReadOpsSnapshot_Unhardened(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	weakPosture := `{"platform_tls":{"pin":"none"},"sandbox":{"mode":"off","sandboxed":false,"network_enforced":false,"unconfined":"acknowledged"}}`
-	strongPosture := `{"platform_tls":{"pin":"fingerprint"},"sandbox":{"mode":"required","sandboxed":true,"network_enforced":true}}`
+	weakPosture := `{"platform_tls":{"pin":"none"},"sandbox":{"mode":"off","sandboxed":false,"network_enforced":false,"unconfined":"acknowledged"},"jobs":{"signed":"off"}}`
+	strongPosture := `{"platform_tls":{"pin":"fingerprint"},"sandbox":{"mode":"required","sandboxed":true,"network_enforced":true},"jobs":{"signed":"required"}}`
 	manifest := func(id, digit, posture string, current bool) {
 		digest := "sha256:" + strings.Repeat(digit, 64)
 		exec(`INSERT INTO sensor_manifests (sensor_id, tenant_id, digest, source, manifest)

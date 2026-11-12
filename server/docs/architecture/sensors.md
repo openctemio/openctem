@@ -2687,7 +2687,9 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   it add the manifest member `posture`: `platform_tls.pin` (`fingerprint`: the
   CA pinned by `SENSOR_CA_FINGERPRINT`; `ca_file`: a private CA file besides
   the system trust store; `none`: the system trust store only) and `sandbox`
-  (`mode` `off`/`auto`/`required`, `sandboxed`, `network_enforced`). The gRPC
+  (`mode` `off`/`auto`/`required`, `sandboxed`, `network_enforced`), and
+  `jobs.signed` (`required`: it pinned the platform's job signer;
+  `verified_when_present`; `off`: it pins no signer). The gRPC
   transport pins its own CA; `platform_tls.pin` is about the HTTPS client.
 - **Storage.** The sanitized manifest (`sensor_manifests.manifest`, no new
   column): `sensor.SanitizeManifestPosture` keeps closed values only; an
@@ -2703,6 +2705,13 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   - `policy_none`: `absent_legacy`, or `unknown` for a sensor that has
     connected (an SDK that ignores local policies);
   - `pin_none`: `platform_pin` is `none`;
+  - `jobs_unsigned`: `signed_jobs` is `off`: the sensor checks no job
+    signature, so it trusts every job and refuses jobs that need platform
+    secrets (refusal rule `secrets_unverified`). The fix: pair the sensor
+    again, or set `SENSOR_JOB_SIGNING_ROOT` on its host. `signed_jobs`
+    (`required`, `verified_when_present`, `off`, `unknown`) is returned next
+    to the other posture values. A sensor shows it after its next manifest
+    upload (every start);
   - `tools_unconfined`: the sensor runs its tools without the sandbox
     (`tools_unconfined` is `refused`: the sandbox is not available on its
     host, it is Linux only, so tools of tier T1 and above are refused there
@@ -2726,10 +2735,15 @@ decisions Q3 revised, Q10, Q12, 2026-10-08).
   key-bound identity. The Tool sandbox check of the install review says when
   tools that contact their targets are refused for want of a sandbox.
 - **Alert.** Gauge `openctem_sensors_unhardened{kind}` (`policy_none`,
-  `pin_none`, `tools_unconfined`, `network_unenforced`, `bearer_key`): active tenant sensors by
+  `pin_none`, `jobs_unsigned`, `tools_unconfined`, `network_unenforced`, `bearer_key`): active tenant sensors by
   reason, platform-wide, no tenant or sensor label. Alert `SensorsUnhardened`
   (warning, `for: 24h`); runbook in
   [operations/monitoring.md](../operations/monitoring.md#sensorsunhardened).
+
+A job a sensor refused with `secrets_unverified` (layer `builtin`) fails
+with a reason that says the sensor checks no job signature and names the
+same fix, instead of the built-in deny list text the other `builtin` rules
+get (`command.RefusalFailureReason`).
 
 The posture is a claim from the sensor: it is shown and alerted on, and never
 relaxes a platform check (dispatch, scope, job signing, authentication). A
