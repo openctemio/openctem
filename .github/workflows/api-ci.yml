@@ -374,6 +374,13 @@ jobs:
       - name: OpenAPI Contract
         run: bash scripts/check-openapi.sh
 
+      # The same make swagger in the golang alpine image with the packages
+      # scripts/generate-in-docker.sh installs (no product image is built):
+      # a recipe that needs a tool that image lacks fails here, not on a source
+      # checkout (the perl step did after the rename).
+      - name: OpenAPI spec generates in the golang alpine image
+        run: bash ../.github/scripts/swagger-in-alpine.sh
+
       # Gateway: the single public entry point (server/deploy/gateway). Validates
       # the Caddyfile in every TLS mode, the entrypoint's refusals, and the
       # routing table against stub upstreams; and that the production compose

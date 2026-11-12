@@ -179,8 +179,8 @@ swagger: swagger-install
 	@# swag names definitions after the Go package path. The published names keep
 	@# the module's pre-rename spelling (openctem/api), so the backend directory
 	@# rename to server/ changed no schema name of the contract. The Dockerfile
-	@# does the same.
-	@perl -pi -e 's/github_com_openctemio_openctem_server_/github_com_openctemio_openctem_api_/g' api/openapi/swagger.yaml
+	@# runs the same script (no perl: the golang alpine image has none).
+	@sh scripts/stable-swagger-names.sh api/openapi/swagger.yaml
 	@echo "Swagger docs generated in api/openapi/"
 
 ## contract: Generate every contract file derived from the Go source. None of

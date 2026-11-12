@@ -79,7 +79,7 @@ docker run --rm \
     cp /src/web/scripts/generate-api-types.sh /work/scripts/
     cd /work
     npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
-    OPENAPI_SPEC=/src/api/api/openapi/swagger.yaml bash scripts/generate-api-types.sh
+    OPENAPI_SPEC=/src/server/api/openapi/swagger.yaml bash scripts/generate-api-types.sh
     out=/src/web/src/lib/api/generated/api.types.ts
     mkdir -p "$(dirname "$out")"
     cp src/lib/api/generated/api.types.ts "$out"

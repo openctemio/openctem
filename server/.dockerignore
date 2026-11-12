@@ -73,6 +73,7 @@ deploy/
 # Scripts (not needed in production image)
 scripts/
 !scripts/dev-entrypoint.sh
+!scripts/stable-swagger-names.sh
 
 # Temporary files
 tmp/
