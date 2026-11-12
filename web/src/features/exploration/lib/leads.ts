@@ -143,8 +143,12 @@ export function leadUrl(id: string): string {
 }
 
 /** The page's own link, optionally for one asset. */
-export function explorationHref(assetId?: string): string {
-  return assetId ? `/exploration?asset=${encodeURIComponent(assetId)}` : '/exploration'
+export function explorationHref(assetId?: string, leadId?: string): string {
+  const q = new URLSearchParams()
+  if (assetId) q.set('asset', assetId)
+  if (leadId) q.set('lead', leadId)
+  const qs = q.toString()
+  return qs ? `/exploration?${qs}` : '/exploration'
 }
 
 /** States a person may still approve (the API refuses the rest per lead). */
