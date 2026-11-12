@@ -28,7 +28,8 @@ description: What a pull request in this repository needs before it is ready - v
 ## Changelog
 Never edit `server/CHANGELOG.md`. Add one file `server/changelog.d/<short-slug>.md` with
 `### <Category>: <title>` and bullets (categories and format in `server/changelog.d/README.md`). Name the
-migration number and any upgrade step for operators.
+migration number and any upgrade step for operators, and add a `Docs:` line with the public docs page
+(openctemio/docs PR) or `Docs: none (<reason>)`: API CI refuses a new fragment without it.
 
 ## Documentation, for a feature
 - the RFC in `server/docs/rfcs/` with its status (H1 `# RFC-NNN: Title` and a `Status` header field), then `python3 scripts/rfc_index.py` to regenerate the `server/docs/rfcs/README.md` index (never edit its table by hand);
