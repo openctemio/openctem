@@ -4,7 +4,7 @@ import { TrendingUp } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
-import { Sparkline } from './sparkline'
+import { Sparkline } from '@/components/ui/sparkline'
 import { METRIC_KEYS, type CtemMaturityTrend, type MetricKey } from '../api/use-ctem-maturity'
 
 const METRIC_FALLBACK: Record<MetricKey, string> = {
@@ -68,7 +68,9 @@ export function MaturityTrendCard({
                 <div className="flex items-center gap-3">
                   <Sparkline
                     values={values}
-                    ariaLabel={t('insights.maturity.trends.sparkline', '{metric} trend', {
+                    width={120}
+                    className="text-primary"
+                    summary={t('insights.maturity.trends.sparkline', '{metric} trend', {
                       metric: t(`insights.maturity.metric.${key}`, METRIC_FALLBACK[key]),
                     })}
                   />
