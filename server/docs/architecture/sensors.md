@@ -2589,6 +2589,25 @@ and narrows dispatch:
     no run or command is created. The zone-routing preview uses the same
     code.
 
+- **Port scans without ports** (`pkg/domain/sensor/port_scan_ports.go`,
+  `internal/app/command/port_scan_ports.go`). A sensor with `ports.allow`
+  refuses a `scan.ports` job that names no ports (`config.ports` or
+  `scanner_config.ports`), because the tool would run its own default list.
+  For such a sensor the platform:
+  - fills the job's `config.ports` on the copy it hands out (before the job
+    is signed) with the requested ports the policy allows, and drops
+    `top_ports`/`top_n`. The requested ports are the 100 most common TCP
+    ports (`DefaultPortScanPorts`), or every port for a top-N above 100 or
+    `full`. The stored command is not changed;
+  - when the policy allows none of them, does not send the job (rule
+    `ports.allow`, detail "the sensor's local policy allows none of the ports
+    the port scan would probe"). It stays pending for another sensor that
+    allows some; when it is pinned to the sensor, or no other sensor may
+    run it, it fails at claim with `PORTS_NOT_ALLOWED` and its step is
+    skipped with that reason (the run goes on, as for `SOURCE_RETIRED`).
+  A named list (`top-100`) in `ports.allow` is not read: the sensor decides.
+  Metric: `sensor_port_scan_ports_total{outcome="filled"|"refused"}`.
+
   The pre-check only narrows: a report comes from the sensor, so a lying
   sensor can only withhold jobs from itself, and the sensor keeps enforcing
   its own policy on whatever it receives. Failures to read the sensor or the

@@ -1139,6 +1139,8 @@
   "scans.failure.PARSE_ERROR.text": "Không đọc được đầu ra của công cụ.",
   "scans.failure.POLICY_REFUSED.fix": "Chủ sở hữu mạng được quét xem lại chính sách cục bộ của sensor.",
   "scans.failure.POLICY_REFUSED.text": "Chính sách cục bộ của sensor đã từ chối công việc.",
+  "scans.failure.PORTS_NOT_ALLOWED.fix": "Hãy đề nghị chủ mạng thêm các cổng vào ports.allow trong chính sách cục bộ của sensor, hoặc nêu trong bản quét những cổng mà chính sách cho phép.",
+  "scans.failure.PORTS_NOT_ALLOWED.text": "Đã bỏ qua: đây là bản quét cổng không nêu cổng nào, và chính sách cục bộ (ports.allow) của mọi sensor có thể chạy nó không cho phép cổng nào trong số các cổng sẽ quét. Tác vụ không được gửi đi.",
   "scans.failure.QUEUE_ERROR.fix": "Chạy lại lượt quét; nếu lặp lại, kiểm tra nhật ký của nền tảng.",
   "scans.failure.QUEUE_ERROR.text": "Không đưa được bước vào hàng đợi.",
   "scans.failure.RESOURCE_EXHAUSTED.fix": "Giải phóng dung lượng đĩa hoặc bộ nhớ trên sensor, hoặc thêm sensor lớn hơn vào vùng quét.",

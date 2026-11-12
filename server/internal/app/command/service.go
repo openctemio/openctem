@@ -582,6 +582,11 @@ func (s *Service) deliver(ctx context.Context, sensorID string, cmds []*commandd
 	if err != nil {
 		return nil, err
 	}
+	// A port scan with no ports gets the ports the sensor's ports.allow
+	// allows (port_scan_ports.go).
+	if cmds, err = s.withPolicyPorts(ctx, sensorID, cmds); err != nil {
+		return nil, err
+	}
 	return s.signTemplates(sensorID, cmds), nil
 }
 
