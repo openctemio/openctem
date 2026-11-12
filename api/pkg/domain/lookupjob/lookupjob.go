@@ -76,7 +76,7 @@ type Repository interface {
 	Claim(ctx context.Context, sensorID shared.ID, capabilities []string, now time.Time) (*Job, error)
 	// Finish records the outcome of a job the sensor claimed, once; false
 	// when the job is not claimed by that sensor (ErrClosed upstream).
-	Finish(ctx context.Context, id, sensorID shared.ID, status string, result json.RawMessage, code string, now time.Time) (bool, error)
+	FinishForPlatform(ctx context.Context, id, sensorID shared.ID, status string, result json.RawMessage, code string, now time.Time) (bool, error)
 	// Get returns a job of the tenant.
 	Get(ctx context.Context, tenantID, id shared.ID) (*Job, error)
 	// Delete removes a job of the tenant.

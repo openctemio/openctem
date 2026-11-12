@@ -64,7 +64,7 @@ func (r *LookupJobRepository) Claim(ctx context.Context, sensorID shared.ID, cap
 }
 
 // Finish records the outcome of a job the sensor claimed, once.
-func (r *LookupJobRepository) Finish(ctx context.Context, id, sensorID shared.ID, status string, result json.RawMessage, code string, now time.Time) (bool, error) {
+func (r *LookupJobRepository) FinishForPlatform(ctx context.Context, id, sensorID shared.ID, status string, result json.RawMessage, code string, now time.Time) (bool, error) {
 	var res any
 	if len(result) > 0 {
 		res = []byte(result)

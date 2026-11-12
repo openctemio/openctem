@@ -246,7 +246,7 @@ func (s *Service) Next(ctx context.Context, sn *sensor.Sensor) (*Next, time.Dura
 		// An excluded name, for example: the job ends refused and the
 		// asker backs off; the sensor asks again at once.
 		s.logger.Warn("lookup jobs: the job signer refused a job", "reason", clip(rf.Reason, 64), "tenant_id", j.TenantID.String())
-		if _, ferr := s.repo.Finish(ctx, j.ID, sn.ID, lookupjob.StatusRefused, nil, "signer_"+clip(rf.Reason, 50), now); ferr != nil {
+		if _, ferr := s.repo.FinishForPlatform(ctx, j.ID, sn.ID, lookupjob.StatusRefused, nil, "signer_"+clip(rf.Reason, 50), now); ferr != nil {
 			return nil, 0, ferr
 		}
 		return nil, 0, nil
@@ -288,7 +288,7 @@ func (s *Service) Done(ctx context.Context, sn *sensor.Sensor, jobID string, res
 	default:
 		out = res.Output
 	}
-	ok, err := s.repo.Finish(ctx, id, sn.ID, status, out, code, s.cfg.Now())
+	ok, err := s.repo.FinishForPlatform(ctx, id, sn.ID, status, out, code, s.cfg.Now())
 	if err != nil {
 		return err
 	}
