@@ -20,6 +20,7 @@ import {
 } from '@/features/shared'
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ErrorState } from '@/features/shared/components/error-state'
 import {
   Select,
   SelectContent,
@@ -59,7 +60,6 @@ import {
   MoreHorizontal,
   Pencil,
   Copy,
-  AlertCircle,
   Cloud,
   Server,
   GitBranch,
@@ -521,21 +521,11 @@ export default function ScanWorkflowsPage() {
           {/* No metric strip on Workflows (research/244): its tiles only
             repeated the owner filter, and run totals belong to the Runs tab. */}
           {workflowsError ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>{t('scans.workflows.loadFailed')}</AlertTitle>
-              <AlertDescription className="flex flex-wrap items-center gap-3">
-                <span>{getErrorMessage(workflowsError, t('scans.workflows.tryAgain'))}</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => invalidateAllScanWorkflowCaches()}
-                >
-                  <RefreshCw className="me-2 h-4 w-4" />
-                  {t('common.retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
+            <ErrorState
+              title={t('scans.workflows.errorTitle', 'workflows')}
+              error={workflowsError}
+              onRetry={() => invalidateAllScanWorkflowCaches()}
+            />
           ) : loadingWorkflows ? (
             tableSkeleton
           ) : allWorkflows.length === 0 ? (

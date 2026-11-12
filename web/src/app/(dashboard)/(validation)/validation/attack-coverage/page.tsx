@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react'
 import { Main } from '@/components/layout'
+import { ErrorState } from '@/features/shared/components/error-state'
 import { PageHeader, PageStack, MetricStrip } from '@/features/shared'
 import { SEVERITY_DOT_COLORS } from '@/lib/severity-colors'
 import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
@@ -333,11 +334,13 @@ export default function MitreCoveragePage() {
   const {
     data: findingsData,
     isLoading: loadingFindings,
+    error: findingsError,
     mutate: refreshFindings,
   } = useAllPentestFindings({ per_page: 200 })
   const {
     data: simsData,
     isLoading: loadingSims,
+    error: simsError,
     mutate: refreshSims,
   } = useSimulations({ enabled: simulationEnabled })
 
@@ -415,6 +418,25 @@ export default function MitreCoveragePage() {
   }
 
   if (isLoading) return <LoadingSkeleton />
+
+  // Coverage drawn from a source that failed to load would read as "nothing
+  // exercised yet", so a failed read replaces the heatmap, not just the strip.
+  const loadError =
+    (findingsError && !findingsData) || (simulationEnabled && simsError && !simsData)
+  if (loadError) {
+    return (
+      <Main>
+        <PageStack>
+          <PageHeader title={t('validation.attackCoverage.title', 'ATT&CK coverage')} />
+          <ErrorState
+            title={t('validation.attackCoverage.errorTitle', 'ATT&CK coverage')}
+            error={findingsError ?? simsError}
+            onRetry={handleRefresh}
+          />
+        </PageStack>
+      </Main>
+    )
+  }
 
   return (
     <Main>
