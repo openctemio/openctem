@@ -36,6 +36,7 @@ import { AssetIdentitySections } from './asset-identity-sections'
 import { AssetAttributionSection } from './asset-attribution-section'
 import { AssetAttributeSourcesSection } from './asset-attribute-sources-section'
 import { AssetLineageSection } from './asset-lineage-section'
+import { AssetNextSteps } from '@/features/exploration/components/asset-next-steps'
 import { AssetFreshnessSection } from './asset-freshness-section'
 import { AssetCoverageSection } from './asset-coverage-section'
 import { AssetTimeline } from './asset-timeline'
@@ -630,6 +631,7 @@ export function AssetDetailSheet<T extends Asset>({
               assetType={asset.type}
             />
             <AssetLineageSection assetId={asset.id} />
+            <AssetNextSteps assetId={asset.id} />
             <AssetAttributeSourcesSection assetId={asset.id} />
             <AssetFreshnessSection assetId={asset.id} />
             <AssetCoverageSection assetId={asset.id} />
