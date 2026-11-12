@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // Set with -ldflags -X. Empty means "not set by the build".
@@ -56,6 +57,39 @@ type Info struct {
 	Commit    string `json:"commit" example:"4d2f4b02"`
 	BuildTime string `json:"build_time,omitempty" example:"2026-10-02T10:00:00Z"`
 	Channel   string `json:"channel" example:"release" enums:"release,rc,dev"`
+	// Extensions are the extensions compiled into this build
+	// (pkg/extension), in the order the build passed them; empty for the
+	// Community build. Support and an upgrade check use it to tell which
+	// build runs.
+	Extensions []Extension `json:"extensions"`
+	// ExtensionAPI is the extension API version this core serves.
+	ExtensionAPI int `json:"extension_api" example:"1"`
+}
+
+// Extension names one extension of a build.
+type Extension struct {
+	Name    string `json:"name" example:"example"`
+	Version string `json:"version,omitempty" example:"v1.0.0"`
+}
+
+// ExtensionAPI mirrors pkg/extension.APIVersion (a test keeps them equal;
+// pkg/version imports nothing so every binary can use it).
+const ExtensionAPI = 1
+
+var extensions atomic.Pointer[[]Extension]
+
+// SetExtensions records the build's extensions; the server calls it once
+// at start.
+func SetExtensions(exts []Extension) {
+	cp := append([]Extension{}, exts...)
+	extensions.Store(&cp)
+}
+
+func currentExtensions() []Extension {
+	if p := extensions.Load(); p != nil {
+		return append([]Extension{}, (*p)...)
+	}
+	return []Extension{}
 }
 
 // String is the one-line identity printed by `openctem-server -version` and
@@ -64,6 +98,12 @@ func (i Info) String() string {
 	s := i.Version + " (commit " + i.Commit
 	if i.BuildTime != "" {
 		s += ", built " + i.BuildTime
+	}
+	for _, e := range i.Extensions {
+		s += ", extension " + e.Name
+		if e.Version != "" {
+			s += " " + e.Version
+		}
 	}
 	return s + ")"
 }
@@ -109,7 +149,7 @@ func build(v, c, t string) Info {
 	if len(c) > shortSHALen && isHex(c) {
 		c = c[:shortSHALen]
 	}
-	return Info{Version: v, Commit: c, BuildTime: t, Channel: channelOf(v)}
+	return Info{Version: v, Commit: c, BuildTime: t, Channel: channelOf(v), Extensions: currentExtensions(), ExtensionAPI: ExtensionAPI}
 }
 
 func channelOf(v string) string {

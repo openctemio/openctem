@@ -1377,6 +1377,17 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		log.Info("administrators' audit log streamed off the box", "sink", redactSinkURL(cfg.AdminAuditSink.URL))
 	}
 
+	// Controllers of the build's extensions (none in the Community build).
+	// One an extension cannot start fails the boot, like a core
+	// controller's bad configuration.
+	extCtrls, err := buildExtensions.Controllers(context.Background(), deps.Services.ExtensionHost)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range extCtrls {
+		w.ControllerManager.Register(c)
+	}
+
 	// Audit hash-chain integrity verification. The admin endpoint
 	// GET /api/v1/audit-logs/verify is pull-based; this controller
 	// runs the same VerifyChain on every active tenant once an hour
