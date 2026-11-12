@@ -38,7 +38,7 @@ func TestIngest_CertificateSANPromotion(t *testing.T) {
 	svc := r.svc
 	svc.SetExclusionSource(scopeSvc)
 	svc.SetScanAttributionStamper(easm.NewScanStamper(attr, postgres.NewVerifiedDomainNameRepository(db)))
-	cm := certmonitor.NewService(assets, nil, "", log)
+	cm := certmonitor.NewService(assets, nil, log)
 	cm.SetDomainSources(postgres.NewVerifiedDomainRepository(db), targets)
 	cm.SetExclusions(scopeSvc)
 	cm.SetPromotion(svc, assets, attr)

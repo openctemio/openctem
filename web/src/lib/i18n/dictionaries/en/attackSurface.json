@@ -383,7 +383,7 @@
   "attackSurface.kind.tech_changed": "Technology changed",
   "attackSurface.monitoring.ct": "Certificate Transparency discovery",
   "attackSurface.monitoring.ctDescription": "Your domain names are sent to crt.sh and Cert Spotter to find certificates issued for them. Turn this off to keep them private; no new names are then discovered this way.",
-  "attackSurface.monitoring.ctNeedsPlatformSensor": "Certificate Transparency lookups run only through a platform sensor: the platform never contacts crt.sh or Cert Spotter itself, and no platform sensor that answers them is connected right now. Monitoring starts on its own once the platform administrator connects one. Names from certificate logs still reach the inventory through the passive subdomain discovery on your sensors.",
+  "attackSurface.monitoring.ctNeedsPlatformSensor": "Certificate Transparency lookups run only through a platform sensor: the platform never contacts crt.sh or Cert Spotter itself, and none is set up to carry them yet. Names from certificate logs still reach the inventory through the passive subdomain discovery on your sensors.",
   "attackSurface.monitoring.description": "Certificate Transparency discovery and DNS checks run on their own; you can also run them now.",
   "attackSurface.monitoring.dns": "DNS checks",
   "attackSurface.monitoring.dnsDescription": "Dangling CNAME and NS records, lame delegations and email security (SPF, DMARC), looked up through DNS only.",
