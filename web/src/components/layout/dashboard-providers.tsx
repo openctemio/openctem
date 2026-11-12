@@ -7,6 +7,8 @@
  *
  * Provider order:
  * 1. TenantProvider - Team/tenant management (provides currentTenant)
+ *    TenantEpochBoundary - everything below is remounted, with a fresh data
+ *    cache and a clean address, when the organization changes
  * 2. BootstrapProvider - Fetches all initial data in ONE API call
  * 3. WebSocketProvider - Real-time WebSocket connection (notifications, activity,
  *    triage); the providers below fall back to polling only while it is down
@@ -26,6 +28,7 @@ import { PermissionProvider } from '@/context/permission-provider'
 import { WebSocketProvider } from '@/context/websocket-provider'
 import { RiskScoringProvider } from '@/context/risk-scoring-provider'
 import { ModuleSync } from './module-sync'
+import { TenantEpochBoundary } from './tenant-epoch-boundary'
 
 interface DashboardProvidersProps {
   children: React.ReactNode
@@ -34,17 +37,19 @@ interface DashboardProvidersProps {
 export function DashboardProviders({ children }: DashboardProvidersProps) {
   return (
     <TenantProvider>
-      <BootstrapProvider>
-        <BootstrapGate>
-          {/* The socket wraps the permission sync, which polls only while it is down. */}
-          <WebSocketProvider>
-            <PermissionProvider>
-              <ModuleSync />
-              <RiskScoringProvider>{children}</RiskScoringProvider>
-            </PermissionProvider>
-          </WebSocketProvider>
-        </BootstrapGate>
-      </BootstrapProvider>
+      <TenantEpochBoundary>
+        <BootstrapProvider>
+          <BootstrapGate>
+            {/* The socket wraps the permission sync, which polls only while it is down. */}
+            <WebSocketProvider>
+              <PermissionProvider>
+                <ModuleSync />
+                <RiskScoringProvider>{children}</RiskScoringProvider>
+              </PermissionProvider>
+            </WebSocketProvider>
+          </BootstrapGate>
+        </BootstrapProvider>
+      </TenantEpochBoundary>
     </TenantProvider>
   )
 }

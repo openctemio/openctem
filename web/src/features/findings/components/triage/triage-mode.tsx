@@ -37,7 +37,7 @@ import {
 import { isRetestable } from '../../api/use-finding-retests'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/add-findings-to-task-dialog'
-import { mutate as mutateCache } from 'swr'
+import { mutate as mutateCache } from '@/lib/swr-mutate'
 import { findingDetailKey, useFindingApi } from '../../api/use-findings-api'
 import type { ApiFinding } from '../../api/finding-api.types'
 import { refreshFindingQuickViews } from '../../api/use-quick-views'

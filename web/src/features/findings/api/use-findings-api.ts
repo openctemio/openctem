@@ -557,7 +557,7 @@ export function useFindingStatsApi(
  * Invalidate findings cache
  */
 export async function invalidateFindingsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/findings'), undefined, {
     revalidate: true,
   })

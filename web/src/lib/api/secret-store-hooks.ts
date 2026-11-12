@@ -220,7 +220,7 @@ export function useDeleteSecretStoreCredential(credentialId: string) {
  * Invalidate secret store credentials cache
  */
 export async function invalidateSecretStoreCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/secret-store'),
     undefined,

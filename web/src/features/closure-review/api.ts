@@ -1,6 +1,7 @@
 'use client'
 
-import useSWR, { mutate as globalMutate, type SWRConfiguration } from 'swr'
+import useSWR, { type SWRConfiguration } from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { get, post } from '@/lib/api/client'
 import { useBootstrapPending } from '@/context/bootstrap-provider'
 import { READY_TO_CLOSE_COUNT_URL } from '@/context/bootstrap-session'

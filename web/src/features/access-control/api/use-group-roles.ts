@@ -5,7 +5,8 @@
  * end date of a team membership (PATCH /api/v1/groups/{groupId}/members/{userId}).
  */
 
-import useSWR, { mutate as globalMutate } from 'swr'
+import useSWR from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
 import type { GroupRoleBinding, SetGroupMemberExpiryInput } from '../types'
 

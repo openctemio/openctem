@@ -643,7 +643,7 @@ export function updateScopeIntrusiveSettings(input: {
  * Invalidate all scope-related caches
  */
 export async function invalidateScopeCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/scope'), undefined, {
     revalidate: true,
   })
@@ -653,7 +653,7 @@ export async function invalidateScopeCache() {
  * Invalidate scope targets cache
  */
 export async function invalidateScopeTargetsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/scope/targets'), undefined, {
     revalidate: true,
   })
@@ -663,7 +663,7 @@ export async function invalidateScopeTargetsCache() {
  * Invalidate scope exclusions cache
  */
 export async function invalidateScopeExclusionsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/scope/exclusions'), undefined, {
     revalidate: true,
   })
@@ -673,7 +673,7 @@ export async function invalidateScopeExclusionsCache() {
  * Invalidate scope stats cache
  */
 export async function invalidateScopeStatsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/scope/stats'), undefined, {
     revalidate: true,
   })

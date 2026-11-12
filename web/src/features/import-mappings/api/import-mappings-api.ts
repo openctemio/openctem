@@ -6,7 +6,8 @@
  * assets:import; writes and preview: integrations:manage).
  */
 
-import useSWR, { mutate, type SWRConfiguration } from 'swr'
+import useSWR, { type SWRConfiguration } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import { csrfFetch, del, get, patch, post } from '@/lib/api/client'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
