@@ -162,9 +162,14 @@ FOLDED=0
 cl="$worktree/server/scripts/changelog.py"
 if [[ -f "$cl" ]]; then
   tag_date="$(g log -1 --format=%cs "refs/tags/$VERSION^{commit}")"
-  fold_out="$(python3 "$cl" release "$VERSION" --ref "refs/tags/$VERSION" --since-previous "$VERSION" --date "$tag_date")" \
-    || die "folding the changelog fragments of $VERSION failed"
-  FOLDED="$(sed -n 's/^folded \([0-9]*\) fragment.*/\1/p' <<<"$fold_out")"
+  # A failed fold never blocks the back-merge: the branch is pushed without
+  # it and the fragments wait (server/changelog.d/README.md, "At release").
+  if fold_out="$(python3 "$cl" release "$VERSION" --ref "refs/tags/$VERSION" --since-previous "$VERSION" --date "$tag_date" 2>&1)"; then
+    FOLDED="$(sed -n 's/^folded \([0-9]*\) fragment.*/\1/p' <<<"$fold_out")"
+  else
+    echo "warning: folding the changelog fragments of $VERSION failed; fold them by hand: $fold_out" >&2
+    w checkout -- server/CHANGELOG.md server/changelog.d 2>/dev/null || true
+  fi
   w add -A -- server/CHANGELOG.md server/changelog.d
   if ! w diff --cached --quiet; then
     w commit --quiet -m "chore(changelog): fold the $VERSION fragments into server/CHANGELOG.md

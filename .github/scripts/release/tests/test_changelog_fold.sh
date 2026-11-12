@@ -105,4 +105,24 @@ git -C "$w" switch -q --detach "$ph"
 assert_rc "a version already folded is refused" 1 python3 "$cl" release v0.2.0
 assert_rc "a malformed --date is refused" 2 python3 "$cl" release v0.3.0 --date 12/11/2026
 
+git -C "$w" switch -q develop
+
+# --- a failed fold does not block the back-merge --------------------------------
+git -C "$w" branch -q -D chore/post-release-v0.2.0
+printf '### Bogus: not a category\n\n- x\n' >"$w/server/changelog.d/bad.md"
+git -C "$w" switch -q develop
+git -C "$w" add -A && git -C "$w" commit -q -m "chore: bad fragment" && git -C "$w" push -q origin develop
+git -C "$w" switch -q main
+git -C "$w" merge -q --no-ff -m "chore(release): v0.3.0" develop
+git -C "$w" tag -a v0.3.0 -m v0.3.0
+git -C "$w" push -q origin main --tags
+git -C "$w" switch -q develop
+out="$(bash "$POST" --repo "$w" --version v0.3.0 --mode train 2>"$tmp/err")"; rc=$?
+assert_eq "a failed fold still exits 0" 0 "$rc"
+assert_eq "and folds nothing" 0 "$(sed -n 's/^FOLDED=//p' <<<"$out")"
+assert_contains "and says so" "fold them by hand" "$(cat "$tmp/err")"
+ph="$(sed -n 's/^HEAD=//p' <<<"$out")"
+assert_rc "the tag is still an ancestor" 0 git -C "$w" merge-base --is-ancestor v0.3.0 "$ph"
+
+
 finish
