@@ -51,5 +51,18 @@ if grep -q 'make -C server contract' "$script"; then
   grep -qE '^contract:' server/Makefile || bad "make -C server contract: no such target in server/Makefile"
 fi
 
+# Tools: the Go half runs `make -C server contract` in the golang alpine image
+# with only the apk packages the script installs. A recipe reachable from the
+# contract target (swagger, swagger-install, contract) that calls a tool the
+# image lacks fails there (perl did, after the rename). BusyBox has sh, sed,
+# grep, awk and mv; anything else must be in the apk list.
+apk_list="$(sed -n 's/^[[:space:]]*apk add --no-cache \(.*\) >\/dev\/null$/\1/p' "$script" | head -n 1)"
+recipes="$(awk '/^[A-Za-z0-9_-]+:/ { t=$1; sub(/:.*/, "", t); on = (t=="swagger" || t=="swagger-install" || t=="contract") } on && /^\t/ && !/^\t@?#/ { print }' server/Makefile)"
+for tool in perl python python3 bash jq gawk curl; do
+  if grep -qE "(^|[^A-Za-z0-9_./-])$tool([^A-Za-z0-9_-]|\$)" <<<"$recipes" && ! grep -qwF "$tool" <<<"$apk_list"; then
+    bad "server/Makefile (swagger/contract recipes) calls $tool, which the golang alpine image does not have: avoid it, or add it to the apk add line"
+  fi
+done
+
 [[ $fail -eq 0 ]] || exit 1
 echo "OK: every path scripts/generate-in-docker.sh reads exists in the tree."

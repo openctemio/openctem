@@ -80,7 +80,7 @@ COPY . .
 # The published definition names keep the module's pre-rename spelling (see
 # the swagger target in the Makefile).
 RUN swag init --generalInfo internal/server/main.go --output api/openapi --outputTypes yaml --parseDependency --quiet \
- && sed -i 's/github_com_openctemio_openctem_server_/github_com_openctemio_openctem_api_/g' api/openapi/swagger.yaml \
+ && sh scripts/stable-swagger-names.sh api/openapi/swagger.yaml \
  && test -s api/openapi/swagger.yaml
 
 # -----------------------------------------------------------------------------
