@@ -439,6 +439,10 @@ func describe(a admin.ApprovalAction) string {
 		return "reset a user's two-factor authentication"
 	case admin.ApprovalPlatformAIDestination:
 		return "change where platform AI sends data (provider, server address or API key)"
+	case admin.ApprovalScopeNameException:
+		return "let an organization scan a government or military name"
+	case admin.ApprovalScopeGovernmentRuleOff:
+		return "turn off the government and military name block"
 	}
 	return string(a)
 }

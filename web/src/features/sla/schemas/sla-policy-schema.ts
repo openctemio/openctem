@@ -79,6 +79,7 @@ export const slaPolicySchema = z
       .min(1, 'At least 1')
       .max(100, 'At most 100'),
     escalation_enabled: z.boolean(),
+    practice: z.enum(['', 'compliance']),
   })
   .superRefine((v, ctx) => {
     for (const [tighter, looser, message] of WINDOW_ORDER) {
@@ -109,12 +110,33 @@ export interface SlaPolicyFormData {
   kev_cap_days: number
   warning_threshold_pct: number
   escalation_enabled: boolean
+  /** Empty: vulnerabilities (every finding except compliance); fixed after create. */
+  practice: '' | 'compliance'
 }
+
+/**
+ * The windows a new compliance policy starts from: the platform's compliance
+ * windows (api/pkg/domain/sla DefaultCompliancePriorityDays and
+ * DefaultComplianceSLADays). A hardening control is fixed in change windows,
+ * and a check has no CVE, so the known exploited cap is off.
+ */
+export const COMPLIANCE_WINDOWS = {
+  p0_days: 30,
+  p1_days: 30,
+  p2_days: 90,
+  p3_days: 180,
+  critical_days: 30,
+  high_days: 30,
+  medium_days: 90,
+  low_days: 180,
+  info_days: NO_SLA,
+  kev_cap_days: 0,
+} as const
 
 /** The windows a new-policy form starts from (read from the API, never constants). */
 export type SlaFormWindows = Omit<
   SlaPolicyFormData,
-  'name' | 'description' | 'is_default' | 'kev_cap_days'
+  'name' | 'description' | 'is_default' | 'kev_cap_days' | 'practice'
 > & { kev_cap_days?: number }
 
 /**
@@ -139,5 +161,6 @@ export function newSlaPolicyForm(base: SlaFormWindows): SlaPolicyFormData {
     kev_cap_days: base.kev_cap_days ?? DEFAULT_KEV_CAP_DAYS,
     warning_threshold_pct: base.warning_threshold_pct,
     escalation_enabled: base.escalation_enabled,
+    practice: '',
   }
 }

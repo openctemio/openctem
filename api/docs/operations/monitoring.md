@@ -141,16 +141,17 @@ Besides the Go runtime and process metrics:
 | Metric | Labels | What |
 |---|---|---|
 | `http_requests_total`, `http_request_duration_seconds`, `http_response_size_bytes` | method, path (route pattern or `unmatched`), status | Every answer, including panics (500), rate-limit refusals (429) and limit refusals. |
-| `openctem_panics_recovered_total` | where (`http` or the background task) | Panics caught by a recover(). |
+| `openctem_panics_recovered_total` | where (`http`, `controller:<name>` for a background controller run, or the background task) | Panics caught by a recover(). A recovered controller run counts as a reconcile error and runs again on its next tick; the log line `background task panicked` carries the task name and the stack. |
 | `openctem_log_records_total` | level (warn, error), component | Log records written, before sampling. |
 | `openctem_auth_login_failures_total` | reason (invalid_credentials, locked, suspended, other) | Refused password sign-ins. |
 | `openctem_signup_events_total` | kind (account_created, organization_created, access_requested), source (the sign-up path) | Sign-up events recorded for the console's sign-up feed. |
 | `openctem_signup_burst_alerts_total` | dimension (ip_prefix, email_domain), kind | Sign-up burst alerts raised. The prefix or domain is in the console admin audit log, never a label. |
 | `openctem_automation_runs_total`, `openctem_automations_auto_paused_total` | status | Finished automation runs; automations paused after repeated failures. |
+| `openctem_notification_dead_letters_total` | where | Notifications the outbox gave up on after their retries: one channel (`channel`) or the whole event (`entry`). |
 | `openctem_suppression_rule_hits_total` | applied_by (ingest, approval, other) | Findings decided by an approved suppression rule: new findings a rule matched as they arrived, and open findings it closed when approved. Counted once per finding; no tenant or rule label (the per-rule breakdown is the `finding_suppressions` table). A sudden rise from `ingest` is a noisy rule. |
 | `openctem_web_client_errors_total` | kind | Errors reported by browsers (when the web reporter is enabled). |
 | `openctem_sensors`, `openctem_sensors_config_health`, `openctem_sensors_sdk` | kind (platform, tenant), health / config_health / status | Active sensors, platform-wide counts. |
-| `openctem_sensors_unhardened` | kind (policy_none, pin_none, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
+| `openctem_sensors_unhardened` | kind (policy_none, pin_none, tools_unconfined, network_unenforced, bearer_key) | Active tenant sensors by unhardened reason (a sensor with several reasons counts under each). |
 | `openctem_commands`, `openctem_command_oldest_pending_seconds` | state | Sensor command queue. |
 | `openctem_command_queue_depth` | stage (catalogue id, `none`, `other`), tool (platform tool, `_custom`, `none`), class (priority), wait (`ready`, `host_busy`, `scheduled`) | Pending, unexpired commands by lane-ish key and why they wait: `ready` waits for an eligible sensor with a free slot, `host_busy` for another command of its tenant on the same host, `scheduled` for its scan window. |
 | `openctem_command_queue_tenants`, `openctem_command_queue_top_tenant_pending` | | Tenants with pending commands, and the pending count of the busiest one (fairness without tenant identity). |
@@ -335,6 +336,11 @@ details:
 - `pin_none`: the sensor's HTTPS client trusts the system trust store instead
   of a pinned platform CA. Set `SENSOR_CA_FINGERPRINT` (shown in the install
   commands).
+- `tools_unconfined`: the sensor runs its tools without the sandbox. On a host
+  without it (the sandbox is Linux only: a macOS or Windows sensor), tools that
+  contact their targets are refused and only passive lookups run; move the
+  sensor to Linux or its container. `acknowledged` means its operator set
+  `SENSOR_SANDBOX=off`: remove it where the sandbox is available.
 - `network_unenforced`: tools run without network confinement. Run the sensor
   with `SENSOR_SANDBOX_NETWORK=required` and the shipped seccomp profile.
 - `bearer_key`: the sensor authenticates with a bearer key instead of a
@@ -411,8 +417,13 @@ and the channel errors.
 
 ### OutboxDeadLetters
 
-Notifications gave up after their retries. Organization admins see them in
-the notification delivery history; usually a channel's credentials changed.
+Notifications gave up after their retries
+(`openctem_notification_dead_letters_total`, by `where`: `channel` when one
+integration's retries ran out, `entry` when the event's integrations or
+routing could not be read at all). The API logs each one at ERROR
+("notification channel dead-lettered" / "notification dead-lettered").
+Organization admins see them in the notification delivery history; usually a
+channel's credentials changed.
 
 ### AutomationAutoPaused
 

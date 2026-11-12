@@ -19,7 +19,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/openctemio/contract/webpath"
 	"github.com/openctemio/ctis/v2/weburl"
 )
 
@@ -67,9 +69,12 @@ type WebRule struct {
 }
 
 // NormalizePathPrefix checks and normalises a path prefix: absolute, no
-// query or fragment, no dot segment, no percent-encoded slash, backslash or
-// NUL, "*" only as a whole segment, empty segments and a trailing "/" or
-// "/*" removed. "/" is the whole origin.
+// query or fragment, no percent-encoded slash, backslash or NUL, decoded as
+// a server reads it ("/files/My%20Docs" is stored "/files/My Docs", the form
+// the sensor compares a request path with), no "%", dot segment or control
+// character once decoded,
+// "*" only as a whole segment, empty segments and a trailing "/" or "/*"
+// removed. "/" is the whole origin.
 func NormalizePathPrefix(p string) (string, error) {
 	p = strings.TrimSpace(p)
 	if p == "" || p[0] != '/' || len(p) > MaxPathPrefixLen || strings.ContainsAny(p, "?#\\\x00") {
@@ -79,8 +84,18 @@ func NormalizePathPrefix(p string) (string, error) {
 	if strings.Contains(lower, "%2f") || strings.Contains(lower, "%5c") || strings.Contains(lower, "%00") {
 		return "", fmt.Errorf("%w: path prefix must not encode a slash, backslash or NUL", ErrInvalidPattern)
 	}
-	segs := make([]string, 0, strings.Count(p, "/"))
-	for _, s := range strings.Split(p, "/") {
+	dec, err := url.PathUnescape(p)
+	if err != nil || !utf8.ValidString(dec) {
+		return "", fmt.Errorf("%w: path prefix has an invalid percent-encoding", ErrInvalidPattern)
+	}
+	// An escaped percent sign ("%25") is refused: a stored prefix never
+	// holds a "%", so it is never read as escaped once more, and some
+	// servers decode twice.
+	if strings.Contains(dec, "%") {
+		return "", fmt.Errorf("%w: path prefix must not encode a percent sign", ErrInvalidPattern)
+	}
+	segs := make([]string, 0, strings.Count(dec, "/"))
+	for _, s := range strings.Split(dec, "/") {
 		switch {
 		case s == "":
 			continue
@@ -100,6 +115,38 @@ func NormalizePathPrefix(p string) (string, error) {
 		segs = segs[:len(segs)-1]
 	}
 	return "/" + strings.Join(segs, "/"), nil
+}
+
+// PrefixForms are the forms a stored prefix is matched in: as stored and,
+// when it normalises to another form (a prefix stored escaped before
+// prefixes were decoded, "/files/My%20Docs"), that form too. A stored
+// prefix is never replaced by its decoding (a decoded prefix may still hold
+// a "%"), only joined by it: over-blocking is the safe side.
+func PrefixForms(p string) []string {
+	if n, err := NormalizePathPrefix(p); err == nil && n != p {
+		return []string{p, n}
+	}
+	return []string{p}
+}
+
+// JobDenyPaths are the deny paths a web job carries for a path prefix: each
+// of its PrefixForms, cut before its first "*" segment ("/tenants/*/admin"
+// is denied as "/tenants/", everything under /tenants). A sensor before
+// contract webpath 1.3.1 compares "*" literally, so the cut keeps the
+// exclusion on every sensor; over-blocking is the safe side.
+func JobDenyPaths(prefix string) []string {
+	forms := PrefixForms(prefix)
+	out := make([]string, 0, len(forms))
+	for _, p := range forms {
+		segs := strings.Split(p, "/")
+		if i := slices.Index(segs, "*"); i > 0 {
+			p = strings.Join(segs[:i], "/") + "/"
+		}
+		if !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // NormalizeMethods upper-cases and de-duplicates methods; an unknown one is
@@ -232,9 +279,11 @@ func (r *WebRule) BlockedMethods(now time.Time) []string {
 	return slices.Clone(methods)
 }
 
-// Blocks reports whether the rule blocks method on path at now.
+// Blocks reports whether the rule blocks method on path at now. The path is
+// read as written and decoded, both compared with the prefix ignoring ASCII
+// case, as the sensor compares them (over-blocking is the safe side).
 func (r *WebRule) Blocks(method, path string, now time.Time) bool {
-	if r == nil || !PathUnder(path, r.PathPrefix) {
+	if r == nil || !r.covers(path) {
 		return false
 	}
 	m := strings.ToUpper(method)
@@ -242,6 +291,21 @@ func (r *WebRule) Blocks(method, path string, now time.Time) bool {
 		m = "GET"
 	}
 	return slices.Contains(r.BlockedMethods(now), m)
+}
+
+// covers reports whether path lies under the rule's prefix in any reading.
+func (r *WebRule) covers(path string) bool {
+	paths := []string{strings.ToLower(path)}
+	if c, err := webpath.CleanPath(path); err == nil {
+		paths = append(paths, strings.ToLower(c))
+	}
+	for _, prefix := range PrefixForms(r.PathPrefix) {
+		prefix = strings.ToLower(prefix)
+		if slices.ContainsFunc(paths, func(p string) bool { return PathUnder(p, prefix) }) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetWeb attaches the web rule of a `path` exclusion.

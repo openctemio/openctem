@@ -52,9 +52,11 @@ func TestOrgIntake_PerToolAndInstances_DB(t *testing.T) {
 	f.record(&ingestreceipt.Delta{TenantID: f.tenant, Source: run, Tool: "subfinder", Instance: inst(edge),
 		Reports: 1, AssetsCreated: 40, AssetsUpdated: 10})
 	f.record(&ingestreceipt.Delta{TenantID: f.tenant, Source: run, Tool: "nuclei", Instance: inst(edge),
-		Reports: 1, Received: 7, Created: created(f.tenant, f.asset, 3)})
+		Reports: 1, Received: 7, Created: created(f.tenant, f.asset, 3),
+		Outcomes: map[string]int{ingestreceipt.OutcomeExposure: 2, ingestreceipt.OutcomeSplit: 1}})
 	f.record(&ingestreceipt.Delta{TenantID: f.tenant, Source: run, Tool: "nuclei", Instance: inst(core),
-		Reports: 1, Received: 5, Created: created(f.tenant, f.asset, 2)})
+		Reports: 1, Received: 5, Created: created(f.tenant, f.asset, 2),
+		Outcomes: map[string]int{ingestreceipt.OutcomeExposure: 1}})
 	// A sensor id of another tenant on this tenant's receipt stays unnamed.
 	f.record(&ingestreceipt.Delta{TenantID: f.tenant, Source: run, Tool: "nuclei", Instance: inst(foreign),
 		Reports: 1, Received: 1})
@@ -66,7 +68,8 @@ func TestOrgIntake_PerToolAndInstances_DB(t *testing.T) {
 		Reports:  1, Received: 4, Created: created(f.tenant, f.asset, 4)})
 	// Another tenant: same tools, never counted.
 	f.record(&ingestreceipt.Delta{TenantID: other, Source: run, Tool: "nuclei", Instance: inst(foreign),
-		Reports: 1, Received: 999, AssetsCreated: 999, Created: created(other, otherAsset, 2)})
+		Reports: 1, Received: 999, AssetsCreated: 999, Created: created(other, otherAsset, 2),
+		Outcomes: map[string]int{ingestreceipt.OutcomeExposure: 500}})
 
 	// The receipt's own counts are the sum of its tool rows.
 	var receiptReceived, toolReceived int
@@ -128,6 +131,11 @@ func TestOrgIntake_PerToolAndInstances_DB(t *testing.T) {
 	}
 	if window.Received != sub.Received+nuc.Received+vm.Received || window.Created != sub.Created+nuc.Created+vm.Created {
 		t.Errorf("window %+v does not sum the sources", window)
+	}
+
+	// The source's outcomes sum its senders' (never another tenant's).
+	if nuc.Outcomes[ingestreceipt.OutcomeExposure] != 3 || nuc.Outcomes[ingestreceipt.OutcomeSplit] != 1 || len(sub.Outcomes) != 0 {
+		t.Errorf("outcomes nuclei %v subfinder %v", nuc.Outcomes, sub.Outcomes)
 	}
 
 	// Senders: nuclei has three, summing to the source; only the tenant's

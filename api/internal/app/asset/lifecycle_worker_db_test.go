@@ -229,3 +229,49 @@ func TestLifecycleWorker_SystemWritesDoNotResetTheStaleClock(t *testing.T) {
 		t.Errorf("reactivated by a person: status %q, want active", got)
 	}
 }
+
+// A dangling name is never demoted while its dangling exposure is open, even
+// when no scan has seen it for longer than the threshold; once the exposure is
+// resolved the normal clock applies. Another tenant's open dangling exposure
+// on its own asset protects nothing here.
+func TestLifecycleWorker_KeepsDanglingNames(t *testing.T) {
+	h := newLifecycleHarness(t)
+	if h == nil {
+		return
+	}
+	ctx := context.Background()
+	tenantID := h.tenant("")
+	other := h.tenant("")
+	dangling := h.asset(tenantID, "promo.dangling.example", "sensor", 30)
+	plain := h.asset(tenantID, "old.plain.example", "sensor", 30)
+	resolved := h.asset(tenantID, "old.fixed.example", "sensor", 30)
+	theirs := h.asset(other, "promo.theirs.example", "sensor", 30)
+	exp := func(tenant, asset shared.ID, typ, state string) {
+		h.exec(`INSERT INTO exposure_events (id, tenant_id, asset_id, event_type, severity, state, title, source, details, fingerprint,
+				first_seen_at, last_seen_at, created_at, updated_at)
+			VALUES ($1::uuid, $2, $3, $4, 'medium', $5, 'Dangling CNAME', 'easm_dns', '{}'::jsonb, $1::text, NOW(), NOW(), NOW(), NOW())`,
+			shared.NewID().String(), tenant.String(), asset.String(), typ, state)
+	}
+	exp(tenantID, dangling, "dangling_cname", "active")
+	exp(tenantID, resolved, "subdomain_takeover", "resolved")
+	exp(other, theirs, "dangling_cname", "active")
+	t.Cleanup(func() {
+		_, _ = h.db.ExecContext(ctx, `DELETE FROM exposure_events WHERE tenant_id = ANY($1::uuid[])`, "{"+tenantID.String()+","+other.String()+"}")
+	})
+
+	if _, err := h.w.Run(ctx, tenantID, false); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := h.status(dangling); got != "active" {
+		t.Fatalf("dangling name demoted to %q", got)
+	}
+	if h.status(plain) != "stale" || h.status(resolved) != "stale" {
+		t.Fatalf("plain=%s resolved=%s, want both stale", h.status(plain), h.status(resolved))
+	}
+	if _, err := h.w.Run(ctx, other, false); err != nil {
+		t.Fatalf("run other: %v", err)
+	}
+	if h.status(theirs) != "active" {
+		t.Fatal("the other tenant's dangling name was demoted")
+	}
+}

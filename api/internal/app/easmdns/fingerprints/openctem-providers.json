@@ -1,0 +1,11 @@
+[
+  {
+    "service": "LadiPage",
+    "cname": ["ladipage.com"],
+    "status": "Vulnerable",
+    "nxdomain": false,
+    "hosted": true,
+    "unclaimed_marker": "Vui lòng xuất bản Landing Page với tên miền trên",
+    "basis": "measured 2026-11-04: a name pointed at dns.ladipage.com that no page uses gets HTTP 200 with the provider's page asking to publish a landing page with that domain"
+  }
+]

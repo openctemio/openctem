@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/openctemio/openctem/api/pkg/notifymsg"
 )
 
 // TeamsClient implements the Client interface for Microsoft Teams notifications.
@@ -144,6 +146,9 @@ func (c *TeamsClient) TestConnection(ctx context.Context) (*SendResult, error) {
 
 // buildMessage builds a Teams Adaptive Card message from the notification message.
 func (c *TeamsClient) buildMessage(msg Message) teamsMessage {
+	if msg.Card != nil {
+		return c.cardMessage(*msg.Card)
+	}
 	emoji := GetSeverityEmoji(msg.Severity)
 	color := c.getSeverityTeamsColor(msg.Severity)
 
@@ -256,4 +261,25 @@ var teamsEscaper = strings.NewReplacer(`\`, `\\`, "[", `\[`, "]", `\]`)
 // teamsEscape makes untrusted text unable to form a markdown link.
 func teamsEscape(s string) string {
 	return teamsEscaper.Replace(s)
+}
+
+// cardMessage renders a notification card as an Adaptive Card.
+func (c *TeamsClient) cardMessage(card notifymsg.Card) teamsMessage {
+	var actions []teamsAction
+	if card.Action.URL != "" {
+		actions = []teamsAction{{Type: "Action.OpenUrl", Title: card.Action.Label, URL: card.Action.URL}}
+	}
+	return teamsMessage{
+		Type: "message",
+		Attachments: []teamsAttachment{{
+			ContentType: "application/vnd.microsoft.card.adaptive",
+			Content: teamsCard{
+				Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+				Type:    "AdaptiveCard",
+				Version: "1.4",
+				Body:    teamsCardBody(card, c.getSeverityTeamsColor(card.Severity)),
+				Actions: actions,
+			},
+		}},
+	}
 }

@@ -98,6 +98,10 @@ const POLLING_BASELINE: Record<string, number> = {
   // The receipts of a running scan, polled only while it runs (no event announces
   // each report); 0 when the run is over.
   'features/findings/api/receipts-api.ts': 1,
+  // A source retirement archives findings in batches and no event announces each
+  // batch: the list (2 s) and one retirement (1.5 s) are polled only while one is
+  // applying or restoring; 0 once it is done.
+  'features/findings/api/source-retirement-api.ts': 2,
   'features/findings/api/use-finding-retests.ts': 1,
   'features/findings/api/use-findings-api.ts': 1,
   'features/notifications/api/use-notification-api.ts': 1,
@@ -126,6 +130,10 @@ const POLLING_BASELINE: Record<string, number> = {
   'lib/api/security-hooks.ts': 1,
   'lib/api/sensor-hooks.ts': 6,
   'lib/api/sensor-pairing-hooks.ts': 1,
+  // A sensor's readiness checklist is computed at read time from its grant,
+  // zones, scope and last reports; re-read every 10 s only while something
+  // is not ready and the checklist is on screen, 0 once it is ready.
+  'lib/api/sensor-readiness-hooks.ts': 1,
   // Sensors waiting for approval: an enrollment token's sensor arrives with
   // no event to the page; polled only while the Enrollment tokens tab is open.
   'lib/api/sensor-enrollment-hooks.ts': 1,

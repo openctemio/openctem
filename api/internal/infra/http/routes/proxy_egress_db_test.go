@@ -3,8 +3,9 @@ package routes
 // Proxy pools for scan traffic, sensor side (docs/architecture/sensor-proxies.md),
 // over the real v2 routes and a migrated database: the egress member a scan
 // job carries for the claiming sensor, the fail-closed gate for a sensor that
-// cannot honor a pool, the credentials only the leasing sensor fetches, and
-// the health report that quarantines a dead endpoint. Requires DATABASE_URL.
+// cannot honor a pool, the pool's credentials listed among the job's task
+// secrets, and the health report (its lease epoch in the body) that
+// quarantines a dead endpoint. Requires DATABASE_URL.
 
 import (
 	"context"
@@ -15,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/lib/pq"
+	"github.com/openctemio/contract/secretref"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/app/command"
@@ -78,7 +80,7 @@ func egressOf(t *testing.T, payload json.RawMessage) *egressWire {
 }
 
 func TestProxyEgress_JobCarriesPoolAndCredentialsOnlyForLeaseHolder(t *testing.T) {
-	h := newCtlHarnessWith(t, true)
+	h := newCtlHarnessConfig(t, ctlHarnessConfig{secrets: true})
 	sA := h.newSensor(h.tenantID, "egress-a")
 	h.reportCaps(sA, "net.confined@1", "egress.upstream@1")
 	sOther := h.newSensor(h.tenantID, "egress-other")
@@ -107,57 +109,37 @@ func TestProxyEgress_JobCarriesPoolAndCredentialsOnlyForLeaseHolder(t *testing.T
 	if eg := egressOf(t, claimed.Payload); eg == nil || eg.PoolID != pool.ID.String() {
 		t.Fatalf("claim repeat lost the egress: %s", claimed.Payload)
 	}
-	epoch := strconv.Itoa(got[0].LeaseEpoch)
-	credPath := "/api/v2/sensor/commands/" + id + "/" + protov2.EgressCredentialsAction
-
-	resp, raw = h.call(sA.key, http.MethodPost, credPath, map[string]any{"pool_id": pool.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-	h.want(resp, raw, 200, "")
-	creds := decodeAs[protov2.EgressCredentialsResponse](t, raw)
-	if len(creds.Credentials) != 1 || creds.Credentials[0].Username != "alice" || creds.Credentials[0].Password != egressSecret ||
-		creds.Credentials[0].EndpointID != eg.Endpoints[0].ID {
-		t.Fatalf("credentials = %+v", creds)
+	// The pool's credentials are a task secret: the claimed job lists the
+	// pool (names only), the values come from the sealed fetch.
+	if ref, ok := secretsOf(t, claimed.Payload).Lookup("p1"); !ok || ref.Kind != secretref.KindEgressProxy || ref.Ref != pool.ID.String() {
+		t.Fatalf("claimed job's secrets: %s", claimed.Payload)
 	}
-	if resp.Header.Get("Cache-Control") != "no-store" {
-		t.Fatal("credentials answer is cacheable")
+	// The retired route is gone, for every sensor.
+	resp, raw = h.call(sA.key, http.MethodPost, "/api/v2/sensor/commands/"+id+"/egress-credentials",
+		map[string]any{"pool_id": pool.ID.String()}, protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+	if (resp.StatusCode != http.StatusNotFound && resp.StatusCode != http.StatusMethodNotAllowed) || strings.Contains(string(raw), egressSecret) {
+		t.Fatalf("egress-credentials: %d %s", resp.StatusCode, raw)
 	}
-
-	// Every refusal looks the same: wrong epoch, another sensor of the
-	// tenant, a pool that is not the sensor's, no epoch.
-	for name, call := range map[string]func() (*http.Response, []byte){
-		"wrong epoch": func() (*http.Response, []byte) {
-			return h.call(sA.key, http.MethodPost, credPath, map[string]any{"pool_id": pool.ID.String()}, protov2.HeaderLeaseEpoch, epoch+"9")
-		},
-		"no epoch": func() (*http.Response, []byte) {
-			return h.call(sA.key, http.MethodPost, credPath, map[string]any{"pool_id": pool.ID.String()})
-		},
-		"other sensor": func() (*http.Response, []byte) {
-			return h.call(sOther.key, http.MethodPost, credPath, map[string]any{"pool_id": pool.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-		},
-		"other pool": func() (*http.Response, []byte) {
-			return h.call(sA.key, http.MethodPost, credPath, map[string]any{"pool_id": sA.id}, protov2.HeaderLeaseEpoch, epoch)
-		},
-	} {
-		resp, raw := call()
-		if resp.StatusCode != http.StatusNotFound || strings.Contains(string(raw), egressSecret) {
-			t.Errorf("%s: %d %s", name, resp.StatusCode, raw)
-		}
+	// Only the endpoints of the job's signed egress block get credentials.
+	var signed, unsigned []string
+	for _, e := range eg.Endpoints {
+		signed = append(signed, e.ID)
 	}
-
-	// Another tenant's sensor cannot reach the command or the pool.
+	if creds, err := h.egress.PoolCredentials(context.Background(), mustID(t, h.tenantID), pool.ID.String(), signed); err != nil || len(creds) != 1 {
+		t.Fatalf("signed endpoints: %d credentials, %v", len(creds), err)
+	}
+	if creds, err := h.egress.PoolCredentials(context.Background(), mustID(t, h.tenantID), pool.ID.String(), unsigned); err != nil || len(creds) != 0 {
+		t.Fatalf("endpoints outside the signed block got credentials: %d, %v", len(creds), err)
+	}
+	// Another tenant's pool is not found by tenant.
 	tenantB := h.newTenant()
-	sB := h.newSensor(tenantB, "egress-b")
-	resp, raw = h.call(sB.key, http.MethodPost, credPath, map[string]any{"pool_id": pool.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-	if resp.StatusCode != http.StatusNotFound || strings.Contains(string(raw), egressSecret) {
-		t.Fatalf("cross-tenant credentials: %d %s", resp.StatusCode, raw)
-	}
-	// A credential lookup by tenant B's own sensor for tenant A's pool.
-	if _, err := h.egress.CredentialsFor(context.Background(), mustID(t, tenantB), mustID(t, sB.id), pool.ID.String()); err == nil {
-		t.Fatal("tenant B's sensor got tenant A's pool credentials")
+	if _, err := h.egress.PoolCredentials(context.Background(), mustID(t, tenantB), pool.ID.String(), signed); err == nil {
+		t.Fatal("tenant B read tenant A's pool credentials")
 	}
 }
 
 func TestProxyEgress_UnsupportedSensorGetsNoScanJobs(t *testing.T) {
-	h := newCtlHarnessWith(t, true)
+	h := newCtlHarnessConfig(t, ctlHarnessConfig{secrets: true})
 	old := h.newSensor(h.tenantID, "egress-old")
 	h.reportCaps(old, "net.confined@1") // no egress.upstream@1
 	h.newPool(h.tenantID, "corp", "http://10.0.0.6:3128", true)
@@ -190,7 +172,7 @@ func TestProxyEgress_UnsupportedSensorGetsNoScanJobs(t *testing.T) {
 }
 
 func TestProxyEgress_SensorPoolAppliesToAllAndReportQuarantines(t *testing.T) {
-	h := newCtlHarnessWith(t, true)
+	h := newCtlHarnessConfig(t, ctlHarnessConfig{secrets: true})
 	s := h.newSensor(h.tenantID, "egress-seg")
 	h.reportCaps(s, "net.confined@1", "egress.upstream@1")
 	h.newPool(h.tenantID, "default", "http://10.0.0.6:3128", true)
@@ -208,13 +190,13 @@ func TestProxyEgress_SensorPoolAppliesToAllAndReportQuarantines(t *testing.T) {
 		t.Fatalf("egress = %+v", eg)
 	}
 	dead := eg.Endpoints[0].ID
-	report := map[string]any{"pool_id": seg.ID.String(), "endpoints": []map[string]any{
+	report := map[string]any{"lease_epoch": got[0].LeaseEpoch, "pool_id": seg.ID.String(), "endpoints": []map[string]any{
 		{"endpoint_id": dead, "proxy_down": 5, "last_error": "proxy_down: dial tcp 10.9.0.1:1080: connection refused"},
 		{"endpoint_id": eg.Endpoints[1].ID, "ok": 30, "handshake_ms_p95": 80},
 	}}
 	path := "/api/v2/sensor/commands/" + id + "/" + protov2.EgressReportAction
 	for i := 0; i < 3; i++ {
-		resp, raw := h.call(s.key, http.MethodPost, path, report, protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+		resp, raw := h.call(s.key, http.MethodPost, path, report)
 		h.want(resp, raw, http.StatusNoContent, "")
 	}
 	var state, lastErr string
@@ -239,7 +221,7 @@ func TestProxyEgress_SensorPoolAppliesToAllAndReportQuarantines(t *testing.T) {
 	// Another tenant's sensor cannot report on this pool.
 	tenantB := h.newTenant()
 	sB := h.newSensor(tenantB, "egress-b")
-	resp, _ := h.call(sB.key, http.MethodPost, path, report, protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+	resp, _ := h.call(sB.key, http.MethodPost, path, report)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("cross-tenant report = %d", resp.StatusCode)
 	}
@@ -253,10 +235,10 @@ func TestProxyEgress_SensorPoolAppliesToAllAndReportQuarantines(t *testing.T) {
 		if !p.IsDefault {
 			continue
 		}
-		other := map[string]any{"pool_id": p.ID.String(), "endpoints": []map[string]any{
+		other := map[string]any{"lease_epoch": got[0].LeaseEpoch, "pool_id": p.ID.String(), "endpoints": []map[string]any{
 			{"endpoint_id": p.Endpoints[0].ID.String(), "proxy_auth": 1},
 		}}
-		resp, raw := h.call(s.key, http.MethodPost, path, other, protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+		resp, raw := h.call(s.key, http.MethodPost, path, other)
 		h.want(resp, raw, http.StatusNotFound, "")
 		var st string
 		if err := h.db.QueryRow(`SELECT state FROM proxy_endpoints WHERE id = $1`, p.Endpoints[0].ID.String()).Scan(&st); err != nil || st == proxypool.StateQuarantined {
@@ -267,7 +249,7 @@ func TestProxyEgress_SensorPoolAppliesToAllAndReportQuarantines(t *testing.T) {
 	if _, err := h.db.Exec(`UPDATE commands SET status = 'completed', completed_at = now() - interval '1 hour' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
-	resp, raw := h.call(s.key, http.MethodPost, path, report, protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
+	resp, raw := h.call(s.key, http.MethodPost, path, report)
 	h.want(resp, raw, http.StatusNotFound, "")
 }
 
@@ -295,7 +277,7 @@ func (h *ctlHarness) newValidateCommand(tenantID, sensorID string) string {
 // honors the pool (egress.validate@1), and then the job carries the pool;
 // an older sensor would probe from its own address, so the job waits.
 func TestProxyEgress_ValidateJobsNeverGoDirect(t *testing.T) {
-	h := newCtlHarnessWith(t, true)
+	h := newCtlHarnessConfig(t, ctlHarnessConfig{secrets: true})
 	s := h.newSensor(h.tenantID, "egress-validate")
 	h.reportCaps(s, "validate", "net.confined@1", "egress.upstream@1")
 	pool := h.newPool(h.tenantID, "corp", "http://10.0.0.6:3128", true)
@@ -352,7 +334,7 @@ func TestProxyEgress_ValidateJobsNeverGoDirect(t *testing.T) {
 // out. A disabled organization default is the "use proxies" switch: the
 // sensors that inherit it scan directly.
 func TestProxyEgress_DisabledAssignedPoolFailsClosed(t *testing.T) {
-	h := newCtlHarnessWith(t, true)
+	h := newCtlHarnessConfig(t, ctlHarnessConfig{secrets: true})
 	s := h.newSensor(h.tenantID, "egress-disabled")
 	h.reportCaps(s, "net.confined@1", "egress.upstream@1")
 	seg := h.newPool(h.tenantID, "segment", "socks5://bob:"+egressSecret+"@10.9.0.1:1080", false)
@@ -373,13 +355,15 @@ func TestProxyEgress_DisabledAssignedPoolFailsClosed(t *testing.T) {
 	if eg == nil || eg.PoolID != seg.ID.String() || eg.AppliesTo != proxypool.AppliesAll || eg.Endpoints == nil || len(eg.Endpoints) != 0 {
 		t.Fatalf("disabled assigned pool: egress = %+v (want the pool with no endpoint)", eg)
 	}
-	credPath := "/api/v2/sensor/commands/" + id + "/" + protov2.EgressCredentialsAction
-	resp, raw := h.call(s.key, http.MethodPost, credPath, map[string]any{"pool_id": seg.ID.String()},
-		protov2.HeaderLeaseEpoch, strconv.Itoa(got[0].LeaseEpoch))
-	h.want(resp, raw, 200, "")
-	if creds := decodeAs[protov2.EgressCredentialsResponse](t, raw); len(creds.Credentials) != 0 || strings.Contains(string(raw), egressSecret) {
-		t.Fatalf("credentials of a disabled pool: %s", raw)
+	// No endpoint is listed, so no credentials are among the job's
+	// secrets, and the disabled pool yields none.
+	if _, ok := secretsOf(t, got[0].Payload).Lookup("p1"); ok {
+		t.Fatalf("a disabled pool's credentials listed: %s", got[0].Payload)
 	}
+	if creds, err := h.egress.PoolCredentials(context.Background(), mustID(t, h.tenantID), seg.ID.String(), nil); err != nil || len(creds) != 0 {
+		t.Fatalf("credentials of a disabled pool: %d %v", len(creds), err)
+	}
+	_ = id
 
 	// A disabled default: inheriting sensors scan directly.
 	inherit := h.newSensor(h.tenantID, "egress-inherit")
@@ -404,7 +388,7 @@ func TestProxyEgress_DisabledAssignedPoolFailsClosed(t *testing.T) {
 // sensor, another tenant, another pool and a lease that is gone get
 // not found.
 func TestProxyTest_SensorSideCredentialsReportAndResult(t *testing.T) {
-	h := newCtlHarnessWith(t, true)
+	h := newCtlHarnessConfig(t, ctlHarnessConfig{secrets: true})
 	s := h.newSensor(h.tenantID, "test-runner")
 	h.reportCaps(s, "net.confined@1", "egress.upstream@1", "proxy.test@1")
 	if _, err := h.db.Exec(`UPDATE sensors SET health = 'online' WHERE id = $1`, s.id); err != nil {
@@ -443,47 +427,28 @@ func TestProxyTest_SensorSideCredentialsReportAndResult(t *testing.T) {
 		t.Fatalf("egress %+v", eg)
 	}
 	epoch := strconv.Itoa(got[0].LeaseEpoch)
-	credPath := "/api/v2/sensor/commands/" + id + "/" + protov2.EgressCredentialsAction
-
-	// The credentials of the draft pool, though no sensor's jobs use it.
-	resp, raw := h.call(s.key, http.MethodPost, credPath, map[string]any{"pool_id": draft.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-	h.want(resp, raw, 200, "")
-	creds := decodeAs[protov2.EgressCredentialsResponse](t, raw)
-	if len(creds.Credentials) != 1 || creds.Credentials[0].Username != "alice" || creds.Credentials[0].Password != egressSecret {
-		t.Fatalf("credentials %+v", creds)
-	}
-	for name, call := range map[string]func() (*http.Response, []byte){
-		"another pool of the organization": func() (*http.Response, []byte) {
-			return h.call(s.key, http.MethodPost, credPath, map[string]any{"pool_id": other.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-		},
-		"the bystander": func() (*http.Response, []byte) {
-			return h.call(bystander.key, http.MethodPost, credPath, map[string]any{"pool_id": draft.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-		},
-		"no lease epoch": func() (*http.Response, []byte) {
-			return h.call(s.key, http.MethodPost, credPath, map[string]any{"pool_id": draft.ID.String()})
-		},
-	} {
-		resp, raw := call()
-		if resp.StatusCode != http.StatusNotFound || strings.Contains(string(raw), egressSecret) {
-			t.Errorf("%s: %d %s", name, resp.StatusCode, raw)
-		}
+	lease := got[0].LeaseEpoch
+	// The draft pool's credentials are the test's task secret (the pool the
+	// command names, though no sensor's jobs use it).
+	if ref, ok := secretsOf(t, got[0].Payload).Lookup("p1"); !ok || ref.Ref != draft.ID.String() {
+		t.Fatalf("test's secrets: %s", got[0].Payload)
 	}
 	tenantB := h.newTenant()
-	sB := h.newSensor(tenantB, "test-b")
-	resp, raw = h.call(sB.key, http.MethodPost, credPath, map[string]any{"pool_id": draft.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-	if resp.StatusCode != http.StatusNotFound || strings.Contains(string(raw), egressSecret) {
-		t.Fatalf("cross-tenant: %d %s", resp.StatusCode, raw)
-	}
 
 	// The report: wrong credentials quarantine the draft pool's endpoint,
 	// a pass on the other endpoint keeps it out of quarantine; a report on
 	// another pool is refused.
 	reportPath := "/api/v2/sensor/commands/" + id + "/" + protov2.EgressReportAction
 	e0, e1 := eg.Endpoints[0].ID, eg.Endpoints[1].ID
-	resp, raw = h.call(s.key, http.MethodPost, reportPath, map[string]any{"pool_id": draft.ID.String(), "endpoints": []map[string]any{
+	firstReport := map[string]any{"pool_id": draft.ID.String(), "endpoints": []map[string]any{
 		{"endpoint_id": e0, "proxy_auth": 1, "last_error": "proxy_auth: proxy refused the credentials"},
 		{"endpoint_id": e1, "ok": 1, "handshake_ms_p95": 90},
-	}}, protov2.HeaderLeaseEpoch, epoch)
+	}}
+	// The lease is the body's: an epoch in the header only is refused.
+	resp, raw := h.call(s.key, http.MethodPost, reportPath, firstReport, protov2.HeaderLeaseEpoch, epoch)
+	h.want(resp, raw, http.StatusNotFound, "")
+	firstReport["lease_epoch"] = lease
+	resp, raw = h.call(s.key, http.MethodPost, reportPath, firstReport)
 	h.want(resp, raw, http.StatusNoContent, "")
 	var state string
 	if err := h.db.QueryRow(`SELECT state FROM proxy_endpoints WHERE id = $1`, e0).Scan(&state); err != nil || state != proxypool.StateQuarantined {
@@ -493,16 +458,16 @@ func TestProxyTest_SensorSideCredentialsReportAndResult(t *testing.T) {
 		t.Fatalf("a passing endpoint: %s %v", state, err)
 	}
 	// A later test that passes lifts the quarantine to probation.
-	resp, raw = h.call(s.key, http.MethodPost, reportPath, map[string]any{"pool_id": draft.ID.String(), "endpoints": []map[string]any{
+	resp, raw = h.call(s.key, http.MethodPost, reportPath, map[string]any{"lease_epoch": lease, "pool_id": draft.ID.String(), "endpoints": []map[string]any{
 		{"endpoint_id": e0, "ok": 1, "handshake_ms_p95": 70},
-	}}, protov2.HeaderLeaseEpoch, epoch)
+	}})
 	h.want(resp, raw, http.StatusNoContent, "")
 	if err := h.db.QueryRow(`SELECT state FROM proxy_endpoints WHERE id = $1`, e0).Scan(&state); err != nil || state != proxypool.StateProbation {
 		t.Fatalf("a passing test after a quarantine: %s %v", state, err)
 	}
-	resp, raw = h.call(s.key, http.MethodPost, reportPath, map[string]any{"pool_id": other.ID.String(), "endpoints": []map[string]any{
+	resp, raw = h.call(s.key, http.MethodPost, reportPath, map[string]any{"lease_epoch": lease, "pool_id": other.ID.String(), "endpoints": []map[string]any{
 		{"endpoint_id": other.Endpoints[0].ID.String(), "proxy_auth": 1},
-	}}, protov2.HeaderLeaseEpoch, epoch)
+	}})
 	h.want(resp, raw, http.StatusNotFound, "")
 	if err := h.db.QueryRow(`SELECT state FROM proxy_endpoints WHERE id = $1`, other.Endpoints[0].ID.String()).Scan(&state); err != nil || state == proxypool.StateQuarantined {
 		t.Fatalf("another pool's endpoint moved: %s %v", state, err)
@@ -540,9 +505,7 @@ func TestProxyTest_SensorSideCredentialsReportAndResult(t *testing.T) {
 	if _, err := h.egress.TestResults(context.Background(), tenantB, draft.ID.String(), []string{id}); err == nil {
 		t.Fatal("another tenant read the test")
 	}
-	// After the end the echo no longer answers and credentials are not served.
-	resp, raw = h.call(s.key, http.MethodPost, credPath, map[string]any{"pool_id": draft.ID.String()}, protov2.HeaderLeaseEpoch, epoch)
-	h.want(resp, raw, http.StatusNotFound, "")
+	// After the end the echo no longer answers.
 	if h.egress.VerifyTestEcho(context.Background(), h.tenantID, id, payload.Echo.Nonce) {
 		t.Fatal("the echo answers for an ended test")
 	}

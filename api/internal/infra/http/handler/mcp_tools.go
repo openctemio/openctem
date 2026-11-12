@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/querylang"
 )
 
 // toolInputError is a tool argument-validation error whose message is safe to
@@ -155,7 +156,8 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		{
 			Name: "list_findings",
 			Description: "List this tenant's findings you can see, with the findings list's filters and order " +
-				"(the console's Findings page). Comma lists are OR within a filter; filters are ANDed. Paged: " +
+				"(the console's Findings page). Comma lists are OR within a filter; filters are ANDed; filter takes " +
+				"the search box syntax for anything else. Paged: " +
 				"page and limit, with total and next_page. A finding is one issue on one asset with its own " +
 				"status: the same CVE can be false_positive on one asset and new on another." + mcpUntrustedHint,
 			InputSchema:  json.RawMessage(mcpFindingListSchema),
@@ -216,8 +218,10 @@ func (h *MCPHandler) buildTools() []mcpTool {
 		},
 		{
 			Name: "get_exposure_chains",
-			Description: "Shortest attack-path hop-chains from public entry points to assets " +
-				"carrying open KEV/critical findings (crown jewels), for this tenant. length 0 is an asset " +
+			Description: "Shortest possible attack-path hop-chains from public entry points to assets " +
+				"carrying open KEV/critical findings (crown jewels), for this tenant. Each chain is built from " +
+				"asset relationships and findings and is NOT proven (proof: possible): call it a possible path, " +
+				"never a confirmed one. length 0 is an asset " +
 				"exposed directly (it is its own entry point); summary.multi_hop_chains counts the others, " +
 				"and relationship_note says when no asset relationships exist to build longer paths." + mcpUntrustedHint,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
@@ -269,12 +273,19 @@ const mcpPageSchema = `{"type":"object","properties":{` +
 // mcpFindingListSchema is list_findings' input: the findings list's
 // filters under plain names.
 const mcpFindingListSchema = `{"type":"object","properties":{` +
+	`"filter":{"type":"string","description":"` + mcpFilterHint + `, e.g. severity>=high kev=true -status:accepted"},` +
 	`"severity":{"type":"string","description":"comma list of critical|high|medium|low|info|none"},` +
 	`"status":{"type":"string","description":"comma list of new|confirmed|in_progress|fix_applied|resolved|false_positive|accepted|duplicate"},` +
 	`"state":{"type":"string","description":"open|fixed|dispositioned|closed (status groups)"},` +
 	`"source":{"type":"string","description":"comma list, e.g. sca,sast,dast,secret,iac,container,pentest"},` +
+	`"practice":{"type":"string","description":"comma list of aspm|infra|external|cloud|compliance|offensive|identity|runtime|other (the program that triages it); compliance = benchmark check results"},` +
+	`"exclude_practice":{"type":"string","description":"comma list of practices to leave out, e.g. compliance for vulnerabilities only"},` +
+	`"compliance_result":{"type":"string","description":"comma list of pass|fail|manual|not_applicable|error|unknown (benchmark check result)"},` +
 	`"search":{"type":"string","description":"free text over title, file, rule, CVE and asset name"},` +
 	`"asset_id":{"type":"string","description":"comma list of asset UUIDs"},` +
+	`"asset_type":{"type":"string","description":"comma list of asset types, e.g. domain,subdomain,repository"},` +
+	`"asset_domain":{"type":"string","description":"comma list of domains: example.com is the name and every asset under it (addresses it resolves to, services, certificates); *.example.com only under it"},` +
+	`"asset_name":{"type":"string","description":"asset name pattern: * any characters, ? one (e.g. api-*)"},` +
 	`"cve":{"type":"string","description":"comma list of CVE ids"},` +
 	`"kev":{"type":"boolean","description":"known exploited (CISA KEV) or not"},` +
 	`"min_epss":{"type":"number","description":"0..1 EPSS floor"},` +
@@ -290,12 +301,19 @@ const mcpFindingListSchema = `{"type":"object","properties":{` +
 	`"limit":{"type":"integer","description":"rows per page (default 25, max 100)"}}}`
 
 type findingListArgs struct {
+	Filter        string   `json:"filter"`
 	Severity      string   `json:"severity"`
 	Status        string   `json:"status"`
 	State         string   `json:"state"`
 	Source        string   `json:"source"`
+	Practice      string   `json:"practice"`
+	ExclPractice  string   `json:"exclude_practice"`
+	ComplianceRes string   `json:"compliance_result"`
 	Search        string   `json:"search"`
 	AssetID       string   `json:"asset_id"`
+	AssetType     string   `json:"asset_type"`
+	AssetDomain   string   `json:"asset_domain"`
+	AssetName     string   `json:"asset_name"`
 	CVE           string   `json:"cve"`
 	KEV           *bool    `json:"kev"`
 	MinEPSS       *float64 `json:"min_epss"`
@@ -325,8 +343,14 @@ func (a findingListArgs) values() (url.Values, error) {
 	set("status", strings.ToLower(a.Status))
 	set("state", strings.ToLower(a.State))
 	set("source", strings.ToLower(a.Source))
+	set("practice", strings.ToLower(a.Practice))
+	set("practice_not", strings.ToLower(a.ExclPractice))
+	set("compliance_result", strings.ToLower(a.ComplianceRes))
 	set("q", a.Search)
 	set("asset_id", a.AssetID)
+	set("asset_type", strings.ToLower(a.AssetType))
+	set("asset_domain", a.AssetDomain)
+	set("asset_name", a.AssetName)
 	set("cve_id", strings.ToUpper(a.CVE))
 	set("priority_class", strings.ToUpper(a.PriorityClass))
 	set("sla_status", strings.ToLower(a.SLAStatus))
@@ -395,6 +419,9 @@ func (h *MCPHandler) toolListFindings(ctx context.Context, tenantID string, raw 
 	spec, err := filterspec.ParseValues(q, vulnerability.FindingFields, filterspec.Options{Unknown: filterspec.UnknownStrict, NoAliases: true})
 	if err != nil {
 		return nil, filterInputError(err)
+	}
+	if spec, err = withMCPFilter(ctx, tenantID, querylang.Findings, vulnerability.FindingFields, spec, a.Filter); err != nil {
+		return nil, err
 	}
 	aiTLPs, err := h.aiAllowedTLPs(ctx, tenantID)
 	if err != nil {
@@ -671,6 +698,8 @@ func (h *MCPHandler) toolExposureChains(ctx context.Context, tenantID string, _ 
 		},
 		"length_note": "length is the number of hops from the entry point to the target; 0 means the target " +
 			"is itself exposed to the internet (it is its own entry point).",
+		"proof_note": "Every chain is a possible path, not a proven one (proof: possible): it is built from " +
+			"asset relationships and open findings, and no check has shown an attacker can follow it.",
 	}
 	if !chains.Summary.HasRelationshipData {
 		meta["relationship_note"] = "No relationships between assets are recorded, so no multi-hop path can be " +

@@ -11,6 +11,7 @@ CUT="$RELEASE_DIR/cut-release.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 scenario "$tmp"
+stub_release_lists "$tmp/stub"
 w="$tmp/work"
 # develop already carries v0.2.0 (the post-release merge of the last train).
 git -C "$w" merge -q -s ours -m "chore: merge v0.2.0 back" v0.2.0

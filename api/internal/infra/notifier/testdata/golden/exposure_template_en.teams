@@ -1,0 +1,46 @@
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": [
+          {
+            "type": "Container",
+            "style": "warning",
+            "items": [
+              {
+                "type": "TextBlock",
+                "text": "🟠 New exposure",
+                "weight": "Bolder",
+                "size": "Medium",
+                "wrap": true
+              }
+            ]
+          },
+          {
+            "type": "TextBlock",
+            "text": "admin.example.com needs a look: Admin panel reachable on port 8443 (web interface exposed)",
+            "wrap": true
+          },
+          {
+            "type": "TextBlock",
+            "text": "Owner team: platform",
+            "wrap": true
+          }
+        ],
+        "actions": [
+          {
+            "type": "Action.OpenUrl",
+            "title": "Open exposure",
+            "url": "https://ctem.example.com/exposures"
+          }
+        ]
+      }
+    }
+  ]
+}

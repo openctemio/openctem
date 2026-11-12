@@ -10,18 +10,22 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/url"
 	"strings"
 
 	"github.com/openctemio/openctem/api/internal/app/asset"
+	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
 	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/api/pkg/querylang"
 	"github.com/openctemio/openctem/api/pkg/weblink"
 )
 
@@ -77,8 +81,10 @@ func (h *MCPHandler) buildAssetTools() []mcpTool {
 			Description: "Search the assets you can see, as the console's inventory: free text over name and " +
 				"description, an IP or CIDR (assets inside it), a CVE (assets with an open finding of it), and filters " +
 				"type, exposure, criticality, internet_facing, monitoring_state, scope_status, owner_id (user or group), " +
-				"technology, has_findings. Riskiest first, paged; each row has a console_url." + mcpUntrustedHint,
+				"technology, has_findings, and filter in the search box syntax for every other inventory field " +
+				"(domain, port, tag, liveness, last_seen...). Riskiest first, paged; each row has a console_url." + mcpUntrustedHint,
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+				`"filter":{"type":"string","description":"` + mcpFilterHint + `, e.g. type=subdomain domain=example.com last_seen<7d"},` +
 				`"query":{"type":"string","description":"name or description text, an IP address, or a CIDR"},` +
 				`"cve":{"type":"string","description":"a CVE id: assets with an open finding of it"},` +
 				`"type":{"type":"string","description":"comma list of asset types, e.g. domain,subdomain,ip_address,service,repository"},` +
@@ -114,6 +120,7 @@ func (h *MCPHandler) buildAssetTools() []mcpTool {
 }
 
 type assetSearchArgs struct {
+	Filter          string `json:"filter"`
 	Query           string `json:"query"`
 	CVE             string `json:"cve"`
 	Type            string `json:"type"`
@@ -155,33 +162,40 @@ func (h *MCPHandler) toolSearchAssets(ctx context.Context, tenantID string, raw 
 		return nil, err
 	}
 	page, limit := pageOf(a.Page, a.Limit)
-	in := asset.ListAssetsInput{
-		TenantID: tenantID, ActingUserID: actingUser(ctx), IsAdmin: false,
-		Types: splitLowerList(a.Type), Exposures: splitLowerList(a.Exposure), Criticalities: splitLowerList(a.Criticality),
-		InternetFacing: a.InternetFacing, MonitoringState: splitLowerList(a.MonitoringState), ScopeStatus: splitLowerList(a.ScopeStatus),
-		Technologies: splitLowerList(a.Technology), HasFindings: a.HasFindings,
-		Sort: "-risk_score", Page: page, PerPage: limit,
+	// The arguments as the inventory list's params, so the list's own
+	// registry validates them.
+	q := url.Values{mcpParamSort: {"-risk_score"}, mcpParamPage: {fmt.Sprint(page)}, mcpParamPerPage: {fmt.Sprint(limit)}}
+	set := func(k, v string) {
+		if l := splitLowerList(v); len(l) > 0 {
+			q.Set(k, strings.Join(l, ","))
+		}
+	}
+	set("type", a.Type)
+	set("exposure", a.Exposure)
+	set("criticality", a.Criticality)
+	set("monitoring_state", a.MonitoringState)
+	set("scope_status", a.ScopeStatus)
+	set("technology", a.Technology)
+	if a.InternetFacing != nil {
+		q.Set("internet_facing", fmt.Sprint(*a.InternetFacing))
+	}
+	if a.HasFindings != nil {
+		q.Set("has_findings", fmt.Sprint(*a.HasFindings))
 	}
 	if id := strings.TrimSpace(a.OwnerID); id != "" {
 		if _, err := shared.IDFromString(id); err != nil {
 			return nil, toolInputError{"owner_id must be a UUID"}
 		}
-		in.OwnerIDs = []string{id}
+		q.Set("owner", id)
 	}
 	// An IP or a CIDR finds the address assets inside it; other text is the
 	// list's search.
-	switch q := strings.TrimSpace(a.Query); {
-	case q == "":
-	case net.ParseIP(q) != nil:
-		bits := "/32"
-		if strings.Contains(q, ":") {
-			bits = "/128"
-		}
-		in.InCIDRs = []string{q + bits}
-	case strings.Contains(q, "/") && isCIDR(q):
-		in.InCIDRs = []string{q}
+	switch t := strings.TrimSpace(a.Query); {
+	case t == "":
+	case net.ParseIP(t) != nil, strings.Contains(t, "/") && isCIDR(t):
+		q.Set("ip", t)
 	default:
-		in.Search = q
+		q.Set("q", t)
 	}
 	if c := strings.TrimSpace(a.CVE); c != "" {
 		ids, err := h.assetIDsWithOpenCVE(ctx, tenantID, c)
@@ -193,11 +207,19 @@ func (h *MCPHandler) toolSearchAssets(ctx context.Context, tenantID string, raw 
 			h.noteScope(ctx, tenantID, meta)
 			return untrustedResult(map[string]any{"assets": []mcpAssetSearchRow{}}, meta), nil
 		}
-		in.IDs = ids
+		q.Set("id", strings.Join(ids, ","))
 	}
-	res, err := h.assets.ListAssets(ctx, in)
+	spec, err := filterspec.ParseValues(q, assetlist.Fields, filterspec.Options{Unknown: filterspec.UnknownStrict, NoAliases: true})
 	if err != nil {
+		return nil, filterInputError(err)
+	}
+	if spec, err = withMCPFilter(ctx, tenantID, querylang.Assets, assetlist.Fields, spec, a.Filter); err != nil {
 		return nil, err
+	}
+	caller := asset.ListCaller{TenantID: tenantID, UserID: actingUser(ctx), IsAdmin: false, APIKey: middleware.ReadsOnOwnScope(ctx)}
+	res, err := h.assets.ListAssetsWhere(ctx, caller, asset.ListQuery{Spec: spec})
+	if err != nil {
+		return nil, filterInputError(err)
 	}
 	rows := make([]mcpAssetSearchRow, 0, len(res.Data))
 	for _, as := range res.Data {
@@ -209,6 +231,9 @@ func (h *MCPHandler) toolSearchAssets(ctx context.Context, tenantID string, raw 
 		rows = append(rows, row)
 	}
 	meta := pageMeta(pagination.Pagination{Page: page, PerPage: limit}, res.Total)
+	if res.Capped {
+		meta["total_capped"] = true
+	}
 	h.noteScope(ctx, tenantID, meta)
 	return untrustedResult(map[string]any{"assets": rows}, meta), nil
 }

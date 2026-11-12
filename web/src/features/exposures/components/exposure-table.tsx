@@ -86,6 +86,7 @@ export const EXPOSURE_EVENT_TYPE_LABELS: Record<ExposureEventType, string> = {
   web_interface_exposed: 'Web interface exposed',
   mcp_server_exposed: 'MCP server exposed',
   mail_server_blocklisted: 'Mail server blocklisted',
+  risky_service_exposed: 'Risky service exposed',
   custom: 'Custom',
 }
 

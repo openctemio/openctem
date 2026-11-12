@@ -8,6 +8,36 @@ following the MCP authorization specification (revision 2026-07-28). An MCP
 client needs only the endpoint URL, `${APP_URL}/api/v1/mcp`, to find out how
 to get a token.
 
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AI as MCP client
+    box API
+    participant MCP as POST /api/v1/mcp (MCPOriginGuard, MCPChallenge, MCPCredentialAuth)
+    participant AS as mcpoauth.Service (/oauth/*)
+    end
+    participant W as Web /oauth/consent (session, step-up)
+    participant DB as Postgres mcp_oauth_* tables
+    AI->>MCP: request without a token
+    MCP-->>AI: 401 WWW-Authenticate Bearer resource_metadata, scope
+    AI->>AS: GET /.well-known/oauth-protected-resource/api/v1/mcp, /.well-known/oauth-authorization-server
+    AI->>AS: GET /oauth/authorize - client_id (metadata URL, octc_, or octd_ when DCR is on), redirect_uri exact, S256, resource = APP_URL/api/v1/mcp
+    AS->>DB: request row, 10 min
+    AS-->>W: 302 /oauth/consent?request=id
+    W->>AS: POST /api/v1/oauth/requests/{id}/approve (requireStepUp, API keys denied)
+    AS->>AS: active member, org policy (enabled, client, scopes), granted = policy scopes and held permissions
+    AS->>DB: code HMAC hash, 60 s, single use, audit mcp_grant.authorized
+    AS-->>AI: redirect_uri?code, state, iss
+    AI->>AS: POST /oauth/token - code, code_verifier, redirect_uri, resource (DPoP proof checked first)
+    AS->>DB: reused code revokes the grant, issueGrant re-checks membership and policy
+    AS-->>AI: octm_at_ 10 min, octm_rt_ (rotating, 14 d idle, grant at most 90 d)
+    AI->>MCP: tools/call with Bearer or DPoP access token
+    MCP->>AS: AuthenticateAccessToken - grant active, resource match, DPoP rules, member, policy
+    MCP-->>AI: result in untrusted_data, or 403 insufficient_scope, audit mcp.tool_called
+```
+
 ## Identifiers
 
 All derived from `APP_URL` (`mcpoauth.NewEndpoints`), which must be an `https`

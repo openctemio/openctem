@@ -67,6 +67,7 @@
   "limits.key.platform_scans_per_day": "Lượt quét nền tảng mỗi ngày",
   "limits.key.seats": "Thành viên",
   "limits.key.sensors": "Sensor",
+  "limits.key.sso_connections": "Kết nối đăng nhập một lần",
   "limits.key.storage_mb": "Lưu trữ (MiB)",
   "limits.loadError": "giới hạn",
   "limits.none.description": "Tổ chức này không có giới hạn nào và mọi mô-đun đều khả dụng.",

@@ -15,10 +15,16 @@ const MaxErrors = 20
 // ErrorDetail is one problem in a query, with the byte range of the text
 // it is about (for the editor) and its 1-based line and column.
 type ErrorDetail struct {
+	// Code classifies the problem for clients (CodeSyntax, CodeUnknownField,
+	// ...); Message is the English text.
+	Code    string `json:"code"`
 	Message string `json:"message"`
 	Span
 	Line   int `json:"line"`
 	Column int `json:"column"`
+	// Suggestions are fixes to offer: field paths the caller may use,
+	// allowed operators or enum values. Never text from the query.
+	Suggestions []string `json:"suggestions,omitempty"`
 }
 
 // Error is an invalid query. It maps to HTTP 400 INVALID_QUERY.
@@ -56,15 +62,18 @@ func AsError(err error) (*Error, bool) {
 // newError is a one-detail error without line information; locate fills
 // it in once the source is known.
 func newError(s Span, msg string) *Error {
-	return &Error{Details: []ErrorDetail{{Message: msg, Span: s}}}
+	return &Error{Details: []ErrorDetail{{Code: CodeSyntax, Message: msg, Span: s}}}
 }
 
 // errList accumulates details up to MaxErrors.
 type errList struct{ d []ErrorDetail }
 
-func (l *errList) add(s Span, msg string) {
+func (l *errList) add(s Span, msg string) { l.addc(s, CodeInvalid, msg, nil) }
+
+// addc records a problem with its code and suggestions.
+func (l *errList) addc(s Span, code, msg string, suggestions []string) {
 	if len(l.d) < MaxErrors {
-		l.d = append(l.d, ErrorDetail{Message: msg, Span: s})
+		l.d = append(l.d, ErrorDetail{Code: code, Message: msg, Span: s, Suggestions: suggestions})
 	}
 }
 

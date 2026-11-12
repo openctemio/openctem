@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	notificationclient "github.com/openctemio/openctem/api/internal/infra/notifier"
+	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/api/pkg/domain/integration"
@@ -56,6 +57,10 @@ type Service struct {
 	// linkBase is the console's base URL: the console-relative link of an
 	// event is sent out absolute (empty: sent as stored).
 	linkBase string
+
+	// facts reads what a message says about the event's object (nil: the
+	// producer's own text only).
+	facts FactsSource
 }
 
 // SetLinkBase sets the console base URL the links of delivered events are
@@ -222,10 +227,7 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 	// Get all notification integrations for this tenant
 	integrations, err := s.getNotificationIntegrationsForTenant(ctx, entry.TenantID())
 	if err != nil {
-		entry.MarkFailed(fmt.Sprintf("failed to get integrations: %v", err))
-		if updateErr := s.outboxRepo.Update(ctx, entry); updateErr != nil {
-			s.log.Error("failed to update outbox entry after error", "error", updateErr)
-		}
+		s.failEntry(ctx, entry, fmt.Sprintf("failed to get integrations: %v", err))
 		return err
 	}
 
@@ -233,10 +235,7 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 	// never a delivery: an NDA-covered event must not leak on a DB error.
 	delivery, err := s.resolveDelivery(ctx, entry)
 	if err != nil {
-		entry.MarkFailed(fmt.Sprintf("failed to resolve delivery: %v", err))
-		if updateErr := s.outboxRepo.Update(ctx, entry); updateErr != nil {
-			s.log.Error("failed to update outbox entry after error", "error", updateErr)
-		}
+		s.failEntry(ctx, entry, fmt.Sprintf("failed to resolve delivery: %v", err))
 		return err
 	}
 
@@ -299,6 +298,7 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 	succeeded, failed, sendResults := entry.DeliveryResults()
 	for _, r := range sendResults {
 		if r.Status != notificationStatusSuccess {
+			metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel).Inc()
 			s.log.Error("notification channel dead-lettered after exhausting retries",
 				"outbox_id", entry.ID().String(),
 				"tenant_id", entry.TenantID().String(),
@@ -316,8 +316,6 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 		IntegrationsFailed:    failed,
 		SendResults:           sendResults,
 	}
-
-	s.alertIfDeadLettered(entry)
 
 	// Archive to notification_events
 	event := outboxdom.NewEventFromOutbox(entry, results)
@@ -351,24 +349,32 @@ func (s *Service) processOutboxEntry(ctx context.Context, entry *outboxdom.Outbo
 	return nil
 }
 
-// alertIfDeadLettered emits an ERROR for a terminal 'dead' entry — a
-// notification that failed permanently (retries exhausted). It is about to be
-// archived + removed from the outbox, so without an explicit ERROR it would
-// vanish silently (otherwise logged only at Debug, indistinguishable from
-// success). Ops can alert on this message + level=error.
-func (s *Service) alertIfDeadLettered(entry *outboxdom.Outbox) {
-	if entry.Status() != outboxdom.OutboxStatusDead {
-		return
+// Where a notification gave up (metrics.NotificationDeadLettersTotal).
+const (
+	deadLetterChannel = "channel"
+	deadLetterEntry   = "entry"
+)
+
+// failEntry records an entry-level failure (its integrations or routing
+// could not be read). When the retries are spent the entry is dead: an
+// ERROR log and the dead-letter counter, which the OutboxDeadLetters alert
+// reads.
+func (s *Service) failEntry(ctx context.Context, entry *outboxdom.Outbox, reason string) {
+	entry.MarkFailed(reason)
+	if entry.Status() == outboxdom.OutboxStatusFailed {
+		metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterEntry).Inc()
+		s.log.Error("notification dead-lettered after exhausting retries",
+			"outbox_id", entry.ID().String(),
+			"tenant_id", entry.TenantID().String(),
+			"event_type", entry.EventType(),
+			"retry_count", entry.RetryCount(),
+			"max_retries", entry.MaxRetries(),
+			"last_error", entry.LastError(),
+		)
 	}
-	s.log.Error("notification dead-lettered after exhausting retries",
-		"outbox_id", entry.ID().String(),
-		"tenant_id", entry.TenantID().String(),
-		"event_type", entry.EventType(),
-		"title", entry.Title(),
-		"retry_count", entry.RetryCount(),
-		"max_retries", entry.MaxRetries(),
-		"last_error", entry.LastError(),
-	)
+	if updateErr := s.outboxRepo.Update(ctx, entry); updateErr != nil {
+		s.log.Error("failed to update outbox entry after error", "error", updateErr)
+	}
 }
 
 // resolveDelivery returns the routing decision for the entry's subject:
@@ -532,7 +538,7 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 		return result
 	}
 
-	msg := s.buildMessage(intg, entry, delivery)
+	msg := s.buildMessage(ctx, intg, entry, delivery)
 
 	// Send with timeout
 	sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -564,37 +570,6 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 	return result
 }
 
-// buildMessage builds the message for one integration. F-6: it carries an
-// idempotency key derived from the outbox entry ID so provider-side
-// deduplication suppresses duplicate deliveries if the worker crashes
-// between "provider ACK" and "UPDATE status='completed'" — a race that would
-// otherwise re-queue the entry after UnlockStale. The names of private
-// programs the integration is not attached to are scrubbed from the title
-// and body before any template sees them.
-func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox, delivery bountyprogram.Delivery) notificationclient.Message {
-	msg := notificationclient.Message{
-		Title:          delivery.Scrub(intg.Integration.ID(), entry.Title()),
-		Body:           delivery.Scrub(intg.Integration.ID(), entry.Body()),
-		Severity:       entry.Severity().String(),
-		URL:            deliveryLink(s.linkBase, entry),
-		IdempotencyKey: idempotencyKey(entry),
-		EventType:      entry.EventType(),
-		EventVersion:   integration.EventPayloadVersion(integration.EventType(entry.EventType())),
-		OccurredAt:     entry.CreatedAt(),
-	}
-	// Minimal by default: unless the channel opted in to details, nothing
-	// that names a finding or an asset leaves the platform, only the kind
-	// of event, its severity and a link back to it.
-	if ext := intg.Notification; ext == nil || !ext.IncludeDetails() {
-		msg.Title = minimalTitle(entry)
-		msg.Body = "Open the link to see the details."
-	}
-	if ext := intg.Notification; ext != nil && ext.MessageTemplate() != "" {
-		msg = s.applyTemplate(msg, ext.MessageTemplate())
-	}
-	return msg
-}
-
 // deliveryLink is the event's console link as a channel receives it:
 // absolute (a chat button or an e-mail needs the host) and naming the
 // event's organization (pkg/weblink), so a member of several organizations
@@ -623,19 +598,6 @@ func idempotencyKey(entry *outboxdom.Outbox) string {
 		}
 	}
 	return "outbox-" + entry.ID().String()
-}
-
-// minimalTitle is the title of a message that carries no details: the event
-// type ("new_finding" becomes "New finding") and the severity.
-func minimalTitle(entry *outboxdom.Outbox) string {
-	kind := strings.ReplaceAll(entry.EventType(), "_", " ")
-	if kind != "" {
-		kind = strings.ToUpper(kind[:1]) + kind[1:]
-	}
-	if kind == "" {
-		kind = "Notification"
-	}
-	return kind + " (" + entry.Severity().String() + ")"
 }
 
 // configureClientFromCredentials configures the notification client based on provider type.
@@ -729,25 +691,6 @@ func (s *Service) configureClientFromCredentials(
 	}
 
 	return nil
-}
-
-// applyTemplate applies a custom message template with variable substitution.
-// Supported variables: {title}, {body}, {severity}, {url}
-func (s *Service) applyTemplate(msg notificationclient.Message, template string) notificationclient.Message {
-	if template == "" {
-		return msg
-	}
-
-	replacer := strings.NewReplacer(
-		"{title}", msg.Title,
-		"{body}", msg.Body,
-		"{severity}", msg.Severity,
-		"{url}", msg.URL,
-	)
-
-	result := replacer.Replace(template)
-	msg.Body = result
-	return msg
 }
 
 // =============================================================================

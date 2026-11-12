@@ -107,3 +107,38 @@ func TestDerivePosture(t *testing.T) {
 		}
 	}
 }
+
+// A sensor that runs its tools without the sandbox is flagged, whether it
+// refuses its active tools for it or its operator acknowledged it; values
+// outside the closed set, and an "unconfined" next to a sandboxed run, are
+// dropped.
+func TestDerivePosture_ToolsUnconfined(t *testing.T) {
+	seen := func(sb *SandboxPosture) PostureInput {
+		return PostureInput{Seen: true, KeyBound: true, LocalPolicy: &LocalPolicyReport{State: LocalPolicyEnforced},
+			Posture: &ManifestPosture{PlatformTLS: &PlatformTLSPosture{Pin: PlatformPinFingerprint}, Sandbox: sb}}
+	}
+	for _, c := range []struct {
+		name       string
+		sb         *SandboxPosture
+		want       string
+		unhardened []string
+	}{
+		{"macOS default", &SandboxPosture{Mode: "auto", Unconfined: "refused"}, ToolsUnconfinedRefused,
+			[]string{UnhardenedToolsUnconfined, UnhardenedNetworkUnenforced}},
+		{"sandbox off", &SandboxPosture{Mode: "off", Unconfined: "Acknowledged"}, ToolsUnconfinedAcknowledged,
+			[]string{UnhardenedToolsUnconfined, UnhardenedNetworkUnenforced}},
+		{"sandboxed", &SandboxPosture{Mode: "auto", Sandboxed: true, NetworkEnforced: true, Unconfined: "refused"}, "", []string{}},
+		{"unknown value", &SandboxPosture{Mode: "auto", NetworkEnforced: true, Unconfined: "whatever"}, "", []string{}},
+		{"older sensor", &SandboxPosture{Mode: "auto", NetworkEnforced: true}, "", []string{}},
+	} {
+		got := DerivePosture(seen(c.sb))
+		if got.ToolsUnconfined != c.want || !slices.Equal(got.Unhardened, c.unhardened) {
+			t.Errorf("%s: %+v", c.name, got)
+		}
+		for _, r := range got.Unhardened {
+			if !slices.Contains(UnhardenedKinds(), r) {
+				t.Errorf("%s: reason %q outside the closed set", c.name, r)
+			}
+		}
+	}
+}

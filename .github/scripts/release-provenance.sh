@@ -16,8 +16,10 @@
 #     the push/merge-queue runs); hotfix: the base is the newest release tag, its
 #     tree is main's, and every pick has the same patch-id as a develop commit
 #     that is on develop and whose containing develop commit passed its checks;
-#   - V changes only the one file the release train writes (api/deploy/VERSION,
-#     see release/cut-release.sh) and sets it to X.Y.Z.
+#   - V changes only what the release train writes (release/cut-release.sh):
+#     api/deploy/VERSION, set to X.Y.Z, and the refreshed built-in "latest"
+#     releases (versions.yaml and its embedded copy in "latest:" lines only,
+#     and the consumers of those values in their vX.Y.Z only).
 # Anything else (an extra commit, a file outside the list, a red or unknown
 # commit, an API error) is "not verified" and the PR runs the full tier.
 #
@@ -31,9 +33,25 @@ source "$HERE/release/lib.sh"
 
 no() { echo "release-provenance: not verified: $*" >&2; exit 1; }
 
-# Version-train file: the version commit may touch this and nothing else.
+# Version-train file: the version commit may touch this freely.
 allowed() {
   [[ "$1" == "$VERSION_FILE" ]]
+}
+
+# The files the version commit's "latest" refresh may change (refresh-latest.sh
+# then sync-versions.sh), and only in their release versions: the manifest and
+# its embedded copy in "latest:" lines (never "min:" or anything else), the
+# consumers in any vX.Y.Z.
+latest_only() { # latest_only FILE PARENT V
+  local f="$1" norm
+  case "$f" in
+    versions.yaml | api/internal/versions/versions.yaml)
+      norm='s/^([[:space:]]+latest:[[:space:]]*)v[0-9]+\.[0-9]+\.[0-9]+/\1vX/' ;;
+    api/deploy/docker-compose.sensor.yml | web/src/features/ci-runners/lib/ci.ts)
+      norm='s/v[0-9]+\.[0-9]+\.[0-9]+/vX/g' ;;
+    *) return 1 ;;
+  esac
+  cmp -s <(git show "$2:$f" 2>/dev/null | sed -E "$norm") <(git show "$3:$f" 2>/dev/null | sed -E "$norm")
 }
 
 [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]] || exit 1
@@ -59,12 +77,13 @@ develop_green() {
   bash "$HERE/release/check-ci.sh" "$1" >/dev/null 2>&1 || { echo "$1 is not green" >&2; return 1; }
 }
 
-# version_commit_ok V PARENT: V sets api/deploy/VERSION, touching nothing else.
+# version_commit_ok V PARENT: V sets api/deploy/VERSION and refreshes "latest"
+# values, touching nothing else.
 version_commit_ok() {
   local v="$1" parent="$2" f got
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
-    allowed "$f" || no "the version commit changes $f"
+    allowed "$f" || latest_only "$f" "$parent" "$v" || no "the version commit changes $f"
   done < <(git diff --name-only --no-renames "$parent" "$v")
   got="$(git show "$v:$VERSION_FILE" 2>/dev/null | tr -d '[:space:]')" || got=""
   [[ "$got" == "$version" ]] || no "$VERSION_FILE is '$got', not $version"

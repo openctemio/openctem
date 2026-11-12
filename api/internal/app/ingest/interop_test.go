@@ -162,7 +162,8 @@ func runInterop(t *testing.T, mode VEXMode, scope *alterScope, findings []ctis.F
 	out := &Output{}
 	report := &ctis.Report{Version: ctis.SchemaVersion, Tool: &ctis.Tool{Name: "trivy"}, Findings: findings}
 	err := p.processBatch(context.Background(), newTestSensor(t, tenantID), tenantID, report,
-		map[string]shared.ID{"h": interopHost}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope)
+		map[string]shared.ID{"h": interopHost}, branch.BranchTypeRules{}, out, map[string]shared.ID{}, false, scope,
+		vulnerability.SourceIdentity{})
 	require.NoError(t, err)
 	return out, tenantID
 }

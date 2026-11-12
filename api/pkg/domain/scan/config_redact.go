@@ -7,7 +7,9 @@ package scan
 // scan but not edit it (no scans:write). Both use the same classifier, so a
 // value listed in scanner_config_warnings is the value that is masked.
 //
-// Sensors are not affected: the command they claim carries the stored config.
+// A credential is refused on save and at trigger (RefuseConfigSecrets), so it
+// never reaches a command; the masking covers what the detector only warns
+// about, and scans stored before the refusal.
 
 import "encoding/json"
 

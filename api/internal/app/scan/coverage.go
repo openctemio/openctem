@@ -11,11 +11,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/command"
+	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
@@ -49,6 +52,10 @@ type CoverageInput struct {
 	// whose tool reads a platform wordlist takes (enumerate.subdomains: the
 	// medium pack instead of the small one). Passive is refused.
 	Depth string
+	// MaxRequestsPerOrigin is a path discovery run's per-origin request cap
+	// (0: the web job guard's default). The job's strict web scope carries
+	// it to the sensor's forwarder.
+	MaxRequestsPerOrigin int
 }
 
 // CoverageResult is what was started. RunID is nil when nothing was left.
@@ -79,7 +86,7 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	if len(in.Targets) > maxCoverageTargets {
 		return nil, fmt.Errorf("%w: at most %d targets per coverage run", shared.ErrValidation, maxCoverageTargets)
 	}
-	st, ok := stage.Lookup(stage.Key(in.Capability))
+	st, ok := stage.Lookup(stage.Key(covdom.StageKeyOf(in.Capability)))
 	if !ok {
 		return nil, fmt.Errorf("%w: %q is not a stage", shared.ErrValidation, in.Capability)
 	}
@@ -162,7 +169,7 @@ func (s *Service) StartCoverage(ctx context.Context, in CoverageInput) (*Coverag
 	// One command per chunk of the stage's size (list tools are efficient
 	// with lists), not one per target.
 	perJob := coverageChunk(st, tool)
-	if err := sc.SetSingleScanner(tool, coverageScannerConfig(st, res.Kept), perJob); err != nil {
+	if err := sc.SetSingleScanner(tool, coverageScannerConfig(in.Capability, st, res.Kept, in.MaxRequestsPerOrigin), perJob); err != nil {
 		return nil, fmt.Errorf("failed to set scanner: %w", err)
 	}
 	// Standard depth picks the small wordlist pack for a tool that reads one
@@ -298,10 +305,28 @@ func (s *Service) coverageScan(ctx context.Context, tenantID shared.ID, capabili
 // coverageScannerConfig is the scanner config of a coverage run of the
 // stage on targets. Subdomain enumeration runs as a brute force over the
 // label list its job asks for (the only method its tool has).
-func coverageScannerConfig(st stage.Stage, targets []string) map[string]any {
+//
+// vuln.templates is explicit about severity so the two passes never overlap:
+// the regular pass runs low to critical, the info pass (its own ledger key)
+// runs info only.
+func coverageScannerConfig(capability string, st stage.Stage, targets []string, maxRequests int) map[string]any {
 	cfg := map[string]any{"targets": targets}
-	if st.Key == stage.EnumerateSubdomains {
+	switch st.Key {
+	case stage.VulnTemplates:
+		if covdom.IsInfoCapability(capability) {
+			cfg[stage.ParamSeverity] = []string{covdom.InfoSeverity}
+		} else {
+			cfg[stage.ParamSeverity] = slices.Clone(stage.StandardTemplateSeverities)
+		}
+	case stage.EnumerateSubdomains:
 		cfg["method"] = "bruteforce"
+	case stage.EnumerateWebPaths:
+		// Steady coverage runs the derived list only (never a pack), with
+		// the per-origin request cap.
+		cfg["lists"] = []string{"derived"}
+		if maxRequests > 0 {
+			cfg[command.PayloadKeyDiscoveryMaxRequests] = maxRequests
+		}
 	}
 	return cfg
 }
@@ -319,7 +344,7 @@ func coverageChunk(st stage.Stage, tool string) int {
 // capability carries (its default tool's chunk size): the size of a batch
 // that fills one task. 0 for a capability that is not a stage.
 func CoverageChunkSize(capability string) int {
-	st, ok := stage.Lookup(stage.Key(capability))
+	st, ok := stage.Lookup(stage.Key(covdom.StageKeyOf(capability)))
 	if !ok {
 		return 0
 	}
@@ -327,7 +352,7 @@ func CoverageChunkSize(capability string) int {
 }
 
 func stageTool(capability string) string {
-	st, _ := stage.Lookup(stage.Key(capability))
+	st, _ := stage.Lookup(stage.Key(covdom.StageKeyOf(capability)))
 	return st.DefaultTool()
 }
 

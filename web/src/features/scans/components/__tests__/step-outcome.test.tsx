@@ -35,6 +35,13 @@ describe('StepOutcome', () => {
     expect(screen.queryByText(/rate_floor|breaker_open/)).toBeNull()
   })
 
+  it('says how many names an active step left out because they no longer resolve', () => {
+    render(<StepOutcome outcome={{ not_resolving_skipped_count: 21 }} />)
+    expect(
+      screen.getByText('21 names no longer resolve, skipped by active steps')
+    ).toBeInTheDocument()
+  })
+
   it('a rechecked host says what it did, what its certificate shows and how to fix it', () => {
     render(
       <StepOutcome

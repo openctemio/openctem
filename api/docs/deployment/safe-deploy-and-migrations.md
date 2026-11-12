@@ -71,14 +71,20 @@ guarantee ordering (below), and keep the schema check on as the backstop.
      -path=/migrations -database "$DATABASE_URL" up
    ```
 
-   - **Kubernetes:** an **init container** (default in `docs/deployment/kubernetes.md`)
-     applies migrations before the `api` container starts — ordering is
-     guaranteed by Kubernetes with no manual wait. For large/lock-heavy
-     migrations use the **pre-deploy `Job`** and
-     `kubectl wait --for=condition=complete job/openctem-migrate`.
+   - **Kubernetes (Helm chart):** a migration **Job** hook
+     (`templates/api-migrations-job.yaml`, `post-install,pre-upgrade`, weight
+     -5, `api.migrations.hooks.enabled`, default on). On an upgrade it runs
+     before the new pods; on a first install it runs after the release is
+     created, so the API pods restart on the schema check until the Job
+     completes. The chart has no init container.
    - **Docker Compose:** the one-shot `migrate` service in
-     `deploy/docker-compose.yml` runs first; the `api` service waits on
-     `condition: service_completed_successfully`.
+     `api/deploy/docker-compose.yml` runs after `db-roles`; `db-grants` and
+     then `api` wait on `condition: service_completed_successfully`.
+   - **All-in-one image:** `openctem-supervise` runs the migrations before any
+     other process, one replica at a time behind `pg_try_advisory_lock`
+     (`MIGRATE_ON_START=false` skips it).
+   - **systemd:** start `openctem-migrate.service` first; `openctem-server.service`
+     has no ordering on it and relies on the schema check.
 
 4. **Verify nothing is pending** before serving:
 
@@ -92,6 +98,33 @@ guarantee ordering (below), and keep the schema check on as the backstop.
    loud, not silent.
 
 ---
+
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant D as Deployer (Compose, Ansible, Helm hook, supervise.sh)
+    participant M as openctem-migrate (cmd/openctem-migrate, internal/migrate)
+    participant DB as Postgres (schema owner)
+    participant A as API server
+    D->>M: up -path -database (PGPASSWORD of DB_MIGRATE_USER)
+    M->>DB: pg_try_advisory_lock polled every 200 ms until -lock-timeout (15 s), else ErrLockTimeout
+    M->>DB: CREATE IF NOT EXISTS schema_migrations, schema_migrations_applied
+    M->>M: Load(dir), pending = shipped versions missing from schema_migrations_applied, lowest first
+    loop each pending version
+        M->>DB: markDirty(version)
+        M->>DB: run the whole up file as one batch
+        M->>DB: one tx - insert applied row, reset tracker
+    end
+    alt a file fails or the runner dies
+        M-->>D: exit non-zero, dirty stays, the next up refuses until force
+    else
+        M->>DB: unlock (fresh 5 s context)
+        D->>A: start
+        A->>DB: verifySchemaUpToDate - any shipped version unapplied or dirty: exit (SKIP_SCHEMA_CHECK bypasses)
+    end
+```
 
 ## Expand-contract: how to write deploy-safe migrations
 
@@ -144,7 +177,7 @@ ALTER TABLE findings DROP COLUMN owner;
 
 ## CI guard: `scripts/check-migrations.sh`
 
-A CI job (`Migration Safety` in `.github/workflows/ci.yml`, PRs only) scans the
+A CI step (`Migration Safety` in `.github/workflows/api-ci.yml`, PRs only) scans the
 **new/changed** `migrations/*.up.sql` in a PR and **fails** on deploy-breaking
 operations:
 

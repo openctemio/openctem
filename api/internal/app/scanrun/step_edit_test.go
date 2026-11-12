@@ -127,3 +127,18 @@ func TestValidateSteps_RefusalNamesTheStep(t *testing.T) {
 		t.Fatalf("unnamed step: %q", got)
 	}
 }
+
+// SECURITY: a step's settings never hold a credential, on add or update.
+func TestStepConfigRefusesCredentials(t *testing.T) {
+	cfg := map[string]any{"token": "ghp_abcdefghijklmnopqrstuvwxyz0123456789"}
+	if _, err := constructStep(shared.NewID(), AddStepInput{StepKey: "a", Name: "a", Order: 1, Tool: "nuclei", Config: cfg}, []string{"scan"}, nil); err == nil {
+		t.Fatal("constructStep accepted a credential in the config")
+	}
+	step := editStep(t, shared.NewID(), "a", "nuclei")
+	if err := applyStepUpdate(step, AddStepInput{Config: cfg}); err == nil {
+		t.Fatal("applyStepUpdate accepted a credential in the config")
+	}
+	if len(step.Config) != 0 {
+		t.Fatalf("the refused config was applied: %v", step.Config)
+	}
+}

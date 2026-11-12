@@ -27,4 +27,5 @@
     - WebVerifyController
     - AssetEnrichmentController
     - AssetCoverageController
+    - ExplorationController
     - WebEvidenceRetentionController

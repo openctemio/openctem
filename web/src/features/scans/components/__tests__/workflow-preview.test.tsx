@@ -131,4 +131,34 @@ describe('WorkflowPreviewBody', () => {
     render(<WorkflowPreviewBody preview={base} />)
     expect(screen.queryByTestId('excluded-targets')).toBeNull()
   })
+
+  it('says why a step with no tool is skipped, and its dependents too', () => {
+    render(
+      <WorkflowPreviewBody
+        preview={{
+          ...base,
+          nodes: [
+            {
+              step_key: 'shots',
+              name: 'Screenshots',
+              capability: 'capture.screenshot',
+              pinned: false,
+              candidates: [],
+              skipped: { code: 'TOOL_NOT_INSTALLED', message: 'server text' },
+            },
+            {
+              step_key: 'report',
+              name: 'Report',
+              pinned: false,
+              candidates: [],
+              skipped: { code: 'DEPENDENCY_SKIPPED', message: 'server text' },
+            },
+          ],
+        }}
+      />
+    )
+    const lines = screen.getAllByTestId('preview-skipped').map((e) => e.textContent)
+    expect(lines[0]).toBe('Skipped: no installed tool provides capture.screenshot yet.')
+    expect(lines[1]).toBe('Skipped: it needs the results of a step that is skipped.')
+  })
 })

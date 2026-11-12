@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
@@ -71,12 +72,51 @@ var (
 // JobRules are the rules a job carries: the union of the rules of the
 // programs that cover its targets.
 type JobRules struct {
-	Headers   map[string]string
-	UserAgent string
+	Headers map[string]string
+	// UserAgent or UserAgents is the programs' User-Agent setting (one
+	// value or a rotation list; UserAgentConfig reads either).
+	UserAgent  string
+	UserAgents []string
+	// IdentificationRequired: any covering program requires identification.
+	IdentificationRequired bool
 	// RateLimit is the smallest program rate (requests per second; 0 none).
 	RateLimit int
 	// Programs names the programs (for logs).
 	Programs []string
+	// Forbidden is every technique any covering program forbids.
+	Forbidden []string
+}
+
+// UserAgentConfig is the User-Agent setting the job carries: the list,
+// else the single value, else none.
+func (r *JobRules) UserAgentConfig() []string {
+	if r == nil {
+		return nil
+	}
+	return scanident.UserAgentConfig(r.UserAgent, r.UserAgents)
+}
+
+// SetsIdentity reports whether the rules put headers or a User-Agent on the
+// job (the sensor must report sensor.CapabilityHTTPIdentity).
+func (r *JobRules) SetsIdentity() bool {
+	return r != nil && (len(r.Headers) > 0 || r.UserAgent != "" || len(r.UserAgents) > 0)
+}
+
+// EnumerationRefusal is why a job that enumerates (guesses names or paths:
+// any enumerate.* capability, a brute force) may not run on targets the
+// rules cover: a program forbids brute force or automated scanning. "" when
+// it may. A nil receiver allows everything.
+func (r *JobRules) EnumerationRefusal() string {
+	if r == nil {
+		return ""
+	}
+	for _, t := range []string{ForbidBruteforce, ForbidAutomatedScanning} {
+		if slices.Contains(r.Forbidden, t) {
+			return fmt.Sprintf("a bug bounty program covering these targets forbids %s (%s); enumeration does not run on them",
+				strings.ReplaceAll(t, "_", " "), strings.Join(r.Programs, ", "))
+		}
+	}
+	return ""
 }
 
 // MergeJobRules combines the rules of the programs covering one job. A
@@ -102,11 +142,19 @@ func MergeJobRules(programs []*Program) (*JobRules, error) {
 			seen[key] = h.Name
 			out.Headers[h.Name] = h.Value
 		}
-		if r.UserAgent != "" {
-			if out.UserAgent != "" && out.UserAgent != r.UserAgent {
+		// One User-Agent setting per job: two programs with different
+		// values or lists conflict (a list is never merged).
+		if ua := scanident.UserAgentConfig(r.UserAgent, r.UserAgents); len(ua) > 0 {
+			if cur := out.UserAgentConfig(); len(cur) > 0 && !slices.Equal(cur, ua) {
 				return nil, ErrRulesConflict
 			}
-			out.UserAgent = r.UserAgent
+			out.UserAgent, out.UserAgents = r.UserAgent, r.UserAgents
+		}
+		out.IdentificationRequired = out.IdentificationRequired || r.IdentificationRequired
+		for _, f := range r.Forbidden {
+			if !slices.Contains(out.Forbidden, f) {
+				out.Forbidden = append(out.Forbidden, f)
+			}
 		}
 		if r.RateLimitRPS > 0 && (out.RateLimit == 0 || r.RateLimitRPS < out.RateLimit) {
 			out.RateLimit = r.RateLimitRPS
@@ -126,6 +174,9 @@ func MergeJobRules(programs []*Program) (*JobRules, error) {
 	}
 	if !printableASCII(out.UserAgent) {
 		return nil, fmt.Errorf("%w: the User-Agent is not printable ASCII; edit the program's rules", ErrRulesConflict)
+	}
+	if err := scanident.CheckUserAgents("", out.UserAgents); err != nil {
+		return nil, fmt.Errorf("%w: the User-Agent list is not acceptable; edit the program's rules", ErrRulesConflict)
 	}
 	return out, nil
 }

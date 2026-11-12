@@ -30,14 +30,7 @@ import { formatEpssScore } from '@/lib/epss'
 import { useEmergingThreat } from '../api'
 import type { EmergingThreatAsset, EmergingThreatDetail, EtsBreakdown } from '../types'
 import { AlertActions, OutOfScopeHint, TaskCoverageNote } from './alert-actions'
-import {
-  EtsCell,
-  LevelBadge,
-  StateBadge,
-  useDateLocale,
-  useEventDetail,
-  useEventKindLabel,
-} from './bits'
+import { EtsCell, LevelBadge, StateBadge, useEventDetail, useEventKindLabel } from './bits'
 
 export function EmergingThreatDetailView({ id }: { id: string }) {
   const { t } = useTranslation()
@@ -228,7 +221,6 @@ function ExploitCard({ alert }: { alert: EmergingThreatDetail }) {
 
 function Timeline({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
-  const dateLocale = useDateLocale()
   const kindLabel = useEventKindLabel()
   const detailOf = useEventDetail()
   return (

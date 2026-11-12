@@ -24,6 +24,74 @@ matcher creates findings ──────────────► threat_al
    + in-app (administrators)              outbox, in-app, e-mail       (the page)
 ```
 
+## Flow
+
+Verified against `develop` (2026-11-05); unchanged since v0.19.1.
+
+### Planner pass (`threatalert.Planner.Run`, controller `threat-alert-planner`)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as controller (1 min, exclusive, 2 min budget)
+  participant P as threatalert.Planner
+  participant ST as PlannerStore (postgres)
+  participant N as outbox, in-app, mailer
+  C->>P: Run(ctx, 2m)
+  P->>ST: fanOut, PlannerCursor, EventsAfter(cursor, 500)
+  P->>P: stop at an id gap younger than 2 min
+  P->>ST: TenantsAffectedBy(page vuln ids), one query per page
+  P->>ST: Enqueue (tenant, vuln), ResolveVuln for rejected (rejected_upstream), SetPlannerCursor
+  P->>ST: baselines, TenantsWithoutBaseline(10), ActiveWindowVulns(30 d events, 90 d KEV)
+  loop Dequeue(200) until the deadline
+    P->>ST: plan, Vuln, AlertByVuln, AffectedAssets(tenant, vuln)
+    P->>P: Score, LevelFor(settings), state transitions
+    P->>ST: SaveAlert(alert, assets)
+  end
+  P->>ST: TenantsWithPendingImmediate(200)
+  P->>N: flush per touched tenant: quiet hours, override, 5 per hour, one N more per hour
+  P->>N: digests at digest_hour local, outbox emerging_threat_digest, in-app, e-mail in member scope
+```
+
+- A plan that fails is re-queued after the loop (not inside it), so a persistent failure cannot spin
+  until the deadline. Items left when the budget ends are put back.
+- `plan` skips a tenant whose module `threat_intel` is off or whose alerts are disabled, and a
+  tenant not yet baselined (the baseline covers it).
+
+### Alert lifecycle (`plan`, triage routes)
+
+```mermaid
+stateDiagram-v2
+  [*] --> Open: plan, affected asset inside the active window (state new)
+  Open --> Open: POST state new, acknowledged or remediating, permission findings triage
+  Open --> NotAffected: POST state, reason required, every asset in scope (else 409)
+  NotAffected --> Open: plan, suppression expired (180 d), possible became confirmed, or KEV added (ReopenedBy), state new
+  NotAffected --> Open: POST state new, acknowledged or remediating
+  Open --> Resolved: plan, no affected asset left (fixed), or ResolveVuln (rejected_upstream)
+  Resolved --> Open: plan, affected again (state new, NotifiedLevel reset), or POST state
+  note right of Open
+    new, acknowledged or remediating
+  end note
+```
+
+- `ValidateTransition` accepts `new`, `acknowledged`, `remediating` and `not_affected` from any
+  state (no source-state check); `resolved` is set only by the planner. A `not_affected` decision
+  on a KEV vulnerability is audited at high severity. The planner's `SaveAlert` refuses to
+  overwrite a triage decision made after it read the alert (`ErrStale`) and plans it again.
+
+### Level (`threatalert.LevelFor`)
+
+```mermaid
+flowchart TD
+  B["Score: (exploitation + severity + exposure + freshness) x confidence<br/>confidence 1.0 confirmed, 0.8 likely, 0.5 possible, max 100"] --> I{"Total >= immediate_threshold (70)<br/>and Exploitation >= 20 (KEV, or EPSS >= 0.5)?"}
+  I -- yes --> T{"tier confirmed, or include_possible_in_immediate,<br/>or KEV on an internet-facing possible asset?"}
+  T -- yes --> IM["immediate"]
+  T -- no --> D
+  I -- no --> D{"Total >= digest_threshold (35)<br/>or minimum severity passes the matching policy?"}
+  D -- yes --> DG["digest"]
+  D -- no --> L["listed"]
+```
+
 ## Vulnerability event log (shipped)
 
 - Table `vuln_events`; emitter state `vuln_event_state`; cursors
@@ -107,10 +175,18 @@ affected asset ids for the delivery resolver (private program routing).
 
 | Route | Gate | Data scope |
 |---|---|---|
-| `GET /api/v1/emerging-threats` | `findings:vulnerabilities:read` | alerts with an asset in scope; counts in scope |
+| `GET /api/v1/emerging-threats` | `findings:vulnerabilities:read` | alerts with an asset in scope; counts, crown jewels (`critical_assets`), the best product (`product`, `product_count`) all over in-scope assets |
 | `GET /api/v1/emerging-threats/{id}` | `findings:vulnerabilities:read` | 404 without an asset in scope; assets in scope; `can_suppress` |
 | `POST /api/v1/emerging-threats/{id}/state` | `findings:triage` | not affected needs every asset in scope (409) |
 | `GET, PUT /api/v1/organization/settings/emerging-threats` | administrator | organization settings, audited |
+
+List filters: `level`, `state` (open by default), `tier`, `exposure=internet`,
+`kev=true` (known exploited), `search` (CVE id or title). Each row carries the
+score breakdown (`ets_breakdown`); the summary counts the open alerts by
+level, `new` (not triaged yet), `kev` and `internet_facing`. The stored
+`title` names the first product over every asset of the organization, so the
+console shows `product` instead: a member with a data scope never reads the
+product of an asset outside it.
 
 Routes are behind the `threat_intel` module; the planner skips organizations
 with the module off or alerts disabled. A remediation task from an alert
@@ -127,11 +203,24 @@ Audit: `tenant.emerging_threats_updated`, `emerging_threat.state_changed`
 
 ## Console (shipped)
 
-- **Prioritization > Emerging threats** (`/emerging-threats`): summary cards,
-  filters (level, state, tier, internet-facing, search), the list by level
-  and score; the alert page shows the score breakdown, the recommended
-  action, exploitation facts, what changed (the public events) and the
-  affected assets by tier with their findings and tasks.
+- **Prioritization > Emerging threats** (`/emerging-threats`): a triage
+  queue. Levels read as priorities: immediate is **Act now**, digest **This
+  week**, listed **Watch** (the tooltip names the notification cadence; API
+  values are unchanged). Five filter tiles (Act now, Untriaged, This week,
+  Known exploited, Internet-facing); one toolbar with the state token, search,
+  the filter panel (priority, match, known exploited, internet-facing) and
+  Display; one compact row per threat: CVE and in-scope product, priority,
+  score (breakdown on hover), exploit (KEV and ransomware; the EPSS figure as
+  "Exploit chance" only without KEV), affected (confirmed, possible,
+  internet-facing, crown jewels; zeros left out), state, last change, and a
+  row menu (view, open page, acknowledge, remediating, reopen).
+- A row opens a drawer: recommended action, score, affected, internet-facing
+  and crown-jewel counts, why it is ranked (score parts), exploit status with
+  the disclosure date, affected products by version, the most important
+  assets, what changed, and every action, including **Scan affected assets**
+  (`scans:write` and `scans:execute`: the quick-scan dialog over the
+  affected domains, subdomains and IP addresses, scope-checked before it
+  starts). The alert page keeps the full asset table and timeline.
 - Triage (`findings:triage`): acknowledge, remediating, reopen, not affected
   (reason required; hidden with a hint when assets are outside the viewer's
   scope). **Create remediation task** (`findings:remediation:write`) from the

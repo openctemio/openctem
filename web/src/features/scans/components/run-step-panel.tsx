@@ -1,5 +1,6 @@
 'use client'
 
+import { ranWithLines } from '../lib/ran-with'
 import useSWR from 'swr'
 import { useTranslation } from '@/context/i18n-provider'
 import { X } from 'lucide-react'
@@ -74,6 +75,8 @@ export function RunStepPanel({
   const outputs = outputsByType(node)
   const [state, ...counts] = nodeBadgeLines(node, t)
   const delta = outputsDeltaLabel(node, t)
+  const ranWith = ranWithLines(node.ran_with, t)
+  const ignoredKeys = (node.ran_with?.sensor_ignored_keys ?? []).map(toDisplayText)
   // A sample of what the step produced, new ones first; only once it
   // produced something (in the caller's scope).
   const produced = (node.outputs?.total ?? 0) > 0
@@ -118,6 +121,17 @@ export function RunStepPanel({
           </div>
         ) : null}
         <StepOutcome outcome={node.outcome} />
+        {ranWith.length > 0 || ignoredKeys.length > 0 ? (
+          <div data-slot="step-ran-with">
+            <p className="font-medium text-foreground">{t('scans.ranWith.title')}</p>
+            {ranWith.map((l) => (
+              <p key={l}>{l}</p>
+            ))}
+            {ignoredKeys.length > 0 ? (
+              <p>{t('scans.ranWith.ignored', undefined, { keys: ignoredKeys.join(', ') })}</p>
+            ) : null}
+          </div>
+        ) : null}
         {node.error_message && showSensorText(node.reason) ? (
           <div>
             <p className="font-medium text-foreground">{t('scans.step.sensorMessage')}</p>

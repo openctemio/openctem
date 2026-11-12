@@ -70,6 +70,7 @@ describe('scope code catalogs', () => {
       'guardrailed',
       'low_impact',
       'unresolved',
+      'vantage_out_of_scope',
       'web_ports_only',
     ]
     expect([...SCOPE_REFUSAL_CODES].sort()).toEqual([...server].sort())
@@ -94,6 +95,13 @@ describe('scope code text', () => {
       /public suffix/i
     )
     expect(scopeErrorMessage(tVi, { code: 'ENTRY_SELF_APPROVAL' }, 'x')).toMatch(/người phê duyệt/)
+    // A government name names who can help, never another organization.
+    expect(scopeErrorMessage(tEn, { code: 'GOVERNMENT_NAME', message: 'raw' }, 'x')).toBe(
+      'Government and military domains are blocked on this installation. Your platform administrator can grant an exception.'
+    )
+    expect(scopeErrorMessage(tVi, { code: 'GOVERNMENT_NAME' }, 'x')).toMatch(
+      /quản trị viên nền tảng/i
+    )
     expect(scopeErrorMessage(tEn, { code: 'OTHER', message: 'Server text' }, 'x')).toBe(
       'Server text'
     )

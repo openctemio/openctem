@@ -35,7 +35,7 @@ import { PriorityClassBadge } from '../priority-class-badge'
 import { findingAssetTypeLabel } from '../../lib/finding-asset-type'
 import { userTags } from '../../lib/finding-display'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
-import { findingSourceLabel, isTriageLocked } from '../../lib/finding-detail'
+import { findingSourceText, isTriageLocked } from '../../lib/finding-detail'
 import { closureReasonLabel, verificationLabel } from '../../lib/closure'
 import { CRITICALITY_LABELS } from '@/lib/criticality'
 
@@ -336,7 +336,7 @@ export function FindingProperties({
           )}
           <Row label={t('findings.properties.foundBy', 'Found by')}>
             <span>
-              {findingSourceLabel(finding.source)}
+              {findingSourceText(t, finding.source)}
               {tool && <span className="block text-xs text-muted-foreground">{tool}</span>}
             </span>
           </Row>

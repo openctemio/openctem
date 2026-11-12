@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { List, Network, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -33,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useTenant } from '@/context/tenant-provider'
@@ -61,8 +63,13 @@ import {
   RelatedAssetsList,
   revalidateRelatedAssets,
 } from './relationships/related-assets-list'
-import { NeighborhoodGraphView } from './relationships/neighborhood-graph'
 import { AddRelationshipDialog, type AssetOption } from './relationships/add-relationship-dialog'
+
+// The graph pulls in the flow-chart library; load it only when the graph view is opened.
+const NeighborhoodGraphView = dynamic(
+  () => import('./relationships/neighborhood-graph').then((m) => m.NeighborhoodGraphView),
+  { ssr: false, loading: () => <Skeleton className="h-96 w-full" /> }
+)
 
 interface AssetRelationshipsTabProps {
   assetId: string
@@ -129,7 +136,7 @@ export function AssetRelationshipsTab({
     async (query: string): Promise<AssetOption[]> => {
       if (!currentTenant) return []
       const params = new URLSearchParams({ per_page: String(PICKER_PAGE_SIZE) })
-      if (query.trim()) params.set('search', query.trim())
+      if (query.trim()) params.set('q', query.trim())
       try {
         const response = await get<BackendAssetsListResponse>(`/api/v1/assets?${params.toString()}`)
         return (response.data ?? []).map((a) => ({

@@ -14,6 +14,17 @@ type fakeTakeoverStore struct {
 	asked     []shared.ID
 	confirmed []string
 	reopened  []string
+	names     map[shared.ID]string
+}
+
+func (f *fakeTakeoverStore) AssetNames(_ context.Context, _ shared.ID, ids []shared.ID) (map[shared.ID]string, error) {
+	out := map[shared.ID]string{}
+	for _, id := range ids {
+		if n, ok := f.names[id]; ok {
+			out[id] = n
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeTakeoverStore) OpenDanglingCNAMEs(_ context.Context, _ shared.ID, ids []shared.ID) ([]OpenDangling, error) {

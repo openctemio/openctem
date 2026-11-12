@@ -106,6 +106,10 @@ const (
 	// from findings:write so whoever fixes a finding need not be able to
 	// re-score it (migration 001534).
 	FindingsSeverity Permission = "findings:severity"
+	// FindingsSourcesRetire: stop using an import source (block its data,
+	// archive the findings only it reported) and use it again
+	// (docs/architecture/source-retirement.md). Owner and administrator.
+	FindingsSourcesRetire Permission = "findings:sources:retire"
 
 	// Exposure permissions (findings:exposures:*)
 	ExposuresRead   Permission = "findings:exposures:read"
@@ -513,7 +517,7 @@ func AllPermissions() []Permission {
 		// Findings module
 		FindingsRead, FindingsWrite, FindingsDelete,
 		FindingsAssign, FindingsTriage, FindingsStatus, FindingsExport, FindingsBulkUpdate, FindingsApprove,
-		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity,
+		FindingsFixApply, FindingsVerify, FindingsComment, FindingsSeverity, FindingsSourcesRetire,
 		ExposuresRead, ExposuresWrite, ExposuresDelete, ExposuresTriage,
 		SuppressionsRead, SuppressionsWrite, SuppressionsDelete, SuppressionsApprove,
 		FindingsLifecyclesWrite, FindingsRetestChecksWrite, FindingsViewsShare,

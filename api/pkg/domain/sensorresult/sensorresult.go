@@ -175,6 +175,19 @@ var (
 	ErrFull = shared.NewDomainError("RESULTS_QUARANTINE_FULL", "the results quarantine is full; the report was refused", shared.ErrValidation)
 )
 
+// HeldGroup is the (tenant, sensor, tool) a set of held items shares.
+type HeldGroup struct {
+	TenantID shared.ID
+	SensorID shared.ID
+	ToolName string
+}
+
+// HeldRef is a pending item without its payload.
+type HeldRef struct {
+	ID        shared.ID
+	CreatedAt time.Time
+}
+
 // Repository stores the policy and the quarantine.
 type Repository interface {
 	// GetPolicy returns the tenant's stored policy, or DefaultPolicy with
@@ -192,7 +205,8 @@ type Repository interface {
 	// Review moves a pending item to accepted or discarded (and clears an
 	// apply claim). ErrAlreadyReviewed
 	// when it is not pending any more. Discarding drops the payload.
-	Review(ctx context.Context, tenantID, id shared.ID, to Status, by shared.ID) error
+	// by is nil for a release by the platform itself (auto-release).
+	Review(ctx context.Context, tenantID, id shared.ID, to Status, by *shared.ID) error
 	// ClaimForApply marks a pending item as being applied (it stays
 	// pending until the apply succeeds). ErrAlreadyReviewed when it is not
 	// pending, ErrBeingApplied when another accept holds a fresh claim.
@@ -202,6 +216,16 @@ type Repository interface {
 	ReleaseApply(ctx context.Context, tenantID, id shared.ID) error
 	// SetResult stores what applying an accepted item did.
 	SetResult(ctx context.Context, tenantID, id shared.ID, result []byte) error
+	// PendingOutOfContractGroups lists the (tenant, sensor, tool) groups
+	// that hold pending out-of-contract items created after notBefore and
+	// not being applied, for an ACTIVE sensor of that tenant. tenantID and
+	// sensorID narrow the listing when set. A platform maintenance read:
+	// it returns ids and names only, never a payload.
+	PendingOutOfContractGroups(ctx context.Context, notBefore time.Time, tenantID, sensorID *shared.ID, limit int) ([]HeldGroup, error)
+	// PendingInGroup lists up to limit pending out-of-contract item refs of
+	// one group created after notBefore, oldest first, after the cursor
+	// (afterCreated, afterID; zero values start from the beginning).
+	PendingInGroup(ctx context.Context, g HeldGroup, notBefore, afterCreated time.Time, afterID shared.ID, limit int) ([]HeldRef, error)
 	// PurgeReviewed deletes reviewed items older than the cutoff.
 	PurgeReviewed(ctx context.Context, before time.Time) (int, error)
 }

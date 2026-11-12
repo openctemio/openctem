@@ -129,6 +129,8 @@ jobs:
 
       - name: Build the release branch (check only, nothing pushed)
         env:
+          # refresh-latest.sh reads the public release lists of the components.
+          GH_TOKEN: ${{ github.token }}
           MODE: ${{ inputs.mode }}
           PICKS: ${{ inputs.cherry_picks }}
           SHA: ${{ steps.sha.outputs.sha }}
@@ -252,6 +254,8 @@ jobs:
 
       - name: Cut release/${{ needs.plan.outputs.version }}
         env:
+          # refresh-latest.sh reads the public release lists of the components.
+          GH_TOKEN: ${{ github.token }}
           MODE: ${{ inputs.mode }}
           PICKS: ${{ inputs.cherry_picks }}
           SHA: ${{ needs.plan.outputs.sha }}

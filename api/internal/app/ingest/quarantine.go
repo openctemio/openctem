@@ -16,6 +16,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/api/internal/safego"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	"github.com/openctemio/openctem/api/pkg/domain/command"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
@@ -228,6 +229,7 @@ func (s *Service) bindingFromCommandID(ctx context.Context, tenantID shared.ID, 
 			b.Tool = commandTool(cmd)
 			b.CommandType = cmd.Type
 			b.StepRunID = cmd.StepRunID
+			b.ScanZoneID = cmd.ScanZoneID
 		}
 	}
 	return b
@@ -276,9 +278,10 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 		return true, nil
 	}
 
-	// A quarantined report is stored as is: mask raw secrets first, as
-	// Ingest does before it applies one.
+	// A quarantined report is stored as is: mask raw secrets and e-mail
+	// addresses first, as Ingest does before it applies one.
 	redactReportSecrets(sub.Report)
+	maskReportEmails(sub.Report)
 	payload, err := json.Marshal(sub.Report)
 	if err != nil {
 		return false, fmt.Errorf("encode quarantined report: %w", err)
@@ -316,7 +319,9 @@ func (s *Service) admitUnsolicited(ctx context.Context, agt *sensor.Sensor, tena
 		}
 		return false, err
 	}
-	s.recordQuarantined(ctx, agt, tenantID, sub.Report)
+	// The hold counts on the receipt the release will count on: the item's
+	// own report id names both.
+	s.recordQuarantined(withReportID(ctx, item.ReportID), agt, tenantID, sub.Report)
 	metrics.SensorUnsolicitedResultsTotal.WithLabelValues("quarantined").Inc()
 	s.logger.Info("unsolicited sensor report quarantined",
 		"sensor_id", agt.ID.String(), "sensor_type", string(sensorType), "tenant_id", tenantID.String(),
@@ -343,13 +348,13 @@ func (s *Service) auditAsync(actx auditapp.AuditContext, event auditapp.AuditEve
 	if s.auditSvc == nil && s.auditRepo == nil {
 		return
 	}
-	go func() {
+	safego.Go(s.logger, "ingest:quarantine-audit-log", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := s.writeIngestAuditLog(ctx, actx, event); err != nil {
 			s.logger.Warn("failed to persist audit log", "action", event.Action.String(), "error", err)
 		}
-	}()
+	})
 }
 
 // recordWithheld counts the changes an ingest was not allowed to make.
@@ -402,6 +407,17 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 	if item.Status != sensorresult.StatusPending {
 		return nil, sensorresult.ErrAlreadyReviewed
 	}
+	return s.applyQuarantined(ctx, actx, tenantID, item, &by, nil)
+}
+
+// autoRelease says a quarantined item is applied by the platform, not a
+// person: Reason is the audited sentence.
+type autoRelease struct{ Reason string }
+
+// applyQuarantined applies a pending item (see AcceptQuarantined). by is nil
+// for an auto-release; the item is then audited as such.
+func (s *Service) applyQuarantined(ctx context.Context, actx auditapp.AuditContext, tenantID shared.ID, item *sensorresult.Item, by *shared.ID, auto *autoRelease) (*Output, error) {
+	id := item.ID
 	var report ctis.Report
 	if err := json.Unmarshal(item.Payload, &report); err != nil {
 		return nil, fmt.Errorf("%w: the stored report does not parse: %v", shared.ErrValidation, err) //nolint:errorlint // detail
@@ -416,7 +432,8 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 	// finding needs a real asset, and the shared CVE catalog is never
 	// written from sensor data.
 	opts := Options{Binding: TrustedBinding(), Admitted: true, DeferAutoResolve: true, DeferSensorStats: true,
-		RequireAssetForFindings: true, NoCatalogWrites: true}
+		RequireAssetForFindings: true, NoCatalogWrites: true,
+		ReleasedFromQuarantine: true, SenderName: item.SensorName}
 	agt := &sensor.Sensor{ID: item.SensorID, TenantID: &tenantID, Type: sensor.SensorType(item.SensorType), Status: sensor.SensorStatusActive}
 	out, ingErr := s.Ingest(ctx, agt, Input{Report: &report, ReportID: item.ReportID, Options: opts})
 	if ingErr == nil {
@@ -439,22 +456,33 @@ func (s *Service) AcceptQuarantined(ctx context.Context, actx auditapp.AuditCont
 	if ingErr != nil {
 		result["error"] = ingErr.Error()
 	}
+	if auto != nil {
+		result["auto_accepted"] = true
+		result["reason"] = auto.Reason
+	}
 	if raw, err := json.Marshal(result); err == nil {
 		if err := s.results.SetResult(ctx, tenantID, id, raw); err != nil {
 			s.logger.Warn("could not store the result of an accepted report", "quarantine_id", id.String(), "error", err)
 		}
 	}
 
-	event := auditapp.NewSuccessEvent(audit.ActionSensorResultsAccepted, audit.ResourceTypeSensor, item.SensorID.String()).
+	action, message := audit.ActionSensorResultsAccepted, "Quarantined sensor report accepted and applied"
+	if auto != nil {
+		action, message = audit.ActionSensorResultAutoAccepted, "Quarantined sensor report released: "+auto.Reason
+	}
+	event := auditapp.NewSuccessEvent(action, audit.ResourceTypeSensor, item.SensorID.String()).
 		WithResourceName(item.SensorName).
-		WithMessage("Quarantined sensor report accepted and applied").
+		WithMessage(message).
 		WithMetadata("quarantine_id", id.String()).
 		WithMetadata("report_id", item.ReportID).
 		WithMetadata("tool_name", item.ToolName).
 		WithMetadata("result", result)
 	if ingErr != nil {
-		event = auditapp.NewFailureEvent(audit.ActionSensorResultsAccepted, audit.ResourceTypeSensor, item.SensorID.String(), ingErr).
+		event = auditapp.NewFailureEvent(action, audit.ResourceTypeSensor, item.SensorID.String(), ingErr).
 			WithMetadata("quarantine_id", id.String())
+	}
+	if auto != nil {
+		event = event.WithMetadata("actor", "system").WithMetadata("reason", auto.Reason)
 	}
 	actx.TenantID = tenantID.String()
 	s.auditAsync(actx, event)
@@ -473,7 +501,7 @@ func (s *Service) DiscardQuarantined(ctx context.Context, actx auditapp.AuditCon
 	if err != nil {
 		return err
 	}
-	if err := s.results.Review(ctx, tenantID, id, sensorresult.StatusDiscarded, by); err != nil {
+	if err := s.results.Review(ctx, tenantID, id, sensorresult.StatusDiscarded, &by); err != nil {
 		return err
 	}
 	actx.TenantID = tenantID.String()
@@ -604,7 +632,8 @@ func (s *Service) recordQuarantined(ctx context.Context, agt *sensor.Sensor, ten
 	}
 	d := &ingestreceipt.Delta{TenantID: tenantID, Source: receiptSource(agt, Binding{Kind: BindingUnsolicited}, Options{}, reportIDOf(ctx)),
 		Instance: receiptInstance(agt, Binding{Kind: BindingUnsolicited}, Options{}, report),
-		Received: len(report.Findings), Items: out.Items, At: time.Now()}
+		Received: len(report.Findings), Items: out.Items, At: time.Now(),
+		Outcomes: map[string]int{ingestreceipt.OutcomeQuarantined: len(report.Findings)}}
 	if report.Tool != nil {
 		d.Tool = report.Tool.Name
 	}

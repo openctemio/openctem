@@ -34,6 +34,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scoring"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
@@ -134,8 +135,14 @@ func (h *TenantHandler) SetScanIdentity(src PlatformScanIdentitySource) { h.scan
 // organization sees it: the values its jobs carry under its own.
 type PlatformScanIdentificationResponse struct {
 	UserAgent         string             `json:"user_agent"`
+	UserAgents        []string           `json:"user_agents"`
 	UserAgentEnforced bool               `json:"user_agent_enforced"`
 	Headers           []scanident.Header `json:"headers"`
+	Query             *scanident.Query   `json:"query,omitempty"`
+	QueryEnforced     bool               `json:"query_enforced"`
+	// IdentificationRequired: the platform requires identification on
+	// every organization's scans; the organization cannot turn it off.
+	IdentificationRequired bool `json:"identification_required"`
 }
 
 // platformScanIdentification reads the platform layer (nil: none wired, or
@@ -149,7 +156,9 @@ func (h *TenantHandler) platformScanIdentification(ctx context.Context) *Platfor
 		h.logger.Warn("platform scan identification not read", "error", logger.SanitizeError(err))
 		return nil
 	}
-	return &PlatformScanIdentificationResponse{UserAgent: l.UserAgent, UserAgentEnforced: l.UserAgentEnforced, Headers: nonNilHeaders(l.Headers)}
+	return &PlatformScanIdentificationResponse{UserAgent: l.UserAgent, UserAgents: nonNilStrings(l.UserAgents),
+		UserAgentEnforced: l.UserAgentEnforced, Headers: nonNilHeaders(l.Headers), Query: l.Query, QueryEnforced: l.QueryEnforced,
+		IdentificationRequired: l.IdentificationRequired}
 }
 
 func nonNilHeaders(hs []scanident.Header) []scanident.Header {
@@ -630,6 +639,11 @@ func (h *TenantHandler) handleServiceError(w http.ResponseWriter, err error) {
 		// carry stored values, so it is not logged here.
 		h.logger.Error("settings section unreadable")
 		apierror.InternalServerError("These settings could not be read. Contact your platform administrator.").WriteJSON(w)
+		return
+	}
+	if errors.Is(err, stepup.ErrBelowFloor) {
+		apierror.New(http.StatusUnprocessableEntity, apierror.Code("STEP_UP_POLICY_BELOW_FLOOR"),
+			"Critical actions ask every time or once per 10 minutes. They cannot be turned off or given a longer window.").WriteJSON(w)
 		return
 	}
 	if errors.Is(err, tenantapp.ErrMFABelowPlatformFloor) {
@@ -1500,6 +1514,10 @@ type ProvisionedUserResponse struct {
 	EmailSent      bool                `json:"email_sent"`
 	SetupToken     string              `json:"setup_token,omitempty"`
 	SetupExpiresAt *time.Time          `json:"setup_expires_at,omitempty"`
+	// SetupURL is the full set-password address of SetupToken on the web
+	// app, for a caller on another site (the platform console). Same secret
+	// as SetupToken, same rules: returned once, never stored or logged.
+	SetupURL string `json:"setup_url,omitempty"`
 	// EmailFailed: the organization can send email but the send failed, and
 	// the link is deliberately not returned (platform administrator's
 	// first-owner bootstrap). The person uses forgot-password.
@@ -2213,6 +2231,14 @@ type SecuritySettingsResponse struct {
 	// ToolHTTPHeaders are the organization's scan identification headers
 	// (free names and values, at most 6), merged over the platform's.
 	ToolHTTPHeaders []scanident.Header `json:"tool_http_headers"`
+	// ToolHTTPUserAgents is the organization's User-Agent rotation list
+	// (instead of tool_http_user_agent; at most 200).
+	ToolHTTPUserAgents []string `json:"tool_http_user_agents"`
+	// ToolHTTPQuery is the organization's identification query parameter.
+	ToolHTTPQuery *scanident.Query `json:"tool_http_query,omitempty"`
+	// ToolHTTPIdentificationRequired: every request of the organization's
+	// scans must carry a header or the query parameter.
+	ToolHTTPIdentificationRequired bool `json:"tool_http_identification_required"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts string `json:"personal_accounts"`
 	// Invitees: who may be invited: any, verified_domains or allow_list.
@@ -2231,6 +2257,9 @@ type SecuritySettingsResponse struct {
 	// admins, everyone). mfa_required and mfa_required_for_admins already
 	// include it; an organization can raise them, not lower them below it.
 	PlatformMFAFloor string `json:"platform_mfa_floor,omitempty"`
+	// StepUp is the re-verification policy in force (critical, sensitive,
+	// routine), with the platform floor applied.
+	StepUp stepup.Policy `json:"step_up"`
 	// PlatformScanIdentification is the platform's layer of the scan
 	// identification markers, merged under the organization's (read-only
 	// here; GET only).
@@ -2270,12 +2299,16 @@ func toSettingsResponse(s *tenant.Settings) SettingsResponse {
 			ToolHTTPUserAgent:                         s.Security.ToolHTTPUserAgent,
 			ForbidToolInsecureTLS:                     s.Security.ForbidToolInsecureTLS,
 			ToolHTTPHeaders:                           nonNilHeaders(s.Security.ToolHTTPHeaders),
+			ToolHTTPUserAgents:                        nonNilStrings(s.Security.ToolHTTPUserAgents),
+			ToolHTTPQuery:                             s.Security.ToolHTTPQuery,
+			ToolHTTPIdentificationRequired:            s.Security.ToolHTTPIdentificationRequired,
 			PersonalAccounts:                          string(s.Security.PersonalAccounts.Effective()),
 			Invitees:                                  string(s.Security.EffectiveInvitees()),
 			ExternalAccessEndRequired:                 s.Security.ExternalAccessEndRequired,
 			SSOExceptions:                             nonNilSSOExceptions(s.Security.SSOExceptions),
 			JITRequiresApproval:                       s.Security.JITRequiresApproval,
 			SSORequireMFAEvidence:                     s.Security.SSORequireMFAEvidence,
+			StepUp:                                    s.Security.EffectiveStepUp(),
 		},
 		Branding: BrandingSettingsResponse{
 			PrimaryColor: s.Branding.PrimaryColor,
@@ -2386,12 +2419,16 @@ type UpdateSecuritySettingsRequest struct {
 	// SSOEnforced is accepted only to refuse it explicitly: SSO enforcement is
 	// set by the platform administrator per organization (RFC-022), and a
 	// silently ignored field would look like it saved.
-	SSOEnforced           *bool    `json:"sso_enforced"`
-	MFARequired           *bool    `json:"mfa_required"`
-	MFARequiredForAdmins  *bool    `json:"mfa_required_for_admins"`
-	IPWhitelist           []string `json:"ip_whitelist"`
-	AllowedDomains        []string `json:"allowed_domains"`
-	EmailVerificationMode *string  `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
+	SSOEnforced          *bool `json:"sso_enforced"`
+	MFARequired          *bool `json:"mfa_required"`
+	MFARequiredForAdmins *bool `json:"mfa_required_for_admins"`
+	// StepUp replaces the re-verification policy: every tier's mode
+	// (every_time, once_per_window, off) and window (10m, 1h, 4h, 8h,
+	// session). Critical is every_time or once_per_window 10m.
+	StepUp                *stepup.Policy `json:"step_up,omitempty"`
+	IPWhitelist           []string       `json:"ip_whitelist"`
+	AllowedDomains        []string       `json:"allowed_domains"`
+	EmailVerificationMode *string        `json:"email_verification_mode" validate:"omitempty,oneof=auto always"`
 	// RequireSensorLocalPolicyForPrivateTargets: see SecuritySettingsResponse.
 	RequireSensorLocalPolicyForPrivateTargets *bool `json:"require_sensor_local_policy_for_private_targets"`
 	// AllowSensorInteractsh / AllowSensorCustomTemplates: see
@@ -2409,6 +2446,16 @@ type UpdateSecuritySettingsRequest struct {
 	// (at most 200 characters); connection, proxy and credential headers are
 	// refused.
 	ToolHTTPHeaders *[]scanident.Header `json:"tool_http_headers" validate:"omitempty,max=6"`
+	// ToolHTTPUserAgents replaces the User-Agent rotation list (omitted:
+	// unchanged; []: none). At most 200 distinct values of 1-256 printable
+	// ASCII characters; not together with tool_http_user_agent.
+	ToolHTTPUserAgents *[]string `json:"tool_http_user_agents" validate:"omitempty,max=200"`
+	// ToolHTTPQuery replaces the identification query parameter (omitted:
+	// unchanged; a blank name and value: none). Name and value are 1-64 of
+	// letters, digits and . _ ~ -.
+	ToolHTTPQuery *scanident.Query `json:"tool_http_query"`
+	// ToolHTTPIdentificationRequired: see SecuritySettingsResponse.
+	ToolHTTPIdentificationRequired *bool `json:"tool_http_identification_required"`
 	// PersonalAccounts: allowed, allowed_with_mfa or blocked.
 	PersonalAccounts *string `json:"personal_accounts" validate:"omitempty,oneof=allowed allowed_with_mfa blocked"`
 	// Invitees: any, verified_domains or allow_list.
@@ -2461,12 +2508,16 @@ func (h *TenantHandler) UpdateSecuritySettings(w http.ResponseWriter, r *http.Re
 		ToolHTTPUserAgent:                         req.ToolHTTPUserAgent,
 		ForbidToolInsecureTLS:                     req.ForbidToolInsecureTLS,
 		ToolHTTPHeaders:                           req.ToolHTTPHeaders,
+		ToolHTTPUserAgents:                        req.ToolHTTPUserAgents,
+		ToolHTTPQuery:                             req.ToolHTTPQuery,
+		ToolHTTPIdentificationRequired:            req.ToolHTTPIdentificationRequired,
 		PersonalAccounts:                          req.PersonalAccounts,
 		Invitees:                                  req.Invitees,
 		ExternalAccessEndRequired:                 req.ExternalAccessEndRequired,
 		SSOExceptions:                             req.SSOExceptions,
 		JITRequiresApproval:                       req.JITRequiresApproval,
 		SSORequireMFAEvidence:                     req.SSORequireMFAEvidence,
+		StepUp:                                    req.StepUp,
 		// Lockout guard: the saved IP allowlist must include this IP.
 		RequesterIP: clientIP,
 		// Lockout guard: "SSO must prove two-factor" must not refuse this
@@ -3338,7 +3389,11 @@ func (h *TenantHandler) previewDeadlines(ctx context.Context, tenantID shared.ID
 		if !f.AssetID().IsZero() {
 			aid = f.AssetID().String()
 		}
-		d, derr := fn(aid, string(class), f.Severity(), now)
+		practice := ""
+		if f.Practice() == vulnerability.PracticeCompliance {
+			practice = string(vulnerability.PracticeCompliance)
+		}
+		d, derr := fn(aid, practice, string(class), f.Severity(), now)
 		if derr != nil {
 			return time.Time{}
 		}

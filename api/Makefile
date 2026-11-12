@@ -120,7 +120,8 @@ lint-new:
 	@echo "Running golangci-lint $(GOLANGCI_LINT_VERSION) against $(BASE_REF)..."
 	@# A private TMPDIR per run: golangci-lint takes a lock file in it, so
 	@# parallel runs (several worktrees, agents) would wait on or fail each other.
-	@t=$$(mktemp -d); GOWORK=off TMPDIR=$$t $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...; rc=$$?; rm -rf "$$t"; exit $$rc
+	@# The trap removes it on an interrupt or a kill too, not only on a normal exit.
+	@t=$$(mktemp -d); trap 'rm -rf "$$t"' EXIT INT TERM HUP; GOWORK=off TMPDIR=$$t $(GOLANGCI_LINT) run --new-from-rev=$(BASE_REF) ./...
 
 ## platform-authz-docs: Rewrite the generated platform (console) permission reference (RFC-134)
 platform-authz-docs:
@@ -374,6 +375,14 @@ generate:
 generate-relationships:
 	@echo "Generating relationship types from configs/relationship-types.yaml..."
 	@GOWORK=off $(GOCMD) run ./cmd/gen-relationships
+
+## generate-lead-types: Regenerate the lead type catalog (Go + TS) from YAML
+##
+## Single source of truth: configs/lead-types.yaml (docs/architecture/exploration.md).
+## Edit the YAML, run this target, commit the YAML + the two generated files.
+## `go run ./cmd/gen-lead-types -check` fails when they are stale.
+generate-lead-types:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-lead-types
 
 ## generate-modules: Regenerate the module registry (Go + TS) from YAML
 ##

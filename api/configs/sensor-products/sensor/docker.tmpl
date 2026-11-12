@@ -71,6 +71,12 @@ echo '{{.SeccompSHA256}}  /etc/openctem/sensor-seccomp.json' | sha256sum -c -
 # restart the sensor after writing it) and the kill switch (no job runs while
 # /etc/openctem/STOP exists). The image's default command runs the sensor; it
 # runs the tools the image ships (narrow them in the policy's tools.allow).
+{{- if .Policy.AllowPrivate}}
+# SENSOR_ALLOW_PRIVATE_TARGETS=1 lets this sensor scan private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7); without it the host refuses them.
+{{- end}}
+{{- if .HostAllowedRanges}}
+# SENSOR_ALLOWED_RANGES pins this host to the networks you listed: the sensor refuses every target outside them.
+{{- end}}
 docker run -d --name {{$slug}} --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges:true \
   --security-opt seccomp=/etc/openctem/sensor-seccomp.json \
@@ -91,6 +97,9 @@ docker run -d --name {{$slug}} --restart unless-stopped \
   -e SENSOR_KILL_SWITCH_FILE=/etc/openctem/STOP \
 {{- if .Policy.AllowPrivate}}
   -e SENSOR_ALLOW_PRIVATE_TARGETS=1 \
+{{- end}}
+{{- if .HostAllowedRanges}}
+  -e SENSOR_ALLOWED_RANGES={{shellQuote .HostAllowedRanges}} \
 {{- end}}
 {{- if .CACert}}
   -e SSL_CERT_DIR=/etc/openctem/certs \

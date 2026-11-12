@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/api/pkg/domain/vulncatalog"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
 )
@@ -26,11 +28,22 @@ import (
 // tenant method filters on the tenant.
 type SoftwareMatchRepository struct {
 	db *DB
+	// catalog answers the product ranges; vulncatalog.ErrUnavailable from
+	// it stops the matcher's unit of work.
+	catalog vulncatalog.Reader
 }
 
-// NewSoftwareMatchRepository creates a SoftwareMatchRepository.
+// NewSoftwareMatchRepository creates a SoftwareMatchRepository that reads
+// ranges through the Postgres vulnerability catalog reader.
 func NewSoftwareMatchRepository(db *DB) *SoftwareMatchRepository {
-	return &SoftwareMatchRepository{db: db}
+	return &SoftwareMatchRepository{db: db, catalog: NewVulnCatalogReader(db)}
+}
+
+// WithVulnCatalog sets the vulnerability catalog reader (the configured
+// mode's reader).
+func (r *SoftwareMatchRepository) WithVulnCatalog(c vulncatalog.Reader) *SoftwareMatchRepository {
+	r.catalog = c
+	return r
 }
 
 var _ softwarematch.Store = (*SoftwareMatchRepository)(nil)
@@ -63,30 +76,18 @@ func (r *SoftwareMatchRepository) PendingVersions(ctx context.Context, limit int
 	return out, rows.Err()
 }
 
-// RangesForProduct (see softwarematch.Store).
+// RangesForProduct (see softwarematch.Store) reads the vulnerability
+// catalog.
 func (r *SoftwareMatchRepository) RangesForProduct(ctx context.Context, productID shared.ID) ([]softwarematch.AffectedRange, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, cve_id, scheme, COALESCE(exact_version, ''), COALESCE(v_start, ''), v_start_incl,
-			COALESCE(v_end, ''), v_end_incl, edition, target, COALESCE(condition_product_id::text, '')
-		FROM vulnerability_affected WHERE product_id = $1 ORDER BY id`, productID.String())
+	stored, err := r.catalog.Ranges(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("product ranges: %w", err)
 	}
-	defer rows.Close()
-	var out []softwarematch.AffectedRange
-	for rows.Next() {
-		var a softwarematch.AffectedRange
-		var scheme string
-		rg := &a.Range
-		if err := rows.Scan(&a.ID, &rg.VulnID, &scheme, &rg.Exact, &rg.Start, &rg.StartIncl,
-			&rg.End, &rg.EndIncl, &rg.Edition, &rg.Target, &rg.Condition); err != nil {
-			return nil, fmt.Errorf("product ranges: %w", err)
-		}
-		rg.Scheme = vulnmatch.Scheme(scheme)
-		rg.ID = fmt.Sprint(a.ID)
-		out = append(out, a)
+	out := make([]softwarematch.AffectedRange, len(stored))
+	for i, a := range stored {
+		out[i] = softwarematch.AffectedRange{ID: a.LegacyID, Range: a.Range}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // ReplaceVersionVulns (see softwarematch.Store).
@@ -309,7 +310,8 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 				  AND c.product_id = m.condition_product_id AND c.superseded_at IS NULL)),
 			r.description, COALESCE(r.severity, ''), r.cvss_score, COALESCE(r.cvss_vector, ''), r.cwes,
 			(k.cve_id IS NOT NULL), COALESCE(e.epss_score, 0),
-			s.source = 'package', COALESCE(v.purl, '')
+			s.source = 'package', COALESCE(v.purl, ''),
+			a.name, a.asset_type, a.created_at
 		FROM asset_software s
 		JOIN assets a ON a.id = s.asset_id AND a.tenant_id = s.tenant_id
 		JOIN software_products p ON p.id = s.product_id
@@ -338,7 +340,8 @@ func (r *SoftwareMatchRepository) matches(ctx context.Context, where string, lim
 			&m.Result.CVEID, &m.Result.AffectedID, &m.Result.RangeText, &m.Result.AllVersions, &m.Result.Adjustment,
 			pq.Array(&reasons), &cond, &m.ConditionMet,
 			&desc, &m.CVE.Severity, &score, &m.CVE.CVSSVector, pq.Array(&cwes),
-			&m.CVE.InKEV, &m.CVE.EPSS, &m.Package, &m.PURL); err != nil {
+			&m.CVE.InKEV, &m.CVE.EPSS, &m.Package, &m.PURL,
+			&m.AssetName, &m.AssetType, &m.AssetCreatedAt); err != nil {
 			return nil, fmt.Errorf("tenant matches: %w", err)
 		}
 		m.AssetID, m.ProductID, m.VersionID = shared.MustIDFromString(asset), shared.MustIDFromString(pid), shared.MustIDFromString(vid)
@@ -364,7 +367,7 @@ func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT f.id, f.asset_id, COALESCE(f.cve_id, ''), f.fingerprint, f.status, f.observation_state = 'stale',
 			f.metadata->'version_match'->>'product_id', f.metadata->'version_match'->>'version_id',
-			COALESCE(f.metadata->'version_match'->>'location', ''), COALESCE(r.status = 'Rejected', false)
+			COALESCE(f.metadata->'version_match'->>'location', ''), COALESCE(r.status = 'Rejected', false), f.created_at
 		FROM findings f
 		LEFT JOIN cve_records r ON r.cve_id = f.cve_id
 		WHERE f.tenant_id = $1 AND `+matcherOwnedSQL+` AND f.asset_id IS NOT NULL
@@ -378,7 +381,7 @@ func (r *SoftwareMatchRepository) MatcherFindings(ctx context.Context, tenantID 
 		var f softwarematch.MatcherFinding
 		var id, asset string
 		var pid, vid sql.NullString
-		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &f.Stale, &pid, &vid, &f.Location, &f.CVERejected); err != nil {
+		if err := rows.Scan(&id, &asset, &f.CVEID, &f.Fingerprint, &f.Status, &f.Stale, &pid, &vid, &f.Location, &f.CVERejected, &f.CreatedAt); err != nil {
 			return nil, fmt.Errorf("matcher findings: %w", err)
 		}
 		f.ID, f.AssetID = shared.MustIDFromString(id), shared.MustIDFromString(asset)
@@ -505,7 +508,7 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 		var vid string
 		err = r.db.QueryRowContext(ctx, `
 			SELECT s.software_version_id, v.raw, s.source, s.evidence_class, s.confidence, s.sightings,
-				s.first_seen_at, s.last_seen_at
+				s.first_seen_at, s.last_seen_at, v.matched_at IS NOT NULL
 			FROM asset_software s
 			JOIN software_versions v ON v.id = s.software_version_id AND (v.tenant_id IS NULL OR v.tenant_id = s.tenant_id)
 			WHERE s.tenant_id = $1 AND s.asset_id = $2 AND s.product_id = $3 AND s.software_version_id <> $4
@@ -513,7 +516,7 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 			ORDER BY s.last_seen_at DESC
 			LIMIT 1`,
 			tenantID.String(), k.AssetID.String(), k.ProductID.String(), k.VersionID.String(), k.Location, currentSince).
-			Scan(&vid, &now.Version, &now.Source, &now.Class, &now.Confidence, &now.Sightings, &now.FirstSeen, &now.LastSeen)
+			Scan(&vid, &now.Version, &now.Source, &now.Class, &now.Confidence, &now.Sightings, &now.FirstSeen, &now.LastSeen, &now.Evaluated)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 		case err != nil:
@@ -525,6 +528,39 @@ func (r *SoftwareMatchRepository) LinkStates(ctx context.Context, tenantID share
 		out[k] = info
 	}
 	return out, nil
+}
+
+// UpdateObservedVersion (see softwarematch.Store). Only the version fields
+// of the finding's version_match evidence and its component change; the
+// status, closure and timestamps of the finding do not.
+func (r *SoftwareMatchRepository) UpdateObservedVersion(ctx context.Context, tenantID shared.ID, refs []softwarematch.ObservedVersionRef) (int, error) {
+	total := 0
+	for _, ref := range refs {
+		if ref.FindingID.IsZero() || ref.ProductID.IsZero() || ref.VersionID.IsZero() {
+			continue
+		}
+		patch, err := json.Marshal(map[string]string{
+			"product_id": ref.ProductID.String(), "version_id": ref.VersionID.String(),
+			"version": ref.Version, "qualifier": ref.Qualifier,
+		})
+		if err != nil {
+			return total, fmt.Errorf("observed version: %w", err)
+		}
+		res, err := r.db.ExecContext(ctx, `
+			UPDATE findings f
+			SET metadata = jsonb_set(f.metadata, '{version_match}', COALESCE(f.metadata->'version_match', '{}'::jsonb) || $3::jsonb),
+			    component_id = $4, updated_at = NOW()
+			WHERE f.tenant_id = $1 AND f.id = $2 AND `+matcherOwnedSQL+`
+			  AND `+vulnerability.OpenStatusSQL("f.status")+`
+			  AND f.metadata->'version_match'->>'version_id' IS DISTINCT FROM $5`,
+			tenantID.String(), ref.FindingID.String(), string(patch), ref.VersionID.String(), ref.VersionID.String())
+		if err != nil {
+			return total, fmt.Errorf("observed version: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, nil
 }
 
 // CancelVersionProposals (see softwarematch.Store).

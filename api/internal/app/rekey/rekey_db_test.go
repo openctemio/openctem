@@ -71,6 +71,8 @@ func seedAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	exec(`INSERT INTO tenants (id, name, slug) VALUES ($1, 'rekey', 'rekey')`, tenantID)
 	exec(`INSERT INTO tenant_ai_settings (tenant_id, source, provider, key_enc) VALUES ($1, 'own', 'openai', $2)`,
 		tenantID, put("tenant_ai_settings.key_enc", "sk-llm-key"))
+	exec(`INSERT INTO tool_source_keys (tenant_id, source, key_enc) VALUES ($1, 'shodan', $2)`,
+		tenantID, put("tool_source_keys.key_enc", "shodan-source-key"))
 	exec(`INSERT INTO ai_mask_maps (tenant_id, run_id, key_enc, map_enc, expires_at) VALUES ($1, gen_random_uuid(), $2, $3, now() + interval '1 day')`,
 		tenantID, put("ai_mask_maps.key_enc", "bWFzay1rZXk="), put("ai_mask_maps.map_enc", `{"tokens":{"HOST_ABC2DE":"db01"}}`))
 	exec(`INSERT INTO users (id, email) VALUES ($1, 'rekey@example.com')`, userID)
@@ -197,7 +199,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	one := func(q string) string {
 		t.Helper()
 		var v sql.NullString
-		if err := db.QueryRow(q).Scan(&v); err != nil {
+		if err := db.QueryRowContext(context.Background(), q).Scan(&v); err != nil {
 			t.Fatalf("read %q: %v", q, err)
 		}
 		return v.String
@@ -205,6 +207,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	out := map[string]string{}
 	for loc, q := range map[string]string{
 		"tenant_ai_settings.key_enc":                                 `SELECT key_enc FROM tenant_ai_settings`,
+		"tool_source_keys.key_enc":                                   `SELECT key_enc FROM tool_source_keys`,
 		"ai_mask_maps.key_enc":                                       `SELECT key_enc FROM ai_mask_maps`,
 		"ai_mask_maps.map_enc":                                       `SELECT map_enc FROM ai_mask_maps`,
 		"integrations.credentials_encrypted":                         `SELECT credentials_encrypted FROM integrations`,
@@ -245,7 +248,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 	}
 
 	var data []byte
-	if err := db.QueryRow(`SELECT encrypted_data FROM credentials`).Scan(&data); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT encrypted_data FROM credentials`).Scan(&data); err != nil {
 		t.Fatal(err)
 	}
 	store, _ := secretstore.NewEncryptor(secretstore.KeyFromConfig(key))
@@ -257,7 +260,7 @@ func readAll(t *testing.T, db *sql.DB, key string) map[string]string {
 
 	var content []byte
 	var sig string
-	if err := db.QueryRow(`SELECT content, signature_hash FROM scanner_templates`).Scan(&content, &sig); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT content, signature_hash FROM scanner_templates`).Scan(&content, &sig); err != nil {
 		t.Fatal(err)
 	}
 	if scannertemplate.VerifySignature(content, key, sig) {
@@ -411,7 +414,7 @@ func TestRekey_PlaceholderIsNotCiphertext(t *testing.T) {
 		t.Fatalf("expected the placeholder listed as not ciphertext, got %+v", rep.NotCipher)
 	}
 	var raw []byte
-	if err := db.QueryRow(`SELECT encrypted_data FROM credentials WHERE name = 'placeholder'`).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(context.Background(), `SELECT encrypted_data FROM credentials WHERE name = 'placeholder'`).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	if hex.EncodeToString(raw) != "deadbeef0a" {

@@ -10,10 +10,11 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
-// A scan command given only addresses and ranges can only observe them: a
-// report asset naming only other addresses is dropped with its findings;
-// in-chunk addresses and address-less names are kept.
-func TestIngest_DropsAddressesOutsideTheChunk(t *testing.T) {
+// A scan command given only addresses and ranges reports on them; a report
+// asset naming only other addresses is recorded as a discovery outside the
+// chunk (research 436), never dropped, and its ref is marked so its findings
+// run no automations. It is never reported as outside the uploader's scope.
+func TestIngest_RecordsAddressesOutsideTheChunk(t *testing.T) {
 	report := func() *ctis.Report {
 		return &ctis.Report{
 			Assets: []ctis.Asset{
@@ -52,23 +53,24 @@ func TestIngest_DropsAddressesOutsideTheChunk(t *testing.T) {
 			t.Errorf("%s was dropped; it is inside the chunk or names no address", want)
 		}
 	}
-	for _, bad := range []string{"203.0.113.9", "203.0.113.10"} {
-		if got[bad] {
-			t.Errorf("%s is outside the chunk and was created", bad)
+	for _, outside := range []string{"203.0.113.9", "203.0.113.10"} {
+		if !got[outside] {
+			t.Errorf("%s is outside the chunk and was dropped; it must be recorded", outside)
 		}
 	}
-	if out.AssetsOutsideChunk != 2 || !out.OutOfScopeAssetRefs["out"] {
-		t.Errorf("outside chunk = %d, refs %v", out.AssetsOutsideChunk, out.OutOfScopeAssetRefs)
+	if out.AssetsOutsideChunk != 2 || !out.OutsideJobAssetRefs["out"] || !out.OutsideJobAssetRefs["svc"] ||
+		out.OutOfScopeAssetRefs["out"] || out.OutsideJobAssetRefs["in"] {
+		t.Errorf("outside chunk = %d, outside refs %v, out of scope %v", out.AssetsOutsideChunk, out.OutsideJobAssetRefs, out.OutOfScopeAssetRefs)
 	}
 
-	// A command that names a host name is not an address chunk: this rule
-	// drops nothing. The job-target rule (job_bound.go) keeps the range's
-	// addresses and drops an address no in-bound asset vouches for.
+	// A command that names a host name is not an address chunk. The
+	// job-target rule (job_bound.go) records an address no in-bound asset
+	// vouches for as outside the targets.
 	got, out = run(scanCmd("198.51.100.0/25", "app.example.com"))
 	if out.AssetsOutsideChunk != 0 {
-		t.Errorf("a chunk with a name dropped %d assets as outside the chunk", out.AssetsOutsideChunk)
+		t.Errorf("a chunk with a name counted %d assets as outside the chunk", out.AssetsOutsideChunk)
 	}
-	if !got["198.51.100.7"] || got["203.0.113.9"] || !out.OutsideJobAssetRefs["out"] {
+	if !got["198.51.100.7"] || !got["203.0.113.9"] || !out.OutsideJobAssetRefs["out"] || out.OutsideJobAssetRefs["in"] {
 		t.Errorf("job-target rule: stored %v, outside job %v", got, out.OutsideJobAssetRefs)
 	}
 

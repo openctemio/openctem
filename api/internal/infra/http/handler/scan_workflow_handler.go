@@ -18,12 +18,14 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/scanprofile"
 	"github.com/openctemio/openctem/api/pkg/domain/scanwindow"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -301,7 +303,11 @@ type RunResponse struct {
 	// versions.
 	ScanWorkflowVersion int    `json:"scan_workflow_version,omitempty"`
 	SpecDigest          string `json:"spec_digest,omitempty"`
-	CreatedAt           string `json:"created_at"`
+	// ParentRunID is the split run this run is a zone run of; ZoneSplit
+	// describes the split (on the parent: one group per scan zone).
+	ParentRunID *string               `json:"parent_run_id,omitempty"`
+	ZoneSplit   *RunZoneSplitResponse `json:"zone_split,omitempty"`
+	CreatedAt   string                `json:"created_at"`
 	// ScheduledFor is the schedule occurrence this run serves (scheduled runs only).
 	ScheduledFor *string `json:"scheduled_for,omitempty"`
 	// DeadlineAt is when the run is settled if it is still open.
@@ -639,6 +645,10 @@ type SkipReasonResponse struct {
 // StepRunResponse represents a step run in the response.
 type StepRunResponse struct {
 	ID string `json:"id"`
+	// EffectiveConfig is the standard params the step's command carried with
+	// their source; SensorSettings what the sensor reported it ran with.
+	EffectiveConfig *scanrundom.EffectiveConfig `json:"effective_config,omitempty"`
+	SensorSettings  *scanrundom.SensorSettings  `json:"sensor_settings,omitempty"`
 	// StepID is empty once the step was removed from the scan workflow; the step
 	// run keeps its key, name and tool.
 	StepID   string `json:"step_id,omitempty"`
@@ -664,6 +674,13 @@ type StepRunResponse struct {
 	Attempt       int    `json:"attempt"`
 	MaxAttempts   int    `json:"max_attempts"`
 	FindingsCount int    `json:"findings_count"`
+	// InfoObservations: template scanner info matches filed as exposures
+	// instead of findings.
+	InfoObservations int `json:"info_observations"`
+	// FindingsHeld / FindingsRefused: reported findings held for review and
+	// findings not stored (FindingsCount is what the sensor reported).
+	FindingsHeld    int `json:"findings_held"`
+	FindingsRefused int `json:"findings_refused"`
 }
 
 // --- Template Handlers ---
@@ -1286,6 +1303,14 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := withRunTriggerLabel(toRunResponse(run), runTriggerNames(r.Context(), h.users, h.logger, run))
+	if resp.ZoneSplit != nil && len(resp.ZoneSplit.Groups) > 0 {
+		// The zone runs, read in the run's tenant.
+		children, err := h.service.ZoneRuns(r.Context(), run)
+		if err != nil {
+			h.logger.Warn("failed to read the zone runs of a split run", "run_id", run.ID.String(), "error", err)
+		}
+		withZoneRunStatuses(resp.ZoneSplit, children)
+	}
 	tasks, err := h.service.GetRunTasks(r.Context(), run)
 	if err != nil {
 		h.logger.Error("failed to read run tasks", "run_id", run.ID.String(), "error", err)
@@ -1304,33 +1329,102 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// ListRuns handles GET /api/v1/scan-workflows/runs
+// scanRunsListDeprecatedAt and scanRunsListSunsetAt date the old GET
+// /scan-runs param names: the list query contract's alias window
+// (docs/rfcs/RFC-048-list-query-contract.md).
+var (
+	scanRunsListDeprecatedAt = time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	scanRunsListSunsetAt     = time.Date(2027, 5, 8, 0, 0, 0, 0, time.UTC)
+)
+
+// scanRunsListRoute is GET /scan-runs on the list query contract: strict
+// params. include_system is a list option, not a filter.
+func (h *ScanWorkflowHandler) scanRunsListRoute() filterquery.Route {
+	return filterquery.Route{
+		Name:         "GET /scan-runs",
+		Registry:     scanrundom.RunFields,
+		Options:      filterspec.Options{Unknown: filterspec.UnknownStrict, Extra: []string{"include_system"}},
+		DeprecatedAt: scanRunsListDeprecatedAt,
+		SunsetAt:     scanRunsListSunsetAt,
+		Logger:       h.logger,
+		NoEchoValues: true,
+	}
+}
+
+// ListRuns handles GET /api/v1/scan-runs
+// @Summary      List scan runs
+// @Description  The tenant's scan runs, newest first, filtered and sorted by the list query contract: every field
+// @Description  accepts a comma list (any of), a _not list (none of) and, where its type allows, _gte, _lte, _gt
+// @Description  and _lt. The old names kind and origin keep their meaning. System runs (housekeeping) are left out
+// @Description  unless include_system=true or kind is given; an unknown param is 400.
+// @Tags         Scan workflows
+// @Produce      json
+// filterspec-params: scan_runs GET /scan-runs
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(pending, running, completed, partial, failed, canceled, timeout, blocked)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(pending, running, completed, partial, failed, canceled, timeout, blocked)
+// @Param  kind  query  []string  false  "kind: any of (comma list)"  collectionFormat(csv)  Enums(scan, quick, retest, validation, test, connector, system)
+// @Param  kind_not  query  []string  false  "kind: none of (comma list)"  collectionFormat(csv)  Enums(scan, quick, retest, validation, test, connector, system)
+// @Param  trigger_type  query  []string  false  "trigger type: any of (comma list)"  collectionFormat(csv)  Enums(manual, schedule, webhook, api, on_asset_discovery, system, automation)
+// @Param  trigger_type_not  query  []string  false  "trigger type: none of (comma list)"  collectionFormat(csv)  Enums(manual, schedule, webhook, api, on_asset_discovery, system, automation)
+// @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
+// @Param  scan_workflow_id  query  []string  false  "scan workflow id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_workflow_id_not  query  []string  false  "scan workflow id: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_id  query  []string  false  "asset id: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_id_not  query  []string  false  "asset id: none of (comma list)"  collectionFormat(csv)
+// @Param  origin  query  string  false  "origin equals"  Enums(user, system)
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  started_at_gte  query  string  false  "started at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  started_at_lte  query  string  false  "started at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  started_at_gt  query  string  false  "started at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  started_at_lt  query  string  false  "started at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  completed_at_gte  query  string  false  "completed at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  completed_at_lte  query  string  false  "completed at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  completed_at_gt  query  string  false  "completed at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  completed_at_lt  query  string  false  "completed at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  duration  query  []integer  false  "run duration in seconds: any of (comma list)"  collectionFormat(csv)
+// @Param  duration_gte  query  integer  false  "run duration in seconds at least"
+// @Param  duration_lte  query  integer  false  "run duration in seconds at most"
+// @Param  duration_gt  query  integer  false  "run duration in seconds greater than"
+// @Param  duration_lt  query  integer  false  "run duration in seconds less than"
+// @Param  total_findings  query  []integer  false  "total findings: any of (comma list)"  collectionFormat(csv)
+// @Param  total_findings_gte  query  integer  false  "total findings at least"
+// @Param  total_findings_lte  query  integer  false  "total findings at most"
+// @Param  total_findings_gt  query  integer  false  "total findings greater than"
+// @Param  total_findings_lt  query  integer  false  "total findings less than"
+// end filterspec-params
+// @Param        include_system  query     bool    false  "Also list system runs (hidden by default)"
+// @Param        sort            query     string  false  "One sort key, - for descending: created_at, started_at, completed_at, total_findings, duration" default(-created_at)
+// @Param        page            query     int     false  "Page number" default(1)
+// @Param        per_page        query     int     false  "Items per page" default(20)
+// @Success      200  {object}  pagination.Result[RunResponse]
+// @Failure      400  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /scan-runs [get]
 func (h *ScanWorkflowHandler) ListRuns(w http.ResponseWriter, r *http.Request) {
 	tenantID := middleware.GetTenantID(r.Context())
 
-	page, ok := listPage(w, r, 20)
+	route := h.scanRunsListRoute()
+	spec, ok := route.ParseQuery(w, r)
 	if !ok {
 		return
 	}
-	input := scanrun.ListRunsInput{
-		TenantID:       tenantID,
-		ScanWorkflowID: r.URL.Query().Get("scan_workflow_id"),
-		ScanID:         r.URL.Query().Get("scan_id"),
-		Kinds:          parseQueryArray(r.URL.Query().Get("kind")),
-		IncludeSystem:  r.URL.Query().Get("include_system") == queryParamTrue,
-		Origin:         r.URL.Query().Get("origin"),
-		AssetID:        r.URL.Query().Get("asset_id"),
-		Status:         r.URL.Query().Get("status"),
-		Sort:           r.URL.Query().Get("sort"),
-		Page:           page.Page,
-		PerPage:        page.PerPage,
-	}
+	hideFindingRuns := false
 	if tid, perr := shared.IDFromString(tenantID); perr == nil && h.listHidesFindingRuns(r.Context(), tid) {
-		input.ExcludeKinds = []string{string(scanrundom.RunKindRetest), string(scanrundom.RunKindValidation)}
+		hideFindingRuns = true
 	}
 
-	result, err := h.service.ListRuns(r.Context(), input)
+	result, err := h.service.ListRunsBySpec(r.Context(), tenantID, spec, r.URL.Query().Get("include_system") == queryParamTrue, hideFindingRuns)
 	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			route.WriteError(w, err)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
@@ -1628,6 +1722,11 @@ func toRunResponse(r *scanrundom.Run) *RunResponse {
 		sid := r.ScanID.String()
 		resp.ScanID = &sid
 	}
+	if r.ParentRunID != nil {
+		pid := r.ParentRunID.String()
+		resp.ParentRunID = &pid
+	}
+	resp.ZoneSplit = toRunZoneSplit(r.Context)
 
 	if r.ScanProfileID != nil {
 		spid := r.ScanProfileID.String()
@@ -1837,19 +1936,25 @@ func toFilteringResultFromStruct(v any) *FilteringResultResponse {
 
 func toStepRunResponse(sr *scanrundom.StepRun) StepRunResponse {
 	resp := StepRunResponse{
-		ID:            sr.ID.String(),
-		StepKey:       sr.StepKey,
-		StepName:      sr.StepName,
-		Tool:          sr.Tool,
-		Capability:    sr.Capability,
-		Status:        string(sr.Status),
-		ErrorMessage:  sr.ErrorMessage,
-		ErrorCode:     sr.ErrorCode,
-		ErrorClass:    stepErrorClass(sr.ErrorCode),
-		SkipReason:    sr.SkipReason,
-		Attempt:       sr.Attempt,
-		MaxAttempts:   sr.MaxAttempts,
-		FindingsCount: sr.FindingsCount,
+		ID:               sr.ID.String(),
+		StepKey:          sr.StepKey,
+		StepName:         sr.StepName,
+		Tool:             sr.Tool,
+		Capability:       sr.Capability,
+		Status:           string(sr.Status),
+		ErrorMessage:     sr.ErrorMessage,
+		ErrorCode:        sr.ErrorCode,
+		ErrorClass:       stepErrorClass(sr.ErrorCode),
+		SkipReason:       sr.SkipReason,
+		Attempt:          sr.Attempt,
+		MaxAttempts:      sr.MaxAttempts,
+		FindingsCount:    sr.FindingsCount,
+		InfoObservations: sr.InfoObservations,
+		FindingsHeld:     sr.FindingsHeld,
+		FindingsRefused:  sr.FindingsRefused,
+
+		EffectiveConfig: sr.EffectiveConfig,
+		SensorSettings:  sr.SensorSettings,
 	}
 	if !sr.StepID.IsZero() {
 		resp.StepID = sr.StepID.String()

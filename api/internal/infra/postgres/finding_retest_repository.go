@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/api/pkg/domain/audit"
 
 	"github.com/lib/pq"
 
@@ -248,10 +249,13 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 			return fmt.Errorf("lock retest: %w", err)
 		}
 
-		var current string
+		var current, severity, priorityClass string
 		var lastSeen sql.NullTime
-		err = tx.QueryRowContext(ctx, `SELECT status, GREATEST(last_seen_at, last_reopened_at) FROM findings WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
-			in.TenantID.String(), in.FindingID.String()).Scan(&current, &lastSeen)
+		var kev bool
+		err = tx.QueryRowContext(ctx, `SELECT status, GREATEST(last_seen_at, last_reopened_at), LOWER(severity::text),
+				COALESCE(priority_class, ''), COALESCE(is_in_kev, false)
+			FROM findings WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+			in.TenantID.String(), in.FindingID.String()).Scan(&current, &lastSeen, &severity, &priorityClass, &kev)
 		findingGone := errors.Is(err, sql.ErrNoRows)
 		if err != nil && !findingGone {
 			return fmt.Errorf("lock finding: %w", err)
@@ -295,6 +299,10 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 				if err := moveFindingInTx(ctx, tx, in, res.PriorStatus, d.Next); err != nil {
 					return err
 				}
+				tier := vulnerability.FindingRiskTier(vulnerability.Severity(severity), priorityClass, kev)
+				if err := auditRetestMove(ctx, tx, in, res.PriorStatus, d.Next, severity, tier); err != nil {
+					return err
+				}
 				res.Moved = true
 				res.ResultStatus = d.Next
 			}
@@ -326,6 +334,48 @@ func (r *FindingRetestRepository) Settle(ctx context.Context, in retest.SettleIn
 		return nil
 	})
 	return res, err
+}
+
+// Audit metadata keys of a status move.
+const (
+	auditKeyOldStatus = "old_status"
+	auditKeyNewStatus = "new_status"
+	auditKeyTrigger   = "trigger"
+	auditKeySeverity  = "severity"
+)
+
+// retestAuditKeys are the retest activity fields copied onto its audit row.
+var retestAuditKeys = map[string]bool{
+	"retest_id": true, auditKeyTrigger: true, "method": true, "requested_by": true, "closure_decision": true, "regression": true,
+}
+
+// auditRetestMove writes the audit row of a retest's status change in the
+// settle transaction: the same finding.status_changed action every other
+// status change writes, so a move by the platform is accountable like a
+// person's (the timeline goes with the finding; audit_logs stay). Closing a
+// finding of the critical tier is high, any other move medium.
+func auditRetestMove(ctx context.Context, tx *sql.Tx, in retest.SettleInput, prior, next vulnerability.FindingStatus,
+	severity string, tier vulnerability.RiskTier) error {
+	level := audit.SeverityMedium
+	if !vulnerability.IsOpenStatus(next) && tier == vulnerability.RiskTierCritical {
+		level = audit.SeverityHigh
+	}
+	meta := map[string]any{
+		auditKeySeverity: severity, "actor": retest.ActorName, "outcome": string(in.Outcome),
+		"actor_kind": string(vulnerability.ActorTypeSystem),
+	}
+	meta[auditKeyOldStatus], meta[auditKeyNewStatus] = string(prior), string(next)
+	for k, v := range in.Activity {
+		if retestAuditKeys[k] {
+			meta[k] = v
+		}
+	}
+	if next == vulnerability.FindingStatusResolved {
+		meta["closure_reason"] = string(vulnerability.ClosureReasonFixed)
+		meta["verification"] = string(vulnerability.VerificationRetest)
+	}
+	return insertDecisionAudit(ctx, tx, in.TenantID, in.FindingID, string(audit.ActionFindingStatusChanged), string(level),
+		fmt.Sprintf("Finding status changed from %s to %s", prior, next), meta)
 }
 
 // moveFindingInTx writes the retest's status change on a locked finding row.

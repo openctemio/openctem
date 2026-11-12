@@ -16,7 +16,7 @@ func TestRequiredStepWithoutTool_SkippedAndRunPartial(t *testing.T) {
 	s, run, store, runs, cmds := gatingFixture(
 		map[string]scanrun.StepRunStatus{"a": scanrun.StepRunStatusPending, "b": scanrun.StepRunStatusPending}, nil)
 	tpl, _ := s.templateRepo.GetWithSteps(context.Background(), run.ScanWorkflowID)
-	tpl.Steps[0].Capabilities = []string{"capture.screenshot"} // required, no tool implements it
+	tpl.Steps[0].Capabilities = []string{"fingerprint.tech"} // required, no tool implements it
 	tpl.Steps[1].Tool = "subfinder"
 	s.toolRepo = platformTools{names: map[string]bool{"subfinder": true}}
 	run.Context = map[string]any{"targets": []string{"example.com"}, scanrun.RunContextKeyScanZoneID: shared.NewID().String()}
@@ -53,7 +53,7 @@ func TestDependentOfSkippedStep_DependencySkipped(t *testing.T) {
 		map[string]scanrun.StepRunStatus{"a": scanrun.StepRunStatusPending, "b": scanrun.StepRunStatusPending, "c": scanrun.StepRunStatusPending},
 		map[string][]string{"b": {"a"}})
 	tpl, _ := s.templateRepo.GetWithSteps(context.Background(), run.ScanWorkflowID)
-	tpl.Steps[0].Capabilities = []string{"capture.screenshot"}
+	tpl.Steps[0].Capabilities = []string{"fingerprint.tech"}
 	tpl.Steps[1].Tool = "subfinder"
 	tpl.Steps[2].Tool = "subfinder"
 	s.toolRepo = platformTools{names: map[string]bool{"subfinder": true}}

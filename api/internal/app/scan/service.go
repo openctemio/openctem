@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/tool"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -176,6 +177,9 @@ type Service struct {
 	// programRules refuses runs a bug-bounty program's rules forbid
 	// (program_rules.go); nil: not checked.
 	programRules ProgramRuleChecker
+	// pathGate refuses path discovery scans the shared gate does not allow
+	// (path_discovery_gate.go).
+	pathGate PathDiscoveryTriggerGate
 	// scopeSnapshots records the scope each run relied on (RFC-065 §9).
 	scopeSnapshots ScopeSnapshotRecorder
 	scanRepo       scan.Repository
@@ -211,6 +215,7 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	rangeLimits         RangeLimits          // optional; nil = every range target at most a /16
 	nameAddresses       NameAddressReader    // optional; resolution relations for the exclusion match (dispatch_gate.go)
 	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
 	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
@@ -222,6 +227,7 @@ type Service struct {
 	activeScan          FeatureAllower                                                    // active_scanning (active_scanning.go); nil: allowed
 	sharedLimits        SharedScanLimits                                                  // platform_scans_per_day (shared_limits.go); nil: never shared
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
+	vantage             scanzone.VantageReader                                            // the sensors' own DNS answers (vantage.go)
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
 	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
 	namePorts           NamePortReader                                                    // optional; nil = a coverage probe of a name tries its default ports only (coverage_named_ports.go)
@@ -235,12 +241,14 @@ type Service struct {
 	privatePolicy    PrivateTargetPolicy       // optional; nil = the private-target switch is not read at trigger
 	readiness        *readinessSources         // optional; nil = no workflow readiness (readiness.go)
 	toolAvailability ToolAvailability          // optional; nil = no tool availability check at trigger (tool_availability_gate.go)
+	coverageSettings CoverageSettings          // optional; nil = organization switches are not checked (a switched capability then reads as off)
 	coverageContent  CoverageContent           // optional; nil = coverage readiness does not check the lists a tool reads
 	tenantTools      TenantToolConfigs         // optional; nil = per-organization tool switch not enforced
 	optIns           OptInPolicy               // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
 	stepQueuer       StepQueuer                // the scan run service's step dispatcher; nil refuses workflow scans
 	workflowVersions scanworkflow.VersionStore // pins workflow runs to the version they start with; nil leaves them on the live workflow
 	logger           *logger.Logger
+	misfireEvents    ScheduleMissEvents // optional; nil = the scan records the misfire but no event is sent
 }
 
 // ScopeExclusionFilter reports which of the given candidate targets match an
@@ -284,6 +292,17 @@ type ServiceOption func(*Service)
 // depth (the onboarding pass of a new root).
 type CoverageContent interface {
 	CoverageContentReady(ctx context.Context, depth scanworkflow.Depth, requests []stage.WordlistRequest) (bool, error)
+}
+
+// CoverageSettings reads the organization's attack-surface settings.
+type CoverageSettings interface {
+	GetEASMSettings(ctx context.Context, tenantID string) (*tenant.EASMSettings, error)
+}
+
+// WithCoverageSettings lets coverage readiness hold a capability an
+// organization must switch on (capture.screenshot) until it does.
+func WithCoverageSettings(c CoverageSettings) ServiceOption {
+	return func(s *Service) { s.coverageSettings = c }
 }
 
 // WithCoverageContent makes coverage readiness pause a capability whose

@@ -42,7 +42,7 @@ import {
 } from '@/features/assets/components/resolved-ports-section'
 import { ClassificationBadges } from '@/features/assets/components/classification-badges'
 import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
-import { AssetStatusBadge } from '@/features/asset-lifecycle'
+import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
 import { AssetScanWindowCard } from '@/features/scan-windows'
 import { AssetWebEvidenceCard } from '@/features/attack-surface'
 import { OriginWebSection, isWebOriginType } from '@/features/web-surface'
@@ -191,7 +191,12 @@ export default function AssetDetailPage() {
             <DetailRow label={t('assetDetail.type', 'Type')} value={typeLabel} />
             <DetailRow
               label={t('assetDetail.status', 'Status')}
-              value={<AssetStatusBadge status={asset.status} />}
+              value={
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <AssetStatusBadge status={asset.status} />
+                  <AssetLivenessBadge liveness={asset.liveness} />
+                </span>
+              }
             />
             {asset.description && (
               <DetailRow

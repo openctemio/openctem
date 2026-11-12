@@ -48,10 +48,11 @@ platform administrator sets up a provider in the console) or
 - **Settings > AI** (`web/src/app/(dashboard)/settings/ai`, Security group,
   module `ai_triage`): a status strip (AI triage on or off, source, this
   month's use against the limit, automatic triage, masked data kinds; each tile
-  opens its tab) and five tabs in the URL (`?tab=`). Provider: the on/off switch
+  opens its tab) and six tabs in the URL (`?tab=`). Provider: the on/off switch
   with a consent dialog, what is sent (folded), the pentest data policy, the
   source (Platform AI, Own provider, Off) with the own provider's form
-  (write-only key, Test connection). Features: automatic triage, AI agents.
+  (write-only key, Test connection). Use cases: the per-use-case mode and
+  data class ceiling ([AI use cases](ai-use-cases.md)). Features: automatic triage, AI agents.
   Knowledge (with `ai_knowledge:read`). Limits and data: the month's token use
   against the limit, a link to the TLP policy, data masking. Activity (with
   `audit:read` and the audit module): the latest AI events from the audit log.
@@ -88,19 +89,51 @@ platform administrator sets up a provider in the console) or
 
 ## Flow
 
-```
-POST /api/v1/findings/{id}/ai-triage        (button; Member and up, ai_triage:trigger + findings:write)
-workflow action trigger_ai_triage            (automation)
-auto-triage on manual finding creation       (organization setting)
-POST /api/v1/findings/ai-triage/bulk         (deprecated, sunset 2027-01-15)
-        │  request-time checks: AI mode, platform provider, AI data policy
-        ▼
-ai_triage_results row (pending) ──► asynq queue ai_triage ──► worker
-        │  AcquireTriageSlot (pending → processing, token limit)
-        │  AI data policy again, provider, budget, call, validation
-        ▼
-completed (activity, audit, workflow event, WebSocket triage:{finding})
-or failed (failure code)
+Checked against the code of v0.19.1 and develop on 2026-11-05 (no change
+between them in this area).
+
+Entry points: `POST /api/v1/findings/{id}/ai-triage` (the button;
+`ai_triage:trigger` + `findings:write`), the workflow action
+`trigger_ai_triage`, auto-triage of new findings (organization setting) and
+`POST /api/v1/findings/ai-triage/bulk` (deprecated, sunset 2027-01-15; also
+`findings:bulk_update`). Every route under `/api/v1/findings/{id}` passes the
+data-scope guard (`middleware/data_scope_guard.go`: `AssertFinding` and
+`AssertFindingCampaign`), so an out-of-scope finding is 404 before the
+handler.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Member, workflow or auto-triage
+  participant H as AITriageHandler
+  participant S as aitriage.AITriageService
+  participant DB as ai_triage_results
+  participant Q as asynq queue ai_triage
+  participant W as Worker (ProcessTriage)
+  box Outside the platform
+    participant M as LLM provider (pkg/httpsec client)
+  end
+  U->>H: POST /api/v1/findings/{id}/ai-triage
+  H->>H: module gate ai_triage, AITriageRateLimiter (10 per minute per tenant and replica),<br/>RequireAll(findings:write, ai_triage:trigger), data-scope guard
+  H->>S: RequestTriage
+  S->>S: loadAISettings: EffectiveMode not disabled, ownProviderBlocked,<br/>platformReady, requireTriageOn (use case not off)
+  S->>S: findingRepo.GetByID(tenant, id), checkEgress (aipolicy),<br/>refuseUnrequested (bug bounty needs a person)
+  S->>DB: HasPendingOrProcessing (409 when true), Create pending row
+  S->>Q: EnqueueAITriage (MaxRetry 3, Timeout 4 min)
+  S-->>H: 202 job id, WebSocket triage_pending, activity, audit
+  W->>DB: AcquireTriageSlot: row FOR UPDATE, pending to processing, token limit
+  W->>W: settings and use case again, ceiling, GetByID, checkEgress,<br/>refuseUnrequested, CreateProviderForTenant
+  W->>W: buildTriagePromptSafe: fields under the ceiling, nonce fence,<br/>masked under the organization's policy (aimask)
+  W->>W: BudgetService.Check (estimate)
+  W->>M: provider.Complete (JSON mode)
+  alt transient failure with retries left
+    W->>DB: releaseForRetry: back to pending, queue retries
+  else other failure
+    W->>DB: failTriage with a fixed code
+  end
+  W->>W: unmask the answer (unknown placeholder: needs review), ValidateAndSanitize, applyInjectionGuard, BudgetService.Record
+  W->>DB: MarkCompleted (a save failure is final)
+  W->>W: needs_review audit, activity, proposeFalsePositive (auto_apply only),<br/>audit completed, workflow event (not for bug bounty), WebSocket
 ```
 
 Key files: `internal/app/aitriage/service.go` (request, worker, auto-triage),
@@ -129,10 +162,28 @@ so a campaign whose TLP was raised after the request is still kept back. A
 refused request answers `403 AI_POLICY_RESTRICTED`; a refused queued job
 fails with `ai_policy_restricted`; auto-triage simply does not queue it.
 
-Every AI context bundle is also **masked**: hosts, addresses, e-mail
-addresses, names and ticket ids become typed placeholders and secrets are
-removed for good, and the platform turns the model's answer back into real
-values. See [AI context masking](ai-context-masking.md).
+AI triage is masked like an AI agent's run
+([AI context masking](ai-context-masking.md)). For each request the worker
+makes a masker with a fresh random key under the organization's masking
+policy (Settings > AI > Data masking), with the organization's and the
+asset's names seeded (`MaskingInputs`, the same `BundleInput` an AI agent's
+run uses; unwired, every class is masked). `buildTriagePromptSafe` masks the
+title, description and file path with the policy, and the code snippet
+(restricted) with every class; source, tool, CVE, CWE, OWASP and compliance
+ids go as written. Secrets always become `SECRET_n`, a leaked secret's
+description is also passed through `safetext.RedactSecrets`, and its snippet
+is never sent. The prompt carries the trusted placeholder facts (which masked
+address is in which masked network, a secret's type and length).
+
+The model's JSON answer is unmasked string by string before validation, so
+the stored result, its raw response, workflows and audit see real values.
+A placeholder the request never issued stays as text and adds a validation
+warning (the result needs review and never becomes a false-positive
+proposal). The map exists only in memory for that request: it is never
+stored, logged or sent; the log preview of an invalid answer shows the masked
+text. A failed policy or name lookup sends nothing (the queue retries).
+A class the organization leaves readable is sent as written, as for AI
+agents.
 
 ## What an AI reviewer may see
 
@@ -148,7 +199,9 @@ permission" when the reason is that AI is not available:
 | `AI_PLATFORM_NOT_CONFIGURED` | 503 | the organization uses platform AI and no provider is set up | platform administrator (console, System > AI provider) |
 | `AI_DISABLED` | 403 | AI triage is off for the organization (not turned on yet, or turned off) | organization administrator (Settings > AI) |
 | `AI_OWN_PROVIDER_NOT_ALLOWED` | 403 | the organization uses (or tries to use) its own provider and the platform policy forbids it | platform administrator (console) or organization administrator (switch to Platform AI) |
-| `AI_POLICY_RESTRICTED` | 403 | the AI data policy keeps this finding on the platform | campaign lead or organization administrator |
+| `AI_USE_CASE_OFF` | 403 | the triage use case is off (Settings > AI > Use cases) | organization administrator |
+| `AI_POLICY_RESTRICTED` | 403 | the AI data policy keeps this finding on the platform, or a bug-bounty finding was requested without a person | campaign lead or organization administrator |
+| (conflict) | 409 | a triage of this finding is pending or processing | wait |
 
 A failed triage stores a fixed failure code in `error_message`; the API
 returns it as `error_code`, and the web UI translates it. Raw error text
@@ -304,7 +357,8 @@ carries them over.
   injection); a member burning the platform's budget; another organization;
   the provider (retention).
 - Controls: organization consent (checked at request time and in the
-  worker); nonce-fenced prompt and output validation; no automatic effect
+  worker); the data-scope guard on `/findings/{id}`; nonce-fenced prompt and
+  output validation; no automatic effect
   of a verdict; the AI data-egress policy at request time and in the worker;
   monthly budgets and per-organization fair share;
   data scope and pentest membership on the routes; tenant-scoped queries

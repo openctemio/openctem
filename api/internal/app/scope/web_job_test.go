@@ -29,6 +29,17 @@ func (f *fakeWebScope) BuildWebScope(_ context.Context, tenantID shared.ID, targ
 	return f.ws, f.err
 }
 
+func (f *fakeWebScope) BuildDiscoveryWebScope(_ context.Context, tenantID shared.ID, targets []string, limit int) (*WebScope, error) {
+	f.calls++
+	f.tenant, f.targets = tenantID, targets
+	if f.ws == nil {
+		return &WebScope{Methods: []string{"GET", "HEAD"}, MaxRequestsPerHost: limit}, f.err
+	}
+	ws := *f.ws
+	ws.MaxRequestsPerHost = limit
+	return &ws, f.err
+}
+
 type fakeConfined struct {
 	has bool
 	err error

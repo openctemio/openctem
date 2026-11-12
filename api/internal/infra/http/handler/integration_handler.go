@@ -1282,7 +1282,7 @@ type NotificationExtensionResponse struct {
 	EnabledSeverities  []string `json:"enabled_severities" example:"[\"critical\",\"high\"]"`
 	EnabledEventTypes  []string `json:"enabled_event_types" example:"[\"new_finding\",\"new_exposure\"]"`
 	MessageTemplate    string   `json:"message_template,omitempty"`
-	IncludeDetails     bool     `json:"include_details" example:"true"`
+	DetailLevel        string   `json:"detail_level" example:"standard" enums:"minimal,standard,full"`
 	MinIntervalMinutes int      `json:"min_interval_minutes" example:"5"`
 }
 
@@ -1319,7 +1319,7 @@ func toIntegrationWithNotificationResponse(iwn *integration.IntegrationWithNotif
 			EnabledSeverities:  enabledSeverities,
 			EnabledEventTypes:  enabledEventTypes,
 			MessageTemplate:    iwn.Notification.MessageTemplate(),
-			IncludeDetails:     iwn.Notification.IncludeDetails(),
+			DetailLevel:        string(iwn.Notification.DetailLevel()),
 			MinIntervalMinutes: iwn.Notification.MinIntervalMinutes(),
 		}
 	}
@@ -1369,13 +1369,14 @@ type CreateNotificationIntegrationRequest struct {
 	Credentials string `json:"credentials" validate:"required"` // Webhook URL or Bot Token
 
 	// Notification-specific fields
-	ChannelID          string   `json:"channel_id"`
-	ChannelName        string   `json:"channel_name"`
-	EnabledSeverities  []string `json:"enabled_severities"`  // Severity levels to notify on (critical, high, medium, low, info, none)
-	EnabledEventTypes  []string `json:"enabled_event_types"` // Event types to receive notifications for
-	MessageTemplate    string   `json:"message_template"`
-	IncludeDetails     *bool    `json:"include_details"`
-	MinIntervalMinutes *int     `json:"min_interval_minutes"`
+	ChannelID         string   `json:"channel_id"`
+	ChannelName       string   `json:"channel_name"`
+	EnabledSeverities []string `json:"enabled_severities"`  // Severity levels to notify on (critical, high, medium, low, info, none)
+	EnabledEventTypes []string `json:"enabled_event_types"` // Event types to receive notifications for
+	MessageTemplate   string   `json:"message_template" validate:"max=8000"`
+	// DetailLevel: minimal, standard (default) or full.
+	DetailLevel        string `json:"detail_level" validate:"omitempty,oneof=minimal standard full"`
+	MinIntervalMinutes *int   `json:"min_interval_minutes"`
 
 	// Metadata holds non-sensitive provider-specific config (e.g. Splunk HEC
 	// hec_url / index / sourcetype). The credential (token/URL) still goes in
@@ -1420,10 +1421,6 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 	}
 
 	// Set defaults
-	includeDetails := false
-	if req.IncludeDetails != nil {
-		includeDetails = *req.IncludeDetails
-	}
 	minInterval := 5
 	if req.MinIntervalMinutes != nil && *req.MinIntervalMinutes > 0 {
 		minInterval = *req.MinIntervalMinutes
@@ -1441,7 +1438,7 @@ func (h *IntegrationHandler) CreateNotification(w http.ResponseWriter, r *http.R
 		EnabledSeverities:  req.EnabledSeverities,
 		EnabledEventTypes:  req.EnabledEventTypes,
 		MessageTemplate:    req.MessageTemplate,
-		IncludeDetails:     includeDetails,
+		DetailLevel:        req.DetailLevel,
 		MinIntervalMinutes: minInterval,
 		Metadata:           req.Metadata,
 		CanEnableOrgMail:   canEnableOrgMail(r),
@@ -1474,7 +1471,7 @@ type UpdateNotificationIntegrationRequest struct {
 	EnabledSeverities  []string `json:"enabled_severities"`  // Severity levels to notify on
 	EnabledEventTypes  []string `json:"enabled_event_types"` // Event types to receive notifications for
 	MessageTemplate    *string  `json:"message_template"`
-	IncludeDetails     *bool    `json:"include_details"`
+	DetailLevel        *string  `json:"detail_level" validate:"omitempty,oneof=minimal standard full"`
 	MinIntervalMinutes *int     `json:"min_interval_minutes"`
 
 	// Metadata, when non-nil, replaces the integration's non-sensitive
@@ -1527,7 +1524,7 @@ func (h *IntegrationHandler) UpdateNotification(w http.ResponseWriter, r *http.R
 		EnabledSeverities:  req.EnabledSeverities,
 		EnabledEventTypes:  req.EnabledEventTypes,
 		MessageTemplate:    req.MessageTemplate,
-		IncludeDetails:     req.IncludeDetails,
+		DetailLevel:        req.DetailLevel,
 		MinIntervalMinutes: req.MinIntervalMinutes,
 		Metadata:           req.Metadata,
 		CanEnableOrgMail:   canEnableOrgMail(r),

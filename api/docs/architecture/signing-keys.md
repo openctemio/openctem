@@ -109,3 +109,58 @@ Lost: the current key set stays valid until it expires; make a new root with
 alongside the old one before the old key set expires. Compromised: ship a
 release that pins only a new root, immediately; treat everything signed under
 the old root after the compromise as untrusted and revoke it.
+
+## The installation's job signer service
+
+The keys above live with the maintainers. Each installation also holds one
+key of its own: the job-signing key that signs every sensor job. It lives in a
+separate process, `openctem-signer` (`cmd/signer`, `internal/signer`), never
+in the API. How a job is signed at claim is in
+[job-signing.md](job-signing.md) and [job-dispatch.md](job-dispatch.md); this
+section covers the service and the custody of its key.
+
+```mermaid
+flowchart LR
+    subgraph APIBOX["API process (no key)"]
+        C["internal/infra/signer Client: SignJob, Keys, fetchKeySet, ledger apply and sync"]
+    end
+    subgraph SIGBOX["openctem-signer: network none, read-only, cap_drop ALL, uid 1001"]
+        SRV["Service on a Unix socket, mode 0660, umask 0117"]
+        KEY["SIGNER_KEY_FILE: Ed25519 PKCS#8, refused when group or other can read it"]
+        SEQ["state/seq per sensor, fsync and rename before the envelope is returned"]
+        LOG["state/signing.log: JSONL, O_APPEND 0600, prev = sha256 of the previous line, fsync"]
+        LED["state/ledger.log: per-organization approved scope, same chaining, SIGNER_LEDGER audit or enforce"]
+        KS["SIGNER_KEYSET_FILE: key set signed by the offline root, must list this key, not expired, version not lower"]
+    end
+    subgraph OFF["Offline machine"]
+        ROOT["openctem-signer root keygen, keyset sign"]
+    end
+    C -- "POST /v1/jobs/sign, /v1/keys, /v1/keyset, /v1/ledger/apply, /v1/ledger/sync" --> SRV
+    SRV --> KEY
+    SRV --> SEQ
+    SRV --> LOG
+    SRV --> LED
+    ROOT --> KS
+    SRV --> KS
+    SRV -- "PublishPublicKey to signer-pub, read-only for the bundled sensor" --> PUB["Public key"]
+```
+
+- **Custody.** The key is a file. It is created on first start only when
+  `SIGNER_GENERATE_KEY=true` and none exists, and is never replaced. Compose
+  mounts the `signer-keys` volume in the signer only; the API gets the socket
+  volume. Helm runs the signer as a sidecar with the key in a PVC or installed
+  from a Secret by the `signer-key-install` init container; the all-in-one
+  image runs it as a second process with `/data/signer` mode 0700. There is no
+  KMS or HSM support.
+- **Access.** The socket is the only interface; there is no other
+  authentication, so its group is the trust boundary.
+- **Ledger.** The "signing ledger" is two hash-chained files in the state
+  directory, not a database table. A broken or torn `signing.log` stops the
+  signer from starting; `openctem-signer verify-log` and
+  `openctem-signer ledger verify` check them offline. Widening an
+  organization's approved scope needs approvals by people other than the
+  requester (`SIGNER_LEDGER_MIN_APPROVALS`); `sync` can only narrow.
+- **Production gate.** The API refuses to start in production without
+  `SIGNER_SOCKET` unless `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS` is set.
+- **Backup.** Back up the key and the state together: a lost state lets
+  sequence numbers repeat.

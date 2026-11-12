@@ -44,3 +44,52 @@ describe('useSensorInstallTemplates', () => {
     expect(client.get).not.toHaveBeenCalled()
   })
 })
+
+describe('useSensorInstallTemplates intent', () => {
+  beforeEach(() => {
+    client.get.mockReset().mockResolvedValue({ docker: 'x' })
+    client.post.mockReset().mockResolvedValue({ docker: 'y' })
+  })
+
+  it('sends purpose and the pin for internal networks', async () => {
+    const { result } = renderHook(
+      () =>
+        useSensorInstallTemplates<{ docker: string }>('K7QM-4ZTD', true, {
+          purpose: 'internal',
+          allowed_ranges: ['10.0.0.0/16', '192.168.1.0/24'],
+        }),
+      { wrapper }
+    )
+    await waitFor(() => expect(result.current.data).toBeDefined())
+    expect(client.post).toHaveBeenCalledWith('/api/v1/sensors/install-templates', {
+      pairing_code: 'K7QM-4ZTD',
+      purpose: 'internal',
+      allowed_ranges: ['10.0.0.0/16', '192.168.1.0/24'],
+    })
+  })
+
+  it('never sends a pin with both, and nothing extra for internet', async () => {
+    const both = renderHook(
+      () =>
+        useSensorInstallTemplates<{ docker: string }>('K7QM-4ZTD', true, {
+          purpose: 'both',
+          allowed_ranges: ['10.0.0.0/16'],
+        }),
+      { wrapper }
+    )
+    await waitFor(() => expect(both.result.current.data).toBeDefined())
+    expect(client.post).toHaveBeenLastCalledWith('/api/v1/sensors/install-templates', {
+      pairing_code: 'K7QM-4ZTD',
+      purpose: 'both',
+    })
+    const internet = renderHook(
+      () =>
+        useSensorInstallTemplates<{ docker: string }>('K7QM-4ZTD', true, { purpose: 'internet' }),
+      { wrapper }
+    )
+    await waitFor(() => expect(internet.result.current.data).toBeDefined())
+    expect(client.post).toHaveBeenLastCalledWith('/api/v1/sensors/install-templates', {
+      pairing_code: 'K7QM-4ZTD',
+    })
+  })
+})

@@ -42,6 +42,9 @@ const (
 	InputSourceLearned = "learned"
 	// InputSourceOrganization: the organization's enabled wordlists.
 	InputSourceOrganization = "organization"
+	// InputSourceDerived: candidate paths derived from the organization's
+	// own web inventory (path discovery).
+	InputSourceDerived = "derived"
 )
 
 // PinnedInput is a list generated for a job and carried inline.

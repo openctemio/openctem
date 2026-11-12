@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/beevik/etree"
-	"github.com/crewjam/saml"
+	"github.com/openctemio/saml"
 	dsig "github.com/russellhaering/goxmldsig"
 
 	samldom "github.com/openctemio/openctem/api/pkg/domain/samlprovider"

@@ -151,7 +151,10 @@ export function AcceptDialog({
     }
   }, [open, suggestion])
 
-  const exactKey = suggestion?.key_kind === 'upgrade' || suggestion?.key_kind === 'rotate'
+  const exactKey =
+    suggestion?.key_kind === 'upgrade' ||
+    suggestion?.key_kind === 'rotate' ||
+    suggestion?.key_kind === 'control'
   const remaining = (suggestion?.member_count ?? 0) - excluded.size
   const pages = members ? Math.max(1, Math.ceil(members.total / members.per_page)) : 1
 

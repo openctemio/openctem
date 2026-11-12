@@ -25,6 +25,7 @@ import type { SupportActiveList } from '@/lib/api/generated'
 import { AI_CONFIG_ENDPOINT, transformAIConfig } from '@/features/ai-triage/lib/ai-config'
 import type { ApiAIConfigResponse } from '@/features/ai-triage/api/ai-triage-api.types'
 import type { SlaPolicy } from '@/features/sla/api/use-sla-policies-api'
+import type { OwnershipInvitationList } from '@/features/account/api/use-ownership-invitations'
 
 export interface BootstrapBadges {
   unread_notifications?: number
@@ -49,6 +50,8 @@ export interface BootstrapSessionData {
   /** Whether this server can send email, as GET /auth/providers reports it. */
   email_delivery?: boolean
   badges?: BootstrapBadges
+  /** The caller's open ownership invitations (GET /me/ownership-invitations). */
+  ownership_invitations?: OwnershipInvitationList
   announcements?: PlatformAnnouncement[]
   /** A limit or module deny applies to the organization (owners and admins). */
   limits_apply?: boolean
@@ -110,6 +113,13 @@ export const PENDING_APPROVALS_COUNT_URL = '/api/v1/approvals?status=pending&pag
  */
 export const READY_TO_CLOSE_COUNT_URL = '/api/v1/findings/closure/proposals?page=1&per_page=1'
 
+/**
+ * The caller's open ownership invitations (the shell banner). Mirrors
+ * OWNERSHIP_INVITATIONS_ENDPOINT in features/account (a value import would
+ * be an import cycle with the bootstrap provider).
+ */
+export const OWNERSHIP_INVITATIONS_URL = '/api/v1/me/ownership-invitations'
+
 /** The caller's sidebar pins in the current organization. */
 export const NAV_PINS_URL = '/api/v1/me/pins'
 
@@ -142,6 +152,8 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
       total_pages: 0,
     })
   if (Array.isArray(data.announcements)) seed(ANNOUNCEMENTS_URL, { data: data.announcements })
+  if (Array.isArray(data.ownership_invitations?.data))
+    seed(OWNERSHIP_INVITATIONS_URL, data.ownership_invitations)
   if (Array.isArray(data.pins?.data)) seed(NAV_PINS_URL, data.pins)
   seed(LIMITS_APPLY_KEY, data.limits_apply === true)
   if (data.support_access && Array.isArray(data.support_access.data))

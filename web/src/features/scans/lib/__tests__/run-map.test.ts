@@ -6,6 +6,7 @@ import {
   outputsByType,
   outputsDeltaLabel,
   producedNothing,
+  producedNothingWhy,
   stepEgressRefused,
   stepGuardRefused,
   stepTasks,
@@ -112,6 +113,32 @@ describe('comparison with the previous run', () => {
     expect(outputsDeltaLabel(o(0, 2, 0, 2))).toBe('2 gone')
     expect(outputsDeltaLabel(o(0, 0, 0, 0))).toBeNull()
     expect(nodeBadgeLines(o(10, 8, 3, 1))).toEqual(['Done', '10 outputs', '+3 new, 1 gone'])
+  })
+
+  it('says why a step that produced nothing skipped its targets', () => {
+    const skipped = (skipped_target_count: number, no_longer_resolve_count = 0) =>
+      node({
+        step_key: 'rdap',
+        name: 'Registration data',
+        state: 'succeeded',
+        outcome: { skipped_target_count, no_longer_resolve_count },
+      } as Partial<RunMapNode>)
+    expect(
+      zeroOutputWarnings({ nodes: [skipped(376, 376)], edges: [] } as unknown as RunMap)
+    ).toEqual([
+      {
+        key: 'rdap',
+        text: 'Registration data produced nothing: all 376 of its targets were refused because the name does not resolve.',
+      },
+    ])
+    expect(producedNothingWhy(skipped(10, 4), 'Registration data')).toBe(
+      'Registration data produced nothing: 4 of its 10 skipped targets were refused because the name does not resolve.'
+    )
+    expect(producedNothingWhy(skipped(3), 'Registration data')).toBe(
+      'Registration data produced nothing: 3 of its targets were skipped by the sensor.'
+    )
+    // Nothing skipped: the plain warning stays.
+    expect(producedNothingWhy(node({ state: 'succeeded' }), 'X')).toBeNull()
   })
 
   it('warns about a finished step that produced nothing', () => {

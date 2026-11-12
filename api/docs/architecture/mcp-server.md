@@ -9,8 +9,10 @@ OpenCTEM exposes a **Model Context Protocol** server so an AI client (a
 desktop or IDE assistant, or any MCP host) can read an organization's CTEM
 data and the pentest campaigns of the signed-in person, and draft report
 sections from them. It reuses the tenant-scoped read services: no new data
-path. One write tool exists (`add_finding_comment`); it runs only after the
-person confirms the exact action in the web UI.
+path. Three tools write: `add_finding_comment` runs only after the person
+confirms the exact action in the web UI; `propose_finding_status` and
+`draft_pentest_finding` create a proposal that another person decides. None of
+them runs with an API key.
 
 ## Endpoint
 

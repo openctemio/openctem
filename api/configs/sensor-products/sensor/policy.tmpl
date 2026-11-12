@@ -25,7 +25,11 @@ targets:
   #   {{.}}
 {{- end}}
 {{- else if .Policy.HasAllow}}
-{{- if eq .Policy.Source "scope"}}
+{{- if eq .Policy.Source "host_pin"}}
+  # The networks you listed when adding this sensor. The install command
+  # pins the same list. If you use this file, remove SENSOR_ALLOWED_RANGES
+  # from the command; the sensor refuses both.
+{{- else if eq .Policy.Source "scope"}}
   # Your organization's scope (active entries): this sensor has no scan zone,
   # so it may scan what your organization may scan. Remove what this sensor
   # must not reach; add host names or *.domain entries.
@@ -80,10 +84,15 @@ tools:
 {{- end}}
 {{- end}}
 
-# Platform-supplied custom templates and out-of-band callbacks (nuclei
-# interactsh) stay off unless the network owner turns them on.
+# Platform-supplied custom templates stay off unless the network owner turns
+# them on.
 allow_custom_templates: false
-allow_interactsh: false
+
+# Out-of-band callbacks (nuclei interactsh) follow the platform: they run only
+# when the organization turned them on, and only with this sensor's own
+# interaction server, never a public one. Uncomment to
+# never use them on this sensor (a job that asks then runs without them):
+# allow_interactsh: false
 
 # While this file exists the sensor runs no job and reports "paused by local
 # policy": sudo touch /etc/openctem/STOP (remove it to resume).

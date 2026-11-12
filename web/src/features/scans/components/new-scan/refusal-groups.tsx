@@ -31,12 +31,16 @@ import {
   scopeRefusalLabel,
   type ApiScopeCheckResult,
 } from '@/features/scope'
+import { ScanZoneDialog } from '@/features/scan-zones/components/scan-zone-dialog'
+import { Can, Permission } from '@/lib/permissions'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { VerifyDomainDialog } from '@/features/attack-surface/components/easm-verify-domain-dialog'
 import {
   groupRefusals,
   internalAddressOf,
+  isKnownRefusalCode,
+  zoneRangesOf,
   type GroupRemedy,
   type RefusalGroup,
 } from '../../lib/refusal-groups'
@@ -229,7 +233,7 @@ function useGroupHint(g: RefusalGroup): string {
     case 'zone':
       return t(
         'scans.groups.zoneHint',
-        'Scanning an internal address would hit your own network, so a scan zone must say which of your sensors may reach it.'
+        'No scan zone covers this private range: add a zone and put the sensor that can reach it in it.'
       )
     case 'unresolved':
       return t(
@@ -281,6 +285,7 @@ function GroupSection({
   const [open, setOpen] = useState(true)
   const [all, setAll] = useState(false)
   const [verifying, setVerifying] = useState<string | null>(null)
+  const [zoneOpen, setZoneOpen] = useState(false)
   const title = useGroupTitle(group)
   const hint = useGroupHint(group)
   const shown = all ? group.results : group.results.slice(0, GROUP_EXAMPLES)
@@ -426,16 +431,35 @@ function GroupSection({
                 size="sm"
               />
             ) : null}
-            {group.kind === 'zone' && zonesHref && (
-              <Button
-                asChild
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 max-sm:min-h-11"
+            {group.kind === 'zone' && (
+              <Can
+                permission={Permission.ScanZonesWrite}
+                fallback={
+                  zonesHref ? (
+                    <Button
+                      asChild
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 max-sm:min-h-11"
+                    >
+                      <Link href={zonesHref}>
+                        {t('scans.groups.setUpZone', 'Set up a scan zone')}
+                      </Link>
+                    </Button>
+                  ) : null
+                }
               >
-                <Link href={zonesHref}>{t('scans.groups.setUpZone', 'Set up a scan zone')}</Link>
-              </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 max-sm:min-h-11"
+                  onClick={() => setZoneOpen(true)}
+                >
+                  {t('scans.groups.addZone', 'Add scan zone')}
+                </Button>
+              </Can>
             )}
             {group.kind === 'scope' && scopeHref && (
               <Button
@@ -450,6 +474,14 @@ function GroupSection({
             )}
           </div>
         </div>
+      )}
+      {group.kind === 'zone' && (
+        <ScanZoneDialog
+          open={zoneOpen}
+          onOpenChange={setZoneOpen}
+          initialRanges={zoneRangesOf(group)}
+          onSaved={onRecheck}
+        />
       )}
       <VerifyDomainDialog
         domain={verifying}
@@ -480,7 +512,10 @@ function GroupRow({ result, kind }: { result: ApiScopeCheckResult; kind: Refusal
             '{addr} is an internal address: scanning it would hit your own network.',
             { addr }
           )
-      : t('scans.groups.noZone', 'No scan zone covers this target.')
+      : t('scans.groups.noZone', 'No scan zone covers this private range.')
+  } else if (kind === 'invalid' && !isKnownRefusalCode(result.code) && result.message) {
+    // A code this form does not know: the server's own reason, not a guess.
+    detail = result.message
   } else if (kind !== 'proof' && kind !== 'entry') {
     detail = scopeRefusalLabel(t, result.code)
   }

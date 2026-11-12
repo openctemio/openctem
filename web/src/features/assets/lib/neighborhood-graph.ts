@@ -328,7 +328,7 @@ export function layoutNeighborhood(
   const tb = (opts.direction ?? 'TB') === 'TB'
   const layerGap = opts.layerGap ?? (tb ? 130 : 250)
   const nodeGap = opts.nodeGap ?? (tb ? 200 : 104)
-  const rowGap = opts.rowGap ?? 84
+  const rowGap = opts.rowGap ?? 96
   const adj = new Map<string, { to: string; delta: number }[]>()
   const push = (from: string, to: string, delta: number) => {
     const list = adj.get(from)
@@ -385,7 +385,9 @@ export function layoutNeighborhood(
       const slot = tb ? i % perRow : i
       const row = tb ? Math.floor(i / perRow) : 0
       const inRow = tb ? Math.min(perRow, ordered.length - row * perRow) : width
-      const along = (slot - (inRow - 1) / 2) * nodeGap
+      // Wrapped rows are staggered by half a node, so an edge into the
+      // second row passes between the nodes of the first, not through them.
+      const along = (slot - (inRow - 1) / 2 + (row % 2) * 0.5) * nodeGap
       out.push({
         id,
         column: c,

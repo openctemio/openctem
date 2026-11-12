@@ -63,6 +63,38 @@ person overrode the class, the decision fields report that override
 }
 ```
 
+## Flow
+
+Verified against `develop` (2026-11-05). The live path (`ClassifyFinding`, batch
+`EnrichAndClassifyBatch`) and `ExplainFinding` share the steps up to the attribution cap; the
+version-match caps run only in the matcher and the reclassifier.
+
+```mermaid
+flowchart TD
+  IN["finding + asset (tenant-scoped loads)"] --> MO{"PriorityClassOverride?"}
+  MO -- yes --> KEEP["live path: unchanged<br/>explain: source manual, computed_class shown"]
+  MO -- no --> CTX["buildPriorityContext: severity, EPSS, KEV, reachableSet,<br/>threatenedSet, EffectiveCriticality, crown jewel,<br/>AttributionUnconfirmed, applyControlProtection"]
+  CTX --> RU{"ruleRepo.ListActiveByTenant(tenant):<br/>first rule.Matches(pctx)"}
+  RU -- match --> RC["ruleClassification: ApplyExploitationFloor,<br/>ApplyOwnershipFloor, ApplyAttributionCap"]
+  RU -- none --> INF{"informational and no<br/>exploitation evidence?"}
+  INF -- yes --> P3["P3"]
+  INF -- no --> CP["ClassifyPriority: classifyExposure cascade,<br/>applyControlReduction, applyBusinessImpactBump,<br/>ApplyExploitationFloor, applyOwnershipFloor,<br/>applyCIAImpactNote, ApplyAttributionCap"]
+  RC --> SET["SetPriorityClassification, audit when the class moved,<br/>PriorityChangeEvent"]
+  CP --> SET
+  P3 --> SET
+  SET --> VMC{"tool version-match?<br/>(vulnmatch.Service.enrich, reclassify.Reclassifier)"}
+  VMC -- yes --> CAP["CapVersionMatchPriority: CapSharedHostingPriority (P3),<br/>CapPotentialPriority (P2 below 80 confidence, not KEV,<br/>not confirmed). Both skip a manual override"]
+  VMC -- no --> DONE["stored"]
+  CAP --> DONE
+```
+
+- From v0.20.0: `CapVersionMatchPriority` replaces the matcher-only `CapPotentialPriority` and also
+  runs in `reclassify.Reclassifier`, so a recompute keeps the cap (in v0.19.1 a recompute could
+  raise a potential match back to P0 or P1). `CapSharedHostingPriority` is new and runs after the
+  exploitation floor, so a KEV version match on a provider's shared front end is stored at P3.
+- `ExplainFinding` does not apply `CapVersionMatchPriority`: for a capped version match
+  `computed_class` is the uncapped class and `stale` reads true although no recompute is pending.
+
 ## What it computes
 
 `PriorityClassificationService.ExplainFinding` mirrors the live classify path

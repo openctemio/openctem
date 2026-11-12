@@ -77,11 +77,12 @@ func AuthStates() []string {
 	return out
 }
 
-// Sources are the endpoint sources.
+// Sources are the stored endpoint sources: the CTIS sources a report may
+// claim, and guess, which only the platform sets (BindSource).
 func Sources() []string {
 	out := []string{}
 	for _, s := range ctis.AllEndpointSources() {
 		out = append(out, string(s))
 	}
-	return out
+	return append(out, SourceGuess)
 }

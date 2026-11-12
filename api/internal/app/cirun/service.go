@@ -123,6 +123,10 @@ type Config struct {
 	// (openctemio/ci) are versioned apart from sensors, so the sensor's
 	// release settings never apply to them.
 	Versions cirun.StatusPolicy
+	// VersionSource, when set, replaces Versions and is called per use, so
+	// a newer release learned from the release feed applies without a
+	// restart.
+	VersionSource func() cirun.StatusPolicy
 	// KnownLimit bounds the decided results one upload response lists
 	// (zero takes cirun.MaxKnownInResponse).
 	KnownLimit int
@@ -382,13 +386,14 @@ func (s *Service) Exchange(ctx context.Context, in ExchangeInput) (*ExchangeOutp
 			return nil, publicRefusal(refusal)
 		}
 	}
-	if v := s.runnerVersion(in.UserAgent); runnerRefusal(v, s.cfg.Versions) != nil {
-		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{runnerRefusal(v, s.cfg.Versions)})
-		pin := s.cfg.Versions.LatestVersion
+	vers := s.versions()
+	if v := s.runnerVersion(in.UserAgent); runnerRefusal(v, vers) != nil {
+		s.auditRefusal(ctx, tenantID, in, claims, []*cirun.Refusal{runnerRefusal(v, vers)})
+		pin := vers.LatestVersion
 		if pin == "" {
-			pin = s.cfg.Versions.MinVersion
+			pin = vers.MinVersion
 		}
-		return nil, &RunnerOutdatedError{Version: v, Min: s.cfg.Versions.MinVersion, Pin: pin}
+		return nil, &RunnerOutdatedError{Version: v, Min: vers.MinVersion, Pin: pin}
 	}
 	// The token's replay record: the first exchange claims it; the same
 	// token presented again (an answer lost, a second step of the job) gets
@@ -725,6 +730,15 @@ func (s *Service) joinAggregate(ctx context.Context, run *cirun.Run, token strin
 // version is the one the runner reports (User-Agent): this keeps known-bad
 // releases out, it does not authenticate the binary. A client that reports
 // no version is admitted and shown as unknown.
+// versions is the CI runner release line in effect now (Config.VersionSource,
+// else Config.Versions).
+func (s *Service) versions() cirun.StatusPolicy {
+	if s.cfg.VersionSource != nil {
+		return s.cfg.VersionSource()
+	}
+	return s.cfg.Versions
+}
+
 func runnerRefusal(version string, pol cirun.StatusPolicy) *cirun.Refusal {
 	if pol.MinVersion == "" || sensor.ClassifyVersion(version, "", pol.MinVersion) != sensor.VersionUnsupported {
 		return nil

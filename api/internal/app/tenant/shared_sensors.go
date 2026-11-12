@@ -54,7 +54,7 @@ func (s *TenantService) UpdateSharedSensorsSettings(
 	t, err := s.writeSettingsSection(ctx, tenantID, tenantdom.SectionSharedSensors, func(t *tenantdom.Tenant) error {
 		before = t.TypedSettings().SharedSensors
 		if before.OptOut && !ss.OptOut {
-			if err := s.requireStepUp(ctx, actx.ActorID); err != nil {
+			if err := s.requireStepUpSensitive(ctx, actx.ActorID); err != nil {
 				return err
 			}
 		}

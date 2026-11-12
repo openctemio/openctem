@@ -32,11 +32,13 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSection, PageStack } from '@/features/shared'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import { updateScopeSettings } from '../api/use-scope-api'
-import type {
-  UnclassifiedScans,
-  ApiScopeSettings,
-  ScopeOneOffPolicy,
-  UpdateScopeSettingsInput,
+import {
+  RANGE_PREFIX_CHOICES,
+  type AddressAutoAdd,
+  type UnclassifiedScans,
+  type ApiScopeSettings,
+  type ScopeOneOffPolicy,
+  type UpdateScopeSettingsInput,
 } from '../api/scope-api.types'
 import { scopeErrorMessage } from '../lib/scope-codes'
 import { TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
@@ -70,6 +72,13 @@ const ONE_OFF_TEXT: Record<ScopeOneOffPolicy, { label: string; hint: string }> =
 }
 
 const DEFAULT_SENTINEL = 'default'
+
+const ADDRESS_HINT: Record<AddressAutoAdd, string> = {
+  auto_strong:
+    'An address your in-scope names resolve to is added as its own scope entry when your declared network holds it (your AS or a prefix it announces) and more evidence agrees; two or more such addresses in one of your prefixes add that prefix. Shared, CDN and hosting addresses never are. Each entry follows your approval rules, is audited and can be removed. The rest wait in Decisions.',
+  ask: 'Every address your in-scope names resolve to waits in Decisions for a person.',
+  never: 'Addresses your in-scope names resolve to are not suggested. The names are still scanned.',
+}
 
 const UNCLASSIFIED_HINT: Record<UnclassifiedScans, string> = {
   off: 'Assets no scope entry covers get passive checks only, until an entry covers them.',
@@ -117,8 +126,11 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
     widening_approvals: s.widening_approvals ?? null,
     default_max_tier: s.default_max_tier === 't0' ? 't0' : 't1',
     ...unclassifiedOf(s),
+    ...addressAutoAddOf(s),
     ...autoCoverageOf(s),
+    ...infoCoverageOf(s),
     ci_scope_requires_proof: s.ci_scope_requires_proof ?? false,
+    max_range_prefix: s.max_range_prefix || 16,
   }
 }
 
@@ -126,6 +138,17 @@ export function settingsToInput(s: ApiScopeSettings): UpdateScopeSettingsInput {
 function autoCoverageOf(s: ApiScopeSettings): { auto_coverage?: boolean } {
   const v = (s as { auto_coverage?: boolean | null }).auto_coverage
   return typeof v === 'boolean' ? { auto_coverage: v } : {}
+}
+
+/** The info pass setting (on and its interval in days), when the API has it. */
+function infoCoverageOf(s: ApiScopeSettings): {
+  info_coverage?: boolean
+  info_coverage_days?: number
+} {
+  const o = s as { info_coverage?: boolean; info_coverage_days?: number }
+  return typeof o.info_coverage === 'boolean' && typeof o.info_coverage_days === 'number'
+    ? { info_coverage: o.info_coverage, info_coverage_days: o.info_coverage_days }
+    : {}
 }
 
 /** Whether automatic coverage runs now (undefined when the API predates it). */
@@ -138,6 +161,16 @@ function autoCoverageEffective(s: ApiScopeSettings): boolean | undefined {
 function unclassifiedOf(s: ApiScopeSettings): { unclassified_scans?: UnclassifiedScans } {
   const v = (s as { unclassified_scans?: string }).unclassified_scans
   return v === 'off' || v === 'low_impact' || v === 'full' ? { unclassified_scans: v } : {}
+}
+
+/** The address setting, when the API has it. */
+function addressAutoAddOf(s: ApiScopeSettings): { address_auto_add?: AddressAutoAdd } {
+  const v = (s as { address_auto_add?: string }).address_auto_add
+  return v === 'auto_strong' || v === 'ask' || v === 'never' ? { address_auto_add: v } : {}
+}
+
+function addressAutoAddEffective(s: ApiScopeSettings): string | undefined {
+  return (s as { address_auto_add_effective?: string }).address_auto_add_effective
 }
 
 function unclassifiedEffective(s: ApiScopeSettings): string | undefined {
@@ -186,6 +219,9 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
       const out = await updateScopeSettings({
         ...form,
         one_off_max_days: Math.min(30, Math.max(1, Math.round(form.one_off_max_days) || 1)),
+        ...(form.info_coverage_days !== undefined && {
+          info_coverage_days: Math.min(90, Math.max(7, Math.round(form.info_coverage_days) || 30)),
+        }),
       })
       if (out) {
         setSaved(out)
@@ -400,6 +436,35 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
             </Row>
 
             <Row
+              label={t('scope.settings.maxRange', 'Widest range one scan target may name')}
+              htmlFor={`${id}-range`}
+              hint={t(
+                'scope.settings.maxRangeHint',
+                'A /16 by default. Choose a wider range only when you scan whole internal networks: a range wider than a /16 is scanned live hosts first, in /16 chunks, only where scope entries cover it, and each such scan asks for a confirmation. Raising it needs a recent sign-in, is audited and every administrator is told. IPv6 gets the same address count (/8 is /104).'
+              )}
+            >
+              <Select
+                value={String(form.max_range_prefix ?? 16)}
+                onValueChange={(v) => setForm({ ...form, max_range_prefix: Number(v) })}
+                disabled={disabled}
+              >
+                <SelectTrigger id={`${id}-range`} className="w-full sm:w-72">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RANGE_PREFIX_CHOICES.map((p) => (
+                    <SelectItem key={p} value={String(p)}>
+                      {t('scope.settings.maxRangeChoice', undefined, {
+                        prefix: `/${p}`,
+                        count: (2 ** (32 - p)).toLocaleString(),
+                      })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Row>
+
+            <Row
               label={t('scope.settings.autoJoin', 'Add discovered names automatically')}
               htmlFor={`${id}-autojoin`}
               hint={t(
@@ -469,6 +534,46 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
               </Row>
             )}
 
+            {form.address_auto_add && (
+              <Row
+                label={t('scope.settings.addressLabel', 'Addresses your names resolve to')}
+                htmlFor={`${id}-addresses`}
+                hint={`${t(
+                  `scope.settings.addressHint.${form.address_auto_add}`,
+                  ADDRESS_HINT[form.address_auto_add]
+                )}${
+                  form.address_auto_add === 'auto_strong' &&
+                  addressAutoAddEffective(saved) === 'ask'
+                    ? ` ${t('scope.settings.addressStrict', 'Strict scan approval is in force, so nothing is added automatically for now.')}`
+                    : ''
+                }`}
+              >
+                <Select
+                  value={form.address_auto_add}
+                  onValueChange={(v) => setForm({ ...form, address_auto_add: v as AddressAutoAdd })}
+                  disabled={disabled}
+                >
+                  <SelectTrigger id={`${id}-addresses`} className="w-full sm:w-72">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto_strong">
+                      {t(
+                        'scope.settings.addressMode.auto_strong',
+                        'Add automatically when the evidence is strong (default)'
+                      )}
+                    </SelectItem>
+                    <SelectItem value="ask">
+                      {t('scope.settings.addressMode.ask', 'Ask for each')}
+                    </SelectItem>
+                    <SelectItem value="never">
+                      {t('scope.settings.addressMode.never', 'Never suggest')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </Row>
+            )}
+
             {autoCoverageEffective(saved) !== undefined && (
               <Row
                 label={t('scope.settings.autoCoverage', 'Automatic coverage')}
@@ -490,6 +595,53 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                   onCheckedChange={(v) => setForm({ ...form, auto_coverage: v })}
                   disabled={disabled}
                 />
+              </Row>
+            )}
+
+            {form.info_coverage !== undefined && (
+              <Row
+                label={t('scope.settings.infoCoverage', 'Info checks')}
+                htmlFor={`${id}-infocoverage`}
+                hint={t(
+                  'scope.settings.infoCoverageHint',
+                  'On (default): web services also get the info-level template checks (technologies, panels, TLS and header posture) on a slower schedule: on the first coverage, when the technologies or web surface change, and otherwise every interval below. Matches are filed as info exposures, not findings. The regular checks keep their own schedule.'
+                )}
+              >
+                <Switch
+                  id={`${id}-infocoverage`}
+                  checked={form.info_coverage}
+                  onCheckedChange={(v) => setForm({ ...form, info_coverage: v })}
+                  disabled={disabled}
+                />
+              </Row>
+            )}
+
+            {form.info_coverage_days !== undefined && (
+              <Row
+                label={t('scope.settings.infoCoverageDays', 'Info checks interval')}
+                htmlFor={`${id}-infodays`}
+                hint={t(
+                  'scope.settings.infoCoverageDaysHint',
+                  'Days between info checks of an asset, 7 to 90. Longer saves sensor time.'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    id={`${id}-infodays`}
+                    type="number"
+                    min={7}
+                    max={90}
+                    className="w-24"
+                    value={form.info_coverage_days}
+                    onChange={(e) =>
+                      setForm({ ...form, info_coverage_days: Number(e.target.value) })
+                    }
+                    disabled={disabled || form.info_coverage === false}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {t('scope.settings.days', 'days')}
+                  </span>
+                </div>
               </Row>
             )}
 

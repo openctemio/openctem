@@ -21,7 +21,8 @@ const portClosedNote = "Resolved automatically: the port scan that had found the
 
 // closePortsTx marks the tenant's active open_port assets among ids
 // inactive, records a "disappeared" entry for each and resolves their
-// open port_open and service_detected exposures, inside tx. A port seen
+// open port_open, service_detected and risky_service_exposed exposures,
+// inside tx. A port seen
 // open at or after seenBefore is not closed. It returns the ids it closed.
 func closePortsTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []string, seenBefore time.Time, reason string) ([]string, error) {
 	if len(ids) == 0 {
@@ -47,7 +48,7 @@ func closePortsTx(ctx context.Context, tx *sql.Tx, tenantID shared.ID, ids []str
 	}
 	if len(closed) > 0 {
 		if _, err := resolveOpenExposuresTx(ctx, tx,
-			`e.tenant_id = $1 AND e.asset_id = ANY($2::uuid[]) AND e.event_type IN ('port_open', 'service_detected')`,
+			`e.tenant_id = $1 AND e.asset_id = ANY($2::uuid[]) AND e.event_type IN ('port_open', 'service_detected', 'risky_service_exposed')`,
 			portClosedNote, tenantID.String(), pq.Array(closed)); err != nil {
 			return nil, fmt.Errorf("resolve exposures of closed ports: %w", err)
 		}

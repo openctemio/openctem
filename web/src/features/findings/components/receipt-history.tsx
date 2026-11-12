@@ -26,6 +26,7 @@ import { formatAbsoluteTime, formatCount, formatRelativeTime } from '@/lib/forma
 import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { tCount } from '@/components/dashboard-kit/flow-parts'
+import { RetiredSourcesSection } from './source-retirement'
 import {
   isReceiptOrigin,
   useReceipts,
@@ -114,6 +115,9 @@ export function ReceiptHistory() {
             </span>
             <span className="block text-xs text-muted-foreground">
               {kindLabel(row.original.source?.kind ?? '')}
+              {row.original.released_from_quarantine
+                ? `, ${t('findings.receipts.releasedFromQuarantine', 'Released from quarantine')}`
+                : ''}
             </span>
           </span>
         ),
@@ -239,6 +243,7 @@ export function ReceiptHistory() {
             ))}
           </ul>
         )}
+        <RetiredSourcesSection />
         {totals && (
           <section aria-labelledby="receipt-totals" className="rounded-lg border p-3">
             <h2 id="receipt-totals" className="mb-2 text-xs font-medium text-muted-foreground">

@@ -14,6 +14,53 @@ migrated to `000272`, through the real ingest service
 listed in [§5](#5-how-the-evidence-was-produced). Claims marked **code** are
 read from the cited lines and not reproduced.
 
+## Flow (current code)
+
+Checked against the code of v0.19.1 and develop on 2026-11-05. The audit
+sections below are the 2026-10-03 snapshot; where they disagree with this
+section, this section is current. Known differences: the version-1 key is
+`generateFindingFingerprint` at `processor_findings.go` (not `:689-758`); the
+unique index lives in the baseline migration (`001146_baseline.up.sql`, the
+`000012` file no longer exists); the insert returns `id, fingerprint,
+inserted` and counts only inserted rows as created; on a conflict the
+metadata is merged (existing keys win), `work_item_uris` is never taken from
+the incoming row, and `occurrence_count` is incremented.
+
+```mermaid
+flowchart TD
+  F["Finding in a report<br/>(asset_ref resolved to a stored asset)"] --> SP{"Several CVEs?"}
+  SP -- yes --> SPL["One finding per CVE"]
+  SP -- no --> V1
+  SPL --> V1["Version-1 key: netva port and lowest CVE,<br/>or ctis GenerateAuto over rule, location,<br/>package, version, CVE, masked secret.<br/>Producer fingerprint is a hint only"]
+  V1 --> ID["Current identity (version 4):<br/>recipe per kind, tool not in the key,<br/>secrets keyed with a per-tenant HMAC,<br/>sha256 of asset, ctis-fp/2 base, qualifiers"]
+  ID --> AL["Re-sighting migration: canonical vuln ids,<br/>legacy and former keys,<br/>ResolveFingerprintAliases"]
+  AL --> DUP["Same key twice in one report: folded"]
+  DUP --> EX{"CheckFingerprintsExist<br/>(tenant_id, fingerprint)"}
+  EX -- existing --> HR{"Resolved by a person on an asset<br/>the report may not change?"}
+  HR -- yes --> HOLD["Not reopened"]
+  HR -- no --> RO["AutoReopenByFingerprintsBatch,<br/>EnrichBatchByFingerprints under row locks"]
+  EX -- new --> SUP["Suppression rules applied, enriched"]
+  SUP --> INS["CreateBatchWithResult: ON CONFLICT<br/>(tenant_id, fingerprint), RETURNING inserted"]
+  INS -- "lost the race" --> RO
+  INS -- inserted --> NEW["Created: callbacks fire<br/>for inserted rows only"]
+```
+
+- **On a re-sighting** (`Finding.EnrichFrom`): status, resolution and
+  assignee never change; description, snippet, recommendation and title take
+  the latest value; severity (unless overridden) and CVSS take the highest;
+  CVE, rule id, rule name and secret type keep the first value; last seen,
+  scan, last-seen tool, branch and commit are always set; first seen and
+  `tool_name` never change.
+- **Across tools**: the identity does not include the tool, so two tools that
+  report the same issue on the same asset land on one finding. Links rather
+  than merges are made for issue links, alias collisions and DAST
+  correlation.
+- **Re-key**: on start, after the asset canonical pass, the server re-keys
+  stored findings under an advisory lock in batches of 500
+  (`internal/app/refingerprint`, `internal/server/finding_rekey.go`).
+- **Isolation**: every lookup and the unique index are per tenant; the
+  tenant comes from the stored report row, never the document.
+
 ## 1. How a finding gets its identity today
 
 There are **five** producers of a finding fingerprint, and they do not agree

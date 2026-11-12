@@ -232,6 +232,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
 - `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
 - `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
+- `PUT`/`DELETE /api/v1/tool-sources/{source}/key`, `PATCH /api/v1/tool-sources/{source}`
 - `POST /api/v1/tenants/{tenant}/settings/sso/changes/{id}/approve`
 - `PUT /api/v1/organization/settings/domains/{domain_id}/signup-policy`
 - `DELETE /api/v1/tenants/{tenant}`
@@ -395,6 +396,16 @@ and SBOM import write it.
 > ([RFC-110](../rfcs/RFC-110-tenant-lifecycles.md)); `findings:lifecycles:write`
 > is granted to owners and administrators by default (migration
 > `finding_lifecycles_permission`).
+
+#### Exploration leads (`/api/v1/exploration/leads`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/exploration/leads` · `/{id}` | `assets:read` |
+| `POST /api/v1/exploration/leads` | `scans:execute` |
+| `POST /api/v1/exploration/leads/approve` | `scans:approve` + step-up |
+| `POST /api/v1/exploration/leads/reject` | `scans:approve` |
+| `GET /api/v1/exploration/summary` · `POST /api/v1/exploration/summary/refresh` | `assets:read` (organization-wide figures only with full data access or organization dashboards; otherwise scoped) |
 
 #### Exposures (`/api/v1/exposures`)
 
@@ -568,8 +579,10 @@ create's target validator, exclusions, zone routing) in one call.
 > keys `(tenant_id, pool_id)` and `(tenant_id, sensor_id)`, so a pool or
 > sensor of another tenant, or a shared sensor, cannot be linked. No response
 > carries a credential. The sensor side
-> (`POST /api/v2/sensor/commands/{id}/egress-credentials` and `/egress-report`)
-> answers only the sensor holding the command's lease. See
+> (`POST /api/v2/sensor/commands/{id}/egress-report`) answers only the sensor
+> holding the command's lease under the epoch in its body; the pool's
+> credentials are a task secret (`POST /api/v2/sensor/commands/{id}/secrets`:
+> trusted, key-bound lease holder only, sealed; [task-secrets.md](task-secrets.md)). See
 > [sensor-proxies.md](sensor-proxies.md).
 
 #### Content catalog (`/api/v1/content`, RFC-099)
@@ -612,6 +625,7 @@ authenticator code, and is audited.
 |----------|---------------------|
 | `GET /api/v1/sensors` · `/stats` · `/{id}` · `/{id}/config-templates` · `/available-capabilities` · `/content-policy` | `sensors:read`; host name and addresses (`hostname`, `ip_address`, `key_last_used_ip`) are returned to owners and administrators only |
 | `GET /api/v1/sensors/{id}/config-report` (setup checklist, research/26) · `GET /quarantined-results` · `/quarantined-results/{qid}` (the preview carries asset values and finding titles from the raw report) | `sensors:write` (owner/admin) |
+| `GET /api/v1/sensors/{id}/readiness` (what still stops the sensor from scanning, research/466) | `sensors:read`, own organization's sensors only (a shared sensor and another organization's are 404). Each fix says whether the caller holds the permission it needs; the add-to-scope fix lists the zones' private ranges only with `sensors:zones:read` (otherwise the count); the host-confinement item is `unknown` without `sensors:write` |
 | `POST /api/v1/sensors` · `PUT /{id}` · `POST /{id}/regenerate-key` · `/activate` · `/deactivate` · `/revoke` | `sensors:write`; creating a sensor and regenerating its key also need **step-up** (they mint a persistent key) |
 | `PUT /api/v1/sensors/content-policy` · `POST /content/refresh` · `POST /{id}/content/refresh` (scanner content, RFC-031) | `sensors:write` |
 | `DELETE /api/v1/sensors/{id}` | `sensors:delete` |
@@ -641,7 +655,7 @@ authenticator code, and is audited.
 |----------|---------------------|
 | `POST /api/v2/sensor/pairing` · `POST /pairing/{id}/reveal` · `GET /pairing/{id}` · `POST /pairing/{id}/confirm` | none by bearer key: every request is RFC 9421-signed by the key being paired; per-address and global caps; no tenant until claimed (RFC-052 §4.4) |
 | `POST /api/v1/sensor-pairings/lookup` · `POST /expectations` · `GET /expectations/{id}` · `POST /{id}/deny` | `sensors:pair` |
-| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + the fingerprint the host shows, picked out of three (a wrong pick closes the request) |
+| `POST /api/v1/sensor-pairings/{id}/approve` | `sensors:approve` + step-up re-authentication + the fingerprint the host shows, picked out of three (a wrong pick closes the request); stating `ranges` also needs `sensors:zones:write`, and `trusted: true` also needs `sensors:grant:widen` (a new sensor of the organization's own console expectation only; both are checked before anything is written, and the zone, the sensor and its trusted grant commit in one transaction) |
 | `GET /api/v1/sensors/{id}/grant` · `GET /api/v1/sensors/grant-profiles` · `GET /api/v1/sensors/grant-summaries` · `GET /api/v1/sensors/identity-policy` | `sensors:read` |
 | `PUT /api/v1/sensors/{id}/grant` | `sensors:grant:narrow` when every dimension narrows or stays (demoting the trust level included); `sensors:grant:widen` otherwise, promoting to trusted included (checked in the service against the stored grant) |
 | `PUT /api/v1/sensors/identity-policy` | require key-bound identity: `sensors:grant:narrow`; allow bearer keys again: `sensors:grant:widen` + **step-up** |
@@ -783,6 +797,7 @@ the billing page in the UI.
 | `POST /{id}/snapshots/{snapshot_id}/reject` | `scans:sources:approve` |
 | `POST /hooks/content-sources/{id}` | public: the source's own webhook secret (constant-time compare); only queues a sync |
 | Secret store `GET` / `POST`,`PUT`,`POST /{id}/rotate` / `DELETE` | `scans:secret_store:read` / `:write` and owner/admin / `:delete`; every write also needs **step-up** |
+| Tool source keys `GET /api/v1/tool-sources` / `PUT /{source}/key`,`PATCH /{source}` / `DELETE /{source}/key` ([task-secrets.md](task-secrets.md)) | `scans:secret_store:read` / `:write` and owner/admin / `:delete` and owner/admin; every write also needs **step-up**. A key is never returned |
 
 > **Rule sources** ([content-sources.md](content-sources.md)). Owners and
 > administrators hold every `scans:sources:*` permission (migration
@@ -1119,6 +1134,13 @@ marking an e-mail verified (`.../mark-verified`) and the two-factor reset
 role holds (account support and `platform_admin` hold `platform.users.support`,
 not this); step-up, a reason and the audit row are unchanged, and the
 two-factor reset still needs a second administrator's approval.
+
+Without email, a new organization owner's set-password link
+(`POST /api/v1/admin/platform-users/{user_id}/setup-link`, body
+`organization_id`) needs `platform.tenants.owner_bootstrap`, the permission
+that creates that owner and already returns its first link: it only replaces
+that link, for an owner account that was never used and belongs to that one
+organization. Fresh step-up, reason, support rate limit, audited.
 
 **Acting permissions.** With `ADMIN_ELEVATION=required` (default) a request
 acts with the baseline (read) permissions of the roles held unless the console
@@ -2020,6 +2042,7 @@ a personal address, or be a work domain nobody has verified.
 | `GET /assets/{id}`, `/findings/{id}`, `/findings/{id}/activities`, `POST /findings/{id}/comments` | scoped | scoped (guard + service) |
 | `GET /assets/{id}/full`, `/assets/{id}/findings`, `/assets/{id}/{owners,relationships,components,services,identifiers,state-history,sla-policy}` | **bypass** | 404 (guard) |
 | `GET /findings/{id}/{comments,priority-explanation,dataflows,approvals,evidence,ai-triage}` | **bypass** | 404 (guard) |
+| `GET /findings/{id}/source-records` (`findings:read`) | new | 404 (guard + `GetFindingWithScope`); the finding's per-source records, every join pinned to the tenant; the sensor only with `sensors:read`; text redacted for secrets on read |
 | `GET /findings/{id}/identity` (`findings:read`) | new | 404 (guard + `GetFindingWithScope`); merged duplicates and their tools listed only when in the caller's scope, no count of the others; names only, never a key or value |
 | `PATCH /findings/{id}/{status,severity,triage,classify,remediation}`, `PUT /tags`, `POST /{assign,unassign,verify,...}`, `DELETE /findings/{id}` | **bypass (write)** | 404 (guard) + service check (`getFindingWithTenantCheck`, status, delete) |
 | `POST /findings/{id}/severity-requests/{request_id}/{approve,reject}` (`findings:approve`), `/cancel` (`findings:severity`, requester only) | new | 404 (guard) + `getFindingWithTenantCheck`; the request must belong to that finding and tenant; approve runs the approval policy (never the requester or an asset owner, approver needs the finding in scope) |
@@ -2045,6 +2068,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
+| `GET /exploration/leads`, `/{id}`, open, approve, reject | new | a lead is seen and changed only when its subject asset is in scope (list filtered in SQL; by id 404; per-lead `not_found` in bulk results) |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered; 404 on a group not visible to the caller |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values |

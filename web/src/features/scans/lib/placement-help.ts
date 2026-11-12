@@ -16,12 +16,16 @@ const FIX = {
   workflows: '/scans/workflows',
   tools: '/settings/scanning/tools',
   scannerAddresses: '/settings/scanning/proxies#scanner-addresses',
+  // Retired import sources ("use this source again"), on the imports page.
+  sources: '/findings/imports',
 } as const
 type FixTarget = keyof typeof FIX
 
 /** Step error codes (api pkg/domain/scanrun/failure.go) and their fix. */
 export const FAILURE_FIX: Record<string, FixTarget | null> = {
   SCANNER_NOT_FOUND: 'sensors',
+  // A scan whose tool configuration holds a credential is never dispatched.
+  SCANNER_CONFIG_SECRET: null,
   TARGET_REFUSED: 'scope',
   NO_TARGETS: 'scope',
   NO_SENSOR: 'sensors',
@@ -50,6 +54,7 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   TOOL_NOT_INSTALLED: 'tools',
   TOOL_DISABLED: 'tools',
   DEPENDENCY_SKIPPED: null,
+  DEPENDENCY_FAILED: null,
   TOOL_EXIT: null,
   PARSE_ERROR: null,
   TIMEOUT: 'workflows',
@@ -67,6 +72,9 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   DEADLINE_TOO_CLOSE: null,
   COVERAGE_GAPS: null,
   NO_RESOLVING_TARGETS: null,
+  // The tool is retired as a source on the sensor (refused at claim; the
+  // step is skipped and the run goes on).
+  SOURCE_RETIRED: 'sources',
   // Retest reason codes (api pkg/domain/retest).
   UNREACHABLE: null,
   BLOCKED: 'sensors',
@@ -97,6 +105,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   capability_missing: 'sensors',
   not_confined: 'sensors',
   rule_sources_unsupported: 'sensors',
+  strong_isolation_missing: 'sensors',
   grant: 'sensors',
   intensity: 'workflows',
   active_scanning_not_entitled: null,
@@ -110,6 +119,7 @@ export const PLACEMENT_FIX: Record<string, FixTarget | null> = {
   sensor_overloaded: 'sensors',
   egress_host_direct: 'sensors',
   no_free_slot: null,
+  source_retired: 'sources',
 }
 
 /** The grant refusal prefix ("grant_tools", "grant_tier_ceiling", ...). */

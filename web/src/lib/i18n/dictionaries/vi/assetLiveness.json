@@ -1,0 +1,21 @@
+{
+  "assetLiveness.band.aria": "Tình trạng hoạt động của tài sản",
+  "assetLiveness.cannotVerify": "Các phát hiện vẫn mở và SLA vẫn tính: không thể xác minh khi tài sản không phản hồi.",
+  "assetLiveness.filter.any": "Mọi tình trạng hoạt động",
+  "assetLiveness.filter.label": "Tình trạng hoạt động",
+  "assetLiveness.goneFindings": "Các phát hiện đang mở được đóng với lý do tài sản không còn (không phải đã khắc phục) nếu tổ chức đã bật, và tự mở lại nếu tài sản xuất hiện trở lại.",
+  "assetLiveness.lastChecked": "Kiểm tra lần cuối {when}",
+  "assetLiveness.lastCheckedBy": "Kiểm tra lần cuối {when} bởi {by}",
+  "assetLiveness.reason.dangling": "Tên trỏ tới một đích không có địa chỉ: có nguy cơ bị chiếm. Tài sản vẫn được theo dõi và không bao giờ bị đánh dấu là không còn tồn tại.",
+  "assetLiveness.reason.host_gone": "Tên máy chủ của nó không còn tồn tại.",
+  "assetLiveness.reason.no_answer": "Các lần kiểm tra gần nhất không nhận được phản hồi (hết thời gian hoặc bị từ chối), dù tên vẫn phân giải được.",
+  "assetLiveness.reason.nxdomain": "Tên không có địa chỉ (NXDOMAIN).",
+  "assetLiveness.reason.nxdomain_confirmed": "Tên không có địa chỉ đủ lâu, được đủ số sensor xác nhận.",
+  "assetLiveness.reason.resolver_failed": "Truy vấn DNS bị lỗi (SERVFAIL). Có thể do DNS của chính sensor.",
+  "assetLiveness.since": "{state} từ {date}",
+  "assetLiveness.state.alive": "Đang hoạt động",
+  "assetLiveness.state.gone": "Không còn tồn tại",
+  "assetLiveness.state.unknown": "Chưa kiểm tra",
+  "assetLiveness.state.unreachable": "Không truy cập được",
+  "assetLiveness.state.unresolvable": "Không phân giải được"
+}

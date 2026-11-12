@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strings"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -168,4 +169,20 @@ var AllowedContentTypes = map[string]bool{
 	// Videos (screen recordings)
 	"video/mp4":  true,
 	"video/webm": true,
+}
+
+// ErrR2SSE is the message for an SSE setting on a Cloudflare R2 endpoint.
+const ErrR2SSE = "R2 always encrypts at rest; the SSE header is not supported: leave STORAGE_SSE empty"
+
+// IsR2Endpoint reports whether an S3 endpoint URL (or bare host) is a
+// Cloudflare R2 account endpoint: <account>.r2.cloudflarestorage.com, with
+// the .eu. and .fedramp. jurisdiction forms.
+func IsR2Endpoint(endpoint string) bool {
+	host := strings.TrimSpace(endpoint)
+	if u, err := url.Parse(host); err == nil && u.Host != "" {
+		host = u.Hostname()
+	} else if i := strings.IndexAny(host, "/:"); i >= 0 {
+		host = host[:i]
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(host, ".")), ".r2.cloudflarestorage.com")
 }

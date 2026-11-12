@@ -60,7 +60,7 @@ func (r *RegressionRestarter) RestartForRegression(ctx context.Context, tenantID
 		if !c.AssetID.IsZero() {
 			assetID = c.AssetID.String()
 		}
-		deadline, err := r.calc.CalculateSLADeadlineForPriority(ctx, tenantID.String(), assetID, c.PriorityClass, sev, now)
+		deadline, err := DeadlineForPractice(ctx, r.calc, tenantID.String(), assetID, c.Practice, c.PriorityClass, sev, now)
 		if err != nil {
 			r.logger.Warn("regression SLA: deadline not computed", "finding_id", c.FindingID.String(), "error", err)
 			continue

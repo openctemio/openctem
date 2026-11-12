@@ -69,11 +69,13 @@ type OwnerInvitation struct {
 	InviteeUserID shared.ID
 	InviteeEmail  string
 	// InvitedBy is the platform administrator (zero when unknown).
-	InvitedBy   shared.ID
-	Status      OwnerInvitationStatus
-	ExpiresAt   time.Time
+	InvitedBy shared.ID
+	Status    OwnerInvitationStatus
+	ExpiresAt time.Time
+	// SendCount is how many times the invitee was emailed; 0 when the
+	// installation could not send email (LastSentAt is then nil).
 	SendCount   int
-	LastSentAt  time.Time
+	LastSentAt  *time.Time
 	RespondedAt *time.Time
 	CreatedAt   time.Time
 }
@@ -88,8 +90,16 @@ func NewOwnerInvitation(tenantID, inviteeID shared.ID, inviteeEmail string, invi
 	return &OwnerInvitation{
 		ID: shared.NewID(), TenantID: tenantID, InviteeUserID: inviteeID, InviteeEmail: email,
 		InvitedBy: invitedBy, Status: OwnerInvitationPending, ExpiresAt: now.Add(OwnerInvitationTTL),
-		SendCount: 1, LastSentAt: now, CreatedAt: now,
+		SendCount: 1, LastSentAt: &now, CreatedAt: now,
 	}, nil
+}
+
+// MarkNotSent records that the invitee was not emailed (the installation
+// cannot send email): no send is counted and there is no send time. The
+// invitee still finds it in the app after signing in.
+func (i *OwnerInvitation) MarkNotSent() {
+	i.SendCount = 0
+	i.LastSentAt = nil
 }
 
 // IsExpired reports whether a pending invitation has lapsed at now.
@@ -112,6 +122,9 @@ func (i *OwnerInvitation) EffectiveStatus(now time.Time) OwnerInvitationStatus {
 
 // ResendAllowedAt is the earliest time the invitation may be sent again.
 func (i *OwnerInvitation) ResendAllowedAt() time.Time {
+	if i.LastSentAt == nil {
+		return time.Time{} // never sent: no interval to wait
+	}
 	return i.LastSentAt.Add(OwnerInvitationResendInterval)
 }
 

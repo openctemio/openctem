@@ -29,7 +29,7 @@ var findingExportExcluded = map[string]string{
 	"secret_age_in_days": "secret", "secret_commit_count": "secret", "secret_in_history_only": "secret",
 	"secret_verified_at": "secret",
 	// Embedded objects and single-finding extras (ids are exported).
-	"asset": "embedded (asset_name, asset_type exported)", "component": "embedded", "provenance": "embedded",
+	"asset": "embedded (asset_name, asset_type exported)", "locations": "embedded (per-service state; scope-filtered, detail only)", "component": "embedded", "provenance": "embedded",
 	"package_fix": "embedded", "intel": "embedded", "vulnerability": "embedded", "assigned_to_user": "embedded",
 	"severity_override": "embedded", "pending_severity_request": "embedded",
 	// A bug-bounty report carries the researcher's text and handle: it leaves
@@ -58,6 +58,7 @@ var findingExportExcluded = map[string]string{
 	"reputational_impact": "detail", "compliance_impact": "detail", "branch_only": "detail",
 	"compliance_framework": "detail", "compliance_framework_version": "detail", "compliance_control_id": "detail",
 	"compliance_control_name": "detail", "compliance_control_description": "detail", "compliance_result": "detail",
+	"practice_reason":    "detail",
 	"compliance_section": "detail", "web3_chain": "detail", "web3_chain_id": "detail",
 	"web3_contract_address": "detail", "web3_swc_id": "detail", "web3_function_signature": "detail",
 	"web3_tx_hash": "detail", "web3_function_selector": "detail", "web3_bytecode_offset": "detail",

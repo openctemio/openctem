@@ -51,11 +51,14 @@ import {
   type DetailTab,
 } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
+import { seenByFindingsHref } from '@/features/findings/api/receipts-api'
+import Link from '@/components/link'
 import { useNow } from '@/hooks/use-now'
 import type { ScanZone } from '@/lib/api/scan-zone-types'
 import {
   useSensor,
   useSensorCommands,
+  useSensorConfigReport,
   useSensorHeartbeatHistory,
   SENSOR_REFRESH_MS,
 } from '@/lib/api/sensor-hooks'
@@ -77,6 +80,7 @@ import { SensorControlSection, hasHeartbeatHistory } from './sensor-control-sect
 import { SensorLocalPolicySection } from './sensor-local-policy-section'
 import { SENSOR_POSTURE_SECTION_ID, SensorPostureSection } from './sensor-posture'
 import { SensorGrantSection } from './sensor-grant-section'
+import { SensorReadinessChecklist } from './sensor-readiness'
 import { SensorNetworkPathSection } from '@/features/proxy-pools'
 import { SensorManifestTab } from './sensor-manifest-tab'
 import { SensorToolSettingsSection } from './sensor-tool-settings'
@@ -108,6 +112,7 @@ import {
   type SensorJobLoad,
 } from '../lib/capabilities'
 import { configHealthNeedsAttention } from '../lib/config-report'
+import { controlDnsFact, withControlDnsReason, type ControlDnsFact } from '../lib/control-dns'
 import { agoShort, exactTime, formatDurationShort, type Tr } from '../lib/format'
 import type { ReleaseChannel } from '../lib/fleet'
 import { sensorHealthChecks, type HealthCheck, type HealthCheckAction } from '../lib/health-checks'
@@ -722,12 +727,15 @@ function ConnectionAndIdentity({
   now,
   channel,
   zoneNames,
+  dnsFact,
   onRotateKey,
 }: {
   sensor: Sensor
   now: number
   channel?: ReleaseChannel
   zoneNames: string[]
+  /** The control channel's DNS state the sensor last reported. */
+  dnsFact?: ControlDnsFact | null
   /** Rotate the key; only for viewers who may (sensors:write). */
   onRotateKey?: () => void
 }) {
@@ -841,6 +849,14 @@ function ConnectionAndIdentity({
           {sensor.last_offline_at && (
             <DetailField label={t('sensors.detail.f.lastOffline', 'Last offline')}>
               <RelativeTime date={sensor.last_offline_at} className="text-foreground" />
+            </DetailField>
+          )}
+          {dnsFact?.kind === 'recovered' && dnsFact.failedAt && dnsFact.recoveredAt && (
+            <DetailField label={t('sensors.detail.f.lastDisconnect', 'Last disconnect')}>
+              {t('sensors.dns.recoveredWindow', 'DNS failure, from {from} to {to}', {
+                from: exactTime(dnsFact.failedAt.toISOString()) ?? '',
+                to: exactTime(dnsFact.recoveredAt.toISOString()) ?? '',
+              })}
             </DetailField>
           )}
           {sensorSdkVersion(sensor) && (
@@ -1052,6 +1068,9 @@ export function SensorDetailSheet({
   const { data: heartbeatHistory } = useSensorHeartbeatHistory(
     open && sensorProp ? sensorProp.id : null
   )
+  // The setup report: a DNS failure the sensor reported names why it went
+  // offline (runtime.control_dns). Shared with the setup tab's request.
+  const { data: configReport } = useSensorConfigReport(open && sensorProp ? sensorProp.id : null)
   const now = useNow()
   const router = useRouter()
   const { t } = useTranslation()
@@ -1090,7 +1109,12 @@ export function SensorDetailSheet({
     },
     t
   )
-  const issues = sensorHealthIssues(sensor, checks, now, thresholds, t)
+  const dnsFact = controlDnsFact(configReport)
+  const issues = withControlDnsReason(
+    sensorHealthIssues(sensor, checks, now, thresholds, t),
+    dnsFact,
+    t
+  )
   const handleAction = (action: HealthCheckAction) => {
     if (action === 'rotate_key') onRegenerateKey(sensor)
     else if (action === 'edit') onEdit(sensor)
@@ -1237,6 +1261,17 @@ export function SensorDetailSheet({
 
             <SensorStats sensor={sensor} now={now} thresholds={thresholds} />
 
+            <p className="text-sm">
+              <Link
+                href={seenByFindingsHref('seen_by_sensor_id', sensor.id)}
+                className="font-medium underline-offset-2 hover:underline"
+                data-testid="sensor-reported-findings"
+              >
+                {t('sensors.detail.reportedFindings', 'Findings this sensor reported')}
+              </Link>
+            </p>
+            <SensorReadinessChecklist sensorId={sensor.id} />
+
             <DetailSections>
               {(!oneShot || sensorToolRows(sensor).length > 0) && (
                 <ToolsAndCapacity sensor={sensor} now={now} thresholds={thresholds} />
@@ -1265,6 +1300,7 @@ export function SensorDetailSheet({
               <ConnectionAndIdentity
                 sensor={sensor}
                 now={now}
+                dnsFact={dnsFact}
                 channel={channel}
                 zoneNames={zoneNames}
                 onRotateKey={can.rotate ? () => onRegenerateKey(sensor) : undefined}

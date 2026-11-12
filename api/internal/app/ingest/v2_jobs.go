@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"github.com/openctemio/openctem/api/internal/metrics"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
@@ -88,6 +90,11 @@ func NewV2JobProcessor(svc *Service, reports ingestreport.Repository, jobs inges
 		logger: log.With("component", "ingest-v2"), now: time.Now}
 }
 
+// ErrorReportDropped is the public error of a v2 job whose report the
+// worker's re-check refused to apply (DroppedJob): the job is dead with its
+// payload kept, never completed and emptied.
+const ErrorReportDropped = "report_dropped"
+
 // v2JobResult is stored on a completed v2 job.
 type v2JobResult struct {
 	ReportID string `json:"report_id"`
@@ -130,7 +137,13 @@ func (p *V2JobProcessor) Process(ctx context.Context, job *ingestjob.Job) ([]byt
 		}
 		// A chained step waiting for this report plans on what it has.
 		p.service.commandIngestedNow(ctx, rep.TenantID, rep.CommandID)
-		return json.Marshal(dropped)
+		// Not applied, but never discarded (research/467 D0, research/436):
+		// the job ends dead, which keeps its sealed segment for the
+		// staging retention, so the report can be re-driven (an identical
+		// re-send by the sensor, or a person) once the reason is gone. A
+		// completed job would empty the payload, and the sensor may have
+		// deleted its copy on the 202.
+		return nil, ingestjob.Permanent(ErrorReportDropped, errors.New("not applied: "+dropped.Reason))
 	}
 
 	// A shared sensor's report is written into the command's tenant (the
@@ -322,10 +335,7 @@ func sanitizeSealError(err error) string {
 		}
 		return r
 	}, err.Error())
-	if len(msg) > maxLen {
-		msg = msg[:maxLen]
-	}
-	return msg
+	return safetext.TruncateBytes(msg, maxLen)
 }
 
 // purgeStaging bounds the staging tables: without it, every segment of a

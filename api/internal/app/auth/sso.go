@@ -21,7 +21,6 @@ import (
 	"time"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/entitlement"
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	identityproviderdom "github.com/openctemio/openctem/api/pkg/domain/identityprovider"
@@ -116,8 +115,8 @@ type SSOService struct {
 	logger           *logger.Logger
 	breakGlassGate   BreakGlassGate
 	httpClient       *http.Client
-	// features gates configuring connections by the organization's limits.
-	features entitlement.FeatureChecker
+	// limits caps the number of connections (sso_connections). Nil: no cap.
+	limits limits.Checker
 	// oidcVerifier verifies id_tokens and logout tokens (pkg/oidc).
 	oidcVerifier *oidc.Client
 
@@ -2332,20 +2331,20 @@ func validateAllowedDomains(domains []string) error {
 	return nil
 }
 
-// SetFeatureGate wires the feature check of the sign-in features: configuring a
-// connection needs sso.connections. Unset (self-managed default wiring
-// aside, tests): everything is allowed.
-func (s *SSOService) SetFeatureGate(g entitlement.FeatureChecker) { s.features = g }
+// SetLimits wires the organization's limits: creating another connection is
+// refused at the sso_connections limit. Unset (tests): no cap.
+func (s *SSOService) SetLimits(c limits.Checker) { s.limits = c }
 
-// requireConnections refuses configuring a SAML or OIDC connection when the
-// organization may not use sso.connections (fail-closed on a read
-// error). Sign-in through a connection already configured is never gated, so a
-// downgrade cannot lock members out.
-func (s *SSOService) requireConnections(ctx context.Context, tenantID shared.ID) error {
-	if s == nil {
+// requireRoomForConnection refuses creating one more SAML or OIDC connection
+// when the organization is at its sso_connections limit (fail-closed on a
+// read error). Changing or deleting a connection, signing in through one and
+// requiring SSO are never limited, so lowering the limit cannot lock members
+// out. With no limit source the organization is unlimited.
+func (s *SSOService) requireRoomForConnection(ctx context.Context, tenantID shared.ID) error {
+	if s == nil || s.limits == nil {
 		return nil
 	}
-	return entitlement.RequireFeature(ctx, s.features, tenantID, limits.FeatureSSOConnections)
+	return s.limits.Check(ctx, tenantID, limits.SSOConnections, 1)
 }
 
 // CreateProvider creates a new identity provider configuration for a tenant.
@@ -2354,7 +2353,7 @@ func (s *SSOService) CreateProvider(ctx context.Context, input CreateProviderInp
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid organization id", shared.ErrValidation)
 	}
-	if err := s.requireConnections(ctx, tid); err != nil {
+	if err := s.requireRoomForConnection(ctx, tid); err != nil {
 		return nil, err
 	}
 	ip, err := s.BuildProvider(input)
@@ -2469,12 +2468,8 @@ func sameIssuer(a, b string) bool {
 // BuildProviderUpdate validates input and returns the tenant's identity
 // provider with the update applied, without storing it.
 func (s *SSOService) BuildProviderUpdate(ctx context.Context, input UpdateProviderInput) (*identityproviderdom.IdentityProvider, error) {
-	tid, err := shared.IDFromString(input.TenantID)
-	if err != nil {
+	if _, err := shared.IDFromString(input.TenantID); err != nil {
 		return nil, fmt.Errorf("%w: invalid organization id", shared.ErrValidation)
-	}
-	if err := s.requireConnections(ctx, tid); err != nil {
-		return nil, err
 	}
 	ip, err := s.ipRepo.GetByID(ctx, input.TenantID, input.ID)
 	if err != nil {

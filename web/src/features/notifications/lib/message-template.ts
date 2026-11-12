@@ -1,70 +1,49 @@
 /**
- * Message template presets for notification channels, and the preview the
- * add and edit dialogs show while a template is being written.
+ * Channel message settings shared by the add and edit dialogs: the detail
+ * levels, the template variables (the API's closed set: a template naming
+ * anything else is refused on save) and the presets. The preview is
+ * rendered by the API from sample data, with the same code that builds real
+ * messages, so what the dialog shows is what the channel gets.
  */
+
+export const DETAIL_LEVELS = ['minimal', 'standard', 'full'] as const
+export type DetailLevel = (typeof DETAIL_LEVELS)[number]
+export const DEFAULT_DETAIL_LEVEL: DetailLevel = 'standard'
+
+/** The template variables, in the order the editor lists them. */
+export const TEMPLATE_VARIABLES = [
+  'title',
+  'severity',
+  'asset',
+  'asset_type',
+  'what',
+  'why',
+  'next_step',
+  'organization',
+  'count',
+  'description',
+] as const
+
+/** Presets use only the variables above; '' means the default layout. */
 export const TEMPLATE_PRESETS = [
-  {
-    id: 'default',
-    name: 'Default',
-    template: '',
-    description: 'Use system default template',
-  },
-  {
-    id: 'detailed',
-    name: 'Detailed Report',
-    template: `**{severity} Alert: {title}**
+  { id: 'default', template: '' },
+  { id: 'short', template: '{asset}: {what}\n{next_step}' },
+  { id: 'triage', template: '{what}\n{why}\n{next_step}\n{organization}' },
+  { id: 'custom', template: null },
+] as const
 
-{body}
+export type TemplatePresetId = (typeof TEMPLATE_PRESETS)[number]['id']
 
----
-View details: {url}
-Timestamp: {timestamp}`,
-    description: 'Full details with all fields',
-  },
-  {
-    id: 'minimal',
-    name: 'Minimal Alert',
-    template: `{title}
-{url}`,
-    description: 'Title and link only',
-  },
-  {
-    id: 'emoji',
-    name: 'With Severity Emoji',
-    template: `{severity_emoji} [{severity}] {title}
+/** The preset a stored template matches, or custom. */
+export function presetOf(template: string | undefined): TemplatePresetId {
+  const value = template ?? ''
+  const found = TEMPLATE_PRESETS.find((p) => p.template === value)
+  return found ? found.id : 'custom'
+}
 
-{body}
-
-{url}`,
-    description: 'Includes severity emoji indicator',
-  },
-  {
-    id: 'custom',
-    name: 'Custom',
-    template: '',
-    description: 'Write your own template',
-  },
-]
-
-/**
- * Render `template` with sample values. The sample finding link points at
- * this console (`origin`), the host real notifications link to.
- */
-export function renderMessageTemplatePreview(template: string, origin: string): string {
-  if (!template) return 'Using default system template'
-
-  const sampleData: Record<string, string> = {
-    title: 'SQL Injection Vulnerability Detected',
-    severity: 'CRITICAL',
-    severity_emoji: '\u{1F6A8}',
-    body: 'A potential SQL injection vulnerability was found in the login endpoint.',
-    url: `${origin}/findings/123`,
-    timestamp: new Date().toLocaleString(),
-  }
-
-  let preview = template
-  Object.entries(sampleData).forEach(([key, value]) => {
-    preview = preview.replace(new RegExp(`\\{${key}\\}`, 'g'), value)
-  })
-  return preview
+/** A stored level, with anything unknown read as the default. */
+export function detailLevelOf(value: string | undefined): DetailLevel {
+  return (DETAIL_LEVELS as readonly string[]).includes(value ?? '')
+    ? (value as DetailLevel)
+    : DEFAULT_DETAIL_LEVEL
 }

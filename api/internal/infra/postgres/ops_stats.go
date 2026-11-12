@@ -32,7 +32,7 @@ type OpsSnapshot struct {
 	Sensors []OpsSensorCount
 
 	// SensorsUnhardened counts active tenant sensors by unhardened reason
-	// (sensor.UnhardenedKinds: policy_none, pin_none, network_unenforced,
+	// (sensor.UnhardenedKinds: policy_none, pin_none, tools_unconfined, network_unenforced,
 	// bearer_key). A sensor with several reasons counts under each.
 	SensorsUnhardened map[string]int64
 
@@ -247,11 +247,12 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 	rows, err := db.QueryContext(ctx, `
 		SELECT s.reported_local_policy->>'state', COALESCE(s.reported_local_policy->>'required', 'false') = 'true',
 		       p.posture->'platform_tls'->>'pin', p.posture->'sandbox'->>'network_enforced',
+		       p.posture->'sandbox'->>'unconfined',
 		       COALESCE(s.auth_kind, '') = '`+string(sensor.AuthKindKeyBound)+`', s.last_seen_at IS NOT NULL, count(*)
 		FROM sensors s
 		LEFT JOIN LATERAL (SELECT `+sensorManifestPostureSQL("s")+` AS posture) p ON TRUE
 		WHERE s.status = 'active' AND s.scope = 'organization'
-		GROUP BY 1, 2, 3, 4, 5, 6`)
+		GROUP BY 1, 2, 3, 4, 5, 6, 7`)
 	if err != nil {
 		return nil, err
 	}
@@ -263,10 +264,11 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 	for rows.Next() {
 		var (
 			state, pin, netEnforced  sql.NullString
+			unconfined               sql.NullString
 			required, keyBound, seen bool
 			n                        int64
 		)
-		if err := rows.Scan(&state, &required, &pin, &netEnforced, &keyBound, &seen, &n); err != nil {
+		if err := rows.Scan(&state, &required, &pin, &netEnforced, &unconfined, &keyBound, &seen, &n); err != nil {
 			return nil, err
 		}
 		in := sensor.PostureInput{KeyBound: keyBound, Seen: seen}
@@ -279,7 +281,7 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 				in.Posture.PlatformTLS = &sensor.PlatformTLSPosture{Pin: pin.String}
 			}
 			if netEnforced.Valid {
-				in.Posture.Sandbox = &sensor.SandboxPosture{NetworkEnforced: netEnforced.String == "true"}
+				in.Posture.Sandbox = &sensor.SandboxPosture{NetworkEnforced: netEnforced.String == "true", Unconfined: unconfined.String}
 			}
 		}
 		for _, reason := range sensor.DerivePosture(in).Unhardened {
