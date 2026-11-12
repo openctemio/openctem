@@ -80,7 +80,6 @@
   "findings.aiTriage.tooltip.processing": "AI is analyzing this finding",
   "findings.approvalBand.aria": "Waiting on an approval",
   "findings.approvalBand.decide": "Decide in the approvals inbox",
-  "findings.approvalBand.reason": "Reason:",
   "findings.approvalBand.requestedBy": "Requested by {who} {when}",
   "findings.approvalBand.title": "Awaiting approval: {status}",
   "findings.approvalDialog.back": "Back",

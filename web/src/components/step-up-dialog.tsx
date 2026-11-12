@@ -203,7 +203,7 @@ export function StepUpDialogHost() {
       onOpenChange={(next) => !next && finish(false)}
       description={t(
         'components.stepUp.description',
-        'This action changes how your organization is secured. Confirm your identity to continue.'
+        'This action needs a fresh confirmation. Confirm it is you and the action continues right away.'
       )}
       rememberNote={rememberNote}
       factor={method === 'password' ? 'password' : 'totp'}

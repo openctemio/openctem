@@ -80,7 +80,6 @@
   "findings.aiTriage.tooltip.processing": "AI đang phân tích phát hiện này",
   "findings.approvalBand.aria": "Đang chờ phê duyệt",
   "findings.approvalBand.decide": "Quyết định trong hộp thư phê duyệt",
-  "findings.approvalBand.reason": "Lý do:",
   "findings.approvalBand.requestedBy": "Yêu cầu bởi {who} {when}",
   "findings.approvalBand.title": "Chờ phê duyệt: {status}",
   "findings.approvalDialog.back": "Quay lại",
