@@ -16,6 +16,18 @@ name: Release Feed
 #   older than 45);
 #   run it by hand after adding an advisory to .github/release-feed/advisories.json.
 #
+# The same run publishes openctem-versions.json, the versions manifest for
+# readers outside an instance (the documentation site, the website, install
+# scripts), signed by the same identity, next to the feed:
+# https://github.com/openctemio/openctem/releases/latest/download/openctem-versions.json
+# (server/docs/architecture/versions-manifest.md). It is built from the same
+# payload plus the platform release's image list, its versions.yaml, the Helm
+# repository index and .github/release-feed/compat.json. A manifest that cannot
+# be built (the image list of a new release is still being published) never
+# holds the instance feed back: the feed is published alone and the next run
+# publishes both. A release is withdrawn from both files by marking it a
+# pre-release on GitHub and running this workflow.
+#
 # Signing is keyless (Sigstore): the sign job asks GitHub for an OIDC token and
 # cosign sign-blob writes a bundle (Fulcio certificate bound to this workflow,
 # transparency log entry). There is no signing key and no secret to set up.
@@ -28,6 +40,9 @@ name: Release Feed
 
 on:
   workflow_call:
+    secrets:
+      DOCS_DISPATCH_TOKEN:
+        required: false
   schedule:
     - cron: '17 */6 * * *' # every 6 hours at :17 UTC; schedules run from the default branch (main)
   workflow_dispatch:
@@ -80,10 +95,39 @@ jobs:
             -advisories ../.github/release-feed/advisories.json -components "$RUNNER_TEMP/components.json" \
             -out "$RUNNER_TEMP/feed/feed.json"
 
+      # The versions manifest of the newest stable platform release. Its failure
+      # is a warning only: the instance feed above is published regardless.
+      - name: Build the versions manifest
+        id: manifest
+        continue-on-error: true
+        working-directory: server
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          in="$RUNNER_TEMP/manifest-in"
+          mkdir -p "$in"
+          tag="$(go run ./cmd/release-feed platform -feed "$RUNNER_TEMP/feed/feed.json")"
+          bash ../.github/scripts/release/gh-retry.sh release download "$tag" -R "$GITHUB_REPOSITORY" \
+            -p "openctem-images-${tag}.txt" -D "$in"
+          bash ../.github/scripts/release/gh-retry.sh api "repos/$GITHUB_REPOSITORY/contents/versions.yaml?ref=${tag}" \
+            --jq .content | base64 -d > "$in/versions.yaml"
+          curl -fsSL --retry 3 --max-time 60 -o "$in/index.yaml" https://openctemio.github.io/helm-charts/index.yaml
+          go run ./cmd/release-feed manifest -feed "$RUNNER_TEMP/feed/feed.json" \
+            -images "$in/openctem-images-${tag}.txt" -versions "$in/versions.yaml" \
+            -compat ../.github/release-feed/compat.json -chart-index "$in/index.yaml" \
+            -out "$RUNNER_TEMP/feed/openctem-versions.json"
+
+      - name: Manifest not built
+        if: steps.manifest.outcome == 'failure'
+        run: echo "::warning::The versions manifest was not built; the release feed is published alone and the next run retries."
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-feed-payload
-          path: ${{ runner.temp }}/feed/feed.json
+          path: |
+            ${{ runner.temp }}/feed/feed.json
+            ${{ runner.temp }}/feed/openctem-versions.json
           if-no-files-found: error
           retention-days: 1
 
@@ -106,12 +150,18 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign
-        run: cosign sign-blob --yes --bundle feed/feed.sigstore.json feed/feed.json
+        run: |
+          cosign sign-blob --yes --bundle feed/feed.sigstore.json feed/feed.json
+          if [ -f feed/openctem-versions.json ]; then
+            cosign sign-blob --yes --bundle feed/openctem-versions.json.sigstore.json feed/openctem-versions.json
+          fi
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-feed-signature
-          path: feed/feed.sigstore.json
+          path: |
+            feed/feed.sigstore.json
+            feed/openctem-versions.json.sigstore.json
           if-no-files-found: error
           retention-days: 1
 
@@ -153,11 +203,55 @@ jobs:
           # signer identity it names, as an instance would.
           go run ./cmd/release-feed verify "$RUNNER_TEMP/openctem-releases.json" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      # Verified exactly as the documentation build verifies it: this workflow,
+      # on main or a release tag. A manifest that fails is not uploaded.
+      - name: Verify the versions manifest
+        id: manifest
+        run: |
+          m="$RUNNER_TEMP/in/openctem-versions.json"
+          if [ ! -f "$m" ]; then echo "present=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          cosign verify-blob --bundle "$m.sigstore.json" \
+            --certificate-identity-regexp '^https://github\.com/openctemio/openctem/\.github/workflows/release-feed\.yml@refs/(heads/main|tags/v[0-9]+\.[0-9]+\.[0-9]+)$' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "$m"
+          cp "$m" "$m.sigstore.json" "$RUNNER_TEMP/"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
       - name: Upload to the latest release
         env:
           GH_TOKEN: ${{ github.token }}
+          MANIFEST: ${{ steps.manifest.outputs.present }}
         run: |
           tag="$(bash .github/scripts/release/gh-retry.sh release view -R "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
-          bash .github/scripts/release/gh-retry.sh release upload "$tag" "$RUNNER_TEMP/openctem-releases.json" \
-            -R "$GITHUB_REPOSITORY" --clobber
-          echo "Uploaded openctem-releases.json to ${tag}." >> "$GITHUB_STEP_SUMMARY"
+          files=("$RUNNER_TEMP/openctem-releases.json")
+          if [ "$MANIFEST" = "true" ]; then
+            files+=("$RUNNER_TEMP/openctem-versions.json" "$RUNNER_TEMP/openctem-versions.json.sigstore.json")
+          fi
+          bash .github/scripts/release/gh-retry.sh release upload "$tag" "${files[@]}" -R "$GITHUB_REPOSITORY" --clobber
+          echo "Uploaded ${files[*]##*/} to ${tag}." >> "$GITHUB_STEP_SUMMARY"
+
+  # Asks the documentation site and the website to rebuild now, so a release
+  # reaches them within minutes; without the token each picks it up at its next
+  # scheduled build (at most 6 hours later). DOCS_DISPATCH_TOKEN: fine-grained,
+  # "Contents: read and write" on openctemio/docs and openctemio/website only
+  # (what repository_dispatch needs); nothing else.
+  notify:
+    name: Rebuild the docs and the website
+    needs: [publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Send release-published
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::DOCS_DISPATCH_TOKEN is not set: the docs and the website rebuild on their own schedule."
+            exit 0
+          fi
+          for repo in openctemio/docs openctemio/website; do
+            gh api "repos/$repo/dispatches" -f event_type=release-published \
+              || echo "::warning::$repo did not accept the rebuild request; its scheduled build picks the release up."
+          done
