@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/ctis/v2"
@@ -33,6 +35,7 @@ type DedupReviewEnqueuer interface {
 // AssetProcessor handles batch asset processing.
 type AssetProcessor struct {
 	repo          asset.Repository
+	tagGovernor   TagGovernor // optional: governing tags an import may not set (nil = validator only)
 	repoExtRepo   asset.RepositoryExtensionRepository
 	relRepo       asset.RelationshipRepository
 	stateHistory  asset.StateHistoryRepository // optional: records appeared/recovered on discovery (nil = disabled)
@@ -376,7 +379,11 @@ func (p *AssetProcessor) processBatch(
 
 	// The response header posture of an origin keeps its allow-listed keys
 	// only (names and flags, never a header or cookie value).
-	sanitizeHTTPPosture(report)
+	sanitizeHTTPPosture(report, scope)
+
+	// Tags a rule reads (team access, approvals, scan windows, assignment)
+	// are set by people with the rule's permission, never by a report.
+	p.dropGoverningTags(ctx, tenantID, report)
 	p.logger.Debug("starting asset processing",
 		"explicit_assets_count", len(report.Assets),
 		"findings_count", len(report.Findings),
@@ -492,6 +499,10 @@ func (p *AssetProcessor) processBatch(
 	observedAt := reportObservedAt(report, time.Now())
 	isNew := map[string]bool{}
 	queued := map[string]bool{}
+	// Every asset entity a report asset landed on, and the ids the upsert
+	// stored (practice_facts.go).
+	var held []*asset.Asset
+	var persisted map[string]shared.ID
 	var renames []pendingRename
 
 	for i := range report.Assets {
@@ -538,6 +549,7 @@ func (p *AssetProcessor) processBatch(
 				skipOutOfScope(output, ctisAsset.ID)
 				return
 			}
+			held = append(held, existing)
 			alterable := isNew[id] || scope.mayAlter(existing)
 			if alterable {
 				exposureChanges = append(exposureChanges, p.mergeTrackingExposure(tenantID, existing, ctisAsset, report.Tool, seenAt, &recoveredIDs, &becameExposed, &pageChanged)...)
@@ -598,6 +610,7 @@ func (p *AssetProcessor) processBatch(
 				return
 			}
 			newAssets = append(newAssets, newAsset)
+			held = append(held, newAsset)
 			assetMap[ctisAsset.ID] = newAsset.ID()
 			alterRefs[ctisAsset.ID] = true
 			existingMap[normalizedName] = newAsset
@@ -789,6 +802,7 @@ func (p *AssetProcessor) processBatch(
 		}
 		output.AssetsCreated = created
 		output.AssetsUpdated = updated
+		persisted = persistedIDs
 
 		// A new asset the database refused (the repository skips just that
 		// row) was never stored: unmap it so its findings are not linked to
@@ -917,6 +931,8 @@ func (p *AssetProcessor) processBatch(
 	if p.relRepo != nil {
 		p.createReportRelationships(ctx, tenantID, report, existingMap, assetMap, mayChange)
 	}
+
+	notePracticeFacts(output, tenantID, held, persisted, isNew, assetMap)
 
 	// What this ingest wrote, for attribution (scan_attribution.go): every
 	// asset it created (report assets, root domains, resolved addresses) and
@@ -1495,23 +1511,17 @@ func (p *AssetProcessor) createAssetFromCTIS(
 				"max_length", maxDescLength,
 				"asset_id", ctisAsset.ID,
 			)
-			desc = desc[:maxDescLength]
+			// Cut on a character boundary: half a multi-byte character is
+			// invalid UTF-8, which fails the whole asset batch.
+			desc = safetext.TruncateBytes(desc, maxDescLength)
 		}
 		newAsset.UpdateDescription(desc)
 	}
 
-	// Set tags (with limit) - log if truncated
-	tags := ctisAsset.Tags
-	if len(tags) > MaxTagsPerAsset {
-		p.logger.Warn("asset tags truncated",
-			"original_count", len(tags),
-			"max_count", MaxTagsPerAsset,
-			"asset_id", ctisAsset.ID,
-		)
-		tags = tags[:MaxTagsPerAsset]
-	}
-	for _, tag := range tags {
-		newAsset.AddTag(tag)
+	// Tags: the shared validator and the per-import cap (a report is not
+	// trusted with arbitrary strings: see importTags).
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		newAsset.AddTag(t)
 	}
 
 	// Discovery info: the report's tool, unless a server-side report (the
@@ -1659,15 +1669,20 @@ func (p *AssetProcessor) mergeCTISIntoAsset(existing *asset.Asset, ctisAsset *ct
 	// owner_ref and data classification of an existing asset are decided
 	// by attribute reconciliation (attributes.go, RFC-069), not here.
 
-	// Merge tags
-	for _, tag := range ctisAsset.Tags {
-		existing.AddTag(tag)
+	// Merge tags (validated like a first sight)
+	for _, t := range p.importTags(ctisAsset.Tags, ctisAsset.ID, nil) {
+		existing.AddTag(t)
 	}
 
 	// Merge properties using deep merge
 	existingProps := existing.Properties()
 	newProps := p.buildPropertiesFromCTIS(ctisAsset)
 	mergedProps := mergePropertiesDeep(existingProps, newProps)
+	if tool != nil && templateScanner(tool.Name) {
+		// A template scanner only fills the posture keys nothing stored
+		// decided (http_posture.go).
+		keepStoredPosture(existingProps, mergedProps)
+	}
 	// The stored asset's schema decides (the report asset may be of another
 	// type that landed here by name): technical blocks an older row still
 	// holds are promoted to flat keys, synonyms fold, and a key only another

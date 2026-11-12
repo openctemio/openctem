@@ -27,6 +27,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -79,8 +80,13 @@ type Service struct {
 	log       *slog.Logger
 	now       func() time.Time
 
-	mu       sync.Mutex
-	packs    map[string]parsedPack // by digest; packs are immutable
+	mu    sync.Mutex
+	packs map[string]parsedPack // by digest; packs are immutable
+	// facts are the parsed template facts packs by digest (nil entries:
+	// not a template facts pack); factsMap is the map built from them.
+	facts    map[string][]templatefact.Entry
+	factsMap *templatefact.Map
+	factsKey string
 	channels []dom.ChannelPointer
 	chanAt   time.Time
 	engines  map[shared.ID]tenantEngine
@@ -97,7 +103,7 @@ func NewService(platform PlatformPacks, org contentrule.OrganizationRules, expos
 	}
 	return &Service{
 		platform: platform, org: org, exposures: exposures, pins: pins, fp: fp, log: log, now: time.Now,
-		packs: map[string]parsedPack{}, engines: map[shared.ID]tenantEngine{},
+		packs: map[string]parsedPack{}, engines: map[shared.ID]tenantEngine{}, facts: map[string][]templatefact.Entry{},
 	}
 }
 
@@ -182,23 +188,9 @@ func (s *Service) platformSets(ctx context.Context, now time.Time) ([]contentrul
 	if s.platform == nil {
 		return nil, nil
 	}
-	s.mu.Lock()
-	chans, fresh := s.channels, now.Sub(s.chanAt) < refreshAfter && s.chanAt != (time.Time{})
-	s.mu.Unlock()
-	if !fresh {
-		all, err := s.platform.Channels(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("read content channels: %w", err)
-		}
-		chans = chans[:0:0]
-		for _, c := range all {
-			if c.Channel == dom.ChannelStable {
-				chans = append(chans, c)
-			}
-		}
-		s.mu.Lock()
-		s.channels, s.chanAt = chans, now
-		s.mu.Unlock()
+	chans, err := s.stableChannels(ctx, now)
+	if err != nil {
+		return nil, err
 	}
 	var sets []contentrule.RuleSet
 	for _, c := range chans {
@@ -212,6 +204,31 @@ func (s *Service) platformSets(ctx context.Context, now time.Time) ([]contentrul
 	}
 	sort.Slice(sets, func(i, j int) bool { return sets[i].Origin.Pack < sets[j].Origin.Pack })
 	return sets, nil
+}
+
+// stableChannels are the stable channel pointers, read at most once per
+// refreshAfter.
+func (s *Service) stableChannels(ctx context.Context, now time.Time) ([]dom.ChannelPointer, error) {
+	s.mu.Lock()
+	chans, fresh := s.channels, now.Sub(s.chanAt) < refreshAfter && s.chanAt != (time.Time{})
+	s.mu.Unlock()
+	if fresh {
+		return chans, nil
+	}
+	all, err := s.platform.Channels(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read content channels: %w", err)
+	}
+	chans = chans[:0:0]
+	for _, c := range all {
+		if c.Channel == dom.ChannelStable {
+			chans = append(chans, c)
+		}
+	}
+	s.mu.Lock()
+	s.channels, s.chanAt = chans, now
+	s.mu.Unlock()
+	return chans, nil
 }
 
 // pack parses the pack a stable channel names; ok is false for a pack of

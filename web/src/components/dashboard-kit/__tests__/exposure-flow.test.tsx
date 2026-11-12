@@ -70,7 +70,7 @@ const intake: IntakeData = {
     suppressed: 8,
     not_stored: 12,
   }),
-  noise: { received: 602, new: 312, merged: 278, suppressed: 8, not_stored: 12 },
+  noise: { received: 602, new: 312, merged: 270, suppressed: 8, not_stored: 12 },
   failing: 1,
   stale: 1,
   drill: '/findings/imports?since=x',
@@ -655,13 +655,13 @@ describe('IntakeViz', () => {
   it('splits received into parts that sum to it, each opening the receipts', () => {
     render(<IntakeViz result={{ shape: 'intake', intake }} />)
     const n = intake.noise
-    // New or reopened is the receipt list's New plus Reopened; suppressed
-    // is inside it, so the three parts sum to received.
-    expect(n.new + n.merged + n.not_stored).toBe(n.received)
+    // New or reopened is the receipt list's New plus Reopened; suppressed is
+    // counted apart from created, so the four parts sum to received.
+    expect(n.new + n.merged + n.suppressed + n.not_stored).toBe(n.received)
     expect(n.new).toBe(intake.totals.created + intake.totals.reopened)
-    expect(hrefOf('Merged: 278')).toBe(intake.drill)
-    expect(hrefOf('of which suppressed by rules: 8')).toBe(intake.drill)
-    expect(screen.getByText('298 noise removed')).toBeInTheDocument()
+    expect(hrefOf('Merged: 270')).toBe(intake.drill)
+    expect(hrefOf('Suppressed by rules: 8')).toBe(intake.drill)
+    expect(screen.getByText('290 noise removed')).toBeInTheDocument()
     expect(hrefOf('97 findings closed as false positive')).toBe(intake.false_positive.drill)
   })
 
@@ -788,7 +788,7 @@ describe('one definition per figure (count equals the list it opens)', () => {
       suppressed: 83,
       not_stored: 5,
     }),
-    noise: { received: 1634, new: 346, merged: 1283, suppressed: 83, not_stored: 5 },
+    noise: { received: 1634, new: 346, merged: 1200, suppressed: 83, not_stored: 5 },
   }
   const seededFlow: FlowResult = {
     ...flow,
@@ -799,9 +799,9 @@ describe('one definition per figure (count equals the list it opens)', () => {
   it('shows the same new figure in the summary, the headline and the funnel', () => {
     const t = seeded.totals
     expect(seeded.noise.new).toBe(t.created + t.reopened)
-    expect(seeded.noise.new + seeded.noise.merged + seeded.noise.not_stored).toBe(
-      seeded.noise.received
-    )
+    expect(
+      seeded.noise.new + seeded.noise.merged + seeded.noise.suppressed + seeded.noise.not_stored
+    ).toBe(seeded.noise.received)
     render(<IntakeViz result={{ shape: 'intake', intake: seeded }} />)
     expect(screen.getByText('+346')).toBeInTheDocument()
     expect(hrefOf('New or reopened: 346')).toBe(seeded.drill)

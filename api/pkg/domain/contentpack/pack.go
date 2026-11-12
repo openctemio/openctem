@@ -76,6 +76,10 @@ const (
 	// sensor receives them.
 	KindWebFingerprints = "web-fingerprints"
 	KindSecretRules     = "secret-rules"
+	// KindTemplateFacts maps template scanner info matches to asset facts
+	// (docs/architecture/template-facts.md); platform packs only, evaluated
+	// by the platform at ingest.
+	KindTemplateFacts = "template-facts"
 )
 
 var (
@@ -101,7 +105,7 @@ var (
 // IsKnownKind reports whether the platform lints kind.
 func IsKnownKind(kind string) bool {
 	switch kind {
-	case KindNucleiTemplates, KindSemgrepRules, KindWordlist, KindWebFingerprints, KindSecretRules:
+	case KindNucleiTemplates, KindSemgrepRules, KindWordlist, KindWebFingerprints, KindSecretRules, KindTemplateFacts:
 		return true
 	}
 	return false
@@ -118,8 +122,8 @@ func ValidateKind(kind string) error {
 	if IsKnownKind(kind) || IsNamespacedKind(kind) {
 		return nil
 	}
-	return fmt.Errorf("%w %q (known: %s, %s, %s, %s, %s; or x-<namespace>/<kind>)", ErrUnknownKind, kind,
-		KindNucleiTemplates, KindSemgrepRules, KindWordlist, KindWebFingerprints, KindSecretRules)
+	return fmt.Errorf("%w %q (known: %s, %s, %s, %s, %s, %s; or x-<namespace>/<kind>)", ErrUnknownKind, kind,
+		KindNucleiTemplates, KindSemgrepRules, KindWordlist, KindWebFingerprints, KindSecretRules, KindTemplateFacts)
 }
 
 // ValidateTenantKind refuses the kinds an organization does not upload as
@@ -128,6 +132,9 @@ func ValidateKind(kind string) error {
 func ValidateTenantKind(kind string) error {
 	if kind == KindWebFingerprints || kind == KindSecretRules {
 		return fmt.Errorf("%w: organization detection rules are managed under Scanning > Detection rules, not uploaded as a pack", shared.ErrValidation)
+	}
+	if kind == KindTemplateFacts {
+		return fmt.Errorf("%w: template facts are a platform pack", shared.ErrValidation)
 	}
 	return nil
 }

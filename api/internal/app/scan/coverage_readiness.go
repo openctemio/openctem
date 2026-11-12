@@ -32,7 +32,7 @@ func (s *Service) CoverageReadiness(ctx context.Context, tenantID shared.ID, cap
 	out := make(map[string]string, len(capabilities))
 	byTool := map[string]string{}
 	for _, c := range capabilities {
-		st, ok := stage.Lookup(stage.Key(c))
+		st, ok := stage.Lookup(stage.Key(covdom.StageKeyOf(c)))
 		if !ok {
 			continue
 		}

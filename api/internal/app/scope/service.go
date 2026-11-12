@@ -61,6 +61,9 @@ type Service struct {
 	visible VisibleAssetCounter
 	// ledger is the job signer's scope ledger (ledger.go); nil: none.
 	ledger LedgerFeed
+
+	// zones: the scan zones a pattern replacement reports on (replace.go).
+	zones ZoneLister
 	// ciTrustLinks links CI trusts to the entries they manage (ci_trust.go).
 	ciTrustLinks scopedom.CITrustLinkRepository
 	// ledgerTemplates lists the approved template versions for snapshots.
@@ -158,10 +161,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		return nil, err
 	}
 
-	g := scopedom.DefaultGuardrails()
-	if s.guardrails != nil {
-		g = *s.guardrails
-	}
+	g := s.guardrailsFor(tenantID)
 	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
 		return nil, err
 	}
@@ -318,6 +318,10 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 	}
 	if target.IsProgramEntry() && input.changesEntry() {
 		return nil, scopedom.ErrProgramManaged
+	}
+	// A superseded entry keeps its history; only its notes change.
+	if target.IsSuperseded() && input.changesEntry() {
+		return nil, scopedom.ErrEntrySuperseded
 	}
 	if input.changesEntry() {
 		if err := s.refuseCITrustManaged(ctx, target); err != nil {
@@ -626,6 +630,8 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 
 	now := time.Now().UTC()
 	switch {
+	case target.IsSuperseded():
+		return nil, scopedom.ErrEntrySuperseded
 	case target.Status() == scopedom.StatusRejected:
 		return nil, scopedom.ErrEntryRejected
 	case target.Status() == scopedom.StatusExpired || target.ExpiredAt(now):
@@ -645,10 +651,7 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 	if err := scopedom.ValidatePattern(target.TargetType(), target.Pattern()); err != nil {
 		return nil, err
 	}
-	g := scopedom.DefaultGuardrails()
-	if s.guardrails != nil {
-		g = *s.guardrails
-	}
+	g := s.guardrailsFor(parsedTenantID)
 	if err := g.CheckPattern(target.TargetType(), target.Pattern()); err != nil {
 		return nil, err
 	}
@@ -666,12 +669,7 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 		return nil, err
 	}
 
-	if err := s.commitEntry(ctx, before, target, false, func() error {
-		if err := s.targetRepo.Update(ctx, target); err != nil {
-			return fmt.Errorf("failed to activate scope target: %w", err)
-		}
-		return nil
-	}); err != nil {
+	if err := s.commitEntryUpdate(ctx, before, target); err != nil {
 		return nil, err
 	}
 	if target.IsPending() {
@@ -703,6 +701,9 @@ func (s *Service) DeactivateTarget(ctx context.Context, targetID string, tenantI
 		return nil, err
 	}
 
+	if target.IsSuperseded() {
+		return nil, scopedom.ErrEntrySuperseded
+	}
 	if err := s.refuseCITrustManaged(ctx, target); err != nil {
 		return nil, err
 	}
@@ -742,6 +743,9 @@ type CreateExclusionInput struct {
 	Origin scopedom.Origin
 	// Kind is why it is out of scope (empty: do_not_scan, exclusion_kind.go).
 	Kind string
+	// ConfirmCritical: the caller confirmed closing critical-tier findings
+	// (critical_closures.go).
+	ConfirmCritical bool
 }
 
 // entryOrigin is the origin a new entry records: the path's own when it
@@ -797,6 +801,13 @@ func (s *Service) CreateExclusion(ctx context.Context, input CreateExclusionInpu
 	exclusion.SetKind(kind)
 	if err := s.checkClosingReach(ctx, tenantID, kind, exclusionType, exclusion.Pattern(), input.ExpiresAt == nil); err != nil {
 		return nil, err
+	}
+	if kind.ClosesFindings() && input.ExpiresAt == nil {
+		if err := s.checkCriticalClosures(ctx, tenantID, []BulkExclusionItem{
+			{ExclusionType: string(exclusionType), Pattern: exclusion.Pattern()},
+		}, input.ConfirmCritical); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.exclusionDuplicate(ctx, tenantID, exclusionType, exclusion.Pattern()); err != nil {
 		return nil, err
@@ -854,6 +865,9 @@ type UpdateExclusionInput struct {
 	// Reviewer is the caller; shortening the window of an exclusion in
 	// effect needs Reviewer.CanApprove and someone other than the requester.
 	Reviewer scopedom.Reviewer
+	// ConfirmCritical: the caller confirmed closing critical-tier findings
+	// (critical_closures.go).
+	ConfirmCritical bool
 }
 
 // UpdateExclusion updates an existing scope exclusion.
@@ -873,6 +887,7 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 	}
 	before := ledgerExclusionOf(exclusion, time.Now())
 	needsReview := s.entriesNeedApproval(ctx, parsedTenantID)
+	closedBefore := exclusion.Kind().ClosesFindings() && exclusion.ExpiresAt() == nil
 
 	if input.ExpiresAt != nil && exclusion.ShortensWindow(input.ExpiresAt) {
 		if err := exclusion.AuthorizeReduction(input.Reviewer, needsReview); err != nil {
@@ -910,6 +925,15 @@ func (s *Service) UpdateExclusion(ctx context.Context, exclusionID string, tenan
 		if err := s.checkClosingReach(ctx, parsedTenantID, exclusion.Kind(), exclusion.ExclusionType(),
 			exclusion.Pattern(), exclusion.ExpiresAt() == nil); err != nil {
 			return nil, err
+		}
+		// Turned into a rule that closes findings (a closing kind, no end
+		// date): critical-tier findings it would close need a confirm.
+		if !closedBefore && exclusion.Kind().ClosesFindings() && exclusion.ExpiresAt() == nil {
+			if err := s.checkCriticalClosures(ctx, parsedTenantID, []BulkExclusionItem{
+				{ExclusionType: string(exclusion.ExclusionType()), Pattern: exclusion.Pattern()},
+			}, input.ConfirmCritical); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1414,6 +1438,29 @@ func (s *Service) ExcludedAddressSet(ctx context.Context, tenantID string) (ipse
 		switch e.ExclusionType() {
 		case scopedom.ExclusionTypeIPAddress, scopedom.ExclusionTypeIPRange, scopedom.ExclusionTypeCIDR:
 			if r, ok := ipset.Parse(e.Pattern()); ok {
+				ranges = append(ranges, r)
+			}
+		}
+	}
+	return ipset.Of(ranges...), nil
+}
+
+// InScopeAddressSet returns the addresses the tenant's scope entries in
+// effect of an address kind (address, range, CIDR) cover, as one set: the
+// scan target gate cuts a large range target to it (RFC-151), so its
+// out-of-scope parts are never dispatched. It only narrows what is sent:
+// every piece still passes the ownership gate. Only this tenant's entries
+// count. A failed lookup is an error (fail closed).
+func (s *Service) InScopeAddressSet(ctx context.Context, tenantID string) (ipset.Set, error) {
+	targets, err := s.ListActiveTargets(ctx, tenantID)
+	if err != nil {
+		return ipset.Set{}, fmt.Errorf("list active scope entries: %w", err)
+	}
+	ranges := make([]ipset.Range, 0, len(targets))
+	for _, t := range targets {
+		switch t.TargetType() {
+		case scopedom.TargetTypeIPAddress, scopedom.TargetTypeIPRange, scopedom.TargetTypeCIDR:
+			if r, ok := ipset.Parse(t.Pattern()); ok {
 				ranges = append(ranges, r)
 			}
 		}

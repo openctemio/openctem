@@ -64,6 +64,11 @@ func TestBuildExposureChains_MultiHop(t *testing.T) {
 	if !c.IsCrownJewel {
 		t.Error("target db should be flagged crown jewel")
 	}
+	// A chain is built from the graph and the findings: possible, never
+	// proven, until a verdict exists.
+	if c.Proof != ProofPossible {
+		t.Errorf("proof = %q, want %q", c.Proof, ProofPossible)
+	}
 	if res.Summary.EntryPoints != 1 || res.Summary.TargetsAtRisk != 1 {
 		t.Errorf("summary: entryPoints=%d targetsAtRisk=%d", res.Summary.EntryPoints, res.Summary.TargetsAtRisk)
 	}

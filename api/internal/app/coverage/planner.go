@@ -130,7 +130,7 @@ func plannedCapabilities(rules []covdom.Rule) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(rules))
 	for _, r := range rules {
-		st, ok := stage.Lookup(stage.Key(r.Capability))
+		st, ok := stage.Lookup(stage.Key(covdom.StageKeyOf(r.Capability)))
 		if !ok || st.Tier >= stage.TierIntrusive || seen[r.Capability] {
 			continue
 		}
@@ -143,8 +143,8 @@ func plannedCapabilities(rules []covdom.Rule) []string {
 // ruleOf returns the rule of a capability (the first: cadences of one
 // capability are the same across types in the default policy; settlement
 // uses it for the next due time and the output check).
-func (s *Service) ruleOf(capability string) covdom.Rule {
-	for _, r := range s.rules {
+func ruleOf(rules []covdom.Rule, capability string) covdom.Rule {
+	for _, r := range rules {
 		if r.Capability == capability {
 			return r
 		}
@@ -159,7 +159,7 @@ func (s *Service) ruleOf(capability string) covdom.Rule {
 // run's error; a run unfinished after a day fails its pairs as stalled.
 // parked is how many names the pass found without an address (resolve.dns
 // no answer).
-func (s *Service) settle(ctx context.Context, tenantID shared.ID) (total, parked int, err error) {
+func (s *Service) settle(ctx context.Context, tenantID shared.ID, rules []covdom.Rule) (total, parked int, err error) {
 	runs, err := s.planner.QueuedRuns(ctx, tenantID)
 	if err != nil {
 		return 0, 0, err
@@ -174,7 +174,7 @@ func (s *Service) settle(ctx context.Context, tenantID shared.ID) (total, parked
 			}
 			stalled = true
 		}
-		n, p, err := s.settleRun(ctx, tenantID, rs, stalled)
+		n, p, err := s.settleRun(ctx, tenantID, rules, rs, stalled)
 		total += n
 		parked += p
 		if err != nil {
@@ -184,8 +184,8 @@ func (s *Service) settle(ctx context.Context, tenantID shared.ID) (total, parked
 	return total, parked, nil
 }
 
-func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.RunState, stalled bool) (n, parked int, err error) {
-	rule := s.ruleOf(rs.Capability)
+func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rules []covdom.Rule, rs covdom.RunState, stalled bool) (n, parked int, err error) {
+	rule := ruleOf(rules, rs.Capability)
 	queued, err := s.planner.QueuedTargets(ctx, tenantID, rs.RunID, rs.Capability)
 	if err != nil {
 		return 0, 0, err
@@ -235,7 +235,9 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 				continue
 			}
 			reason := covdom.ReasonUnresolvable
-			if v.Outcome == covdom.ReasonResolverFailed {
+			if v.Outcome == covdom.ReasonResolverFailed || v.Outcome == covdom.OutcomeDNSUnknown {
+				// A failed lookup, or one the sensor did not explain: never
+				// "the name has no address".
 				reason = covdom.ReasonResolverFailed
 			}
 			unresolved = append(unresolved, covdom.FailedPair{AssetID: d.AssetID, Outcome: reason, Error: v.Error})
@@ -283,6 +285,11 @@ func (s *Service) settleRun(ctx context.Context, tenantID shared.ID, rs covdom.R
 	}
 	if err := s.planner.MarkBlocked(ctx, tenantID, rs.Capability, blocked, BlockedRecheck); err != nil {
 		return n, parked, err
+	}
+	if s.liveness != nil && !stalled {
+		// Liveness is a reading of the settled verdicts: recorded after the
+		// ledger, and never failing the settlement.
+		s.liveness.Record(ctx, tenantID, livenessObservations(rs.Capability, queued, verdicts))
 	}
 	if !stalled {
 		if err := s.countRunClaim(ctx, tenantID, rs); err != nil {
@@ -380,7 +387,7 @@ const ReasonRepositoryCodeOnly = "repository_code_only"
 // gives repositories no network capability; this keeps a stray ledger row
 // from ever sending one to a network tool.
 func (s *Service) blockRepositories(ctx context.Context, tenantID shared.ID, capability string, due []covdom.DueTarget) ([]covdom.DueTarget, error) {
-	st, ok := stage.Lookup(stage.Key(capability))
+	st, ok := stage.Lookup(stage.Key(covdom.StageKeyOf(capability)))
 	if !ok || !st.TakesNetworkKinds() || len(due) == 0 {
 		return due, nil
 	}
@@ -408,13 +415,13 @@ func (s *Service) blockRepositories(ctx context.Context, tenantID shared.ID, cap
 // tenant's daily budget. A capability that cannot run for the tenant now
 // (readiness) gets no run: its pairs are paused with the reason, and resume
 // on the first pass where it is ready again.
-func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
+func (s *Service) plan(ctx context.Context, tenantID shared.ID, rules []covdom.Rule) (int, error) {
 	used, err := s.planner.AttemptsSince(ctx, tenantID, s.now().Add(-24*time.Hour))
 	if err != nil {
 		return 0, err
 	}
 	left := s.cfg.DailyBudget - used
-	capabilities := plannedCapabilities(s.rules)
+	capabilities := plannedCapabilities(rules)
 	rd := s.newReadinessPass(tenantID, capabilities)
 	holds, err := s.planner.Holds(ctx, tenantID)
 	if err != nil {
@@ -425,8 +432,20 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		if left <= 0 {
 			break
 		}
-		lookahead := covdom.Lookahead(s.ruleOf(capability).Every)
-		due, err := s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead)
+		lookahead := covdom.Lookahead(ruleOf(rules, capability).Every)
+		limit := min(s.cfg.Batch, left)
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			// The organization's switch and request budget.
+			n, stop, err := s.pathDiscoveryLimit(ctx, tenantID, limit)
+			if err != nil {
+				return total, err
+			}
+			if stop {
+				continue
+			}
+			limit = n
+		}
+		due, err := s.dueBatch(ctx, tenantID, capability, limit, lookahead)
 		if err != nil {
 			return total, err
 		}
@@ -447,34 +466,25 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 			}
 			continue
 		}
-		if h, ok := holds[capability]; ok && h.Active() {
-			// No sensor took its last runs: wait for a fleet change or
-			// the probe instead of starting runs that cannot succeed.
-			run, err := s.heldResume(ctx, tenantID, h)
-			if err != nil {
+		var run bool
+		if due, run, err = s.resumeDue(ctx, tenantID, capability, holds[capability], paused, due, limit, lookahead); err != nil {
+			return total, err
+		}
+		if !run {
+			continue
+		}
+		if len(due) == 0 || !s.batchReady(rules, capability, due, limit) {
+			continue
+		}
+		budgetBound := false
+		if capability == covdom.CapabilityEnumerateWebPaths {
+			budgetBound = len(due) >= limit && limit < min(s.cfg.Batch, left)
+			if due, err = s.pathDiscoveryRefuse(ctx, tenantID, due); err != nil {
 				return total, err
 			}
-			if !run {
+			if len(due) == 0 {
 				continue
 			}
-			if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
-				return total, err
-			}
-		} else if paused != "" {
-			n, err := s.planner.ResumeFromReadiness(ctx, tenantID, capability)
-			if err != nil {
-				return total, err
-			}
-			if n > 0 {
-				s.logger.Info("coverage resumed", "tenant_id", tenantID.String(), "capability", capability,
-					"pairs", n, "was", paused)
-				if due, err = s.dueBatch(ctx, tenantID, capability, min(s.cfg.Batch, left), lookahead); err != nil {
-					return total, err
-				}
-			}
-		}
-		if len(due) == 0 || !s.batchReady(capability, due, min(s.cfg.Batch, left)) {
-			continue
 		}
 		batch, depth := onboardingBatch(capability, due)
 		n, err := s.startBatch(ctx, tenantID, capability, batch, depth)
@@ -483,8 +493,45 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 		if err != nil {
 			return total, err
 		}
+		if budgetBound {
+			// What the daily request budget left out waits as deferred,
+			// never as covered.
+			if err := s.pauseCapability(ctx, tenantID, capability, covdom.ReadyBudgetSpent, pathBudgetRetry); err != nil {
+				return total, err
+			}
+		}
 	}
 	return total, nil
+}
+
+// resumeDue applies a capability's hold and readiness pause to its due batch:
+// a hold waits for a fleet change or the probe; a pause that cleared resumes
+// its pairs and reads the batch again. run is false when nothing starts now.
+func (s *Service) resumeDue(ctx context.Context, tenantID shared.ID, capability string, h covdom.Hold, paused string, due []covdom.DueTarget, limit int, lookahead time.Duration) (_ []covdom.DueTarget, run bool, err error) {
+	if h.Active() {
+		// No sensor took its last runs: wait for a fleet change or the
+		// probe instead of starting runs that cannot succeed.
+		run, err := s.heldResume(ctx, tenantID, h)
+		if err != nil || !run {
+			return due, false, err
+		}
+		due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead)
+		return due, err == nil, err
+	}
+	if paused == "" {
+		return due, true, nil
+	}
+	n, err := s.planner.ResumeFromReadiness(ctx, tenantID, capability)
+	if err != nil {
+		return due, false, err
+	}
+	if n > 0 {
+		s.logger.Info("coverage resumed", "tenant_id", tenantID.String(), "capability", capability,
+			"pairs", n, "was", paused)
+		due, err = s.dueBatch(ctx, tenantID, capability, limit, lookahead)
+		return due, err == nil, err
+	}
+	return due, true, nil
 }
 
 // batchReady applies the batch rule (covdom.BatchReady) when FillBatches is
@@ -492,7 +539,7 @@ func (s *Service) plan(ctx context.Context, tenantID shared.ID) (int, error) {
 // pairs: the daily budget may leave fewer), or its oldest pair has waited
 // a tenth of the cadence, at most covdom.MaxBatchWait. A batch that is not
 // ready stays due and collects the pairs that fall due meanwhile.
-func (s *Service) batchReady(capability string, due []covdom.DueTarget, limit int) bool {
+func (s *Service) batchReady(rules []covdom.Rule, capability string, due []covdom.DueTarget, limit int) bool {
 	if !s.cfg.FillBatches {
 		return true
 	}
@@ -501,7 +548,7 @@ func (s *Service) batchReady(capability string, due []covdom.DueTarget, limit in
 		oldest = max(oldest, d.Waited)
 	}
 	minBatch := min(scanapp.CoverageChunkSize(capability), limit)
-	return covdom.BatchReady(len(due), minBatch, oldest, s.ruleOf(capability).Every)
+	return covdom.BatchReady(len(due), minBatch, oldest, ruleOf(rules, capability).Every)
 }
 
 // dueBatch is the planner's due batch with repositories taken out (and
@@ -574,7 +621,15 @@ func (s *Service) startBatch(ctx context.Context, tenantID shared.ID, capability
 		}
 		byTarget[key] = append(byTarget[key], d.AssetID)
 	}
-	res, err := s.starter.StartCoverage(ctx, scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)})
+	in := scanapp.CoverageInput{TenantID: tenantID, Capability: capability, Targets: targets, Depth: string(depth)}
+	if capability == covdom.CapabilityEnumerateWebPaths && s.pathGate != nil {
+		b, err := s.pathGate.PathDiscoveryBudget(ctx, tenantID)
+		if err != nil {
+			return 0, err
+		}
+		in.MaxRequestsPerOrigin = b.PerOrigin
+	}
+	res, err := s.starter.StartCoverage(ctx, in)
 	if errors.Is(err, scanapp.ErrCoverageBusy) {
 		return 0, nil // the previous batch is still running: back-pressure
 	}

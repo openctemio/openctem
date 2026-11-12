@@ -21,8 +21,10 @@ import (
 	"github.com/openctemio/ctis/v2"
 
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
@@ -80,13 +82,15 @@ func templateScanner(tool string) bool {
 }
 
 // splitInfoMatches splits the report's findings into those that stay
-// findings and the info matches of a template scanner that become
-// exposures. Pure: the report is not changed.
-func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output *Output, stepRunID *shared.ID) ([]ctis.Finding, []exposure.TemplateMatch) {
+// findings, the info matches of a template scanner that become exposures,
+// and the number of info matches the template facts mapping stored as
+// asset facts. Pure: the report is not changed.
+func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output *Output, stepRunID *shared.ID, facts *templatefact.Map, scope *alterScope) ([]ctis.Finding, []exposure.TemplateMatch, int) {
 	if report == nil || report.Tool == nil || !templateScanner(report.Tool.Name) {
-		return report.Findings, nil
+		return report.Findings, nil, 0
 	}
 	var matches []exposure.TemplateMatch
+	consumed := 0
 	keep := make([]ctis.Finding, 0, len(report.Findings))
 	for i := range report.Findings {
 		f := &report.Findings[i]
@@ -96,43 +100,81 @@ func splitInfoMatches(report *ctis.Report, assetMap map[string]shared.ID, output
 			keep = append(keep, *f)
 			continue
 		}
+		fact, mapped := infoFactClass(facts, f)
+		if mapped && fact.Class.IsFact() && scope.factWasStored(i) {
+			// Stored as a fact of its asset before the findings (info_facts.go).
+			consumed++
+			continue
+		}
+		if !mapped || fact.Class.IsFact() {
+			// No mapping, or a mapping that left nothing on the asset
+			// (unknown matcher, no web origin, no clean path, over a cap):
+			// nothing is dropped, it is filed as an exposure and counted.
+			output.InfoUnmapped++
+		}
 		m := exposure.TemplateMatch{AssetID: assetID, Tool: report.Tool.Name, RuleID: f.RuleID, Title: f.Title,
-			Matcher: f.SourceExtra["matcher_name"], Tags: f.Tags, StepRunID: stepRunID}
+			Matcher: f.SourceExtra["matcher_name"], Tags: f.Tags, StepRunID: stepRunID,
+			EventType: exposure.EventType(fact.EventType)}
 		if f.Web != nil {
 			m.URL = f.Web.URL
 		}
 		matches = append(matches, m)
 	}
-	return keep, matches
+	return keep, matches, consumed
 }
 
 // routeInfoMatches moves the report's template info matches to exposures
-// (see the file comment) and counts them on output and on the step run.
-// When the organization files them as findings, or nothing is wired, the
-// report is left as it is.
-func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, report *ctis.Report, assetMap map[string]shared.ID, output *Output, binding Binding) {
+// or, for those the template facts mapping stored as asset facts, out of
+// the findings (see the file comment), and counts them on output and on
+// the step run. When the organization files them as findings, or nothing
+// is wired, the report is left as it is.
+func (s *Service) routeInfoMatches(ctx context.Context, tenantID shared.ID, report *ctis.Report, assetMap map[string]shared.ID, output *Output, binding Binding, facts *templatefact.Map, scope *alterScope) {
 	if s.templateMatches == nil || report == nil || len(report.Findings) == 0 {
 		return
 	}
-	keep, matches := splitInfoMatches(report, assetMap, output, binding.StepRunID)
-	if len(matches) == 0 || s.infoMatchesAsFindings(ctx, tenantID) {
+	keep, matches, consumed := splitInfoMatches(report, assetMap, output, binding.StepRunID, facts, scope)
+	if len(matches)+consumed == 0 || s.infoMatchesAsFindings(ctx, tenantID) {
+		output.InfoUnmapped = 0
 		return
 	}
-	n, err := s.templateMatches.ProjectTemplateMatches(ctx, tenantID, matches)
-	if err != nil {
-		// Not filed: they stay findings rather than vanish.
-		s.logger.Warn("ingest: info matches not filed as exposures; kept as findings",
-			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
-		return
+	n := 0
+	if len(matches) > 0 {
+		var err error
+		n, err = s.templateMatches.ProjectTemplateMatches(ctx, tenantID, matches)
+		if err != nil {
+			// Not filed: they stay findings rather than vanish.
+			s.logger.Warn("ingest: info matches not filed as exposures; kept as findings",
+				"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+			output.InfoUnmapped = 0
+			return
+		}
 	}
+	output.addOutcome(ingestreceipt.OutcomeExposure, len(report.Findings)-len(keep))
 	report.Findings = keep
+	n += consumed
 	output.InfoObservations += n
+	output.InfoFacts += consumed
 	if s.stepInfo != nil && binding.Kind == BindingCommand && binding.StepRunID != nil && n > 0 {
 		if err := s.stepInfo.AddStepInfoObservations(ctx, tenantID, *binding.StepRunID, n); err != nil {
 			s.logger.Warn("ingest: step run info observations not counted",
 				"tenant_id", tenantID.String(), "scan_run_step_id", binding.StepRunID.String(), "error", logger.SanitizeError(err))
 		}
 	}
+	if output.InfoUnmapped > 0 && report.Tool != nil {
+		s.logger.Info("ingest: template info matches the template facts mapping does not name; filed as generic exposures",
+			"tenant_id", tenantID.String(), "tool", report.Tool.Name, "count", output.InfoUnmapped)
+	}
+}
+
+// infoMatchesRouted reports whether this ingest files the tool's info
+// matches as exposures instead of findings (a template scanner, the
+// projection wired, the organization's setting off). A covered run of such
+// a tool then never reports an informational match as a finding, so its
+// absence from the run proves nothing: coverage auto-resolve leaves the
+// informational findings of the tool alone (they move to exposures with
+// their own closure reason, never as fixed).
+func (s *Service) infoMatchesRouted(ctx context.Context, tenantID shared.ID, tool string) bool {
+	return s.templateMatches != nil && templateScanner(tool) && !s.infoMatchesAsFindings(ctx, tenantID)
 }
 
 // infoMatchesAsFindings reads the organization's choice (false when the

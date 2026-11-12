@@ -47,6 +47,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
   },
   { path: /^src\/features\/shared\/components\/tone-pill\.tsx$/, why: 'a CI pipeline status' },
   {
+    path: /^src\/features\/query\/components\/query-input\.tsx$/,
+    why: "the query API's problem code pipeline_not_allowed (a | pipe in a query)",
+  },
+  {
     path: /^src\/features\/assets\/types\/asset\.types\.ts$/,
     why: 'repositories and their CI pipelines',
   },
@@ -82,6 +86,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
     why: 'asserts the old /pipelines routes are gone',
   },
   { path: /^src\/config\/__tests__\/pipeline-vocabulary\.test\.ts$/, why: 'this guard' },
+  {
+    path: /^src\/lib\/__tests__\/literal-ui-text-debt\.json$/,
+    why: 'lists the CI pipeline sheet by its file path',
+  },
   {
     path: /^src\/hooks\/__tests__\/list-params-guard\.test\.ts$/,
     why: 'names the CI pipelines view',

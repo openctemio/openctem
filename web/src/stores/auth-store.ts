@@ -11,6 +11,7 @@
  */
 
 import { clearFormDrafts } from '@/lib/form-drafts'
+import { clearRecentQueries } from '@/features/query/lib/recent'
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { clearAllStoredPermissions } from '@/lib/permission-storage'
@@ -285,6 +286,7 @@ export const useAuthStore = create<AuthState>()(
         clearAllStoredPermissions()
         clearAllLogoCaches()
         clearFormDrafts()
+        clearRecentQueries()
 
         redirectToLogout({
           post_logout_redirect_uri: postLogoutRedirectUri,
@@ -334,6 +336,7 @@ export const useAuthStore = create<AuthState>()(
         clearAllStoredPermissions()
         clearAllLogoCaches()
         clearFormDrafts()
+        clearRecentQueries()
       },
 
       setError: (error: string) => {

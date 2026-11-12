@@ -121,6 +121,15 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
+// @Param  practice  query  []string  false  "practice: any of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_level  query  []integer  false  "compliance level: any of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_null  query  boolean  false  "compliance level is unset (true) or set (false)"
+// @Param  compliance_level_not  query  []integer  false  "compliance level: none of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_gte  query  integer  false  "compliance level at least"
+// @Param  compliance_level_lte  query  integer  false  "compliance level at most"
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
@@ -134,12 +143,25 @@ func (h *FindingActionsHandler) findingGroupsRoute() filterquery.Route {
 // @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
 // @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_sensor_id  query  []string  false  "seen by sensor id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_scan_id  query  []string  false  "seen by scan id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
+// @Param  retired_source_only  query  boolean  false  "retired source only equals"
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  description  query  string  false  "description contains"
 // @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_type  query  []string  false  "asset type: any of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  asset_type_not  query  []string  false  "asset type: none of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  asset_domain  query  []string  false  "asset domain (example.com: the name and every asset under it; *.example.com: only under it): any of (comma list)"  collectionFormat(csv)
+// @Param  asset_domain_not  query  []string  false  "asset domain (example.com: the name and every asset under it; *.example.com: only under it): none of (comma list)"  collectionFormat(csv)
+// @Param  asset_name  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): any of (comma list)"  collectionFormat(csv)
+// @Param  asset_name_not  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): none of (comma list)"  collectionFormat(csv)
+// @Param  asset_ip  query  []string  false  "asset IP address or CIDR range (10.0.0.0/8): any of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
 // @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"
@@ -297,6 +319,15 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  family_not  query  []string  false  "family: none of (comma list)"  collectionFormat(csv)
 // @Param  finding_type  query  []string  false  "finding type: any of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
+// @Param  practice  query  []string  false  "practice: any of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
+// @Param  compliance_level  query  []integer  false  "compliance level: any of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_null  query  boolean  false  "compliance level is unset (true) or set (false)"
+// @Param  compliance_level_not  query  []integer  false  "compliance level: none of (comma list)"  collectionFormat(csv)
+// @Param  compliance_level_gte  query  integer  false  "compliance level at least"
+// @Param  compliance_level_lte  query  integer  false  "compliance level at most"
 // @Param  is_in_kev  query  boolean  false  "is in kev equals"
 // @Param  kev_ransomware  query  boolean  false  "kev ransomware equals"
 // @Param  is_reachable  query  boolean  false  "is reachable equals"
@@ -310,12 +341,25 @@ func (h *FindingActionsHandler) ListFindingGroups(w http.ResponseWriter, r *http
 // @Param  rule_id_not  query  []string  false  "rule id: none of (comma list)"  collectionFormat(csv)
 // @Param  scan_id  query  []string  false  "scan id: any of (comma list)"  collectionFormat(csv)
 // @Param  scan_id_not  query  []string  false  "scan id: none of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_sensor_id  query  []string  false  "seen by sensor id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_scan_id  query  []string  false  "seen by scan id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_in_run_id  query  []string  false  "seen in run id: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_tool  query  []string  false  "seen by tool: any of (comma list)"  collectionFormat(csv)
+// @Param  seen_by_channel  query  []string  false  "seen by channel: any of (comma list)"  collectionFormat(csv)  Enums(scan, task, sensor, upload, ci, connector, platform, unknown)
+// @Param  retired_source_only  query  boolean  false  "retired source only equals"
 // @Param  file_path  query  string  false  "file path contains"
 // @Param  file_path_contains  query  string  false  "file path contains"
 // @Param  description  query  string  false  "description contains"
 // @Param  description_contains  query  string  false  "description contains"
 // @Param  asset_tag  query  []string  false  "asset tag: any of (comma list)"  collectionFormat(csv)
 // @Param  asset_tag_not  query  []string  false  "asset tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_type  query  []string  false  "asset type: any of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  asset_type_not  query  []string  false  "asset type: none of (comma list)"  collectionFormat(csv)  Enums(domain, subdomain, ip_address, certificate, service, application, host, cloud_account, container, kubernetes, repository, identity, database, storage, network, unclassified)
+// @Param  asset_domain  query  []string  false  "asset domain (example.com: the name and every asset under it; *.example.com: only under it): any of (comma list)"  collectionFormat(csv)
+// @Param  asset_domain_not  query  []string  false  "asset domain (example.com: the name and every asset under it; *.example.com: only under it): none of (comma list)"  collectionFormat(csv)
+// @Param  asset_name  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): any of (comma list)"  collectionFormat(csv)
+// @Param  asset_name_not  query  []string  false  "asset name pattern (* any characters, ? one; at most 3 wildcards): none of (comma list)"  collectionFormat(csv)
+// @Param  asset_ip  query  []string  false  "asset IP address or CIDR range (10.0.0.0/8): any of (comma list)"  collectionFormat(csv)
 // @Param  asset_group_id  query  []string  false  "asset group id: any of (comma list)"  collectionFormat(csv)
 // @Param  related_to  query  string  false  "related to equals"  Enums(me, my_team)
 // @Param  cvss_score_gte  query  number  false  "cvss score at least"

@@ -145,6 +145,10 @@ type BootstrapResponse struct {
 	EmailDelivery *bool `json:"email_delivery,omitempty"`
 	// Badges are the sidebar and header counts.
 	Badges *BootstrapBadges `json:"badges,omitempty"`
+	// OwnershipInvitations is the caller's open ownership invitations, as
+	// GET /me/ownership-invitations returns them (the caller's own account
+	// only), for the app shell's banner.
+	OwnershipInvitations *OwnerInvitationListResponse `json:"ownership_invitations,omitempty"`
 	// Announcements are the platform notices shown now, as GET
 	// /announcements returns them in `data`. Platform-wide, not per tenant.
 	Announcements *[]AnnouncementResponse `json:"announcements,omitempty"`
@@ -212,6 +216,9 @@ type BootstrapSession struct {
 	// EmailDelivery reports whether this server can send email (the same
 	// source as GET /auth/providers email_delivery).
 	EmailDelivery func() bool
+	// OwnershipInvitations is UserHandler.MyOwnerInvitationsResponse (the
+	// /me/ownership-invitations body for the request's own account).
+	OwnershipInvitations func(ctx context.Context, userID shared.ID) (*OwnerInvitationListResponse, error)
 	// Announcements is AnnouncementHandler.ActiveResponses (the
 	// /announcements body).
 	Announcements func(ctx context.Context) ([]AnnouncementResponse, error)
@@ -518,6 +525,18 @@ func (h *BootstrapHandler) addSession(r *http.Request, resp *BootstrapResponse, 
 			me := h.session.Me(ctx, u)
 			mu.Lock()
 			resp.User = &me
+			mu.Unlock()
+		})
+	}
+	if h.session.OwnershipInvitations != nil {
+		run(func() {
+			inv, err := h.session.OwnershipInvitations(ctx, userID)
+			if err != nil {
+				h.logger.Warn("bootstrap: ownership invitations unavailable", "error", err)
+				return
+			}
+			mu.Lock()
+			resp.OwnershipInvitations = inv
 			mu.Unlock()
 		})
 	}

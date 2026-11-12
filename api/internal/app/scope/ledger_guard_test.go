@@ -108,8 +108,11 @@ func TestLedgerGuard_SQLWritersAreKnown(t *testing.T) {
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.Create": true,
 		// Shared INSERT of Create and the bounty Import / ReplaceScope (all three
 		// known); TestLedgerGuard_InsertHelperCallers pins its callers.
-		"internal/infra/postgres/scope_target_repository.go:insertScopeTarget":                  true,
-		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.Update":       true,
+		"internal/infra/postgres/scope_target_repository.go:insertScopeTarget":            true,
+		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.Update": true,
+		// Shared UPDATE of Update and SaveReplacement (a pattern replacement,
+		// replace.go: called only inside commitEntry).
+		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.updateInTx":   true,
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.Delete":       true,
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.ExpireOld":    true,
 		"internal/infra/postgres/scope_exclusion_repository.go:ScopeExclusionRepository.Create": true,
@@ -371,6 +374,8 @@ func TestLedgerGuard_InsertHelperCallers(t *testing.T) {
 		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.Create":           true,
 		"internal/infra/postgres/bounty_program_repository.go:BountyProgramRepository.Import":       true,
 		"internal/infra/postgres/bounty_program_repository.go:BountyProgramRepository.ReplaceScope": true,
+		// A pattern replacement (replace.go), saved only inside commitEntry.
+		"internal/infra/postgres/scope_target_repository.go:ScopeTargetRepository.SaveReplacement": true,
 	}
 	root := moduleRoot(t)
 	var bad []string

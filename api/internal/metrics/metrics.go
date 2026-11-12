@@ -102,9 +102,11 @@ var (
 	)
 
 	// ScanStageStreamWaves counts the plannings of streamed workflow stages
-	// (RFC-137): kind start (the first wave), wave or close; outcome
+	// (RFC-137): kind start (the first wave), wave, close or stop (its source
+	// failed); outcome
 	// dispatched, empty, deferred (a predecessor report is still being
-	// ingested), deadline (the run's deadline was too close) or error.
+	// ingested), deadline (the run's deadline was too close), error or
+	// dependency_failed.
 	ScanStageStreamWaves = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "scan_stage_stream_waves_total",

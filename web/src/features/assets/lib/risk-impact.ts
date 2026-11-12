@@ -26,7 +26,7 @@ const CRITICALITY_RANK: Record<string, number> = {
   none: 0,
 }
 
-export type LoweredField = 'exposure' | 'criticality'
+export type LoweredField = 'exposure' | 'criticality' | 'crown_jewel'
 
 /** The inputs a form value lowers (a field that is not set is not lowered). */
 export function loweredRiskFields(
@@ -94,7 +94,7 @@ export interface RiskRequest {
 /** What lowering the given inputs would do to the asset's open findings. */
 export function previewRiskImpact(
   assetId: string,
-  body: { exposure?: string; criticality?: string }
+  body: { exposure?: string; criticality?: string; is_crown_jewel?: boolean }
 ): Promise<RiskPreview> {
   return post<RiskPreview>(`/api/v1/assets/${encodeURIComponent(assetId)}/risk-impact`, body)
 }

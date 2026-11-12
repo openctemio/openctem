@@ -354,3 +354,32 @@ func TestApproveAndMerge_OnePendingApprovalSurvives(t *testing.T) {
 		t.Fatalf("the loser's request is not kept canceled: %d", n)
 	}
 }
+
+// A control's state points at its failed finding; when that finding is merged
+// into a survivor the state points at the survivor, and the history row keeps
+// the loser's id (the tombstone still resolves).
+func TestFindingMerge_ComplianceStateFollowsSurvivor(t *testing.T) {
+	f := newMergeFixture(t, "merge-compliance-state")
+	old := time.Now().Add(-48 * time.Hour)
+	keepCopy := f.composite(f.keep, "base-cs", "confirmed", old)
+	awayCopy := f.composite(f.away, "base-cs", "confirmed", old.Add(time.Hour))
+	if _, err := f.db.ExecContext(context.Background(), `INSERT INTO compliance_check_states
+		(tenant_id, asset_id, benchmark_key, benchmark_name, control_id, result, finding_id, first_seen_at, last_checked_at, last_changed_at)
+		VALUES ($1, $2, 'cis-test', 'CIS test', '1.1', 'fail', $3, now(), now(), now())`,
+		f.tenant.String(), f.away.String(), awayCopy.String()); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	if _, err := f.db.ExecContext(context.Background(), `INSERT INTO compliance_check_results
+		(tenant_id, asset_id, benchmark_key, control_id, result, finding_id, observed_at)
+		VALUES ($1, $2, 'cis-test', '1.1', 'fail', $3, now())`,
+		f.tenant.String(), f.away.String(), awayCopy.String()); err != nil {
+		t.Fatalf("seed history: %v", err)
+	}
+	f.merge()
+	if n := f.count(`SELECT count(*) FROM compliance_check_states WHERE tenant_id=$1 AND finding_id=$2`, f.tenant.String(), keepCopy.String()); n != 1 {
+		t.Fatalf("the control state does not point at the survivor: %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM compliance_check_results WHERE tenant_id=$1 AND finding_id=$2`, f.tenant.String(), awayCopy.String()); n != 1 {
+		t.Fatalf("the history lost its row: %d", n)
+	}
+}

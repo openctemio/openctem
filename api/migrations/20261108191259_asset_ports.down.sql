@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS trg_asset_relationships_ports_delete ON asset_relationships;
+DROP TRIGGER IF EXISTS trg_asset_relationships_ports_update ON asset_relationships;
+DROP TRIGGER IF EXISTS trg_asset_relationships_ports_insert ON asset_relationships;
+DROP TRIGGER IF EXISTS trg_assets_ports_update ON assets;
+DROP TRIGGER IF EXISTS trg_assets_ports_insert ON assets;
+DROP FUNCTION IF EXISTS asset_ports_enqueue_edges();
+DROP FUNCTION IF EXISTS asset_ports_enqueue_asset();
+DROP FUNCTION IF EXISTS asset_ports_enqueue_new_assets();
+DROP TABLE IF EXISTS asset_port_queue;
+DROP TABLE IF EXISTS asset_ports;

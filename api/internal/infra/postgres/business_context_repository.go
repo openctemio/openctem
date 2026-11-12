@@ -377,3 +377,36 @@ func dedupStrings(in []string) []string {
 	}
 	return out
 }
+
+// effectiveCriticalityBatch bounds the asset ids of one business-context lookup.
+const effectiveCriticalityBatch = 2000
+
+// EffectiveCriticalities returns each asset's effective criticality: the MAX of
+// its own criticality, its business units (with their parents), the business
+// services it powers and the assets it is a control plane for
+// (asset.EffectiveCriticality). It is the one resolver behind finding priority
+// and scan approvals, so an asset raised by its unit or service is critical for
+// both. Tenant-scoped; own maps each asset to its own criticality.
+func (r *BusinessContextLookupRepo) EffectiveCriticalities(
+	ctx context.Context,
+	tenantID shared.ID,
+	own map[shared.ID]asset.Criticality,
+) (map[shared.ID]asset.Criticality, error) {
+	out := make(map[shared.ID]asset.Criticality, len(own))
+	ids := make([]shared.ID, 0, len(own))
+	for id := range own {
+		ids = append(ids, id)
+	}
+	for start := 0; start < len(ids); start += effectiveCriticalityBatch {
+		batch := ids[start:min(start+effectiveCriticalityBatch, len(ids))]
+		bctx, err := r.GetForAssets(ctx, tenantID, batch)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range batch {
+			eff, _ := asset.EffectiveCriticality(own[id], bctx[id])
+			out[id] = eff
+		}
+	}
+	return out, nil
+}

@@ -807,8 +807,9 @@ func resolve(cfg *config, rel *relConfig) (*model, error) { //nolint:gocognit,go
 // test in pkg/domain/coverage proves each rule names a capability that
 // takes the type. Requires is a closed set of predicates over stored facts.
 var (
-	capabilityRe      = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
-	coverageRequires  = map[string]bool{"resolves": true, "web_port": true, "web_port_or_unscanned": true, "scope_entry": true, "no_named_twin": true}
+	capabilityRe     = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`)
+	coverageRequires = map[string]bool{"resolves": true, "web_port": true, "web_port_or_unscanned": true, "scope_entry": true, "no_named_twin": true,
+		"origin_scope_entry": true, "inventory_changed": true, "edge_clear": true}
 	minCoverageEvery  = time.Hour
 	maxCoverageEvery  = 30 * 24 * time.Hour
 	coverageEveryUnit = regexp.MustCompile(`^([1-9][0-9]{0,3})([hd])$`)

@@ -1,0 +1,27 @@
+{
+  "time": 0,
+  "sourcetype": "openctem:notification",
+  "source": "openctem.io",
+  "event": {
+    "event_type": "new_exposure",
+    "title": "New exposure",
+    "body": "Severity: High\nNext step: Open it in the console to triage.\nOrganization: Example Corp",
+    "severity": "high",
+    "url": "https://ctem.example.com/exposures",
+    "source": "openctem.io",
+    "notification": {
+      "schema": "openctem.notification/v1",
+      "detail_level": "minimal",
+      "locale": "en",
+      "headline": "New exposure",
+      "severity": "high",
+      "organization": "Example Corp",
+      "next_step": "Open it in the console to triage.",
+      "text": "Severity: High\nNext step: Open it in the console to triage.\nOrganization: Example Corp",
+      "action": {
+        "label": "Open exposure",
+        "url": "https://ctem.example.com/exposures"
+      }
+    }
+  }
+}

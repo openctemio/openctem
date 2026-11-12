@@ -10,6 +10,7 @@ import (
 	"github.com/openctemio/ctis/v2/importer"
 
 	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -40,7 +41,7 @@ func TestInfoMatchesAsFindingsSetting(t *testing.T) {
 	proj := &fakeTemplateMatches{}
 	s := &Service{logger: logger.NewNop(), templateMatches: proj, tenantRepo: settingsTenantRepo{t: tn}}
 	out := &Output{}
-	s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{})
+	s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, nil, nil)
 	if len(report.Findings) != 14 || len(proj.got) != 0 {
 		t.Fatalf("findings %d, filed %d", len(report.Findings), len(proj.got))
 	}
@@ -101,10 +102,14 @@ func TestInfoMatchesBecomeExposuresNotFindings(t *testing.T) {
 	s := &Service{logger: logger.NewNop(), templateMatches: proj, stepInfo: rec}
 	tenant, step := shared.NewID(), shared.NewID()
 	out := &Output{}
-	s.routeInfoMatches(context.Background(), tenant, report, assetMap, out, Binding{Kind: BindingCommand, StepRunID: &step})
+	s.routeInfoMatches(context.Background(), tenant, report, assetMap, out, Binding{Kind: BindingCommand, StepRunID: &step}, nil, nil)
 
 	if len(report.Findings) != 2 {
 		t.Fatalf("findings left = %d, want the medium and the high", len(report.Findings))
+	}
+	// The receipt still accounts for them (research 436).
+	if out.Outcomes[ingestreceipt.OutcomeExposure] != 12 {
+		t.Fatalf("exposure outcome = %d, want 12", out.Outcomes[ingestreceipt.OutcomeExposure])
 	}
 	for _, f := range report.Findings {
 		if f.Severity == ctis.SeverityInfo {
@@ -150,7 +155,7 @@ func TestInfoMatchesOnlyFromAcceptedAssetsOfTemplateScanners(t *testing.T) {
 			mutate(report, out, assetMap)
 			proj := &fakeTemplateMatches{}
 			s := &Service{logger: logger.NewNop(), templateMatches: proj}
-			s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{})
+			s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, nil, nil)
 			if len(report.Findings) != 14 || len(proj.got) != 0 {
 				t.Fatalf("findings %d, filed %d", len(report.Findings), len(proj.got))
 			}
@@ -164,7 +169,7 @@ func TestInfoMatchesKeptWhenNotFiled(t *testing.T) {
 	report, assetMap, _ := infoReport(t)
 	s := &Service{logger: logger.NewNop(), templateMatches: &fakeTemplateMatches{err: errors.New("down")}}
 	out := &Output{}
-	s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{})
+	s.routeInfoMatches(context.Background(), shared.NewID(), report, assetMap, out, Binding{}, nil, nil)
 	if len(report.Findings) != 14 || out.InfoObservations != 0 {
 		t.Fatalf("findings %d, counted %d", len(report.Findings), out.InfoObservations)
 	}

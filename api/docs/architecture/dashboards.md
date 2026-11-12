@@ -455,14 +455,28 @@ receipt or on the discovery tool whose report named the software.
 - Health: `failed` when the latest receipt failed; `stale` when nothing
   came for more than twice the usual interval and at least a day; `ok`
   otherwise. A source with fewer than three receipts is never stale.
+- A source whose senders include a stale one is stale, and its note names
+  that sender's own last receipt (`health_last_at`), not the freshest
+  sender's. A sender's `released` is its reports applied from the results
+  quarantine; the card says "Includes N released from quarantine".
 - Noise: received splits into new or reopened (created plus reopened:
   the receipt list's New and Reopened totals added), merged into findings
-  that exist (the rest after new, reopened and not stored: still detected
-  and repeats within a report) and not stored. These three sum to received.
-  Suppressed by an approved rule is the part of New that was stored closed
-  on arrival (the list's Suppressed total); it is inside New, not a fourth
-  part. One definition per label: the intake summary, the noise headline,
+  that exist (the rest after new, reopened, suppressed and not stored: still
+  detected, repeats within a report and the other outcomes), suppressed and
+  not stored. These four sum to received. Suppressed by an approved rule is
+  the list's Suppressed total; the receipt counts it apart from created (a
+  suppressed new finding is never also counted as created), so it is its own
+  part and New does not contain it, and the removed noise (received minus new)
+  counts it once.
+  One definition per label: the intake summary, the noise headline,
   the hero funnel and the source tooltip all use it.
+- Reconciliation: the noise also carries the receipts' full split
+  (`seen_again`: still detected; `repeated`: the `merged` outcome;
+  `outcomes`: every other receipt outcome, summed from
+  `ingest_receipt_tools.outcomes`; `unaccounted`: what none of them
+  explains, from receipts written before outcomes were counted). The
+  funnel keeps two steps, received and new or reopened; the tooltip of
+  either step lists every row that is not zero.
 - Funnel: received and new or reopened are the period's flow (received is
   at least new or reopened); actionable is a stock (open findings of
   classes P0 to P3 now), so the hero shows it once, apart from the flow
@@ -821,7 +835,9 @@ Opening a dashboard reads its stored snapshot (`dash_snapshots`, one row per
 dashboard); it does not compute. A snapshot is computed on open only when
 there is none, when the layout changed (`layout_hash`), or, for a personal
 dashboard, when the owner's scope changed since it was computed
-(`scope_key`). The data and preview routes of "Widget data" return the
+(`scope_key`), or when it was computed before the organization's dashboard
+facts were first built (`facts_built_at` empty: every widget "being built")
+and the facts exist now. The data and preview routes of "Widget data" return the
 snapshot with `computed_at`, the effective `refresh_schedule` (the
 organization default resolved), `next_refresh_at` (absent for manual or
 paused), `stale` (older than twice the schedule, or the last refresh failed)
@@ -1425,9 +1441,24 @@ Rules every visualization follows:
   `aria-describedby` while open) gives the title, two or three figures, the
   definition and a link to the same list as the figure; Escape, moving the
   pointer out or moving focus out closes it; the second tap on touch follows
-  the link. A healthy source's wire carries a moving dash (static under
-  reduced motion); stale is a dotted amber line and failed a dotted red line,
-  and the row says so in words.
+  the link. A healthy source's wire carries a travelling light (a short
+  bright dash, a CSS animation of `stroke-dashoffset` only, so no layout per
+  frame); its speed follows the findings received on a log scale
+  (`flowDuration`, 3.2 s per cycle for the smallest to 1.1 s for the
+  largest), and a wire with nothing received is a thin dashed still line.
+  The lights stop off screen and in a hidden tab (`FlowWireLayer`, an
+  `IntersectionObserver` and `visibilitychange` set `data-flow-paused`) and
+  are not drawn at all under reduced motion or `data-motion="off"`; width,
+  line style and the row's figure carry everything the motion repeats.
+  Stale is a dotted amber line and failed a dotted red line, still, and the
+  row says so in words.
+- **Source wires.** Every shown source row has a wire, by tool and by
+  instance (`sourceWires` in `source-view.tsx`, shared by both widgets). A
+  wire always carries the findings the row sent, the only thing that enters
+  the findings funnel: ranked by assets, a discovery source's bar shows its
+  assets while its wire stays thin and dashed, and a line under the
+  switchers says that the lines carry findings only. Rows behind "Show all"
+  have no wire.
 - **Receipt list.** `/findings/imports` lists the receipts with the filters
   of the figure that opened it (`origin`, `tool`, `since`, removable chips)
   and the API's totals of the filter above the list, so the totals equal

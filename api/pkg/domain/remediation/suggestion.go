@@ -274,6 +274,7 @@ const (
 	BasisSameSolutionText  = "same_specific_solution_text"
 	BasisSameRule          = "same_rule"
 	BasisSameFindingTitle  = "same_finding_title"
+	BasisSameControl       = "same_benchmark_control"
 )
 
 // maxBasisRules bounds the rule ids a suggestion lists in fix_spec.
@@ -284,7 +285,7 @@ const maxBasisRules = 5
 // 0.6 and gains from the members (Confidence).
 func KeyConfidence(key string) float64 {
 	switch KeyKind(key) {
-	case KindUpgrade, KindRotate:
+	case KindUpgrade, KindRotate, KindControl:
 		return 1.0
 	case KindSol:
 		return 0.6
@@ -303,6 +304,8 @@ func Confidence(key string, cs []Candidate) (float64, []string) {
 		return 1.0, []string{BasisSamePackageTarget}
 	case KindRotate:
 		return 1.0, []string{BasisSameSecretValue}
+	case KindControl:
+		return 1.0, []string{BasisSameControl}
 	case KindSol:
 		conf, basis := 0.6, []string{BasisSameSolutionText}
 		rules, titles := map[string]bool{}, map[string]bool{}
@@ -363,6 +366,13 @@ func FixSpecForKey(key string) map[string]any {
 	case KindSol:
 		if len(parts) == 3 {
 			return map[string]any{"kind": KindSol, "source": parts[1]}
+		}
+	case KindControl:
+		if i := strings.IndexByte(key, ':'); i > 0 {
+			rest := key[i+1:]
+			if j := strings.IndexByte(rest, ':'); j > 0 {
+				return map[string]any{"kind": KindControl, "benchmark": rest[:j], "control": strings.ReplaceAll(rest[j+1:], "~", "/")}
+			}
 		}
 	}
 	return map[string]any{"kind": KeyKind(key)}

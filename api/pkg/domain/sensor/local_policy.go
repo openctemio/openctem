@@ -77,6 +77,12 @@ type LocalPolicyReport struct {
 	Digest string `json:"digest,omitempty"`
 	// KillSwitch is true while the sensor owner stopped every job.
 	KillSwitch bool `json:"kill_switch,omitempty"`
+	// AllowPrivate is whether the sensor's host admits private targets
+	// (RFC1918, IPv6 ULA) now, policy file or not: the host's private-range
+	// switch, narrowed by an enforced policy. nil when the sensor does not
+	// report it (an SDK before it). Routing only narrows on it: a sensor
+	// that reports false gets no job with a private target.
+	AllowPrivate *bool `json:"allow_private,omitempty"`
 	// Summary is the shape of an enforced policy (never the ranges).
 	Summary *LocalPolicySummary `json:"summary,omitempty"`
 	// Warnings are the sensor's operator warnings.
@@ -135,6 +141,10 @@ func SanitizeLocalPolicyReport(r *LocalPolicyReport) *LocalPolicyReport {
 		return nil
 	}
 	out := &LocalPolicyReport{State: state, Required: r.Required, KillSwitch: r.KillSwitch}
+	if r.AllowPrivate != nil {
+		v := *r.AllowPrivate
+		out.AllowPrivate = &v
+	}
 	if state == LocalPolicyEnforced {
 		switch src := strings.ToLower(strings.TrimSpace(r.Source)); src {
 		case "file", "env":
@@ -263,6 +273,25 @@ func (r *LocalPolicyReport) AllowsNoTarget() bool {
 	return r.Enforced() && r.Summary != nil && r.Summary.TargetsAllow == 0
 }
 
+// RefusesPrivate reports whether the sensor says it refuses private
+// targets: its host switch is off (allow_private false, reported with or
+// without a policy file), or its enforced policy does not allow private
+// ranges. False when the sensor does not say (no report, an older SDK
+// without a policy): the sensor decides.
+func (r *LocalPolicyReport) RefusesPrivate() bool {
+	if r == nil {
+		return false
+	}
+	if r.AllowPrivate != nil && !*r.AllowPrivate {
+		return true
+	}
+	return r.Enforced() && r.Summary != nil && !r.Summary.AllowPrivate
+}
+
+// PrivateTargetsHostHint tells an operator how a sensor's host allows
+// private targets.
+const PrivateTargetsHostHint = "the host owner sets SENSOR_ALLOW_PRIVATE_TARGETS=1 for the sensor and restarts it"
+
 // LocalPolicyFileHint tells an operator where a sensor's local policy is
 // edited: the file the multi-sensor install writes per sensor, or the
 // single-sensor default path.
@@ -290,6 +319,9 @@ func MergeLocalPolicyReport(stored, next *LocalPolicyReport) *LocalPolicyReport 
 	}
 	if merged.Warnings == nil {
 		merged.Warnings = stored.Warnings
+	}
+	if merged.AllowPrivate == nil {
+		merged.AllowPrivate = stored.AllowPrivate
 	}
 	return &merged
 }

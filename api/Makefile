@@ -376,6 +376,14 @@ generate-relationships:
 	@echo "Generating relationship types from configs/relationship-types.yaml..."
 	@GOWORK=off $(GOCMD) run ./cmd/gen-relationships
 
+## generate-lead-types: Regenerate the lead type catalog (Go + TS) from YAML
+##
+## Single source of truth: configs/lead-types.yaml (docs/architecture/exploration.md).
+## Edit the YAML, run this target, commit the YAML + the two generated files.
+## `go run ./cmd/gen-lead-types -check` fails when they are stale.
+generate-lead-types:
+	@GOWORK=off $(GOCMD) run ./cmd/gen-lead-types
+
 ## generate-modules: Regenerate the module registry (Go + TS) from YAML
 ##
 ## Single source of truth: configs/modules/<id>.yaml (RFC-064). Edit the YAML, run

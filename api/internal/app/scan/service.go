@@ -177,6 +177,9 @@ type Service struct {
 	// programRules refuses runs a bug-bounty program's rules forbid
 	// (program_rules.go); nil: not checked.
 	programRules ProgramRuleChecker
+	// pathGate refuses path discovery scans the shared gate does not allow
+	// (path_discovery_gate.go).
+	pathGate PathDiscoveryTriggerGate
 	// scopeSnapshots records the scope each run relied on (RFC-065 §9).
 	scopeSnapshots ScopeSnapshotRecorder
 	scanRepo       scan.Repository
@@ -212,6 +215,7 @@ type Service struct {
 	securityValidator   SecurityValidator
 	auditService        AuditService
 	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	rangeLimits         RangeLimits          // optional; nil = every range target at most a /16
 	nameAddresses       NameAddressReader    // optional; resolution relations for the exclusion match (dispatch_gate.go)
 	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
 	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
@@ -223,6 +227,7 @@ type Service struct {
 	activeScan          FeatureAllower                                                    // active_scanning (active_scanning.go); nil: allowed
 	sharedLimits        SharedScanLimits                                                  // platform_scans_per_day (shared_limits.go); nil: never shared
 	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
+	vantage             scanzone.VantageReader                                            // the sensors' own DNS answers (vantage.go)
 	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
 	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
 	namePorts           NamePortReader                                                    // optional; nil = a coverage probe of a name tries its default ports only (coverage_named_ports.go)
@@ -243,6 +248,7 @@ type Service struct {
 	stepQueuer       StepQueuer                // the scan run service's step dispatcher; nil refuses workflow scans
 	workflowVersions scanworkflow.VersionStore // pins workflow runs to the version they start with; nil leaves them on the live workflow
 	logger           *logger.Logger
+	misfireEvents    ScheduleMissEvents // optional; nil = the scan records the misfire but no event is sent
 }
 
 // ScopeExclusionFilter reports which of the given candidate targets match an

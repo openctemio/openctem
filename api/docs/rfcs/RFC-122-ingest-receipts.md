@@ -303,6 +303,19 @@ automations (a re-applied upload finds the findings existing, not new).
 The automation event journal, written in the merge transaction, will close
 that window and replace this outbox; it is not on develop yet.
 
+### 6d.1 Released items keep their sender
+
+A report held in the results quarantine and applied later (the platform's
+auto-release or a person's accept) is recorded under the sensor that sent it:
+source kind `sensor`, the sensor as the sender of the tool's row, the original
+tool. `ingest_receipts.released_from_quarantine` and
+`ingest_receipt_tools.released_reports` mark it, so the receipt list shows
+"Released from quarantine" and the dashboard's Sources card says how many of a
+sensor's reports were released. A release is never filed under a connector.
+The `receipt-reattribute` operator command (a dry run by default) moves the
+receipts an earlier auto-release filed under a connector back to the sensor,
+only where the quarantine item's own record shows it was auto-released.
+
 ## 6e. Load targets
 
 `tests/integration/ingest_load_test.go` (`TestIngestLoad`, `INGEST_LOAD=1`)
