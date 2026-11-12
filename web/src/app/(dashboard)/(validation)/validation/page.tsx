@@ -1,6 +1,7 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import { ErrorState } from '@/features/shared/components/error-state'
 import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { MetricStrip, PageHeader, PageStack, type MetricStripItem } from '@/features/shared'
@@ -81,6 +82,7 @@ export default function ValidationOverviewPage() {
     data: coverage,
     error: coverageError,
     isLoading: coverageLoading,
+    mutate: retryCoverage,
   } = useValidationCoverage()
 
   const covTotal = coverage?.p0_p1_total ?? 0
@@ -241,6 +243,13 @@ export default function ValidationOverviewPage() {
             </a>
           </Button>
         </PageHeader>
+        {coverageError && !coverage ? (
+          <ErrorState
+            title={t('validation.overview.coverage.errorTitle', 'validation coverage')}
+            error={coverageError}
+            onRetry={() => void retryCoverage()}
+          />
+        ) : null}
         <MetricStrip items={metrics} loading={coverageLoading} />
         <WaitingForYou items={waiting} starts={starts} />
         <ModulesOffHint modules={off} />

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 
 type Hook = { data?: unknown; error?: unknown; isLoading: boolean; mutate: () => void }
 const idle: Hook = { data: undefined, error: undefined, isLoading: false, mutate: vi.fn() }
@@ -118,5 +118,24 @@ describe('ExecutiveSummaryPage', () => {
     summary = { ...idle, error: new Error('x') }
     render(<ExecutiveSummaryPage />)
     expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
+  })
+
+  it('shows a failed headline read as an error with Retry, not as zeros', () => {
+    const retry = vi.fn()
+    summary = { ...idle, error: new Error('boom: upstream timeout'), mutate: retry }
+    render(<ExecutiveSummaryPage />)
+    expect(screen.getByText(/Failed to load headline figures/i)).toBeInTheDocument()
+    expect(screen.getByText(/Report this problem/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }))
+    expect(retry).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a failed process-health read as an error with Retry', () => {
+    const retry = vi.fn()
+    process = { ...idle, error: new Error('boom: upstream timeout'), mutate: retry }
+    render(<ExecutiveSummaryPage />)
+    expect(screen.getByText(/Failed to load process health/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }))
+    expect(retry).toHaveBeenCalledTimes(1)
   })
 })
