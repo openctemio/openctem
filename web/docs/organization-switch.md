@@ -29,6 +29,12 @@ forget to.
 | The back button                                                                                                                             | Each address of the tab is remembered with the organization it was shown in (sessionStorage, addresses only); going back to one of another organization lands on its list root instead, also when the back button loads a new document                                                                                                                                  | `tenant-epoch.ts`, `TenantEpochBoundary`                                             |
 | Another tab still showing the old organization                                                                                              | The switching tab tells the others (BroadcastChannel); a tab also checks the session cookie on focus, when it becomes visible and on a back/forward cache restore. The API client refuses to send any request while the cookie names another organization than the tab renders, and the tab resets the same way first, with the notice "Another tab switched to {name}" | `tenant-epoch.ts` (`tenantRequestSignal`), `src/lib/api/client.ts`, `TenantProvider` |
 
+SWR keeps a provider's state only while its `SWRConfig` is mounted, and drops it
+in a layout-effect cleanup that React also runs when a Suspense boundary above
+hides the tree. The boundary therefore puts a Suspense boundary directly under
+the epoch's `SWRConfig`: a page that suspends is caught there and never hides
+the cache it reads from.
+
 A link that names the new organization (`OrgLinkGate`) and the MCP consent page
 keep their address: `switchTeam(id, { keepLocation: true })`. The tree still
 mounts again with a fresh cache.
