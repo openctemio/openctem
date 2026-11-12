@@ -42,7 +42,7 @@
 /api/internal/infra/http/routes/auth.go @0xmanhnv
 /api/internal/infra/http/routes/admin.go @0xmanhnv
 /api/internal/infra/http/internalapi/** @0xmanhnv
-/api/cmd/server/internal_api.go @0xmanhnv
+/api/internal/server/internal_api.go @0xmanhnv
 /api/internal/app/entitlement/** @0xmanhnv
 /api/internal/infra/http/routes/misc.go @0xmanhnv
 /api/internal/infra/http/routes/scim.go @0xmanhnv
@@ -101,6 +101,7 @@
 /api/internal/app/scopeauth/** @0xmanhnv
 /api/internal/app/scangov/gate.go @0xmanhnv
 /api/internal/app/scan/dispatch_gate.go @0xmanhnv
+/api/internal/app/exploration/controller.go @0xmanhnv
 /api/internal/app/command/scope_recheck.go @0xmanhnv
 /api/internal/app/scope/web_job.go @0xmanhnv
 /api/internal/infra/postgres/command_web_scope.go @0xmanhnv

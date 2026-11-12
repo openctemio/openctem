@@ -279,7 +279,7 @@ export function RankedBars({
             data-wire-main
           >
             <span
-              className={cn('rounded-full', !r.color && 'bg-signal')}
+              className={cn('rounded-full', !r.color && 'bg-viz-ink')}
               style={{ width: `${pct}%`, background: r.color }}
               data-testid="ranked-bar"
             />

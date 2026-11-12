@@ -81,6 +81,7 @@ describe('Discovery > Assets', () => {
       'Scans',
       'Sensors',
       'CI/CD',
+      'Exploration',
       'Attack surface',
       'Assets',
       'Exposures',

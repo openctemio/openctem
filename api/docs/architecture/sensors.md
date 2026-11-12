@@ -1502,6 +1502,15 @@ secrets in it are masked. It is stored **sealed**, never in plaintext
 - Only the ingest worker opens a segment. A segment that does not open (key
   removed, row altered) is recorded as a rejected segment
   (`processing_failed`); it is not retried. Payloads are never logged.
+- A transient store error while a segment is applied (a lost connection, a
+  lock or statement timeout, a deadlock or serialization failure, no pooled
+  connection before the deadline: `pkg/dberr.IsTransient`) is not a verdict
+  on its findings: the ingest returns `ingest.ErrRetryLater`, the job fails
+  and is retried with back-off, nothing is counted as rejected and no
+  receipt is written for that attempt. The report stays unfinished, so the
+  sensor keeps its copy and keeps polling; on the last attempt the report
+  is marked `failed` and the sensor sends the same bytes again. A permanent
+  error (a value the database refuses) is still recorded as a rejection.
 - The payload is emptied when its segment job completes (and, as before,
   when its report finishes); `payload_sha` and `payload_bytes` stay for the
   commit check. A failed attempt keeps it for the retry; a dead job keeps it

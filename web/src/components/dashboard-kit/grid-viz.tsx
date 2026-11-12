@@ -60,7 +60,7 @@ export function HeatmapViz({ result, drill }: { result: MatrixResult; drill?: Dr
         {result.cols.map((c) => (
           <span
             key={c.key}
-            className="self-end px-0.5 text-center text-[11px] leading-tight break-words text-muted-foreground sm:text-xs"
+            className="self-end px-0.5 text-center text-xs leading-tight break-words text-muted-foreground"
           >
             {label(c)}
           </span>
@@ -107,7 +107,7 @@ export function HeatmapViz({ result, drill }: { result: MatrixResult; drill?: Dr
         ))}
       </div>
       {max > 0 && (
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground" aria-hidden>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-hidden>
           <span>{t('dashboardKit.heatmap.fewer', 'Fewer')}</span>
           {Array.from({ length: SEQUENTIAL_STEPS }, (_, k) => (
             <span

@@ -26,10 +26,10 @@ import (
 // script itself and fails when SQL in this package reads a table the app role
 // cannot read, or writes or locks one it cannot write, outside the
 // repositories listed in consolePoolRepos. TestConsoleTables_ConsolePoolWiring
-// proves those repositories are built on the console pool in cmd/server.
+// proves those repositories are built on the console pool in internal/server.
 
 // consolePoolRepos are the receiver types built on the console pool
-// (cmd/server: Repositories.UseAdminDB and adminDBOf).
+// (internal/server: Repositories.UseAdminDB and adminDBOf).
 var consolePoolRepos = map[string]string{
 	"AdminRepository":         "NewAdminRepository",
 	"AdminConsoleRepository":  "NewAdminConsoleRepository",
@@ -206,9 +206,9 @@ func TestConsoleTables_ConsolePoolWiring(t *testing.T) {
 	for _, c := range consolePoolRepos {
 		ctors[c] = true
 	}
-	files, err := filepath.Glob("../../../cmd/server/*.go")
+	files, err := filepath.Glob("../../../internal/server/*.go")
 	if err != nil || len(files) == 0 {
-		t.Fatalf("cmd/server sources: %v", err)
+		t.Fatalf("internal/server sources: %v", err)
 	}
 	fset := token.NewFileSet()
 	rebuilt := map[string]bool{} // constructors UseAdminDB calls with adminDB
@@ -277,7 +277,7 @@ func TestConsoleTables_ConsolePoolWiring(t *testing.T) {
 		}
 	}
 	if len(calls) == 0 {
-		t.Fatal("found no console-pool repository construction in cmd/server; update this guard")
+		t.Fatal("found no console-pool repository construction in internal/server; update this guard")
 	}
 	if len(bad) > 0 {
 		t.Fatalf("console-pool repositories built on the app pool (use adminDBOf(repos, db) or rebuild in UseAdminDB):\n  %s",

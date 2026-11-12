@@ -139,6 +139,16 @@ describe('brand tokens', () => {
       pair('--destructive-foreground', '--destructive', 4.5)
     })
 
+    it(`${mode}: the signal button fill carries its text at AA, and delta text reads on every surface`, () => {
+      // Button variant "signal": bg-signal text-signal-ink (the one main action of a page).
+      pair('--signal-ink', '--signal', 4.5)
+      for (const bg of SURFACES) {
+        pair('--good', bg, 4.5)
+        pair('--bad', bg, 4.5)
+        pair('--viz-ink', bg, 4.5)
+      }
+    })
+
     it(`${mode}: priority box text at AA, marks at 3:1, edges visible`, () => {
       for (const n of PRIO) {
         // A transparent box sits on the card.

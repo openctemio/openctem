@@ -564,6 +564,10 @@ func (p *FindingProcessor) processBatch(
 	// Step 2: Batch check existing fingerprints
 	existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, fingerprints)
 	if err != nil {
+		if noteRetryable(output, err) {
+			// Nothing of this batch is stored and the report runs again.
+			return fmt.Errorf("failed to check fingerprints: %w", err)
+		}
 		// Nothing of this batch is stored: each finding is counted as
 		// failed on the receipt, never dropped without a trace.
 		addError(output, fmt.Sprintf("check %d findings failed: %v", len(validFindings), err))
@@ -710,7 +714,11 @@ func (p *FindingProcessor) processBatch(
 		attachPracticeFacts(newFindings, tenantID, output)
 
 		result, err := p.repo.CreateBatchWithResult(ctx, newFindings)
-		if err != nil {
+		switch {
+		case err != nil && noteRetryable(output, err):
+			// The report runs again; these findings are not rejected.
+			p.logger.Warn("batch create of findings hit a transient store error", "error", err, "count", len(newFindings))
+		case err != nil:
 			// Fatal error - could not process any findings
 			p.logger.Error("failed to batch create findings", "error", err, "count", len(newFindings))
 			addError(output, fmt.Sprintf("batch create failed: %v", err))
@@ -720,7 +728,7 @@ func (p *FindingProcessor) processBatch(
 				output.FindingsSkipped++
 				output.FailedFindings = append(output.FailedFindings, createFailedFinding(fm, fmt.Sprintf("batch failed at index %d: %v", i, err)))
 			}
-		} else {
+		default:
 			output.FindingsCreated = result.Created
 			// A row that met an existing finding (a concurrent ingest created it
 			// between the fingerprint check and this insert) is a re-sighting,
@@ -797,6 +805,9 @@ func (p *FindingProcessor) processBatch(
 				var incomplete *vulnerability.EnrichIncompleteError
 				if errors.As(err, &incomplete) {
 					fallbackFPs = append(fallbackFPs, incomplete.Fingerprints...)
+				} else if noteRetryable(output, err) {
+					// The report runs again and enriches them then.
+					return fmt.Errorf("enrich existing findings: %w", err)
 				} else {
 					for _, f := range existingNewData {
 						fallbackFPs = append(fallbackFPs, f.Fingerprint())
@@ -826,6 +837,9 @@ func (p *FindingProcessor) processBatch(
 				sightingTool = report.Tool.Name
 			}
 			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID, sightingTool)
+			if err != nil && noteRetryable(output, err) {
+				return fmt.Errorf("record sighting of existing findings: %w", err)
+			}
 			if err != nil {
 				p.logger.Error("failed to update existing findings (fallback)", "error", err)
 				addError(output, fmt.Sprintf("record sighting of %d existing findings failed: %v", len(unenrichedFingerprints), err))

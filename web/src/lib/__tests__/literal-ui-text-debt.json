@@ -122,7 +122,6 @@
   "features/components/components/vex-statement-dialog.tsx": 1,
   "features/content-rules/components/content-rule-dialog.tsx": 2,
   "features/credentials/components/credential-identity-groups.tsx": 9,
-  "features/ctem-maturity/components/sparkline.tsx": 1,
   "features/ctem-maturity/components/stage-coverage.tsx": 10,
   "features/cycles/components/charter-attacker-profiles-field.tsx": 3,
   "features/cycles/components/charter-exclusions-field.tsx": 10,

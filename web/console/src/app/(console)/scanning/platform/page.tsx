@@ -27,13 +27,19 @@ import { PlatformSensorProofForm } from '@console/features/admin-console/compone
 import { SharedSensorAnomalyForm } from '@console/features/admin-console/components/shared-sensor-anomaly-form'
 import { SharedSensorsForm } from '@console/features/admin-console/components/shared-sensors-form'
 import { SharedSensorsEgressForm } from '@console/features/admin-console/components/shared-sensors-egress-form'
+import {
+  SCOPE_GUARDRAILS_PERMISSION,
+  ScopeBlockedNamesPanel,
+} from '@console/features/admin-console/components/scope-blocked-names-panel'
 import { adminHas } from '@console/features/admin-console/types'
 
 /**
  * Scanning > Platform scanning: everything an instance administrator sets for
  * the platform's own and shared sensors, in one page. Policy: whether platform
  * sensors need a verified domain before they scan a target (RFC-054 §8.1) and
- * whether shared sensors may scan internal zones (RFC-100 §6.1). Fleet: the
+ * whether shared sensors may scan internal zones (RFC-100 §6.1). Blocked
+ * names: the government and military rule, the operator's own names and the
+ * organizations' exceptions (RFC-154). Fleet: the
  * instance switch (RFC-100 §5; the sensors, enrollment and zones are on
  * the Platform sensors page). Queue: lanes, per-organization use and job metadata (§12). Egress (§9) and Anomalies (§9) follow. Until a value is stored the
  * deployment default applies (MANAGED_SERVICE changes the defaults, RFC-100
@@ -42,12 +48,13 @@ import { adminHas } from '@console/features/admin-console/types'
  * page shows one notice and the domain-proof policy only.
  */
 
-const TABS = ['policy', 'fleet', 'queue', 'egress', 'anomalies'] as const
+const TABS = ['policy', 'blocked', 'fleet', 'queue', 'egress', 'anomalies'] as const
 
 function useScanning() {
   const me = useAdmin()
   return {
     canEdit: adminHas(me, 'platform.sensors.manage'),
+    canEditNames: adminHas(me, SCOPE_GUARDRAILS_PERMISSION),
     proof: usePlatformSensorProof(),
     shared: useSharedSensorsSetting(),
     zones: useSharedSensorInternalZones(),
@@ -126,6 +133,9 @@ function SharedTabs({ s }: { s: Scanning }) {
     <Tabs value={tab} onValueChange={setTab}>
       <TabsList className="h-auto flex-wrap justify-start">
         <TabsTrigger value="policy">{t('admin.scanning.tab.policy', 'Policy')}</TabsTrigger>
+        <TabsTrigger value="blocked">
+          {t('admin.scanning.tab.blocked', 'Blocked names')}
+        </TabsTrigger>
         <TabsTrigger value="fleet">{t('admin.scanning.tab.fleet', 'Fleet')}</TabsTrigger>
         <TabsTrigger value="queue">{t('admin.scanning.tab.queue', 'Queue')}</TabsTrigger>
         <TabsTrigger value="egress">{t('admin.scanning.tab.egress', 'Egress')}</TabsTrigger>
@@ -166,6 +176,9 @@ function SharedTabs({ s }: { s: Scanning }) {
             />
           )}
         </PageStack>
+      </TabsContent>
+      <TabsContent value="blocked">
+        <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
       </TabsContent>
       <TabsContent value="fleet">
         <PageStack>
@@ -300,6 +313,7 @@ export default function PlatformScanningPage() {
           <>
             <NotAvailablePanel />
             <ProofPolicy s={s} />
+            <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
           </>
         ) : (
           <SharedTabs s={s} />

@@ -10,7 +10,6 @@ import { describe, expect, it } from 'vitest'
  * until it is removed from the list.
  */
 const ALLOW_LIST = [
-  'src/app/(dashboard)/(discovery)/scans/workflows/page.tsx',
   'src/app/(dashboard)/settings/members/page.tsx',
   'src/app/(dashboard)/settings/roles/page.tsx',
   'src/features/access-control/components/assignment-rules-section.tsx',
