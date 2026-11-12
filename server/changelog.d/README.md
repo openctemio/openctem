@@ -16,6 +16,15 @@ Create `server/changelog.d/<short-slug>.md` (lowercase letters, digits, `-`, `_`
 - **Upgrade note:** anything an operator must do.
 ```
 
+Name the user documentation of the change in a `Docs:` line: a page of the public docs site,
+a path in one of the project's repositories, or `none` with the reason. A release never ships
+a change nobody can read about; API CI refuses a new fragment without it:
+
+```markdown
+- Docs: https://docs.openctem.io/sensors/proxies/
+- Docs: none (internal refactor, no behaviour change)
+```
+
 A file may hold several `### ` sections. The category is one of, in release
 order: `Security`, `Behaviour change`, `Removed`, `Deprecated`, `Added`,
 `Changed`, `Fixed`.
@@ -28,6 +37,7 @@ the file.
 `python3 server/scripts/changelog.py check` runs in API CI (pull requests and the merge queue).
 It refuses:
 
+- on a pull request, a fragment it adds without a `Docs:` line (`--docs-base`);
 - a fragment without a valid `### <Category>: <title>` heading or text;
 - an entry (`### `) written under `## Unreleased` in `server/CHANGELOG.md`;
 - merge-conflict markers in any tracked text file of the repository.
