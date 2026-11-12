@@ -40,6 +40,9 @@ vi.mock('@/features/assets', () => ({
   AssetIdentitySections: () => null,
   AssetTimeline: () => null,
 }))
+vi.mock('@/features/exploration/components/asset-next-steps', () => ({
+  AssetNextSteps: () => null,
+}))
 vi.mock('@/features/assets/components/classification-badges', () => ({
   ClassificationBadges: () => null,
 }))

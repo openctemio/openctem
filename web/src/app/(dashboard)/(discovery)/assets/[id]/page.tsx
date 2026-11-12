@@ -47,6 +47,7 @@ import { AssetScanWindowCard } from '@/features/scan-windows'
 import { AssetWebEvidenceCard } from '@/features/attack-surface'
 import { OriginWebSection, isWebOriginType } from '@/features/web-surface'
 import { useTranslation } from '@/context/i18n-provider'
+import { AssetNextSteps } from '@/features/exploration/components/asset-next-steps'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { SettleGroup } from '@/features/shared/components/settle-group'
@@ -244,6 +245,7 @@ export default function AssetDetailPage() {
                   assetType={asset.type}
                 />
                 <AssetLineageSection assetId={asset.id} />
+                <AssetNextSteps assetId={asset.id} />
                 <AssetAttributeSourcesSection assetId={asset.id} />
                 <AssetFreshnessSection assetId={asset.id} />
                 <AssetCoverageSection assetId={asset.id} />
