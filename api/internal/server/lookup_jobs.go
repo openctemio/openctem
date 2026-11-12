@@ -1,4 +1,4 @@
-package main
+package server
 
 // Lookup jobs (docs/architecture/certificate-transparency-monitoring.md):
 // the platform's passive lookups (lookup.ct@1) run on its instance-scope
