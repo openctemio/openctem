@@ -47,16 +47,30 @@ section. The release train adds it to its run summary.
 
 ## At release
 
-After the release is tagged, one pull request into `develop` runs
-`python3 server/scripts/changelog.py release vX.Y.Z`. That folds every fragment
-into `CHANGELOG.md` under `## vX.Y.Z (date)` and deletes the fragments. The
-release branch itself is not changed, so its tree stays byte-for-byte equal to
-develop's.
+A release's changes are the fragments its tag's tree has and the previous
+release's tree lacks (`changelog.py notes --ref vX.Y.Z --since-previous vX.Y.Z`),
+so hotfixes and a late fold never mix releases.
 
-`changelog.py release` must run at every release cut, with no exception: fragments
-not folded at a release stay in `changelog.d/` forever and their notes reach no
-changelog. (Fragments shipped up to v0.11.0 were folded in one catch-up under
-`## v0.11.0 and earlier` with `changelog.py archive`.)
+- The GitHub Release carries them under "Changes in vX.Y.Z" (`.github/workflows/release.yml`).
+- Release Publish's develop follow-up pull request (the merge of main back)
+  folds them in a commit of its own (`.github/scripts/release/post-release.sh`):
+  `changelog.py release vX.Y.Z --ref vX.Y.Z --since-previous vX.Y.Z --date <tag date>`
+  writes `## vX.Y.Z (date)` under Unreleased and deletes those fragments.
+  Fragments merged after the cut stay for the next release.
+
+The release branch itself is not changed, so its tree stays byte-for-byte equal
+to develop's. If a follow-up pull request was lost, run the same command for each
+missing release, oldest first. (Fragments shipped up to v0.11.0 were folded in one
+catch-up under `## v0.11.0 and earlier` with `changelog.py archive`; v0.15.6 to
+v0.21.0 were folded per release with the command above.)
+
+## Upgrade notes in the release notes
+
+Write what an operator must do as a bullet that starts with `**Upgrade note:**`
+(start it with "no action." when nothing is needed but the change is
+noticeable). The release notes open with an **Upgrade notes** block: every
+such line under "Before you upgrade", then the titles of the Behaviour change,
+Removed and Deprecated sections.
 
 ## Operator headings in the release notes
 
