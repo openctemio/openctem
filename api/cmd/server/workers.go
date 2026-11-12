@@ -889,8 +889,8 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 	}
 
 	// Certificate-Transparency discovery — daily, fail-open, PUBLIC-data
-	// external-exposure connector. Per tenant it queries crt.sh for the tenant's
-	// domain assets (SSRF-guarded, rate-limited, body-bounded) and emits
+	// external-exposure connector. Per tenant it queries CT for the tenant's
+	// domain assets through a platform sensor (rate-limited, body-bounded) and emits
 	// subdomain_discovered + certificate_expiring ExposureEvents. Inert until a
 	// tenant owns domain assets; disable with CERT_MONITOR_ENABLED=false.
 	// Names a permanent scope target or seed covers are confirmed: once at
@@ -953,7 +953,9 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewScopePendingController(svc.Scope, 0))
 	}
 
-	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor != nil {
+	// Only when a platform sensor carries the CT requests (the platform
+	// makes none itself).
+	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor.Available() {
 		w.ControllerManager.Register(controller.NewCertMonitorController(
 			svc.CertMonitor,
 			repos.Tenant,
