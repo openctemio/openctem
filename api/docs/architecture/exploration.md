@@ -373,10 +373,30 @@ Tests: `internal/infra/postgres/exploration_rollup_repository_db_test.go`
 (figures, tenant-bound, scoped counts, no scope row counts nothing),
 `internal/app/exploration/leads_test.go` (`TestLeadService_SummaryFollowsTheViewer`).
 
+## Web
+
+- **Exploration page** (`/exploration`, Discovery, `assets:read`, module Scans):
+  `web/src/features/exploration/components/exploration-page.tsx`. One status
+  sentence from `GET /exploration/summary` (Refresh now when the figures are
+  organization-wide), the groups Waiting for you, Next, Running and Done
+  recently (`?group=`), `?asset=` for one asset and `?lead=` for an open
+  step. Subject names resolve with one batched asset read per page. Bulk
+  Approve and Dismiss need `scans:approve`; approving goes through the shared
+  client's step-up.
+- **Step drawer**: `lead-detail-sheet.tsx` (rationale as plain text, links by
+  relation, answers with their tier, score inputs, blocked reason);
+  `lead-actions.tsx` (approve, dismiss with an optional reason, per-lead
+  results).
+- **Asset Next steps**: `asset-next-steps.tsx` on the asset page and drawer,
+  next to How we found this: up to three steps with their state, See all and
+  Ask (`ask-lead-dialog.tsx`, `scans:execute`).
+- Labels and helpers: `web/src/features/exploration/lib/leads.ts`; strings in
+  the `exploration` catalogs (lead types under `exploration.leadTypes`,
+  reasons under `exploration.reasons`).
+
 ## Not yet built
 
 - Retest outcomes and evidence items as steps.
-- The Exploration page and the asset "Next steps" card.
 - An exploration metric in the dashboard metric catalog (widgets read the
   rollup through the catalog).
 - A person-attributed run for an approved intrusive step; four-eyes approval.

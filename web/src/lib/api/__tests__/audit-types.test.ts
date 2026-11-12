@@ -57,6 +57,15 @@ describe('sensor audit events before and after the rename', () => {
     expect(canonicalAuditResourceType('scope_exclusion')).toBe('scope_exclusion')
   })
 
+  it('labels the exploration step actions', () => {
+    expect(getActionLabel('exploration.lead_opened')).toBe('Exploration question asked')
+    expect(getActionLabel('exploration.lead_approved')).toBe('Exploration step approved')
+    expect(getActionLabel('exploration.lead_dismissed')).toBe('Exploration step dismissed')
+    expect(getActionLabel('exploration.lead_state_changed')).toBe('Exploration step state changed')
+    expect(getActionLabel('exploration.lead_verdict')).toBe('Exploration step answered')
+    expect(canonicalAuditResourceType('exploration_lead')).toBe('exploration_lead')
+  })
+
   it('labels the remediation campaign actions', () => {
     expect(getActionLabel('remediation_campaign.created')).toBe('Remediation campaign created')
     expect(getActionLabel('remediation_campaign.updated')).toBe('Remediation campaign updated')

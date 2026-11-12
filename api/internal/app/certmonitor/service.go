@@ -4,18 +4,18 @@
 // domains and emits first-class ExposureEvents.
 //
 // This is CTEM Discovery breadth ("exposure != vulnerability") that needs no
-// credentials, no sensor and no traffic to the tenant's hosts: it reads only
-// public CT-log data. See docs/rfcs/RFC-019 and RFC-036 (P0: rotation through
-// every watched domain, retries, fallback, back-off).
+// credentials and no traffic to the tenant's hosts: it reads only public
+// CT-log data. See docs/rfcs/RFC-019 and RFC-036 (P0: rotation through every
+// watched domain, retries, fallback, back-off).
 //
 // The watched domains are the tenant's domain assets, verified domains and
 // active domain scope targets. Each run picks the ones due, oldest-queried
 // first, up to a per-run cap (selection.go); per-domain state lives in
 // ct_monitor_state so the rotation survives restarts.
 //
-// Outbound queries dial through httpsec.SafeDialContext (SSRF-guarded: private,
-// link-local and metadata addresses are refused even though the sources are
-// public — defense against DNS rebinding of the configurable URLs), are
+// The platform makes no CT request itself: every query goes through a
+// Fetcher that relays it through a platform-owned sensor (ctlog.go). Without
+// one the sweep is off and reports ReasonNeedsPlatformSensor. Queries are
 // body-bounded, retried with jittered back-off and politeness-delayed.
 //
 // Tenant isolation: the tenant is taken from the domain being queried, never
@@ -28,7 +28,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -41,7 +40,6 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/scope"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/pagination"
 )
@@ -52,15 +50,6 @@ const (
 
 	// Source is the exposure source tag for everything this connector emits.
 	Source = "cert_transparency"
-
-	// httpTimeout bounds a single CT query end to end. crt.sh can be slow for
-	// busy domains, so this is generous.
-	httpTimeout = 60 * time.Second
-
-	// responseHeaderTimeout is how long we wait for crt.sh to start answering.
-	// The shared SSRF-guarded client waits 15 s, which crt.sh's database
-	// routinely exceeds for any domain with a few thousand certificates.
-	responseHeaderTimeout = 50 * time.Second
 
 	// maxBodyBytes bounds a single CT JSON response.
 	maxBodyBytes = 48 << 20 // 48 MiB
@@ -159,11 +148,16 @@ type Service struct {
 	scopeTargets ScopeTargetLister
 	exclusions   ExclusionSource // nil = exclusions not wired (tests, minimal wiring)
 	state        StateStore
-	httpClient   *http.Client
-	feedBaseURL  string
+	// fetcher carries the CT requests through a platform sensor; nil: CT
+	// monitoring is unavailable (ReasonNeedsPlatformSensor).
+	fetcher     Fetcher
+	feedBaseURL string
 
 	// certSpotterBaseURL is the fallback source; empty disables it.
 	certSpotterBaseURL string
+	// certSpotterKey is the commercial Cert Spotter key (""), sent only
+	// through the fetcher.
+	certSpotterKey string
 
 	// Promotion of CT names into assets (promote.go); nil = off.
 	ingester    AssetIngester
@@ -213,7 +207,6 @@ func NewService(
 	return &Service{
 		assetRepo:       assetRepo,
 		exposureRepo:    exposureRepo,
-		httpClient:      newCTHTTPClient(),
 		feedBaseURL:     strings.TrimRight(feedBaseURL, "/"),
 		maxDomains:      DefaultMaxDomainsPerRun,
 		maxSubs:         defaultMaxSubdomainsPerDomain,
@@ -229,10 +222,24 @@ func NewService(
 	}
 }
 
-// newCTHTTPClient is the SSRF-guarded client with a response-header timeout
-// long enough for crt.sh.
-func newCTHTTPClient() *http.Client {
-	return httpsec.SafeHTTPClientWithHeaderTimeout(httpTimeout, responseHeaderTimeout)
+// SetFetcher wires the platform sensor that carries the CT requests (nil:
+// none, CT monitoring is unavailable).
+func (s *Service) SetFetcher(f Fetcher) { s.fetcher = f }
+
+// SetCertSpotterKey sets the commercial Cert Spotter key, sent with the Cert
+// Spotter requests through the fetcher (never by the platform itself).
+func (s *Service) SetCertSpotterKey(key string) { s.certSpotterKey = strings.TrimSpace(key) }
+
+// Available reports whether CT monitoring can run: a platform sensor carries
+// its requests.
+func (s *Service) Available() bool { return s != nil && s.fetcher != nil }
+
+// UnavailableReason is why CT monitoring cannot run ("" when it can).
+func (s *Service) UnavailableReason() string {
+	if s.Available() {
+		return ""
+	}
+	return ReasonNeedsPlatformSensor
 }
 
 // SetDomainSources adds verified domains and active domain scope targets to
@@ -269,16 +276,6 @@ func (s *Service) SetLimits(maxDomainsPerRun int, recheckAfter time.Duration) {
 // FeedBaseURL returns the configured crt.sh base URL (for diagnostics).
 func (s *Service) FeedBaseURL() string { return s.feedBaseURL }
 
-// setHTTPClient overrides the outbound client and disables the politeness delay
-// and retry waits. Test-only: production always uses the SSRF-guarded client
-// built in NewService, which (correctly) refuses the loopback address an
-// httptest server listens on.
-func (s *Service) setHTTPClient(c *http.Client) {
-	s.httpClient = c
-	s.requestDelay = 0
-	s.noSleep = true
-}
-
 // MonitorTenant runs one CT sweep for a single tenant: it gathers the tenant's
 // domains (domain assets, verified domains, active domain scope targets),
 // picks the ones due this run in rotation order, queries CT for each (crt.sh
@@ -292,6 +289,11 @@ func (s *Service) MonitorTenant(ctx context.Context, tenantID shared.ID) (int, e
 	}
 	if tenantID.IsZero() {
 		return 0, fmt.Errorf("%w: tenant ID is required", shared.ErrValidation)
+	}
+	if !s.Available() {
+		// No platform sensor carries CT requests: nothing is queried, and no
+		// domain's state changes (it is not a failure of the domain).
+		return 0, nil
 	}
 
 	if locker, ok := s.state.(TenantLocker); ok {

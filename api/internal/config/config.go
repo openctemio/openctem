@@ -1320,6 +1320,11 @@ type SensorConfig struct {
 	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
 	CertMonitorCertSpotterURL string
 
+	// CertMonitorCertSpotterKey is a commercial Cert Spotter API key (SaaS),
+	// sent only with the Cert Spotter requests a platform sensor carries;
+	// empty: the unauthenticated tier.
+	CertMonitorCertSpotterKey string
+
 	// AssetTechnologyBackfillReportOnly makes the asset-technology-backfill
 	// job count and log the component links it would remove instead of
 	// deleting them. ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY, default TRUE: an
@@ -1854,6 +1859,7 @@ func Load() (*Config, error) {
 			EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
 			EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
 			CertMonitorCertSpotterURL:         getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
+			CertMonitorCertSpotterKey:         getEnv("CERT_MONITOR_CERTSPOTTER_KEY", ""),
 			AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
 			InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
 			AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
