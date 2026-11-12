@@ -91,7 +91,7 @@ func newWSBindingFixture(t *testing.T) *wsBindingFixture {
 		time.Sleep(20 * time.Millisecond)
 	}
 
-	// Instance A: the services, wired as cmd/server wires them.
+	// Instance A: the services, wired as internal/server wires them.
 	tokens, err := redis.NewTokenStore(rc, log)
 	if err != nil {
 		t.Fatal(err)

@@ -25,6 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
@@ -131,11 +132,6 @@ function OpenSessionDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
             <div className="space-y-2">
               <Label htmlFor="support-session-reason">
                 {t('admin.support.sessionReason', 'What you will look at (optional)')}
@@ -149,6 +145,8 @@ function OpenSessionDialog({
               />
             </div>
           </DialogBody>
+          <DialogSubmitError message={error} />
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {t('common.cancel', 'Cancel')}

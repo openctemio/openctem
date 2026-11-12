@@ -149,6 +149,7 @@ export function CreateOrganizationDialog({
                 <OwnerInvitationSentNotice
                   email={owner.trim()}
                   invitation={created.owner_invitation}
+                  emailDelivery={created.email_delivery}
                 />
               </div>
             </DialogBody>

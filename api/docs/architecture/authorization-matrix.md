@@ -397,6 +397,16 @@ and SBOM import write it.
 > is granted to owners and administrators by default (migration
 > `finding_lifecycles_permission`).
 
+#### Exploration leads (`/api/v1/exploration/leads`)
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/exploration/leads` · `/{id}` | `assets:read` |
+| `POST /api/v1/exploration/leads` | `scans:execute` |
+| `POST /api/v1/exploration/leads/approve` | `scans:approve` + step-up |
+| `POST /api/v1/exploration/leads/reject` | `scans:approve` |
+| `GET /api/v1/exploration/summary` · `POST /api/v1/exploration/summary/refresh` | `assets:read` (organization-wide figures only with full data access or organization dashboards; otherwise scoped) |
+
 #### Exposures (`/api/v1/exposures`)
 
 | Endpoint | Permission Required |
@@ -1125,6 +1135,13 @@ role holds (account support and `platform_admin` hold `platform.users.support`,
 not this); step-up, a reason and the audit row are unchanged, and the
 two-factor reset still needs a second administrator's approval.
 
+Without email, a new organization owner's set-password link
+(`POST /api/v1/admin/platform-users/{user_id}/setup-link`, body
+`organization_id`) needs `platform.tenants.owner_bootstrap`, the permission
+that creates that owner and already returns its first link: it only replaces
+that link, for an owner account that was never used and belongs to that one
+organization. Fresh step-up, reason, support rate limit, audited.
+
 **Acting permissions.** With `ADMIN_ELEVATION=required` (default) a request
 acts with the baseline (read) permissions of the roles held unless the console
 session holds a live elevation (`POST /api/v1/admin/auth/elevate {role}`, a
@@ -1832,7 +1849,7 @@ and every by-id read answers 404. There is no per-organization switch back.
 
 **One enforcement point.** `internal/app/datascope.Enforcer` resolves the
 caller's scope (caller and admin flag come from the HTTP auth context, wired in
-`cmd/server/services.go`) and is shared by every service. Nil-safe: an unwired
+`internal/server/services.go`) and is shared by every service. Nil-safe: an unwired
 service is unrestricted. Out-of-scope by-id access returns **404**, never 403 —
 the same answer as a missing row, so it is not an existence oracle; in bulk
 results an out-of-scope id is reported exactly like an unknown id.
@@ -2051,6 +2068,7 @@ a personal address, or be a work domain nobody has verified.
 | `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
+| `GET /exploration/leads`, `/{id}`, open, approve, reject | new | a lead is seen and changed only when its subject asset is in scope (list filtered in SQL; by id 404; per-lead `not_found` in bulk results) |
 | `GET /exposures`, `/exposures/{id}`, `/{id}/history`, state changes, delete | **bypass** | list filtered; by-id 404. An exposure with no asset is hidden from restricted members |
 | `GET /asset-groups/{id}/assets`, `/{id}/findings` | **bypass** | filtered; 404 on a group not visible to the caller |
 | `GET /asset-groups` (+ `/{id}`, `/stats`, and the group returned by create, update, add and remove) counts | **bypass (asset_count, per-kind counts, risk_score and finding_count over every member, tenant-wide; the risk and has_findings filters and the count/risk sorts could probe them; L-18)** | computed over the members in the reader's scope; filters and sorts use those values |

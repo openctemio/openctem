@@ -40,6 +40,7 @@ import (
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
 	"github.com/openctemio/openctem/api/pkg/crypto"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
@@ -248,4 +249,72 @@ func (s *UserProvisioningService) issueFirstOwnerLink(ctx context.Context, t *te
 		WithMetadata("setup_link_returned", result.SetupToken != "").
 		WithSeverity(audit.SeverityHigh))
 	return result, nil
+}
+
+// ErrSetupLinkEmailAvailable is returned when the platform console asks for a
+// hand-over link on an installation that can send email: the link is then
+// only ever emailed, never shown to the administrator.
+var ErrSetupLinkEmailAvailable = fmt.Errorf("%w: this installation can send email, so the set-password link is emailed and never shown", shared.ErrConflict)
+
+// IssueFirstOwnerHandOverLink replaces the one-time set-password link of an
+// organization's owner account that was created by the platform console and
+// has never been used, and returns it for the administrator to hand over. It
+// exists for installations that cannot send email: the link shown when the
+// owner was created is gone (closed, lost or expired after 24 hours) and the
+// organization would otherwise stay without a usable owner.
+//
+// Rules: email delivery off (ErrSetupLinkEmailAvailable otherwise); the
+// account is an active owner of tenantID (not found otherwise, so another
+// organization's account answers like a missing one); it is pending setup,
+// not a service account, and belongs to no other organization
+// (ErrNotPendingSetup). The new token replaces the old one, so an earlier link
+// stops working. Only the token's hash is stored; the token is returned once
+// and written nowhere else (the audit row records that a link was issued,
+// never the link).
+func (s *UserProvisioningService) IssueFirstOwnerHandOverLink(ctx context.Context, tenantID, userID shared.ID, actx auditapp.AuditContext) (*ProvisionedUser, error) {
+	if s.mailer != nil && s.mailer.CanDeliverTo(ctx, tenantID.String()) {
+		return nil, ErrSetupLinkEmailAvailable
+	}
+	m, err := s.tenants.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !m.IsOwner() || !m.IsActive() {
+		return nil, ErrNotPendingSetup
+	}
+	u, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsPendingSetup() || strings.HasSuffix(u.Email(), "@"+serviceaccount.EmailDomain) {
+		return nil, ErrNotPendingSetup
+	}
+	memberships, err := s.tenants.GetUserMembershipsWithStatus(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list memberships: %w", err)
+	}
+	for _, other := range append(append([]tenantdom.UserMembership{}, memberships.Active...), memberships.Suspended...) {
+		if other.TenantID != tenantID.String() {
+			return nil, ErrNotPendingSetup
+		}
+	}
+
+	token, err := password.GenerateResetToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate setup token: %w", err)
+	}
+	expiresAt := s.now().Add(AccountSetupTTL)
+	u.SetPasswordResetToken(crypto.HashToken(token), expiresAt)
+	if err := s.users.Update(ctx, u); err != nil {
+		return nil, fmt.Errorf("store setup token: %w", err)
+	}
+
+	actx.TenantID = tenantID.String()
+	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(audit.ActionUserUpdated, audit.ResourceTypeUser, u.ID().String()).
+		WithResourceName(u.Email()).
+		WithMessage(fmt.Sprintf("New set-password link for the owner %s issued by a platform administrator and shown to them once (this installation cannot send email)", u.Email())).
+		WithMetadata("setup_link_emailed", false).
+		WithMetadata("setup_link_returned", true).
+		WithSeverity(audit.SeverityHigh))
+	return &ProvisionedUser{User: u, Membership: m, SetupToken: token, SetupExpiresAt: expiresAt}, nil
 }

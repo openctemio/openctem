@@ -155,7 +155,7 @@ POST   /api/v1/assets
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     cmd/server                           │
+│            cmd/server -> pkg/server.Main                 │
 │                   (Entry Point)                          │
 └─────────────────────────────────────────────────────────┘
                          │
@@ -218,7 +218,7 @@ database lacks, lowest version first, so a migration merged after a higher
 one still runs; versions only have to be unique. `schema_migrations` holds a
 fence (and the dirty flag) that makes an older migrations image refuse the
 database. The API never migrates: at start-up it refuses a database with a
-pending, dirty or pre-baseline migration state (`cmd/server/schema_check.go`).
+pending, dirty or pre-baseline migration state (`internal/server/schema_check.go`).
 CI proves that the order a database receives migrations in does not change its
 schema. Design and threat model:
 [RFC-130](../rfcs/RFC-130-migration-applied-set.md); procedures:

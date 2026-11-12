@@ -1,0 +1,22 @@
+{
+  "pages": [
+    "(dashboard)/(scoping)/attack-surface/page.tsx",
+    "(dashboard)/(validation)/pentest/findings/[id]/edit/page.tsx",
+    "(dashboard)/account/preferences/page.tsx",
+    "(dashboard)/account/security/page.tsx",
+    "(dashboard)/dashboards/page.tsx",
+    "(dashboard)/findings/[id]/page.tsx",
+    "(dashboard)/notifications/page.tsx",
+    "(dashboard)/settings/domains/page.tsx",
+    "(dashboard)/settings/modules/page.tsx",
+    "(dashboard)/settings/pentest/checklists/page.tsx",
+    "(dashboard)/settings/pentest/page.tsx",
+    "(dashboard)/settings/pentest/report-templates/page.tsx",
+    "(dashboard)/settings/pentest/templates/new/page.tsx",
+    "(dashboard)/settings/scope/page.tsx",
+    "(dashboard)/settings/sso-approvals/page.tsx",
+    "(dashboard)/settings/support-access/page.tsx",
+    "(dashboard)/settings/tenant/create/page.tsx",
+    "(dashboard)/settings/trusted-organizations/page.tsx"
+  ]
+}

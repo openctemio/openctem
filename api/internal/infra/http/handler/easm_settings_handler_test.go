@@ -99,6 +99,20 @@ func TestEASMSettingsHandler(t *testing.T) {
 	}
 }
 
+// CT monitoring the platform cannot run says why: the platform makes no CT
+// request itself, so without a platform sensor the switch has no effect.
+func TestEASMSettingsHandler_CTUnavailableReason(t *testing.T) {
+	tenantID := shared.NewID()
+	h := NewEASMSettingsHandler(&fakeEASMSettingsStore{}, nil, &fakeSweeper{},
+		EASMPlatform{CTUnavailableReason: "needs_platform_sensor", DNSAvailable: true}, &settingsAudit{}, logger.NewNop())
+	w := httptest.NewRecorder()
+	h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ct_available":false`) ||
+		!strings.Contains(w.Body.String(), `"ct_unavailable_reason":"needs_platform_sensor"`) {
+		t.Fatalf("get: %d %s", w.Code, w.Body.String())
+	}
+}
+
 type settingsAudit struct{ actions []auditdom.Action }
 
 func (c *settingsAudit) LogEvent(_ context.Context, _ auditapp.AuditContext, e auditapp.AuditEvent) error {

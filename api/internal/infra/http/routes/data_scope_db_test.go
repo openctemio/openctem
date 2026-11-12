@@ -40,8 +40,10 @@ import (
 	explorationapp "github.com/openctemio/openctem/api/internal/app/exploration"
 	"github.com/openctemio/openctem/api/internal/app/exposure"
 	"github.com/openctemio/openctem/api/internal/app/finding"
+	inboxapp "github.com/openctemio/openctem/api/internal/app/inbox"
 	"github.com/openctemio/openctem/api/internal/app/integration"
 	"github.com/openctemio/openctem/api/internal/app/module"
+	appremediation "github.com/openctemio/openctem/api/internal/app/remediation"
 	threatapp "github.com/openctemio/openctem/api/internal/app/threat"
 	vulnmatchapp "github.com/openctemio/openctem/api/internal/app/vulnmatch"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
@@ -251,6 +253,14 @@ func newDSHarness(t *testing.T) *dsHarness {
 	registerScanRoutes(router, scanHandler, auth, nil, nil)
 	registerCTEMCycleRoutes(router, handler.NewCTEMCycleHandler(sqldb, postgres.NewCTEMCycleMetricsRepository(db), log).WithDataScope(enforcer), auth, nil, passthrough)
 	registerNotificationRoutes(router, handler.NewNotificationHandler(notifSvc, log), auth, nil)
+	// The Inbox summary every page load reads (its own vulnerability service
+	// with the approval store, so the routes above keep theirs).
+	inboxVuln := finding.NewVulnerabilityService(postgres.NewVulnerabilityRepository(db), findingRepo, log)
+	inboxVuln.SetDataScope(enforcer)
+	inboxVuln.SetApprovalRepository(postgres.NewFindingApprovalRepository(db))
+	inboxTasks := appremediation.NewTaskService(postgres.NewRemediationTaskRepository(db), log)
+	inboxTasks.SetDataScope(enforcer)
+	registerInboxRoutes(router, handler.NewInboxHandler(inboxapp.NewService(inboxVuln, inboxTasks, nil), log), auth, nil)
 
 	// Asset sub-resources outside /assets/<uuid>: services, state history,
 	// relationships, relationship suggestions, dedup reviews.

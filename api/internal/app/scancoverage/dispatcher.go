@@ -5,7 +5,7 @@ import (
 )
 
 // DispatchTenableInput describes one coverage batch. Since RFC-047 the
-// dispatcher is the Tenable.sc connector (cmd/server
+// dispatcher is the Tenable.sc connector (internal/server
 // connectorCoverageDispatcher): the batch becomes a connector_scan of
 // IntegrationID, pinned to the connector's sensor, which holds the Tenable.sc
 // credentials; the control plane never does.

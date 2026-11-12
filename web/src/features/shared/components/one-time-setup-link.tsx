@@ -23,6 +23,11 @@ export interface SetupLinkOutcome {
    */
   email_failed?: boolean
   setup_token?: string
+  /**
+   * The full set-password address, when the API builds it (the platform
+   * console is another site, so it cannot use its own address).
+   */
+  setup_url?: string
   /** RFC3339 */
   setup_expires_at?: string
 }
@@ -48,6 +53,8 @@ function formatExpiry(iso?: string): string | null {
 
 interface OneTimeSetupLinkProps {
   token: string
+  /** The full address from the API; preferred over one built from this site. */
+  url?: string
   expiresAt?: string
   /** Who the link is for (shown in the hand-over note). */
   email?: string
@@ -58,9 +65,9 @@ interface OneTimeSetupLinkProps {
  * stored: once this view is closed it cannot be shown again (a new link has to
  * be issued, which invalidates this one).
  */
-export function OneTimeSetupLink({ token, expiresAt, email }: OneTimeSetupLinkProps) {
+export function OneTimeSetupLink({ token, url, expiresAt, email }: OneTimeSetupLinkProps) {
   const [copied, setCopied] = useState(false)
-  const link = buildSetupLink(token)
+  const link = url || buildSetupLink(token)
   const expiry = formatExpiry(expiresAt)
 
   return (
@@ -115,6 +122,7 @@ export function SetupLinkResult({ outcome, email }: { outcome: SetupLinkOutcome;
     return (
       <OneTimeSetupLink
         token={outcome.setup_token}
+        url={outcome.setup_url}
         expiresAt={outcome.setup_expires_at}
         email={email}
       />

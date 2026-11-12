@@ -33,6 +33,7 @@ import {
 import type { Severity } from '@/features/shared/types'
 import { ShieldCheck, Timer, Users } from 'lucide-react'
 import { compareSeverity } from '@/lib/severity'
+import { ErrorState } from '@/features/shared/components/error-state'
 import { WidgetError } from '@/features/dashboard/components/widget-error'
 import {
   MTTR_WINDOW_DAYS,
@@ -260,7 +261,11 @@ export default function ExecutiveSummaryPage() {
         {summaryLoading ? (
           <StripSkeleton />
         ) : !summary && summaryError ? (
-          <WidgetError onRetry={() => void retrySummary()} className="rounded-lg border py-8" />
+          <ErrorState
+            title={t('insights.executive.headlineErrorTitle', 'headline figures')}
+            error={summaryError}
+            onRetry={() => void retrySummary()}
+          />
         ) : (
           <MetricStrip items={headline} />
         )}
@@ -410,7 +415,11 @@ export default function ExecutiveSummaryPage() {
           {processLoading ? (
             <StripSkeleton />
           ) : !processMetrics && processError ? (
-            <WidgetError onRetry={() => void retryProcess()} className="rounded-lg border py-8" />
+            <ErrorState
+              title={t('insights.executive.processErrorTitle', 'process health')}
+              error={processError}
+              onRetry={() => void retryProcess()}
+            />
           ) : processMetrics ? (
             <Card>
               <CardContent className="py-0">

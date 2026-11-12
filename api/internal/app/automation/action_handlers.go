@@ -33,7 +33,7 @@ type TicketRef struct {
 // Jira sync service: file a ticket for a finding and push a finding's status to
 // its linked ticket. Interface (with primitive params, not jira.* types) so the
 // workflow package does not import app/jira — that would form a cycle through
-// the app shim. The concrete adapter is wired in cmd/server.
+// the app shim. The concrete adapter is wired in internal/server.
 type JiraTicketService interface {
 	CreateTicketFromFinding(ctx context.Context, tenantID, findingID, projectKey, issueType string) (TicketRef, error)
 	SyncFindingStatus(ctx context.Context, tenantID, findingID shared.ID) error
