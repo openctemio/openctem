@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/server/pkg/validator"
@@ -526,7 +527,24 @@ func (s *Service) RetryScanRun(ctx context.Context, tenantID, scanID shared.ID, 
 		RetryAttempt: retryAttempt,
 		// A retry is started by the platform, not by a person.
 		TriggerType: scanworkflow.TriggerTypeSystem,
+		// One live run per scan: a retry never starts next to an active run
+		// of the same scan (a scheduled run or a coverage pass started
+		// meanwhile), which already does this work; two runs would hand the
+		// sensors the same work twice once they are back.
+		SkipIfRunning: true,
 	})
+	if errors.Is(err, ErrScanRunInProgress) {
+		s.logger.Info("scan retry skipped: the scan has an active run", "scan_id", scanID.String(), "attempt", retryAttempt)
+		s.logAudit(ctx, AuditContext{TenantID: tenantID.String()},
+			NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, scanID.String(), err).
+				WithResourceName(sc.Name).
+				WithMessage("Automatic retry skipped: the scan already has an active run, which does the same work").
+				WithMetadata("trigger_type", "retry").
+				WithMetadata("retry_attempt", retryAttempt))
+		// The retry controller treats this code as final: the failed run is
+		// not retried again.
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("failed to trigger retry: %w", err)
 	}
