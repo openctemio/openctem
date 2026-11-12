@@ -106,7 +106,7 @@ UPGRADE_NOTE = re.compile(
     r"^(?P<indent>\s*)[-*]\s+(?:\*\*)?Upgrade notes?(?::\*\*|\*\*:|:)\s*(?P<text>\S.*)$",
     re.IGNORECASE,
 )
-FRAGMENT_DIRS = ("server/changelog.d", "api/changelog.d")  # api/: tags before the rename
+FRAGMENT_DIRS = ("server/changelog.d", "api/changelog.d")  # tags before the rename; rename-guard: allow
 TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 UNRELEASED = "## Unreleased"
 FRAGMENT_NOTE = (
