@@ -41,4 +41,11 @@ func registerExplorationLeadRoutes(router Router, h *handler.ExplorationLeadHand
 		r.POST("/reject", h.Dismiss, middleware.Require(permission.ScansApprove))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
+	// The figures follow the viewer: organization-wide (precomputed) for a
+	// caller who sees the organization or views organization dashboards,
+	// live within the caller's data scope otherwise.
+	router.Group("/api/v1/exploration/summary", func(r Router) {
+		r.GET("/", h.Summary, middleware.Require(permission.AssetsRead))
+		r.POST("/refresh", h.RefreshSummary, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
 }

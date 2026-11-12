@@ -26,9 +26,11 @@ import (
 const MaxBulk = 100
 
 // ScopeResolver resolves the request caller's data scope (nil: unrestricted;
-// an unwired resolver is an error, never unrestricted).
+// an unwired resolver is an error, never unrestricted). ViewerScope also
+// says whether a restricted caller may read organization-wide figures.
 type ScopeResolver interface {
 	ResolveStrict(ctx context.Context, tenantID shared.ID) (*shared.DataScope, error)
+	ViewerScope(ctx context.Context, tenantID shared.ID) (*shared.DataScope, bool, error)
 }
 
 // SubjectReader reads an asset within the request caller's data scope.
@@ -38,18 +40,20 @@ type SubjectReader interface {
 
 // LeadService serves people.
 type LeadService struct {
-	repo   exploration.Repository
-	scope  ScopeResolver
-	assets SubjectReader
-	sw     ActiveSwitch
-	audit  Auditor
-	logger *logger.Logger
-	now    func() time.Time
+	repo    exploration.Repository
+	rollups exploration.RollupStore
+	scope   ScopeResolver
+	assets  SubjectReader
+	sw      ActiveSwitch
+	audit   Auditor
+	logger  *logger.Logger
+	now     func() time.Time
 }
 
 // NewLeadService creates the service.
 func NewLeadService(repo exploration.Repository, scope ScopeResolver, assets SubjectReader, sw ActiveSwitch, audit Auditor, log *logger.Logger) *LeadService {
-	return &LeadService{repo: repo, scope: scope, assets: assets, sw: sw, audit: audit,
+	rollups, _ := repo.(exploration.RollupStore)
+	return &LeadService{repo: repo, rollups: rollups, scope: scope, assets: assets, sw: sw, audit: audit,
 		logger: log.With("component", "exploration-leads"), now: time.Now}
 }
 
@@ -351,4 +355,40 @@ func (s *LeadService) dismissOne(ctx context.Context, tenantID shared.ID, p Pers
 	recordLead(ctx, s.audit, s.logger, l, audit.ActionExplorationLeadDismissed, p.Actx,
 		map[string]any{"from": string(from), metaReason: reason})
 	return nil
+}
+
+// RefreshEvery is how often Refresh now recomputes the organization's
+// figures at most; a call within it returns the figures as they are.
+const RefreshEvery = time.Minute
+
+// Summary returns the exploration's figures for the caller. A caller who
+// may read organization-wide figures (unrestricted, or a viewer of
+// organization dashboards) gets the precomputed rollup with its freshness;
+// any other member gets live counts within their data scope.
+func (s *LeadService) Summary(ctx context.Context, tenantID shared.ID, refresh bool) (*exploration.Summary, error) {
+	if s.rollups == nil {
+		return nil, fmt.Errorf("exploration figures are not available")
+	}
+	explorationID, err := s.repo.EnsureContinuous(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	scope, orgWide, err := s.scope.ViewerScope(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if scope.Restricted() && !orgWide {
+		return s.rollups.ScopedSummary(ctx, tenantID, explorationID, scope)
+	}
+	cur, err := s.rollups.Rollup(ctx, tenantID, explorationID)
+	if err != nil && !shared.IsNotFound(err) {
+		return nil, err
+	}
+	if cur != nil && (!refresh || s.now().Sub(cur.ComputedAt) < RefreshEvery) {
+		return cur, nil
+	}
+	if err := s.rollups.RefreshRollup(ctx, tenantID, explorationID); err != nil {
+		return nil, err
+	}
+	return s.rollups.Rollup(ctx, tenantID, explorationID)
 }

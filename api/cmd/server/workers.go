@@ -1440,10 +1440,11 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 			sw := coverageapp.GovernanceSwitch{Modes: svc.ScanPolicy, Settings: svc.Tenant}
 			leads := postgres.NewExplorationRepository(db)
 			rules := explorationapp.NewRules(leads, postgres.NewExplorationTriggerRepository(db), sw, svc.Audit, log)
-			w.ControllerManager.Register(controller.NewExplorationController(
-				explorationapp.NewController(leads, postgres.NewExplorationControllerRepository(db), rules, svc.Scan,
-					repos.AssetCoverage, sw, svc.Audit, log,
-					explorationapp.ControllerConfig{DailyBudget: cfg.Worker.AssetCoverageDailyBudget}), 0))
+			ctl := explorationapp.NewController(leads, postgres.NewExplorationControllerRepository(db), rules, svc.Scan,
+				repos.AssetCoverage, sw, svc.Audit, log,
+				explorationapp.ControllerConfig{DailyBudget: cfg.Worker.AssetCoverageDailyBudget})
+			ctl.SetRollups(leads)
+			w.ControllerManager.Register(controller.NewExplorationController(ctl, 0))
 		}
 	}
 
