@@ -36,11 +36,14 @@
 #   no-new-privileges, read-only root filesystem). The runtime's default
 #   seccomp profile refuses namespace flags without CAP_SYS_ADMIN, so the
 #   sensor runs under sensor/seccomp.json: the sensor release's own profile
-#   (sensor repository docker/seccomp/sensor.json at v0.23.0, sha256
-#   97d0b0a8292012537f2474b6c200ea49bef1239a306bc6e7e8a2afe15a3895a8), which
-#   is Docker's default profile plus clone/unshare with namespace flags. The
-#   tools cannot use that rule: the sensor's per-task seccomp filter refuses
-#   namespace creation to every tool. Keep Docker's default AppArmor profile
+#   (sensor repository docker/seccomp/sensor.json at v0.41.0, sha256
+#   f2ceafc7b2267ba8edfd606c0f19267683698d84b26dd703e5389b9c9fb21836), which
+#   is Docker's default profile plus clone/unshare with namespace flags and
+#   chroot. The tools cannot use the namespace rule: the sensor's per-task
+#   seccomp filter refuses namespace creation to every tool except the
+#   browser tool (Chromium's renderer sandbox), which also needs chroot; the
+#   kernel still refuses chroot without CAP_SYS_CHROOT in the caller's own
+#   user namespace. Keep Docker's default AppArmor profile
 #   (apparmor=unconfined breaks confinement on Ubuntu), and the host must
 #   allow unprivileged user namespaces (the kernel default; on Ubuntu 24.04
 #   the AppArmor userns restriction applies to unconfined processes only).
@@ -121,7 +124,7 @@ services:
         max-file: "5"
 
   sensor:
-    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.37.0}
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.41.0}
     environment:
       # The gateway, over https, like every other client. The gateway's
       # network alias on sensor-net is OPENCTEM_HOSTNAME.

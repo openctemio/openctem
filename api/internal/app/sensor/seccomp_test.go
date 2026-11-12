@@ -11,7 +11,7 @@ import (
 // The served profile is the sensor release's file (sensor
 // docker/seccomp/sensor.json, byte for byte): a change here is deliberate
 // and must come from a sensor release, together with this digest.
-const releasedSeccompSHA256 = "97d0b0a8292012537f2474b6c200ea49bef1239a306bc6e7e8a2afe15a3895a8"
+const releasedSeccompSHA256 = "f2ceafc7b2267ba8edfd606c0f19267683698d84b26dd703e5389b9c9fb21836"
 
 func TestSeccompProfile_IsTheReleasedFile(t *testing.T) {
 	if SeccompProfileSHA256 != releasedSeccompSHA256 {
