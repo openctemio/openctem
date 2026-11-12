@@ -162,6 +162,13 @@ func run() int {
 		return 1
 	}
 
+	// A setting of a feature that left the core must not be lost unnoticed:
+	// refuse to start unless an extension of this build provides it.
+	if err := buildExtensions.CheckRemovedSettings(os.Getenv); err != nil {
+		logger.NewDefault().Error("refusing to start", "error", err)
+		return 1
+	}
+
 	brand.SetInstance(cfg.Brand)
 	// A hosted service holds organization mail relays to the managed rules
 	// (submission port, AUTH, TLS).

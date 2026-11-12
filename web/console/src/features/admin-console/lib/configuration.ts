@@ -54,7 +54,6 @@ export const CONFIG_ITEM_LABELS: Record<string, string> = {
   ADMIN_ALLOWED_CIDRS: 'Networks allowed to reach the console',
   ADMIN_ELEVATION: 'Time-boxed elevation',
   OPENCTEM_PLANE: 'API plane',
-  ADMIN_AUDIT_SINK: 'Admin audit stream',
   AUDIT_RETENTION_DAYS: 'Audit retention (days)',
   RATE_LIMIT_ENABLED: 'Request rate limits',
   LOG_LEVEL: 'Log level',

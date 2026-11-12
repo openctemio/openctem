@@ -1722,38 +1722,6 @@ vars:
     type: string
     default: "required"
     description: "`required`: platform administrators act as read-only until they elevate their console session to a role no higher than their own, for 15 to 60 minutes, with a reason and a fresh confirmation (audited). `off`: they act as their own role from sign-in."
-  - name: ADMIN_AUDIT_SINK
-    component: api
-    group: "Audit log retention"
-    type: string
-    description: "Streams the platform administrators' audit log off the box in batches (rows with hash-chain position and hash, no request body; the chain head; the chain verification state), at least once from a durable cursor, with backoff. `https://collector/path` (HMAC-SHA256 signed POST, no redirects; needs `ADMIN_AUDIT_SINK_SECRET`), `syslog+tls://host:6514` (RFC 5424 over TLS, optional mutual TLS) or `file:///path` (one JSON batch per line, 0600). Plaintext `syslog+tcp://` and `syslog+udp://` are not supported. A destination that cannot be used stops the start-up. Empty: off, except that with `MANAGED_SERVICE=true` in production the start-up is refused unless it is set."
-  - name: ADMIN_AUDIT_SINK_SECRET
-    component: api
-    group: "Audit log retention"
-    type: string
-    secret: true
-    description: "HMAC-SHA256 key that signs each request to an `https://` `ADMIN_AUDIT_SINK` (`X-OpenCTEM-Signature`, `X-OpenCTEM-Timestamp`, `X-OpenCTEM-Batch-Id`). At least 32 bytes, required for https, refused for other destinations. Never logged."
-  - name: ADMIN_AUDIT_SINK_SYSLOG_CA_FILE
-    component: api
-    group: "Audit log retention"
-    type: path
-    description: "PEM bundle that replaces the system roots when verifying a `syslog+tls://` `ADMIN_AUDIT_SINK`."
-  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT
-    component: api
-    group: "Audit log retention"
-    type: path
-    description: "PEM client certificate presented to a `syslog+tls://` `ADMIN_AUDIT_SINK` (mutual TLS), so the collector can accept only this sender. Set together with `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY`."
-  - name: ADMIN_AUDIT_SINK_SYSLOG_CLIENT_KEY
-    component: api
-    group: "Audit log retention"
-    type: path
-    description: "PEM private key of `ADMIN_AUDIT_SINK_SYSLOG_CLIENT_CERT`."
-  - name: ADMIN_AUDIT_SINK_HEAD_INTERVAL
-    component: api
-    group: "Audit log retention"
-    type: duration
-    default: "15m"
-    description: "How often the administrators' audit chain head (position and hash) and the chain verification state are sent to `ADMIN_AUDIT_SINK` when no row is new. A later re-signing of the chain cannot match a head already sent."
   - name: ADMIN_AUDIT_RETENTION_DAYS
     component: api
     group: "Audit log retention"

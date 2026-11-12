@@ -119,11 +119,6 @@ check_http_client() {
         # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
         # the request host, so no network destination exists to guard.
         'api/internal/infra/signer/client.go'
-        # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
-        # server's environment, never from a tenant or a request, and is
-        # usually a log collector on a private network, which SafeHTTPClient
-        # refuses. https only, TLS 1.2+, no redirects.
-        'api/internal/infra/auditsink/sink.go'
         # System page probes (RFC-114): InternalProbeClient checks the platform's
         # own components at URLs from the server's environment (never a tenant
         # or a request), usually on private addresses that SafeHTTPClient
@@ -514,11 +509,6 @@ check_client_ip_headers() {
         # operator-configured local Unix socket (SIGNER_SOCKET) and ignores
         # the request host, so no network destination exists to guard.
         'api/internal/infra/signer/client.go'
-        # Admin audit sink (ADMIN_AUDIT_SINK): the URL comes only from the
-        # server's environment, never from a tenant or a request, and is
-        # usually a log collector on a private network, which SafeHTTPClient
-        # refuses. https only, TLS 1.2+, no redirects.
-        'api/internal/infra/auditsink/sink.go'
         # Authorization-matrix test harness: only SETS X-Forwarded-For on the
         # requests it sends to its own disposable test stack, to give each
         # simulated user a distinct client identity for the rate limiter.
@@ -639,8 +629,6 @@ check_outbound_primitives() {
         # Scan-zone resolver: the recursive resolver the operator names in
         # the server's environment (SCOPE_ZONE_RESOLVER).
         'api/internal/server/scope_zone_resolver.go'
-        # Admin audit sink: destination from the server's environment only.
-        'api/internal/infra/auditsink/sink.go'
         # Sensor transport probe: the platform's own sensor endpoint.
         'api/internal/infra/sensortransport/probe.go'
         # Sensor relay connector: two destinations from the server's

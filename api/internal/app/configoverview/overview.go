@@ -164,7 +164,6 @@ var serverSettings = []serverSetting{
 		return "off"
 	}},
 	{env: "OPENCTEM_PLANE", group: GroupConsole, value: func(c *config.Config) string { return c.AdminPlane.Plane }},
-	{env: "ADMIN_AUDIT_SINK", group: GroupAudit, secret: true, isSet: func(c *config.Config) bool { return c.AdminAuditSink.URL != "" }},
 	{env: "AUDIT_RETENTION_DAYS", group: GroupAudit, value: func(c *config.Config) string { return strconv.Itoa(c.AuditRetention.Days) }},
 	{env: "AUDIT_RETENTION_ENABLED", group: GroupAudit, value: func(c *config.Config) string { return boolText(c.AuditRetention.Enabled) }},
 	{env: "RATE_LIMIT_ENABLED", group: GroupInstance, value: func(c *config.Config) string { return boolText(c.RateLimit.Enabled) }},
