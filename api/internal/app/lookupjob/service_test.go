@@ -48,7 +48,7 @@ func (r *memRepo) Claim(_ context.Context, sensorID shared.ID, caps []string, no
 	return nil, nil
 }
 
-func (r *memRepo) Finish(_ context.Context, id, sensorID shared.ID, status string, res json.RawMessage, code string, _ time.Time) (bool, error) {
+func (r *memRepo) FinishForPlatform(_ context.Context, id, sensorID shared.ID, status string, res json.RawMessage, code string, _ time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	j, ok := r.jobs[id]
