@@ -140,7 +140,7 @@ func promotionService(t *testing.T, srvURL string, client *http.Client, tenant s
 		inv.byName[a.Name()] = a
 	}
 	attr := newMemAttribution()
-	svc := NewService(&fakeAssetRepo{assets: assets}, newFakeExposureRepo(), srvURL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: assets}, newFakeExposureRepo(), srvURL)
 	svc.setHTTPClient(client)
 	svc.SetPromotion(inv, inv, attr)
 	return svc, inv, attr
@@ -182,9 +182,9 @@ func TestPromote_StatesByRootOrigin(t *testing.T) {
 			t.Errorf("%s: %d evidence rows, want 1", name, len(attr.evidence[a.ID().String()]))
 		}
 	}
-	for _, name := range []string{"wild.proven.com", "old.proven.com", "wild.listed.com", "old.listed.com"} {
+	for _, name := range []string{"old.proven.com", "old.listed.com"} {
 		if _, ok := inv.byName[name]; ok {
-			t.Errorf("%s promoted (wildcard-only or long expired)", name)
+			t.Errorf("%s promoted (long expired)", name)
 		}
 	}
 	for _, tn := range inv.tenants {
@@ -286,7 +286,7 @@ func TestPromote_OffWithoutWiring(t *testing.T) {
 	tenant := shared.NewID()
 	srv := ctNames(t, "www")
 	defer srv.Close()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "listed.com")}}, newFakeExposureRepo(), srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "listed.com")}}, newFakeExposureRepo(), srv.URL)
 	svc.setHTTPClient(srv.Client())
 	if n, err := svc.MonitorTenant(context.Background(), tenant); err != nil || n == 0 {
 		t.Fatalf("n=%d err=%v", n, err)

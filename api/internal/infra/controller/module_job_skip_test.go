@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/contract/ctlookup"
+
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
@@ -153,19 +155,21 @@ type ctExposures struct{}
 
 func (ctExposures) BulkUpsert(context.Context, []*exposuredom.ExposureEvent) error { return nil }
 
-// ctFetcher stands in for the platform sensor that carries CT requests; it
+// ctSource stands in for the platform sensor that answers CT lookups; it
 // answers every query with no certificates.
-type ctFetcher struct{}
+type ctSource struct{}
 
-func (ctFetcher) FetchCT(context.Context, certmonitorapp.CTRequest) ([]byte, error) {
-	return []byte("[]"), nil
+func (ctSource) Available(context.Context) bool { return true }
+
+func (ctSource) Lookup(context.Context, shared.ID, string) (ctlookup.Output, error) {
+	return ctlookup.Output{SourceStatus: []ctlookup.SourceStatus{{Source: ctlookup.SourceCRTSH, State: ctlookup.StateOK}}}, nil
 }
 
 func TestCertMonitor_SkipsTenantWithAttackSurfaceOff(t *testing.T) {
 	on, off := shared.NewID(), shared.NewID()
 	assets := &ctAssets{}
-	svc := certmonitorapp.NewService(assets, ctExposures{}, "", logger.NewNop())
-	svc.SetFetcher(ctFetcher{})
+	svc := certmonitorapp.NewService(assets, ctExposures{}, logger.NewNop())
+	svc.SetSource(ctSource{})
 	c := NewCertMonitorController(svc, &fakeTenantLister{ids: []shared.ID{on, off}},
 		&CertMonitorControllerConfig{ModuleGuard: offFor(moduledom.ModuleAttackSurface, off)})
 	if _, err := c.Reconcile(context.Background()); err != nil {

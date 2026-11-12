@@ -1253,11 +1253,6 @@ type SensorConfig struct {
 	// disable outbound crt.sh polling entirely.
 	CertMonitorEnabled bool
 
-	// CertMonitorFeedBaseURL is the CT-log aggregator the cert-monitor controller
-	// queries per tenant domain. Set CERT_MONITOR_FEED_URL to override; defaults
-	// to https://crt.sh. Queried via the SSRF-guarded SafeHTTPClient.
-	CertMonitorFeedBaseURL string
-
 	// CertMonitorInterval is how often the CT sweep runs across all tenants.
 	// Defaults to 24h (daily), matching the threat-intel refresh.
 	CertMonitorInterval time.Duration
@@ -1314,16 +1309,6 @@ type SensorConfig struct {
 	// request budget per 24 h; what does not fit is deferred.
 	// PATH_DISCOVERY_DAILY_REQUESTS, default 50000.
 	PathDiscoveryDailyRequests int
-
-	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
-	// (free tier), when crt.sh still fails after its retries. Set
-	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
-	CertMonitorCertSpotterURL string
-
-	// CertMonitorCertSpotterKey is a commercial Cert Spotter API key (SaaS),
-	// sent only with the Cert Spotter requests a platform sensor carries;
-	// empty: the unauthenticated tier.
-	CertMonitorCertSpotterKey string
 
 	// AssetTechnologyBackfillReportOnly makes the asset-technology-backfill
 	// job count and log the component links it would remove instead of
@@ -1843,7 +1828,6 @@ func Load() (*Config, error) {
 			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
 			VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
 			CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL:            getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:               getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			CertMonitorMaxDomainsPerRun:       getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
 			AssetEnrichmentEnabled:            getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
@@ -1858,8 +1842,6 @@ func Load() (*Config, error) {
 			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
 			EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
 			EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
-			CertMonitorCertSpotterURL:         getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
-			CertMonitorCertSpotterKey:         getEnv("CERT_MONITOR_CERTSPOTTER_KEY", ""),
 			AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
 			InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
 			AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
@@ -2867,10 +2849,17 @@ func (r retiredName) instead() string {
 // smtpMoved is the hint for the SMTP_* variables.
 const smtpMoved = "unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
 
+// ctMoved: the CT sources are the platform sensor's settings now.
+const ctMoved = "unset it; the platform makes no CT request, its platform sensors query CT (sensor settings SENSOR_CT_CRTSH_URL, SENSOR_CT_CERTSPOTTER_URL, SENSOR_CT_CERTSPOTTER_KEY)"
+
 // removedEnv lists settings that were removed without a replacement
 // variable. Startup refuses to run while one is set, saying what to do
 // instead, so an operator never believes a removed setting still applies.
 var removedEnv = []struct{ Name, Instead string }{
+	// The platform makes no CT request: its platform sensors do.
+	{"CERT_MONITOR_FEED_URL", ctMoved},
+	{"CERT_MONITOR_CERTSPOTTER_URL", ctMoved},
+	{"CERT_MONITOR_CERTSPOTTER_KEY", ctMoved},
 	// Knobs that were read but switched nothing.
 	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
 	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},

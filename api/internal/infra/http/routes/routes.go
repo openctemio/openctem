@@ -188,6 +188,7 @@ type Handlers struct {
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	FeedRelay           *handler.FeedRelayHandler           // feed relay (RFC-142): sensor and admin routes; nil if not initialized
+	LookupJobs          *handler.LookupJobHandler           // lookup jobs (lookup.ct@1) of platform sensors; nil if not initialized
 	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	AdminConfiguration  *handler.AdminConfigurationHandler  // Configuration page: setting sources (RFC-022 rev. 22)
 	// AdminPlatformSettings serves the settings moved from the environment
@@ -1107,6 +1108,9 @@ func Register(
 		}
 		if ctl != nil && h.FeedRelay != nil {
 			ctl.SetFeedRelay(h.FeedRelay)
+		}
+		if ctl != nil && h.LookupJobs != nil {
+			ctl.SetLookupJobs(h.LookupJobs)
 		}
 		budgets := newSensorV2Budgets(ingestRateLimiter, log)
 		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)

@@ -329,6 +329,12 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/openctemio/contract v1.6.0 h1:AmZs4JHCm+m6ANhJifM2H4YK9GOfOnjtQusaUhGXwGI=
 github.com/openctemio/contract v1.6.0/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
+github.com/openctemio/contract v1.6.1-0.20261112034811-260997ce9636 h1:Ppg37/ghUeIGq996jtNZap+zxB1WdfsGlUHlCW02zKs=
+github.com/openctemio/contract v1.6.1-0.20261112034811-260997ce9636/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
+github.com/openctemio/contract v1.6.1-0.20261112042130-5ac8fa796c90 h1:sHRqcIsoB7wv/wHPkzrNnJ6vYIRCMA9pGQ5yRwNl1mE=
+github.com/openctemio/contract v1.6.1-0.20261112042130-5ac8fa796c90/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
+github.com/openctemio/contract v1.6.1-0.20261112042759-cf68d4ca7454 h1:EttmwCmbCCENftQA19WA5Q8NMENLv2hKf1PwtLVHhJ0=
+github.com/openctemio/contract v1.6.1-0.20261112042759-cf68d4ca7454/go.mod h1:HxX5pwiijz4RjtUWUjbqsFMIUPMOPx4kyPnsoXVhwW4=
 github.com/openctemio/contract/transfer v1.0.1 h1:d7Od6Lmd2rqdd9HwiWnQy8u518vFj4eUOBxFe7+C4BA=
 github.com/openctemio/contract/transfer v1.0.1/go.mod h1:pNJPUtGJBhm+DfBxgeUz2tGSfW1KSUF+Ry7fV0BJnWg=
 github.com/openctemio/ctis/v2 v2.0.3 h1:6Da/PSpZlsXNRU5GNeZNr8udj7Jbw9ICa+fUym/t2DE=
