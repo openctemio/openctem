@@ -47,7 +47,11 @@ type EASMPlatform struct {
 	// CTUnavailableReason: why CT monitoring cannot run ("disabled",
 	// "needs_platform_sensor"; "" when it runs).
 	CTUnavailableReason string
-	DNSAvailable        bool
+	// CTAvailability, when set, decides CTAvailable and CTUnavailableReason
+	// per request: CT monitoring is available only while a platform sensor
+	// serves CT lookups.
+	CTAvailability func(ctx context.Context) (bool, string)
+	DNSAvailable   bool
 	// EnrichmentAvailable: ASSET_ENRICHMENT_ENABLED.
 	EnrichmentAvailable bool
 	CTDefaultHrs        int
@@ -225,6 +229,9 @@ func (h *EASMSettingsHandler) respond(ctx context.Context, tenantID shared.ID, e
 		if until, err := h.freshness.RunNowAvailableAt(ctx, tenantID); err == nil && !until.IsZero() {
 			out.RunNowAvailableAt = &until
 		}
+	}
+	if h.platform.CTAvailability != nil {
+		out.CTAvailable, out.CTUnavailableReason = h.platform.CTAvailability(ctx)
 	}
 	return out
 }

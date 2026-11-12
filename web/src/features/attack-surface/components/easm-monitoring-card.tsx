@@ -236,7 +236,7 @@ export function EASMMonitoringCard() {
             <p className="text-xs text-muted-foreground" role="status">
               {t(
                 'attackSurface.monitoring.ctNeedsPlatformSensor',
-                'Certificate Transparency lookups run only through a platform sensor: the platform never contacts crt.sh or Cert Spotter itself, and none is set up to carry them yet. Names from certificate logs still reach the inventory through the passive subdomain discovery on your sensors.'
+                'Certificate Transparency lookups run only through a platform sensor: the platform never contacts crt.sh or Cert Spotter itself, and no platform sensor that answers them is connected right now. Monitoring starts on its own once the platform administrator connects one. Names from certificate logs still reach the inventory through the passive subdomain discovery on your sensors.'
               )}
             </p>
           )}

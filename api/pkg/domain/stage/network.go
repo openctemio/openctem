@@ -47,6 +47,7 @@ var stageNetworks = map[Key]Network{
 	ResolveDNS:         NetworkResolver,
 	LookupRDAP:         NetworkEgressProxy,
 	LookupASN:          NetworkEgressProxy,
+	LookupCT:           NetworkVendor,
 	SecretsCode:        NetworkVendor,
 	SASTCode:           NetworkVendor,
 	SCADeps:            NetworkVendor,

@@ -19,6 +19,13 @@ import (
 // CommandTypeFeedRelay is the command type of a feed relay round.
 const CommandTypeFeedRelay = "feed_relay"
 
+// CommandTypeLookup is the command type of a lookup job: a passive
+// question (capability lookup.ct@1) a platform (instance-scope) sensor
+// answers for one organization. Its statement carries that organization's
+// tenant id, the instance scope, the tool of the capability and exactly one
+// target (the name asked about).
+const CommandTypeLookup = "lookup"
+
 // PlatformTenantID is the tenant_id of a statement that belongs to the
 // platform, not to an organization: the nil UUID. Only a feed relay
 // statement may carry it.

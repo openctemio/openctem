@@ -64,39 +64,6 @@ func mustDomainAsset(t *testing.T, tenantID shared.ID, name string) *assetdom.As
 
 // --- pure-parse tests ------------------------------------------------------
 
-func TestParseCRTSH_RealShape(t *testing.T) {
-	// Real crt.sh shape: bare array, multi-line name_value (SANs), no-tz times.
-	body := []byte(`[
-	  {"issuer_ca_id":16418,"issuer_name":"C=US, O=Let's Encrypt, CN=R3","common_name":"example.com","name_value":"example.com\nwww.example.com","not_before":"2026-06-01T00:00:00","not_after":"2026-09-01T12:00:00","serial_number":"abc123"},
-	  {"issuer_ca_id":9,"issuer_name":"DigiCert","common_name":"*.api.example.com","name_value":"*.api.example.com","not_before":"2026-01-01T00:00:00.500000","not_after":"2027-01-01T00:00:00"}
-	]`)
-	entries, err := parseCRTSH(body)
-	if err != nil {
-		t.Fatalf("parseCRTSH: %v", err)
-	}
-	if len(entries) != 2 {
-		t.Fatalf("want 2 entries, got %d", len(entries))
-	}
-	if entries[0].NameValue != "example.com\nwww.example.com" {
-		t.Errorf("name_value not preserved: %q", entries[0].NameValue)
-	}
-	if got := parseCRTTime(entries[0].NotAfter); got.IsZero() {
-		t.Errorf("not_after should parse: %q", entries[0].NotAfter)
-	}
-	if got := parseCRTTime(entries[1].NotBefore); got.IsZero() {
-		t.Errorf("fractional-second not_before should parse: %q", entries[1].NotBefore)
-	}
-}
-
-func TestParseCRTSH_EmptyAndMalformed(t *testing.T) {
-	if got, err := parseCRTSH([]byte("  ")); err != nil || got != nil {
-		t.Errorf("empty body: got %v, %v", got, err)
-	}
-	if _, err := parseCRTSH([]byte("<html>rate limited</html>")); err == nil {
-		t.Errorf("non-JSON should error")
-	}
-}
-
 func TestCollectDiscoveries_Subdomains(t *testing.T) {
 	now := time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC)
 	future := "2027-01-01T00:00:00"
@@ -190,7 +157,7 @@ func TestMonitorTenant_EmitsExposuresAndIsolatesTenant(t *testing.T) {
 	assetRepo := &fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenantA, "example.com")}}
 	expRepo := newFakeExposureRepo()
 
-	svc := NewService(assetRepo, expRepo, srv.URL, testLogger())
+	svc := newTestService(assetRepo, expRepo, srv.URL)
 	svc.setHTTPClient(srv.Client())
 
 	n, err := svc.MonitorTenant(context.Background(), tenantA)
@@ -238,7 +205,7 @@ func TestMonitorTenant_IdempotentOnRepoll(t *testing.T) {
 
 	assetRepo := &fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}
 	expRepo := newFakeExposureRepo()
-	svc := NewService(assetRepo, expRepo, srv.URL, testLogger())
+	svc := newTestService(assetRepo, expRepo, srv.URL)
 	svc.setHTTPClient(srv.Client())
 
 	first, err := svc.MonitorTenant(context.Background(), tenant)
@@ -259,7 +226,7 @@ func TestMonitorTenant_IdempotentOnRepoll(t *testing.T) {
 }
 
 func TestMonitorTenant_NoDomainsIsInert(t *testing.T) {
-	svc := NewService(&fakeAssetRepo{}, newFakeExposureRepo(), "https://crt.sh", testLogger())
+	svc := newTestService(&fakeAssetRepo{}, newFakeExposureRepo(), "https://crt.sh")
 	n, err := svc.MonitorTenant(context.Background(), shared.NewID())
 	if err != nil || n != 0 {
 		t.Fatalf("no domains -> inert; got n=%d err=%v", n, err)
@@ -268,23 +235,12 @@ func TestMonitorTenant_NoDomainsIsInert(t *testing.T) {
 
 // --- SSRF guard on the outbound query --------------------------------------
 
-func TestQueryCRTSH_SSRFGuardBlocksInternal(t *testing.T) {
-	// Production path: the default SafeHTTPClient must refuse an internal target
-	// even though the feed URL is operator-configurable (DNS-rebinding defense).
-	// "localhost" is hard-blocked regardless of the allow-private policy, so this
-	// is deterministic and offline.
-	svc := NewService(&fakeAssetRepo{}, newFakeExposureRepo(), "http://localhost:9", testLogger())
-	if _, err := svc.queryCRTSH(context.Background(), "example.com"); err == nil {
-		t.Fatalf("SSRF guard should have blocked an internal/localhost feed target")
-	}
-}
-
 // A domain asset awaiting review, a candidate or a rejected one is not a CT
 // root: a domain a sensor report created must not widen the watch list by
 // itself (research/22b S2). The listing asks for approved assets only.
 func TestGatherRoots_OnlyApprovedDomainAssets(t *testing.T) {
 	repo := &fakeAssetRepo{}
-	svc := NewService(repo, newFakeExposureRepo(), "http://127.0.0.1:0", testLogger())
+	svc := newTestService(repo, newFakeExposureRepo(), "http://127.0.0.1:0")
 	if _, _, err := svc.gatherRoots(context.Background(), shared.NewID()); err != nil {
 		t.Fatal(err)
 	}

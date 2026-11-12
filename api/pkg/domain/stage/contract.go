@@ -184,6 +184,7 @@ var requiredFields = map[Key][]string{
 	ResolveDNS:          []string{"name", "resolves_to"},
 	LookupRDAP:          []string{"name", "registration"},
 	LookupASN:           []string{"address", "asn"},
+	LookupCT:            []string{"name", "issuer", "not_after"},
 	DiscoverHosts:       []string{"address", "live_by"},
 	ScanPorts:           []string{"host", "port", "protocol"},
 	ProbeHTTP:           []string{"url", "status_code", "title"},

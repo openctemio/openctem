@@ -113,6 +113,32 @@ func TestEASMSettingsHandler_CTUnavailableReason(t *testing.T) {
 	}
 }
 
+// CT availability follows the platform sensors per request: a sensor that
+// serves CT lookups connecting later turns it on without a restart.
+func TestEASMSettingsHandler_CTAvailabilityIsLive(t *testing.T) {
+	tenantID := shared.NewID()
+	sensorUp := false
+	h := NewEASMSettingsHandler(&fakeEASMSettingsStore{}, nil, &fakeSweeper{},
+		EASMPlatform{DNSAvailable: true, CTAvailability: func(context.Context) (bool, string) {
+			if sensorUp {
+				return true, ""
+			}
+			return false, "needs_platform_sensor"
+		}}, &settingsAudit{}, logger.NewNop())
+	get := func() string {
+		w := httptest.NewRecorder()
+		h.Get(w, seedReq(http.MethodGet, "/", "", tenantID, "u1"))
+		return w.Body.String()
+	}
+	if b := get(); !strings.Contains(b, `"ct_available":false`) || !strings.Contains(b, `"ct_unavailable_reason":"needs_platform_sensor"`) {
+		t.Fatalf("no sensor: %s", b)
+	}
+	sensorUp = true
+	if b := get(); !strings.Contains(b, `"ct_available":true`) || strings.Contains(b, `ct_unavailable_reason`) {
+		t.Fatalf("sensor connected: %s", b)
+	}
+}
+
 type settingsAudit struct{ actions []auditdom.Action }
 
 func (c *settingsAudit) LogEvent(_ context.Context, _ auditapp.AuditContext, e auditapp.AuditEvent) error {
