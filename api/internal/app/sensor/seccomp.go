@@ -6,7 +6,9 @@ package sensor
 // seccomp/sensor.json is the sensor release's docker/seccomp/sensor.json:
 // the container runtime's default profile plus clone/unshare of new
 // namespaces, so the sensor can give every tool task its own network
-// namespace (per-task network confinement). The install snippets download
+// namespace (per-task network confinement), and chroot, which the browser
+// tool's renderer sandbox uses inside its own user namespace (the kernel
+// still requires CAP_SYS_CHROOT in that namespace). The install snippets download
 // it from the platform and check SeccompProfileSHA256, so a tampered or
 // truncated download is refused before the container starts.
 

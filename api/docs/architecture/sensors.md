@@ -1198,7 +1198,12 @@ profile refuses the namespaces this needs.
   (public, rate limited per IP, `X-Content-SHA256`). It is the sensor
   release's `docker/seccomp/sensor.json`, embedded in the API
   (`internal/app/sensor/seccomp/sensor.json`); a test pins its SHA-256, so a
-  change comes from a sensor release on purpose.
+  change comes from a sensor release on purpose. The copy is the release
+  `versions.yaml` `sensor.latest` names (CI compares them). Beyond the
+  runtime's default it allows clone/unshare with namespace flags and, since
+  sensor v0.40.0, `chroot` for the browser tool's renderer sandbox (the
+  kernel still refuses it without `CAP_SYS_CHROOT` in the caller's own user
+  namespace).
 - **Checked before use:** the docker and compose snippets download it with
   `curl -fsSL` (with the platform CA when there is one) and run
   `sha256sum -c` against the digest the API rendered into the snippet, before

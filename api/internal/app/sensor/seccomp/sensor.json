@@ -1229,6 +1229,13 @@
       ],
       "action": "SCMP_ACT_ALLOW",
       "comment": "openctem sensor: per-task user, network and mount namespaces (api RFC-060); tools are refused namespace creation by the sensor own filter"
+    },
+    {
+      "names": [
+        "chroot"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "comment": "openctem sensor: the browser tool's renderer sandbox (Chromium) chroots inside a user namespace it owns; the kernel still refuses chroot without CAP_SYS_CHROOT in the caller's namespace"
     }
   ]
 }
