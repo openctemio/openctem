@@ -9,9 +9,37 @@ component needs, and which component releases a platform release accepts. They r
 signed file, so a release needs **no commit** in the documentation or the website:
 
 ```
+https://get.openctem.io/releases/manifest.json
+https://get.openctem.io/releases/manifest.json.sigstore.json
+```
+
+## Addresses
+
+`get.openctem.io` is the stable public address. It hosts nothing: each path is a redirect to a
+GitHub release asset, so publishing a release is the only publishing step and there is no second
+copy to keep in sync.
+
+| Path | Redirects to (302) |
+|---|---|
+| `/releases/manifest.json` | `https://github.com/openctemio/openctem/releases/latest/download/openctem-versions.json` |
+| `/releases/manifest.json.sigstore.json` | `.../releases/latest/download/openctem-versions.json.sigstore.json` |
+| `/releases/feed.json` | `.../releases/latest/download/openctem-releases.json` (the instance feed) |
+| `/releases/vX.Y.Z/<file>` | `.../releases/download/vX.Y.Z/<file>` (that release's own assets: image list, checksums, archives) |
+| `/` and `/install.sh` | reserved for the one-script installer when it ships (`.../releases/latest/download/install.sh`) |
+
+The redirects are Cloudflare Single Redirect rules in the `openctem.io` zone (the zone already serves
+`openctem.io`); TLS is the zone's certificate, which covers first-level subdomains. A per-release
+path serves the assets of that release; the manifest exists only at the latest path, since the
+current releases are a property of the day, not of one release.
+
+Until `get.openctem.io` answers, consumers use the GitHub address directly:
+
+```
 https://github.com/openctemio/openctem/releases/latest/download/openctem-versions.json
 https://github.com/openctemio/openctem/releases/latest/download/openctem-versions.json.sigstore.json
 ```
+
+Both are the same bytes, so the signature check is the same.
 
 ## Who writes it
 
