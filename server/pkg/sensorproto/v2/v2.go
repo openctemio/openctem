@@ -102,6 +102,15 @@ const (
 	// holds a command under, sent on complete and fail: a command claimed
 	// again since refuses the change. Optional.
 	HeaderLeaseEpoch = "X-OpenCTEM-Lease-Epoch"
+	// HeaderLateCommand and HeaderLateLeaseEpoch name, on an unbound report
+	// (PUT and commit of /results/{report_id}), the command and lease epoch
+	// a late report was made for: one sent again without its command after
+	// the command was refused as command-not-found. They are provenance, not
+	// a binding: the platform refuses the report with ProblemLeaseSuperseded
+	// when the command was handed out again since, and otherwise takes it as
+	// an unsolicited report. Optional.
+	HeaderLateCommand    = "X-OpenCTEM-Late-Command"
+	HeaderLateLeaseEpoch = "X-OpenCTEM-Late-Lease-Epoch"
 )
 
 // StatusRetryAfterSeconds is the poll delay a 202 advises.

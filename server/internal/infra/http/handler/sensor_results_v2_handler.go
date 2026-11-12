@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -180,6 +181,14 @@ func (h *SensorResultsV2Handler) target(w http.ResponseWriter, r *http.Request) 
 	if protov2.ValidateUUID(t.ReportID) != nil || (t.CommandID != "" && protov2.ValidateUUID(t.CommandID) != nil) {
 		protov2.NewProblem(protov2.ProblemInvalidID).Write(w)
 		return ingest.V2Target{}, false
+	}
+	// Late provenance (ingest/v2_late.go): read only on the unbound form; a
+	// value that is not a UUID or an epoch is ignored like an absent header.
+	if t.CommandID == "" {
+		if c := strings.TrimSpace(r.Header.Get(protov2.HeaderLateCommand)); protov2.ValidateUUID(c) == nil {
+			t.LateCommand = c
+			t.LateLeaseEpoch = intHeader(r, protov2.HeaderLateLeaseEpoch)
+		}
 	}
 	return t, true
 }
