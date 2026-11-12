@@ -145,6 +145,23 @@ func TestScanRetry_PermanentDispatchFailure_GivesUp(t *testing.T) {
 	}
 }
 
+// A retry skipped because the scan already has an active run (a scheduled
+// run or a coverage pass started after the failure) is final: that run does
+// the work, and retrying later would hand the sensors the same work twice.
+func TestScanRetry_ActiveRunSkip_GivesUp(t *testing.T) {
+	repo := &fakeRetryRepo{cand: newCandidate(t)}
+	skipped := dispatcherFunc(func(context.Context, shared.ID, shared.ID, int) error {
+		return scanrun.ErrScanRunActive
+	})
+	c := NewScanRetryController(repo, skipped, &ScanRetryControllerConfig{Logger: logger.NewNop()})
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.resetCall != 0 {
+		t.Fatalf("claim released %d time(s); a retry next to an active run must not be retried", repo.resetCall)
+	}
+}
+
 // A transient dispatch failure spends the attempt: before, the claim was
 // released with retry_attempt unchanged, so a dispatch that kept failing was
 // retried every backoff interval forever.

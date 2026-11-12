@@ -377,7 +377,9 @@ resolves and looks up every asset its policy names.
 whether a sensor *could* take a capability's work; it cannot see every
 reason the claim or a sensor's dispatch gate (grant, local policy,
 intensity) keeps it. A coverage run whose step ends `NO_SENSOR` (no sensor
-took its work before the run's deadline) counts on the capability's hold
+took its work before the run's deadline), or that ended with every command
+refused by the sensors that took it (local policy, egress) or never picked
+up (`runNothingClaimedSQL`), counts on the capability's hold
 (`asset_coverage_holds`, one row per tenant and capability); any other
 finished run resets the count, a stalled one leaves it. At 3 runs in a row
 the capability is paused with readiness reason `not_claimed`: its pairs
