@@ -98,6 +98,18 @@ describe('LoginForm social-button gating', () => {
     expect(screen.queryByText('GitHub')).not.toBeInTheDocument()
   })
 
+  it('keeps a long SSO provider name inside the card (ellipsis, full name in the tooltip)', () => {
+    const name = 'Example Corporation International Holdings single sign-on (production tenant)'
+    mockUseTenantSSOProviders.mockReturnValue({
+      data: [{ id: 'p1', provider: 'okta', display_name: name }],
+    } as ReturnType<typeof useTenantSSOProviders>)
+    render(<LoginForm orgSlug="example-corp" />)
+    const button = screen.getByRole('button', { name: `Sign in with ${name}` })
+    expect(button).toHaveClass('min-w-0')
+    expect(button).toHaveAttribute('title', `Sign in with ${name}`)
+    expect(screen.getByText(`Sign in with ${name}`)).toHaveClass('truncate')
+  })
+
   it('respects showSocialLogin=false even if providers are configured', () => {
     setAuthProviders({ google: true, github: true, microsoft: true })
     render(<LoginForm showSocialLogin={false} />)

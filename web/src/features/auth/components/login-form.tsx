@@ -552,25 +552,31 @@ export function LoginForm({
             </div>
 
             <div className="grid gap-2">
-              {ssoProviders.map((provider) => (
-                <Button
-                  key={provider.id}
-                  variant="outline"
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleSSOLogin(provider.provider)}
-                  className="w-full"
-                >
-                  {loadingSSOProvider === provider.provider ? (
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <KeyRound className="me-2 h-4 w-4" />
-                  )}
-                  {t('auth.login.signInWith', 'Sign in with {provider}', {
-                    provider: provider.display_name,
-                  })}
-                </Button>
-              ))}
+              {ssoProviders.map((provider) => {
+                const label = t('auth.login.signInWith', 'Sign in with {provider}', {
+                  provider: provider.display_name,
+                })
+                // min-w-0 + truncate: an identity provider's long display name
+                // ends in an ellipsis instead of widening the card past its edge.
+                return (
+                  <Button
+                    key={provider.id}
+                    variant="outline"
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => handleSSOLogin(provider.provider)}
+                    className="w-full min-w-0"
+                    title={label}
+                  >
+                    {loadingSSOProvider === provider.provider ? (
+                      <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <KeyRound className="me-2 h-4 w-4" />
+                    )}
+                    <span className="truncate">{label}</span>
+                  </Button>
+                )
+              })}
             </div>
           </>
         )}
