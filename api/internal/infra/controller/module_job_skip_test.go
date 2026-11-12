@@ -153,10 +153,19 @@ type ctExposures struct{}
 
 func (ctExposures) BulkUpsert(context.Context, []*exposuredom.ExposureEvent) error { return nil }
 
+// ctFetcher stands in for the platform sensor that carries CT requests; it
+// answers every query with no certificates.
+type ctFetcher struct{}
+
+func (ctFetcher) FetchCT(context.Context, certmonitorapp.CTRequest) ([]byte, error) {
+	return []byte("[]"), nil
+}
+
 func TestCertMonitor_SkipsTenantWithAttackSurfaceOff(t *testing.T) {
 	on, off := shared.NewID(), shared.NewID()
 	assets := &ctAssets{}
 	svc := certmonitorapp.NewService(assets, ctExposures{}, "", logger.NewNop())
+	svc.SetFetcher(ctFetcher{})
 	c := NewCertMonitorController(svc, &fakeTenantLister{ids: []shared.ID{on, off}},
 		&CertMonitorControllerConfig{ModuleGuard: offFor(moduledom.ModuleAttackSurface, off)})
 	if _, err := c.Reconcile(context.Background()); err != nil {
