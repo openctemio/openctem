@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // fakeSignerAPI serves GET /v1/keys and GET /v1/keyset.

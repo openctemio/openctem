@@ -1,7 +1,7 @@
 package postgres
 
 // Vulnerability id aliases from the signed feed (RFC-043 §17.2).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeed"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 var (

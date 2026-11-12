@@ -10,8 +10,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // Version is one technology at one version (an empty Version is a version

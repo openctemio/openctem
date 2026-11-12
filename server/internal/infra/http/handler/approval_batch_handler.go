@@ -1,6 +1,6 @@
 package handler
 
-// Group-level exceptions (api/docs/rfcs/RFC-111-approval-policy.md §7):
+// Group-level exceptions (server/docs/rfcs/RFC-111-approval-policy.md §7):
 // request and preview on a remediation task, list, read and decide under
 // /approvals/batches.
 
@@ -11,15 +11,15 @@ import (
 	"net/http"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	remediationapp "github.com/openctemio/openctem/server/internal/app/remediation"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // TaskExceptionRequest asks for one exception over a task's open findings.

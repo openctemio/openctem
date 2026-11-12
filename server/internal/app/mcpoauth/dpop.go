@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/dpop"
+	"github.com/openctemio/openctem/server/pkg/dpop"
 )
 
 // DPoP sender-constrained tokens (RFC 9449, RFC-062 §9). A client that sends

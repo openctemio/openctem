@@ -1,6 +1,6 @@
 package definition
 
-import "github.com/openctemio/openctem/api/pkg/domain/shared"
+import "github.com/openctemio/openctem/server/pkg/domain/shared"
 
 // GlobalScopeKey is the scope key of a global definition: the nil UUID. The
 // schema stores it in scope_tenant_id / definition_scope so that foreign keys

@@ -1,7 +1,7 @@
 package controller
 
 // SLA escalation: announces SLA breaches and at-risk deadlines once per SLA
-// episode (api/docs/architecture/sla-escalation.md).
+// episode (server/docs/architecture/sla-escalation.md).
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SLABreachEvent is emitted once per SLA episode of a finding whose deadline

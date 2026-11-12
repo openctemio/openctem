@@ -10,12 +10,12 @@ import (
 	"errors"
 	"testing"
 
-	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	automationsvc "github.com/openctemio/openctem/server/internal/app/automation"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // closingStatuses is every finding status an automation may not set.

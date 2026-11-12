@@ -74,7 +74,7 @@
 
 | Piece | Where | State |
 |---|---|---|
-| RFC-007 planner, scheduler, dispatcher, `tenable_config.go`, coverage stats | `api/internal/app/scancoverage/`, `internal/infra/controller/coverage_scheduler.go`, migration `000176_scan_coverage_state` | Kept, not registered since #990 (`tenableCoverageRunnerAvailable = false`). `ActiveIPs` returns 0 |
+| RFC-007 planner, scheduler, dispatcher, `tenable_config.go`, coverage stats | `server/internal/app/scancoverage/`, `internal/infra/controller/coverage_scheduler.go`, migration `000176_scan_coverage_state` | Kept, not registered since #990 (`tenableCoverageRunnerAvailable = false`). `ActiveIPs` returns 0 |
 | Tenable provider | `pkg/domain/integration` (`ProviderTenable`) | `HasClient()` false since #990: create refused, stored rows load |
 | `.nessus` parser and findings upload | ctis `importer` (Nessus format), `POST /api/v1/findings/import` | Works; runs with the uploader's rights. The API's own parser and `POST /assets/import/nessus{,-findings}` were removed |
 | Nessus Pro REST client and `.nessus` → CTIS | sdk-go `pkg/scanners/tenable` | Kept in sdk-go v0.17.0; no Tenable.sc client |

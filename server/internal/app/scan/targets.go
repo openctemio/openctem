@@ -9,14 +9,14 @@ import (
 
 	"github.com/openctemio/contract/addrscope"
 
-	"github.com/openctemio/openctem/api/internal/app/actscope"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/server/internal/app/actscope"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // maxResolvedTargets bounds how many targets one scan run may dispatch. Larger

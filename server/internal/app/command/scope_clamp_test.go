@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // SECURITY (RFC-054 §16): a job clamped at claim carries the caps in both

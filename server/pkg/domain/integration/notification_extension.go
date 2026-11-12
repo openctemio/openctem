@@ -1,6 +1,6 @@
 package integration
 
-import "github.com/openctemio/openctem/api/pkg/notifymsg"
+import "github.com/openctemio/openctem/server/pkg/notifymsg"
 
 // ============================================================================
 // SEVERITY TYPES

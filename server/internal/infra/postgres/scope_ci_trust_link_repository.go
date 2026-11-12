@@ -12,8 +12,8 @@ import (
 
 	"github.com/lib/pq"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ScopeCITrustLinkRepository implements scopedom.CITrustLinkRepository.

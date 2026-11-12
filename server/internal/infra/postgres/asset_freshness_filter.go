@@ -1,6 +1,6 @@
 package postgres
 
-import "github.com/openctemio/openctem/api/pkg/domain/assetlist"
+import "github.com/openctemio/openctem/server/pkg/domain/assetlist"
 
 // The inventory's freshness filter (docs/architecture/asset-freshness.md).
 // The SQL is generated from the class table, so it always agrees with the

@@ -269,10 +269,10 @@ and `rolled_back` (high).
 
 ## Key files
 
-- `api/migrations/*_content_sources.*`
-- `api/pkg/domain/contentsource/` (source, snapshot, rules, repository)
-- `api/internal/app/contentsource/` (service, sync, credential and webhook)
-- `api/internal/infra/fetchers/git_snapshot.go`
-- `api/internal/infra/postgres/content_source_repository.go`
-- `api/internal/infra/http/handler/content_source_handler.go`, `routes/scanning.go`
-- `api/internal/infra/controller/content_source_sync.go`
+- `server/migrations/*_content_sources.*`
+- `server/pkg/domain/contentsource/` (source, snapshot, rules, repository)
+- `server/internal/app/contentsource/` (service, sync, credential and webhook)
+- `server/internal/infra/fetchers/git_snapshot.go`
+- `server/internal/infra/postgres/content_source_repository.go`
+- `server/internal/infra/http/handler/content_source_handler.go`, `routes/scanning.go`
+- `server/internal/infra/controller/content_source_sync.go`

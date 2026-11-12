@@ -8,10 +8,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/component"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/component"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 func TestComponentRepository_SearchByPackageURL(t *testing.T) {

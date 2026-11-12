@@ -11,7 +11,7 @@
 // Upstream files are untrusted data: they are only read, checked and
 // counted. Nothing from them is executed or interpreted beyond line text.
 //
-// Usage (from api/):
+// Usage (from server/):
 //
 //	go run ./cmd/wordlists-build -out dist/wordlists
 //	go run ./cmd/wordlists-build -sources cmd/wordlists-build/sources.yaml -cache dir -out dist

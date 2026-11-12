@@ -9,10 +9,10 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestReviewAddressStore(t *testing.T) {

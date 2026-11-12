@@ -9,12 +9,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	"github.com/openctemio/openctem/api/pkg/jwt"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/jwt"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // A person with an account and no organization holds an account-only token,

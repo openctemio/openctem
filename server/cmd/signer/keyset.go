@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/signer"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/internal/signer"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // keysetCheckInterval is how often a running signer re-checks its key

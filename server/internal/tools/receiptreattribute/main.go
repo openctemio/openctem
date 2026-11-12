@@ -49,8 +49,8 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // reviewWindow is how far from the item's review a receipt may have been

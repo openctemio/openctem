@@ -18,16 +18,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	"github.com/openctemio/openctem/server/pkg/brand"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // CampaignEpicCreator creates and moves the Jira epic of a campaign.

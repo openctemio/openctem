@@ -2,7 +2,7 @@ package bootstrapadmin
 
 // `bootstrap-admin sensor-token` gives an install a single-use instance
 // enrollment token for its bundled sensor, which then enrolls as a shared
-// sensor (api/docs/rfcs/RFC-100-shared-sensors.md §7). The API image ships it as
+// sensor (server/docs/rfcs/RFC-100-shared-sensors.md §7). The API image ships it as
 // /app/bootstrap-admin; the compose and Helm installs run it once the
 // migrations are applied.
 //
@@ -31,13 +31,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/feedrelay"
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/feedrelay"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func runSensorToken(args []string) int {

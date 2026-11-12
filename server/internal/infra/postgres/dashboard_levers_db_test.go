@@ -7,8 +7,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func seedLeverSuggestion(ctx context.Context, t *testing.T, db *sql.DB, tenant shared.ID, title, state string, stored int, members ...shared.ID) shared.ID {

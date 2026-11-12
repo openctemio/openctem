@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
-	"github.com/openctemio/openctem/api/pkg/extension/example"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
+	"github.com/openctemio/openctem/server/pkg/extension/example"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func build(t *testing.T, exts ...ext.Extension) *Set {

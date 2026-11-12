@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
+	"github.com/openctemio/openctem/server/internal/app/finding"
 )
 
 // This guards a defect class this codebase keeps producing: code that runs but

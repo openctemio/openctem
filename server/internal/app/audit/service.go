@@ -7,16 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/aianalysis"
 
-	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify"
-	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stepup"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify"
+	cryptopkg "github.com/openctemio/openctem/server/pkg/crypto"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stepup"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // AuditService handles audit logging operations.

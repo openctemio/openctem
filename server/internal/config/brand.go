@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // brandFile is the optional BRAND_FILE (YAML). Image paths in it are

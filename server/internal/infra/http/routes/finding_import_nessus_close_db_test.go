@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
-	"github.com/openctemio/openctem/api/internal/app/findingimport"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	evidenceapp "github.com/openctemio/openctem/server/internal/app/evidence"
+	"github.com/openctemio/openctem/server/internal/app/findingimport"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // What a Nessus import closes (docs/architecture/finding-import.md, "What a

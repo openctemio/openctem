@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The per-IP rate limit is keyed on the client IP. If a caller could choose

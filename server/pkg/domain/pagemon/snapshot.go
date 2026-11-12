@@ -8,8 +8,8 @@ import (
 
 	"golang.org/x/net/publicsuffix"
 
-	"github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Kind is what a fetched URL is.

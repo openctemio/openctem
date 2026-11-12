@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
-	"github.com/openctemio/openctem/api/pkg/domain/sensorresult"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/server/pkg/domain/sensorresult"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func newAbsenceRun(t *testing.T) *repoRun {

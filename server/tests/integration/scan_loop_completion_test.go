@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/scanrun"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/internal/app/scanrun"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
 
 	_ "github.com/lib/pq"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The second half of the scan loop had no test at all.

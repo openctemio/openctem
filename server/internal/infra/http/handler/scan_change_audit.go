@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // logRequestChange writes a tenant audit entry for a change the caller just

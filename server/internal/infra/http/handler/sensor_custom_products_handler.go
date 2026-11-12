@@ -12,10 +12,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // CustomSensorProductResponse is one of the organization's own sensor

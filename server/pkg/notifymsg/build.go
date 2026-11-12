@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // Facts are what the platform knows about the event's object, resolved at

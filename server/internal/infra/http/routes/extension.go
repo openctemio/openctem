@@ -12,12 +12,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/extensionhost"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
+	"github.com/openctemio/openctem/server/internal/extensionhost"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
 )
 
 // GrantChecker answers whether a grant is on for an organization

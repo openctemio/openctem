@@ -6,8 +6,8 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // =============================================================================
@@ -527,7 +527,7 @@ func TestIngestFinding_PartialData_MisconfigFields(t *testing.T) {
 // =============================================================================
 // Test: Tool Sends Partial CTEM Data
 // Note: CTEM fields (Exposure, RemediationContext, BusinessImpact) are in sdk/pkg/ctis
-// This package (api/pkg/parsers/ctis) doesn't include them.
+// This package (server/pkg/parsers/ctis) doesn't include them.
 // CTEM tests are covered in processor_findings.go integration with sdk/pkg/ctis.
 // =============================================================================
 

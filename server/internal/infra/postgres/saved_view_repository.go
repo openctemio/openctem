@@ -9,8 +9,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/savedview"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/savedview"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SavedViewRepository stores saved views (migration 000777). Every statement

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // Dashboard counts follow the viewer (owner decision D6, research doc 15

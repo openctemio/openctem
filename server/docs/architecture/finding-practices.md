@@ -23,7 +23,7 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
 - `findings.practice` (`varchar(16)`, default `other`, CHECK on the nine
   values) and `findings.practice_reason` (the code of the rule, NULL for a row
   never derived). Index `(tenant_id, practice, status)`.
-- `vulnerability.DerivePractice` (`api/pkg/domain/vulnerability/practice.go`)
+- `vulnerability.DerivePractice` (`server/pkg/domain/vulnerability/practice.go`)
   holds the ordered rules (RFC-152 §3). Every insert path of the finding
   repository (`Create`, `CreateInTx`, `CreateBatch`, `CreateBatchWithResult`)
   derives the practice right before the insert, reading the facts of the
@@ -43,7 +43,7 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
 
 ## Where it is used (shipped)
 
-- Findings registry fields (`api/pkg/domain/vulnerability/finding_fields.go`):
+- Findings registry fields (`server/pkg/domain/vulnerability/finding_fields.go`):
   `practice` (enum, in / not in, sortable) and `compliance_result` (pass, fail,
   manual for a scanner WARNING, not_applicable, error, unknown; NULL on
   non-compliance findings, so `compliance_result_not=pass` keeps them). Every
@@ -87,7 +87,7 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
 Rows written before the column read as `other` with a NULL reason until the
 backfill runs; a new sighting of an open one derives it. The operator command
 `finding-practice` (a link to the server binary in the API image,
-`api/internal/tools/findingpractice`) sets them:
+`server/internal/tools/findingpractice`) sets them:
 
 - It considers every finding never derived (any status) and every open
   finding (to catch changed inputs); a closed finding that has a practice is
@@ -152,11 +152,11 @@ vulnerability SLA figures and vulnerability windows never reach them.
 
 ## Key files
 
-- `api/pkg/domain/vulnerability/practice.go`, `practice_test.go`
-- `api/internal/infra/postgres/finding_practice_columns.go`
-- `api/migrations/*_finding_practice*.sql`
-- `api/internal/infra/http/routes/findings_practice_filter_db_test.go`
-- `api/internal/tools/findingpractice` (the backfill command)
-- `api/internal/infra/http/handler/finding_list_practice_counts.go`, `web/src/features/findings/api/use-practice-counts.ts`, `web/src/features/findings/components/practice-switch.tsx`, `web/src/features/findings/lib/practice.ts`
-- `api/pkg/domain/sla/entity.go`, `api/internal/app/sla/service.go` (compliance policy)
-- `api/migrations/*_sla_policy_practice.sql`, `*_dashboard_facts_without_compliance.sql`
+- `server/pkg/domain/vulnerability/practice.go`, `practice_test.go`
+- `server/internal/infra/postgres/finding_practice_columns.go`
+- `server/migrations/*_finding_practice*.sql`
+- `server/internal/infra/http/routes/findings_practice_filter_db_test.go`
+- `server/internal/tools/findingpractice` (the backfill command)
+- `server/internal/infra/http/handler/finding_list_practice_counts.go`, `web/src/features/findings/api/use-practice-counts.ts`, `web/src/features/findings/components/practice-switch.tsx`, `web/src/features/findings/lib/practice.ts`
+- `server/pkg/domain/sla/entity.go`, `server/internal/app/sla/service.go` (compliance policy)
+- `server/migrations/*_sla_policy_practice.sql`, `*_dashboard_facts_without_compliance.sql`

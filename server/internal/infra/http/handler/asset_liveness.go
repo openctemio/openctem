@@ -11,8 +11,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/domain/liveness"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/liveness"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AssetLivenessReader reads the liveness of a page of one tenant's assets

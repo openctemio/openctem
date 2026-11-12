@@ -13,9 +13,9 @@ import (
 	"fmt"
 	"time"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/scoring"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/scoring"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // DefaultRiskQueueBatch is how many queued assets one ProcessRiskQueue call

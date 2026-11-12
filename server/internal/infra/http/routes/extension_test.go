@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/extensionhost"
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
+	"github.com/openctemio/openctem/server/internal/extensionhost"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
 )
 
 type fakeGrants struct {

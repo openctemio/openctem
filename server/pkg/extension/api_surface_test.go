@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/extension"
+	"github.com/openctemio/openctem/server/pkg/extension"
 )
 
 var updateSurface = flag.Bool("update-api", false, "rewrite testdata/api.golden (refused for a removal without an APIVersion bump)")

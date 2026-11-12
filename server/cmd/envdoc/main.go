@@ -1,6 +1,6 @@
 // Command envdoc writes the files generated from the environment variable
-// registry (internal/config/env_registry.yaml): api/.env.example and
-// api/docs/configuration/environment-variables.md. Run from api/:
+// registry (internal/config/env_registry.yaml): server/.env.example and
+// server/docs/configuration/environment-variables.md. Run from server/:
 //
 //	go run ./cmd/envdoc          (make env-docs)
 package main
@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/server/internal/config"
 )
 
 func main() {

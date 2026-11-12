@@ -18,7 +18,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // DefaultClaimBalanceWindow is how long after a job became claimable a

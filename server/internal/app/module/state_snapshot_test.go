@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // dlEntitlements is an entitlement reader that also reports its next change.

@@ -17,21 +17,21 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 
 	"github.com/openctemio/ctis/v2"
 	"github.com/openctemio/ctis/v2/importer"
 
-	"github.com/openctemio/openctem/api/internal/app/closuremode"
-	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tooldom "github.com/openctemio/openctem/api/pkg/domain/tool"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/closuremode"
+	appimportmapping "github.com/openctemio/openctem/server/internal/app/importmapping"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tooldom "github.com/openctemio/openctem/server/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Ingester ingests a CTIS report (ingest.Service).

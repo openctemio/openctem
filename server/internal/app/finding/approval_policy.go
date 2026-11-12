@@ -1,7 +1,7 @@
 package finding
 
 // The approval policy on finding status requests
-// (api/docs/rfcs/RFC-111-approval-policy.md): every false-positive and
+// (server/docs/rfcs/RFC-111-approval-policy.md): every false-positive and
 // accepted-risk request is evaluated from facts read on the server (the
 // finding, its asset, its owners, the approver pool, the organization's
 // policy). The evaluation decides the tier, who may approve, how many people,
@@ -27,11 +27,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // PolicyFacts are the facts of a finding the policy needs beyond the

@@ -12,9 +12,9 @@ import (
 
 	"github.com/openctemio/contract/outcome"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/liveness"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/liveness"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // LivenessRecorder records liveness observations (*liveness.Service).

@@ -13,7 +13,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MaxSteps caps a story's chain whatever the stored records hold: the scope

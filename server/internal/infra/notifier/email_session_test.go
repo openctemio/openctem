@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	emailpkg "github.com/openctemio/openctem/api/pkg/email"
+	emailpkg "github.com/openctemio/openctem/server/pkg/email"
 )
 
 // tarpit accepts connections and never sends a byte: an SMTP client waiting

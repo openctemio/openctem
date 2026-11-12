@@ -10,16 +10,16 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/internal/infra/fetchers"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	cpdom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentsource"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/infra/fetchers"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	cpdom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentsource"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Sync bounds.

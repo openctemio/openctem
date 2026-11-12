@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
+	cryptopkg "github.com/openctemio/openctem/server/pkg/crypto"
 )
 
 // storedTS is a microsecond-exact timestamp, as PostgreSQL stores timestamptz.

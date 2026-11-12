@@ -15,16 +15,16 @@ import (
 
 	"github.com/google/uuid"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	toolapp "github.com/openctemio/openctem/api/internal/app/tool"
-	"github.com/openctemio/openctem/api/internal/config"
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	toolapp "github.com/openctemio/openctem/server/internal/app/tool"
+	"github.com/openctemio/openctem/server/internal/config"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 func newToolAvailabilityHarness(t *testing.T) *authzPolicyHarness {

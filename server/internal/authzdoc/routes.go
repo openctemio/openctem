@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // Gate is what a route requires.
@@ -307,7 +307,7 @@ func paramNames(fn *ast.FuncDecl) (names []string, variadic bool) {
 // ParseRoutes reads every route registered under
 // internal/infra/http/routes, with its full path (chi groups resolved) and
 // the gates applied to it, including gates inherited from groups, middleware
-// variables and module gates passed in as arguments. apiRoot is the api/
+// variables and module gates passed in as arguments. apiRoot is the server/
 // directory.
 //
 //nolint:cyclop,gocognit // one AST walk

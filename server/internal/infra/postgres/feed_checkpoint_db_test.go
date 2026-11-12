@@ -9,7 +9,7 @@ import (
 
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 )
 
 // feed_checkpoints (migration feed_checkpoints) and the chunked program

@@ -2,7 +2,7 @@
 
 Design: [RFC-094](../rfcs/RFC-094-platform-contracts-only.md).
 
-The platform (`api/`, `web/`) depends on contracts, never on a sensor
+The platform (`server/`, `web/`) depends on contracts, never on a sensor
 implementation or on the sensor SDK. Every sensor product (the scanning
 sensor, the Tenable.sc connector, inventory collectors, sensors that
 customers build on sdk-go) is handled by the same code.
@@ -12,7 +12,7 @@ customers build on sdk-go) is handled by the same code.
 | ctis: schemas (`schemas/v2`, media type `application/vnd.ctis+json; version=2.0`), importers, `fingerprint`, `severity` | `github.com/openctemio/ctis/v2` |
 | orchestration contracts: `capability`, `settings`, `tooloption`, `politeness`, `edgeprotect`, `addrscope`, `source`, `outcome` | `github.com/openctemio/contract` |
 | feed transfer (bundle format, fetcher) | `github.com/openctemio/contract/transfer` (its own module) |
-| the sensor protocol (versioned) | `api/pkg/sensorproto` |
+| the sensor protocol (versioned) | `server/pkg/sensorproto` |
 | what a sensor reports under its signed key: manifest, tool descriptors, config report, checks | stored per sensor |
 | catalog data: sensor products and their release lines | `versions.yaml` |
 

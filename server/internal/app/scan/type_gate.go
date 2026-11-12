@@ -32,8 +32,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // RunContextKeyTargetTypes is the run-context key holding the stored pair of

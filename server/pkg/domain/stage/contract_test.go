@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 func portKnown(t PortType) bool {

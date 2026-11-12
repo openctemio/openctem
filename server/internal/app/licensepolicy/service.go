@@ -4,7 +4,7 @@
 // the organization opts in). It runs when the policy changes and after
 // every write of an asset's packages (sensor, CI, SBOM import).
 //
-// Design: api/docs/rfcs/RFC-070-software-components-inventory.md, "License
+// Design: server/docs/rfcs/RFC-070-software-components-inventory.md, "License
 // policy". Threat model: the policy is configuration of the caller's own
 // tenant (settings:write); evaluation reads and writes only that tenant's
 // rows; findings are created and closed only under the reserved tool name,
@@ -17,12 +17,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/licensepolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/licensepolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ToolName is the reserved tool name of license findings.

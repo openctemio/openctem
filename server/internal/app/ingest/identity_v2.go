@@ -1,7 +1,7 @@
 package ingest
 
 // Identity recipes v2 at ingest (RFC-043 §4.2, decisions D1–D4).
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-043-deduplication-and-identity.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-043-deduplication-and-identity.md
 //
 // The server decides identity. A sensor's opaque Finding.Fingerprint is a hint
 // (RFC-040): it is kept as a sighting key in partial_fingerprints and never
@@ -15,8 +15,8 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Partial fingerprint keys ingest reads or writes.

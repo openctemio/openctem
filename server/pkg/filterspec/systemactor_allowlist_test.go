@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// systemActorAllowlist names the only files (relative to api/) that may
+// systemActorAllowlist names the only files (relative to server/) that may
 // build a SystemActor, which compiles a filter without the data-scope
 // predicate. Add a file only for background work whose output only
 // administrators see, and say why in a comment here.

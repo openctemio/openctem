@@ -9,15 +9,15 @@ import (
 	"net/http"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
-	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/savedview"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	savedviewapp "github.com/openctemio/openctem/server/internal/app/savedview"
+	"github.com/openctemio/openctem/server/internal/infra/http/filterquery"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/savedview"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // maxSavedViewBody bounds a view request body (the filter is at most 32 KB).

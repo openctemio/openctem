@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A range wider than a /16 is saved only when the request confirms it; the

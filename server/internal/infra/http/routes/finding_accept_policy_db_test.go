@@ -1,7 +1,7 @@
 package routes
 
 // The organization's risk acceptance approval level (accept_approval: all,
-// high_and_above, off; api/docs/architecture/finding-status-lifecycle.md,
+// high_and_above, off; server/docs/architecture/finding-status-lifecycle.md,
 // "Approval levels"): level gating on the request path, the 24-hour wait on a
 // lowering, no bulk, group or automation path, the approvals digest entry,
 // the material-change review flag and the sole member's own approval.
@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func newAcceptPolicyHarness(t *testing.T, rec *approvalNoticeRecorder,

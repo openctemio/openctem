@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SignInHook runs after a sign-in created a session: signing in again

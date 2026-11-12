@@ -21,13 +21,13 @@ import (
 
 	"connectrpc.com/connect"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/v3/sensorv3connect"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/v3/sensorv3connect"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 func TestLoadCACreatesOnceAndReloads(t *testing.T) {

@@ -15,7 +15,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ToolStatus is a tool's availability for a tenant, derived on read.

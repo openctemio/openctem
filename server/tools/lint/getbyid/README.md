@@ -7,7 +7,7 @@ F-5 hardened from re-appearing through a new repository.
 ## Run locally
 
 ```bash
-cd api
+cd server
 GOWORK=off go run ./tools/lint/getbyid/cmd ./internal/infra/postgres/...
 ```
 
@@ -35,7 +35,7 @@ Add to `.github/workflows/ci.yml` (Go tests job):
 
 ```yaml
       - name: Tenant-scope lint
-        working-directory: api
+        working-directory: server
         run: |
           GOWORK=off go run ./tools/lint/getbyid/cmd ./internal/infra/postgres/...
 ```
@@ -72,7 +72,7 @@ To make the linter a hard CI gate:
 
    ```yaml
    - name: F-310 tenant-scope lint
-     working-directory: api
+     working-directory: server
      run: GOWORK=off go run ./tools/lint/getbyid/cmd ./internal/infra/postgres/...
    ```
 

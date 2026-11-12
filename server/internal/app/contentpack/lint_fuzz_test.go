@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 // FuzzLint: lint never panics on any file content for any kind, always

@@ -9,7 +9,7 @@ package remediation
 import (
 	"context"
 
-	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
+	remediationdom "github.com/openctemio/openctem/server/pkg/domain/remediation"
 )
 
 // TaskMoveNotifier hears about stored moves. Implementations must not block

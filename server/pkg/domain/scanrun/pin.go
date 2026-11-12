@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
 )
 
 // PinWorkflow saves the spec of w (loaded with its steps) as a version of the

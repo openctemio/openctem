@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	freshdom "github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Enrichment defaults (docs/architecture/asset-freshness.md).

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/notifymsg"
+	"github.com/openctemio/openctem/server/pkg/notifymsg"
 )
 
 // TeamsClient implements the Client interface for Microsoft Teams notifications.

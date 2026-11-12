@@ -1,7 +1,7 @@
 package remediation
 
 // Group-level exception on a remediation task
-// (api/docs/rfcs/RFC-111-approval-policy.md §7): "no maintenance window until
+// (server/docs/rfcs/RFC-111-approval-policy.md §7): "no maintenance window until
 // 1 December" is one request about the task's open findings, decided once by
 // the approval policy (the finding service owns the request and its
 // decision). Every finding of the task must be in the caller's scope, as for
@@ -12,12 +12,12 @@ import (
 	"fmt"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	remediationdom "github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // TaskExceptionRequester previews and creates group exceptions

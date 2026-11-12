@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // The outbox block is decoded leniently like the rest of the heartbeat and

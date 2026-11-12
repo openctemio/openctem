@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/lifecycle"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/lifecycle"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The idle policy as the application role: only organizations an

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
 )
 
 // Bundle file names.

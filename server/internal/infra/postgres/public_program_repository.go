@@ -15,8 +15,8 @@ import (
 	"github.com/lib/pq"
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PublicProgramRepository implements bountyprogram.CatalogRepository.

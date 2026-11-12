@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	freshdom "github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
-	"github.com/openctemio/openctem/api/pkg/domain/assetresolution"
-	scanpkg "github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stage"
+	freshdom "github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/assetresolution"
+	scanpkg "github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
 )
 
 // ReasonNotResolving is the skip reason of a name without recent

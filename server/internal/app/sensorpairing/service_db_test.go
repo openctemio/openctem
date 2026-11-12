@@ -17,15 +17,15 @@ import (
 
 	_ "github.com/lib/pq"
 
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/pairing"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 const testSecret = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"

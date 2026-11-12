@@ -49,7 +49,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const modulePath = "github.com/openctemio/openctem/api"
+const modulePath = "github.com/openctemio/openctem/server"
 
 // keep lists identifiers that contain "agent" but do not mean a sensor.
 var keep = map[string]bool{

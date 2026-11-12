@@ -10,8 +10,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/feedsign"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // The functions in this file sign and write bundles. They run where the

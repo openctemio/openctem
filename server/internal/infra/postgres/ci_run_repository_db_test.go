@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CI runs against the real schema (migration 001077): tenant isolation on

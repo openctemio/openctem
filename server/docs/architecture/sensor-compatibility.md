@@ -110,12 +110,12 @@ reads them; audited; at most 50 products). The rules:
 
 ## Key files
 
-- `versions.yaml`, `api/internal/versions/`: the built-in catalog, `sdk.min`,
+- `versions.yaml`, `server/internal/versions/`: the built-in catalog, `sdk.min`,
   `sdk.advisories`, the learned releases
-- `api/pkg/domain/sensor/build.go`, `fleet_health.go`: the SDK and version
+- `server/pkg/domain/sensor/build.go`, `fleet_health.go`: the SDK and version
   verdicts
-- `api/pkg/domain/sensor/custom_product.go`,
-  `api/internal/app/sensor/custom_products.go`,
-  `api/internal/infra/postgres/tenant_sensor_products.go`,
-  `api/internal/infra/http/handler/sensor_custom_products_handler.go`: an
+- `server/pkg/domain/sensor/custom_product.go`,
+  `server/internal/app/sensor/custom_products.go`,
+  `server/internal/infra/postgres/tenant_sensor_products.go`,
+  `server/internal/infra/http/handler/sensor_custom_products_handler.go`: an
   organization's own products (migration `002913_tenant_sensor_products`)

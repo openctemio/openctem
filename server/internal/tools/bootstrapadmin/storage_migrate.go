@@ -3,7 +3,7 @@ package bootstrapadmin
 // `bootstrap-admin storage migrate` copies the server file storage between
 // the local driver and an S3-compatible bucket (the API image ships it as
 // /app/bootstrap-admin). Design and procedure:
-// api/docs/architecture/file-storage.md, "Moving between local and S3".
+// server/docs/architecture/file-storage.md, "Moving between local and S3".
 //
 //	# 1. Dry run: what would be copied
 //	STORAGE_BUCKET=openctem-attachments STORAGE_REGION=eu-west-1 \
@@ -25,8 +25,8 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/infra/storage"
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/internal/infra/storage"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
 )
 
 // Drivers the copy moves between.

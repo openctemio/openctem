@@ -9,11 +9,11 @@ import (
 	"errors"
 	"net/http"
 
-	inboxapp "github.com/openctemio/openctem/api/internal/app/inbox"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	inboxapp "github.com/openctemio/openctem/server/internal/app/inbox"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // InboxHandler serves the Inbox summary.

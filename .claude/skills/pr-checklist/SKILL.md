@@ -13,7 +13,7 @@ description: What a pull request in this repository needs before it is ready - v
   pre-push hook refuses an unpushed branch that is behind its base and a pushed branch that conflicts with it.
 - Several agents work at once: run it right before pushing, not only when the branch was created.
 
-## Verify (from `api/` or `web/`)
+## Verify (from `server/` or `web/`)
 - API: `GOWORK=off go build ./... && GOWORK=off go vet ./...`; tests of the touched packages (integration
   tests against a scratch Postgres and Redis); `make lint-new` (golangci-lint pinned to v2.14.0 with
   `--new-from-rev=origin/develop`; use the Makefile's pin, not a global binary). If lint reports findings in
@@ -26,14 +26,14 @@ description: What a pull request in this repository needs before it is ready - v
   conflict clean.
 
 ## Changelog
-Never edit `api/CHANGELOG.md`. Add one file `api/changelog.d/<short-slug>.md` with
-`### <Category>: <title>` and bullets (categories and format in `api/changelog.d/README.md`). Name the
+Never edit `server/CHANGELOG.md`. Add one file `server/changelog.d/<short-slug>.md` with
+`### <Category>: <title>` and bullets (categories and format in `server/changelog.d/README.md`). Name the
 migration number and any upgrade step for operators.
 
 ## Documentation, for a feature
-- the RFC in `api/docs/rfcs/` with its status (H1 `# RFC-NNN: Title` and a `Status` header field), then `python3 scripts/rfc_index.py` to regenerate the `api/docs/rfcs/README.md` index (never edit its table by hand);
-- an architecture doc in `api/docs/architecture/` (how it works, setup, shipped vs planned, key files),
-  listed in `api/docs/README.md`;
+- the RFC in `server/docs/rfcs/` with its status (H1 `# RFC-NNN: Title` and a `Status` header field), then `python3 scripts/rfc_index.py` to regenerate the `server/docs/rfcs/README.md` index (never edit its table by hand);
+- an architecture doc in `server/docs/architecture/` (how it works, setup, shipped vs planned, key files),
+  listed in `server/docs/README.md`;
 - the authorization matrix and permission tables when gates or roles change.
 Mark clearly what is shipped and what is only designed.
 

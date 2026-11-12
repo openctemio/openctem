@@ -10,9 +10,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/querylang"
-	"github.com/openctemio/openctem/api/pkg/querylang/pgsql"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/querylang"
+	"github.com/openctemio/openctem/server/pkg/querylang/pgsql"
 )
 
 // QueryExecutor runs custom queries (docs/architecture/query-language.md)

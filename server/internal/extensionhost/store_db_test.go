@@ -16,11 +16,11 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
-	"github.com/openctemio/openctem/api/pkg/extension/example"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
+	"github.com/openctemio/openctem/server/pkg/extension/example"
 )
 
 // exampleDB is a private migrated database with the example extension's

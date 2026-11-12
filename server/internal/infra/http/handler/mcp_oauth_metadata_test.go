@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
 )
 
 func TestMCPResourceMetadata(t *testing.T) {

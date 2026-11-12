@@ -16,14 +16,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/internal/app/aiprompt"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	aidom "github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	kdom "github.com/openctemio/openctem/api/pkg/domain/aiknowledge"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/internal/app/aiprompt"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	kdom "github.com/openctemio/openctem/server/pkg/domain/aiknowledge"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // Quotas per organization.

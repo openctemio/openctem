@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/systemstatus"
-	"github.com/openctemio/openctem/api/internal/app/versioncheck"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/version"
+	"github.com/openctemio/openctem/server/internal/app/systemstatus"
+	"github.com/openctemio/openctem/server/internal/app/versioncheck"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/version"
 )
 
 // newSystemCollector wires the System page (RFC-114) to the API's own reads.

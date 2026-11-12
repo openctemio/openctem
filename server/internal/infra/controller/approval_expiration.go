@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ApprovalExpirationControllerConfig configures the ApprovalExpirationController.

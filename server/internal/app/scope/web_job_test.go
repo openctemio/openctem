@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // fakeWebScope answers with a fixed scope and records what it was asked.

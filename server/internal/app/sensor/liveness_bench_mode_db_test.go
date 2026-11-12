@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/infra/redis"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/infra/redis"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // benchConfigure wires the liveness store for TestHeartbeatWriteCost.

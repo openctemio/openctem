@@ -13,14 +13,14 @@ import (
 	"strings"
 	"time"
 
-	cirunapp "github.com/openctemio/openctem/api/internal/app/cirun"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // CIAdminService is what the CI administration endpoints need.

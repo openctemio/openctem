@@ -16,7 +16,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
 )
 
 const (

@@ -1,17 +1,17 @@
 package handler
 
 // Report fields of bug-bounty findings.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-121-bug-bounty-reports.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-121-bug-bounty-reports.md
 
 import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // maxBountyReportBody bounds the report object request: every field is

@@ -3,8 +3,8 @@ package contentpack
 import (
 	"fmt"
 
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/templatefact"
 )
 
 // lintTemplateFacts validates a template facts file

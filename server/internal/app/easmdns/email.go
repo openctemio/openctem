@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/dnsprobe"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/dnsprobe"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Email posture: DNS TXT only (RFC-036 P1).

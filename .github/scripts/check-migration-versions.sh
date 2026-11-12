@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-migration-versions.sh [base-commit]
 #
-# Guards the migration files in api/migrations (VERSION_name.{up,down}.sql).
+# Guards the migration files in server/migrations (VERSION_name.{up,down}.sql).
 # openctem-migrate applies every migration a database has not applied, in
 # version order, whatever the highest applied version is
 # (docs/rfcs/RFC-130-migration-applied-set.md). So a version only has to be
@@ -11,17 +11,17 @@
 #      MIGRATION_DUPLICATE=warning (pull_request) reports a version this
 #      change adds that the base also uses as a warning: PR CI renumbers its
 #      copy for the run (pr-migration-renumber.sh) and the author runs
-#      `make -C api migration-renumber`. Everywhere else it fails.
+#      `make -C server migration-renumber`. Everywhere else it fails.
 #   2. With a base commit:
 #      - an added migration has a UTC timestamp version YYYYMMDDHHMMSS
-#        (`make -C api migration-new`). A legacy sequential number (up to six
+#        (`make -C server migration-new`). A legacy sequential number (up to six
 #        digits) is still accepted with a warning while older pull requests
 #        land, but only above the base's highest legacy number and only while
 #        the base has no timestamp version: when the runner takes over a
 #        database the earlier tool migrated, it records every legacy-numbered
 #        file up to that tool's version as applied, so a lower one would
 #        never run there (on pull_request this case is a warning too: PR CI
-#        and `make -C api migration-renumber` move it to a timestamp), and
+#        and `make -C server migration-renumber` move it to a timestamp), and
 #        once a timestamp version has merged that tool's version may be a
 #        timestamp, above every legacy number (always an error). Any other
 #        form fails;
@@ -39,8 +39,18 @@
 # Tests: .github/scripts/check-migration-versions.test.sh
 set -euo pipefail
 
-dir="${MIGRATIONS_DIR:-api/migrations}"
+dir="${MIGRATIONS_DIR:-server/migrations}"
 base="${1:-}"
+
+# The base's own layout: the base of the backend directory rename (server/ to
+# server/) still keeps its migrations under server/. base_ls and base_diff read
+# the base in its layout and print paths in this tree's ($dir/...).
+bdir="$dir"
+if [[ -n "$base" ]] && ! git cat-file -e "$base:$dir" 2>/dev/null && git cat-file -e "$base:api/${dir#server/}" 2>/dev/null; then bdir="api/${dir#server/}"; fi # rename-guard: allow
+base_ls() { if [[ "$bdir" == "$dir" ]]; then git ls-tree --name-only "$base" -- "$dir/"; else git ls-tree --name-only "$base:$bdir"; fi; }
+base_diff() { # base_diff <git diff options>
+  if [[ "$bdir" == "$dir" ]]; then git diff "$@" "$base" HEAD -- "$dir/"; else git diff "$@" "$base:$bdir" "HEAD:$dir" | sed -E "s#^([A-Z][0-9]*\t)?#\1$dir/#"; fi
+}
 pattern='^([0-9]+)_(.+)\.(up|down)\.sql$'
 fail=0
 dup_mode="${MIGRATION_DUPLICATE:-error}"
@@ -73,9 +83,9 @@ base_legacy_max=0
 base_has_stamp=0
 if [[ -n "$base" ]]; then
   # --no-renames: a renamed migration shows as removed + added.
-  added="$(git diff --no-renames --name-only --diff-filter=A "$base" HEAD -- "$dir/" | versions)"
-  base_legacy_max="$(git ls-tree --name-only "$base" -- "$dir/" | versions | awk 'length($3) < 14 {m = $1} END {print m + 0}')"
-  if git ls-tree --name-only "$base" -- "$dir/" | versions | awk 'length($3) >= 14 {f = 1} END {exit !f}'; then base_has_stamp=1; fi
+  added="$(base_diff --no-renames --name-only --diff-filter=A | versions)"
+  base_legacy_max="$(base_ls | versions | awk 'length($3) < 14 {m = $1} END {print m + 0}')"
+  if base_ls | versions | awk 'length($3) >= 14 {f = 1} END {exit !f}'; then base_has_stamp=1; fi
 fi
 
 # 1. One name per version (the .up/.down pair share it).
@@ -85,9 +95,9 @@ for v in $dups; do
   mine="$(awk -v v="$v" '$1 == v' <<<"$added" | wc -l)"
   total="$(awk -v v="$v" '$1 == v' <<<"$current" | wc -l)"
   if [[ "$dup_mode" == warning && "$mine" -eq 1 && "$total" -eq 2 ]]; then
-    warn "migration version $v is used more than once: ${names}- give this change's copy a new version: make -C api migration-renumber, then commit"
+    warn "migration version $v is used more than once: ${names}- give this change's copy a new version: make -C server migration-renumber, then commit"
   else
-    err "migration version $v is used more than once: ${names}- give one a new version: make -C api migration-renumber"
+    err "migration version $v is used more than once: ${names}- give one a new version: make -C server migration-renumber"
   fi
 done
 
@@ -98,14 +108,14 @@ if [[ -n "$base" ]]; then
     if [[ "$name" == baseline ]] && (( v == lowest )); then continue; fi
     if (( ${#raw} == 14 )) && valid_stamp "$raw"; then continue; fi
     if (( ${#raw} <= 6 )) && (( base_has_stamp )); then
-      err "$dir/${raw}_${name} has the sequential version $v, but the base already has timestamp versions: a database the earlier tool migrated to a timestamp version would record it as applied without running it. Renumber with make -C api migration-renumber, then commit."
+      err "$dir/${raw}_${name} has the sequential version $v, but the base already has timestamp versions: a database the earlier tool migrated to a timestamp version would record it as applied without running it. Renumber with make -C server migration-renumber, then commit."
     elif (( ${#raw} <= 6 )) && (( v <= base_legacy_max )); then
-      msg="$dir/${raw}_${name} has the sequential version $v, at or below the base's highest ($base_legacy_max): a database the earlier tool migrated past it would record it as applied without running it. Give it a timestamp version: make -C api migration-renumber, then commit."
+      msg="$dir/${raw}_${name} has the sequential version $v, at or below the base's highest ($base_legacy_max): a database the earlier tool migrated past it would record it as applied without running it. Give it a timestamp version: make -C server migration-renumber, then commit."
       if [[ "$dup_mode" == warning ]]; then warn "$msg"; else err "$msg"; fi
     elif (( ${#raw} <= 6 )); then
-      warn "$dir/${raw}_${name} has a sequential version. New migrations take a timestamp version (make -C api migration-new name=...); move it with make -C api migration-renumber."
+      warn "$dir/${raw}_${name} has a sequential version. New migrations take a timestamp version (make -C server migration-new name=...); move it with make -C server migration-renumber."
     else
-      err "$dir/${raw}_${name}: the version must be a UTC timestamp YYYYMMDDHHMMSS. Create migrations with make -C api migration-new name=..., or move this one with make -C api migration-renumber."
+      err "$dir/${raw}_${name}: the version must be a UTC timestamp YYYYMMDDHHMMSS. Create migrations with make -C server migration-new name=..., or move this one with make -C server migration-renumber."
     fi
   done <<<"$added"
 
@@ -125,8 +135,8 @@ if [[ -n "$base" ]]; then
       D) what="removed or renamed" ;;
       *) what="changed ($status)" ;;
     esac
-    err "$path is $what, but it has merged: databases that applied it never run it again. Revert that and put the change in a new migration (make -C api migration-new name=...)."
-  done < <(git diff --no-renames --name-status --diff-filter=MDT "$base" HEAD -- "$dir/")
+    err "$path is $what, but it has merged: databases that applied it never run it again. Revert that and put the change in a new migration (make -C server migration-new name=...)."
+  done < <(base_diff --no-renames --name-status --diff-filter=MDT)
   echo "base $base: added: $(awk '{printf "%s_%s ", $3, $2}' <<<"$added")"
 fi
 

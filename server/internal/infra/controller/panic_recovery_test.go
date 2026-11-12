@@ -9,7 +9,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
+	"github.com/openctemio/openctem/server/internal/metrics"
 )
 
 // panickyController panics on its first run and counts every run.

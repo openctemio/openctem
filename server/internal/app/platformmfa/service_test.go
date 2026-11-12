@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/consolesetting"
-	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
-	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 func newSvc(repo *cst.Repo, managed bool, env string) (*Service, *cst.Audit) {

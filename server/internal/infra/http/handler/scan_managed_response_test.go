@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // A managed scan is reported as managed (no owner to take over) and names

@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	evidencedom "github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // InsertManual stores recorded request/response records for one finding

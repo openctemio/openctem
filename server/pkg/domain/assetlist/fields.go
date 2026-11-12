@@ -6,16 +6,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/assetdomain"
-	"github.com/openctemio/openctem/api/pkg/domain/assettech"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/liveness"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/assetdomain"
+	"github.com/openctemio/openctem/server/pkg/domain/assettech"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/liveness"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // The asset inventory's field registry: every filter of GET /assets, its

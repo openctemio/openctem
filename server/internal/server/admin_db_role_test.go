@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/server/internal/config"
 )
 
 func TestConsoleTablesVerdict(t *testing.T) {

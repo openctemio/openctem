@@ -19,8 +19,8 @@ import (
 
 	"github.com/openctemio/contract/politeness"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // NameAddressReader maps names (lower-case) to the addresses the tenant's

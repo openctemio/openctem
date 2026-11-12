@@ -17,11 +17,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // InvitationPreview answers PreviewInvitation.

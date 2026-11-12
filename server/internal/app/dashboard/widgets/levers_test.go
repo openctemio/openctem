@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	dashboardapp "github.com/openctemio/openctem/api/internal/app/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	dashboardapp "github.com/openctemio/openctem/server/internal/app/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // storyFacts answers open counts per filter shape, the seven-day flows and

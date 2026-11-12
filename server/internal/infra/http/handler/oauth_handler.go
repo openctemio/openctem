@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // OAuthHandler handles OAuth authentication requests.
@@ -138,7 +138,7 @@ type CallbackResponse struct {
 
 // Callback handles the OAuth callback from the provider.
 // @Summary      OAuth callback handler
-// @Description  Handles the OAuth callback after user authorization. A refusal carries a stable `code` (api/internal/infra/http/handler/auth_error_codes.go), for example EMAIL_UNVERIFIED_AT_IDP, USE_ADMIN_CONSOLE, OAUTH_INVALID_STATE, ACCOUNT_LINK_REQUIRED; the console words it in the person's language.
+// @Description  Handles the OAuth callback after user authorization. A refusal carries a stable `code` (server/internal/infra/http/handler/auth_error_codes.go), for example EMAIL_UNVERIFIED_AT_IDP, USE_ADMIN_CONSOLE, OAUTH_INVALID_STATE, ACCOUNT_LINK_REQUIRED; the console words it in the person's language.
 // @Tags         OAuth
 // @Accept       json
 // @Produce      json

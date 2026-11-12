@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 func TestDispositionReversal_NeedsApprove(t *testing.T) {

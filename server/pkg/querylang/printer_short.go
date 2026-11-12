@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // FormatShort renders the filter of q in the canonical short form:

@@ -1,6 +1,6 @@
 package posture
 
-import "github.com/openctemio/openctem/api/pkg/filterspec"
+import "github.com/openctemio/openctem/server/pkg/filterspec"
 
 // LiveSQL keeps facts whose asset still exists (not deleted, not
 // program-only) and the row of issues without an asset. Facts are rebuilt on

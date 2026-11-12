@@ -401,7 +401,7 @@ administrator is told; IPv6 gets the same address count).
 - Every other path (a direct command, context targets of a run, claim-time
   re-check) keeps the /16 bound.
 - The bound and its refusal text are one contract with the web format check:
-  `api/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
+  `server/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
 
 ### Targets step layout and the scope source
 

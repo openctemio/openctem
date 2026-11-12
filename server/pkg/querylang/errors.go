@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // MaxErrors bounds the details of one Error.

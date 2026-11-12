@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ErrNotRecorded is returned by a service that undid an action because its

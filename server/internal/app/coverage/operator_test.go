@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type fakePlatformReader struct {

@@ -17,8 +17,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/assetlist"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Scope statuses of the asset list filter (?scope_status=).

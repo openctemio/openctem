@@ -3,8 +3,8 @@ package reclassify
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/infra/controller"
-	"github.com/openctemio/openctem/api/pkg/domain/scoring"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
+	"github.com/openctemio/openctem/server/pkg/domain/scoring"
 )
 
 // Queue adapts the durable finding-priority queue to the producers'

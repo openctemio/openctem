@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	pentestdom "github.com/openctemio/openctem/server/pkg/domain/pentest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 type fakePolicies struct {

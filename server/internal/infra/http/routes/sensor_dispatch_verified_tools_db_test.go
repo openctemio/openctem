@@ -14,8 +14,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestDispatch_OnlyToolsTheSensorVerified(t *testing.T) {

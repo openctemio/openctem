@@ -11,7 +11,7 @@ real use, follow the operator documentation at
 - Docker with Docker Compose
 - Make
 
-The API is the `api/` directory of the
+The API is the `server/` directory of the
 [`openctemio/openctem`](https://github.com/openctemio/openctem) monorepo; the web
 console is `web/`. From the repository root, `make setup` downloads the Go and npm
 dependencies, enables the git hooks and generates the contract files.
@@ -25,7 +25,7 @@ make setup
 ## Run the API in Docker (recommended)
 
 ```bash
-cd api
+cd server
 cp .env.example .env
 make docker-dev
 ```
@@ -52,7 +52,7 @@ Run the web console against it from the repository root with `make dev-web`
 ## Run the API without Docker
 
 ```bash
-cd api
+cd server
 make install-tools               # golangci-lint, staticcheck, air, migrate, mockgen
 docker compose -f docker-compose.yml up -d   # only PostgreSQL and Redis
 make migrate-up
@@ -61,8 +61,8 @@ make dev                         # hot reload (falls back to `make run` without 
 
 ## Configuration
 
-All settings are environment variables; `api/.env.example` lists them with
-comments, and `api/internal/config/config.go` is the source of truth. The ones you
+All settings are environment variables; `server/.env.example` lists them with
+comments, and `server/internal/config/config.go` is the source of truth. The ones you
 need locally:
 
 ```env
@@ -96,7 +96,7 @@ Operator-facing configuration (TLS, SSO, SMTP, scaling) is documented at
 ## Project layout
 
 ```
-api/
+server/
 ├── cmd/server/          # API entry point, calls pkg/server.Main (also bootstrap-admin, rekey, seed, ... in cmd/)
 ├── internal/
 │   ├── app/             # Application services, one package per bounded context

@@ -3,7 +3,7 @@ package ctemcycle
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // B5: unit tests for the review-phase domain types.

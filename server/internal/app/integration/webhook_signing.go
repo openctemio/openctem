@@ -6,9 +6,9 @@ import (
 	"maps"
 	"time"
 
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/webhooksig"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/webhooksig"
 )
 
 // Signing secret of a generic webhook integration

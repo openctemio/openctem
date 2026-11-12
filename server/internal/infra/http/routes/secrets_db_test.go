@@ -25,12 +25,12 @@ import (
 
 	"github.com/openctemio/contract/secretref"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/command"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/sealed"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
-	"github.com/openctemio/openctem/api/pkg/sensorsig"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/sealed"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/pkg/sensorsig"
 )
 
 // syncBuffer is a log sink safe for concurrent writes.

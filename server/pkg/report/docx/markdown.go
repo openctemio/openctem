@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/report/markdown"
+	"github.com/openctemio/openctem/server/pkg/report/markdown"
 )
 
 // markdownToOOXML renders the Markdown that findings are written in as Word

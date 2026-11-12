@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/consolesetting"
-	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
 )
 
 const apiKey = "sk-ant-test-key-0123456789"

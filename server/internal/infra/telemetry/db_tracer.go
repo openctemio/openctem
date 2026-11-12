@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const dbTracerName = "github.com/openctemio/openctem/api/postgres"
+const dbTracerName = "github.com/openctemio/openctem/server/postgres"
 
 // StartDBSpan starts a new span for a database operation.
 // Usage:

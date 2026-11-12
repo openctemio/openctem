@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // Limits. They are the ones the update API and the web have always

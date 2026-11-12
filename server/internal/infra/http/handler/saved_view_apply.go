@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net/http"
 
-	savedviewapp "github.com/openctemio/openctem/api/internal/app/savedview"
-	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/savedview"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	savedviewapp "github.com/openctemio/openctem/server/internal/app/savedview"
+	"github.com/openctemio/openctem/server/internal/infra/http/filterquery"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/savedview"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // applySavedView handles ?view=<id> on a list request (RFC-048 §3.8): the

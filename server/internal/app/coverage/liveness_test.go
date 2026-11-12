@@ -3,8 +3,8 @@ package coverage
 import (
 	"testing"
 
-	covdom "github.com/openctemio/openctem/api/pkg/domain/coverage"
-	"github.com/openctemio/openctem/api/pkg/domain/liveness"
+	covdom "github.com/openctemio/openctem/server/pkg/domain/coverage"
+	"github.com/openctemio/openctem/server/pkg/domain/liveness"
 )
 
 func TestLivenessKind(t *testing.T) {

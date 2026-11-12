@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Identifier is one identifier of a definition (RFC-044 §5.2): its primary

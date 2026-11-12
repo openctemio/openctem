@@ -17,17 +17,17 @@ import (
 	"strings"
 	"testing"
 
-	catalogapp "github.com/openctemio/openctem/api/internal/app/contentcatalog"
-	contentpackapp "github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/internal/app/contentpack/contentpacktest"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/infra/storage"
-	"github.com/openctemio/openctem/api/pkg/contentpkg"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentcatalog"
-	"github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	catalogapp "github.com/openctemio/openctem/server/internal/app/contentcatalog"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/app/contentpack/contentpacktest"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/infra/storage"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentcatalog"
+	"github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func wordlistArchive(t *testing.T, words string) []byte {

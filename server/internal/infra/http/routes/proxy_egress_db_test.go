@@ -18,12 +18,12 @@ import (
 	"github.com/lib/pq"
 	"github.com/openctemio/contract/secretref"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/command"
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/command"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 const egressSecret = "s3cret-proxy-pass"

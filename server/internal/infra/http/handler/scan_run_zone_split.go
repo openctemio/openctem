@@ -4,7 +4,7 @@ package handler
 // (docs/architecture/scan-zones.md, "Workflow runs over several zones").
 
 import (
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
 )
 
 // RunZoneSplitResponse describes a split run. On the parent: Groups, one per

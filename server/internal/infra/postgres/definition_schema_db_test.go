@@ -8,8 +8,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // The definition catalog's tenant isolation and trust rules are enforced by
@@ -17,7 +17,7 @@ import (
 // statement cannot link one tenant's finding to another tenant's definition or
 // let a report write shared catalog content. These tests write SQL directly,
 // as the API's least-privilege role, and expect the database to refuse.
-// https://github.com/openctemio/openctem/blob/develop/api/docs/rfcs/RFC-044-issue-definitions-and-findings.md
+// https://github.com/openctemio/openctem/blob/develop/server/docs/rfcs/RFC-044-issue-definitions-and-findings.md
 
 const nilScope = "00000000-0000-0000-0000-000000000000"
 

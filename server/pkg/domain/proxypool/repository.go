@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Repository persists pools, endpoints and sensor assignments. Every method

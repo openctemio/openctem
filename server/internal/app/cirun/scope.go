@@ -12,13 +12,13 @@ import (
 	"fmt"
 	"strings"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ScopeLinker keeps a trust's repository scope entries (*scope.Service).

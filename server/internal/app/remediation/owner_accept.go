@@ -15,8 +15,8 @@ import (
 	"context"
 	"fmt"
 
-	remediationdom "github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	remediationdom "github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Owner accept refusals.

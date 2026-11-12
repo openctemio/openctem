@@ -1,7 +1,7 @@
 package finding
 
 // The organization's false-positive and risk acceptance approval levels
-// (api/docs/architecture/finding-status-lifecycle.md, "Approval levels").
+// (server/docs/architecture/finding-status-lifecycle.md, "Approval levels").
 //
 // Threat model: four-eyes on a false positive or an accepted risk stops one
 // stolen session or one careless person from hiding a real issue. An
@@ -35,11 +35,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // singlePersonStore writes a request decided as it is made and reads the

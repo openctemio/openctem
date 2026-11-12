@@ -11,11 +11,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // ErrCommandTargetRefused is wrapped by every refusal of GateCommandPayload

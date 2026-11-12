@@ -9,11 +9,11 @@ import (
 	"net/url"
 	"strings"
 
-	appticketmap "github.com/openctemio/openctem/api/internal/app/ticketmap"
-	"github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	appticketmap "github.com/openctemio/openctem/server/internal/app/ticketmap"
+	"github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketmap"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // MappingTrackerResolver opens the Jira site of one integration for the

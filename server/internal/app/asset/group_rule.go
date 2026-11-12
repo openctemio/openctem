@@ -26,12 +26,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assettech"
+	"github.com/openctemio/openctem/server/pkg/domain/assettech"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	assetgroupdom "github.com/openctemio/openctem/server/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // RuleAssetSource is what the rule evaluator reads from the assets

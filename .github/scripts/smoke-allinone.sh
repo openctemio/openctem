@@ -5,7 +5,7 @@
 # waits for Docker's own healthcheck (which covers every process):
 #   GATEWAY=off -> :8080 /health and :3000 /api/health answer; no console on :3001
 #   GATEWAY=on  -> :443 /health (API) and /login (web) answer through the
-#                  shared gateway (api/deploy/gateway, TLS mode internal),
+#                  shared gateway (server/deploy/gateway, TLS mode internal),
 #                  /metrics is blocked, 8080/3000 are bound to 127.0.0.1 only
 #   GATEWAY=on without OPENCTEM_HOSTNAME -> refuses to start (exit 64)
 # Environment:

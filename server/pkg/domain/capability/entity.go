@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Security: Strict name validation - only ASCII lowercase alphanumeric with hyphens

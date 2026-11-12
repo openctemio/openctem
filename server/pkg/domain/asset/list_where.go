@@ -12,8 +12,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // CountCap is where a list count stops: an exact total up to it, and

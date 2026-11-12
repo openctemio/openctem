@@ -4,12 +4,12 @@ import (
 	"context"
 	"net/http"
 
-	automationsvc "github.com/openctemio/openctem/api/internal/app/automation"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	automationdom "github.com/openctemio/openctem/api/pkg/domain/automation"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	automationsvc "github.com/openctemio/openctem/server/internal/app/automation"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	automationdom "github.com/openctemio/openctem/server/pkg/domain/automation"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // authorizeActionConfigs checks the caller holds the permission of every

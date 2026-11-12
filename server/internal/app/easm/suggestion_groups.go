@@ -30,8 +30,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/easmseed"
-	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
+	"github.com/openctemio/openctem/server/pkg/domain/easmseed"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 )
 
 // Group kinds.

@@ -12,14 +12,14 @@ import (
 	"net/http"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	authapp "github.com/openctemio/openctem/server/internal/app/auth"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
 )
 
 // OwnerInvitationOfferResponse is an organization the caller is invited to

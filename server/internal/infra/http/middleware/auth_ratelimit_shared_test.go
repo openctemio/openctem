@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	redisinfra "github.com/openctemio/openctem/api/internal/infra/redis"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	redisinfra "github.com/openctemio/openctem/server/internal/infra/redis"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The auth limits used to be in-memory per process: with N API replicas a

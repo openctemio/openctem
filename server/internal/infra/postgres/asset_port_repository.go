@@ -12,7 +12,7 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetport"
+	"github.com/openctemio/openctem/server/pkg/domain/assetport"
 )
 
 // assetPortTimeout bounds one batch statement.

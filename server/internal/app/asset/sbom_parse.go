@@ -2,15 +2,15 @@ package asset
 
 // SBOM parsing (CycloneDX 1.4-1.6 JSON, SPDX 2.2/2.3 JSON) into package
 // nodes with their dependency graph. Design:
-// api/docs/rfcs/RFC-070-software-components-inventory.md.
+// server/docs/rfcs/RFC-070-software-components-inventory.md.
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/software"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/software"
 )
 
 // SBOM formats.

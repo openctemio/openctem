@@ -19,7 +19,7 @@ measured at all.
 
 ## 2. Today (checked on develop, 2026-11-12)
 
-Paths are relative to `api/`.
+Paths are relative to `server/`.
 
 - **Close.** `POST /api/v1/ctem-cycles/{id}/close` (`ctem:cycles:write`)
   moves a cycle from review to closed, then computes and stores its metrics
@@ -133,7 +133,7 @@ domain and shown in the report under "Next scope".
 
 ## 4. Data model
 
-Expand migration (`make -C api migration-new name=cycle_metrics_tenant`):
+Expand migration (`make -C server migration-new name=cycle_metrics_tenant`):
 
 - `ctem_cycle_metrics.tenant_id uuid` and `ctem_cycle_scope_snapshots.tenant_id
   uuid`, nullable; backfilled from `ctem_cycles` in batches of 5000 in the

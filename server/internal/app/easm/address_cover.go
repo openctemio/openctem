@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"sort"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ExactCover returns the fewest prefixes whose union is exactly addrs: a

@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/feedrelay"
-	"github.com/openctemio/openctem/api/internal/app/vulnfeed"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	signerclient "github.com/openctemio/openctem/api/internal/infra/signer"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/feedrelay"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeed"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	signerclient "github.com/openctemio/openctem/server/internal/infra/signer"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // newFeedRelayService builds the relay. Relay mode is locked off while a

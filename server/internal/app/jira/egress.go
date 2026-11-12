@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/ticketing"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/ticketing"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // SetEgressGate wires the outbound gate. Without one, pentest content is

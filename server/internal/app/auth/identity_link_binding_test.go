@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/server/internal/config"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
 )
 
 const linkRedirect = "https://app.example/auth/callback/github"

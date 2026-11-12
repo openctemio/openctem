@@ -3,7 +3,7 @@ package routes
 // The platform permission reference page (RFC-134) is generated from the
 // catalog, the built-in roles and the console route inventory, and committed
 // at docs/architecture/platform-permissions.md. This test fails when the page
-// is stale; `make -C api platform-authz-docs` rewrites it.
+// is stale; `make -C server platform-authz-docs` rewrites it.
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
+	"github.com/openctemio/openctem/server/pkg/domain/platformauthz"
 )
 
 const platformReferencePath = "../../../../docs/architecture/platform-permissions.md"
@@ -21,7 +21,7 @@ func renderPlatformReference() string {
 	var b strings.Builder
 	b.WriteString("# Platform permission reference\n\n")
 	b.WriteString("Generated from `pkg/domain/platformauthz` and `adminRoutePermissions`\n")
-	b.WriteString("(`internal/infra/http/routes/admin_permissions.go`) by `make -C api platform-authz-docs`;\n")
+	b.WriteString("(`internal/infra/http/routes/admin_permissions.go`) by `make -C server platform-authz-docs`;\n")
 	b.WriteString("do not edit by hand. Design: RFC-134. These permissions exist only on the\n")
 	b.WriteString("console; the tenant permission reference never lists them.\n\n")
 	b.WriteString("A baseline permission is usable by a console session that has not elevated.\n")
@@ -98,6 +98,6 @@ func TestPlatformPermissionReferenceUpToDate(t *testing.T) {
 	}
 	got, err := os.ReadFile(platformReferencePath)
 	if err != nil || string(got) != want {
-		t.Fatalf("docs/architecture/platform-permissions.md is stale: run make -C api platform-authz-docs (%v)", err)
+		t.Fatalf("docs/architecture/platform-permissions.md is stale: run make -C server platform-authz-docs (%v)", err)
 	}
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	assetgroupdom "github.com/openctemio/openctem/api/pkg/domain/assetgroup"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetgroupdom "github.com/openctemio/openctem/server/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Asset groups that teams depend on. A team's scope rules can name an asset

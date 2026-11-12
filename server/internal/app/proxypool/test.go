@@ -32,13 +32,13 @@ import (
 	"sync"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	pooldom "github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	pooldom "github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // Limits of a test.

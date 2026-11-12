@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/report/markdown"
+	"github.com/openctemio/openctem/server/pkg/report/markdown"
 )
 
 func pngEncode(w io.Writer) error {

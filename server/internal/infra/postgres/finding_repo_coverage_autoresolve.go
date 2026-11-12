@@ -6,8 +6,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Default-branch (repository) auto-resolve, decided per scan command: the

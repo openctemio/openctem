@@ -9,7 +9,7 @@ import (
 	"cmp"
 	"slices"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
 )
 
 // Why a target is skipped: the Skip* reasons of the Quick Scan preview

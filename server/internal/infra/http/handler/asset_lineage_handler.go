@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // AssetLineageNode is one asset of a discovery chain. A node outside the

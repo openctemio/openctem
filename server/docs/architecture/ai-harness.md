@@ -13,7 +13,7 @@ API process. The API keeps only the single-shot executor (one model call, no too
 | Part | State | Where |
 |---|---|---|
 | Harness loop, provider interface, replay provider, tool registry, grant policy, hooks, budgets, fenced untrusted text, closed output schema with evidence checks, run record, result rendering, model tiers | shipped in sdk-go (in review) | `sdk-go/pkg/harness` |
-| Copies of the analyze/v1 schemas, pinned by sha256 | shipped in sdk-go (in review) | `sdk-go/pkg/harness/contract` (source: `api/pkg/sensorproto/analyze/schemas`) |
+| Copies of the analyze/v1 schemas, pinned by sha256 | shipped in sdk-go (in review) | `sdk-go/pkg/harness/contract` (source: `server/pkg/sensorproto/analyze/schemas`) |
 | Playbook format `openctem.io/playbook/v1` + sample | shipped in sdk-go (in review) | `sdk-go/pkg/harness/playbook`, `sdk-go/examples/playbooks/web-vuln-triage` |
 | Eval harness and `openctem playbook init\|test` | shipped in sdk-go (in review) | `sdk-go/pkg/harness/eval`, `sdk-go/internal/playbookcli` |
 | Model provider core (settings, presets, per-job credentials, hardened client, retries, prices, degradation, policy-safe fallback with circuit breakers, conformance kit) and adapters: OpenAI family (incl. Azure OpenAI and compatible/local servers), Anthropic, Gemini/Vertex, Bedrock Converse, Cohere | in review | the AI worker, which is distributed separately (RFC-133 §6a) |
@@ -86,4 +86,4 @@ openctem playbook test ./my-triage                    # validate, run the golden
 - `sdk-go/pkg/harness/run.go` (loop), `policy.go`, `tool.go`, `budget.go`, `fence.go`, `record.go`, `result.go`,
   `provider.go`, `router.go`
 - `sdk-go/pkg/harness/contract/contract.go`, `sdk-go/pkg/harness/playbook/playbook.go`, `sdk-go/pkg/harness/eval/eval.go`
-- `api/pkg/sensorproto/analyze/` (contract source), `api/internal/app/aianalysis/` (single-shot executor, RFC-132)
+- `server/pkg/sensorproto/analyze/` (contract source), `server/internal/app/aianalysis/` (single-shot executor, RFC-132)

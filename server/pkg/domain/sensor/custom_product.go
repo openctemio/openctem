@@ -18,7 +18,7 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ReservedProductPrefix starts every first-party product token

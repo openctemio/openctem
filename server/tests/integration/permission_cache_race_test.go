@@ -11,11 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/redis"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/redis"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // gatedRoleRepo answers GetUserPermissions from perms. When gate is set, the

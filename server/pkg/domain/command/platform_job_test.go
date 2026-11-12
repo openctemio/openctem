@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SECURITY (license): a platform job never runs semgrep, which fetches

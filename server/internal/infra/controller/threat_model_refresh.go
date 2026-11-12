@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/tenant"
-	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	tmdom "github.com/openctemio/openctem/server/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ThreatModelRefreshControllerConfig configures the periodic threat-model

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // VEXStatementExpirer withdraws expired VEX statements (internal/app/vex).

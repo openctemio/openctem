@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
 )
 
 // fakeMappings answers GetCompatibleAssetTypes from a fixed admin mapping

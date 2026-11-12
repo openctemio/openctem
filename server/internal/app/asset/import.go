@@ -8,10 +8,10 @@ import (
 	"io"
 	"strings"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tagdom "github.com/openctemio/openctem/api/pkg/domain/tag"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tagdom "github.com/openctemio/openctem/server/pkg/domain/tag"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AssetImportService handles bulk asset import from various formats.

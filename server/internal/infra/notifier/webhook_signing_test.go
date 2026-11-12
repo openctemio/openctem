@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/webhooksig"
+	"github.com/openctemio/openctem/server/pkg/webhooksig"
 )
 
 type captured struct {

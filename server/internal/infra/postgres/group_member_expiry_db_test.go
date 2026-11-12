@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/group"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/group"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Team membership expiry (RFC-050 W22, migration 001502): the end date round

@@ -146,7 +146,7 @@ Separate from E2E scripts — these are Go tests:
 
 ```bash
 # All unit tests
-cd api
+cd server
 make test
 
 # Or directly
@@ -159,7 +159,7 @@ GOWORK=off go test ./tests/unit/ -run TestAssetService -v
 GOWORK=off go test ./tests/unit/... -cover
 ```
 
-Unit test files are in `api/tests/unit/` (103 files).
+Unit test files are in `server/tests/unit/` (103 files).
 
 ### Security unit tests
 
@@ -227,7 +227,7 @@ Add to GitHub Actions:
 ```yaml
 - name: Run E2E tests
   run: |
-    cd api/scripts/tests
+    cd server/scripts/tests
     ./run_all_e2e.sh ${{ env.API_URL }}
 ```
 
@@ -235,8 +235,8 @@ Or run individual critical tests:
 
 ```yaml
 - name: Security tests
-  run: ./api/scripts/tests/test_e2e_security_fixes.sh $API_URL
+  run: ./server/scripts/tests/test_e2e_security_fixes.sh $API_URL
 
 - name: Asset tests
-  run: ./api/scripts/tests/test_e2e_assets.sh $API_URL
+  run: ./server/scripts/tests/test_e2e_assets.sh $API_URL
 ```

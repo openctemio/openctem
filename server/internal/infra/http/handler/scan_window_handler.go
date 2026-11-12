@@ -8,12 +8,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	swapp "github.com/openctemio/openctem/api/internal/app/scanwindow"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	swapp "github.com/openctemio/openctem/server/internal/app/scanwindow"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ScanWindowHandler serves scan window policies, their evaluation and

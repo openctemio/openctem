@@ -13,7 +13,7 @@ import (
 //	// @Param  severity  query  []string  false  "..."  collectionFormat(csv) Enums(...)
 //	// end filterspec-params
 //
-// api/tools/gen/filterparams rewrites the blocks; a test fails when a block,
+// server/tools/gen/filterparams rewrites the blocks; a test fails when a block,
 // or the committed spec, differs from the registry.
 
 // ParamMarker and ParamEndMarker delimit a generated block.

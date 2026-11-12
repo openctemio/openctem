@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketmap"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // TicketMappingRepository stores ticket mapping profiles and their versions.

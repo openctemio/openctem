@@ -22,18 +22,18 @@ import (
 
 	"github.com/openctemio/contract/secretref"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	proxypoolapp "github.com/openctemio/openctem/api/internal/app/proxypool"
-	toolsourceapp "github.com/openctemio/openctem/api/internal/app/toolsource"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/proxypool"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	dom "github.com/openctemio/openctem/api/pkg/domain/tasksecret"
-	"github.com/openctemio/openctem/api/pkg/domain/toolsource"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/sensorproto/sealed"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	proxypoolapp "github.com/openctemio/openctem/server/internal/app/proxypool"
+	toolsourceapp "github.com/openctemio/openctem/server/internal/app/toolsource"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/proxypool"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	dom "github.com/openctemio/openctem/server/pkg/domain/tasksecret"
+	"github.com/openctemio/openctem/server/pkg/domain/toolsource"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/sealed"
 )
 
 // ErrRefused is every refusal of a fetch. The sensor is told

@@ -4,10 +4,10 @@
 
 ## Project Context
 
-This is `api/` in the `openctemio/openctem` monorepo (formerly the `openctemio/api`
+This is `server/` in the `openctemio/openctem` monorepo (formerly the `openctemio/api`
 repository, renamed 2026-10-02; RFC-020). The repository holds two components:
 
-- `api/` (this): the Go API, module `github.com/openctemio/openctem/api`.
+- `server/` (this): the Go API, module `github.com/openctemio/openctem/server`.
 - `web/`: the Next.js web console (formerly `openctemio/ui`, now archived). See `../web/CLAUDE.md`.
 
 Separate repositories: [sensor](https://github.com/openctemio/sensor) (formerly
@@ -55,7 +55,7 @@ go test -cover ./...                         # With coverage
 - **PostgreSQL** persistence, **Chi Router**, **DDD architecture**
 
 ```
-api/
+server/
 ├── cmd/                    # Application entrypoints
 ├── internal/
 │   ├── app/               # Application services (business logic)
@@ -192,8 +192,8 @@ When a single file imports both, alias the domain side with a `dom` suffix:
 
 ```go
 import (
-    "github.com/openctemio/openctem/api/internal/app/audit"
-    auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+    "github.com/openctemio/openctem/server/internal/app/audit"
+    auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 )
 
 var _ auditdom.Repository = (*audit.Service)(nil)
@@ -920,7 +920,7 @@ no counts that go stale:
 
 The monorepo has no `go.work`, but a `go.work` in a parent directory (for example
 a workspace checkout that lists `sdk-go` or `sensor`) would still be picked up and
-can fail with `cannot load module … listed in go.work`. **Run Go from `api/` with
+can fail with `cannot load module … listed in go.work`. **Run Go from `server/` with
 `GOWORK=off`**, which is what CI does (and what the root `Makefile` does):
 
 ```bash

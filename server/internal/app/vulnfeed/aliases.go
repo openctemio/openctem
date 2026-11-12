@@ -13,7 +13,7 @@ import (
 
 	"github.com/openctemio/contract/transfer"
 
-	"github.com/openctemio/openctem/api/pkg/vulnbundle"
+	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
 // Merge guard: a dictionary may fold at most max(minAliasMerges, 5% of its

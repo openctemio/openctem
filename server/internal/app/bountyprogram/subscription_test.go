@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type fakeCatalog struct {

@@ -13,13 +13,13 @@ import (
 
 	"github.com/lib/pq"
 
-	scanrunapp "github.com/openctemio/openctem/api/internal/app/scanrun"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scanrunapp "github.com/openctemio/openctem/server/internal/app/scanrun"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 const wfOne = "00000000-0000-0000-0000-000000000001"

@@ -8,9 +8,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/pkg/dberr"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/dberr"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // =============================================================================

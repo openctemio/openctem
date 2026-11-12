@@ -1,6 +1,6 @@
 package remediation
 
-import "github.com/openctemio/openctem/api/pkg/domain/shared"
+import "github.com/openctemio/openctem/server/pkg/domain/shared"
 
 // StateChange is a task whose derived state a recompute changed.
 type StateChange struct {

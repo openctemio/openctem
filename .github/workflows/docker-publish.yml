@@ -6,10 +6,10 @@ name: Docker Publish
 #   ghcr.io/openctemio/openctem-web   web only (3000)
 #   ghcr.io/openctemio/openctem-console  the platform console (3000), served by
 #                                      the gateway's console site
-#   ghcr.io/openctemio/openctem       all-in-one: API + web + the api/deploy/gateway
+#   ghcr.io/openctemio/openctem       all-in-one: API + web + the server/deploy/gateway
 #                                      Caddy gateway (GATEWAY=on: 443 only;
 #                                      GATEWAY=off: 8080+3000)
-#   ghcr.io/openctemio/openctem-gateway  the api/deploy/gateway Caddy with the
+#   ghcr.io/openctemio/openctem-gateway  the server/deploy/gateway Caddy with the
 #                                      layer4 module: sensor gRPC on 443 by ALPN
 #                                      (OPENCTEM_SENSOR_GATEWAY=alpn|passthrough)
 #   ghcr.io/openctemio/{migrations,seed}
@@ -105,13 +105,13 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { name: openctem-api, legacy: api, context: api, file: api/Dockerfile, target: production }
-          - { name: migrations, legacy: '', context: api, file: api/Dockerfile.migrations, target: '' }
-          - { name: seed, legacy: '', context: api, file: api/Dockerfile.seed, target: '' }
+          - { name: openctem-api, legacy: api, context: server, file: server/Dockerfile, target: production }
+          - { name: migrations, legacy: '', context: server, file: server/Dockerfile.migrations, target: '' }
+          - { name: seed, legacy: '', context: server, file: server/Dockerfile.seed, target: '' }
           - { name: openctem-web, legacy: ui, context: web, file: web/Dockerfile, target: '' }
           # The platform console: its own app and image (web/console, RFC-022 revision 21).
           - { name: openctem-console, legacy: '', context: web, file: web/Dockerfile, target: console }
-          - { name: openctem-gateway, legacy: '', context: api/deploy/gateway, file: api/deploy/gateway/Dockerfile, target: '' }
+          - { name: openctem-gateway, legacy: '', context: server/deploy/gateway, file: server/deploy/gateway/Dockerfile, target: '' }
         platform:
           - { platform: linux/amd64, runner: ubuntu-latest, arch: amd64 }
           - { platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64 }
@@ -334,8 +334,8 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: deploy/allinone
-          # The gateway is api/deploy/gateway itself (same files as the split deployment).
-          build-contexts: gateway=api/deploy/gateway
+          # The gateway is server/deploy/gateway itself (same files as the split deployment).
+          build-contexts: gateway=server/deploy/gateway
           platforms: ${{ matrix.platform }}
           build-args: |
             API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
@@ -364,8 +364,8 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: deploy/allinone
-          # The gateway is api/deploy/gateway itself (same files as the split deployment).
-          build-contexts: gateway=api/deploy/gateway
+          # The gateway is server/deploy/gateway itself (same files as the split deployment).
+          build-contexts: gateway=server/deploy/gateway
           platforms: ${{ matrix.platform }}
           build-args: |
             API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
@@ -542,7 +542,7 @@ jobs:
             for t in ${TAGS//,/ }; do crane copy "${SRC}:${t}" "docker.io/${DOCKERHUB_NAMESPACE}/${n}:${t}"; done
           done
 
-  # The offline image bundle (api/docs/deployment/air-gapped.md): every image
+  # The offline image bundle (server/docs/deployment/air-gapped.md): every image
   # of a production release as an OCI archive that holds the multi-arch index
   # (same digest as on ghcr.io) together with its cosign signature and its
   # attestations (SLSA provenance, SBOM), attached to the GitHub release.

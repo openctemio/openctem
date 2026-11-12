@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	commandapp "github.com/openctemio/openctem/api/internal/app/command"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commandapp "github.com/openctemio/openctem/server/internal/app/command"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The withheld reason reaches the response for a platform task too (whose

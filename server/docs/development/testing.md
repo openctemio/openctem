@@ -23,7 +23,7 @@ go test ./internal/app/scan/...       # one package
 go test -run TestScopeEntry ./tests/unit/
 ```
 
-Run Go from `api/` with `GOWORK=off` (CI does the same).
+Run Go from `server/` with `GOWORK=off` (CI does the same).
 
 ## Mocking
 
@@ -121,7 +121,7 @@ func TestRiskCalculator(t *testing.T) {
 ## CI Testing
 
 API CI's `Tests (Postgres + Redis)` job runs the whole suite against Postgres
-and Redis service containers on every PR that touches `api/`, in the merge
+and Redis service containers on every PR that touches `server/`, in the merge
 queue and on pushes, with `OPENCTEM_TEST_DB_REQUIRED=1`. See
 [ci-cd.md](./ci-cd.md#what-the-api-jobs-check).
 

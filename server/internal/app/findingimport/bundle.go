@@ -28,9 +28,9 @@ import (
 	"github.com/openctemio/ctis/v2/importer"
 	"github.com/openctemio/ctis/v2/weburl"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/app/scopeauth"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/app/scopeauth"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ScopeCover answers which of the given names the organization's scope

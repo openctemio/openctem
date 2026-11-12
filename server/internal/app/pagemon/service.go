@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/pagemon"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/pagemon"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/webendpoint"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Source is the exposure source of page monitoring.

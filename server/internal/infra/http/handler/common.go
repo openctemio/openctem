@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // URL scheme constants

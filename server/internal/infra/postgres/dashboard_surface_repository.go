@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 )
 
 // The attack surface and accepted-risk breakdowns of the dashboard

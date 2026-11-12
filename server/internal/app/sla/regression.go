@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	sladom "github.com/openctemio/openctem/api/pkg/domain/sla"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	sladom "github.com/openctemio/openctem/server/pkg/domain/sla"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // RegressionStore reads reopened findings and writes their fresh deadline.

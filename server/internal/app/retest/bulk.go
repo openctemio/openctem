@@ -11,9 +11,9 @@ import (
 	"context"
 	"errors"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // MaxBulkRetest bounds the findings one bulk request tries (most urgent

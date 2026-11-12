@@ -10,8 +10,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 var _ scanrun.ZoneSplitStore = (*ScanRunRepository)(nil)

@@ -14,13 +14,13 @@ import (
 	"sync"
 	"testing"
 
-	coverageapp "github.com/openctemio/openctem/api/internal/app/coverage"
-	"github.com/openctemio/openctem/api/internal/app/outbox"
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	coverageapp "github.com/openctemio/openctem/server/internal/app/coverage"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 type recAlerts struct {

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func TestProgramDelivery(t *testing.T) {

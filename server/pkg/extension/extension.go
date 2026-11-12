@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"regexp"
 
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
 )
 
 // APIVersion is the version of this extension API. It stays 1 until the
@@ -19,7 +19,7 @@ const APIVersion = 1
 type GrantProvider = limits.GrantProvider
 
 // Extension is one extension of a build. A build passes its extensions to
-// server.Main (api/pkg/server). Every field but APIVersion and Name is
+// server.Main (server/pkg/server). Every field but APIVersion and Name is
 // optional; a nil field means the core default.
 type Extension struct {
 	// APIVersion is the API version the extension was written for, as a

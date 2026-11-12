@@ -13,8 +13,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/commandlog"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/commandlog"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // dropSeq is the row that counts dropped lines.

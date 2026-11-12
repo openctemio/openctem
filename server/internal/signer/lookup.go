@@ -21,8 +21,8 @@ import (
 
 	"github.com/openctemio/contract/ctlookup"
 
-	"github.com/openctemio/openctem/api/pkg/domain/lookupjob"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/domain/lookupjob"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // ReasonLookupShape is the refusal reason of the lookup rules.

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/querylang"
-	"github.com/openctemio/openctem/api/pkg/querylang/pgsql"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/querylang"
+	"github.com/openctemio/openctem/server/pkg/querylang/pgsql"
 )
 
 // Matcher is an executor that also returns the findings a filter-only

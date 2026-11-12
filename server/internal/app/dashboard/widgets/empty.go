@@ -9,7 +9,7 @@ package widgets
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/pkg/domain/dashboard"
+	"github.com/openctemio/openctem/server/pkg/domain/dashboard"
 )
 
 // ReasonNoFindings: no published finding, in any status, is in the scope.

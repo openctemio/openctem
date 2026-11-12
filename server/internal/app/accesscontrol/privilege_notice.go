@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PrivilegeNotifier tells an organization's administrators that a member

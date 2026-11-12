@@ -10,10 +10,10 @@ import (
 	"context"
 	"time"
 
-	slaapp "github.com/openctemio/openctem/api/internal/app/sla"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	sladom "github.com/openctemio/openctem/api/pkg/domain/sla"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	slaapp "github.com/openctemio/openctem/server/internal/app/sla"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	sladom "github.com/openctemio/openctem/server/pkg/domain/sla"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // FindingSLAExplainer explains a deadline from the governing policy.

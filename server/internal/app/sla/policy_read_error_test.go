@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	sladom "github.com/openctemio/openctem/api/pkg/domain/sla"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	sladom "github.com/openctemio/openctem/server/pkg/domain/sla"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // failingSLARepo fails every policy read with a non-not-found error, as a

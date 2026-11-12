@@ -10,8 +10,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/internal/migrate"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/migrate"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func TestLatestMigrationVersion(t *testing.T) {

@@ -31,11 +31,11 @@ import (
 	"github.com/openctemio/ctis/v2"
 	"github.com/openctemio/ctis/v2/weburl"
 
-	"github.com/openctemio/openctem/api/internal/app/contentrule/builtin"
-	"github.com/openctemio/openctem/api/pkg/domain/assettech"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
-	"github.com/openctemio/openctem/api/pkg/domain/webendpoint"
+	"github.com/openctemio/openctem/server/internal/app/contentrule/builtin"
+	"github.com/openctemio/openctem/server/pkg/domain/assettech"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/templatefact"
+	"github.com/openctemio/openctem/server/pkg/domain/webendpoint"
 )
 
 // TemplateFactsSource gives the template facts mapping

@@ -9,9 +9,9 @@ import (
 
 	"github.com/lib/pq"
 
-	assettechapp "github.com/openctemio/openctem/api/internal/app/assettech"
-	"github.com/openctemio/openctem/api/pkg/domain/assettech"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assettechapp "github.com/openctemio/openctem/server/internal/app/assettech"
+	"github.com/openctemio/openctem/server/pkg/domain/assettech"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AssetTechnologyBackfillRepository reads technologies and component links

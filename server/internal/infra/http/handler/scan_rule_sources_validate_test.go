@@ -3,7 +3,7 @@ package handler
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/validator"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 // The edit dialog sends back the scan's own rule_sources, which is "" when

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 func buildShort(t *testing.T, ent *Entity, src string, pr Principal) (*Plan, error) {

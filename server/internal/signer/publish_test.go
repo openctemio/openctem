@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 func TestPublishPublicKey(t *testing.T) {

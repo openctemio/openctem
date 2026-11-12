@@ -15,10 +15,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/openctemio/openctem/api/internal/app/lookupjob"
-	lookupjobdom "github.com/openctemio/openctem/api/pkg/domain/lookupjob"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/lookupjob"
+	lookupjobdom "github.com/openctemio/openctem/server/pkg/domain/lookupjob"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // LookupJobResultLimit bounds the body of POST done (the answer's own bound

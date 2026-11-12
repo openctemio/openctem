@@ -3,7 +3,7 @@ package ingest
 import (
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
 // maxLogValue caps a report-supplied value written to the log.

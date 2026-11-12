@@ -3,7 +3,7 @@ package webendpoint
 import (
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // Fields is the list query contract registry of GET /web-endpoints

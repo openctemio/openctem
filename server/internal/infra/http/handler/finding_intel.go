@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/threatintel"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // FindingIntel is the vulnerability intelligence of a finding with its

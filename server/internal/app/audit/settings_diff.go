@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 )
 
 // Configuration changes (organization settings, integrations, policies,

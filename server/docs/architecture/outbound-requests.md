@@ -72,14 +72,14 @@ They use `httpsec.FeedHTTPClient`; without the setting it is
 Only addresses the operator sets in the server's environment: the audit-log
 sink, the sensor transport probe, the scan-zone resolver, the signer socket, the
 operator's own S3 storage and the internal relay. Each is listed with its
-reason in `api/scripts/security-lint.sh`.
+reason in `server/scripts/security-lint.sh`.
 
 ## Key files
 
-- `api/pkg/httpsec/ssrf.go`: ranges, dialer, clients.
-- `api/pkg/httpsec/feed_proxy.go`: the platform feed proxy (`FeedHTTPClient`).
-- `api/pkg/httpsec/bypass_test.go`: the bypass suite (address spellings, host
+- `server/pkg/httpsec/ssrf.go`: ranges, dialer, clients.
+- `server/pkg/httpsec/feed_proxy.go`: the platform feed proxy (`FeedHTTPClient`).
+- `server/pkg/httpsec/bypass_test.go`: the bypass suite (address spellings, host
   spellings, schemes, redirects, proxy environment, error text).
-- `api/internal/infra/fetchers/git_snapshot.go`: rule-source fetches.
-- `api/scripts/security-lint.sh`: the CI rules that keep every outbound client
+- `server/internal/infra/fetchers/git_snapshot.go`: rule-source fetches.
+- `server/scripts/security-lint.sh`: the CI rules that keep every outbound client
   on the guard.

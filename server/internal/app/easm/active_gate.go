@@ -40,16 +40,16 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/actscope"
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	"github.com/openctemio/openctem/api/internal/app/scopeauth"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/assetfreshness"
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/internal/app/actscope"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/internal/app/scopeauth"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // ActiveGateRecords reads attribution records and rejection tombstones

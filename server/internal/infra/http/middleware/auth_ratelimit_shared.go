@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	redisinfra "github.com/openctemio/openctem/api/internal/infra/redis"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/config"
+	redisinfra "github.com/openctemio/openctem/server/internal/infra/redis"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Shared (cross-replica) budgets for the auth rate limits.

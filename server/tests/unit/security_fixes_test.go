@@ -8,16 +8,16 @@ package unit
 // Test locations:
 //
 //   SSRF (ValidateWebhookURL):
-//     api/pkg/validator/security_test.go
+//     server/pkg/validator/security_test.go
 //
 //   X-Forwarded Header (isValidHostHeader):
-//     api/internal/infra/http/handler/security_test.go
+//     server/internal/infra/http/handler/security_test.go
 //
 //   ExtraArgs Validation (validateExtraArgs):
 //     sensor/internal/executor/security_test.go
 //
 //   OAuth Redirect (isRedirectAllowed):
-//     api/internal/infra/http/handler/oauth_security_test.go
+//     server/internal/infra/http/handler/oauth_security_test.go
 //
 // Run all security tests:
 //   go test ./pkg/validator/ -run TestValidateWebhookURL -v

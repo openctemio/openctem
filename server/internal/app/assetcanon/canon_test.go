@@ -3,7 +3,7 @@ package assetcanon
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // Golden corpus per stored type: the stored name (as the 1.x ingest stored

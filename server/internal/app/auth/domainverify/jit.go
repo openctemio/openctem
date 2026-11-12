@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
 )
 
 // DomainJITPolicy returns whether SSO may admit new people on emailDomain in

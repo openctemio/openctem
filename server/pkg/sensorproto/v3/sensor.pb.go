@@ -2271,7 +2271,7 @@ const file_openctem_sensor_v3_sensor_proto_rawDesc = "" +
 	"\x0fGetSuppressions\x12*.openctem.sensor.v3.GetSuppressionsRequest\x1a+.openctem.sensor.v3.GetSuppressionsResponse\"\x03\x90\x02\x01\x12u\n" +
 	"\x11CheckFingerprints\x12,.openctem.sensor.v3.CheckFingerprintsRequest\x1a-.openctem.sensor.v3.CheckFingerprintsResponse\"\x03\x90\x02\x01\x12f\n" +
 	"\fBaselineDiff\x12'.openctem.sensor.v3.BaselineDiffRequest\x1a(.openctem.sensor.v3.BaselineDiffResponse\"\x03\x90\x02\x01\x12m\n" +
-	"\x10IssueCertificate\x12+.openctem.sensor.v3.IssueCertificateRequest\x1a,.openctem.sensor.v3.IssueCertificateResponseB@Z>github.com/openctemio/openctem/api/pkg/sensorproto/v3;sensorv3b\x06proto3"
+	"\x10IssueCertificate\x12+.openctem.sensor.v3.IssueCertificateRequest\x1a,.openctem.sensor.v3.IssueCertificateResponseBCZAgithub.com/openctemio/openctem/server/pkg/sensorproto/v3;sensorv3b\x06proto3"
 
 var (
 	file_openctem_sensor_v3_sensor_proto_rawDescOnce sync.Once

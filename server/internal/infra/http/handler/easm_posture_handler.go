@@ -7,17 +7,17 @@ import (
 	"strconv"
 	"time"
 
-	postureapp "github.com/openctemio/openctem/api/internal/app/posture"
-	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/posture"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	postureapp "github.com/openctemio/openctem/server/internal/app/posture"
+	"github.com/openctemio/openctem/server/internal/infra/http/filterquery"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/posture"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 )
 
 // EASMPostureHandler serves the attack surface posture score

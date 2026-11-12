@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ScopeFetcher reads a program's scope from its source

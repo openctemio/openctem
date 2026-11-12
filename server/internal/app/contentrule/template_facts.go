@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/contentrule/builtin"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/contentrule/builtin"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/templatefact"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // BuiltinTemplateFacts is the embedded template facts mapping.

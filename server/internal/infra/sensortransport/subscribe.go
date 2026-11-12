@@ -11,10 +11,10 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/coalesce"
-	sensorv3 "github.com/openctemio/openctem/api/pkg/sensorproto/v3"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/coalesce"
+	sensorv3 "github.com/openctemio/openctem/server/pkg/sensorproto/v3"
 )
 
 // wakeJitter spreads the re-evaluation of the streams a wake reaches, so

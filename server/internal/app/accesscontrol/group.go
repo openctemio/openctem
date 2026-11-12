@@ -9,17 +9,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/integration"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/integration"
 
-	accesscontroldom "github.com/openctemio/openctem/api/pkg/domain/accesscontrol"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
-	groupdom "github.com/openctemio/openctem/api/pkg/domain/group"
-	"github.com/openctemio/openctem/api/pkg/domain/notification"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	accesscontroldom "github.com/openctemio/openctem/server/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	groupdom "github.com/openctemio/openctem/server/pkg/domain/group"
+	"github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // teamsSettingsURL is the UI page that in-app notifications about team

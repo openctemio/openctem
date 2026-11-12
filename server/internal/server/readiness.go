@@ -3,12 +3,12 @@ package server
 import (
 	"context"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	toolapp "github.com/openctemio/openctem/api/internal/app/tool"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	toolapp "github.com/openctemio/openctem/server/internal/app/tool"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // readinessSources builds the sources of workflow readiness from the same

@@ -9,11 +9,11 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/openctemio/openctem/api/internal/extensionhost"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/extensionhost"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Options tune the Deps.

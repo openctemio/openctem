@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
 )
 
 // dispatchGateArg is the dispatch_gate column value of g (NULL for none).

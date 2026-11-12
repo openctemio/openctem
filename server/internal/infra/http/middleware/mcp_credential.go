@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	mcpoauthapp "github.com/openctemio/openctem/api/internal/app/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/mcpoauth"
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	mcpoauthapp "github.com/openctemio/openctem/server/internal/app/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/mcpoauth"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AuthProviderMCPOAuth is the AuthProviderKey value for a request

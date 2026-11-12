@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/audit"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
 )
 
 // An action taken with an `oct_` API key is recorded against the key's user

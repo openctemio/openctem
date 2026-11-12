@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/outbox"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	notificationdom "github.com/openctemio/openctem/api/pkg/domain/notification"
-	swdom "github.com/openctemio/openctem/api/pkg/domain/scanwindow"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/outbox"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+	swdom "github.com/openctemio/openctem/server/pkg/domain/scanwindow"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // memPolicies is a tenant-scoped in-memory policy store.

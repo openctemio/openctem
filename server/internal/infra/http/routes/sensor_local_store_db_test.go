@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 func TestSensorLocalStore_HeartbeatToDetail_DB(t *testing.T) {

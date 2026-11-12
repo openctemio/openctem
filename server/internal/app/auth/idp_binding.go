@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/mfa"
-	sessiondom "github.com/openctemio/openctem/api/pkg/domain/session"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/mfa"
+	sessiondom "github.com/openctemio/openctem/server/pkg/domain/session"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
 )
 
 // An organization's identity provider vouches for a person in THAT

@@ -19,8 +19,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
 )
 
 // Bounds on what a producer may store. Sensors and imports are untrusted:

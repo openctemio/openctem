@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync/atomic"
 
-	scanapp "github.com/openctemio/openctem/api/internal/app/scan"
-	"github.com/openctemio/openctem/api/internal/app/validation"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/internal/app/validation"
 )
 
 // lateTargetGate is the active-probe gate handed to the validate-command

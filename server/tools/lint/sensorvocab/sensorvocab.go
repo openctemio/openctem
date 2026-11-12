@@ -102,7 +102,7 @@ func Scan(root string) ([]Violation, error) {
 					}
 				}
 			case *ast.ImportSpec:
-				if p := strings.Trim(x.Path.Value, `"`); strings.HasPrefix(p, "github.com/openctemio/openctem/api/") && mentionsAgent(p) {
+				if p := strings.Trim(x.Path.Value, `"`); strings.HasPrefix(p, "github.com/openctemio/openctem/server/") && mentionsAgent(p) {
 					out = append(out, Violation{Pos: fmt.Sprintf("%s:%d", rel, fset.Position(x.Pos()).Line), Name: "import " + p})
 				}
 			}

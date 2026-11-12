@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"strings"
 
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ErrIntegrationDisabled is returned when a read or test would use the stored

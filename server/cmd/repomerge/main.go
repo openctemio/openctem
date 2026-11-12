@@ -2,6 +2,6 @@
 // to the server binary (internal/server/tools.go), not as a binary of its own.
 package main
 
-import "github.com/openctemio/openctem/api/internal/tools/repomerge"
+import "github.com/openctemio/openctem/server/internal/tools/repomerge"
 
 func main() { repomerge.Main() }

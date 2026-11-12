@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/crypto"
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // SettingsStorageResolver resolves per-tenant storage config from the settings table.

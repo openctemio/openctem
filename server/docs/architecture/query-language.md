@@ -303,17 +303,17 @@ their versions, sharing and deletion) will be.
 
 ## Key files
 
-- `api/pkg/querylang/` — lexer, parser, printer, entities, plan, pipeline, description, document v2;
+- `server/pkg/querylang/` — lexer, parser, printer, entities, plan, pipeline, description, document v2;
   `short.go` (short form parser), `printer_short.go` (`FormatShort`, `FromDocument`), `suggest.go` ("did you mean")
-- `api/internal/app/query/parse.go`, `values.go` — search box check and value completion
+- `server/internal/app/query/parse.go`, `values.go` — search box check and value completion
 - `web/src/features/query/` — `QueryInput`, completion, recent queries
-- `api/pkg/querylang/pgsql/` — SQL rendering, golden files under `testdata/golden`
-- `api/pkg/domain/asset/asset_fields.go` — the asset column fields
-- `api/pkg/domain/assetlist/fields.go` — the asset inventory registry (columns, relations, derived states) the assets entity uses
-- `api/pkg/filterspec/registry.go` — `Registry.Extend`
-- `api/internal/infra/postgres/query_executor.go` — read-only execution, timeout, estimate
-- `api/internal/app/query/` — principal resolution, concurrency, service
-- `api/internal/infra/http/handler/query_handler.go`, `routes/query.go`
+- `server/pkg/querylang/pgsql/` — SQL rendering, golden files under `testdata/golden`
+- `server/pkg/domain/asset/asset_fields.go` — the asset column fields
+- `server/pkg/domain/assetlist/fields.go` — the asset inventory registry (columns, relations, derived states) the assets entity uses
+- `server/pkg/filterspec/registry.go` — `Registry.Extend`
+- `server/internal/infra/postgres/query_executor.go` — read-only execution, timeout, estimate
+- `server/internal/app/query/` — principal resolution, concurrency, service
+- `server/internal/infra/http/handler/query_handler.go`, `routes/query.go`
 
 ## Matching findings (tasks from a query)
 

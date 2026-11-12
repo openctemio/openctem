@@ -5,7 +5,7 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	evidencedom "github.com/openctemio/openctem/api/pkg/domain/evidence"
+	evidencedom "github.com/openctemio/openctem/server/pkg/domain/evidence"
 )
 
 func TestFindingEvidenceFromEvidenceItems(t *testing.T) {

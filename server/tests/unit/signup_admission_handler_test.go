@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // The sign-up policy at the HTTP edge: a refused registration answers the one

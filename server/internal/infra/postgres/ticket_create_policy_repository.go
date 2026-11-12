@@ -11,9 +11,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // TicketCreatePolicyRepository stores ticket create policies, holds and the

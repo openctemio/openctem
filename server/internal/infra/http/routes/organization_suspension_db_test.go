@@ -18,13 +18,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openctemio/openctem/api/internal/app/apikey"
-	"github.com/openctemio/openctem/api/internal/app/suspension"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/testdb"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/jwt"
+	"github.com/openctemio/openctem/server/internal/app/apikey"
+	"github.com/openctemio/openctem/server/internal/app/suspension"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/jwt"
 )
 
 func TestOrganizationSuspension_Routes_DB(t *testing.T) {

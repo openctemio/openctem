@@ -3,11 +3,11 @@ package threatmodel
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/attack"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/attack"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tmdom "github.com/openctemio/openctem/server/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // TestEnumerate_EndToEnd drives the pure enumeration core (applicability +

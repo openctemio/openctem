@@ -1,7 +1,7 @@
 name: Edition fence
 
 # The Community build never contains extension code and the core builds from
-# public sources only (api/docs/development/editions.md). The check reads only
+# public sources only (server/docs/development/editions.md). The check reads only
 # the tracked tree and needs no toolchain, so it runs on every pull request,
 # merge-queue group and push with no path filter and can be a required check
 # ("Edition fence"). The restricted-word list comes from the secret

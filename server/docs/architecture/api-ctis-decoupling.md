@@ -80,7 +80,7 @@ receives CTIS reports over the sensor protocol v2 and file imports through
 ### SDK-Go removed from go.mod
 
 ```
-// api/go.mod: no sdk-go
+// server/go.mod: no sdk-go
 require github.com/openctemio/ctis/v2 vX.Y.Z
 require github.com/openctemio/contract vX.Y.Z
 // NO github.com/openctemio/sdk-go
@@ -107,7 +107,7 @@ API's ctis types and SDK-Go's ctis types are **copies from the same source**. CI
 
 | File | Purpose |
 |---|---|
-| `api/go.mod` | `require github.com/openctemio/ctis` |
+| `server/go.mod` | `require github.com/openctemio/ctis` |
 | `internal/app/ingest/` | All processors use `ctis` types |
 
 ## Related

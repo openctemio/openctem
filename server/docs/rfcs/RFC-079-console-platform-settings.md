@@ -4,7 +4,7 @@
 |---|---|
 | Status | Accepted, partly implemented (2026-10-18) |
 | Scope | api (`internal/app/platformsettings`, admin console routes, the e-mail sender, the auth policy, the OAuth providers, the AI provider, discovery and retention jobs), web (admin console > System pages, en + vi), `internal/config` (variables removed and refused) |
-| Related | RFC-022 (admin console), RFC-025 (sign-up policy, the first setting moved this way), RFC-074 (adaptive sensor control), the environment variable registry (`api/internal/config/env_registry.yaml`) |
+| Related | RFC-022 (admin console), RFC-025 (sign-up policy, the first setting moved this way), RFC-074 (adaptive sensor control), the environment variable registry (`server/internal/config/env_registry.yaml`) |
 
 ## 1. Summary
 

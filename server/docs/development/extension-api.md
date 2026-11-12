@@ -8,11 +8,11 @@ exactly the API described here and nothing else.
 
 | Part | Where |
 |---|---|
-| Back-end API | [`api/pkg/extension`](../../pkg/extension/doc.go) |
-| Server entry point | [`api/pkg/server`](../../pkg/server/server.go): `Main(exts ...extension.Extension)` |
-| Test helpers | [`api/pkg/extension/extensiontest`](../../pkg/extension/extensiontest/extensiontest.go) |
-| Reference extension | [`api/pkg/extension/example`](../../pkg/extension/example/example.go) |
-| Reference custom build | [`api/examples/custombuild`](../../examples/custombuild/main.go) |
+| Back-end API | [`server/pkg/extension`](../../pkg/extension/doc.go) |
+| Server entry point | [`server/pkg/server`](../../pkg/server/server.go): `Main(exts ...extension.Extension)` |
+| Test helpers | [`server/pkg/extension/extensiontest`](../../pkg/extension/extensiontest/extensiontest.go) |
+| Reference extension | [`server/pkg/extension/example`](../../pkg/extension/example/example.go) |
+| Reference custom build | [`server/examples/custombuild`](../../examples/custombuild/main.go) |
 | Web API | `web/src/lib/extension` (navigation, settings, slots, override allowlist, message catalogs) |
 | Where paid code goes, the fence | [editions](editions.md) |
 
@@ -20,7 +20,7 @@ exactly the API described here and nothing else.
 
 ```
 go mod init example.com/myedition
-go get github.com/openctemio/openctem/api@<version or commit>
+go get github.com/openctemio/openctem/server@<version or commit>
 ```
 
 ```go
@@ -29,7 +29,7 @@ package main
 
 import (
 	"example.com/myedition/myext"
-	"github.com/openctemio/openctem/api/pkg/server"
+	"github.com/openctemio/openctem/server/pkg/server"
 )
 
 func main() { server.Main(myext.Extension()) }
@@ -39,7 +39,7 @@ func main() { server.Main(myext.Extension()) }
 // myext/myext.go
 package myext
 
-import "github.com/openctemio/openctem/api/pkg/extension"
+import "github.com/openctemio/openctem/server/pkg/extension"
 
 func Extension() extension.Extension {
 	return extension.Extension{
@@ -63,9 +63,9 @@ to start on a mistake.
 
 ## Dependency rule
 
-- An extension imports `api/pkg/extension`, the other public `api/pkg/...`
+- An extension imports `server/pkg/extension`, the other public `server/pkg/...`
   packages (best effort, not versioned before 1.0), its own packages and its
-  own dependencies. Go refuses `api/internal/...` from another module, so
+  own dependencies. Go refuses `server/internal/...` from another module, so
   this rule is enforced by the compiler.
 - The core imports nothing of any extension and never names a grant key, a
   plan, a tier, an edition or a brand.

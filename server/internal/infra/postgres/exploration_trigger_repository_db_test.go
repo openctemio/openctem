@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/exploration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/exploration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func (f *coverageFixture) namedAsset(t *testing.T, typ string) shared.ID {

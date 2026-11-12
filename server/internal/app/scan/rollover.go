@@ -5,16 +5,16 @@ package scan
 // of the same scan plans those targets first, so a scan whose window is too
 // short still covers everything over successive windows instead of
 // rescanning the head of its list every time.
-// See api/docs/rfcs/RFC-046-scans-redesign.md.
+// See server/docs/rfcs/RFC-046-scans-redesign.md.
 
 import (
 	"context"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
 )
 
 // planRolloverFirst moves the previous scheduled run's unfinished targets to

@@ -15,10 +15,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/identityprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/samlprovider"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/verifieddomain"
+	"github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/samlprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/verifieddomain"
 )
 
 // Kind is what a pending change does.

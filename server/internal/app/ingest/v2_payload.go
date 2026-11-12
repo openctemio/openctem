@@ -19,8 +19,8 @@ import (
 	"crypto/subtle"
 	"errors"
 
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestpayload"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestpayload"
 )
 
 // errNoSegmentSealer: the server has no ingest payload sealer; segments are

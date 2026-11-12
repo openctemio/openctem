@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // The built-in roles are defined twice: seeded by migrations (the grants that

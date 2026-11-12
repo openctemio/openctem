@@ -3,7 +3,7 @@ package jira
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 func TestDefaultMapping_PreservesLegacyBehaviour(t *testing.T) {

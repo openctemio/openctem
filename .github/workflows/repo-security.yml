@@ -365,7 +365,7 @@ jobs:
       - name: Platform depends on contracts only (self-test)
         run: bash .github/scripts/check-platform-deps.test.sh
 
-      - name: Platform depends on contracts only (no sensor module or SDK in api/ or web/)
+      - name: Platform depends on contracts only (no sensor module or SDK in server/ or web/)
         run: bash .github/scripts/check-platform-deps.sh
 
       - name: Backend directory name (self-test)

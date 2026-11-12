@@ -9,9 +9,9 @@ import (
 
 	"github.com/openctemio/contract/transfer/bundle"
 
-	"github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
-	dom "github.com/openctemio/openctem/api/pkg/domain/feedrelay"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
+	dom "github.com/openctemio/openctem/server/pkg/domain/feedrelay"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 func (f *fixture) withNotifier() *consolesettingtest.Notifier {

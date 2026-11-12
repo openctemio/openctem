@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/audit/chainclassify"
-	cryptopkg "github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/server/internal/app/audit/chainclassify"
+	cryptopkg "github.com/openctemio/openctem/server/pkg/crypto"
 )
 
 // Kind is how one chain row is (re-)signed.

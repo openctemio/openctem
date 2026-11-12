@@ -60,5 +60,5 @@ cookie and an allowed `Origin`
 
 ```bash
 make generate        # repository root: spec, route manifest, web types
-make -C api swagger  # the spec only (api/api/openapi/swagger.yaml)
+make -C server swagger  # the spec only (server/api/openapi/swagger.yaml)
 ```

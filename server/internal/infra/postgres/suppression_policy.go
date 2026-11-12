@@ -1,7 +1,7 @@
 package postgres
 
 // Suppression rules under the approval policy
-// (api/docs/rfcs/RFC-111-approval-policy.md): the facts and owners over the
+// (server/docs/rfcs/RFC-111-approval-policy.md): the facts and owners over the
 // open findings a rule matches, the rule approvers, and sign-offs. Every
 // query is scoped to the rule's tenant.
 
@@ -14,10 +14,10 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/approvalpolicy"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/suppression"
+	"github.com/openctemio/openctem/server/pkg/domain/approvalpolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/suppression"
 )
 
 // signoffSubjectRule is the subject type of a suppression rule's sign-offs.

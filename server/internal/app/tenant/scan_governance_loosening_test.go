@@ -3,8 +3,8 @@ package tenant
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scangov"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 func TestScanGovernanceLoosened(t *testing.T) {

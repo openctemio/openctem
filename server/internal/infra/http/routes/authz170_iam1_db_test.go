@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
+	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
 )
 
 // IAM-1: re-activating a deactivated team re-grants its bound privileged role

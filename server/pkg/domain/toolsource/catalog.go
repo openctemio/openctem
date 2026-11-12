@@ -20,7 +20,7 @@ import (
 
 	"github.com/openctemio/contract/secretref"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Format is how a source's key is written.

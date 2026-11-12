@@ -6,8 +6,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Tool results and errors an AI client can act on (RFC-016, research on

@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func platformCARootPEM(t *testing.T) []byte {

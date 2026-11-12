@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The scan list's batch reads are tenant-scoped: another tenant's run or

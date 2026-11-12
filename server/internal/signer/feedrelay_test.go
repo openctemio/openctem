@@ -4,7 +4,7 @@ import (
 	"crypto/ed25519"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 const tOrigin = "https://github.com/openctemio/vulnfeed-bundles/releases/latest/download"

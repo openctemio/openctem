@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	roledom "github.com/openctemio/openctem/api/pkg/domain/role"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // MembershipRoleForRoleIDs derives the coarse tenant_members.role for a user

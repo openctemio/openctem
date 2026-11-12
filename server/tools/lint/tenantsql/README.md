@@ -66,7 +66,7 @@ drifts. To regenerate against a migrated scratch database whose name ends in
 `_test`:
 
 ```bash
-cd api
+cd server
 DATABASE_URL=postgres://…/openctem_test?sslmode=disable TENANTSQL_UPDATE=1 \
   GOWORK=off go test ./tools/lint/tenantsql -run TestTenantTablesMatchSchema
 ```
@@ -74,7 +74,7 @@ DATABASE_URL=postgres://…/openctem_test?sslmode=disable TENANTSQL_UPDATE=1 \
 ## Run it
 
 ```bash
-cd api
+cd server
 GOWORK=off go test ./tools/lint/tenantsql/... -count=1
 ```
 

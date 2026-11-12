@@ -9,7 +9,7 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/api"
+    directory: "/server"
     target-branch: "develop"
     schedule:
       interval: "weekly"
@@ -98,13 +98,13 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
-  # Base images of the release images (api/Dockerfile*, web/Dockerfile,
-  # deploy/allinone/Dockerfile, api/deploy/gateway/Dockerfile): Go, Alpine,
+  # Base images of the release images (server/Dockerfile*, web/Dockerfile,
+  # deploy/allinone/Dockerfile, server/deploy/gateway/Dockerfile): Go, Alpine,
   # node, distroless, Postgres. A base refresh is how OS-package advisories get
   # fixed (the image guard fails a release on a fixable HIGH/CRITICAL one).
   # Majors (node 26 -> 28, Alpine 3.x -> 4) stay manual: they change runtimes.
   - package-ecosystem: "docker"
-    directories: ["/api", "/web", "/deploy/allinone", "/api/deploy/gateway"]
+    directories: ["/server", "/web", "/deploy/allinone", "/server/deploy/gateway"]
     target-branch: "develop"
     schedule:
       interval: "weekly"

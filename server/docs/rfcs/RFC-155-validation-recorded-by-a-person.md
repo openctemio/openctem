@@ -31,7 +31,7 @@ first.
 
 ## 2. Today (checked on develop, 2026-11-12)
 
-Paths are relative to `api/`.
+Paths are relative to `server/`.
 
 - **One store of validation results.** `validation_evidence`
   (`migrations/001146_baseline.up.sql:9644`) holds tenant_id, finding_id,
@@ -206,7 +206,7 @@ inconclusive records count as "validated" only.
 
 ## 4. Data model
 
-One expand migration (`make -C api migration-new name=validation_records`)
+One expand migration (`make -C server migration-new name=validation_records`)
 and one validate migration.
 
 `validation_evidence` gains nullable columns; machine rows leave them NULL:

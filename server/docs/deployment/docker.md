@@ -13,20 +13,20 @@ deploy OpenCTEM with Docker Compose or the all-in-one image, follow
 
 | File | Purpose |
 |------|---------|
-| `api/Dockerfile` | Multi-target build: `development` (Air, Delve, migrate), `base` and `builder`, `production` (Alpine, non-root user `openctem`) |
-| `api/Dockerfile.migrations`, `Dockerfile.seed` | The `migrations` and `seed` release images |
-| `api/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development). Supported PostgreSQL: 16, 17 and 18; 17 is recommended. |
-| `api/docker-compose.dev.yml` | The API in the `development` target, source bind-mounted |
-| `api/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
-| `api/deploy/backup.sh` | Backup (`backup`), restore check (`verify`) and restore (`restore <dir> --yes`) of that stack; encrypts with age when `BACKUP_AGE_RECIPIENT` is set (decrypt with `BACKUP_AGE_IDENTITY`) |
-| `api/deploy/docker-compose.backup.yml` | Optional overlay: WAL archiving and scheduled full/differential backups to S3-compatible storage, an SFTP host or a local path ([guide](backup-and-restore.md)) |
-| `api/deploy/gateway/` | Gateway Caddyfile, TLS modes, entrypoint and `smoke-test.sh`. `planes.caddy` is generated from the API's plane table: do not edit it by hand |
+| `server/Dockerfile` | Multi-target build: `development` (Air, Delve, migrate), `base` and `builder`, `production` (Alpine, non-root user `openctem`) |
+| `server/Dockerfile.migrations`, `Dockerfile.seed` | The `migrations` and `seed` release images |
+| `server/docker-compose.yml` | Base services: PostgreSQL 17 and Redis 7 (ports published for development). Supported PostgreSQL: 16, 17 and 18; 17 is recommended. |
+| `server/docker-compose.dev.yml` | The API in the `development` target, source bind-mounted |
+| `server/deploy/docker-compose.yml` | The supported Compose deployment: gateway (one HTTPS port), web, API, PostgreSQL and Redis with TLS, and the one-shot `datastore-tls`, `db-roles` and `migrate` services |
+| `server/deploy/backup.sh` | Backup (`backup`), restore check (`verify`) and restore (`restore <dir> --yes`) of that stack; encrypts with age when `BACKUP_AGE_RECIPIENT` is set (decrypt with `BACKUP_AGE_IDENTITY`) |
+| `server/deploy/docker-compose.backup.yml` | Optional overlay: WAL archiving and scheduled full/differential backups to S3-compatible storage, an SFTP host or a local path ([guide](backup-and-restore.md)) |
+| `server/deploy/gateway/` | Gateway Caddyfile, TLS modes, entrypoint and `smoke-test.sh`. `planes.caddy` is generated from the API's plane table: do not edit it by hand |
 | `deploy/allinone/` | The all-in-one image (`ghcr.io/openctemio/openctem`): API, web, platform console and gateway in one container |
 
 ## Development environment
 
 ```bash
-cd api
+cd server
 make docker-dev        # foreground; make docker-dev-d for background
 # same as:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
@@ -87,12 +87,12 @@ image and command `/app/bootstrap-admin`.
 
 ## Production
 
-The supported deployments are `api/deploy/docker-compose.yml`, the all-in-one
+The supported deployments are `server/deploy/docker-compose.yml`, the all-in-one
 image and the Helm chart; the API-only and web-only Compose files are removed.
-`make docker-prod` only prints how to start `api/deploy`. Operators follow
+`make docker-prod` only prints how to start `server/deploy`. Operators follow
 [docs.openctem.io/install](https://docs.openctem.io/install/).
 
-Start order in `api/deploy/docker-compose.yml` (`depends_on`):
+Start order in `server/deploy/docker-compose.yml` (`depends_on`):
 
 ```mermaid
 flowchart LR
@@ -111,7 +111,7 @@ The API starts only after the `migrate` one-shot service and `db-grants`
 succeed (`condition: service_completed_successfully`),
 and `OPENCTEM_VERSION` tags every platform image, so the migrations always match
 the API. There is no default: `./setup.sh` writes it into `.env` from the
-release you checked out (`api/deploy/VERSION` in a tag's checkout), or from
+release you checked out (`server/deploy/VERSION` in a tag's checkout), or from
 `--version vX.Y.Z`; to upgrade, check out the new tag and set it in `.env`.
 
 The API image runs in production mode unless `APP_ENV` says otherwise: an unset
@@ -119,7 +119,7 @@ The API image runs in production mode unless `APP_ENV` says otherwise: an unset
 
 ```bash
 docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:vX.Y.Z -check-config
-# or, in api/deploy:
+# or, in server/deploy:
 docker compose run --rm --no-deps api -check-config
 ```
 
@@ -240,7 +240,7 @@ shows newer releases and security releases that affect the instance. The
 request sends nothing about the instance (no id, no version, no counts, no
 cookies); GitHub sees the server's IP address, as for any download.
 
-- Turn it off: `VERSION_CHECK_ENABLED=false` (in `api/deploy/.env`). No request
+- Turn it off: `VERSION_CHECK_ENABLED=false` (in `server/deploy/.env`). No request
   is made at all.
 - Air-gapped or no internet access: leave it on or off; without access it fails
   silently and retries weekly. Download `openctem-releases.json` from the latest
@@ -256,7 +256,7 @@ Details: [version check](../architecture/version-check.md).
 
 The gateway runs as uid/gid 1000 (as in the Helm chart), not as root, from the
 `ghcr.io/openctemio/openctem-gateway` image: Caddy with the standard and layer4
-modules, built with the release's Go toolchain. In `api/deploy` it binds 443
+modules, built with the release's Go toolchain. In `server/deploy` it binds 443
 (and 80 with the redirect overlay) through the namespaced sysctl
 `net.ipv4.ip_unprivileged_port_start=0`, so it keeps `no-new-privileges` and
 holds no capability.

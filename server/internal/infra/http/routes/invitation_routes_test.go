@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
 )
 
 // The invitation token moved from the URL into the body (RFC-041 §3.2 P4).

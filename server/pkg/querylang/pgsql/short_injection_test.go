@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/querylang"
-	"github.com/openctemio/openctem/api/pkg/querylang/pgsql"
+	"github.com/openctemio/openctem/server/pkg/querylang"
+	"github.com/openctemio/openctem/server/pkg/querylang/pgsql"
 )
 
 // A short-form search compiles to the same SQL text whatever its literals

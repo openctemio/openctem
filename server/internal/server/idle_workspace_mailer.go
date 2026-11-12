@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	"github.com/openctemio/openctem/api/internal/app/lifecycle"
-	"github.com/openctemio/openctem/api/pkg/brand"
-	lifecycledom "github.com/openctemio/openctem/api/pkg/domain/lifecycle"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/app/lifecycle"
+	"github.com/openctemio/openctem/server/pkg/brand"
+	lifecycledom "github.com/openctemio/openctem/server/pkg/domain/lifecycle"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // idleWorkspaceMailer emails the idle-workspace notices (system SMTP): the

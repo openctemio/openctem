@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/softwarematch"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // FindingLocationResponse is one service a version-match finding is

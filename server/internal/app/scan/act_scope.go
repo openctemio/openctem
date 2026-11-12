@@ -8,9 +8,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/actscope"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/actscope"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ActScopeChecker decides which targets and assets an actor may scan

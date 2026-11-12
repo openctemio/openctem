@@ -14,10 +14,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/openctemio/openctem/api/internal/app/contentpack"
-	"github.com/openctemio/openctem/api/internal/app/contentpin"
-	"github.com/openctemio/openctem/api/internal/app/contentrule/builtin"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/app/contentpin"
+	"github.com/openctemio/openctem/server/internal/app/contentrule/builtin"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
 )
 
 // InstallBuiltin installs the embedded rule packs whose names have no

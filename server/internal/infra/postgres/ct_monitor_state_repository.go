@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/certmonitor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/certmonitor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // CTMonitorStateRepository stores the Certificate-Transparency sweep's

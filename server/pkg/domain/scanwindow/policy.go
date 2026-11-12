@@ -18,8 +18,8 @@ import (
 	// image having /usr/share/zoneinfo.
 	_ "time/tzdata"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Kind is what a policy does to the targets it selects.

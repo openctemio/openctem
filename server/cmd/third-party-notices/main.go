@@ -2,7 +2,7 @@
 // module linked into the server binary, with its version, license and license
 // text, read from the module cache (no network). The API image runs it at
 // build time and serves the file at GET /api/v1/licenses and
-// /api/v1/admin/licenses (About > Open-source licenses). Run from api/:
+// /api/v1/admin/licenses (About > Open-source licenses). Run from server/:
 //
 //	go run ./cmd/third-party-notices -o third-party-notices.json
 //
@@ -19,7 +19,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/notices"
+	"github.com/openctemio/openctem/server/pkg/notices"
 )
 
 func main() {

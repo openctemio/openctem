@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/role"
+	"github.com/openctemio/openctem/server/pkg/domain/role"
 )
 
 // A custom role created from a template keeps its template origin through

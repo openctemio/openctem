@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-pdf/fpdf"
 
-	"github.com/openctemio/openctem/api/pkg/report/markdown"
+	"github.com/openctemio/openctem/server/pkg/report/markdown"
 )
 
 // PDF rendering of finding Markdown: paragraphs, headings, lists, quotes,

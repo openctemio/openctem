@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/infra/scm"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	branchdom "github.com/openctemio/openctem/api/pkg/domain/branch"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	integrationdom "github.com/openctemio/openctem/api/pkg/domain/integration"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/infra/scm"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	branchdom "github.com/openctemio/openctem/server/pkg/domain/branch"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	integrationdom "github.com/openctemio/openctem/server/pkg/domain/integration"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 const (

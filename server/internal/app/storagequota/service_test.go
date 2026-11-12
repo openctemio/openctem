@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
-	"github.com/openctemio/openctem/api/pkg/domain/limits"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type orgLimits map[shared.ID]int

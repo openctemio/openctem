@@ -60,8 +60,8 @@ flowchart LR
 
 | Concern | Where |
 |---|---|
-| Revisions, gates, rollout | `api/internal/app/aiagent/` |
+| Revisions, gates, rollout | `server/internal/app/aiagent/` |
 | Tables | `ai_agents`, `ai_agent_revisions`, `ai_eval_reports`, `ai_golden_sets`, `ai_golden_cases`, `ai_trusted_publishers` |
-| Golden baseline and injection corpus | `api/testdata/ai-eval/` |
+| Golden baseline and injection corpus | `server/testdata/ai-eval/` |
 | CLI | sdk-go `openctem aiagent`, `openctem playbook` |
 | Console | `web/src/app/(dashboard)/ai-agents/` |

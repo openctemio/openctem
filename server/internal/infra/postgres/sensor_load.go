@@ -11,8 +11,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // sensorActiveCommandsSQL is the number of scan commands the sensor aliased

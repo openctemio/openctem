@@ -3,8 +3,8 @@ package threatmodel
 import (
 	"sort"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	tmdom "github.com/openctemio/openctem/api/pkg/domain/threatmodel"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tmdom "github.com/openctemio/openctem/server/pkg/domain/threatmodel"
 )
 
 // Finding status buckets used by the derivation rules. These mirror

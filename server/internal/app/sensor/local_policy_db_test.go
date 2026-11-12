@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	sensorapp "github.com/openctemio/openctem/api/internal/app/sensor"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // TestSensorLocalPolicy_HeartbeatsAndRefusals_DB (RFC-040 §5.7): a heartbeat's

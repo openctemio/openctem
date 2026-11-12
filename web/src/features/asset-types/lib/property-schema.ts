@@ -1,7 +1,7 @@
 /**
  * The asset property schema (RFC-042 §6.3.9), from the generated registry.
  *
- * Every property key is declared once in api/configs/asset-types.yaml with
+ * Every property key is declared once in server/configs/asset-types.yaml with
  * its labels, display format and synonyms; a type's schema is its own
  * attribute keys (and those of the alias its sub-type came from) plus the
  * common keys. The API folds synonyms on write; rows written before that

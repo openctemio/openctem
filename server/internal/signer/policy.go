@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
 // Refusal reason codes (closed set; also the signing log's reasons).

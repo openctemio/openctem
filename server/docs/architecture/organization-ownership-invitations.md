@@ -176,10 +176,10 @@ the administrator hands things over instead of the mailbox.
 
 ## Key files
 
-- `api/migrations/20261102094502_organization_owner_invitations.up.sql`
-- `api/pkg/domain/tenant/owner_invitation.go`
-- `api/internal/app/tenant/owner_invitation.go`, `organization_creator.go`
-- `api/internal/infra/postgres/owner_invitation_repository.go`
-- `api/internal/infra/http/handler/owner_invitation_handler.go`, `admin_organization_handler.go`
+- `server/migrations/20261102094502_organization_owner_invitations.up.sql`
+- `server/pkg/domain/tenant/owner_invitation.go`
+- `server/internal/app/tenant/owner_invitation.go`, `organization_creator.go`
+- `server/internal/infra/postgres/owner_invitation_repository.go`
+- `server/internal/infra/http/handler/owner_invitation_handler.go`, `admin_organization_handler.go`
 - `web/console/src/features/admin-console/components/owner-invitation.tsx`
 - `web/src/features/account/components/ownership-invitations-card.tsx`, `web/src/app/ownership-invitations/page.tsx`

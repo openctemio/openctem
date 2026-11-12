@@ -1,5 +1,5 @@
 /**
- * EPSS trend helpers (api/docs/architecture/vulnerability-page.md, "EPSS
+ * EPSS trend helpers (server/docs/architecture/vulnerability-page.md, "EPSS
  * trend"): the API sends daily scores 0..1; charts draw percent.
  */
 

@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	remediationapp "github.com/openctemio/openctem/server/internal/app/remediation"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Changes no person made to a task are in the audit log with the system as

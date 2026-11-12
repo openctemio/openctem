@@ -1273,7 +1273,7 @@ widget kit's frame, with its own error boundary.
   template"); the copy is a stored dashboard like any other. Stored
   dashboards are never rearranged when a template changes: copies get the
   new layout offer above.
-  `api/pkg/domain/dashboard/templates_test.go` parses every template widget
+  `server/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
   Names and descriptions are in the `dashboards` i18n namespace.
 - **Widget titles**: a widget without a title of its own shows the metric's
@@ -1344,7 +1344,7 @@ widget kit's frame, with its own error boundary.
   no display text is hard-coded in the components (JSX text and literal
   `aria-label` / `placeholder` / `title` / `alt`); every template rendered in
   Vietnamese shows no English message.
-- `api/pkg/domain/dashboard/templates_test.go`: every catalog metric has a
+- `server/pkg/domain/dashboard/templates_test.go`: every catalog metric has a
   name and definition in both web dictionaries; every template widget passes
   the server's spec validation.
 - `web/src/features/dashboards/__tests__/a11y.test.tsx`: axe-core on a

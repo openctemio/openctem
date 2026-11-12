@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/threatalert"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnevent"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatalert"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnevent"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // fanOutStore implements the planner store methods the fan-out uses; any

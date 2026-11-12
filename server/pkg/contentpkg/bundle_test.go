@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/contentpkg/sigstore"
+	"github.com/openctemio/openctem/server/pkg/contentpkg/sigstore"
 )
 
 // The sast-rules v0.1.0 release: its tarball and the keyless Sigstore

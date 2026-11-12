@@ -5,12 +5,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
-	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/domain/session"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
-	"github.com/openctemio/openctem/api/pkg/jwt"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/session"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/jwt"
 )
 
 // authErrorEntry is one refusal of a sign-in, SSO, SAML, social-login or

@@ -158,7 +158,7 @@ key reads the control from the finding's check state.
 
 Compliance findings stored before check state existed are moved by an
 operator command (a link to the server binary in the API image,
-`api/internal/tools/compliancechecks`). It considers every open compliance
+`server/internal/tools/compliancechecks`). It considers every open compliance
 finding; closed findings are never touched.
 
 - It records the state of each finding's control (history source
@@ -217,9 +217,9 @@ compliance-checks -apply -undo undo.csv    # write (owner's go on production)
 
 ## Key files
 
-- `api/pkg/domain/compliancecheck/check.go` (results, benchmark key, evidence)
-- `api/pkg/domain/vulnerability/compliance_level.go`
-- `api/internal/app/ingest/compliance_checks.go`
-- `api/internal/infra/postgres/compliance_check_repository.go`
-- `api/migrations/*_compliance_check_state.sql`
-- `api/pkg/domain/remediation/group.go` (`control:` key)
+- `server/pkg/domain/compliancecheck/check.go` (results, benchmark key, evidence)
+- `server/pkg/domain/vulnerability/compliance_level.go`
+- `server/internal/app/ingest/compliance_checks.go`
+- `server/internal/infra/postgres/compliance_check_repository.go`
+- `server/migrations/*_compliance_check_state.sql`
+- `server/pkg/domain/remediation/group.go` (`control:` key)

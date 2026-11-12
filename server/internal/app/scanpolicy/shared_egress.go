@@ -30,7 +30,7 @@ import (
 
 	"github.com/openctemio/contract/addrscope"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SharedSensorsEgressKey is the platform_settings key of the egress list.

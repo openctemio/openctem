@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // turnstileVerifyURL is Cloudflare Turnstile's server-side check. It is a

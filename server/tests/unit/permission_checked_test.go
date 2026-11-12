@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 )
 
 // Every permission in the catalog gates something. A permission that no
@@ -27,7 +27,7 @@ var reservedPermissions = map[string]string{
 	"assets:export": "server-side asset export (owner decision R14; kept by migration 000772 for it)",
 }
 
-const permissionImportPath = "github.com/openctemio/openctem/api/pkg/domain/permission"
+const permissionImportPath = "github.com/openctemio/openctem/server/pkg/domain/permission"
 
 // referencedPermissionConsts returns the permission constants referenced
 // from the non-test Go files under dirs, through the file's import name for

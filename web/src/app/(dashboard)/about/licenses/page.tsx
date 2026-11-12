@@ -20,7 +20,7 @@ const web: NoticeSource = {
 /**
  * About > Open-source licenses (tenant app): the third-party components of
  * the API and the web app, any signed-in user. Always present, whatever the
- * brand (api/docs/architecture/third-party-notices.md).
+ * brand (server/docs/architecture/third-party-notices.md).
  */
 export default function OpenSourceLicensesPage() {
   const { t } = useTranslation()

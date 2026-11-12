@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // TestCommittedRegistryIsUpToDate is the asset-types-drift check as a unit
@@ -17,7 +17,7 @@ import (
 // equal what configs/asset-types.yaml produces. CI also runs
 // `go run ./cmd/gen-asset-types -check` as its own step.
 func TestCommittedRegistryIsUpToDate(t *testing.T) {
-	t.Chdir("../..") // api/
+	t.Chdir("../..") // server/
 	m, err := load(yamlPath, relationshipPath)
 	if err != nil {
 		t.Fatalf("load: %v", err)

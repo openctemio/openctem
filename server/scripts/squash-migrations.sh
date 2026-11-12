@@ -8,7 +8,7 @@
 #   scripts/squash-migrations.sh [REF]        generate, then verify
 #   VERIFY_ONLY=1 scripts/squash-migrations.sh [REF]
 #
-# REF (default origin/develop) is the git ref whose api/migrations is squashed.
+# REF (default origin/develop) is the git ref whose server/migrations is squashed.
 # V is the highest migration version at REF.
 #
 #   1. Apply REF's chain to a throwaway PostgreSQL 17 and pg_dump it into
@@ -63,7 +63,7 @@ SHA="$(git -C "$REPO" rev-parse "$REF")"
 
 # --- REF's chain ---------------------------------------------------------------
 mkdir -p "$WORK/chain"
-git -C "$REPO" archive "$SHA" api/migrations | tar -x -C "$WORK/chain"
+git -C "$REPO" archive "$SHA" server/migrations | tar -x -C "$WORK/chain"
 CHAIN="$WORK/chain/api/migrations"
 version_of() { local f="${1##*/}"; echo $((10#${f%%_*})); }
 V=0
@@ -125,7 +125,7 @@ SET check_function_bodies = false;
 DO \$baseline\$
 BEGIN
     IF to_regclass('public.tenants') IS NOT NULL THEN
-        RAISE EXCEPTION 'migration baseline $VV installs into an empty database only, and this one already has the OpenCTEM schema. Upgrade it with a release from before the baseline (git tag pre-baseline-$VV) first, see api/docs/development/migrations.md';
+        RAISE EXCEPTION 'migration baseline $VV installs into an empty database only, and this one already has the OpenCTEM schema. Upgrade it with a release from before the baseline (git tag pre-baseline-$VV) first, see server/docs/development/migrations.md';
     END IF;
 END
 \$baseline\$;

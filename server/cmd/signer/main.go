@@ -38,9 +38,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/signer"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	"github.com/openctemio/openctem/api/pkg/version"
+	"github.com/openctemio/openctem/server/internal/signer"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/version"
 )
 
 func main() {

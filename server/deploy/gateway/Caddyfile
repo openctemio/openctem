@@ -4,7 +4,7 @@
 # The browser UI (web, Next.js) and the REST API (api, Go) stay on the internal
 # network. This gateway terminates TLS and routes by plane (RFC-041), from
 # planes.caddy, which is GENERATED from the API's plane table
-# (api/internal/infra/http/routes/plane), the same table the route-style lint
+# (server/internal/infra/http/routes/plane), the same table the route-style lint
 # checks every route against; CI fails if the two disagree:
 #
 #   to the API (api:8080), by plane

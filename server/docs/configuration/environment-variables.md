@@ -1,6 +1,6 @@
 # Environment variable reference
 
-<!-- GENERATED from api/internal/config/env_registry.yaml by "make env-docs". Do not edit. -->
+<!-- GENERATED from server/internal/config/env_registry.yaml by "make env-docs". Do not edit. -->
 
 Every environment variable OpenCTEM reads. **Default** is the value used when the
 variable is unset or empty (durations in Go syntax: `30s`, `5m`, `24h`; lists
@@ -554,7 +554,7 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 
 ## Gateway
 
-Read by the bundled Caddy gateway (`api/deploy/gateway`).
+Read by the bundled Caddy gateway (`server/deploy/gateway`).
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
@@ -584,7 +584,7 @@ Read by the bundled Caddy gateway (`api/deploy/gateway`).
 
 ## Docker Compose stack
 
-Read by `api/deploy/docker-compose.yml` from its `.env` file.
+Read by `server/deploy/docker-compose.yml` from its `.env` file.
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
@@ -686,7 +686,7 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `SMTP_TLS` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `SMTP_SKIP_VERIFY` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
 | `SMTP_TIMEOUT` | unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin |
-| `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in api/.env.example) |
+| `APP_ALLOW_PLAINTEXT_CREDENTIALS` | unset it; credentials are always encrypted (development uses the key in server/.env.example) |
 | `CTEM_ENFORCE_COVERAGE_SLO` | unset it; owners and admins set it per organization on the Cycles page (PUT /api/v1/organization/settings/cycles) |
 | `AUTH_ACCESS_TOKEN_COOKIE_NAME` | unset it; the session cookie is always auth_token |
 | `AUTH_REFRESH_TOKEN_COOKIE_NAME` | unset it; the refresh cookie is always refresh_token |

@@ -11,11 +11,11 @@ import (
 
 	"github.com/openctemio/contract/ctlookup"
 
-	"github.com/openctemio/openctem/api/pkg/domain/lookupjob"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/jobsign"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/domain/lookupjob"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // memRepo mirrors the SQL rules of the Postgres repository.

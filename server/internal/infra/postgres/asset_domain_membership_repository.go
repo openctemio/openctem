@@ -15,8 +15,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetdomain"
-	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
+	"github.com/openctemio/openctem/server/pkg/domain/assetdomain"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 )
 
 const (

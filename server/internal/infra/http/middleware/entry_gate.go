@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // EntryChecker decides whether a session meets the entry requirements of one

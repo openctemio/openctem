@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/version"
+	"github.com/openctemio/openctem/server/pkg/version"
 )
 
-// rootManifest is the repository's versions.yaml (two levels above api/).
+// rootManifest is the repository's versions.yaml (two levels above server/).
 func rootManifest(t *testing.T) []byte {
 	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
@@ -32,7 +32,7 @@ func TestManifestParses(t *testing.T) {
 // (sync-versions.sh writes it).
 func TestEmbeddedCopyMatchesRoot(t *testing.T) {
 	if root := rootManifest(t); !bytes.Equal(root, manifestYAML) {
-		t.Fatal("api/internal/versions/versions.yaml differs from versions.yaml: run .github/scripts/release/sync-versions.sh")
+		t.Fatal("server/internal/versions/versions.yaml differs from versions.yaml: run .github/scripts/release/sync-versions.sh")
 	}
 }
 

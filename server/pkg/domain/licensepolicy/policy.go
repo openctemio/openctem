@@ -3,8 +3,8 @@
 // and which are denied, optionally per dependency scope, and how a
 // package's declared licenses (SPDX expressions) are judged against it.
 //
-// Design: api/docs/rfcs/RFC-070-software-components-inventory.md, "License
-// policy"; architecture doc api/docs/architecture/software-components.md.
+// Design: server/docs/rfcs/RFC-070-software-components-inventory.md, "License
+// policy"; architecture doc server/docs/architecture/software-components.md.
 package licensepolicy
 
 import (

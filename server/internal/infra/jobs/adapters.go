@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/aitriage"
+	"github.com/openctemio/openctem/server/internal/app/aitriage"
 )
 
 // UserInfoAdapter provides user information from the user service.

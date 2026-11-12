@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	assetapp "github.com/openctemio/openctem/api/internal/app/asset"
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/validator"
+	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
 )
 
 func newTagFilterHandler() (*handler.AssetHandler, *HandlerMockRepository) {

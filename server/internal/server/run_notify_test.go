@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	scanrundom "github.com/openctemio/openctem/api/pkg/domain/scanrun"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scanrundom "github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 type recordedEvent struct {

@@ -2,7 +2,7 @@
 
 /**
  * QueryInput: the one search box for filtered lists and custom queries
- * (api/docs/architecture/query-language.md, "Short form"). People type plain
+ * (server/docs/architecture/query-language.md, "Short form"). People type plain
  * words (a text search) or conditions such as
  * `severity>=high kev=true -status:accepted last_seen<7d`; the long form
  * (`findings where ...`) is accepted too. The server parses and checks the

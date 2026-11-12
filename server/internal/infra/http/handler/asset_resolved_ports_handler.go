@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
 )
 
 // ResolvedPortItem is one open port of an address the name resolves to.

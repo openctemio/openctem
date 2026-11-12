@@ -10,9 +10,9 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/aianalysis"
-	"github.com/openctemio/openctem/api/pkg/domain/serviceaccount"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/aianalysis"
+	"github.com/openctemio/openctem/server/pkg/domain/serviceaccount"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // AIAnalysisRepository stores AI agents, their owners and their runs

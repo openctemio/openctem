@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // Only a verified Jira/GitHub ticket move is the ticket actor (work state

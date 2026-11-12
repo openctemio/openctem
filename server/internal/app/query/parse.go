@@ -12,12 +12,12 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/openctemio/openctem/api/pkg/domain/assetlist"
-	"github.com/openctemio/openctem/api/pkg/domain/scan"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/querylang"
+	"github.com/openctemio/openctem/server/pkg/domain/assetlist"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/querylang"
 )
 
 // listRegistries are the list endpoints a search box document is sent to

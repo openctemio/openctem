@@ -6,8 +6,8 @@ import (
 	"context"
 	"fmt"
 
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // SetLineage wires the reader of an asset's ancestor chain. Unset, an asset

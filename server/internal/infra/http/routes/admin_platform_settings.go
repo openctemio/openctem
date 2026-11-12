@@ -3,7 +3,7 @@ package routes
 import (
 	"net/http"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // registerAdminPlatformSettingsRoutes mounts the settings that moved from

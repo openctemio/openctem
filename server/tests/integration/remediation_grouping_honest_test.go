@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	remediationapp "github.com/openctemio/openctem/api/internal/app/remediation"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/pkg/domain/remediation"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	remediationapp "github.com/openctemio/openctem/server/internal/app/remediation"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/remediation"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func codeFinding(rule, title, path string, line int) ctis.Finding {

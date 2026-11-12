@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // Result requests reserve what they may hold decoded from a process-wide

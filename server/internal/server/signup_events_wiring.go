@@ -1,11 +1,11 @@
 package server
 
 import (
-	signupeventapp "github.com/openctemio/openctem/api/internal/app/signupevent"
-	"github.com/openctemio/openctem/api/internal/config"
-	"github.com/openctemio/openctem/api/internal/infra/redis"
-	"github.com/openctemio/openctem/api/internal/infra/telemetry"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	signupeventapp "github.com/openctemio/openctem/server/internal/app/signupevent"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/redis"
+	"github.com/openctemio/openctem/server/internal/infra/telemetry"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // wireSignupEvents builds the console's sign-up feed and burst alerts

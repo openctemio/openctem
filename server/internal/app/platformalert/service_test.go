@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/consolesetting"
-	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
 )
 
 type receiver struct {

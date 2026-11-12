@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/module"
+	"github.com/openctemio/openctem/server/internal/app/module"
 )
 
 func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {

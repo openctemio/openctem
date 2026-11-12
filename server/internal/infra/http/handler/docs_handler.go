@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 // DocsHandler handles API documentation endpoints

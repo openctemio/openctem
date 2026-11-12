@@ -21,7 +21,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // File formats.

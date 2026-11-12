@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/openctemio/openctem/api/internal/app/easm"
-	"github.com/openctemio/openctem/api/pkg/domain/asset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/easm"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 var _ easm.ScopeJoinStore = (*AttributionRepository)(nil)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks for the development tooling guards. Run from anywhere: bash api/scripts/dev-tools.test.sh
+# Checks for the development tooling guards. Run from anywhere: bash server/scripts/dev-tools.test.sh
 set -uo pipefail
 api="$(cd "$(dirname "$0")/.." && pwd)"
 pass=0 failed=0

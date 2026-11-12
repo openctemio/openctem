@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
 )
 
 func TestSensorCustomProducts_Routes_DB(t *testing.T) {

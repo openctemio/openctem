@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/stepup"
-	tenantdom "github.com/openctemio/openctem/api/pkg/domain/tenant"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stepup"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
 // ErrOwnerRequiredForAdminChange is returned when someone other than the

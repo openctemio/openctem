@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // Waiting work rings the sensor again soon only when it has room for it and

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
-	userdom "github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	signupdom "github.com/openctemio/openctem/server/pkg/domain/signup"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
 )
 
 // authAtSessions answers when a session last proved the person.

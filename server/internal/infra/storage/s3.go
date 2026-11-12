@@ -16,8 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attachment"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/attachment"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // S3Storage stores files in S3-compatible object storage (AWS S3, MinIO, etc).

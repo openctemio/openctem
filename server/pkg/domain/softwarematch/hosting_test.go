@@ -3,7 +3,7 @@ package softwarematch
 import (
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/edgeaddr"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 )
 
 func TestHostedBy(t *testing.T) {

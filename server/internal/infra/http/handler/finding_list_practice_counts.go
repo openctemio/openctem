@@ -12,10 +12,10 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/filterspec"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/infra/http/filterquery"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // includePracticeCounts is the include value of GET /findings that adds

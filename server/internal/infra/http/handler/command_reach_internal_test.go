@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/scanrun"
+	"github.com/openctemio/openctem/server/internal/app/scanrun"
 )
 
 // The reach outcome of a completed command (sensor-supplied) shapes the

@@ -7,8 +7,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/openctemio/openctem/api/pkg/domain/easmchange"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/easmchange"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Typed attack-surface changes against the real schema. Requires DATABASE_URL.

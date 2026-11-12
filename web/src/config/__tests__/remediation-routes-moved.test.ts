@@ -1,5 +1,5 @@
 /**
- * The Remediation console (api/docs/rfcs/RFC-098-remediation-tasks.md): the
+ * The Remediation console (server/docs/rfcs/RFC-098-remediation-tasks.md): the
  * solution families page (/remediations) is removed and the campaign pages
  * moved to /remediation/campaigns, with no redirects (owner rule: no
  * redirects for renamed pages). No link, nav entry, test or e2e spec may

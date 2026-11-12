@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/templatefact"
+	"github.com/openctemio/openctem/server/pkg/domain/templatefact"
 )
 
 //go:embed web-fingerprints-core/*.yaml secret-rules-core/*.yaml template-facts-core/*.yaml

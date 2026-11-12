@@ -7,13 +7,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/app/aiknowledge"
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/api/pkg/apierror"
-	kdom "github.com/openctemio/openctem/api/pkg/domain/aiknowledge"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/aiknowledge"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	kdom "github.com/openctemio/openctem/server/pkg/domain/aiknowledge"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // AIKnowledgeHandler serves the knowledge organizations give their AI agents

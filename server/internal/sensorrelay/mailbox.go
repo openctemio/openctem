@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/sensorproto/relay"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/relay"
 )
 
 // errFull: a quota would be exceeded; the caller answers 429.

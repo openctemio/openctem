@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/querylang"
-	"github.com/openctemio/openctem/api/pkg/querylang/pgsql"
+	"github.com/openctemio/openctem/server/pkg/querylang"
+	"github.com/openctemio/openctem/server/pkg/querylang/pgsql"
 )
 
 func compile(t *testing.T, src string, pr querylang.Principal) *querylang.Plan {

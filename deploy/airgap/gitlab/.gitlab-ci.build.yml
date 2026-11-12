@@ -1,6 +1,6 @@
 # GitLab CI: build the OpenCTEM images from the release ARCHIVES (no source
 # code), scan them, sign them with YOUR key and push them to your registry.
-# Guide: api/docs/deployment/air-gapped.md ("Build images from the release
+# Guide: server/docs/deployment/air-gapped.md ("Build images from the release
 # archives").
 #
 # fetch (assets + signed checksums verified) -> build (kaniko, rootless, one

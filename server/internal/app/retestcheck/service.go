@@ -19,13 +19,13 @@ import (
 	"strings"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	auditdom "github.com/openctemio/openctem/api/pkg/domain/audit"
-	dom "github.com/openctemio/openctem/api/pkg/domain/retestcheck"
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	dom "github.com/openctemio/openctem/server/pkg/domain/retestcheck"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // templateTag marks the library templates created for a retest check.

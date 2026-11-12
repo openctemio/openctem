@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
+	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
 )
 
 // The dispatch report reaches the API both from a freshly built run context

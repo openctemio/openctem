@@ -13,12 +13,12 @@ import (
 	"errors"
 	"testing"
 
-	retestapp "github.com/openctemio/openctem/api/internal/app/retest"
-	"github.com/openctemio/openctem/api/internal/app/validation"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	retestdom "github.com/openctemio/openctem/api/pkg/domain/retest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	"github.com/openctemio/openctem/server/internal/app/validation"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 func (fx *fixture) newTypedAsset(name, typ string) shared.ID {

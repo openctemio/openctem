@@ -7,10 +7,10 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	dom "github.com/openctemio/openctem/api/pkg/domain/importmapping"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	appimportmapping "github.com/openctemio/openctem/server/internal/app/importmapping"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	dom "github.com/openctemio/openctem/server/pkg/domain/importmapping"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 func resolvedCSV(t *testing.T) *appimportmapping.Resolved {

@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/ticketing"
-	"github.com/openctemio/openctem/api/pkg/domain/remediation"
-	ticketmapdom "github.com/openctemio/openctem/api/pkg/domain/ticketmap"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/weblink"
+	"github.com/openctemio/openctem/server/internal/app/ticketing"
+	"github.com/openctemio/openctem/server/pkg/domain/remediation"
+	ticketmapdom "github.com/openctemio/openctem/server/pkg/domain/ticketmap"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/weblink"
 )
 
 // AssetInfo is what a finding's mapping may show about its asset.

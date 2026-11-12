@@ -11,10 +11,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	ccdom "github.com/openctemio/openctem/api/pkg/domain/compliancecheck"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	ccdom "github.com/openctemio/openctem/server/pkg/domain/compliancecheck"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 // ErrNotConfigured: the service has no reader or no data scope enforcer.

@@ -3,7 +3,7 @@ package scope
 import (
 	"testing"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 )
 
 // A batch's expiry and tier reach every item's CreateTarget input, so the

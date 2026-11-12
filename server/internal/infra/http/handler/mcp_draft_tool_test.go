@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/compliance"
-	pentestdom "github.com/openctemio/openctem/api/pkg/domain/pentest"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/internal/app/compliance"
+	pentestdom "github.com/openctemio/openctem/server/pkg/domain/pentest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 )
 
 // draft_pentest_finding: who may draft, what is checked before anything is

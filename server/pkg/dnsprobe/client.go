@@ -32,7 +32,7 @@ import (
 	"golang.org/x/net/dns/dnsmessage"
 	"golang.org/x/time/rate"
 
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // RCode is a DNS response code.

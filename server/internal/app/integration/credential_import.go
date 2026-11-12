@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
-	"github.com/openctemio/openctem/api/internal/app/datascope"
-	exposureapp "github.com/openctemio/openctem/api/internal/app/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/credential"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/logger"
-	"github.com/openctemio/openctem/api/pkg/pagination"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+	exposureapp "github.com/openctemio/openctem/server/internal/app/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/credential"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
 const csvBoolTrue = "true"

@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	scopeapp "github.com/openctemio/openctem/api/internal/app/scope"
-	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
-	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	assetdom "github.com/openctemio/openctem/server/pkg/domain/asset"
+	exposuredom "github.com/openctemio/openctem/server/pkg/domain/exposure"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // fakeExclusionRepo serves ListActive only; anything else panics.

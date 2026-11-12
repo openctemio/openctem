@@ -5,10 +5,10 @@ import (
 	"errors"
 	"net/http"
 
-	appjira "github.com/openctemio/openctem/api/internal/app/jira"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/ticketmap"
-	"github.com/openctemio/openctem/api/pkg/httpsec"
+	appjira "github.com/openctemio/openctem/server/internal/app/jira"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/ticketmap"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // The capabilities the mapping-profile engine needs, on the same adapter.

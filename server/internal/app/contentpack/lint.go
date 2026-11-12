@@ -11,10 +11,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/openctemio/openctem/api/internal/app/template"
-	dom "github.com/openctemio/openctem/api/pkg/domain/contentpack"
-	"github.com/openctemio/openctem/api/pkg/domain/evidence"
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/internal/app/template"
+	dom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/domain/evidence"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
 )
 
 // Wordlist limits.

@@ -3,12 +3,12 @@ package server
 import (
 	"context"
 
-	"github.com/openctemio/openctem/api/internal/app/refingerprint"
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
-	"github.com/openctemio/openctem/api/internal/tools/refingerprintcmd"
-	"github.com/openctemio/openctem/api/internal/tools/toolaudit"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/app/refingerprint"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/tools/refingerprintcmd"
+	"github.com/openctemio/openctem/server/internal/tools/toolaudit"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // runFindingRekeyOnStart re-keys stored findings to the current identity

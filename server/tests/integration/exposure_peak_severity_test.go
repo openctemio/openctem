@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	exposureapp "github.com/openctemio/openctem/api/internal/app/exposure"
-	"github.com/openctemio/openctem/api/pkg/domain/exposure"
+	exposureapp "github.com/openctemio/openctem/server/internal/app/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
 )
 
 // The two-approver rule of a high or critical exposure is decided on the

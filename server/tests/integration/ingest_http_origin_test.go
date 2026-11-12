@@ -8,8 +8,8 @@ import (
 
 	"github.com/openctemio/ctis/v2"
 
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // An HTTP probe report, exactly as the recon converter writes it, creates one

@@ -17,8 +17,8 @@ import (
 	"github.com/openctemio/ctis/v2/importer"
 	"github.com/openctemio/ctis/v2/importer/mapping"
 
-	_ "github.com/openctemio/openctem/api/internal/app/ctisformats" // the standard-format adapters of importer.Parse
-	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
+	_ "github.com/openctemio/openctem/server/internal/app/ctisformats" // the standard-format adapters of importer.Parse
+	appimportmapping "github.com/openctemio/openctem/server/internal/app/importmapping"
 )
 
 // Upload is one uploaded file: an export of another tool or a ZIP of them.

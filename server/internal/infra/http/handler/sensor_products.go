@@ -1,7 +1,7 @@
 package handler
 
 // The sensor product catalog as the Sensors page sees it (versions.yaml,
-// api/docs/rfcs/RFC-037 §11): the products whose install snippets the
+// server/docs/rfcs/RFC-037 §11): the products whose install snippets the
 // platform renders and whose release lines it judges sensors against. The
 // latest release of a built-in product is resolved on every request, so a
 // release learned from the release feed (RFC-037 §12) applies without a
@@ -10,8 +10,8 @@ package handler
 import (
 	"regexp"
 
-	"github.com/openctemio/openctem/api/internal/versions"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // SensorInstallProduct is one catalog product as the handler uses it.

@@ -1,4 +1,4 @@
-# Reviewed exceptions to the authorization matrix (api/tests/authzmatrix).
+# Reviewed exceptions to the authorization matrix (server/tests/authzmatrix).
 # One per line, six TAB-separated columns:
 #   method  path-template  principal-glob  variant(own|cross|oos|*)  status  reason
 # status: "expected" (intended behaviour, explained in the reason) or

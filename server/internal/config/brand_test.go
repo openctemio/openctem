@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/brand"
+	"github.com/openctemio/openctem/server/pkg/brand"
 )
 
 func TestLoadBrandDefaults(t *testing.T) {

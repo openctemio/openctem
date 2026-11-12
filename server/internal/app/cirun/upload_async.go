@@ -25,14 +25,14 @@ import (
 	"github.com/openctemio/ctis/v2"
 	"github.com/openctemio/ctis/v2/importer"
 
-	"github.com/openctemio/openctem/api/internal/app/findingimport"
-	appimportmapping "github.com/openctemio/openctem/api/internal/app/importmapping"
-	"github.com/openctemio/openctem/api/internal/app/ingest"
-	"github.com/openctemio/openctem/api/internal/app/ingestqueue"
-	"github.com/openctemio/openctem/api/pkg/domain/cirun"
-	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
+	"github.com/openctemio/openctem/server/internal/app/findingimport"
+	appimportmapping "github.com/openctemio/openctem/server/internal/app/importmapping"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 // UploadQueue is the ingest queue (ingestqueue.Queue).

@@ -8,15 +8,15 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	appcompliance "github.com/openctemio/openctem/api/internal/app/compliance"
-	"github.com/openctemio/openctem/api/internal/app/finding"
-	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
-	moduledom "github.com/openctemio/openctem/api/pkg/domain/module"
-	"github.com/openctemio/openctem/api/pkg/domain/permission"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
-	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
-	"github.com/openctemio/openctem/api/pkg/safetext"
-	"github.com/openctemio/openctem/api/pkg/weblink"
+	appcompliance "github.com/openctemio/openctem/server/internal/app/compliance"
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/safetext"
+	"github.com/openctemio/openctem/server/pkg/weblink"
 )
 
 // Proposal tools (docs/rfcs/RFC-062-mcp-authorization.md, "Proposal tools").

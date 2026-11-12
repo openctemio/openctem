@@ -35,7 +35,7 @@ func createsCommands(src []byte) bool {
 }
 
 func TestEveryCommandProducerIsGated(t *testing.T) {
-	root := filepath.Join("..", "..", "..") // api/
+	root := filepath.Join("..", "..", "..") // server/
 	var found []string
 	for _, dir := range []string{"internal", "pkg"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {

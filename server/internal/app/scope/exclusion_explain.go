@@ -7,9 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	scopedom "github.com/openctemio/openctem/api/pkg/domain/scope"
-	"github.com/openctemio/openctem/api/pkg/domain/scope/ipset"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/scope/ipset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // maxRulesPerTarget bounds the exclusions named for one range target.

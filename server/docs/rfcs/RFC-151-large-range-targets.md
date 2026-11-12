@@ -92,7 +92,7 @@ the validator, not of the dispatch.
    explicitly; no MCP tool creates scans.
 10. **One validator contract.** The bound and its refusal text are shared by
     the API validator and the web format check through
-    `api/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
+    `server/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
     The file also states which ranges are internal (scanned only inside a
     scan zone): a range is internal when it overlaps a private, link-local or
     loopback block at all, so `172.0.0.0/8` (holding `172.16.0.0/12`) needs a
@@ -103,7 +103,7 @@ the validator, not of the dispatch.
 
 ## 3. Measured
 
-`BenchmarkLargeRangeSplit` (api/internal/app/scan): a /8 cut around 100
+`BenchmarkLargeRangeSplit` (server/internal/app/scan): a /8 cut around 100
 scattered single-address exclusions is 1,756 prefixes in about 21 ms and
 1.2 MB per dispatch (no per-address work). Without exclusions a /8 is 256
 prefixes. With the 10 targets per job New scan sets, 1,756 prefixes are 176

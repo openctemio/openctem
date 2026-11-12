@@ -5,7 +5,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // The e-mail list of a CI admin alert is the tenant's active owners and

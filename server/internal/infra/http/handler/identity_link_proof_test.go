@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/app/auth"
 )
 
 // The proof travels in the body as step_up; an empty body is no proof (the

@@ -27,11 +27,11 @@ import (
 	"strings"
 	"time"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/scanident"
-	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/scanident"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // ProgramRuleSource answers the rules a job on targets carries

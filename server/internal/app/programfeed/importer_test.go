@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Bundles written and signed by the collector (openctemio/programfeed).

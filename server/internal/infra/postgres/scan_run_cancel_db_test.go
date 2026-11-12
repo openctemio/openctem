@@ -8,9 +8,9 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Canceling a run reaches the sensors (RFC-046 §8): its open step runs and

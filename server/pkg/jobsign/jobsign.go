@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
 )
 
 // PayloadType is the DSSE payload type of a signed job.

@@ -1,6 +1,6 @@
 package audit
 
-// "Rebuild dashboard data" (api/docs/architecture/dashboards.md, "Facts
+// "Rebuild dashboard data" (server/docs/architecture/dashboards.md, "Facts
 // maintainer"): recomputes the organization's derived dashboard facts.
 
 const (

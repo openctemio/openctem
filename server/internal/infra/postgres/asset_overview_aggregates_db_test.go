@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 )
 
 // The overview's per-type breakdown and average risk score count the same

@@ -10,7 +10,7 @@ runs through it, the analyst worker.
 
 ## Schemas
 
-In `api/pkg/sensorproto/analyze/schemas/`, embedded in the API and readable with
+In `server/pkg/sensorproto/analyze/schemas/`, embedded in the API and readable with
 `analyze.SchemaJSON(id)`:
 
 | File | `$id` |
@@ -50,4 +50,4 @@ refuse), `analyze.Validate(schemaID, doc)`, `analyze.LookupKind(name)`.
 
 ## Key files
 
-- `api/pkg/sensorproto/analyze/` (schemas, types, validator, test vectors)
+- `server/pkg/sensorproto/analyze/` (schemas, types, validator, test vectors)

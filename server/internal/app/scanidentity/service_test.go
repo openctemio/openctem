@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/app/consolesetting"
-	cst "github.com/openctemio/openctem/api/internal/app/consolesetting/consolesettingtest"
-	"github.com/openctemio/openctem/api/pkg/domain/platformsetting"
-	"github.com/openctemio/openctem/api/pkg/domain/scanident"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
+	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
+	"github.com/openctemio/openctem/server/pkg/domain/scanident"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 var layer = scanident.PlatformLayer{UserAgent: " openctem-scanner ", Headers: []scanident.Header{

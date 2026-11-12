@@ -17,8 +17,8 @@ import (
 
 	"github.com/openctemio/contract/secretref"
 
-	commanddom "github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PayloadKeySecrets is the payload member of a job's secret refs.

@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/openctemio/openctem/api/pkg/domain/attribution"
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Scope effects (research/320) on the real schema: a permanent not_ours or

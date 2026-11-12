@@ -567,7 +567,7 @@ per-plan defaults. The e-mail notification channel's own alerts are not yet subj
 
 Every link the platform sends to a console page names the organization it
 belongs to in the `org` query parameter, the organization ID
-(`api/pkg/weblink`). One rule covers every sender:
+(`server/pkg/weblink`). One rule covers every sender:
 
 - in-app notifications: `NotificationService.Notify` adds it to the stored
   (relative) link;
@@ -1080,7 +1080,7 @@ notices, domain managed) renders in one language per message. Supported:
   e-mail is already sent for. The address is looked up among accounts only
   (`auth.EmailLocaleResolver`); no search across organizations. A failed lookup
   is `en`; it never blocks or fails the send.
-- **Catalog.** `api/pkg/email/locales/{en,vi}.json` hold subjects, headings,
+- **Catalog.** `server/pkg/email/locales/{en,vi}.json` hold subjects, headings,
   paragraphs, buttons and footer lines, keyed identically; values are
   placeholders (`{0}`, `{1}`) filled in one pass. The HTML layout is shared by
   all languages. User-controlled values are template data: the HTML templates

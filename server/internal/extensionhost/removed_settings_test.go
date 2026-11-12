@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openctemio/openctem/api/internal/config"
-	ext "github.com/openctemio/openctem/api/pkg/extension"
+	"github.com/openctemio/openctem/server/internal/config"
+	ext "github.com/openctemio/openctem/server/pkg/extension"
 )
 
 func TestRemovedSettingsRefuseCommunity(t *testing.T) {

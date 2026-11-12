@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/apierror"
 )
 
 // Poll mode of GET /sensors (changed_since): the sensors page refreshes the

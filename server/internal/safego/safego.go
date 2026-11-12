@@ -18,8 +18,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/openctemio/openctem/api/internal/metrics"
-	"github.com/openctemio/openctem/api/pkg/logger"
+	"github.com/openctemio/openctem/server/internal/metrics"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // ErrPanic is wrapped by the error Run returns for a recovered panic.

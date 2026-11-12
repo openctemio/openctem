@@ -9,8 +9,8 @@ package postgres
 import (
 	"fmt"
 
-	"github.com/openctemio/openctem/api/pkg/domain/command"
-	"github.com/openctemio/openctem/api/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 )
 
 // SetStrongIsolationTools says which tools need strong isolation. Production

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
 )
 
 // Only platform sensors are counted, and stale or erroring ones count as

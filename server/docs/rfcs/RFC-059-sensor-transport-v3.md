@@ -5,7 +5,7 @@
 | Status | Accepted (owner 2026-10-08: "implement the gRPC support plan"; decisions T1–T14 delegated; revised by the owner 2026-10-11: no enable flag, bindings chosen automatically, T15; one port for every setup by ALPN routing, T16; the same without a gateway, T17) |
 | Authors | Platform team |
 | Related | RFC-026 (v2 results), RFC-029 (v2 control plane), RFC-030 (leases), RFC-032 (enrollment, identity), RFC-035 (doorbell), RFC-040 (mutual distrust), RFC-052 (pairing, key-bound sensors), RFC-055 (tool contract) |
-| Code | `api/proto/openctem/sensor/v3/sensor.proto`, `api/pkg/sensorproto/v3` (generated), `api/internal/infra/sensortransport` (server), sdk-go `pkg/client` (client) |
+| Code | `server/proto/openctem/sensor/v3/sensor.proto`, `server/pkg/sensorproto/v3` (generated), `server/internal/infra/sensortransport` (server), sdk-go `pkg/client` (client) |
 
 ## 1. Summary
 
@@ -59,7 +59,7 @@ mTLS the preferred path where the network allows it.
 
 | # | Decision |
 |---|---|
-| T1 | One proto, package `openctem.sensor.v3`, service `SensorService`, in `api/proto` (a buf module). Generated Go is committed in `api/pkg/sensorproto/v3`. CI: `buf lint` (STANDARD), `buf breaking` against the base branch (FILE), generated code current (`scripts/check-proto.sh`). A breaking change needs a new package. |
+| T1 | One proto, package `openctem.sensor.v3`, service `SensorService`, in `server/proto` (a buf module). Generated Go is committed in `server/pkg/sensorproto/v3`. CI: `buf lint` (STANDARD), `buf breaking` against the base branch (FILE), generated code current (`scripts/check-proto.sh`). A breaking change needs a new package. |
 | T2 | v3 binds the v2 resource model to RPCs: one RPC per v2 resource. The envelope is typed (ids, segment numbers, lease epochs, encodings, digests, entity tags, transport); documents whose schema another specification owns (heartbeat, commands, CTIS reports, manifest, config report, suppressions) travel as their JSON bytes, unchanged. The server serves each RPC by running it through the v2 handler chain in-process, so validation, limits, services and side effects are the same code, and one conformance suite covers both protocols. |
 | T3 | The control channel is a server stream (`Subscribe`) plus unary calls, on both bindings. A bidirectional stream does not work over HTTP/1.1, which the fallback must support; with server streaming both bindings have the same semantics. The stream carries the doorbell, never a job; jobs are claimed with `ClaimCommands`. |
 | T4 | Uploads are unary and resumable: `PutResult` sends a whole report or one segment, idempotent by report id + segment + Content-Digest (RFC-026); `GetResultStatus` tells what is missing after a disconnect. Logs are batched unary calls. Client streaming would not work over HTTP/1.1 and would add nothing to the exactly-once guarantee the segments already give. |

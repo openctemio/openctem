@@ -11,7 +11,7 @@ import (
 
 	"github.com/openctemio/contract/ctlookup"
 
-	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // testBodyCap is the largest answer httpSource reads from one test server.
