@@ -374,6 +374,12 @@ jobs:
       - name: Backend directory name (no tracked file names the old backend directory or module path)
         run: bash .github/scripts/check-backend-dir-name.sh
 
+      - name: generate-in-docker paths (self-test)
+        run: bash .github/scripts/check-generate-in-docker-paths.test.sh
+
+      - name: generate-in-docker reads paths that exist in the tree
+        run: bash .github/scripts/check-generate-in-docker-paths.sh
+
       - name: Tool pin freshness self-test
         run: bash .github/scripts/tool-pins.test.sh
 

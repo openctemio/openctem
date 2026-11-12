@@ -76,6 +76,12 @@ report "$OLD/ as a repository path is gone: the backend directory is $NEW/" \
   "(?<![$WORD])$OLD/(?=(?:$TOP))"
 report "./$OLD, ../$OLD and \$VAR/$OLD as a repository path are gone: use $NEW" \
   "(?:\.\.?|\\$\\{?[A-Za-z0-9_]+\\}?)/$OLD/(?=(?:$TOP))"
+# A checkout bind-mounted into a container (-v "$ROOT:/src"): /src/api is the old
+# directory in the mount, not a runtime path of an image (those are /app/api,
+# /opt/openctem/api, which stay).
+report "a checkout mount path (/src/$OLD, /workspace/$OLD, /repo/$OLD, /work/$OLD) is gone: use $NEW" \
+  "(?<![$WORD])/(?:src|workspace|repo|checkout|work|github/workspace)/$OLD(?![A-Za-z0-9_-])"
+
 report "-C $OLD, cd $OLD, working-directory: $OLD and context: $OLD are gone: use $NEW" \
   "(?<![\\w./-])(?:-C|cd|pushd)\\s+(?:\./)?$OLD(?![\\w/-])|working-directory:\\s*(?:\./)?$OLD\\s*\$|\\b(?:context|working-directory|path|dir):\\s*(?:\./)?$OLD\\s*[,}]"
 

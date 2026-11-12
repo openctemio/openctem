@@ -60,4 +60,8 @@ expect pass "merged migration keeps its text" server/migrations/000001_x.up.sql 
 expect fail "find argument"                   x.sh   "x=\"\$(find api -name '*.go' -print -quit)\""
 expect fail "a tracked file under api/"       api/x.txt 'hello'
 
+expect fail "checkout mounted in a container (/src/api)" x.sh   'OPENAPI_SPEC=/src/api/api/openapi/swagger.yaml bash gen.sh'
+expect fail "checkout mounted at /workspace"  x.sh   'cat /workspace/api/go.mod'
+expect pass "runtime spec path inside an image" x.sh 'COPY --from=api /app/api/openapi/swagger.yaml /opt/openctem/api/api/openapi/swagger.yaml'
+expect pass "new mount path"                  x.sh   'OPENAPI_SPEC=/src/server/api/openapi/swagger.yaml bash gen.sh'
 echo "all check-backend-dir-name tests passed"

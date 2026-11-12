@@ -279,6 +279,20 @@ not own, and its log prints that command. The certificates, the internal CA
 (and so the root sensors trust) and the ACME account are kept: only their
 owner changes.
 
+### Source-checkout installs: the gateway directory moved
+
+The backend directory was renamed from `api/` to `server/`, so the gateway
+configuration a source-checkout install bind-mounts is now
+`server/deploy/gateway` (it was `api/deploy/gateway`). If your Compose file or <!-- rename-guard: allow -->
+override mounts that directory (for example the Caddyfile, `servers.common` or
+the entrypoint), change the host path, then **recreate** the gateway container
+(`docker compose up -d --force-recreate gateway`). Do not apply the change with
+`docker exec ... caddy reload`: a reload skips the entrypoint, which derives
+the gateway's settings (planes, TLS mode, sensor routing) from the environment
+at start, so the running gateway would keep the old derived settings. Installs
+that use the released `openctem-gateway` image or the supplied
+`server/deploy/docker-compose.yml` need no change.
+
 ## Make targets
 
 ```bash
