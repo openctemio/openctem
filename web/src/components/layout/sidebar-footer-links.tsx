@@ -27,8 +27,18 @@ import { DOCS_URL } from '@/lib/docs-links'
 import type { ShortcutShell } from '@/config/keyboard-shortcuts'
 import { NAV_BUTTON_CLASS } from './nav-group'
 import { SidebarViewSwitch } from './sidebar-nav-view'
-import { KeyboardShortcutsDialog } from './keyboard-shortcuts-dialog'
-import { AboutDialog } from './about-dialog'
+import dynamic from 'next/dynamic'
+import { useOpenedOnce } from '@/hooks/use-opened-once'
+
+// Both dialogs open from the Help menu: their code loads on first open, not
+// with every page (the shell is in every route's first-load JS).
+const KeyboardShortcutsDialog = dynamic(
+  () => import('./keyboard-shortcuts-dialog').then((m) => m.KeyboardShortcutsDialog),
+  { ssr: false }
+)
+const AboutDialog = dynamic(() => import('./about-dialog').then((m) => m.AboutDialog), {
+  ssr: false,
+})
 
 interface SidebarFooterLinksProps {
   /** Which shell this is: picks the shortcuts the Help dialog lists. */
@@ -92,6 +102,8 @@ function HelpMenu({ shell }: { shell: ShortcutShell }) {
   const { isMobile } = useSidebar()
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const shortcutsEverOpened = useOpenedOnce(shortcutsOpen)
+  const aboutEverOpened = useOpenedOnce(aboutOpen)
   const label = t('help.menu', 'Help')
   const newTab = t('help.opensInNewTab', '(opens in a new tab)')
 
@@ -145,8 +157,16 @@ function HelpMenu({ shell }: { shell: ShortcutShell }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} shell={shell} />
-      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} shell={shell} />
+      {shortcutsEverOpened && (
+        <KeyboardShortcutsDialog
+          open={shortcutsOpen}
+          onOpenChange={setShortcutsOpen}
+          shell={shell}
+        />
+      )}
+      {aboutEverOpened && (
+        <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} shell={shell} />
+      )}
     </>
   )
 }

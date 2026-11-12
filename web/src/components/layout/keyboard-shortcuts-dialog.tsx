@@ -1,6 +1,5 @@
 'use client'
 
-import { Fragment, useSyncExternalStore } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,55 +8,14 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
+import { ShortcutKeys } from './shortcut-keys'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   KEYBOARD_SHORTCUT_GROUPS,
   shortcutsForShell,
   type KeyboardShortcut,
-  type ShortcutKey,
   type ShortcutShell,
 } from '@/config/keyboard-shortcuts'
-
-const subscribeNoop = () => () => {}
-
-/** macOS / iOS show Cmd and the Shift glyph; everything else Ctrl and Shift. */
-function useIsApple(): boolean {
-  return useSyncExternalStore(
-    subscribeNoop,
-    () => /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent),
-    () => false
-  )
-}
-
-function keyLabel(key: ShortcutKey, apple: boolean): string {
-  if (key === 'mod') return apple ? '⌘' : 'Ctrl'
-  if (key === 'shift') return apple ? '⇧' : 'Shift'
-  if (key === 'esc') return 'Esc'
-  return key
-}
-
-/** One key cap, the same look as the ⌘K hint on the search button. */
-function Kbd({ children }: { children: string }) {
-  return (
-    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded border bg-muted px-1.5 font-sans text-xs font-medium text-muted-foreground">
-      {children}
-    </kbd>
-  )
-}
-
-export function ShortcutKeys({ keys }: { keys: ShortcutKey[] }) {
-  const apple = useIsApple()
-  return (
-    <span className="flex shrink-0 items-center gap-1" dir="ltr">
-      {keys.map((k, i) => (
-        <Fragment key={k}>
-          {i > 0 && !apple && <span className="text-xs text-muted-foreground">+</span>}
-          <Kbd>{keyLabel(k, apple)}</Kbd>
-        </Fragment>
-      ))}
-    </span>
-  )
-}
 
 interface KeyboardShortcutsDialogProps {
   open: boolean

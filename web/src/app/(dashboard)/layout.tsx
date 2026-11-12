@@ -17,10 +17,9 @@ import { StepUpDialogHost } from '@/components/step-up-dialog'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
+import { LazyAccountShell, LazyPendingLinkPrompt } from '@/components/layout/lazy-shell-branches'
 import { ShellBannerSlot } from '@/components/layout/shell-banner-slot'
-import { PendingLinkPrompt } from '@/features/account/components/pending-link-prompt'
 import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
-import { AccountShell } from '@/features/account/components/account-shell'
 import { OwnershipInvitationBanner } from '@/features/account/components/ownership-invitation-banner'
 import { env } from '@/lib/env'
 
@@ -41,7 +40,7 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
   const accountOnly =
     !!cookieStore.get(env.cookies.accountOnly)?.value && !cookieStore.get(env.cookies.tenant)?.value
   if (accountOnly) {
-    return <AccountShell>{children}</AccountShell>
+    return <LazyAccountShell>{children}</LazyAccountShell>
   }
   return (
     <DashboardProviders>
@@ -103,7 +102,7 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
           </TenantGate>
           {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}
           <StepUpDialogHost />
-          {hasPendingLink && <PendingLinkPrompt />}
+          {hasPendingLink && <LazyPendingLinkPrompt />}
           <SettingsAnchorHighlighter />
         </LayoutProvider>
       </SearchProvider>
