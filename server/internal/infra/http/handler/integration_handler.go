@@ -776,21 +776,17 @@ func (h *IntegrationHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	intg, err := h.service.GetIntegration(r.Context(), id)
+	// The service reads the integration inside the caller's organization:
+	// another organization's id is not found.
+	intg, err := h.service.GetIntegration(r.Context(), tenantID, id)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
 	}
 
-	// Verify tenant ownership
-	if intg.TenantID().String() != tenantID {
-		apierror.NotFound("Integration").WriteJSON(w)
-		return
-	}
-
 	// If it's an SCM integration, get the full details with extension
 	if intg.IsSCM() {
-		iws, err := h.service.GetIntegrationWithSCM(r.Context(), id)
+		iws, err := h.service.GetIntegrationWithSCM(r.Context(), tenantID, id)
 		if err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
@@ -863,7 +859,7 @@ func (h *IntegrationHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var before any
-	if prev, gerr := h.service.GetIntegration(r.Context(), id); gerr == nil && prev.TenantID().String() == tenantID {
+	if prev, gerr := h.service.GetIntegration(r.Context(), tenantID, id); gerr == nil {
 		before = toIntegrationResponse(prev)
 	}
 
@@ -909,7 +905,7 @@ func (h *IntegrationHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var before IntegrationResponse
-	if prev, gerr := h.service.GetIntegration(r.Context(), id); gerr == nil && prev.TenantID().String() == tenantID {
+	if prev, gerr := h.service.GetIntegration(r.Context(), tenantID, id); gerr == nil {
 		before = toIntegrationResponse(prev)
 	}
 
@@ -1996,8 +1992,8 @@ func (h *IntegrationHandler) RotateGitHubWebhookSecret(w http.ResponseWriter, r 
 // integrations:manage. A missing or other-tenant integration passes through:
 // the service answers it as not found, in the tenant scope.
 func (h *IntegrationHandler) allowSCMChange(w http.ResponseWriter, r *http.Request, id, tenantID string, perm permission.Permission) bool {
-	intg, err := h.service.GetIntegration(r.Context(), id)
-	if err != nil || intg.TenantID().String() != tenantID || !intg.IsSCM() {
+	intg, err := h.service.GetIntegration(r.Context(), tenantID, id)
+	if err != nil || !intg.IsSCM() {
 		return true
 	}
 	if middleware.HasPermission(r.Context(), perm.String()) {

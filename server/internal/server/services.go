@@ -572,6 +572,9 @@ type wsChannelAccess struct {
 // pentestChannelChecker is *finding.VulnerabilityService.
 type pentestChannelChecker interface {
 	PentestChannelAccess(ctx context.Context, tenantID, userID, findingID shared.ID) (pentestFinding, allowed bool)
+	// FindingInTenant: the finding exists in the tenant (the data scope of an
+	// owner or administrator checks no row, so existence is asked here).
+	FindingInTenant(ctx context.Context, tenantID, findingID shared.ID) bool
 }
 
 // CanSeeFinding applies the Layer 2 data scope to finding and triage
@@ -588,6 +591,10 @@ func (a wsChannelAccess) CanSeeFinding(ctx context.Context, tenantID, userID, fi
 	fid, err := shared.IDFromString(findingID)
 	if err != nil {
 		return false, err // not a finding id: refuse the subscription
+	}
+	// A finding of another organization, or none, is refused to everyone.
+	if a.pentest != nil && !a.pentest.FindingInTenant(ctx, tid, fid) {
+		return false, nil
 	}
 	// A pentest finding is governed by its campaign: the team subscribes,
 	// a client never does (the channel carries team-only comments).

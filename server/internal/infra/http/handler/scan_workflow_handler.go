@@ -1292,7 +1292,7 @@ func (h *ScanWorkflowHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 	runID := chi.URLParam(r, "id")
 
 	// Read by the caller's tenant: another tenant's run is not found.
-	run, err := h.service.GetRunWithStepsForTenant(r.Context(), tenantID, runID)
+	run, err := h.service.GetRunWithSteps(r.Context(), tenantID, runID)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

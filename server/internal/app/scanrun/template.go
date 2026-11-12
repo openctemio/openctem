@@ -187,14 +187,32 @@ func (s *Service) GetTemplate(ctx context.Context, tenantID, templateID string) 
 	return nil, err
 }
 
-// GetTemplateWithSteps retrieves a template with its steps.
-func (s *Service) GetTemplateWithSteps(ctx context.Context, templateID string) (*scanworkflow.Workflow, error) {
+// GetTemplateWithSteps retrieves a template with its steps for tenantID: one
+// of the tenant's own workflows or a system workflow (shared, read-only).
+// Another tenant's private workflow is not found: the tenant is part of the
+// signature, so a caller cannot read a workflow by its id alone.
+func (s *Service) GetTemplateWithSteps(ctx context.Context, tenantID, templateID string) (*scanworkflow.Workflow, error) {
 	pid, err := shared.IDFromString(templateID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid template id", shared.ErrValidation)
 	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
 
-	return s.templateRepo.GetWithSteps(ctx, pid)
+	w, err := s.templateRepo.GetWithSteps(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	if !w.IsSystemTemplate && w.TenantID != tid {
+		s.logger.Warn("SECURITY: cross-tenant scan workflow read attempt",
+			"template_id", w.ID.String(),
+			"template_tenant_id", w.TenantID.String(),
+			"caller_tenant_id", tenantID)
+		return nil, shared.ErrNotFound
+	}
+	return w, nil
 }
 
 // ListTemplatesInput represents the input for listing templates.
@@ -423,16 +441,11 @@ func (s *Service) CloneTemplate(ctx context.Context, input CloneTemplateInput) (
 	s.logger.Info("cloning scan workflow", "template_id", sanitizeLogValue(input.TemplateID), "new_name", sanitizeLogValue(input.NewName))
 
 	// Get the original template with steps
-	original, err := s.GetTemplateWithSteps(ctx, input.TemplateID)
+	// System templates can be cloned by any tenant; a non-system template only
+	// by the owning tenant (GetTemplateWithSteps answers not found otherwise).
+	original, err := s.GetTemplateWithSteps(ctx, input.TenantID, input.TemplateID)
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify tenant access:
-	// - System templates can be cloned by any tenant
-	// - Non-system templates can only be cloned by the owning tenant
-	if !original.IsSystemTemplate && original.TenantID.String() != input.TenantID {
-		return nil, shared.ErrNotFound
 	}
 
 	tenantID, err := shared.IDFromString(input.TenantID)

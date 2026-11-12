@@ -32,7 +32,7 @@ type RunMap struct {
 // shared.ErrNotFound. scope (nil: unrestricted) limits the output counts to
 // assets the caller may see.
 func (s *Service) GetRunMap(ctx context.Context, tenantID, runID string, scope *shared.DataScope) (*RunMap, error) {
-	run, err := s.GetRunWithStepsForTenant(ctx, tenantID, runID)
+	run, err := s.GetRunWithSteps(ctx, tenantID, runID)
 	if err != nil {
 		return nil, err
 	}
