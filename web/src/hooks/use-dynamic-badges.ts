@@ -11,7 +11,8 @@
 'use client'
 
 import { useMemo } from 'react'
-import useSWR, { mutate as globalMutate } from 'swr'
+import useSWR from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { get } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 import { useBootstrapPending } from '@/context/bootstrap-provider'

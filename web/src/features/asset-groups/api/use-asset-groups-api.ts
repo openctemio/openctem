@@ -431,7 +431,7 @@ export function useBulkDeleteAssetGroupsApi() {
  * Invalidate asset groups cache
  */
 export async function invalidateAssetGroupsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/asset-groups'), undefined, {
     revalidate: true,
   })
@@ -441,7 +441,7 @@ export async function invalidateAssetGroupsCache() {
  * Invalidate a specific asset group cache
  */
 export async function invalidateAssetGroupCache(groupId: string) {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes(`/asset-groups/${groupId}`),
     undefined,

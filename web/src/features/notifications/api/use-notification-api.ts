@@ -236,7 +236,7 @@ export async function updateNotificationPreferences(
  * Invalidate all notification caches (list + unread count)
  */
 export async function invalidateNotificationsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) =>
       typeof key === 'string' &&
@@ -251,7 +251,7 @@ export async function invalidateNotificationsCache() {
  * Invalidate unread count cache only
  */
 export async function invalidateUnreadCountCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/notifications/unread-count'),
     undefined,
@@ -263,7 +263,7 @@ export async function invalidateUnreadCountCache() {
  * Invalidate notification preferences cache
  */
 export async function invalidatePreferencesCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/notifications/preferences'),
     undefined,

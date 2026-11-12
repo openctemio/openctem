@@ -237,7 +237,7 @@ export function useDownloadScannerTemplate(templateId: string) {
  * Invalidate scanner templates cache
  */
 export async function invalidateScannerTemplatesCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/scanner-templates'),
     undefined,

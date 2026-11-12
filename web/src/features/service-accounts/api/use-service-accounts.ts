@@ -6,7 +6,8 @@
 
 'use client'
 
-import useSWR, { mutate as globalMutate } from 'swr'
+import useSWR from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import useSWRMutation from 'swr/mutation'
 import { get, post, del } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'

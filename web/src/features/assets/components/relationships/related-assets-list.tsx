@@ -17,7 +17,7 @@
 
 import * as React from 'react'
 import { ChevronDown, ChevronRight, Lock, MoreHorizontal, Network } from 'lucide-react'
-import { mutate as globalMutate } from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'

@@ -255,7 +255,7 @@ export function useDeleteSlaPolicy() {
 
 /** Revalidate every SLA-policy SWR key after a mutation. */
 export async function invalidateSlaPoliciesCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/sla-policies'), undefined, {
     revalidate: true,
   })

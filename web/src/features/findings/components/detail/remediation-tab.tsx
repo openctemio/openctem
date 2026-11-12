@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { useState, useMemo, useCallback } from 'react'
 import { toast } from 'sonner'
-import { mutate as globalMutate } from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { copyToClipboard } from '@/lib/clipboard'
 import { usePermissions } from '@/context/permission-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'

@@ -16,7 +16,7 @@ import { findingLocation } from '../lib/finding-location'
 import { useTranslation } from '@/context/i18n-provider'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { mutate } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import { Loader2, Search } from 'lucide-react'
 import {
   Dialog,

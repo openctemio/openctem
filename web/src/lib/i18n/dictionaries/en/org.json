@@ -835,6 +835,8 @@
   "org.switch": "Switch organization",
   "org.switchFailed": "Could not switch organization",
   "org.switched": "Switched to {name}",
+  "org.switchedElsewhere": "Another tab switched to {name}. This tab shows it now.",
+  "org.switching": "Switching organization…",
   "org.teamAccess.allAssets": "All assets",
   "org.teamAccess.allAssetsHint": "Every asset in the organization. People outside your organization and service accounts cannot join such a team.",
   "org.teamAccess.allAssetsOwnerOnly": "Every asset in the organization. Only an owner can choose this.",

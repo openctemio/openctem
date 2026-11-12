@@ -17,7 +17,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { mutate as globalMutate } from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { Target, ClipboardCheck, Wrench, ListChecks, Pencil, Save, X, Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
