@@ -112,8 +112,12 @@ func (s *Service) withPolicyPorts(ctx context.Context, sensorID string, cmds []*
 	return cmds, nil
 }
 
-// payloadKeyConfig is the payload member of a job's tool settings.
-const payloadKeyConfig = "config"
+// payloadKeyConfig and payloadKeyScannerConfig are the payload members of a
+// job's tool settings.
+const (
+	payloadKeyConfig        = "config"
+	payloadKeyScannerConfig = "scanner_config"
+)
 
 // withPorts sets config.ports to ports and removes the top-N settings of
 // config and scanner_config, which the ports replace.
@@ -122,7 +126,7 @@ func withPorts(payload json.RawMessage, ports string) (json.RawMessage, error) {
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return nil, err
 	}
-	for _, k := range []string{payloadKeyConfig, "scanner_config"} {
+	for _, k := range []string{payloadKeyConfig, payloadKeyScannerConfig} {
 		raw, ok := p[k]
 		if !ok && k != payloadKeyConfig {
 			continue
