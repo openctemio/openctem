@@ -72,7 +72,7 @@ export function AssetNextSteps({ assetId }: { assetId: string }) {
           {leads.slice(0, NEXT_STEPS_LIMIT).map((l) => (
             <li key={l.id} className="min-w-0 space-y-0.5">
               <Link
-                href={`${explorationHref(assetId)}&lead=${encodeURIComponent(l.id)}`}
+                href={explorationHref(assetId, l.id)}
                 className="break-words font-medium hover:underline"
               >
                 {leadQuestion(t, l.type)}

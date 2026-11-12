@@ -132,6 +132,8 @@ describe('requests and links', () => {
     )
     expect(leadsUrl({ group: 'done', before: '2026-11-01T00:00:00Z' })).toContain('before=')
     expect(explorationHref('a1')).toBe('/exploration?asset=a1')
+    expect(explorationHref('a1', 'l 2')).toBe('/exploration?asset=a1&lead=l+2')
+    expect(explorationHref(undefined, 'l2')).toBe('/exploration?lead=l2')
     expect(isLeadGroup('next')).toBe(true)
     expect(isLeadGroup('all')).toBe(false)
   })
