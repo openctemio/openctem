@@ -1,0 +1,33 @@
+{
+  "time": 0,
+  "sourcetype": "openctem:notification",
+  "source": "openctem.io",
+  "event": {
+    "event_type": "new_exposure",
+    "title": "New exposure",
+    "body": "Severity: High\nAsset: admin.example.com (subdomain)\nWhat: Admin panel reachable on port 8443 (web interface exposed)\nWhy it matters: An admin or login page is reachable from the internet\nNext step: Restrict access to the interface, or confirm it is meant to be public.\nOrganization: Example Corp",
+    "severity": "high",
+    "url": "https://ctem.example.com/exposures",
+    "source": "openctem.io",
+    "notification": {
+      "schema": "openctem.notification/v1",
+      "detail_level": "standard",
+      "locale": "en",
+      "headline": "New exposure",
+      "severity": "high",
+      "organization": "Example Corp",
+      "subject": {
+        "name": "admin.example.com",
+        "type": "subdomain"
+      },
+      "what": "Admin panel reachable on port 8443 (web interface exposed)",
+      "why": "An admin or login page is reachable from the internet",
+      "next_step": "Restrict access to the interface, or confirm it is meant to be public.",
+      "text": "Severity: High\nAsset: admin.example.com (subdomain)\nWhat: Admin panel reachable on port 8443 (web interface exposed)\nWhy it matters: An admin or login page is reachable from the internet\nNext step: Restrict access to the interface, or confirm it is meant to be public.\nOrganization: Example Corp",
+      "action": {
+        "label": "Open exposure",
+        "url": "https://ctem.example.com/exposures"
+      }
+    }
+  }
+}

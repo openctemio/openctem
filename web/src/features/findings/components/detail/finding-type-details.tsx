@@ -11,7 +11,7 @@
  * a type the finding is not.
  */
 
-import { Globe, KeyRound, Package, ScrollText, Settings2, Wallet } from 'lucide-react'
+import { Globe, KeyRound, Package, Settings2, Wallet } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -21,6 +21,8 @@ import {
 } from '@/features/shared/components/detail-sheet'
 import { cn } from '@/lib/utils'
 import type { FindingDetail } from '../../types'
+import { complianceCheckOf } from '../../lib/compliance-check'
+import { ComplianceCheckSection } from './compliance-check-section'
 
 function meta(f: FindingDetail, ...keys: string[]): string {
   for (const k of keys) {
@@ -249,48 +251,9 @@ function WebRequestSection({ finding }: { finding: FindingDetail }) {
 }
 
 function ComplianceSection({ finding }: { finding: FindingDetail }) {
-  const { t } = useTranslation()
-  const c = finding.complianceDetails
-  if (!c) return null
-  return (
-    <DetailSection
-      title={t('findings.typeDetails.complianceControl', 'Compliance control')}
-      icon={ScrollText}
-    >
-      <DetailFieldGrid>
-        <DetailField label={t('findings.typeDetails.framework', 'Framework')}>
-          {c.framework
-            ? `${c.framework.toUpperCase()}${c.frameworkVersion ? ` v${c.frameworkVersion}` : ''}`
-            : null}
-        </DetailField>
-        <DetailField label={t('findings.typeDetails.result', 'Result')}>
-          {c.result ? (
-            <span
-              className={cn(
-                c.result === 'fail' && 'font-medium text-destructive',
-                c.result === 'pass' && 'text-success'
-              )}
-            >
-              {c.result.replace(/_/g, ' ')}
-            </span>
-          ) : null}
-        </DetailField>
-        <DetailField label={t('findings.typeDetails.control', 'Control')}>
-          {c.controlId || c.controlName ? (
-            <span>
-              {c.controlId && <Mono>{c.controlId}</Mono>}
-              {c.controlId && c.controlName && ', '}
-              {c.controlName}
-            </span>
-          ) : null}
-        </DetailField>
-        <DetailField label={t('findings.typeDetails.section', 'Section')}>{c.section}</DetailField>
-        <DetailField label={t('findings.typeDetails.requirement', 'Requirement')} full>
-          {c.controlDescription}
-        </DetailField>
-      </DetailFieldGrid>
-    </DetailSection>
-  )
+  const check = complianceCheckOf(finding)
+  if (!check) return null
+  return <ComplianceCheckSection check={check} findingId={finding.id} />
 }
 
 function Web3Section({ finding }: { finding: FindingDetail }) {

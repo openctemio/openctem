@@ -25,7 +25,7 @@ category, so the "by type" counts on the Exposures view are stable:
 
 | Category | Event types | Producer today |
 |---|---|---|
-| `exposed_ports` | `port_open`, `port_closed`, `service_detected`, `service_changed` | port scans |
+| `exposed_ports` | `port_open`, `port_closed`, `service_detected`, `service_changed`, `risky_service_exposed` | port scans, service detection (`service-kinds.md`) |
 | `web_interfaces` | `web_interface_exposed` | template scanner info matches (panels) |
 | `exposed_apis` | `api_exposed`, `api_removed` | API discovery |
 | `ai_services` | `mcp_server_exposed` | planned |
@@ -57,6 +57,12 @@ than what is wrong with it: the technology it runs, a login panel, its TLS and
 header posture, a WAF in front of it. Filed as findings they bury the
 vulnerabilities; not run at all, a scan of a well-kept host reports nothing.
 
+Most of these matches are facts about the asset: the template facts mapping
+([template-facts.md](template-facts.md)) stores technologies, header posture
+and web surface entries where they belong and takes those matches out of
+the findings. What is left (panels, exposed consoles, and templates the
+mapping does not name yet, counted as `info_unmapped`) is filed as follows.
+
 At ingest (`internal/app/ingest/info_matches.go`) the info-severity findings
 of a tool that implements `vuln.templates` or `dast.web` leave the report
 before finding ingest and become info exposures of their assets
@@ -69,7 +75,9 @@ before finding ingest and become info exposures of their assets
 | `headers`, `header`, an id with `security-headers` | `header_missing` |
 | `spf`, `dmarc`, `dkim`, `mail` | `email_security_weak` |
 | `misconfig`, `exposure`, `config` | `misconfiguration` |
-| anything else (technology, WAF detection) | `custom` |
+| anything else (a template the mapping does not name) | `custom` |
+
+A mapping entry of class `exposure` may set the type itself.
 
 One exposure per template, matcher and URL on an asset: the header template's
 ten matchers are ten exposures, and a match seen again bumps its exposure's
@@ -85,6 +93,37 @@ the run map as "N info observations" and returned on step runs), so a run that
 found no vulnerability still shows what it saw. An organization that wants
 them as findings turns on `info_matches_as_findings` in the attack surface
 settings (`PUT /api/v1/easm/settings`, `settings:write`).
+
+### Findings filed before
+
+Info matches filed as findings before this (severity `none` until info became
+`info`) would stay open forever: no scan reports them as findings again. Two
+rules cover them:
+
+- A covered scan whose info matches went to exposures never auto-resolves an
+  informational finding of its tool (`CoverageQuery.KeepInformational`): not
+  reporting it as a finding proves nothing, and closing it as fixed would
+  count a fix that never happened.
+- `refingerprint -info-exposures [-tenant <id>] [-apply]` moves them as ingest
+  moves a new match: the asset gets the same exposure event (same fingerprint,
+  so the next scan bumps it instead of filing a second one), with the
+  finding's first and last sighting; the finding is resolved with the closure
+  reason `reclassified_exposure` (verification `none`, never counted as fixed:
+  `ClosureReason.IsObsolete`, `RemediatedSQL`), severity `none` becomes
+  `info`, and its timeline entry names the exposure event and the old
+  severity. One `findings.reclassified` audit entry per tenant changed. The
+  finding row, comments, evidence and history stay. A stored finding holds
+  only the last matcher it was seen with (the finding identity has no
+  matcher), so it becomes that matcher's exposure; the next scan adds the
+  other matchers.
+- Held, never moved, and counted in the report: a finding with an active
+  ticket link or a work item (a move must not close or change a ticket), in
+  an open remediation task, or with a pending status approval or closure
+  proposal. An organization with `info_matches_as_findings` on is skipped.
+- Dry run by default, idempotent, batched (`-batch`, one transaction per
+  batch), tenant-scoped. Recovery: `-info-exposures -down -apply` reopens
+  each moved finding to the status and severity its timeline entry recorded
+  and removes the exposure events the move created that nothing touched since.
 
 ## One-line summary
 

@@ -1,0 +1,75 @@
+# Lead type catalog of the exploration layer (docs/architecture/exploration.md).
+#
+# SINGLE SOURCE OF TRUTH. Edit this file, run `make generate-lead-types`,
+# commit the YAML and the two generated files
+# (pkg/domain/exploration/lead_types_generated.go and
+# web/src/features/exploration/lib/lead-types.generated.ts).
+#
+# A lead type is one kind of question. Each maps to typed next actions: a
+# capability of the stage catalog (pkg/domain/stage), per subject asset
+# type when the step depends on it. The tier of every action is the stage
+# catalog's; the generator copies it and refuses a capability the catalog
+# does not know. An action takes only the params it declares.
+#
+# Fields:
+#   id           "<area>.<question>", stable; the i18n keys are
+#                exploration.leadTypes.<id with . replaced by _>.*
+#   version      bumped when the trigger or the action changes; rules record
+#                "<id>@<version>" as the lead's origin.
+#   subject      asset (the only subject rules open leads on today).
+#   likelihood   the prior band (low, medium, high) of a useful outcome.
+#   value_weight multiplies the subject's value in the score (0.1 to 5).
+#   max_attempts dispatches before the lead is exhausted (1 to 5).
+#   reasons      the reason codes a rule may give (i18n keys).
+#   settle       how a finished step answers the question:
+#                finding  - proven when the step reports a finding on the
+#                           subject, refuted when it completes without one;
+#                liveness - proven (gone) when the liveness ledger, checked
+#                           after the step, holds the subject gone or
+#                           unreachable, refuted when it answers (alive);
+#                match    - proven when a cited version-match finding is now
+#                           likely or seen by a scanner, refuted when all of
+#                           them closed; otherwise inconclusive.
+#   actions      capability, optional asset_types (empty: any) and params
+#                (the allowed param keys; empty: none).
+version: 1
+types:
+  - id: dns.takeover_check
+    version: 1
+    subject: asset
+    likelihood: medium
+    value_weight: 2
+    max_attempts: 2
+    reasons: [cname_dangling]
+    settle: finding
+    actions:
+      - capability: check.takeover
+        asset_types: [domain, subdomain]
+
+  - id: version.confirm
+    version: 1
+    subject: asset
+    likelihood: medium
+    value_weight: 1.5
+    max_attempts: 2
+    reasons: [kev_on_unconfirmed_version]
+    settle: match
+    actions:
+      - capability: probe.http
+        asset_types: [domain, subdomain, ip_address, host, http_service, open_port]
+
+  - id: asset.gone_with_findings
+    version: 1
+    subject: asset
+    likelihood: low
+    value_weight: 1
+    max_attempts: 2
+    reasons: [gone_with_open_findings]
+    settle: liveness
+    actions:
+      - capability: resolve.dns
+        asset_types: [domain, subdomain]
+      - capability: probe.http
+        asset_types: [http_service, host]
+      - capability: discover.hosts
+        asset_types: [ip_address]

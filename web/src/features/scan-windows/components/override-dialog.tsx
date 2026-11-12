@@ -11,11 +11,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from '@/components/link'
-import { AlertTriangle, Loader2, ShieldAlert } from 'lucide-react'
+import { Loader2, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { TOTP_CODE_LENGTH, VerificationCodeInput } from '@/components/security'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -27,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -155,22 +155,6 @@ export function OverrideDialog({ open, onOpenChange, policies }: OverrideDialogP
           }}
         >
           <DialogBody className="space-y-4">
-            {error && (
-              <Alert variant="destructive" role="alert" data-testid="override-error">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>
-                  <p>{error.text}</p>
-                  {error.setup && (
-                    <Link
-                      href="/account/security"
-                      className="font-medium underline underline-offset-2"
-                    >
-                      {t('scanWindows.override.setup', 'Open account security')}
-                    </Link>
-                  )}
-                </AlertDescription>
-              </Alert>
-            )}
             <div className="space-y-1.5">
               <Label htmlFor="override-policy">
                 {t('scanWindows.override.policy', 'Windows to lift')}
@@ -236,6 +220,14 @@ export function OverrideDialog({ open, onOpenChange, policies }: OverrideDialogP
               disabled={saving}
             />
           </DialogBody>
+          <DialogSubmitError message={error?.text} testId="override-error">
+            {error?.setup && (
+              <Link href="/account/security" className="font-medium underline underline-offset-2">
+                {t('scanWindows.override.setup', 'Open account security')}
+              </Link>
+            )}
+          </DialogSubmitError>
+
           <DialogFooter>
             <Button
               type="button"

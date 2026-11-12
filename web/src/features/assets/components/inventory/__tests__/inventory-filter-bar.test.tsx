@@ -59,14 +59,14 @@ function setup(qs: string) {
 
 describe('InventoryFilterBar', () => {
   it('draws a chip per filter; removing one clears only it', () => {
-    const { onChange } = setup('lens=external_surface&types=subdomain&criticalities=high')
+    const { onChange } = setup('lens=data&types=storage&criticalities=high')
     const chips = screen.getAllByTestId('inventory-filter-chip')
-    expect(chips.map((c) => c.textContent)).toEqual(['Type is Subdomain', 'Criticality is High'])
-    fireEvent.click(screen.getByRole('button', { name: 'Remove filter Type is Subdomain' }))
+    expect(chips.map((c) => c.textContent)).toEqual(['Type is storage', 'Criticality is High'])
+    fireEvent.click(screen.getByRole('button', { name: 'Remove filter Type is storage' }))
     const next = onChange.mock.calls[0][0]
     expect(next.types).toBeUndefined()
     expect(next.criticalities).toEqual(['high'])
-    expect(next.lens).toBe('external_surface')
+    expect(next.lens).toBe('data')
     expect(screen.getByRole('status')).toHaveTextContent('361 assets')
   })
 

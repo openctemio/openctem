@@ -157,6 +157,27 @@ describe('Findings list filters', () => {
     expect(contractState.asked.every((a) => a === false)).toBe(true)
   })
 
+  it('opens on vulnerabilities: compliance checks are left out until asked for', () => {
+    openAt('')
+    render(<FindingsPage />)
+    expect(lastListFilters().practice_not).toBe('compliance')
+    expect(lastListFilters().practice).toBeUndefined()
+    expect(screen.getByTestId('findings-practice-switch')).toBeInTheDocument()
+  })
+
+  it('shows compliance, one practice, or everything from the practice param', () => {
+    openAt('?practice=compliance')
+    render(<FindingsPage />)
+    expect(lastListFilters().practice).toBe('compliance')
+    expect(lastListFilters().practice_not).toBeUndefined()
+    expect(screen.queryByText(/Practice is/)).toBeNull()
+
+    openAt('?practice=all')
+    render(<FindingsPage />)
+    expect(lastListFilters().practice).toBeUndefined()
+    expect(lastListFilters().practice_not).toBeUndefined()
+  })
+
   it('a crown-jewel drill-down is a context filter: no contract request, no second chip', () => {
     openAt('?asset_crown_jewel=true')
     render(<FindingsPage />)

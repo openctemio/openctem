@@ -189,7 +189,7 @@ func (a *AddressAutoAdd) RunTenant(ctx context.Context, tenantID shared.ID) (int
 		return 0, nil
 	}
 	// The system view: every address of the tenant, whoever looks later.
-	card, err := a.cards.addressCard(ctx, tenantID, nil)
+	card, err := a.cards.addressCard(ctx, tenantID, nil, maxSuggestionScan)
 	if err != nil {
 		return 0, err
 	}

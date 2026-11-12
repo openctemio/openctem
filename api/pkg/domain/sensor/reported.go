@@ -75,6 +75,15 @@ const CapabilityScopeLimits = "scope.limits@1"
 // declares never counts.
 const CapabilityNetConfined = "net.confined@1"
 
+// CapabilityIsolationStrong is the capability of a sensor that proved a
+// strong isolation backend at start-up (sdk-go executor.
+// CapabilityIsolationStrong): a task of a tool whose manifest says
+// `isolation: strong` runs on it. A job of such a tool
+// (command.PayloadKeyRequiredFeatures) is claimable only by a sensor that
+// reported it, and waits otherwise; what an administrator declares never
+// counts.
+const CapabilityIsolationStrong = "isolation.strong@1"
+
 // CapabilityEgressUpstream is the capability of a sensor that runs a job's
 // tool connections through the job's proxy pool (the "egress" member) from
 // its per-task forwarder, and never directly. A sensor whose jobs use a pool
@@ -108,6 +117,16 @@ const CapabilityProxyTest = "proxy.test@1"
 // toolhost.CapabilityHTTPIdentity). A job carrying a program's
 // identification is claimable only by a sensor that reported it.
 const CapabilityHTTPIdentity = "http.identity@1"
+
+// CapabilityHTTPIdentityRequired is the capability of a sensor that honors a
+// job's identification_required (sdk-go toolhost.CapabilityHTTPIdentityRequired):
+// a task whose tool cannot carry the identification headers and query
+// parameter, on a sensor that cannot add them at its forwarder, is refused
+// before it sends a request. A job that requires identification is
+// claimable only by a sensor that reported it: an older sensor would drop
+// the requirement silently. Decided by what the sensor reports, never by
+// its version.
+const CapabilityHTTPIdentityRequired = "http.identity.required@1"
 
 // CapabilityReachProbe is the capability of a sensor that serves the
 // polite reach probe (docs/rfcs/RFC-089-reachability-aware-routing.md
@@ -149,6 +168,7 @@ var sensorWideCapabilities = []string{
 	CapabilityEgressHostDirect,
 	CapabilityProxyTest,
 	CapabilityHTTPIdentity,
+	CapabilityHTTPIdentityRequired,
 	CapabilityReachProbe,
 	CapabilityRuleSources,
 }

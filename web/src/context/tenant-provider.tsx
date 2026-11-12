@@ -10,6 +10,7 @@
 'use client'
 
 import { clearFormDrafts } from '@/lib/form-drafts'
+import { clearRecentQueries } from '@/features/query/lib/recent'
 import * as React from 'react'
 // useRouter removed — cache.clear() handles revalidation without router.refresh()
 import { useSWRConfig } from 'swr'
@@ -212,6 +213,7 @@ export function TenantProvider({ children }: TenantProviderProps) {
         clearAllLogoCaches()
         // Drafts belong to the organization they were written in.
         clearFormDrafts()
+        clearRecentQueries()
 
         // Update current tenant
         const newTenant: CurrentTenant = {

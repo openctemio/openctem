@@ -18,9 +18,11 @@ import (
 
 	"github.com/openctemio/openctem/api/internal/app/ingest"
 	"github.com/openctemio/openctem/api/internal/infra/postgres"
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestjob"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreport"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	protov2 "github.com/openctemio/openctem/api/pkg/sensorproto/v2"
 )
@@ -48,12 +50,34 @@ func newV2Rig(t *testing.T, guard ingest.BlindingGuard) *v2Rig {
 // result quarantine, the command reader).
 func newV2RigWith(t *testing.T, guard ingest.BlindingGuard, configure func(*ingest.Service, *postgres.DB)) *v2Rig {
 	t.Helper()
+	return newV2RigRepos(t, guard, nil, configure)
+}
+
+// v2RigRepos replaces the asset and finding repositories the rig's service
+// writes through (a fault-injecting wrapper); nil fields keep the real ones.
+type v2RigRepos struct {
+	assets   func(*postgres.AssetRepository) asset.Repository
+	findings func(*postgres.FindingRepository) vulnerability.FindingRepository
+}
+
+func newV2RigRepos(t *testing.T, guard ingest.BlindingGuard, repos *v2RigRepos, configure func(*ingest.Service, *postgres.DB)) *v2Rig {
+	t.Helper()
 	sqldb := setupTestDB(t)
 	t.Cleanup(func() { _ = sqldb.Close() })
 	db := &postgres.DB{DB: sqldb}
 	log := logger.NewNop()
+	var (
+		assetRepo   asset.Repository                = postgres.NewAssetRepository(db)
+		findingRepo vulnerability.FindingRepository = postgres.NewFindingRepository(db)
+	)
+	if repos != nil && repos.assets != nil {
+		assetRepo = repos.assets(postgres.NewAssetRepository(db))
+	}
+	if repos != nil && repos.findings != nil {
+		findingRepo = repos.findings(postgres.NewFindingRepository(db))
+	}
 	svc := ingest.NewService(
-		postgres.NewAssetRepository(db), postgres.NewFindingRepository(db),
+		assetRepo, findingRepo,
 		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
 		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
 		postgres.NewAuditRepository(db), log)

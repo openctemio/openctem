@@ -142,6 +142,7 @@ export type EvidenceItem = Schemas['github_com_openctemio_openctem_api_pkg_domai
 export type ScopeTargetResponse = Schemas['internal_infra_http_handler.ScopeTargetResponse']
 export type ScopeExclusionResponse = Schemas['internal_infra_http_handler.ScopeExclusionResponse']
 export type ScopeStatsResponse = Schemas['internal_infra_http_handler.ScopeStatsResponse']
+export type ScopeReplaceResponse = Schemas['internal_infra_http_handler.ScopeReplaceResponse']
 export type CheckScopeResponse = Schemas['internal_infra_http_handler.CheckScopeResponse']
 export type ScopeCheckResult = Schemas['internal_infra_http_handler.ScopeCheckResult']
 export type ScopeBulkOperationResponse =
@@ -305,6 +306,9 @@ export type EASMAddressAddResult =
 /** POST /api/v1/easm/suggestions/addresses/reject */
 export type EASMAddressRejectResult =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.AddressRejectResult']
+/** POST /api/v1/easm/suggestions/addresses/lookup */
+export type EASMLookupRetryResult =
+  Schemas['github_com_openctemio_openctem_api_internal_app_easm.LookupRetryResult']
 /** POST /api/v1/easm/suggestions/networks/{ours,not-ours} */
 export type EASMNetworkAnswerResult =
   Schemas['github_com_openctemio_openctem_api_internal_app_easm.NetworkAnswerResult']

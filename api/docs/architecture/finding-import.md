@@ -69,7 +69,9 @@ Nessus v2 XML, Qualys host detection XML with an optional KnowledgeBase,
 SARIF 2.1.0, trivy, grype, semgrep (and opengrep), gitleaks (and
 betterleaks), nuclei, ZAP (JSON and XML), vuls, CycloneDX (SBOM, VDR, VEX),
 SPDX, osv-scanner results, CSAF 2.0, OpenVEX, DefectDojo Generic Findings
-JSON and the generic `bounty_report` (ctis v2.0.1). A `bounty_report` file is
+JSON, the generic `bounty_report`, and the inventory formats nmap XML,
+testssl.sh JSON, ffuf, S3Scanner, arjun, a line list (`format=lines`) and CTIS
+2.0 itself (ctis v2.0.2). A `bounty_report` file is
 read, but its findings get the source `external` (no tool name in the
 ingest table matches) and the importer's `extensions[io.openctem].bounty_report`
 is not read into `metadata.bounty_report`, so they are not `bug_bounty`
@@ -79,6 +81,85 @@ fixtures and a field-coverage test in the ctis repository
 `importer.Detect`, `importer.Parse` and `importer.OpenZip` only, through one entry
 point, `findingimport.Convert` (content sniffing, archive limits, KnowledgeBase
 pairing), which any other caller that accepts exported files reuses.
+
+## Nessus host inventory
+
+A credentialed `.nessus` file describes the inside of each host. The ctis
+importer (mapping: ctis `docs/importers/nessus.md`) emits it and ingest stores
+it like any other CTIS report:
+
+- `cpe-*` host properties become technologies with a CPE 2.3 name
+  (`asset_technologies`); a CPE technology is also software of the asset
+  (`recordSoftware`), so vulnerability matching finds CVEs from it even when
+  the export carries none.
+- The package lists of Software Enumeration (SSH) and Windows Installed
+  Software Enumeration become dependencies with `asset_ref` set to their host.
+  `ComponentProcessor.resolveDepAssetIDs` honours `asset_ref`: a package goes
+  to the host it names, and is skipped when that host was not stored (out of
+  scope, left out), never moved to another host of the file. An import writes
+  packages add-only (`software.SnapshotMode`).
+- `netstat-listen-*` sockets become open-port services with
+  `observed_from` (`host`: only the host's socket table shows it; `network`:
+  the scanner also reached it), `bind_address` and `process`
+  (`addLocalListenerProperties` reads only these keys of
+  `technical.service.details`). Loopback-only sockets are not services.
+- `ssh-fingerprint` keys are kept in the host's properties
+  (`ssh_host_key_fingerprints`); CTIS identity hints have no SSH key member,
+  so they do not match hosts yet.
+- A file without plugin details gets the importer issue "export lacks plugin
+  details; re-export with full plugin attributes", shown on the import result.
+
+## What a Nessus import closes
+
+A `.nessus` file says what it proves about the findings it does not hold
+(ctis `ImportCoverage`): per host when its scan ended, whether it finished,
+whether the scan logged in and the local checks ran, and which plugins and
+plugin families the scan policy ran. The uploader declares nothing: the close
+scope is the file's own hosts (`findingimport.closeByFileCoverage`). Nessus
+results sometimes leave out findings that were mitigated or moved; the rule
+is that no finding stays open for ever, and nothing closes without proof.
+
+An open finding of the file's tool on one of its hosts that the upload did
+not report is a candidate, and gets exactly one outcome:
+
+| Outcome | When |
+|---|---|
+| closed `not_in_scan` | the file is complete, the host finished, the check ran (its plugin, or its family whole), a local check only where local checks ran (`importer.ImportCoverage.Covers`) |
+| kept `host_not_finished` | the file records no end of the host's scan (a stopped scan) |
+| kept `local_checks_not_run` | a local check (a "Local Security Checks" family, plugin type local) on a host the scan did not log in to, or where authentication failed (plugins 21745, 104410, 110385, 117885, 110723, 117886) |
+| kept `check_not_run` | the plugin and its family were not in the scan policy |
+| kept `seen_later` | the finding was seen after the host's scan (an older file uploaded later) |
+| kept `file_incomplete` | the file has no plugin selection or no plugin details, or any file or row of the upload failed, was skipped or filtered (`min_severity`), or went through a mapping |
+| kept `needs_verify` | the uploader lacks `findings:verify` |
+| kept `guard` | critical or known exploited, a leaked secret, last seen by a platform sensor, a compliance result missing from the file, the organization's closing mode keeps it, or it changed meanwhile |
+| proposed | the closing mode asks a person, or the mass-close guard held the close (Ready to close) |
+
+Human sources and branch occurrences are never candidates. A compliance
+result is never closed by absence: a `PASSED` result of the same check on the
+same host resolves the open `FAILED` finding (closed `compliance_passed`);
+`WARNING` and `ERROR` never resolve it. A passed check is not stored as a
+finding and is not a sighting of the failure (receipt outcome
+`compliance_passed`).
+
+Time ordering (`ingest/observation.go`): each finding of the file carries its
+host's scan end (`last_seen_at`). That time is the sighting: a new finding is
+stored with it, an existing one keeps the newer of the stored and the file's
+time (`GREATEST`, never `NOW()`), and a closed finding reopens only when the
+file saw it after it was closed. A close is dated at the host's scan end, so
+a later file that still saw the finding reopens it, and an older file never
+closes or reopens what a newer one decided. Importing the same file twice
+gives the same result.
+
+The receipt's `closing` counts the outcomes (`considered = closed + proposed
++ kept`) and the hosts that did not finish or were not logged in to; the
+import result says, for example, "Authentication failed on 2 hosts: local
+findings there were not closed". A declared `coverage=full` no longer decides
+a file that carries its own coverage; it still applies to the other files of
+the upload.
+
+Simplest path: upload the `.nessus` export of a credentialed scan with the
+plugin details; the import closes what the scan proves gone and says why the
+rest stayed open.
 
 ## Recon results (reconFTW directory)
 
@@ -197,8 +278,10 @@ A preview ignores the key.
   `ingest.Service` with the uploader's data scope as `Options.Actor`, so a
   restricted uploader only adds findings to existing assets in their scope
   and creates none. Coverage is **partial** unless the upload declares
-  `coverage=full` for explicit assets: without that an import never closes
-  anything, whatever the file says. Closing by absence is a verification of a
+  `coverage=full` for explicit assets, or a file carries its own coverage (a
+  Nessus export, [What a Nessus import closes](#what-a-nessus-import-closes)):
+  otherwise an import never closes anything. The file's hosts are narrowed to
+  the uploader's visibility, so a host outside it closes nothing. Closing by absence is a verification of a
   fix: it also needs `findings:verify` (without it the file is imported, the
   receipt note is `needs_verify` and nothing closes); a critical or
   known-exploited finding stays open; and only a finding whose latest sighting
@@ -293,5 +376,8 @@ finding ids.
 | A recon directory naming someone else's hosts (or claiming their domain as its target) | scope verdict from the organization's scope entries; uncovered hosts are candidates, never scanned; endpoints only under origins the uploader may change |
 | A recon directory closing findings | partial coverage by nature; full coverage refused; `closeUncovered` skips bundles; `TestBundle_PartialNeverCloses` |
 | People and credential data in a recon directory | `osint/` never opened; `TestBundle_OsintNeverRead` |
+| A crafted scan file closing findings | closes only on the file's hosts in the uploader's visibility, of the file's tool, with `findings:verify`, under the guards (critical, known exploited, secrets, sensor sightings, human sources, mass-close guard); a close needs host, check and local-check proof; `TestNessusClose_*_DB` |
+| An old file closing or reopening what a newer scan decided | closes and reopens compare the host's scan end with the finding's last sighting and close time; last seen never moves back; `TestNessusClose_TimeOrderingAndIdempotence_DB` |
+| A file closing another organization's findings | every statement `tenant_id = $1`; host assets come from the upload's own ingest; `TestNessusClose_TenantAndScopeIsolation_DB` |
 | Abuse of the parser | per-organization rate limit; request timeout |
 | Credentials or account names in reports | the importers skip the Nessus scan policy and login accounts and redact credentials in scanner output |

@@ -479,6 +479,22 @@ request is audited as `organization.owner_recovery` in `admin_audit_logs` (high
 severity, refusals included) and as `user.created` with `owner_recovery: true`
 at critical severity in the organization's audit log.
 
+### Running without email
+
+Many self-hosted installations have no mail server (`email_delivery` false on
+`GET /api/v1/auth/providers`, the session bootstrap and the console's
+organization and user pages). Nothing is promised by email then, and every
+flow has a hand-over path:
+
+| Flow | Without email |
+|---|---|
+| Organization admin creates a user | The one-time set-password link is shown once to the administrator (`setup_token`); a new one from the Members page ("Get setup link"). |
+| Organization invitation | The invitation link is shown to the inviter; the Members page says invitation emails are not sent and offers Copy link. |
+| Console: new organization owner (new person) | The set-password link is shown once as the web app's address (`setup_url`); a lost or expired one is replaced with New setup link on the organization's Users tab. |
+| Console: organization for an existing account | The ownership invitation is recorded as not sent; the console shows the accept address to hand over, and the person sees a banner after signing in ([ownership invitations](organization-ownership-invitations.md#running-without-email)). |
+| Password reset | Forgot-password says reset by email is not available; a super admin copies a one-hour reset link from the user's page in the console. |
+| Email verification | A super admin marks the address verified from the user's page in the console. |
+
 ### Ownership transfer (RFC-095 §3.5)
 
 The owner hands the organization to an existing member from Settings >

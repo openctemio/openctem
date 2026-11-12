@@ -11,6 +11,7 @@ import vi_actor from './vi/actor.json'
 import vi_admin from './vi/admin.json'
 import vi_announcements from './vi/announcements.json'
 import vi_assetFreshness from './vi/assetFreshness.json'
+import vi_assetLiveness from './vi/assetLiveness.json'
 import vi_assetCoverage from './vi/assetCoverage.json'
 import vi_assetPorts from './vi/assetPorts.json'
 import vi_assetSources from './vi/assetSources.json'
@@ -43,6 +44,7 @@ import vi_findings from './vi/findings.json'
 import vi_findingApprovals from './vi/findingApprovals.json'
 import vi_findingLifecycle from './vi/findingLifecycle.json'
 import vi_exceptions from './vi/exceptions.json'
+import vi_exploration from './vi/exploration.json'
 import vi_exposures from './vi/exposures.json'
 import vi_help from './vi/help.json'
 import vi_insights from './vi/insights.json'
@@ -96,6 +98,7 @@ import vi_workflowStages from './vi/workflowStages.json'
 import vi_remediationHub from './vi/remediationHub.json'
 import vi_remediationClaim from './vi/remediationClaim.json'
 import vi_remediationCampaigns from './vi/remediationCampaigns.json'
+import vi_queryInput from './vi/queryInput.json'
 import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
 import vi_threatModel from './vi/threatModel.json'
@@ -113,6 +116,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   admin: vi_admin,
   announcements: vi_announcements,
   assetFreshness: vi_assetFreshness,
+  assetLiveness: vi_assetLiveness,
   assetCoverage: vi_assetCoverage,
   assetPorts: vi_assetPorts,
   assetSources: vi_assetSources,
@@ -145,6 +149,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   findingApprovals: vi_findingApprovals,
   findingLifecycle: vi_findingLifecycle,
   exceptions: vi_exceptions,
+  exploration: vi_exploration,
   exposures: vi_exposures,
   help: vi_help,
   insights: vi_insights,
@@ -198,6 +203,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   remediationHub: vi_remediationHub,
   remediationClaim: vi_remediationClaim,
   remediationCampaigns: vi_remediationCampaigns,
+  queryInput: vi_queryInput,
   remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
   threatModel: vi_threatModel,

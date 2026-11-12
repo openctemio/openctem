@@ -18,6 +18,7 @@ import (
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/branch"
+	"github.com/openctemio/openctem/api/pkg/domain/compliancecheck"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
@@ -31,6 +32,8 @@ type FindingCreatedCallback func(ctx context.Context, tenantID shared.ID, findin
 
 // FindingProcessor handles batch finding processing.
 type FindingProcessor struct {
+	// complianceChecks stores compliance check states (compliance_checks.go).
+	complianceChecks ComplianceCheckRecorder
 	// sourceResolveMode is the source-asserted resolve mode
 	// (source_resolve.go); "" is dry_run.
 	sourceResolveMode SourceResolveMode
@@ -239,7 +242,8 @@ func (p *FindingProcessor) ProcessBatch(
 	output *Output,
 	cveMap map[string]shared.ID,
 ) error {
-	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false, fullScope())
+	return p.processBatch(ctx, agt, tenantID, report, assetMap, tenantRules, output, cveMap, false, fullScope(),
+		vulnerability.SourceIdentity{})
 }
 
 // processBatch is ProcessBatch; strictAssets (protocol v2,
@@ -258,6 +262,7 @@ func (p *FindingProcessor) processBatch(
 	cveMap map[string]shared.ID,
 	strictAssets bool,
 	scope *alterScope,
+	src vulnerability.SourceIdentity,
 ) error {
 	if len(report.Findings) == 0 {
 		return nil
@@ -340,7 +345,9 @@ func (p *FindingProcessor) processBatch(
 	for i, reported := range report.Findings {
 		// A network or SCA finding that names several CVEs is one finding
 		// per CVE (RFC-043 decisions D3, D20).
-		for _, ctisFinding := range splitMultiCVEFinding(reported) {
+		parts := splitMultiCVEFinding(reported)
+		output.addOutcome(ingestreceipt.OutcomeSplit, len(parts)-1)
+		for _, ctisFinding := range parts {
 			if output.ExcludedAssetRefs[ctisFinding.AssetRef] {
 				// Its asset matches a scope exclusion and was not added.
 				output.FindingsSkipped++
@@ -479,6 +486,20 @@ func (p *FindingProcessor) processBatch(
 
 	var mitigations []vulnerability.SourceMitigation
 	mitigatedNow := time.Now()
+	// The compliance results of the batch, recorded once the findings are
+	// written (a failure's state links its finding).
+	var checks []compliancecheck.Observation
+	checksRecorded := false
+	recordChecks := func() {
+		if !checksRecorded {
+			checksRecorded = true
+			p.recordComplianceChecks(ctx, tenantID, checks)
+		}
+	}
+	// Recorded before the remediation keys are derived (a failure's
+	// control key reads its state); the deferred call covers a batch that
+	// ends early (only passes).
+	defer recordChecks()
 	for _, fm := range candidates {
 		if current, ok := aliases[fm.fingerprint]; ok {
 			fm.fingerprint = current
@@ -494,7 +515,26 @@ func (p *FindingProcessor) processBatch(
 				AssetID:     fm.assetID,
 				MitigatedAt: mitigatedAt(&fm.finding, mitigatedNow),
 			})
+			output.addOutcome(ingestreceipt.OutcomeSourceMitigated, 1)
 			continue
+		}
+		// Every compliance result is the state of its control
+		// (compliance_checks.go). A pass, a not-applicable and an error are
+		// no finding and no sighting of the failure of the same check
+		// (observation.go); a pass may resolve that failure.
+		if o, ok := complianceObservation(&fm.finding, fm.assetID, fm.fingerprint, toolNameOf(report, &fm.finding),
+			findingObservedAt(&fm.finding, reportObservedAt(report, mitigatedNow), mitigatedNow)); ok {
+			checks = append(checks, o)
+			switch {
+			case o.Result == compliancecheck.ResultPass:
+				output.CompliancePassed = append(output.CompliancePassed, CompliancePass{Fingerprint: fm.fingerprint,
+					AssetID: fm.assetID, ObservedAt: o.ObservedAt})
+				output.addOutcome(ingestreceipt.OutcomeCompliancePassed, 1)
+				continue
+			case !o.Result.OpensFinding():
+				output.addOutcome(ingestreceipt.OutcomeComplianceState, 1)
+				continue
+			}
 		}
 		// One report naming the same finding twice (the same package in two
 		// lockfiles, a template matching twice, two keys of one finding) is
@@ -503,6 +543,7 @@ func (p *FindingProcessor) processBatch(
 		// findings (RFC-043 B2).
 		if _, dup := seenFingerprints[fm.fingerprint]; dup {
 			duplicatesInReport++
+			output.addOutcome(ingestreceipt.OutcomeMerged, 1)
 			continue
 		}
 		seenFingerprints[fm.fingerprint] = struct{}{}
@@ -523,6 +564,17 @@ func (p *FindingProcessor) processBatch(
 	// Step 2: Batch check existing fingerprints
 	existsMap, err := p.repo.CheckFingerprintsExist(ctx, tenantID, fingerprints)
 	if err != nil {
+		if noteRetryable(output, err) {
+			// Nothing of this batch is stored and the report runs again.
+			return fmt.Errorf("failed to check fingerprints: %w", err)
+		}
+		// Nothing of this batch is stored: each finding is counted as
+		// failed on the receipt, never dropped without a trace.
+		addError(output, fmt.Sprintf("check %d findings failed: %v", len(validFindings), err))
+		for _, fm := range validFindings {
+			output.FindingsSkipped++
+			output.FailedFindings = append(output.FailedFindings, createFailedFinding(fm, err.Error()))
+		}
 		return fmt.Errorf("failed to check fingerprints: %w", err)
 	}
 
@@ -538,6 +590,11 @@ func (p *FindingProcessor) processBatch(
 	existingNewData := make([]*vulnerability.Finding, 0) // Built findings for enrichment
 	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
 	existingSnippets := make(map[string]string)          // Track snippets for existing findings
+
+	// When the file saw each finding (an upload; observation.go).
+	observed := validFindingTimes(validFindings, func(fm findingMeta) (string, *ctis.Finding) {
+		return fm.fingerprint, &fm.finding
+	}, output.fileObserved)
 
 	// Fingerprints on assets the report may not change (RFC-040 §5.3): a
 	// finding a person resolved there stays resolved.
@@ -556,6 +613,7 @@ func (p *FindingProcessor) processBatch(
 			newData, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				applyIdentityToFinding(newData, fm.identity, &fm.finding)
+				newData.ObservedAt(observed[fm.fingerprint])
 				existingNewData = append(existingNewData, newData)
 			} else {
 				// buildFinding failed — fall back to scan-id-only update for this fingerprint
@@ -565,6 +623,7 @@ func (p *FindingProcessor) processBatch(
 			f, err := p.buildFinding(ctx, tenantID, fm.assetID, fm.branchID, agt.ID, report, &fm.finding, fm.fingerprint, fm.base, cveMap)
 			if err == nil {
 				applyIdentityToFinding(f, fm.identity, &fm.finding)
+				f.ObservedAt(observed[fm.fingerprint])
 			}
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
@@ -601,7 +660,7 @@ func (p *FindingProcessor) processBatch(
 		p.sightDuplicateTargets(ctx, tenantID, existingFingerprints, reportIDOf(ctx), scanner)
 		// Each reopen writes its timeline entry with the scan behind it.
 		reopenCtx := vulnerability.WithTransitionEvidence(ctx, map[string]any{"scanner": scanner, "scan_id": reportIDOf(ctx)}) //nolint:goconst // evidence key, as in the other transition evidence maps
-		reopenedMap, err := p.repo.AutoReopenByFingerprintsBatch(reopenCtx, tenantID, existingFingerprints, reportObservedAt(report, time.Now()))
+		reopenedMap, err := p.autoReopen(reopenCtx, tenantID, report, existingFingerprints, observed)
 		if err != nil {
 			p.logger.Warn("failed to batch auto-reopen findings", "error", err)
 		} else if len(reopenedMap) > 0 {
@@ -636,6 +695,11 @@ func (p *FindingProcessor) processBatch(
 	// are re-derived after enrichment (Step 5c).
 	var resighted []string
 
+	// Step 3d: a compliance finding's severity comes from its benchmark
+	// level and its asset, never the scanner (compliance_severity.go); set
+	// before it is classified and written, new or re-sighted.
+	p.applyComplianceSeverity(ctx, tenantID, newFindings, existingNewData)
+
 	// Step 4: Batch create new findings with partial success support
 	if len(newFindings) > 0 {
 		// Enrich BEFORE inserting so EPSS/KEV/priority/SLA are written by the
@@ -645,17 +709,26 @@ func (p *FindingProcessor) processBatch(
 		// in-memory computation (catalog/rule lookups), so it does not depend
 		// on the findings being persisted first.
 		p.enrichAndClassify(ctx, tenantID, newFindings)
+		// The practice is derived on insert from the facts of the assets the
+		// asset processor already holds (practice_facts.go).
+		attachPracticeFacts(newFindings, tenantID, output)
 
 		result, err := p.repo.CreateBatchWithResult(ctx, newFindings)
-		if err != nil {
+		switch {
+		case err != nil && noteRetryable(output, err):
+			// The report runs again; these findings are not rejected.
+			p.logger.Warn("batch create of findings hit a transient store error", "error", err, "count", len(newFindings))
+		case err != nil:
 			// Fatal error - could not process any findings
 			p.logger.Error("failed to batch create findings", "error", err, "count", len(newFindings))
 			addError(output, fmt.Sprintf("batch create failed: %v", err))
-			// Track all findings as failed for audit
+			// Track all findings as failed for audit. Skipped holds the
+			// failures too (the receipt's skipped count leaves them out).
 			for i, fm := range newFindingsMeta {
+				output.FindingsSkipped++
 				output.FailedFindings = append(output.FailedFindings, createFailedFinding(fm, fmt.Sprintf("batch failed at index %d: %v", i, err)))
 			}
-		} else {
+		default:
 			output.FindingsCreated = result.Created
 			// A row that met an existing finding (a concurrent ingest created it
 			// between the fingerprint check and this insert) is a re-sighting,
@@ -708,6 +781,7 @@ func (p *FindingProcessor) processBatch(
 				}
 			}
 
+			recordChecks()
 			if len(createdFindings) > 0 {
 				p.afterCreate(ctx, tenantID, output, newFindings, createdFindings, createdIndex, suppressionDecisions)
 			}
@@ -731,6 +805,9 @@ func (p *FindingProcessor) processBatch(
 				var incomplete *vulnerability.EnrichIncompleteError
 				if errors.As(err, &incomplete) {
 					fallbackFPs = append(fallbackFPs, incomplete.Fingerprints...)
+				} else if noteRetryable(output, err) {
+					// The report runs again and enriches them then.
+					return fmt.Errorf("enrich existing findings: %w", err)
 				} else {
 					for _, f := range existingNewData {
 						fallbackFPs = append(fallbackFPs, f.Fingerprint())
@@ -760,6 +837,9 @@ func (p *FindingProcessor) processBatch(
 				sightingTool = report.Tool.Name
 			}
 			updated, err := p.repo.UpdateScanIDBatchByFingerprints(ctx, tenantID, unenrichedFingerprints, scanID, sightingTool)
+			if err != nil && noteRetryable(output, err) {
+				return fmt.Errorf("record sighting of existing findings: %w", err)
+			}
 			if err != nil {
 				p.logger.Error("failed to update existing findings (fallback)", "error", err)
 				addError(output, fmt.Sprintf("record sighting of %d existing findings failed: %v", len(unenrichedFingerprints), err))
@@ -790,6 +870,7 @@ func (p *FindingProcessor) processBatch(
 
 	// Step 5c: Re-derive the remediation keys of re-sighted findings: a new
 	// fixed version or changed advice moves the finding to the right group.
+	recordChecks()
 	resighted = append(resighted, existingFingerprints...)
 	if p.remediationKeyApplier != nil && len(resighted) > 0 {
 		if err := p.remediationKeyApplier.ApplyByFingerprints(ctx, tenantID, resighted); err != nil {
@@ -870,16 +951,36 @@ func (p *FindingProcessor) processBatch(
 	// VEX not_affected statements. Best-effort.
 	interop := make([]vulnerability.InteropUpdate, 0, len(validFindings))
 	vexSightings := make([]vexSighting, 0)
+	// Step 7d, written with 7b in one statement: what this ingest's source
+	// reported for each finding, kept per source so another source never
+	// overwrites it (finding-source-records.md).
+	records := make([]vulnerability.SourceRecordValues, 0, len(validFindings))
+	built := make(map[string]*vulnerability.Finding, len(newFindings)+len(existingNewData))
+	for _, f := range newFindings {
+		built[f.Fingerprint()] = f
+	}
+	for _, f := range existingNewData {
+		built[f.Fingerprint()] = f
+	}
+	reportTool := ""
+	if report.Tool != nil {
+		reportTool = report.Tool.Name
+	}
 	for i := range validFindings {
 		fm := &validFindings[i]
-		if u := interopUpdate(fm.fingerprint, &fm.finding); !u.Data.IsEmpty() {
+		u := interopUpdate(fm.fingerprint, &fm.finding)
+		u.Tool = reportTool
+		if !u.Data.IsEmpty() {
 			interop = append(interop, u)
+		}
+		if f, ok := built[fm.fingerprint]; ok {
+			records = append(records, vulnerability.SourceRecordValuesFrom(f, u.Data, observed[fm.fingerprint]))
 		}
 		if fm.finding.VEX != nil {
 			vexSightings = append(vexSightings, vexSighting{fingerprint: fm.fingerprint, assetID: fm.assetID, finding: &fm.finding})
 		}
 	}
-	p.storeInterop(ctx, tenantID, interop)
+	p.storeSightingData(ctx, tenantID, interop, src, records)
 	p.applyVEX(ctx, tenantID, report, vexNotAffectedItems(vexSightings), scope, output)
 
 	// Step 7c: the organization's VEX statements cover findings reported
@@ -1695,13 +1796,12 @@ func (p *FindingProcessor) setComplianceFields(f *vulnerability.Finding, ctisFin
 	if ctisFinding.Compliance.ControlDescription != "" {
 		f.SetComplianceControlDescription(ctisFinding.Compliance.ControlDescription)
 	}
-	// The evaluation of a control is the finding's kind in CTIS 2.0.
-	switch ctisFinding.Kind {
-	case "pass", "fail", "not_applicable":
-		f.SetComplianceResult(ctisFinding.Kind)
-	case "review":
-		f.SetComplianceResult(string(vulnerability.ComplianceResultManual))
+	// The evaluation of a control is the finding's kind in CTIS 2.0; a
+	// not-applicable result the check could not evaluate is an error.
+	if r, ok := complianceResultOf(ctisFinding); ok {
+		f.SetComplianceResult(string(r))
 	}
+	f.SetComplianceLevel(complianceLevelOf(ctisFinding))
 }
 
 // setWeb3Fields sets Web3-specific fields on a finding.

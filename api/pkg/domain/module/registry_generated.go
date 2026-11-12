@@ -71,7 +71,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "assets:read",
 		MCP:        []string{"list_assets", "search_assets", "get_asset"},
-		Jobs:       []string{"AssetGroupRulesController", "AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
+		Jobs:       []string{"AssetGroupRulesController", "AssetIdentityBackfillController", "AssetTechnologyBackfillController", "AssetChangeTimelineController", "AssetLifecycleController", "AssetLivenessController", "AssetPurgeController", "AssetRiskScoreController", "AssetRiskReconcileController", "AssetDomainMembershipController", "AssetPortsController", "OwnerResolutionController", "DataExpirationController", "DomainReverifyController"},
 	},
 	{
 		ID: ModuleFindings, Slug: "findings", Name: "Findings",
@@ -82,7 +82,7 @@ var Registry = []Definition{
 		UserFacing: true,
 		Permission: "findings:read",
 		MCP:        []string{"list_findings", "get_finding", "finding_stats", "list_active_cves", "explain_finding_priority", "list_finding_transitions", "list_remediation_groups"},
-		Jobs:       []string{"ApprovalExpirationController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController", "FeedRelayController", "VEXStatementExpiryController"},
+		Jobs:       []string{"ApprovalExpirationController", "SourceRetirementController", "ApprovalMaterialChangeController", "VEXRequestNoticeController", "ApprovalDigestController", "FindingPriorityController", "FindingPriorityReconcileController", "PriorityAuditRetentionController", "EvidenceRetentionController", "AttachmentRetentionController", "AttachmentScanController", "ReportFileMigrationController", "ScannerOutputRetentionController", "RiskSnapshotController", "IngestWorkerController", "IngestReceiptRetentionController", "IngestQueueRetentionController", "JobRecoveryController", "RetestScheduler", "ThreatIntelRefreshController", "KEVRefreshController", "VulnMatchController", "VulnFeedImportController", "FeedRelayController", "VEXStatementExpiryController"},
 	},
 	{
 		ID: ModuleScans, Slug: "scans", Name: "Scans",
@@ -92,7 +92,7 @@ var Registry = []Definition{
 		Core:       true,
 		UserFacing: true,
 		Permission: "scans:read",
-		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CISweepController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController", "WebVerifyController", "AssetEnrichmentController", "AssetCoverageController", "WebEvidenceRetentionController"},
+		Jobs:       []string{"CoverageScheduler", "OneOffScanArchiveController", "QueuePriorityController", "ScanRetryController", "ScanTimeoutController", "ScanWindowClosingController", "StalledRunRepairController", "CIAlertsController", "CIDecorationController", "CIRetentionController", "CISweepController", "CommandEventRetentionController", "CommandLogRetentionController", "WebSurfaceRetentionController", "WebVerifyController", "AssetEnrichmentController", "AssetCoverageController", "ExplorationController", "WebEvidenceRetentionController"},
 	},
 	{
 		ID: ModuleAttackSurface, Slug: "attack-surface", Name: "Attack Surface",

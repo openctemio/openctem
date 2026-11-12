@@ -19,8 +19,19 @@ import (
 	"sync"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/sourceretire"
 	"github.com/openctemio/openctem/api/pkg/domain/suppression"
 )
+
+// RetiredSourceReader reads the sources a tenant stopped using
+// (postgres.SourceRetirementRepository); a write to them bumps the policy
+// version.
+type RetiredSourceReader interface {
+	Live(ctx context.Context, tenantID shared.ID) ([]sourceretire.Selector, error)
+}
+
+// SetRetiredSources makes ingest refuse the reports of retired sources.
+func (s *Service) SetRetiredSources(r RetiredSourceReader) { s.retiredSources = r }
 
 // PolicyVersionReader reads a tenant's ingest policy version
 // (postgres.IngestPolicyVersions); 0 when no policy was ever written.
@@ -32,6 +43,9 @@ type PolicyVersionReader interface {
 type PolicySnapshot struct {
 	Version     int64
 	Suppression []*suppression.Rule
+	// Retired: the sources the tenant stopped using; their reports are
+	// refused (counted on the receipt as source_retired).
+	Retired []sourceretire.Selector
 	// loaded: the suppression rules were read (a checker is wired).
 	loaded bool
 }
@@ -73,6 +87,13 @@ func (s *Service) loadPolicySnapshot(ctx context.Context, tenantID shared.ID) (*
 		}
 		snap.Suppression, snap.loaded = rules, true
 	}
+	if s.retiredSources != nil {
+		retired, err := s.retiredSources.Live(ctx, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("load the retired sources: %w", err)
+		}
+		snap.Retired = retired
+	}
 	if s.policyVersions != nil {
 		s.policies.mu.Lock()
 		if s.policies.m == nil || len(s.policies.m) >= maxPolicySnapshots {
@@ -82,4 +103,18 @@ func (s *Service) loadPolicySnapshot(ctx context.Context, tenantID shared.ID) (*
 		s.policies.mu.Unlock()
 	}
 	return snap, nil
+}
+
+// retiredSource reports whether a report comes from a source the tenant
+// stopped using.
+func (p *PolicySnapshot) retiredSource(r sourceretire.Report) bool {
+	if p == nil {
+		return false
+	}
+	for _, sel := range p.Retired {
+		if sel.Matches(r) {
+			return true
+		}
+	}
+	return false
 }

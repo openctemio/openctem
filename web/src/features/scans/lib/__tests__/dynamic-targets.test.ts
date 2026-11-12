@@ -77,10 +77,10 @@ describe('selectorPreviewURL', () => {
     )
     expect(url.pathname).toBe('/api/v1/assets')
     expect(url.searchParams.get('under')).toBe('example.com')
-    expect(url.searchParams.get('types')).toBe('domain,subdomain')
-    expect(url.searchParams.get('statuses')).toBe('active')
+    expect(url.searchParams.get('type')).toBe('domain,subdomain')
+    expect(url.searchParams.get('status')).toBe('active')
     expect(url.searchParams.get('sort')).toBe('-last_seen')
-    expect(url.searchParams.get('last_seen_after')).toBeNull()
+    expect(url.searchParams.get('last_seen_gte')).toBeNull()
   })
 
   it('follows the options, and asks for addresses inside a range', () => {
@@ -93,10 +93,10 @@ describe('selectorPreviewURL', () => {
       ),
       'http://x'
     )
-    expect(url.searchParams.get('in_cidr')).toBe('203.0.113.0/24')
+    expect(url.searchParams.get('ip')).toBe('203.0.113.0/24')
     expect(url.searchParams.get('under')).toBeNull()
-    expect(url.searchParams.get('statuses')).toBe('active,stale,inactive')
-    expect(url.searchParams.get('last_seen_after')).toBe('2026-10-02')
+    expect(url.searchParams.get('status')).toBe('active,stale,inactive')
+    expect(url.searchParams.get('last_seen_gte')).toBe('2026-10-02')
     expect(seenSince(30, now)).toBe('2026-09-09')
   })
 })

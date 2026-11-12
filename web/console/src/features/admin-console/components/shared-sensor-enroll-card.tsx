@@ -16,12 +16,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SharedSensorEnrollmentToken } from '../api/use-scan-policy'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 import { RoleRequiredNotice } from './role-required-notice'
 
 export const SHARED_SENSOR_TOKEN_ENV = 'SENSOR_INSTANCE_ENROLLMENT_TOKEN'
@@ -41,11 +40,8 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
   const id = useId()
   const [name, setName] = useState('')
   const [ttl, setTtl] = useState(60)
-  const [reason, setReason] = useState('')
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const rc = useReasonAndCode(open)
   const [busy, setBusy] = useState(false)
   const [issued, setIssued] = useState<SharedSensorEnrollmentToken | null>(null)
   const [copied, setCopied] = useState(false)
@@ -54,23 +50,20 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
 
   const issue = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
       const out = await onIssue({
         name: name.trim(),
         ttlMinutes: ttl,
-        reason: reason.trim(),
-        code: code.trim(),
+        reason: rc.reason.trim(),
+        code: rc.code.trim(),
       })
       setIssued(out)
       setCopied(false)
       setOpen(false)
-      setReason('')
-      setCode('')
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setOpen(false)
@@ -162,7 +155,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
         }}
         title={t('admin.sharedSensorEnroll.confirmTitle')}
         desc={<p>{t('admin.sharedSensorEnroll.confirmDesc')}</p>}
-        disabled={!stepUpCodeReady(code, codeOptional) || !reason.trim()}
+        disabled={!rc.codeOk || !rc.reasonOk}
         isLoading={busy}
         handleConfirm={() => void issue()}
         confirmText={
@@ -176,25 +169,7 @@ export function SharedSensorEnrollCard({ canEdit, onIssue }: SharedSensorEnrollC
           )
         }
       >
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-reason`}>{t('admin.scanPolicy.reason')}</Label>
-            <Textarea
-              id={`${id}-reason`}
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </div>
-          <StepUpCodeField
-            id={`${id}-code`}
-            value={code}
-            onChange={setCode}
-            optional={codeOptional}
-            error={codeError}
-          />
-        </div>
+        <ReasonAndCodeFields id={id} state={rc} />
       </ConfirmDialog>
     </>
   )

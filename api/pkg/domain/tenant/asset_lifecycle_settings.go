@@ -74,6 +74,19 @@ type AssetLifecycleSettings struct {
 	// dry-run endpoint. A non-nil value unlocks the Enabled flag;
 	// unset means the API rejects Enable with "run a dry-run first".
 	DryRunCompletedAt *int64 `json:"dry_run_completed_at,omitempty"`
+	// Liveness: thresholds of the liveness states and whether findings of
+	// a gone asset close (asset_liveness_settings.go). Nil on a request
+	// keeps the stored value (a client that predates the field never
+	// resets it); nil stored means the defaults.
+	Liveness *AssetLivenessSettings `json:"liveness,omitempty"`
+}
+
+// LivenessSettings returns the liveness settings, the defaults when unset.
+func (s AssetLifecycleSettings) LivenessSettings() AssetLivenessSettings {
+	if s.Liveness == nil {
+		return AssetLivenessSettings{}
+	}
+	return *s.Liveness
 }
 
 // DefaultAssetLifecycleSettings returns the recommended defaults,
@@ -158,6 +171,9 @@ func (s *AssetLifecycleSettings) Validate() error {
 				shared.ErrValidation, MinLifecycleThresholdDays, MaxLifecycleThresholdDays,
 			)
 		}
+	}
+	if err := s.LivenessSettings().Validate(); err != nil {
+		return err
 	}
 	if len(s.ExcludedSourceTypes) > MaxExcludedSourceTypes {
 		return fmt.Errorf(

@@ -19,8 +19,14 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import Link from '@/components/link'
 import { useRouter } from 'next/navigation'
 import {
+  Bug,
+  ClipboardCheck,
+  Coins,
   Copy,
   ExternalLink,
+  FileText,
+  KeyRound,
+  Settings2,
   Link2,
   Loader2,
   MoreHorizontal,
@@ -28,6 +34,7 @@ import {
   ShieldCheck,
   Ticket,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
@@ -50,12 +57,22 @@ import { AddFindingsToTaskDialog } from '@/features/remediation-hub/components/a
 import { AITriageButton } from '@/features/ai-triage/components'
 import { isNoValidationSensorError, useRequestValidationApi } from '../../api/use-findings-api'
 import type { FindingDetail, FindingStatus } from '../../types'
-import { FINDING_TYPE_CONFIG } from '../../types'
+import { Tag } from '@/components/ui/tag'
 import { CreateTicketDialog } from '../create-ticket-dialog'
 import { useCanCreateTicket } from '../../hooks/use-can-create-ticket'
 import { MarkDuplicateDialog } from '../mark-duplicate-dialog'
-import { findingSourceLabel, HUMAN_SOURCES } from '../../lib/finding-detail'
+import { findingSourceText, findingTypeText, HUMAN_SOURCES } from '../../lib/finding-detail'
 import { shareableLink } from '@/lib/org-link'
+
+/** The icon of each finding type: shape, not colour, names the kind. */
+const TYPE_ICON: Record<string, LucideIcon> = {
+  vulnerability: Bug,
+  compliance: ClipboardCheck,
+  misconfiguration: Settings2,
+  secret: KeyRound,
+  license: FileText,
+  web3: Coins,
+}
 
 interface FindingHeaderProps {
   finding: FindingDetail
@@ -121,10 +138,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
     }
   }
 
-  const typeCfg =
-    finding.findingType && finding.findingType !== 'vulnerability'
-      ? FINDING_TYPE_CONFIG[finding.findingType]
-      : undefined
+  const TypeIcon = TYPE_ICON[finding.findingType ?? 'vulnerability'] ?? Bug
   const cweNum = finding.cwe?.replace(/^CWE-/i, '')
 
   return (
@@ -137,14 +151,22 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
             kevRansomware={finding.kevRansomware}
           />
         )}
-        <Badge variant="outline" className="text-xs">
-          {findingSourceLabel(finding.source)}
-        </Badge>
-        {typeCfg && (
-          <Badge variant="outline" className="text-xs">
-            {typeCfg.label}
-          </Badge>
-        )}
+        {/* What it is (a configuration check, a vulnerability), then who found it. */}
+        <Tag
+          icon={TypeIcon}
+          label={findingTypeText(t, finding.findingType)}
+          className="font-semibold"
+        />
+        <span className="text-xs text-muted-foreground" data-slot="finding-found-by">
+          {finding.toolName
+            ? t('findings.header.foundByTool', 'Found by {source} ({tool})', {
+                source: findingSourceText(t, finding.source),
+                tool: finding.toolName,
+              })
+            : t('findings.header.foundBy', 'Found by {source}', {
+                source: findingSourceText(t, finding.source),
+              })}
+        </span>
         {finding.branchOnly && <BranchOnlyBadge />}
         {finding.cve && (
           <Badge variant="outline" className="text-xs">

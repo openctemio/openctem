@@ -12,6 +12,10 @@ export default defineConfig({
     // Setup files
     setupFiles: ['./src/test/setup.ts'],
 
+    // @uiw/react-md-editor (4.2+) imports .css from its ESM build; Node cannot
+    // load that, so Vite must process these packages.
+    server: { deps: { inline: [/@uiw\//] } },
+
     // Global test utilities
     globals: true,
 

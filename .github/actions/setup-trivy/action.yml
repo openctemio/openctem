@@ -1,11 +1,14 @@
 name: Set up trivy
 description: >
   Installs a pinned trivy release from its GitHub release asset, checked
-  against the published SHA-256, with retries. Used by the image guard.
+  against the published SHA-256 on every run (through
+  ./.github/actions/fetch-tool, which keeps the archive in the Actions cache).
+  Used by the image guard.
 runs:
   using: composite
   steps:
-    - name: Install trivy
+    - name: Pick the trivy asset for this runner
+      id: pin
       shell: bash
       env:
         TRIVY_VERSION: "0.75.0"
@@ -18,12 +21,24 @@ runs:
           aarch64|arm64) asset=Linux-ARM64; sum="$TRIVY_SHA256_ARM64" ;;
           *) echo "::error::unsupported runner architecture $(uname -m)"; exit 1 ;;
         esac
-        url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_${asset}.tar.gz"
-        archive="$RUNNER_TEMP/trivy.tar.gz"
-        curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 --connect-timeout 20 -o "$archive" "$url"
-        echo "${sum}  ${archive}" | sha256sum -c -
-        dir="$RUNNER_TEMP/trivy-bin"
-        mkdir -p "$dir"
-        tar -xzf "$archive" -C "$dir" trivy
-        echo "$dir" >> "$GITHUB_PATH"
-        "$dir/trivy" --version
+        {
+          echo "version=$TRIVY_VERSION"
+          echo "sha256=$sum"
+          echo "url=https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_${asset}.tar.gz"
+        } >> "$GITHUB_OUTPUT"
+    - name: Fetch trivy
+      id: trivy
+      uses: ./.github/actions/fetch-tool
+      with:
+        name: trivy
+        version: ${{ steps.pin.outputs.version }}
+        url: ${{ steps.pin.outputs.url }}
+        sha256: ${{ steps.pin.outputs.sha256 }}
+        extract: trivy
+    - name: Put trivy on PATH
+      shell: bash
+      env:
+        TRIVY_DIR: ${{ steps.trivy.outputs.dir }}
+      run: |
+        echo "$TRIVY_DIR" >> "$GITHUB_PATH"
+        "$TRIVY_DIR/trivy" --version

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { AlertCircle, Check, Copy, Info, Loader2, Mail, Send, ShieldAlert } from 'lucide-react'
+import { Check, Copy, Info, Loader2, Mail, Send, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -16,6 +16,7 @@ import {
   DialogBody,
   DialogForm,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
@@ -396,15 +397,10 @@ export function InviteUserDialog({
                     </p>
                   </div>
                 )}
-
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
               </div>
             </DialogBody>
+
+            <DialogSubmitError message={error} />
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={close}>

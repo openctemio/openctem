@@ -233,23 +233,42 @@ const (
 	// FailureDependencySkipped: a step this step needs the results of was
 	// skipped, so this one has nothing to work on.
 	FailureDependencySkipped = "DEPENDENCY_SKIPPED"
+	// FailureDependencyFailed: a step that streamed from a predecessor
+	// (it started on the predecessor's first finished tasks) was stopped
+	// because the predecessor then failed: its tasks that had not run were
+	// canceled, so it never scans the whole input of a step that found
+	// nothing (a host discovery that could not probe its ranges).
+	FailureDependencyFailed = "DEPENDENCY_FAILED"
 	// FailureScannerConfigSecret: the scan's stored settings hold a
 	// credential, which never reaches a command (scan.CodeScannerConfigSecret).
 	FailureScannerConfigSecret = "SCANNER_CONFIG_SECRET"
+	// FailureSourceRetired: the organization stopped using the step's tool
+	// on the sensor as a source of findings
+	// (docs/architecture/source-retirement.md), and no other sensor of the
+	// organization may run it; refused at claim, never sent. The step is
+	// skipped, never failed: the rest of the run goes on.
+	FailureSourceRetired = "SOURCE_RETIRED"
 )
 
 // unsupportedSkipCodes are the codes of a step skipped because no tool or
-// sensor of the organization runs it.
+// sensor of the organization runs it (or may: SOURCE_RETIRED).
 var unsupportedSkipCodes = map[string]bool{
 	FailureNoMatchingTool:   true,
 	FailureToolNotInstalled: true,
 	FailureToolDisabled:     true,
 	FailureNoSensorForTool:  true,
+	FailureSourceRetired:    true,
 }
 
 // IsUnsupportedSkipCode reports whether code is the reason of a step skipped
 // because no tool or sensor of the organization runs it.
 func IsUnsupportedSkipCode(code string) bool { return unsupportedSkipCodes[code] }
+
+// IsClaimSkipCode reports whether a command failed at claim with code skips
+// its step instead of failing it: the work was never sent, by a decision of
+// the organization, so the rest of the run goes on (it ends partial, or
+// failed when no step produced results).
+func IsClaimSkipCode(code string) bool { return code == FailureSourceRetired }
 
 // FailureCodeForInfra is the step failure code of a command that ended on
 // the infrastructure class class (command.FailureClass spelling). An
@@ -316,7 +335,9 @@ var failureClasses = map[string]FailureClass{
 	FailureToolNotInstalled:          FailureClassConfig,
 	FailureToolDisabled:              FailureClassConfig,
 	FailureDependencySkipped:         FailureClassConfig,
+	FailureDependencyFailed:          FailureClassTransient,
 	FailureScannerConfigSecret:       FailureClassConfig,
+	FailureSourceRetired:             FailureClassPolicy,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a

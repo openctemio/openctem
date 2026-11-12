@@ -86,6 +86,9 @@ type WebhookPayload struct {
 	FooterText     string              `json:"footer_text,omitempty"`
 	Attachments    []WebhookAttachment `json:"attachments,omitempty"`
 	Source         string              `json:"source"`
+	// Notification is the structured message (schema
+	// openctem.notification/v1); absent for a test delivery.
+	Notification *cardNotification `json:"notification,omitempty"`
 }
 
 // WebhookAttachment represents an attachment in the webhook payload.
@@ -211,5 +214,6 @@ func (c *WebhookClient) buildPayload(msg Message) WebhookPayload {
 		FooterText:     msg.FooterText,
 		Attachments:    attachments,
 		Source:         "openctem.io",
+		Notification:   newCardNotification(msg.Card),
 	}
 }

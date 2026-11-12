@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -63,7 +64,7 @@ func (h *VulnerabilityHandler) SearchFindings(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	h.writeFindingList(w, r, spec)
+	h.writeFindingList(w, r, spec, false)
 }
 
 // FindingFilterMeta handles GET /api/v1/meta/filters/findings
@@ -89,10 +90,10 @@ func (h *VulnerabilityHandler) FindingFilterMeta(w http.ResponseWriter, r *http.
 
 // writeFindingList runs a decoded filter as the caller and writes the list
 // response (shared by GET /findings and POST /findings/search).
-func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec) {
+func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec, practiceCounts bool) {
 	result, dupCounts, err := h.service.ListFindingsWithDuplicatesBySpec(r.Context(), filterCaller(r), spec)
 	if err != nil {
-		if writeFindingQueryTimeout(w, err) {
+		if h.specTimedOut(w, spec, err) {
 			return
 		}
 		if _, isFilter := filterspec.AsError(err); isFilter {
@@ -115,17 +116,37 @@ func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.R
 		data[i].DuplicatesMarked = dupCounts[f.ID()]
 	}
 
-	response := ListResponse[FindingResponse]{
+	response := FindingListResponse{ListResponse: ListResponse[FindingResponse]{
 		Data:       data,
 		Total:      result.Total,
 		Page:       result.Page,
 		PerPage:    result.PerPage,
 		TotalPages: result.TotalPages,
 		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	}}
+	if practiceCounts {
+		response.PracticeCounts = h.listPracticeCounts(r.Context(), r, spec)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// specTimedOut logs a findings read that ran past its statement timeout with
+// the names of the filter's fields (never their values), then answers it
+// like writeFindingQueryTimeout.
+func (h *VulnerabilityHandler) specTimedOut(w http.ResponseWriter, spec *filterspec.Spec, err error) bool {
+	if !errors.Is(err, vulnerability.ErrFindingQueryTimeout) {
+		return false
+	}
+	if h.logger != nil && spec != nil {
+		fields := make([]string, 0, 8)
+		for _, l := range spec.Leaves() {
+			fields = append(fields, l.Field)
+		}
+		h.logger.Warn("findings query timed out", "fields", strings.Join(fields, ","), "search", spec.Q != "")
+	}
+	return writeFindingQueryTimeout(w, err)
 }
 
 // writeFindingQueryTimeout answers a findings read that ran past its

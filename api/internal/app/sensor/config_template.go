@@ -142,6 +142,12 @@ type SensorTemplateData struct {
 	// signs the job signer's key set; the snippets pass it as
 	// SENSOR_JOB_SIGNING_ROOT. Empty: none configured.
 	JobSigningRoot string
+	// HostAllowedRanges (pairing installs for internal networks only) is
+	// the comma-separated SENSOR_ALLOWED_RANGES pin the snippets set: the
+	// host then refuses every target outside these private networks. Empty:
+	// no pin, the sensor follows the platform's signed scope. Set only by
+	// InstallIntent.Apply, which validates every range.
+	HostAllowedRanges string
 }
 
 // How an installed sensor gets its identity (SensorTemplateData.Auth).

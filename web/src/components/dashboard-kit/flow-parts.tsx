@@ -66,16 +66,36 @@ export function wireStroke(health: SourceHealth | 'neutral' | 'bad'): {
   }
 }
 
+/** Slowest and fastest travel of a wire's light, in seconds per cycle. */
+export const FLOW_SLOW_S = 3.2
+export const FLOW_FAST_S = 1.1
+
+/**
+ * How long one cycle of a wire's travelling light takes: faster for more
+ * volume, on a log scale (a source with ten times the findings is visibly
+ * quicker, never a hundred times), from FLOW_SLOW_S for the smallest to
+ * FLOW_FAST_S for the largest. Null when nothing flows: no light at all.
+ */
+export function flowDuration(value: number, max: number): number | null {
+  if (value <= 0) return null
+  const top = Math.max(value, max, 1)
+  const share = top <= 1 ? 1 : Math.log1p(value) / Math.log1p(top)
+  return Math.round((FLOW_SLOW_S - (FLOW_SLOW_S - FLOW_FAST_S) * share) * 100) / 100
+}
+
 /**
  * One wire of a connected visual, the same in every widget: a line from its
  * source row to its target, its width the volume.
  *
  * - healthy with data: a travelling light (a short bright dash) runs along the
- *   wire from source to target; the speed is the same on every wire;
- * - nothing received: a thin dashed line, still;
+ *   wire from source to target, faster for more volume (`flowDuration`);
+ * - nothing received: a thin dashed line, still (the source is connected and
+ *   listed, nothing flowed);
  * - stale: dotted amber, failed: dotted red, both still (the row says why);
- * - no motion at all under prefers-reduced-motion or data-motion="off".
- * The light is a CSS animation of the dash offset (no per-frame script).
+ * - no motion at all under prefers-reduced-motion or data-motion="off", and
+ *   paused while its layer is off screen or the tab is hidden (FlowWireLayer).
+ * The light is a CSS animation of the dash offset (no per-frame script); the
+ * numbers and the width carry the volume, the motion only repeats it.
  */
 export function FlowWire({
   d,
@@ -102,13 +122,13 @@ export function FlowWire({
     ? { stroke: 'var(--border-strong, var(--border))', dash: '4 4' as string | undefined }
     : wireStroke(health)
   const width = silent ? 1 : wireWidth(value, max)
-  const travelling = health === 'ok' && !silent && !reduced
+  const duration = health === 'ok' && !reduced ? flowDuration(value, max) : null
   return (
     <g
       className={className}
       data-wire={health}
       data-wire-key={wireKey}
-      data-wire-motion={travelling ? 'on' : 'off'}
+      data-wire-motion={duration ? 'on' : 'off'}
     >
       <path
         d={d}
@@ -119,17 +139,81 @@ export function FlowWire({
         strokeDasharray={base.dash}
         strokeLinecap="round"
       />
-      {travelling && (
+      {duration && (
         <path
           d={d}
           fill="none"
           stroke="var(--signal)"
           strokeOpacity={0.9}
           strokeWidth={Math.max(2, width)}
+          strokeLinecap="round"
           className="animate-flow-light"
+          style={{ animationDuration: `${duration}s` }}
+          data-flow-duration={duration}
         />
       )}
     </g>
+  )
+}
+
+/**
+ * Whether an element is worth animating: on screen (IntersectionObserver)
+ * and in a visible tab (document.visibilityState). Without the observer
+ * (old browsers, tests) it counts as on screen.
+ */
+export function useInViewAndVisible(ref: RefObject<Element | null>): boolean {
+  const [onScreen, setOnScreen] = useState(true)
+  const [tabVisible, setTabVisible] = useState(true)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1]
+      if (last) setOnScreen(last.isIntersecting)
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [ref])
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const on = () => setTabVisible(document.visibilityState !== 'hidden')
+    on()
+    document.addEventListener('visibilitychange', on)
+    return () => document.removeEventListener('visibilitychange', on)
+  }, [])
+  return onScreen && tabVisible
+}
+
+/**
+ * The layer every connected visual draws its wires on: one SVG over the
+ * visual, never hit by the pointer, hidden from assistive technology (the
+ * rows and figures carry the same numbers). Off screen or in a hidden tab it
+ * marks itself paused and the wires' lights stop (`data-flow-paused`, CSS
+ * animation-play-state), so a dashboard below the fold costs no paint.
+ */
+export function FlowWireLayer({
+  width,
+  height,
+  children,
+}: {
+  width: number
+  height: number
+  children: ReactNode
+}) {
+  const ref = useRef<SVGSVGElement>(null)
+  const running = useInViewAndVisible(ref)
+  return (
+    <svg
+      ref={ref}
+      aria-hidden
+      className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+      width={width}
+      height={height}
+      data-testid="flow-wires"
+      data-flow-paused={running ? undefined : ''}
+    >
+      {children}
+    </svg>
   )
 }
 

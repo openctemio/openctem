@@ -34,6 +34,12 @@ type ChainHop struct {
 	Exposure  string `json:"exposure"`
 }
 
+// ProofPossible is the proof state of every exposure chain and attack path
+// today: it is built from the asset graph and the open findings, and no check
+// has shown that an attacker can follow it. A path becomes proven only from
+// a recorded verdict (docs/architecture/attack-paths.md, Proof).
+const ProofPossible = "possible"
+
 // ExposureChain is the shortest path from a public entry point to an asset that
 // carries a KEV or critical finding — the concrete "how the internet reaches a
 // dangerous asset" story that plain reachability scoring doesn't surface.
@@ -56,6 +62,8 @@ type ExposureChain struct {
 	CriticalCount int `json:"critical_count"`
 	// Score ranks urgency: dangerous + close-to-internet + crown-jewel = higher.
 	Score float64 `json:"score"`
+	// Proof is "possible": the chain is not proven (ProofPossible).
+	Proof string `json:"proof"`
 }
 
 // ExposureChainSummary holds aggregate metrics for the tenant.
@@ -233,6 +241,7 @@ func considerChain(
 
 	tn, en := nodeByID[target], nodeByID[entry]
 	best[target] = &ExposureChain{
+		Proof:             ProofPossible,
 		EntryPointID:      entry,
 		EntryPointName:    en.Name,
 		TargetID:          target,
