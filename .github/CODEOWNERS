@@ -28,6 +28,7 @@
 # Extension seams: the public extension API, the custom-build entry point,
 # the fence and the entitlement registry. Maintainer review.
 /api/pkg/extension/                 @0xmanhnv
+/api/internal/extensionhost/        @0xmanhnv
 /api/pkg/server/                    @0xmanhnv
 /api/pkg/domain/limits/             @0xmanhnv
 /web/src/lib/extension/             @0xmanhnv
