@@ -35,6 +35,13 @@ for triage. All findings, Closed, Pending approval, Accepted expiring, an
 explicit `severity=info` and any API call that does not send `informational`
 are unchanged.
 
+Actionable (`actionable`: `state=open&priority_class=P0,P1`) and Known
+exploited (`known_exploited`: `state=open&is_in_kev=true`), the two Findings
+board tabs, carry no informational filter either way: an informational
+finding is P3, so it is never in Actionable, and a finding on the known
+exploited list is shown whatever its severity, because the listing is the
+fact that matters.
+
 A view's count and its list compile the same params in the same caller scope
 (`CountQuickViews`), so the Triage count and the sidebar counts always equal
 the list totals.

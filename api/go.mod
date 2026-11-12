@@ -77,7 +77,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/common v0.72.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
-	github.com/richardlehane/mscfb v1.0.8 // indirect
+	github.com/richardlehane/mscfb v1.0.9 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/sassoftware/relic/v8 v8.2.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect
@@ -99,7 +99,7 @@ require (
 	github.com/transparency-dev/merkle v0.0.2 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xuri/efp v0.0.2 // indirect
+	github.com/xuri/efp v0.0.3-0.20260924042702-217b81952dec // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -138,7 +138,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/lib/pq v1.12.3
 	github.com/mattermost/xml-roundtrip-validator v0.1.0
-	github.com/openctemio/contract v1.6.0
+	github.com/openctemio/contract v1.6.1-0.20261112042759-cf68d4ca7454
 	github.com/openctemio/contract/transfer v1.0.1
 	github.com/openctemio/ctis/v2 v2.0.3
 	github.com/openctemio/ctis/v2/interop/csaf v0.1.0
@@ -158,7 +158,7 @@ require (
 	github.com/sigstore/sigstore-go v1.4.0
 	github.com/stretchr/testify v1.12.1
 	github.com/teambition/rrule-go v1.8.2
-	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
+	github.com/xuri/excelize/v2 v2.11.1
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0

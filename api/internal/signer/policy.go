@@ -107,6 +107,9 @@ func validate(raw []byte, now time.Time) (*jobsign.Statement, *refusal) {
 	if r := checkFeedRelayShape(st); r != nil {
 		return st, r
 	}
+	if r := checkLookupShape(st); r != nil {
+		return st, r
+	}
 	if st.CommandType != jobsign.CommandTypeFeedRelay {
 		if r := checkShared(st); r != nil {
 			return st, r

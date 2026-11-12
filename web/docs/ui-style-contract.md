@@ -325,6 +325,12 @@ load.
 
 - **Loading**: `<Skeleton>` shaped like the content it replaces. Spinners
   (`Loader2`) only inside buttons that are working.
+- **Failed load**: a page that reads data shows `ErrorState` with Retry (or a
+  `DataTable` `error` with `onRetry`) for every read that can fail, so a failed
+  read never looks like an empty list or a row of zeros. The route guard
+  `src/lib/__tests__/route-error-state-guard.test.ts` fails when a route page
+  that fetches has none; its debt file `route-error-state-debt.json` lists the
+  pages still to fix and can only shrink.
 - **Navigating**: no `loading.tsx` inside `(dashboard)` (a test enforces it).
   Each page renders its own skeleton; a route-level loading file only adds a
   second, differently shaped skeleton and makes React hold the page back for
@@ -491,6 +497,16 @@ load.
   box. A page keeps the open state in the URL (`?activity=open`); a drawer
   keeps it in memory.
 - Destructive confirmation: `<ConfirmDialog destructive>`.
+  - A bulk or irreversible act passes `preview` (a sentence with the count, plus
+    the first five names and "and N more"), so the user sees what will change
+    before confirming. An act that is recorded or approved passes `reason`
+    (`required` keeps Confirm disabled until it has text); `handleConfirm`
+    receives the trimmed reason. Typed confirmation, preview and reason combine.
+  - A request held for approval shows the shared `AwaitingApprovalBand` on the
+    object (what is waiting, who asked and why, Cancel request behind a
+    confirmation, the approver's buttons). Do not build a second band.
+  - The step-up dialog says the action continues right away once the identity
+    is confirmed; it never describes the act.
 
 ## 9. Responsiveness
 

@@ -2,7 +2,6 @@ package certmonitor
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -103,7 +102,7 @@ func TestMonitorTenant_RotatesThroughAllDomains(t *testing.T) {
 	srv := httptest.NewServer(ct.handler(t))
 	defer srv.Close()
 
-	svc := NewService(&fakeAssetRepo{assets: domainAssets(t, tenant, 120)}, newFakeExposureRepo(), srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: domainAssets(t, tenant, 120)}, newFakeExposureRepo(), srv.URL)
 	svc.setHTTPClient(srv.Client())
 	state := newMemState()
 	svc.SetStateStore(state)
@@ -135,7 +134,7 @@ func TestMonitorTenant_RestartDoesNotRequery(t *testing.T) {
 	srv := httptest.NewServer(ct.handler(t))
 	defer srv.Close()
 
-	svc := NewService(&fakeAssetRepo{assets: domainAssets(t, tenant, 10)}, newFakeExposureRepo(), srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: domainAssets(t, tenant, 10)}, newFakeExposureRepo(), srv.URL)
 	svc.setHTTPClient(srv.Client())
 	svc.SetStateStore(newMemState())
 	clock := time.Date(2026, 10, 2, 3, 0, 0, 0, time.UTC)
@@ -157,36 +156,6 @@ func TestMonitorTenant_RestartDoesNotRequery(t *testing.T) {
 	}
 	if ct.count() != 20 {
 		t.Errorf("next daily run: %d queries, want 20", ct.count())
-	}
-}
-
-func TestMonitorTenant_RetriesCRTSHThenSucceeds(t *testing.T) {
-	tenant := shared.NewID()
-	ct := &ctServer{asked: map[string]int{}, status: func(_ string, n int) int {
-		if n <= 2 {
-			return http.StatusBadGateway
-		}
-		return http.StatusOK
-	}}
-	srv := httptest.NewServer(ct.handler(t))
-	defer srv.Close()
-
-	exp := newFakeExposureRepo()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, exp, srv.URL, testLogger())
-	svc.setHTTPClient(srv.Client())
-	state := newMemState()
-	svc.SetStateStore(state)
-
-	n, err := svc.MonitorTenant(context.Background(), tenant)
-	if err != nil || n != 1 {
-		t.Fatalf("want 1 exposure after two 502s, got n=%d err=%v", n, err)
-	}
-	if ct.asked["example.com"] != 3 {
-		t.Errorf("crt.sh asked %d times, want 3", ct.asked["example.com"])
-	}
-	st := state.m[tenant.String()]["example.com"]
-	if st.LastSource != SourceCRTSH || st.LastSuccessAt == nil || st.ConsecutiveFailures != 0 {
-		t.Errorf("state after success = %+v", st)
 	}
 }
 
@@ -213,9 +182,9 @@ func TestMonitorTenant_FallsBackToCertSpotter(t *testing.T) {
 	defer cs.Close()
 
 	exp := newFakeExposureRepo()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, exp, crt.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, exp, crt.URL)
 	svc.setHTTPClient(crt.Client())
-	svc.SetCertSpotterFallback(cs.URL)
+	setCertSpotter(svc, cs.URL)
 	state := newMemState()
 	svc.SetStateStore(state)
 
@@ -227,8 +196,8 @@ func TestMonitorTenant_FallsBackToCertSpotter(t *testing.T) {
 	if n != 3 {
 		t.Fatalf("want 3 exposures from Cert Spotter, got %d", n)
 	}
-	if ct.asked["example.com"] != crtshAttempts {
-		t.Errorf("crt.sh tried %d times before fallback, want %d", ct.asked["example.com"], crtshAttempts)
+	if ct.asked["example.com"] != 1 {
+		t.Errorf("crt.sh tried %d times before fallback, want 1", ct.asked["example.com"])
 	}
 	if csCalls != 2 {
 		t.Errorf("Cert Spotter called %d times, want 2 (one page + the empty page)", csCalls)
@@ -253,9 +222,9 @@ func TestMonitorTenant_BothSourcesFail_BacksOffAndSkips(t *testing.T) {
 
 	assets := []*assetdom.Asset{mustDomainAsset(t, tenant, "a.example.com"), mustDomainAsset(t, tenant, "b.example.com")}
 	exp := newFakeExposureRepo()
-	svc := NewService(&fakeAssetRepo{assets: assets}, exp, crt.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: assets}, exp, crt.URL)
 	svc.setHTTPClient(crt.Client())
-	svc.SetCertSpotterFallback(cs.URL)
+	setCertSpotter(svc, cs.URL)
 	state := newMemState()
 	svc.SetStateStore(state)
 	clock := time.Date(2026, 10, 2, 3, 0, 0, 0, time.UTC)
@@ -265,9 +234,10 @@ func TestMonitorTenant_BothSourcesFail_BacksOffAndSkips(t *testing.T) {
 	if err != nil || n != 0 {
 		t.Fatalf("both sources down: want n=0 err=nil, got %d %v", n, err)
 	}
-	// Cert Spotter answered 429 for the first domain; the second never asks it.
-	if csCalls != 1 {
-		t.Errorf("Cert Spotter called %d times after a 429, want 1", csCalls)
+	// One lookup per domain, one attempt per source (pacing and retries
+	// are the sensor's job now).
+	if csCalls != 2 {
+		t.Errorf("Cert Spotter called %d times, want 2 (once per domain)", csCalls)
 	}
 	for _, d := range []string{"a.example.com", "b.example.com"} {
 		st := state.m[tenant.String()][d]
@@ -294,21 +264,6 @@ func TestMonitorTenant_BothSourcesFail_BacksOffAndSkips(t *testing.T) {
 	}
 	if st := state.m[tenant.String()]["a.example.com"]; st.ConsecutiveFailures != 0 || st.NextAttemptAt != nil || st.LastError != "" {
 		t.Errorf("state after recovery = %+v", st)
-	}
-}
-
-func TestMonitorTenant_NotFoundIsNotRetried(t *testing.T) {
-	tenant := shared.NewID()
-	ct := &ctServer{asked: map[string]int{}, status: func(string, int) int { return http.StatusNotFound }}
-	srv := httptest.NewServer(ct.handler(t))
-	defer srv.Close()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, newFakeExposureRepo(), srv.URL, testLogger())
-	svc.setHTTPClient(srv.Client())
-	if _, err := svc.MonitorTenant(context.Background(), tenant); err != nil {
-		t.Fatal(err)
-	}
-	if ct.asked["example.com"] != 1 {
-		t.Errorf("a 404 was retried %d times", ct.asked["example.com"])
 	}
 }
 
@@ -343,7 +298,7 @@ func TestMonitorTenant_QueriesVerifiedAndScopeDomains(t *testing.T) {
 		return tg
 	}
 
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, newFakeExposureRepo(), srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, newFakeExposureRepo(), srv.URL)
 	svc.setHTTPClient(srv.Client())
 	svc.SetDomainSources(fakeVerified{list: []*verifieddomain.VerifiedDomain{verified, pending}}, fakeTargets{list: []*scope.Target{
 		mkTarget(scope.TargetTypeDomain, "*.scoped.org"),
@@ -398,24 +353,6 @@ func TestFailureBackoff(t *testing.T) {
 	}
 }
 
-func TestRetryDelay(t *testing.T) {
-	if d := retryDelay(1, &statusError{status: 503, retryAfter: 7 * time.Second}); d != 7*time.Second {
-		t.Errorf("Retry-After not honored: %s", d)
-	}
-	if d := retryDelay(1, &statusError{status: 503, retryAfter: time.Hour}); d != maxRetryAfter {
-		t.Errorf("Retry-After not capped: %s", d)
-	}
-	for i := 0; i < 50; i++ {
-		d := retryDelay(2, errors.New("x"))
-		if d < 2*time.Second || d > 4*time.Second {
-			t.Fatalf("attempt 2 delay %s outside [2s,4s]", d)
-		}
-		if d := retryDelay(10, errors.New("x")); d > retryCap {
-			t.Fatalf("delay %s above cap", d)
-		}
-	}
-}
-
 func TestCollectDiscoveries_ExpiredEmitsEvent(t *testing.T) {
 	tenant := shared.NewID()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -424,7 +361,7 @@ func TestCollectDiscoveries_ExpiredEmitsEvent(t *testing.T) {
 	}))
 	defer srv.Close()
 	exp := newFakeExposureRepo()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, exp, srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, exp, srv.URL)
 	svc.setHTTPClient(srv.Client())
 	if _, err := svc.MonitorTenant(context.Background(), tenant); err != nil {
 		t.Fatal(err)
@@ -470,7 +407,7 @@ func TestMonitorTenant_SweepBudget(t *testing.T) {
 	srv := httptest.NewServer(ct.handler(t))
 	defer srv.Close()
 
-	svc := NewService(&fakeAssetRepo{assets: domainAssets(t, tenant, 10)}, newFakeExposureRepo(), srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: domainAssets(t, tenant, 10)}, newFakeExposureRepo(), srv.URL)
 	svc.setHTTPClient(srv.Client())
 	state := newMemState()
 	svc.SetStateStore(state)
@@ -510,7 +447,7 @@ func TestMonitorTenant_SkipsWhenTenantLocked(t *testing.T) {
 	ct := &ctServer{asked: map[string]int{}}
 	srv := httptest.NewServer(ct.handler(t))
 	defer srv.Close()
-	svc := NewService(&fakeAssetRepo{assets: domainAssets(t, tenant, 3)}, newFakeExposureRepo(), srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: domainAssets(t, tenant, 3)}, newFakeExposureRepo(), srv.URL)
 	svc.setHTTPClient(srv.Client())
 	st := &lockingState{memState: newMemState(), held: true}
 	svc.SetStateStore(st)

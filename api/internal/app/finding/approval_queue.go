@@ -47,6 +47,39 @@ func (s *VulnerabilityService) ListApprovalQueue(ctx context.Context, in Approva
 	})
 }
 
+// approvalQueueCounter counts both personal queues with one statement
+// (*postgres.FindingApprovalRepository).
+type approvalQueueCounter interface {
+	CountQueues(ctx context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, scope *shared.DataScope) (map[vulnerability.ApprovalQueue]int64, error)
+}
+
+// CountApprovalQueues counts the pending requests of the caller's personal
+// queues (review, requested): the queue_counts of ListApprovalQueue, under
+// the same tenant, data scope and pentest visibility, without reading a
+// page. in.Queue, Status and paging are ignored. Review is 0 without
+// in.CanApprove.
+func (s *VulnerabilityService) CountApprovalQueues(ctx context.Context, in ApprovalQueueInput) (map[vulnerability.ApprovalQueue]int64, error) {
+	r, ok := s.approvalRepo.(approvalQueueCounter)
+	if !ok {
+		return nil, fmt.Errorf("%w: approval workflow not configured", shared.ErrValidation)
+	}
+	tid, err := shared.IDFromString(in.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+	caller, err := shared.IDFromString(in.CallerID)
+	if err != nil {
+		// An API key or a platform caller has no personal queue.
+		return nil, fmt.Errorf("%w: a personal queue needs a signed-in person", shared.ErrValidation)
+	}
+	filter := vulnerability.ApprovalFilter{CallerID: &caller, CallerCanApprove: in.CanApprove}
+	scope, err := s.approvalViewer(ctx, tid, &filter)
+	if err != nil {
+		return nil, err
+	}
+	return r.CountQueues(ctx, tid, filter, scope)
+}
+
 // ApprovalFindingFacts are the facts of an approval's finding now, for a
 // queue row: what the approver weighs at a glance.
 type ApprovalFindingFacts struct {

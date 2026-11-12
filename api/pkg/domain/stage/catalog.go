@@ -37,10 +37,14 @@ const (
 	ResolveDNS          Key = "resolve.dns"
 	LookupRDAP          Key = "lookup.rdap"
 	LookupASN           Key = "lookup.asn"
-	DiscoverHosts       Key = "discover.hosts"
-	ScanPorts           Key = "scan.ports"
-	ProbeHTTP           Key = "probe.http"
-	CrawlWeb            Key = "crawl.web"
+	// LookupCT asks Certificate Transparency which certificates name a
+	// root domain. Cross-cutting: the platform's certificate monitoring runs
+	// it as a lookup job on a platform sensor, never as a workflow step.
+	LookupCT      Key = "lookup.ct"
+	DiscoverHosts Key = "discover.hosts"
+	ScanPorts     Key = "scan.ports"
+	ProbeHTTP     Key = "probe.http"
+	CrawlWeb      Key = "crawl.web"
 	// EnumerateWebPaths requests candidate paths the platform lists on a
 	// web origin, GET and HEAD only (path discovery).
 	EnumerateWebPaths Key = "enumerate.web_paths"
@@ -273,6 +277,18 @@ var catalog = []Stage{
 			{Tool: "asn", Default: true},
 		},
 		MaxFanout: RunFanoutCap, MaxPerParent: DefaultPerParent,
+	},
+	{
+		Key: LookupCT, Name: "Certificate Transparency lookup",
+		Description: "Certificates that public Certificate Transparency search services list for a root domain and the names under it. Run by a platform sensor for certificate monitoring, not as a workflow step.",
+		Inputs:      []asset.TypeRef{tDomain},
+		Outputs:     []asset.TypeRef{tDomain},
+		Tier:        TierPassive,
+		Implementations: []Implementation{
+			{Tool: "ctlog", Default: true},
+		},
+		CrossCutting: true,
+		MaxFanout:    RunFanoutCap, MaxPerParent: DefaultPerParent,
 	},
 	{
 		Key: DiscoverHosts, Name: "Host discovery",

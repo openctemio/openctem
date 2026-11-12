@@ -111,10 +111,9 @@ func approvalWhere(tenantID shared.ID, scope *shared.DataScope) (string, []any) 
 	return where, args
 }
 
-// List returns a tenant's approvals, newest first, filtered by status (empty
-// = every status) and, for a restricted caller, by data scope. Total and the
-// per-status counts use the same tenant and scope condition.
-func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, page pagination.Pagination, scope *shared.DataScope) (vulnerability.ApprovalPage, error) {
+// approvalListWhere is approvalWhere plus the pentest visibility of the
+// filter's viewer: the condition every approval list and count shares.
+func approvalListWhere(tenantID shared.ID, filter vulnerability.ApprovalFilter, scope *shared.DataScope) (string, []any) {
 	where, args := approvalWhere(tenantID, scope)
 	if filter.PentestViewerID != nil {
 		// A pentest finding's approval (its reason, the finding title) is
@@ -125,6 +124,45 @@ func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID
 			WHERE m.tenant_id = $1 AND m.user_id = $%d
 			  AND (m.role <> 'client' OR f.status NOT IN ('draft', 'in_review')))))`, len(args))
 	}
+	return where, args
+}
+
+// countApprovalQueues counts the pending requests of both personal queues of
+// the caller bound at $callerArg, under where. Review is pending by its own
+// condition; requested counts the caller's pending requests.
+func (r *FindingApprovalRepository) countApprovalQueues(ctx context.Context, where string, args []any, callerArg int, canApprove bool) (map[vulnerability.ApprovalQueue]int64, error) {
+	review := approvalQueueCond(vulnerability.ApprovalQueueReview, callerArg, canApprove)
+	requested := approvalQueueCond(vulnerability.ApprovalQueueRequested, callerArg, canApprove)
+	var nReview, nRequested int64
+	if err := r.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FILTER (WHERE "+review+"), COUNT(*) FILTER (WHERE a.status = 'pending' AND "+requested+
+			") FROM finding_status_approvals a WHERE "+where, args...).Scan(&nReview, &nRequested); err != nil {
+		return nil, fmt.Errorf("failed to count approval queues: %w", err)
+	}
+	return map[vulnerability.ApprovalQueue]int64{
+		vulnerability.ApprovalQueueReview:    nReview,
+		vulnerability.ApprovalQueueRequested: nRequested,
+	}, nil
+}
+
+// CountQueues counts the pending requests of the caller's two personal
+// queues (review, requested) with one statement: the queue_counts a queue
+// page of List carries, under the same tenant, data scope and pentest
+// visibility, without reading a page.
+func (r *FindingApprovalRepository) CountQueues(ctx context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, scope *shared.DataScope) (map[vulnerability.ApprovalQueue]int64, error) {
+	if filter.CallerID == nil {
+		return nil, fmt.Errorf("%w: a personal queue needs the caller", shared.ErrValidation)
+	}
+	where, args := approvalListWhere(tenantID, filter, scope)
+	args = append(args, filter.CallerID.String())
+	return r.countApprovalQueues(ctx, where, args, len(args), filter.CallerCanApprove)
+}
+
+// List returns a tenant's approvals, newest first, filtered by status (empty
+// = every status) and, for a restricted caller, by data scope. Total and the
+// per-status counts use the same tenant and scope condition.
+func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID, filter vulnerability.ApprovalFilter, page pagination.Pagination, scope *shared.DataScope) (vulnerability.ApprovalPage, error) {
+	where, args := approvalListWhere(tenantID, filter, scope)
 
 	var queueCounts map[vulnerability.ApprovalQueue]int64
 	if filter.Queue != "" {
@@ -133,17 +171,9 @@ func (r *FindingApprovalRepository) List(ctx context.Context, tenantID shared.ID
 		}
 		args = append(args, filter.CallerID.String())
 		callerArg := len(args)
-		review := approvalQueueCond(vulnerability.ApprovalQueueReview, callerArg, filter.CallerCanApprove)
-		requested := approvalQueueCond(vulnerability.ApprovalQueueRequested, callerArg, filter.CallerCanApprove)
-		var nReview, nRequested int64
-		if err := r.db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FILTER (WHERE "+review+"), COUNT(*) FILTER (WHERE a.status = 'pending' AND "+requested+
-				") FROM finding_status_approvals a WHERE "+where, args...).Scan(&nReview, &nRequested); err != nil {
-			return vulnerability.ApprovalPage{}, fmt.Errorf("failed to count approval queues: %w", err)
-		}
-		queueCounts = map[vulnerability.ApprovalQueue]int64{
-			vulnerability.ApprovalQueueReview:    nReview,
-			vulnerability.ApprovalQueueRequested: nRequested,
+		var err error
+		if queueCounts, err = r.countApprovalQueues(ctx, where, args, callerArg, filter.CallerCanApprove); err != nil {
+			return vulnerability.ApprovalPage{}, err
 		}
 		where += " AND " + approvalQueueCond(filter.Queue, callerArg, filter.CallerCanApprove)
 	}

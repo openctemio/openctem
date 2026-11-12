@@ -110,6 +110,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/jira"
 	licapp "github.com/openctemio/openctem/api/internal/app/licensepolicy"
 	lifecycleapp "github.com/openctemio/openctem/api/internal/app/lifecycle"
+	lookupjobapp "github.com/openctemio/openctem/api/internal/app/lookupjob"
 	onboardingapp "github.com/openctemio/openctem/api/internal/app/onboarding"
 	orgtrustapp "github.com/openctemio/openctem/api/internal/app/orgtrust"
 	"github.com/openctemio/openctem/api/internal/app/outbox"
@@ -1054,7 +1055,10 @@ type Services struct {
 	ThreatSource        *threatsource.Service
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
-	FeedRelay     *feedrelay.Service
+	FeedRelay *feedrelay.Service
+	// LookupJobs asks the platform's instance-scope sensors passive
+	// questions for an organization (lookup.ct@1).
+	LookupJobs    *lookupjobapp.Service
 	ScanIdentity  *scanidentity.Service
 	PlatformAlert *platformalert.Service
 	PlatformAI    *platformai.Service
@@ -1596,23 +1600,20 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Immediate alerts of web endpoint changes share the exposure alerts'
 	// outbox, hourly budget and attribution rules.
 	repos.WebEndpoint.SetAlerter(postgres.NewWebAlerter(easmAlerts))
-	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, cfg.Worker.CertMonitorFeedBaseURL, log)
+	s.CertMonitor = certmonitorapp.NewService(repos.Asset, easmExposures, log)
+	// CT queries are lookup jobs on the platform's sensors (lookup.ct@1):
+	// the platform makes no CT request itself. CT monitoring is available
+	// while such a sensor is connected.
+	s.LookupJobs = newLookupJobService(cfg, deps.DB, log)
+	if s.LookupJobs != nil {
+		s.CertMonitor.SetSource(certmonitorapp.SensorSource{Jobs: s.LookupJobs})
+	}
 	s.CertMonitor.SetDomainSources(repos.VerifiedDomain, repos.ScopeTarget)
 	// Stored CT exposures follow their host to its own asset (research/22 P0-9).
 	s.CertMonitor.SetRelinker(repos.Exposure)
 	// Excluded names are neither queried nor discovered (RFC-042 F16).
 	s.CertMonitor.SetExclusions(s.Scope)
 	s.CertMonitor.SetStateStore(repos.CTMonitorState)
-	s.CertMonitor.SetCertSpotterFallback(cfg.Worker.CertMonitorCertSpotterURL)
-	// The commercial Cert Spotter key (SaaS), sent only with requests a
-	// platform sensor carries. No fetcher is wired: the platform makes no CT
-	// request itself (zero platform egress), so the sweep reports
-	// needs_platform_sensor until a platform sensor can carry CT lookups.
-	s.CertMonitor.SetCertSpotterKey(cfg.Worker.CertMonitorCertSpotterKey)
-	if cfg.Worker.CertMonitorEnabled && !s.CertMonitor.Available() {
-		log.Info("certificate transparency monitoring needs a platform sensor; the platform makes no CT request itself",
-			"reason", s.CertMonitor.UnavailableReason())
-	}
 	// Re-check a little under the sweep interval: the next scheduled run
 	// re-queries, an API restart in between does not.
 	s.CertMonitor.SetLimits(cfg.Worker.CertMonitorMaxDomainsPerRun, easmRecheck(cfg.Worker.CertMonitorInterval))
@@ -1632,7 +1633,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// Run-now and seed-triggered sweeps (research/22 P0-11): CT then DNS
 	// checks for one tenant, each honoring the tenant's switches.
 	var sweepCT easmapp.SweepCT
-	if cfg.Worker.CertMonitorEnabled && s.CertMonitor.Available() {
+	if cfg.Worker.CertMonitorEnabled {
+		// Runs only while a platform sensor serves CT lookups (checked per
+		// sweep).
 		sweepCT = s.CertMonitor
 	}
 	var sweepDNS easmapp.SweepDNS

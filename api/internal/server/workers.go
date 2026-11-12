@@ -937,9 +937,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		w.ControllerManager.Register(controller.NewScopePendingController(svc.Scope, 0))
 	}
 
-	// Only when a platform sensor carries the CT requests (the platform
-	// makes none itself).
-	if cfg.Worker.CertMonitorEnabled && svc.CertMonitor.Available() {
+	// Each sweep runs only while a platform sensor serves CT lookups (the
+	// platform makes no CT request itself); a sensor connected later is
+	// picked up without a restart.
+	if cfg.Worker.CertMonitorEnabled {
 		w.ControllerManager.Register(controller.NewCertMonitorController(
 			svc.CertMonitor,
 			repos.Tenant,
