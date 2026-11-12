@@ -695,7 +695,6 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		IngestReceipt:          newIngestReceiptHandler(cfg, repos, svc, log),
 		SourceRetirement:       handler.NewSourceRetirementHandler(svc.SourceRetire, log),
 		Story:                  newStoryHandler(deps.DB, repos, svc, log),
-		ExplorationLeads:       newExplorationLeadHandler(deps.DB, svc, log),
 		ReportSchedule:         newReportScheduleHandler(repos, svc, log),
 		UserDashboard:          handler.NewUserDashboardHandler(svc.UserDashboard, log).SetWidgetData(svc.DashboardWidgets),
 		SavedView:              handler.NewSavedViewHandler(svc.SavedView, log),
@@ -982,6 +981,9 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Pending entries name their approvers; an owner without another
 	// approver approves with a fresh authenticator code (RFC-054 §7).
 	wireScopeApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
+	// Exploration leads need the scan policy service wired just above: built
+	// earlier it was nil and the routes were never registered.
+	handlers.ExplorationLeads = newExplorationLeadHandler(deps.DB, svc, log)
 	wireSharedSensorDefaults(svc, cfg, deps.RedisClient, log)
 	wireFindingApprovers(svc, repos, scopeActors, cfg.SMTP.BaseURL, log)
 	wireSelfApprovalTOTP(svc)
@@ -1829,6 +1831,16 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 	return effects
 }
 
+// ctUnavailableReason is why the CT monitor cannot run: "disabled" when the
+// operator turned it off, the monitor's own reason (needs_platform_sensor)
+// otherwise, "" when it runs.
+func ctUnavailableReason(cfg *config.Config, svc *Services) string {
+	if !cfg.Worker.CertMonitorEnabled {
+		return "disabled"
+	}
+	return svc.CertMonitor.UnavailableReason()
+}
+
 // newEASMSettingsHandler builds the EASM settings and run-now handler
 // (research/22 P0-11).
 func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps, log *logger.Logger) *handler.EASMSettingsHandler {
@@ -1841,7 +1853,8 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		sweeper = svc.EASMSweep
 	}
 	platform := handler.EASMPlatform{
-		CTAvailable:         cfg.Worker.CertMonitorEnabled,
+		CTAvailable:         cfg.Worker.CertMonitorEnabled && svc.CertMonitor.Available(),
+		CTUnavailableReason: ctUnavailableReason(cfg, svc),
 		DNSAvailable:        svc.EASMDNS != nil,
 		EnrichmentAvailable: cfg.Worker.AssetEnrichmentEnabled,
 		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
