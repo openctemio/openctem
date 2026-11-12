@@ -336,6 +336,11 @@ details:
 - `pin_none`: the sensor's HTTPS client trusts the system trust store instead
   of a pinned platform CA. Set `SENSOR_CA_FINGERPRINT` (shown in the install
   commands).
+- `jobs_unsigned`: the sensor checks no job signature (signed jobs `off`): it
+  trusts every job and refuses jobs that need platform secrets
+  (`secrets_unverified`). Pair it again, or set `SENSOR_JOB_SIGNING_ROOT` to
+  the platform's job-signing root (shown in the install commands); a
+  self-bound sensor on a current SDK pins the signer on its first start.
 - `tools_unconfined`: the sensor runs its tools without the sandbox. On a host
   without it (the sandbox is Linux only: a macOS or Windows sensor), tools that
   contact their targets are refused and only passive lookups run; move the
