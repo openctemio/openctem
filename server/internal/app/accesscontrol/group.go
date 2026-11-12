@@ -1,0 +1,1280 @@
+// Package accesscontrol provides the application-layer services for the
+// 2-layer access control model (RBAC roles + Groups data scope). See
+// CLAUDE.md "2-Layer Access Control" for the conceptual overview and
+// pkg/domain/accesscontrol for the persisted entities.
+package accesscontrol
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/app/datascope"
+
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/integration"
+
+	accesscontroldom "github.com/openctemio/openctem/server/pkg/domain/accesscontrol"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	groupdom "github.com/openctemio/openctem/server/pkg/domain/group"
+	"github.com/openctemio/openctem/server/pkg/domain/notification"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// teamsSettingsURL is the UI page that in-app notifications about team
+// membership link to. The UI moved Teams from /settings/access-control/groups
+// to /settings/teams (Settings IA) and 308s the old path, so notifications
+// stored before this change still resolve.
+const teamsSettingsURL = "/settings/teams"
+
+// GroupService handles group-related business operations.
+type GroupService struct {
+	repo                groupdom.Repository
+	accessControlRepo   accesscontroldom.Repository
+	auditService        *auditapp.AuditService
+	notificationService *integration.NotificationService
+	dataScope           *datascope.Enforcer
+	// delegation caps what a caller can hand out through a group to the
+	// scope they hold (D13). Nil: no cap (tests).
+	delegation *datascope.Enforcer
+	// expiredLister finds memberships past their end date (the expiry
+	// controller). Nil: ExpireMemberships does nothing.
+	expiredLister groupdom.ExpiredMemberLister
+	// bindings and roles enable team role bindings (group_role.go).
+	bindings groupdom.RoleBindingRepository
+	roles    *RoleService
+	// poolLookup and poolStepUp guard edits of the security pool group
+	// (group_security_pool.go).
+	poolLookup SecurityPoolLookup
+	poolStepUp shared.RecentAuthGate
+	logger     *logger.Logger
+}
+
+// NewGroupService creates a new GroupService.
+func NewGroupService(
+	repo groupdom.Repository,
+	log *logger.Logger,
+	opts ...GroupServiceOption,
+) *GroupService {
+	s := &GroupService{
+		repo:   repo,
+		logger: log.With("service", "group"),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// GroupServiceOption is a functional option for GroupService.
+type GroupServiceOption func(*GroupService)
+
+// WithGroupAuditService sets the audit service for GroupService.
+func WithGroupAuditService(auditService *auditapp.AuditService) GroupServiceOption {
+	return func(s *GroupService) {
+		s.auditService = auditService
+	}
+}
+
+// WithAccessControlRepository sets the access control repository.
+func WithAccessControlRepository(repo accesscontroldom.Repository) GroupServiceOption {
+	return func(s *GroupService) {
+		s.accessControlRepo = repo
+	}
+}
+
+// WithGroupDataScope wires the Layer 2 data-scope enforcer used to limit a
+// group's asset list to the caller's own scope.
+func WithGroupDataScope(e *datascope.Enforcer) GroupServiceOption {
+	return func(s *GroupService) { s.dataScope = e }
+}
+
+// WithScopeDelegationCap wires the data-scope enforcer that caps group
+// asset assignment and membership at the caller's own scope (owner decision
+// D13, research doc 15 L-09).
+func WithScopeDelegationCap(e *datascope.Enforcer) GroupServiceOption {
+	return func(s *GroupService) { s.delegation = e }
+}
+
+// ErrDelegationExceedsScope: the change would give someone access to assets
+// the caller does not hold.
+var ErrDelegationExceedsScope = fmt.Errorf("%w: the group holds assets outside your own data scope; only someone with access to all of them can change its members or assets", shared.ErrForbidden)
+
+// ErrSelfMembership: a caller without full data access cannot widen their
+// own scope by joining a group.
+var ErrSelfMembership = fmt.Errorf("%w: you cannot add yourself to a group; ask another administrator", shared.ErrForbidden)
+
+// SetNotificationService sets the notification service for GroupService.
+// This is used for late-binding when integration.NotificationService is initialized after GroupService.
+func (s *GroupService) SetNotificationService(ns *integration.NotificationService) {
+	s.notificationService = ns
+}
+
+// logAudit logs an audit event if audit service is configured.
+func (s *GroupService) logAudit(ctx context.Context, actx auditapp.AuditContext, event auditapp.AuditEvent) {
+	if s.auditService == nil {
+		return
+	}
+	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
+		s.logger.Error("failed to log audit event", "error", err, "action", event.Action)
+	}
+}
+
+// groupForTenant fetches a group and verifies it belongs to the caller's
+// tenant (anti-enumeration: ErrNotFound on mismatch/empty), preventing
+// cross-tenant group management via a guessed group ID.
+func (s *GroupService) groupForTenant(ctx context.Context, id shared.ID, callerTenantID string) (*groupdom.Group, error) {
+	// An empty or malformed caller tenant becomes the zero ID, which owns no
+	// group, so the lookup answers not-found.
+	tid, _ := shared.IDFromString(callerTenantID)
+	return s.repo.GetByTenantAndID(ctx, tid, id)
+}
+
+// =============================================================================
+// GROUP CRUD OPERATIONS
+// =============================================================================
+
+// CreateGroupInput represents the input for creating a group.
+type CreateGroupInput struct {
+	TenantID           string                       `json:"-"`
+	Name               string                       `json:"name" validate:"required,min=2,max=100"`
+	Slug               string                       `json:"slug" validate:"required,min=2,max=100,slug"`
+	Description        string                       `json:"description" validate:"max=500"`
+	GroupType          string                       `json:"group_type" validate:"required,oneof=security_team team department project external"`
+	Settings           *groupdom.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *groupdom.NotificationConfig `json:"notification_config,omitempty"`
+}
+
+// CreateGroup creates a new group.
+func (s *GroupService) CreateGroup(ctx context.Context, input CreateGroupInput, creatorUserID shared.ID, actx auditapp.AuditContext) (*groupdom.Group, error) {
+	s.logger.Info("creating group", "name", input.Name, "slug", input.Slug, "type", input.GroupType)
+
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	// Validate group type
+	groupType := groupdom.GroupType(input.GroupType)
+	if !groupType.IsValid() {
+		return nil, fmt.Errorf("%w: invalid group type", shared.ErrValidation)
+	}
+
+	// Check if slug already exists in tenant
+	exists, err := s.repo.ExistsBySlug(ctx, tenantID, input.Slug)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check slug existence: %w", err)
+	}
+	if exists {
+		return nil, fmt.Errorf("%w: slug '%s' is already taken in this tenant", shared.ErrValidation, input.Slug)
+	}
+
+	// Create group
+	g, err := groupdom.NewGroup(tenantID, input.Name, input.Slug, groupType)
+	if err != nil {
+		return nil, err
+	}
+
+	if input.Description != "" {
+		g.UpdateDescription(input.Description)
+	}
+
+	if input.Settings != nil {
+		g.UpdateSettings(*input.Settings)
+	}
+
+	if input.NotificationConfig != nil {
+		g.UpdateNotificationConfig(*input.NotificationConfig)
+	}
+
+	// Create in database
+	if err := s.repo.Create(ctx, g); err != nil {
+		return nil, fmt.Errorf("failed to create group: %w", err)
+	}
+
+	// Pin the audit/caller tenant to the group's tenant for the rest of this
+	// flow so the internal AddMember tenant check (groupForTenant) resolves
+	// against the just-created group.
+	actx.TenantID = input.TenantID
+
+	// Add creator as owner of the group
+	_, err = s.AddMember(ctx, AddGroupMemberInput{
+		GroupID: g.ID().String(),
+		UserID:  creatorUserID,
+		Role:    string(groupdom.MemberRoleOwner),
+		creator: true,
+	}, actx)
+	if err != nil {
+		// Rollback group creation
+		_ = s.repo.Delete(ctx, g.TenantID(), g.ID())
+		return nil, fmt.Errorf("failed to add creator as group owner: %w", err)
+	}
+
+	s.logger.Info("group created", "id", g.ID().String(), "name", g.Name())
+
+	// Log audit event
+	event := auditapp.NewSuccessEvent(audit.ActionGroupCreated, audit.ResourceTypeGroup, g.ID().String()).
+		WithResourceName(g.Name()).
+		WithMessage(fmt.Sprintf("Group '%s' created", g.Name())).
+		WithMetadata("group_type", input.GroupType)
+	s.logAudit(ctx, actx, event)
+
+	return g, nil
+}
+
+// GetGroupSecure retrieves a group by tenant and ID (tenant-scoped access control).
+func (s *GroupService) GetGroupSecure(ctx context.Context, tenantID, groupID string) (*groupdom.Group, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+	id, err := shared.IDFromString(groupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+	return s.repo.GetByTenantAndID(ctx, tid, id)
+}
+
+// GetGroupBySlug retrieves a group by tenant and slug.
+func (s *GroupService) GetGroupBySlug(ctx context.Context, tenantID, slug string) (*groupdom.Group, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	return s.repo.GetBySlug(ctx, tid, slug)
+}
+
+// UpdateGroupInput represents the input for updating a group.
+type UpdateGroupInput struct {
+	Name               *string                      `json:"name" validate:"omitempty,min=2,max=100"`
+	Slug               *string                      `json:"slug" validate:"omitempty,min=2,max=100,slug"`
+	Description        *string                      `json:"description" validate:"omitempty,max=500"`
+	Settings           *groupdom.GroupSettings      `json:"settings,omitempty"`
+	NotificationConfig *groupdom.NotificationConfig `json:"notification_config,omitempty"`
+	IsActive           *bool                        `json:"is_active,omitempty"`
+}
+
+// UpdateGroup updates a group.
+func (s *GroupService) UpdateGroup(ctx context.Context, groupID string, input UpdateGroupInput, actx auditapp.AuditContext) (*groupdom.Group, error) {
+	id, err := shared.IDFromString(groupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	g, err := s.groupForTenant(ctx, id, actx.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// A team with elevated access is the owner's to change.
+	if err := s.requirePrivilegedTeamOwner(ctx, g, actx.ActorID); err != nil {
+		return nil, err
+	}
+
+	// Switching a team on or off changes what its members hold (scope rows
+	// and bound roles), so it is a grant: checked before anything changes.
+	flip := input.IsActive != nil && *input.IsActive != g.IsActive()
+	var flipMembers []shared.ID
+	if flip {
+		if flipMembers, err = s.authorizeActiveFlip(ctx, g, *input.IsActive, actx); err != nil {
+			return nil, err
+		}
+	}
+
+	if input.Name != nil {
+		if err := g.UpdateName(*input.Name); err != nil {
+			return nil, err
+		}
+	}
+
+	if input.Slug != nil && *input.Slug != g.Slug() {
+		// Check if new slug already exists
+		exists, err := s.repo.ExistsBySlug(ctx, g.TenantID(), *input.Slug)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check slug existence: %w", err)
+		}
+		if exists {
+			return nil, fmt.Errorf("%w: slug '%s' is already taken", shared.ErrValidation, *input.Slug)
+		}
+		if err := g.UpdateSlug(*input.Slug); err != nil {
+			return nil, err
+		}
+	}
+
+	if input.Description != nil {
+		g.UpdateDescription(*input.Description)
+	}
+
+	if input.Settings != nil {
+		g.UpdateSettings(*input.Settings)
+	}
+
+	if input.NotificationConfig != nil {
+		g.UpdateNotificationConfig(*input.NotificationConfig)
+	}
+
+	if input.IsActive != nil {
+		if *input.IsActive {
+			g.Activate()
+		} else {
+			g.Deactivate()
+		}
+	}
+
+	if err := s.repo.Update(ctx, g); err != nil {
+		return nil, fmt.Errorf("failed to update group: %w", err)
+	}
+	if flip {
+		// Members' cached permissions follow the team's state.
+		s.invalidateMembers(ctx, g.TenantID(), flipMembers)
+	}
+
+	s.logger.Info("group updated", "id", groupID)
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := auditapp.NewSuccessEvent(audit.ActionGroupUpdated, audit.ResourceTypeGroup, groupID).
+		WithResourceName(g.Name()).
+		WithMessage(fmt.Sprintf("Group '%s' updated", g.Name()))
+	s.logAudit(ctx, actx, event)
+
+	return g, nil
+}
+
+// DeleteGroup deletes a group.
+func (s *GroupService) DeleteGroup(ctx context.Context, groupID string, actx auditapp.AuditContext) error {
+	id, err := shared.IDFromString(groupID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	g, err := s.groupForTenant(ctx, id, actx.TenantID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+		return err
+	}
+	tenantID := g.TenantID().String()
+	groupName := g.Name()
+
+	// The bindings and memberships go with the team: read the members first,
+	// then drop their cached permissions.
+	members := s.activeMemberIDs(ctx, g)
+
+	if err := s.repo.Delete(ctx, g.TenantID(), id); err != nil {
+		return err
+	}
+	s.invalidateMembers(ctx, g.TenantID(), members)
+
+	s.logger.Info("group deleted", "id", groupID)
+
+	// Log audit event
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionGroupDeleted, audit.ResourceTypeGroup, groupID).
+		WithResourceName(groupName).
+		WithMessage(fmt.Sprintf("Group '%s' deleted", groupName)).
+		WithSeverity(audit.SeverityHigh)
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
+// ListGroupsInput represents the input for listing groups.
+type ListGroupsInput struct {
+	TenantID  string
+	GroupType *string
+	IsActive  *bool
+	Search    string
+	Limit     int
+	Offset    int
+}
+
+// ListGroupsOutput represents the output for listing groups.
+type ListGroupsOutput struct {
+	Groups     []*groupdom.Group
+	TotalCount int64
+}
+
+// ListGroups lists groups with filtering.
+func (s *GroupService) ListGroups(ctx context.Context, input ListGroupsInput) (*ListGroupsOutput, error) {
+	tenantID, err := shared.IDFromString(input.TenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	filter := groupdom.ListFilter{
+		Search: input.Search,
+		Limit:  input.Limit,
+		Offset: input.Offset,
+	}
+
+	if input.GroupType != nil {
+		gt := groupdom.GroupType(*input.GroupType)
+		filter.GroupTypes = []groupdom.GroupType{gt}
+	}
+
+	if input.IsActive != nil {
+		filter.IsActive = input.IsActive
+	}
+
+	groups, err := s.repo.List(ctx, tenantID, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups: %w", err)
+	}
+
+	count, err := s.repo.Count(ctx, tenantID, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count groups: %w", err)
+	}
+
+	return &ListGroupsOutput{
+		Groups:     groups,
+		TotalCount: count,
+	}, nil
+}
+
+// GroupCounts holds member and asset counts for a group.
+type GroupCounts struct {
+	MemberCount int
+	AssetCount  int
+}
+
+// GetGroupCounts returns member and asset counts for the given groups.
+func (s *GroupService) GetGroupCounts(ctx context.Context, groups []*groupdom.Group) (map[shared.ID]GroupCounts, error) {
+	if len(groups) == 0 {
+		return make(map[shared.ID]GroupCounts), nil
+	}
+
+	groupIDs := make([]shared.ID, len(groups))
+	for i, g := range groups {
+		groupIDs[i] = g.ID()
+	}
+
+	memberCounts, err := s.repo.CountMembersByGroups(ctx, groupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get member counts: %w", err)
+	}
+
+	result := make(map[shared.ID]GroupCounts, len(groups))
+	for _, gid := range groupIDs {
+		result[gid] = GroupCounts{
+			MemberCount: memberCounts[gid],
+		}
+	}
+
+	if s.accessControlRepo != nil {
+		// A restricted reader counts only the assets they can see.
+		var scope *shared.DataScope
+		if s.delegation != nil {
+			if scope, err = s.delegation.Resolve(ctx, groups[0].TenantID()); err != nil {
+				return nil, fmt.Errorf("failed to resolve data scope: %w", err)
+			}
+		}
+		assetCounts, err := s.accessControlRepo.CountAssetsByGroups(ctx, groupIDs, scope)
+		if err != nil {
+			s.logger.Warn("failed to get asset counts", "error", err)
+		} else {
+			for _, gid := range groupIDs {
+				c := result[gid]
+				c.AssetCount = assetCounts[gid]
+				result[gid] = c
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// CountUniqueMembers counts the number of distinct users across the given groups.
+func (s *GroupService) CountUniqueMembers(ctx context.Context, groups []*groupdom.Group) (int, error) {
+	if len(groups) == 0 {
+		return 0, nil
+	}
+
+	groupIDs := make([]shared.ID, len(groups))
+	for i, g := range groups {
+		groupIDs[i] = g.ID()
+	}
+
+	return s.repo.CountUniqueMembers(ctx, groupIDs)
+}
+
+// =============================================================================
+// MEMBER OPERATIONS
+// =============================================================================
+
+// AddGroupMemberInput represents the input for adding a member to a group.
+type AddGroupMemberInput struct {
+	GroupID string    `json:"-"`
+	UserID  shared.ID `json:"user_id" validate:"required"`
+	Role    string    `json:"role" validate:"required,oneof=owner lead member"`
+	// ExpiresAt ends the membership (RFC-050 W22). Required on external
+	// teams; at most 365 days ahead.
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+	ExpiryReason string     `json:"expiry_reason,omitempty" validate:"max=500"`
+
+	// creator: the group's creator joins as its first owner without an end
+	// date, whatever the team type (set only by CreateGroup).
+	creator bool
+}
+
+// checkMembershipDelegation applies D13 to adding userID to group g: a
+// caller without full data access cannot add themselves, and can add others
+// only when every asset the group holds is in their own scope.
+func (s *GroupService) checkMembershipDelegation(ctx context.Context, g *groupdom.Group, userID shared.ID, actorID string) error {
+	if s.delegation == nil {
+		return nil
+	}
+	if actorID != "" && actorID == userID.String() {
+		full, err := s.delegation.FullDataCaller(ctx, g.TenantID())
+		if err != nil {
+			return err
+		}
+		if !full {
+			return ErrSelfMembership
+		}
+	}
+	return s.requireWholeGroupInScope(ctx, g)
+}
+
+// requireWholeGroupInScope is the group-modification cap (RFC-050 W7,
+// research 21b M-4): a restricted manager may change a group (its members,
+// its assets, their ownership type) only when every asset the group holds is
+// inside the manager's own scope. Otherwise a BU lead could strip another
+// BU's group of an asset or a member. Unrestricted callers (owner, admin,
+// full-data role, internal calls) are not capped.
+func (s *GroupService) requireWholeGroupInScope(ctx context.Context, g *groupdom.Group) error {
+	if s.delegation == nil || s.accessControlRepo == nil {
+		return nil
+	}
+	held, err := s.accessControlRepo.ListAssetsByGroup(ctx, g.ID())
+	if err != nil {
+		return fmt.Errorf("failed to list group assets: %w", err)
+	}
+	admit, unrestricted, err := s.delegation.Delegable(ctx, g.TenantID(), held)
+	if err != nil {
+		return err
+	}
+	if unrestricted {
+		return nil
+	}
+	for _, id := range held {
+		if !admit(id) {
+			return ErrDelegationExceedsScope
+		}
+	}
+	return nil
+}
+
+// AddMember adds a user to a group.
+func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput, actx auditapp.AuditContext) (*groupdom.Member, error) {
+	groupID, err := shared.IDFromString(input.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	role := groupdom.MemberRole(input.Role)
+	if !role.IsValid() {
+		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
+	}
+
+	// Verify group belongs to caller's tenant before any mutation.
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// The user must be a member of the group's organization (L-14): an
+	// outsider would otherwise get the group's notifications and name.
+	if s.accessControlRepo != nil {
+		inTenant, terr := s.accessControlRepo.IsUserInTenant(ctx, g.TenantID(), input.UserID)
+		if terr != nil {
+			return nil, fmt.Errorf("failed to verify user tenant membership: %w", terr)
+		}
+		if !inTenant {
+			return nil, fmt.Errorf("%w: user not found", shared.ErrNotFound)
+		}
+	}
+	if err := s.checkMembershipDelegation(ctx, g, input.UserID, actx.ActorID); err != nil {
+		return nil, err
+	}
+	if !input.creator {
+		if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+			return nil, err
+		}
+	}
+	// The team's roles go with the membership (decisions G1-G12 R3-R5). The
+	// creator joining their new team carries no roles yet.
+	carriesRoles := false
+	if !input.creator {
+		if carriesRoles, err = s.checkMembershipGrant(ctx, g, input.UserID, actx.ActorID, true); err != nil {
+			return nil, err
+		}
+	}
+
+	// Check if user is already a member
+	_, err = s.repo.GetMember(ctx, groupID, input.UserID)
+	if err == nil {
+		return nil, fmt.Errorf("%w: user is already a member of this group", shared.ErrValidation)
+	}
+	if !groupdom.IsMemberNotFound(err) {
+		return nil, fmt.Errorf("failed to check membership: %w", err)
+	}
+
+	member, err := groupdom.NewMember(groupID, input.UserID, role, nil)
+	if err != nil {
+		return nil, err
+	}
+	if !input.creator {
+		if err := applyMembershipExpiry(g, member, input.ExpiresAt, input.ExpiryReason, time.Now().UTC()); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := s.repo.AddMember(ctx, member); err != nil {
+		return nil, fmt.Errorf("failed to add member: %w", err)
+	}
+
+	// Incremental refresh: grant access to all assets owned by this group
+	if s.accessControlRepo != nil {
+		if err := s.accessControlRepo.RefreshAccessForMemberAdd(ctx, groupID, input.UserID); err != nil {
+			s.logger.Error("failed to incrementally refresh access for member add", "error", err)
+		}
+	}
+	if carriesRoles {
+		s.invalidateMembers(ctx, g.TenantID(), []shared.ID{input.UserID})
+	}
+
+	s.logger.Info("member added to group", "group_id", input.GroupID, "user_id", input.UserID.String(), "role", role)
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := auditapp.NewSuccessEvent(audit.ActionMemberAdded, audit.ResourceTypeGroup, input.GroupID).
+		WithMessage(fmt.Sprintf("Member added to group with role %s", role)).
+		WithMetadata("user_id", input.UserID.String()).
+		WithMetadata("role", input.Role)
+	s.logAudit(ctx, actx, event)
+
+	// Notify the added user
+	if s.notificationService != nil {
+		audienceID := input.UserID
+		notifParams := notification.NotificationParams{
+			TenantID:         g.TenantID(),
+			Audience:         notification.AudienceUser,
+			AudienceID:       &audienceID,
+			NotificationType: notification.TypeMemberInvited,
+			Title:            fmt.Sprintf("You've been added to team \"%s\"", g.Name()),
+			Body:             fmt.Sprintf("You have been added to the team \"%s\" as %s.", g.Name(), role),
+			Severity:         notification.SeverityInfo,
+			ResourceType:     "group",
+			ResourceID:       &groupID,
+			URL:              teamsSettingsURL,
+		}
+		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
+			notifParams.ActorID = &actorID
+		}
+		if err := s.notificationService.Notify(ctx, notifParams); err != nil {
+			s.logger.Error("failed to notify added member", "error", err, "user_id", input.UserID.String())
+		}
+	}
+
+	return member, nil
+}
+
+// UpdateGroupMemberRoleInput represents the input for updating a member's role
+// within a group.
+type UpdateGroupMemberRoleInput struct {
+	GroupID string    `json:"-"`
+	UserID  shared.ID `json:"-"`
+	Role    string    `json:"role" validate:"required,oneof=owner lead member"`
+}
+
+// UpdateMemberRole updates a member's role in a group.
+func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMemberRoleInput, actx auditapp.AuditContext) (*groupdom.Member, error) {
+	groupID, err := shared.IDFromString(input.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	role := groupdom.MemberRole(input.Role)
+	if !role.IsValid() {
+		return nil, fmt.Errorf("%w: invalid role", shared.ErrValidation)
+	}
+
+	// Verify group belongs to caller's tenant before any mutation.
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	member, err := s.repo.GetMember(ctx, groupID, input.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	oldRole := member.Role()
+	if err := member.UpdateRole(role); err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.UpdateMember(ctx, member); err != nil {
+		return nil, fmt.Errorf("failed to update member role: %w", err)
+	}
+
+	s.logger.Info("member role updated", "group_id", input.GroupID, "user_id", input.UserID.String(), "new_role", role)
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	changes := audit.NewChanges().Set("role", oldRole.String(), input.Role)
+	event := auditapp.NewSuccessEvent(audit.ActionMemberRoleChanged, audit.ResourceTypeGroup, input.GroupID).
+		WithChanges(changes).
+		WithMessage(fmt.Sprintf("Member role changed from %s to %s", oldRole, role)).
+		WithMetadata("user_id", input.UserID.String())
+	s.logAudit(ctx, actx, event)
+
+	// Notify the user about role change
+	if s.notificationService != nil {
+		audienceID := input.UserID
+		notifParams := notification.NotificationParams{
+			TenantID:         g.TenantID(),
+			Audience:         notification.AudienceUser,
+			AudienceID:       &audienceID,
+			NotificationType: notification.TypeRoleChanged,
+			Title:            fmt.Sprintf("Your role in team \"%s\" has been updated", g.Name()),
+			Body:             fmt.Sprintf("Your role has been changed from %s to %s in team \"%s\".", oldRole, role, g.Name()),
+			Severity:         notification.SeverityInfo,
+			ResourceType:     "group",
+			ResourceID:       &groupID,
+			URL:              teamsSettingsURL,
+		}
+		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
+			notifParams.ActorID = &actorID
+		}
+		if err := s.notificationService.Notify(ctx, notifParams); err != nil {
+			s.logger.Error("failed to notify member about role change", "error", err, "user_id", input.UserID.String())
+		}
+	}
+
+	return member, nil
+}
+
+// RemoveMember removes a member from a group.
+func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID shared.ID, actx auditapp.AuditContext) error {
+	gid, err := shared.IDFromString(groupID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	// Get group (tenant-scoped) for audit context
+	g, err := s.groupForTenant(ctx, gid, actx.TenantID)
+	if err != nil {
+		return err
+	}
+	if err := s.requireSecurityPoolStepUp(ctx, g, actx.ActorID); err != nil {
+		return err
+	}
+	// Leaving a group oneself only narrows one's own scope; removing someone
+	// else is capped to groups wholly inside the caller's scope.
+	carriesRoles := false
+	if actx.ActorID != userID.String() {
+		if err := s.requireWholeGroupInScope(ctx, g); err != nil {
+			return err
+		}
+		// Taking someone's team roles away is a revocation (decisions G1-G12 R3).
+		if carriesRoles, err = s.checkMembershipGrant(ctx, g, userID, actx.ActorID, false); err != nil {
+			return err
+		}
+	} else if s.bindings != nil {
+		roles, berr := s.boundRoles(ctx, g)
+		if berr != nil {
+			return berr
+		}
+		carriesRoles = len(roles) > 0
+	}
+
+	// Check if this would remove the last owner
+	member, err := s.repo.GetMember(ctx, gid, userID)
+	if err != nil {
+		return err
+	}
+
+	if member.Role() == groupdom.MemberRoleOwner {
+		// Count owners
+		members, err := s.repo.ListMembers(ctx, gid)
+		if err != nil {
+			return fmt.Errorf("failed to list members: %w", err)
+		}
+		ownerCount := 0
+		for _, m := range members {
+			if m.Role() == groupdom.MemberRoleOwner {
+				ownerCount++
+			}
+		}
+		if ownerCount <= 1 {
+			return fmt.Errorf("%w: cannot remove the last owner", shared.ErrValidation)
+		}
+	}
+
+	if err := s.repo.RemoveMember(ctx, gid, userID); err != nil {
+		return err
+	}
+
+	// Incremental refresh: revoke access to assets that were only accessible through this group
+	if s.accessControlRepo != nil {
+		if err := s.accessControlRepo.RefreshAccessForMemberRemove(ctx, gid, userID); err != nil {
+			s.logger.Error("failed to incrementally refresh access for member remove", "error", err)
+		}
+	}
+	if carriesRoles {
+		s.invalidateMembers(ctx, g.TenantID(), []shared.ID{userID})
+	}
+
+	s.logger.Info("member removed from group", "group_id", groupID, "user_id", userID.String())
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := auditapp.NewSuccessEvent(audit.ActionMemberRemoved, audit.ResourceTypeGroup, groupID).
+		WithMessage("Member removed from group").
+		WithMetadata("user_id", userID.String()).
+		WithSeverity(audit.SeverityHigh)
+	s.logAudit(ctx, actx, event)
+
+	// Notify the removed user
+	if s.notificationService != nil {
+		audienceID := userID
+		notifParams := notification.NotificationParams{
+			TenantID:         g.TenantID(),
+			Audience:         notification.AudienceUser,
+			AudienceID:       &audienceID,
+			NotificationType: notification.TypeMemberInvited,
+			Title:            fmt.Sprintf("You've been removed from team \"%s\"", g.Name()),
+			Body:             fmt.Sprintf("You have been removed from the team \"%s\".", g.Name()),
+			Severity:         notification.SeverityMedium,
+			ResourceType:     "group",
+			ResourceID:       &gid,
+			URL:              teamsSettingsURL,
+		}
+		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
+			notifParams.ActorID = &actorID
+		}
+		if err := s.notificationService.Notify(ctx, notifParams); err != nil {
+			s.logger.Error("failed to notify removed member", "error", err, "user_id", userID.String())
+		}
+	}
+
+	return nil
+}
+
+// ListGroupMembers lists all members of a group.
+func (s *GroupService) ListGroupMembers(ctx context.Context, groupID string) ([]*groupdom.Member, error) {
+	id, err := shared.IDFromString(groupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	return s.repo.ListMembers(ctx, id)
+}
+
+// ListGroupMembersWithUserInfo lists members with user details, with pagination.
+// The group is verified to belong to the caller's tenant to prevent cross-tenant reads.
+func (s *GroupService) ListGroupMembersWithUserInfo(ctx context.Context, tenantID, groupID string, limit, offset int) ([]*groupdom.MemberWithUser, int64, error) {
+	id, err := shared.IDFromString(groupID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	if _, err := s.groupForTenant(ctx, id, tenantID); err != nil {
+		return nil, 0, err
+	}
+
+	return s.repo.ListMembersWithUserInfo(ctx, id, limit, offset)
+}
+
+// ListUserGroups lists all groups a user belongs to.
+func (s *GroupService) ListUserGroups(ctx context.Context, tenantID string, userID shared.ID) ([]*groupdom.GroupWithRole, error) {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	return s.repo.ListGroupsByUser(ctx, tid, userID)
+}
+
+// =============================================================================
+// ASSET OWNERSHIP OPERATIONS
+// =============================================================================
+
+// AssignAssetInput represents the input for assigning an asset to a group.
+type AssignAssetInput struct {
+	GroupID       string `json:"-"`
+	AssetID       string `json:"asset_id" validate:"required,uuid"`
+	OwnershipType string `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
+}
+
+// AssignAsset assigns an asset to a group with the specified ownership type.
+func (s *GroupService) AssignAsset(ctx context.Context, input AssignAssetInput, assignedBy shared.ID, actx auditapp.AuditContext) error {
+	if s.accessControlRepo == nil {
+		return fmt.Errorf("access control repository not configured")
+	}
+
+	groupID, err := shared.IDFromString(input.GroupID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	assetID, err := shared.IDFromString(input.AssetID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+
+	ownershipType := accesscontroldom.OwnershipType(input.OwnershipType)
+	if !ownershipType.IsValid() {
+		return fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
+	}
+
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return err
+	}
+
+	// D13: only an asset the caller holds can be handed to a group; any
+	// other answers like an unknown asset.
+	if s.delegation != nil {
+		admit, _, derr := s.delegation.Delegable(ctx, g.TenantID(), []shared.ID{assetID})
+		if derr != nil {
+			return derr
+		}
+		if !admit(assetID) {
+			return fmt.Errorf("%w: asset not found", shared.ErrNotFound)
+		}
+	}
+
+	// Create the asset owner relationship
+	ao, err := accesscontroldom.NewAssetOwner(assetID, groupID, ownershipType, &assignedBy)
+	if err != nil {
+		return err
+	}
+
+	if err := s.accessControlRepo.CreateAssetOwner(ctx, ao); err != nil {
+		return fmt.Errorf("failed to assign asset: %w", err)
+	}
+
+	s.logger.Info("asset assigned to group", "group_id", input.GroupID, "asset_id", input.AssetID, "ownership_type", input.OwnershipType)
+
+	// Incremental refresh (only affects this group+asset combination)
+	if err := s.accessControlRepo.RefreshAccessForAssetAssign(ctx, groupID, assetID, input.OwnershipType); err != nil {
+		s.logger.Error("failed to incrementally refresh access for asset assign", "error", err)
+	}
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := auditapp.NewSuccessEvent(audit.ActionAssetAssigned, audit.ResourceTypeGroup, input.GroupID).
+		WithMessage("Asset assigned to group").
+		WithMetadata("asset_id", input.AssetID).
+		WithMetadata("ownership_type", input.OwnershipType)
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
+// UnassignAssetInput represents the input for removing an asset from a group.
+type UnassignAssetInput struct {
+	GroupID string `json:"-"`
+	AssetID string `json:"-"`
+}
+
+// UnassignAsset removes an asset from a group.
+func (s *GroupService) UnassignAsset(ctx context.Context, input UnassignAssetInput, actx auditapp.AuditContext) error {
+	if s.accessControlRepo == nil {
+		return fmt.Errorf("access control repository not configured")
+	}
+
+	groupID, err := shared.IDFromString(input.GroupID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	assetID, err := shared.IDFromString(input.AssetID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return err
+	}
+	if err := s.requireWholeGroupInScope(ctx, g); err != nil {
+		return err
+	}
+
+	if err := s.accessControlRepo.DeleteAssetOwner(ctx, assetID, groupID); err != nil {
+		return fmt.Errorf("failed to unassign asset: %w", err)
+	}
+
+	s.logger.Info("asset unassigned from group", "group_id", input.GroupID, "asset_id", input.AssetID)
+
+	// Incremental refresh (only affects this group+asset combination)
+	if err := s.accessControlRepo.RefreshAccessForAssetUnassign(ctx, groupID, assetID); err != nil {
+		s.logger.Error("failed to incrementally refresh access for asset unassign", "error", err)
+	}
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := auditapp.NewSuccessEvent(audit.ActionAssetUnassigned, audit.ResourceTypeGroup, input.GroupID).
+		WithMessage("Asset removed from group").
+		WithMetadata("asset_id", input.AssetID)
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
+// UpdateAssetOwnershipInput represents the input for updating asset ownership type.
+type UpdateAssetOwnershipInput struct {
+	GroupID       string `json:"-"`
+	AssetID       string `json:"-"`
+	OwnershipType string `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
+}
+
+// UpdateAssetOwnership updates the ownership type of an asset for a group.
+func (s *GroupService) UpdateAssetOwnership(ctx context.Context, input UpdateAssetOwnershipInput, actx auditapp.AuditContext) error {
+	if s.accessControlRepo == nil {
+		return fmt.Errorf("access control repository not configured")
+	}
+
+	groupID, err := shared.IDFromString(input.GroupID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	assetID, err := shared.IDFromString(input.AssetID)
+	if err != nil {
+		return fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+
+	ownershipType := accesscontroldom.OwnershipType(input.OwnershipType)
+	if !ownershipType.IsValid() {
+		return fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
+	}
+
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return err
+	}
+	if err := s.requireWholeGroupInScope(ctx, g); err != nil {
+		return err
+	}
+
+	// Get existing asset owner
+	ao, err := s.accessControlRepo.GetAssetOwner(ctx, assetID, groupID)
+	if err != nil {
+		return err
+	}
+
+	// Update ownership type
+	if err := ao.UpdateOwnershipType(ownershipType); err != nil {
+		return err
+	}
+
+	if err := s.accessControlRepo.UpdateAssetOwner(ctx, ao); err != nil {
+		return fmt.Errorf("failed to update asset ownership: %w", err)
+	}
+
+	s.logger.Info("asset ownership updated", "group_id", input.GroupID, "asset_id", input.AssetID, "ownership_type", input.OwnershipType)
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := auditapp.NewSuccessEvent(audit.ActionAssetOwnershipUpdated, audit.ResourceTypeGroup, input.GroupID).
+		WithMessage("Asset ownership type updated").
+		WithMetadata("asset_id", input.AssetID).
+		WithMetadata("ownership_type", input.OwnershipType)
+	s.logAudit(ctx, actx, event)
+
+	return nil
+}
+
+// ListGroupAssets lists assets assigned to a group with asset details, with pagination.
+// The group is verified to belong to the caller's tenant to prevent cross-tenant reads.
+func (s *GroupService) ListGroupAssets(ctx context.Context, tenantID, groupID string, limit, offset int) ([]*accesscontroldom.AssetOwnerWithAsset, int64, error) {
+	if s.accessControlRepo == nil {
+		return nil, 0, fmt.Errorf("access control repository not configured")
+	}
+
+	gid, err := shared.IDFromString(groupID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	g, err := s.groupForTenant(ctx, gid, tenantID)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Members hold groups:read, so the list is limited to the assets the
+	// caller may see: a team's asset list is not a way around their own
+	// data scope (out-of-scope rows are simply not listed or counted).
+	scope, err := s.dataScope.Resolve(ctx, g.TenantID())
+	if err != nil {
+		return nil, 0, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.accessControlRepo.ListAssetOwnersByGroupWithDetails(ctx, gid, scope, limit, offset)
+}
+
+// ListAssetOwners lists all groups that own an asset.
+func (s *GroupService) ListAssetOwners(ctx context.Context, assetID string) ([]*accesscontroldom.AssetOwner, error) {
+	if s.accessControlRepo == nil {
+		return nil, fmt.Errorf("access control repository not configured")
+	}
+
+	aid, err := shared.IDFromString(assetID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+
+	return s.accessControlRepo.ListAssetOwners(ctx, aid)
+}
+
+// ListMyAssets lists all assets the user can access through their group memberships.
+func (s *GroupService) ListMyAssets(ctx context.Context, tenantID string, userID shared.ID) ([]shared.ID, error) {
+	if s.accessControlRepo == nil {
+		return nil, fmt.Errorf("access control repository not configured")
+	}
+
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
+	}
+
+	return s.accessControlRepo.ListAccessibleAssets(ctx, tid, userID)
+}
+
+// CanAccessAsset checks if a user can access an asset through their group memberships.
+func (s *GroupService) CanAccessAsset(ctx context.Context, userID shared.ID, assetID string) (bool, error) {
+	if s.accessControlRepo == nil {
+		return false, fmt.Errorf("access control repository not configured")
+	}
+
+	aid, err := shared.IDFromString(assetID)
+	if err != nil {
+		return false, fmt.Errorf("%w: invalid asset id format", shared.ErrValidation)
+	}
+
+	return s.accessControlRepo.CanAccessAsset(ctx, userID, aid)
+}
+
+// =============================================================================
+// BULK ASSET ASSIGNMENT
+// =============================================================================
+
+// BulkAssignAssetsInput represents the input for bulk assigning assets to a group.
+type BulkAssignAssetsInput struct {
+	GroupID       string   `json:"-"`
+	AssetIDs      []string `json:"asset_ids" validate:"required,min=1,max=1000,dive,uuid"`
+	OwnershipType string   `json:"ownership_type" validate:"required,oneof=primary secondary stakeholder informed"`
+}
+
+// BulkAssignAssetsResult represents the result of bulk asset assignment.
+type BulkAssignAssetsResult struct {
+	SuccessCount int      `json:"success_count"`
+	FailedCount  int      `json:"failed_count"`
+	FailedAssets []string `json:"failed_assets,omitempty"`
+}
+
+// BulkAssignAssets assigns multiple assets to a group in bulk.
+func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAssetsInput, assignedBy shared.ID, actx auditapp.AuditContext) (*BulkAssignAssetsResult, error) {
+	if s.accessControlRepo == nil {
+		return nil, fmt.Errorf("access control repository not configured")
+	}
+
+	groupID, err := shared.IDFromString(input.GroupID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid group id format", shared.ErrValidation)
+	}
+
+	ownershipType := accesscontroldom.OwnershipType(input.OwnershipType)
+	if !ownershipType.IsValid() {
+		return nil, fmt.Errorf("%w: invalid ownership type", shared.ErrValidation)
+	}
+
+	// Verify group exists and belongs to caller's tenant
+	g, err := s.groupForTenant(ctx, groupID, actx.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// D13: assets the caller does not hold are skipped like unknown ones.
+	admit := func(shared.ID) bool { return true }
+	if s.delegation != nil {
+		ids := make([]shared.ID, 0, len(input.AssetIDs))
+		for _, raw := range input.AssetIDs {
+			if id, perr := shared.IDFromString(raw); perr == nil {
+				ids = append(ids, id)
+			}
+		}
+		if admit, _, err = s.delegation.Delegable(ctx, g.TenantID(), ids); err != nil {
+			return nil, err
+		}
+	}
+
+	// Build AssetOwner entities
+	owners := make([]*accesscontroldom.AssetOwner, 0, len(input.AssetIDs))
+	failedAssets := make([]string, 0)
+
+	for _, assetIDStr := range input.AssetIDs {
+		assetID, err := shared.IDFromString(assetIDStr)
+		if err != nil || !admit(assetID) {
+			failedAssets = append(failedAssets, assetIDStr)
+			continue
+		}
+
+		ao, err := accesscontroldom.NewAssetOwnerForGroup(assetID, groupID, ownershipType, &assignedBy)
+		if err != nil {
+			failedAssets = append(failedAssets, assetIDStr)
+			continue
+		}
+		owners = append(owners, ao)
+	}
+
+	// Bulk insert
+	inserted, err := s.accessControlRepo.BulkCreateAssetOwners(ctx, owners)
+	if err != nil {
+		return nil, fmt.Errorf("failed to bulk assign assets: %w", err)
+	}
+
+	// Incremental refresh for each successfully assigned asset
+	for _, ao := range owners {
+		if refreshErr := s.accessControlRepo.RefreshAccessForAssetAssign(ctx, groupID, ao.AssetID(), input.OwnershipType); refreshErr != nil {
+			s.logger.Error("failed to refresh access for bulk-assigned asset", "asset_id", ao.AssetID().String(), "error", refreshErr)
+		}
+	}
+
+	result := &BulkAssignAssetsResult{
+		SuccessCount: inserted,
+		FailedCount:  len(input.AssetIDs) - inserted,
+		FailedAssets: failedAssets,
+	}
+
+	s.logger.Info("bulk assets assigned to group",
+		"group_id", input.GroupID,
+		"total", len(input.AssetIDs),
+		"success", inserted,
+		"failed", result.FailedCount,
+	)
+
+	// Log audit event
+	actx.TenantID = g.TenantID().String()
+	event := auditapp.NewSuccessEvent(audit.ActionAssetAssigned, audit.ResourceTypeGroup, input.GroupID).
+		WithMessage(fmt.Sprintf("Bulk assigned %d assets to group", inserted)).
+		WithMetadata("total_requested", fmt.Sprintf("%d", len(input.AssetIDs))).
+		WithMetadata("success_count", fmt.Sprintf("%d", inserted)).
+		WithMetadata("ownership_type", input.OwnershipType)
+	s.logAudit(ctx, actx, event)
+
+	return result, nil
+}

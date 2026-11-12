@@ -1,15 +1,15 @@
 ---
 name: migration
-description: Rules for writing a database migration in api/migrations - timestamp versions, never editing a merged migration, reversible down, safety on populated tables, tests that find a migration by name, destructive-change notes. Use whenever a change adds or edits a migration or a seed row.
+description: Rules for writing a database migration in server/migrations - timestamp versions, never editing a merged migration, reversible down, safety on populated tables, tests that find a migration by name, destructive-change notes. Use whenever a change adds or edits a migration or a seed row.
 ---
 
-Full reference: `api/docs/development/migrations.md`; design: `api/docs/rfcs/RFC-130-migration-applied-set.md`.
+Full reference: `server/docs/development/migrations.md`; design: `server/docs/rfcs/RFC-130-migration-applied-set.md`.
 
-1. **Version:** `YYYYMMDDHHMMSS_<snake_name>.{up,down}.sql`, created with `make -C api migration-new name=<snake_name>`
+1. **Version:** `YYYYMMDDHHMMSS_<snake_name>.{up,down}.sql`, created with `make -C server migration-new name=<snake_name>`
    (the current UTC time; no network, no coordination). `openctem-migrate` applies every migration a database has
    not applied, so a version only has to be **unique**: a migration merged after a higher one still runs. Never
    pick or change a version by hand. If CI reports a duplicate, or your branch still has a legacy six-digit
-   number, run `make -C api migration-renumber` and commit the staged renames. Do not renumber on every rebase:
+   number, run `make -C server migration-renumber` and commit the staged renames. Do not renumber on every rebase:
    below `develop`'s highest is fine for a timestamp.
 2. **A merged migration never changes.** Databases that applied it never run it again, so an edit, a removal or a
    rename reaches only fresh installs. Fix it with a new migration. CI ("Migration Versions") refuses a changed,

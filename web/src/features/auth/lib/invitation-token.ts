@@ -2,7 +2,7 @@
  * Where the invitation token lives in the browser.
  *
  * The token is a bearer credential, so it stays out of every URL the server or
- * a proxy can see (RFC-041, api/docs/rfcs/RFC-041-api-path-design.md):
+ * a proxy can see (RFC-041, server/docs/rfcs/RFC-041-api-path-design.md):
  *
  * - Emailed links are `/invitations#token=…`. A fragment is never sent to a
  *   server and never appears in a Referer header.

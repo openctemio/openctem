@@ -1,0 +1,1270 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+)
+
+// openFindingStatusClause is the canonical set of CLOSED finding statuses.
+// A finding is considered OPEN (a live exposure) when its status is NOT in
+// this set. Matches the closed-category set used by the dashboard finding
+// stats (see FindingRepository stats query). Applied with the "f" table alias.
+var openFindingStatusClause = vulnerability.OpenStatusSQL("f.status")
+
+// ThreatIntelRepository implements threatintel.ThreatIntelRepository using PostgreSQL.
+type ThreatIntelRepository struct {
+	db         *DB
+	epssRepo   *EPSSRepository
+	kevRepo    *KEVRepository
+	statusRepo *SyncStatusRepository
+}
+
+// NewThreatIntelRepository creates a new ThreatIntelRepository.
+func NewThreatIntelRepository(db *DB) *ThreatIntelRepository {
+	return &ThreatIntelRepository{
+		db:         db,
+		epssRepo:   &EPSSRepository{db: db},
+		kevRepo:    &KEVRepository{db: db},
+		statusRepo: &SyncStatusRepository{db: db},
+	}
+}
+
+// EPSS returns the EPSS repository.
+func (r *ThreatIntelRepository) EPSS() threatintel.EPSSRepository {
+	return r.epssRepo
+}
+
+// KEV returns the KEV repository.
+func (r *ThreatIntelRepository) KEV() threatintel.KEVRepository {
+	return r.kevRepo
+}
+
+// SyncStatus returns the sync status repository.
+func (r *ThreatIntelRepository) SyncStatus() threatintel.SyncStatusRepository {
+	return r.statusRepo
+}
+
+// catalogFromEPSS and catalogFromKEV make the shared vulnerabilities catalog
+// agree with the trusted feeds. Migration 000233 runs the same statements once
+// after clearing what tenant ingest had written there.
+const (
+	catalogFromEPSS = `
+		UPDATE vulnerabilities v
+		SET epss_score = e.epss_score,
+		    epss_percentile = (SELECT c.percentile FROM epss_percentile_curve c WHERE c.score = e.epss_score)
+		FROM epss_scores e
+		WHERE e.cve_id = v.cve_id
+		  AND v.epss_score IS DISTINCT FROM e.epss_score`
+	catalogFromKEV = `
+		UPDATE vulnerabilities v
+		SET cisa_kev_date_added     = k.date_added::timestamptz,
+		    cisa_kev_due_date       = k.due_date::timestamptz,
+		    cisa_kev_ransomware_use = k.known_ransomware_campaign_use,
+		    cisa_kev_notes          = k.notes,
+		    exploit_available       = true
+		FROM kev_catalog k
+		WHERE k.cve_id = v.cve_id
+		  AND (v.cisa_kev_date_added IS DISTINCT FROM k.date_added::timestamptz
+		    OR v.cisa_kev_due_date IS DISTINCT FROM k.due_date::timestamptz
+		    OR v.cisa_kev_ransomware_use IS DISTINCT FROM k.known_ransomware_campaign_use
+		    OR v.cisa_kev_notes IS DISTINCT FROM k.notes
+		    OR NOT v.exploit_available)`
+	// catalogClearKEV undoes catalogFromKEV for a CVE that is no longer in the
+	// KEV feed (CISA removes entries, rarely). exploit_available is written only
+	// from KEV (global-catalog-trust.md), so it goes back to false with it.
+	catalogClearKEV = `
+		UPDATE vulnerabilities v
+		SET cisa_kev_date_added     = NULL,
+		    cisa_kev_due_date       = NULL,
+		    cisa_kev_ransomware_use = NULL,
+		    cisa_kev_notes          = NULL,
+		    exploit_available       = false
+		WHERE (v.cisa_kev_date_added IS NOT NULL
+		    OR v.cisa_kev_due_date IS NOT NULL
+		    OR v.exploit_available)
+		  AND NOT EXISTS (SELECT 1 FROM kev_catalog k WHERE k.cve_id = v.cve_id)`
+)
+
+// PropagateToVulnerabilityCatalog copies the EPSS and KEV feeds onto the
+// shared vulnerabilities catalog. Only rows that differ are written.
+func (r *ThreatIntelRepository) PropagateToVulnerabilityCatalog(ctx context.Context) (int64, error) {
+	var total int64
+	for _, q := range []string{catalogFromEPSS, catalogFromKEV, catalogClearKEV} {
+		res, err := execWithTimeout(ctx, r.db.DB, timeoutHeavy, q)
+		if err != nil {
+			return total, fmt.Errorf("propagate threat intel to catalog: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			total += n
+		}
+	}
+	return total, nil
+}
+
+// EnrichCVEs enriches multiple CVEs with threat intel data.
+func (r *ThreatIntelRepository) EnrichCVEs(ctx context.Context, cveIDs []string) (map[string]*threatintel.ThreatIntelEnrichment, error) {
+	if len(cveIDs) == 0 {
+		return make(map[string]*threatintel.ThreatIntelEnrichment), nil
+	}
+
+	result := make(map[string]*threatintel.ThreatIntelEnrichment)
+	for _, cveID := range cveIDs {
+		result[cveID] = threatintel.NewThreatIntelEnrichment(cveID)
+	}
+
+	// Fetch EPSS scores
+	epssScores, err := r.epssRepo.GetByCVEIDs(ctx, cveIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch EPSS scores: %w", err)
+	}
+	for _, score := range epssScores {
+		if enrichment, ok := result[score.CVEID()]; ok {
+			enrichment.WithEPSS(score.Score(), score.Percentile())
+		}
+	}
+
+	// Fetch KEV entries
+	kevEntries, err := r.kevRepo.GetByCVEIDs(ctx, cveIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch KEV entries: %w", err)
+	}
+	for _, entry := range kevEntries {
+		if enrichment, ok := result[entry.CVEID()]; ok {
+			dateAdded := entry.DateAdded().Format("2006-01-02")
+			dueDate := entry.DueDate().Format("2006-01-02")
+			ransomware := entry.KnownRansomwareCampaignUse()
+			enrichment.WithKEV(dateAdded, dueDate, ransomware)
+		}
+	}
+
+	return result, nil
+}
+
+// EnrichCVE enriches a single CVE with threat intel data.
+func (r *ThreatIntelRepository) EnrichCVE(ctx context.Context, cveID string) (*threatintel.ThreatIntelEnrichment, error) {
+	enrichments, err := r.EnrichCVEs(ctx, []string{cveID})
+	if err != nil {
+		return nil, err
+	}
+	return enrichments[cveID], nil
+}
+
+// =============================================================================
+// EPSS Repository
+// =============================================================================
+
+// EPSSRepository implements threatintel.EPSSRepository.
+type EPSSRepository struct {
+	db *DB
+}
+
+// Upsert creates or updates an EPSS score. Its percentile goes to the curve
+// (one row per distinct score); the feed date goes to the sync status row.
+func (r *EPSSRepository) Upsert(ctx context.Context, score *threatintel.EPSSScore) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO epss_percentile_curve (score, percentile) VALUES ($1, $2)
+		ON CONFLICT (score) DO UPDATE SET percentile = EXCLUDED.percentile
+		WHERE epss_percentile_curve.percentile IS DISTINCT FROM EXCLUDED.percentile`,
+		score.Score(), score.Percentile()); err != nil {
+		return fmt.Errorf("failed to upsert EPSS percentile: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `
+		INSERT INTO epss_scores (cve_id, epss_score, model_version, updated_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (cve_id) DO UPDATE SET
+			epss_score = EXCLUDED.epss_score,
+			model_version = EXCLUDED.model_version,
+			updated_at = NOW()
+		WHERE (epss_scores.epss_score, epss_scores.model_version)
+			IS DISTINCT FROM (EXCLUDED.epss_score, EXCLUDED.model_version)`,
+		score.CVEID(), score.Score(), score.ModelVersion()); err != nil {
+		return fmt.Errorf("failed to upsert EPSS score: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, epssSetDataDateSQL, score.ScoreDate()); err != nil {
+		return fmt.Errorf("failed to record EPSS feed date: %w", err)
+	}
+	return tx.Commit()
+}
+
+// epssSetDataDateSQL records the feed date on the EPSS sync status row, only
+// when it moved ($1 is the date).
+const epssSetDataDateSQL = `
+	UPDATE threat_intel_sync_status SET data_date = $1::date
+	WHERE source_name = 'epss' AND data_date IS DISTINCT FROM $1::date`
+
+// epssReadSQL is the read model of one EPSS score: the percentile comes from
+// the curve at the score, the feed date from the sync status row.
+const epssReadSQL = `
+	SELECT e.cve_id, e.epss_score, c.percentile, e.model_version,
+		COALESCE((SELECT data_date FROM threat_intel_sync_status WHERE source_name = 'epss'),
+			e.updated_at::date),
+		e.created_at, e.updated_at
+	FROM epss_scores e
+	LEFT JOIN epss_percentile_curve c ON c.score = e.epss_score`
+
+// UpsertBatch creates or updates multiple EPSS scores efficiently.
+func (r *EPSSRepository) UpsertBatch(ctx context.Context, scores []*threatintel.EPSSScore) error {
+	if len(scores) == 0 {
+		return nil
+	}
+
+	// Use COPY for bulk insert with ON CONFLICT handling via temp table
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// A full feed (hundreds of thousands of rows) can outlast the app role's limit.
+	if err := setLocalStatementTimeout(ctx, tx, timeoutHeavy); err != nil {
+		return err
+	}
+
+	// Create temp table
+	_, err = tx.ExecContext(ctx, `
+		CREATE TEMP TABLE temp_epss_scores (
+			cve_id VARCHAR(30),
+			epss_score DECIMAL(8,6),
+			-- percentile is stored on a 0-100 scale (the sync scales the feed's
+			-- 0-1 value) and the top CVEs land on exactly 100.0, which does NOT fit
+			-- DECIMAL(8,6) (max 99.999999). This staging table must mirror the real
+			-- column's precision (numeric(9,6), migration 000194) or the COPY dies
+			-- with "numeric field overflow" and the whole EPSS sync is lost.
+			percentile DECIMAL(9,6),
+			model_version VARCHAR(20),
+			score_date DATE
+		) ON COMMIT DROP
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create temp table: %w", err)
+	}
+
+	// Prepare COPY statement
+	stmt, err := tx.PrepareContext(ctx, "COPY temp_epss_scores (cve_id, epss_score, percentile, model_version, score_date) FROM STDIN")
+	if err != nil {
+		return fmt.Errorf("failed to prepare COPY statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, score := range scores {
+		_, err = stmt.ExecContext(ctx,
+			score.CVEID(),
+			score.Score(),
+			score.Percentile(),
+			score.ModelVersion(),
+			score.ScoreDate(),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to copy row: %w", err)
+		}
+	}
+
+	_, err = stmt.ExecContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to flush COPY: %w", err)
+	}
+
+	// Only rows that are new or whose score or model moved are written: the
+	// filter runs before the upsert because a WHERE on DO UPDATE still locks
+	// and logs every conflicting row. The percentile is not a column of
+	// epss_scores; it is one row per distinct score in the curve.
+	// sqlgate:optional — temp_epss_scores is a session-scoped TEMP table created
+	// a few lines above in this same transaction, so it is legitimately absent
+	// from a schema built purely from migrations.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO epss_percentile_curve (score, percentile)
+		SELECT s.epss_score, s.percentile
+		FROM (SELECT DISTINCT ON (epss_score) epss_score, percentile
+			FROM temp_epss_scores WHERE percentile IS NOT NULL
+			ORDER BY epss_score, percentile DESC) s
+		LEFT JOIN epss_percentile_curve c ON c.score = s.epss_score
+		WHERE c.score IS NULL OR c.percentile IS DISTINCT FROM s.percentile
+		ON CONFLICT (score) DO UPDATE SET percentile = EXCLUDED.percentile
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to upsert EPSS percentile curve: %w", err)
+	}
+
+	// sqlgate:optional — same TEMP table as above.
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO epss_scores (cve_id, epss_score, model_version, updated_at)
+		SELECT s.cve_id, s.epss_score, s.model_version, NOW()
+		FROM (
+			-- A feed that repeats a CVE must not fail the whole sync (ON CONFLICT
+			-- cannot update one row twice): keep the newest score date per CVE.
+			SELECT DISTINCT ON (cve_id) cve_id, epss_score, model_version
+			FROM temp_epss_scores
+			ORDER BY cve_id, score_date DESC NULLS LAST
+		) s
+		LEFT JOIN epss_scores t ON t.cve_id = s.cve_id
+		WHERE t.cve_id IS NULL
+		   OR (t.epss_score, t.model_version) IS DISTINCT FROM (s.epss_score, s.model_version)
+		ON CONFLICT (cve_id) DO UPDATE SET
+			epss_score = EXCLUDED.epss_score,
+			model_version = EXCLUDED.model_version,
+			updated_at = NOW()
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to upsert from temp table: %w", err)
+	}
+
+	if err := recordEPSSHistory(ctx, tx); err != nil {
+		return err
+	}
+
+	// sqlgate:optional — same TEMP table as above.
+	_, err = tx.ExecContext(ctx, `
+		UPDATE threat_intel_sync_status SET data_date = d.v
+		FROM (SELECT MAX(score_date) AS v FROM temp_epss_scores) d
+		WHERE source_name = 'epss' AND d.v IS NOT NULL AND data_date IS DISTINCT FROM d.v
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to record EPSS feed date: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// GetByCVEID retrieves an EPSS score by CVE ID.
+func (r *EPSSRepository) GetByCVEID(ctx context.Context, cveID string) (*threatintel.EPSSScore, error) {
+	query := `
+		` + epssReadSQL + `
+		WHERE e.cve_id = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, cveID)
+	return r.scanEPSSScore(row)
+}
+
+// GetByCVEIDs retrieves EPSS scores for multiple CVE IDs.
+func (r *EPSSRepository) GetByCVEIDs(ctx context.Context, cveIDs []string) ([]*threatintel.EPSSScore, error) {
+	if len(cveIDs) == 0 {
+		return []*threatintel.EPSSScore{}, nil
+	}
+
+	query := `
+		` + epssReadSQL + `
+		WHERE e.cve_id = ANY($1)
+	`
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(cveIDs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query EPSS scores: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanEPSSScores(rows)
+}
+
+// GetHighRisk retrieves all high-risk EPSS scores (score > threshold).
+func (r *EPSSRepository) GetHighRisk(ctx context.Context, threshold float64, limit int) ([]*threatintel.EPSSScore, error) {
+	query := `
+		` + epssReadSQL + `
+		WHERE e.epss_score > $1
+		ORDER BY e.epss_score DESC LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, query, threshold, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query high-risk EPSS scores: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanEPSSScores(rows)
+}
+
+// GetTopPercentile retrieves scores in top N percentile.
+func (r *EPSSRepository) GetTopPercentile(ctx context.Context, percentile float64, limit int) ([]*threatintel.EPSSScore, error) {
+	threshold := 100.0 - percentile
+	query := `
+		` + epssReadSQL + `
+		WHERE c.percentile >= $1
+		ORDER BY c.percentile DESC LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, query, threshold, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query top percentile EPSS scores: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanEPSSScores(rows)
+}
+
+// CountTenantOpenAboveScores returns, for each threshold, the number of the
+// tenant's OPEN findings whose CVE has an EPSS score at or above it. These are
+// real tenant-scoped COUNTs (no LIMIT, no saturation) computed in ONE join of
+// the tenant's findings to the EPSS catalog (one FILTER per threshold) instead
+// of one full join per threshold.
+//
+// COUNT(*) equals the former COUNT(DISTINCT f.id): epss_scores.cve_id is the
+// primary key, so each finding joins at most one EPSS row.
+func (r *EPSSRepository) CountTenantOpenAboveScores(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, thresholds []float64) ([]int64, error) {
+	if len(thresholds) == 0 {
+		return []int64{}, nil
+	}
+	args := make([]any, 0, len(thresholds)+1)
+	args = append(args, tenantID.String())
+	cols := make([]string, len(thresholds))
+	minThreshold := thresholds[0]
+	for i, th := range thresholds {
+		args = append(args, th)
+		cols[i] = fmt.Sprintf("COUNT(*) FILTER (WHERE es.epss_score >= $%d)", i+2)
+		if th < minThreshold {
+			minThreshold = th
+		}
+	}
+	args = append(args, minThreshold)
+	minIdx := len(args)
+	inScope, args := dataScopeCond("f.asset_id", scope, args)
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
+	query := `
+		SELECT ` + strings.Join(cols, ", ") + `
+		FROM findings f
+		JOIN epss_scores es ON es.cve_id = f.cve_id
+		WHERE f.tenant_id = $1
+			AND es.epss_score >= $` + strconv.Itoa(minIdx) + `
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
+			AND ` + inScope
+
+	counts := make([]int64, len(thresholds))
+	dest := make([]any, len(counts))
+	for i := range counts {
+		dest[i] = &counts[i]
+	}
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(dest...); err != nil {
+		return nil, fmt.Errorf("failed to count tenant open findings above EPSS scores: %w", err)
+	}
+	return counts, nil
+}
+
+// Count returns the total number of EPSS scores.
+func (r *EPSSRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM epss_scores").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count EPSS scores: %w", err)
+	}
+	return count, nil
+}
+
+// DeleteAll removes all EPSS scores.
+func (r *EPSSRepository) DeleteAll(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, "TRUNCATE TABLE epss_scores")
+	if err != nil {
+		return fmt.Errorf("failed to truncate EPSS scores: %w", err)
+	}
+	// The app role holds TRUNCATE on the two feed tables only (database-roles.md).
+	if _, err := r.db.ExecContext(ctx, "DELETE FROM epss_percentile_curve"); err != nil {
+		return fmt.Errorf("failed to clear EPSS percentile curve: %w", err)
+	}
+	return nil
+}
+
+func (r *EPSSRepository) scanEPSSScore(row *sql.Row) (*threatintel.EPSSScore, error) {
+	var (
+		cveID        string
+		epssScore    float64
+		percentile   sql.NullFloat64
+		modelVersion sql.NullString
+		scoreDate    time.Time
+		createdAt    time.Time
+		updatedAt    time.Time
+	)
+
+	err := row.Scan(&cveID, &epssScore, &percentile, &modelVersion, &scoreDate, &createdAt, &updatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, threatintel.ErrEPSSNotFound
+		}
+		return nil, fmt.Errorf("failed to scan EPSS score: %w", err)
+	}
+
+	return threatintel.ReconstituteEPSSScore(
+		cveID,
+		epssScore,
+		percentile.Float64,
+		modelVersion.String,
+		scoreDate,
+		createdAt,
+		updatedAt,
+	), nil
+}
+
+func (r *EPSSRepository) scanEPSSScores(rows *sql.Rows) ([]*threatintel.EPSSScore, error) {
+	var scores []*threatintel.EPSSScore
+	for rows.Next() {
+		var (
+			cveID        string
+			epssScore    float64
+			percentile   sql.NullFloat64
+			modelVersion sql.NullString
+			scoreDate    time.Time
+			createdAt    time.Time
+			updatedAt    time.Time
+		)
+
+		err := rows.Scan(&cveID, &epssScore, &percentile, &modelVersion, &scoreDate, &createdAt, &updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan EPSS score: %w", err)
+		}
+
+		scores = append(scores, threatintel.ReconstituteEPSSScore(
+			cveID,
+			epssScore,
+			percentile.Float64,
+			modelVersion.String,
+			scoreDate,
+			createdAt,
+			updatedAt,
+		))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating EPSS scores: %w", err)
+	}
+
+	return scores, nil
+}
+
+// =============================================================================
+// KEV Repository
+// =============================================================================
+
+// KEVRepository implements threatintel.KEVRepository.
+type KEVRepository struct {
+	db *DB
+}
+
+// Upsert creates or updates a KEV entry.
+func (r *KEVRepository) Upsert(ctx context.Context, entry *threatintel.KEVEntry) error {
+	query := `
+		INSERT INTO kev_catalog (cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+		ON CONFLICT (cve_id) DO UPDATE SET
+			vendor_project = EXCLUDED.vendor_project,
+			product = EXCLUDED.product,
+			vulnerability_name = EXCLUDED.vulnerability_name,
+			short_description = EXCLUDED.short_description,
+			due_date = EXCLUDED.due_date,
+			known_ransomware_campaign_use = EXCLUDED.known_ransomware_campaign_use,
+			notes = EXCLUDED.notes,
+			cwes = EXCLUDED.cwes,
+			updated_at = NOW()
+	`
+	dueDate := entry.DueDate()
+	var dueDateNullTime sql.NullTime
+	if !dueDate.IsZero() {
+		dueDateNullTime = sql.NullTime{Time: dueDate, Valid: true}
+	}
+	_, err := r.db.ExecContext(ctx, query,
+		entry.CVEID(),
+		nullString(entry.VendorProject()),
+		nullString(entry.Product()),
+		entry.VulnerabilityName(),
+		nullString(entry.ShortDescription()),
+		entry.DateAdded(),
+		dueDateNullTime,
+		nullString(entry.KnownRansomwareCampaignUse()),
+		nullString(entry.Notes()),
+		pq.Array(entry.CWEs()),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to upsert KEV entry: %w", err)
+	}
+	return nil
+}
+
+// UpsertBatch creates or updates multiple KEV entries.
+func (r *KEVRepository) UpsertBatch(ctx context.Context, entries []*threatintel.KEVEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	// Dedup by CVE id before building the batch. A single INSERT ... ON CONFLICT
+	// (cve_id) DO UPDATE cannot touch the same conflict row twice — a chunk that
+	// contains a CVE id more than once (a malformed/duplicated feed row) would
+	// otherwise abort the WHOLE chunk with "ON CONFLICT DO UPDATE command cannot
+	// affect row a second time". Keep the last occurrence (upsert = last wins).
+	seen := make(map[string]int, len(entries))
+	deduped := make([]*threatintel.KEVEntry, 0, len(entries))
+	for _, e := range entries {
+		if idx, ok := seen[e.CVEID()]; ok {
+			deduped[idx] = e
+			continue
+		}
+		seen[e.CVEID()] = len(deduped)
+		deduped = append(deduped, e)
+	}
+	entries = deduped
+
+	// Build bulk upsert query
+	valueStrings := make([]string, 0, len(entries))
+	valueArgs := make([]interface{}, 0, len(entries)*10)
+
+	for i, entry := range entries {
+		base := i * 10
+		valueStrings = append(valueStrings, fmt.Sprintf(
+			"($%d::varchar, $%d::varchar, $%d::varchar, $%d::text, $%d::text, $%d::date, $%d::date, $%d::varchar, $%d::text, $%d::text[])",
+			base+1, base+2, base+3, base+4, base+5, base+6, base+7, base+8, base+9, base+10,
+		))
+
+		dueDate := entry.DueDate()
+		var dueDateNullTime sql.NullTime
+		if !dueDate.IsZero() {
+			dueDateNullTime = sql.NullTime{Time: dueDate, Valid: true}
+		}
+		valueArgs = append(valueArgs,
+			entry.CVEID(),
+			nullString(entry.VendorProject()),
+			nullString(entry.Product()),
+			entry.VulnerabilityName(),
+			nullString(entry.ShortDescription()),
+			entry.DateAdded(),
+			dueDateNullTime,
+			nullString(entry.KnownRansomwareCampaignUse()),
+			nullString(entry.Notes()),
+			pq.Array(entry.CWEs()),
+		)
+	}
+
+	// Rows are filtered before the upsert (a WHERE on DO UPDATE would still lock
+	// and log every conflicting row): only new entries and entries whose
+	// updatable fields differ are written, so an unchanged feed writes nothing.
+	query := fmt.Sprintf(`
+		WITH src (cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes) AS (VALUES %s)
+		INSERT INTO kev_catalog (cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes)
+		SELECT s.cve_id, s.vendor_project, s.product, s.vulnerability_name, s.short_description,
+			s.date_added, s.due_date, s.known_ransomware_campaign_use, s.notes, s.cwes
+		FROM src s
+		LEFT JOIN kev_catalog t ON t.cve_id = s.cve_id
+		WHERE t.cve_id IS NULL
+		   OR (t.vendor_project, t.product, t.vulnerability_name, t.short_description, t.due_date,
+		       t.known_ransomware_campaign_use, t.notes, t.cwes)
+		      IS DISTINCT FROM
+		      (s.vendor_project, s.product, s.vulnerability_name, s.short_description, s.due_date,
+		       s.known_ransomware_campaign_use, s.notes, s.cwes)
+		ON CONFLICT (cve_id) DO UPDATE SET
+			vendor_project = EXCLUDED.vendor_project,
+			product = EXCLUDED.product,
+			vulnerability_name = EXCLUDED.vulnerability_name,
+			short_description = EXCLUDED.short_description,
+			due_date = EXCLUDED.due_date,
+			known_ransomware_campaign_use = EXCLUDED.known_ransomware_campaign_use,
+			notes = EXCLUDED.notes,
+			cwes = EXCLUDED.cwes,
+			updated_at = NOW()
+	`, strings.Join(valueStrings, ", "))
+
+	_, err := execWithTimeout(ctx, r.db.DB, timeoutBatch, query, valueArgs...)
+	if err != nil {
+		return fmt.Errorf("failed to upsert KEV entries: %w", err)
+	}
+	return nil
+}
+
+// GetByCVEID retrieves a KEV entry by CVE ID.
+func (r *KEVRepository) GetByCVEID(ctx context.Context, cveID string) (*threatintel.KEVEntry, error) {
+	query := `
+		SELECT cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes, created_at, updated_at
+		FROM kev_catalog WHERE cve_id = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, cveID)
+	return r.scanKEVEntry(row)
+}
+
+// GetByCVEIDs retrieves KEV entries for multiple CVE IDs.
+func (r *KEVRepository) GetByCVEIDs(ctx context.Context, cveIDs []string) ([]*threatintel.KEVEntry, error) {
+	if len(cveIDs) == 0 {
+		return []*threatintel.KEVEntry{}, nil
+	}
+
+	query := `
+		SELECT cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes, created_at, updated_at
+		FROM kev_catalog WHERE cve_id = ANY($1)
+	`
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(cveIDs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query KEV entries: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanKEVEntries(rows)
+}
+
+// ExistsByCVEID checks if a CVE is in KEV.
+func (r *KEVRepository) ExistsByCVEID(ctx context.Context, cveID string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM kev_catalog WHERE cve_id = $1)", cveID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check KEV existence: %w", err)
+	}
+	return exists, nil
+}
+
+// ExistsByCVEIDs checks which CVEs are in KEV.
+func (r *KEVRepository) ExistsByCVEIDs(ctx context.Context, cveIDs []string) (map[string]bool, error) {
+	if len(cveIDs) == 0 {
+		return make(map[string]bool), nil
+	}
+
+	query := `SELECT cve_id FROM kev_catalog WHERE cve_id = ANY($1)`
+	rows, err := r.db.QueryContext(ctx, query, pq.Array(cveIDs))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query KEV CVE IDs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for _, id := range cveIDs {
+		result[id] = false
+	}
+
+	for rows.Next() {
+		var cveID string
+		if err := rows.Scan(&cveID); err != nil {
+			return nil, fmt.Errorf("failed to scan CVE ID: %w", err)
+		}
+		result[cveID] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating CVE IDs: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetPastDue retrieves KEV entries past their due date.
+func (r *KEVRepository) GetPastDue(ctx context.Context, limit int) ([]*threatintel.KEVEntry, error) {
+	query := `
+		SELECT cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes, created_at, updated_at
+		FROM kev_catalog
+		WHERE due_date IS NOT NULL AND due_date < NOW()
+		ORDER BY due_date ASC LIMIT $1
+	`
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query past due KEV entries: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanKEVEntries(rows)
+}
+
+// GetRecentlyAdded retrieves recently added KEV entries.
+func (r *KEVRepository) GetRecentlyAdded(ctx context.Context, days, limit int) ([]*threatintel.KEVEntry, error) {
+	query := `
+		SELECT cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes, created_at, updated_at
+		FROM kev_catalog
+		WHERE date_added >= NOW() - INTERVAL '1 day' * $1
+		ORDER BY date_added DESC LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, query, days, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recently added KEV entries: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanKEVEntries(rows)
+}
+
+// GetRansomwareRelated retrieves KEV entries with known ransomware use.
+func (r *KEVRepository) GetRansomwareRelated(ctx context.Context, limit int) ([]*threatintel.KEVEntry, error) {
+	query := `
+		SELECT cve_id, vendor_project, product, vulnerability_name, short_description,
+			date_added, due_date, known_ransomware_campaign_use, notes, cwes, created_at, updated_at
+		FROM kev_catalog
+		WHERE known_ransomware_campaign_use IS NOT NULL AND known_ransomware_campaign_use != 'Unknown'
+		ORDER BY date_added DESC LIMIT $1
+	`
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ransomware-related KEV entries: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanKEVEntries(rows)
+}
+
+// CountTenantOpenKEV counts the tenant's OPEN findings that reference a
+// CISA-KEV CVE, with the past-due, ransomware and recently-added splits, in
+// one join of the tenant's findings to the catalog. Real COUNTs (no LIMIT, no
+// saturation) that follow the viewer's data scope and the pentest
+// member-visibility rule: the tenant's exposure, never the catalog's size.
+func (r *KEVRepository) CountTenantOpenKEV(ctx context.Context, tenantID shared.ID, scope *shared.DataScope) (threatintel.TenantKEVCounts, error) {
+	inScope, args := dataScopeCond("f.asset_id", scope, []any{tenantID.String()})
+	//nolint:gosec // G202: inScope is built from fixed SQL and numbered placeholders
+	query := `
+		SELECT COUNT(*),
+			COUNT(*) FILTER (WHERE kc.due_date IS NOT NULL AND kc.due_date < NOW()),
+			COUNT(*) FILTER (WHERE kc.known_ransomware_campaign_use IS NOT NULL
+				AND kc.known_ransomware_campaign_use <> 'Unknown'),
+			COUNT(*) FILTER (WHERE kc.date_added >= NOW() - INTERVAL '30 days')
+		FROM findings f
+		JOIN kev_catalog kc ON kc.cve_id = f.cve_id
+		WHERE f.tenant_id = $1
+			AND ` + openFindingStatusClause + pentestVisibilityExcl(ctx, "f") + `
+			AND ` + inScope
+	var c threatintel.TenantKEVCounts
+	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&c.Open, &c.PastDue, &c.Ransomware, &c.NewLast30Days); err != nil {
+		return threatintel.TenantKEVCounts{}, fmt.Errorf("failed to count tenant open KEV findings: %w", err)
+	}
+	return c, nil
+}
+
+// CountRecentlyAdded returns the true number of KEV catalog entries added within
+// the last N days. Unlike GetRecentlyAdded (which is LIMIT-bounded and whose
+// len() saturates), this is a plain COUNT and reports the real figure. This is
+// global KEV-feed context, not tenant-scoped.
+func (r *KEVRepository) CountRecentlyAdded(ctx context.Context, days int) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM kev_catalog WHERE date_added >= NOW() - INTERVAL '1 day' * $1`,
+		days,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count recently added KEV entries: %w", err)
+	}
+	return count, nil
+}
+
+// CountRansomwareRelated returns the true number of KEV catalog entries with
+// known ransomware campaign use. Unlike GetRansomwareRelated (which is
+// LIMIT-bounded and whose len() saturates), this is a plain COUNT and reports
+// the real figure. This is global KEV-feed context, not tenant-scoped.
+func (r *KEVRepository) CountRansomwareRelated(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM kev_catalog
+			WHERE known_ransomware_campaign_use IS NOT NULL
+				AND known_ransomware_campaign_use != 'Unknown'`,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count ransomware-related KEV entries: %w", err)
+	}
+	return count, nil
+}
+
+// Count returns the total number of KEV entries.
+func (r *KEVRepository) Count(ctx context.Context) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM kev_catalog").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count KEV entries: %w", err)
+	}
+	return count, nil
+}
+
+// PruneNotIn removes the KEV entries whose CVE is not in keep.
+func (r *KEVRepository) PruneNotIn(ctx context.Context, keep []string) (int64, error) {
+	res, err := execWithTimeout(ctx, r.db.DB, timeoutBatch,
+		`DELETE FROM kev_catalog WHERE NOT (cve_id = ANY($1))`, pq.Array(keep))
+	if err != nil {
+		return 0, fmt.Errorf("failed to prune KEV catalog: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to count pruned KEV entries: %w", err)
+	}
+	return n, nil
+}
+
+// DeleteAll removes all KEV entries.
+func (r *KEVRepository) DeleteAll(ctx context.Context) error {
+	_, err := r.db.ExecContext(ctx, "TRUNCATE TABLE kev_catalog")
+	if err != nil {
+		return fmt.Errorf("failed to truncate KEV catalog: %w", err)
+	}
+	return nil
+}
+
+func (r *KEVRepository) scanKEVEntry(row *sql.Row) (*threatintel.KEVEntry, error) {
+	var (
+		cveID             string
+		vendorProject     sql.NullString
+		product           sql.NullString
+		vulnerabilityName string
+		shortDescription  sql.NullString
+		dateAdded         time.Time
+		dueDate           sql.NullTime
+		ransomwareUse     sql.NullString
+		notes             sql.NullString
+		cwes              pq.StringArray
+		createdAt         time.Time
+		updatedAt         time.Time
+	)
+
+	err := row.Scan(&cveID, &vendorProject, &product, &vulnerabilityName, &shortDescription,
+		&dateAdded, &dueDate, &ransomwareUse, &notes, &cwes, &createdAt, &updatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, threatintel.ErrKEVNotFound
+		}
+		return nil, fmt.Errorf("failed to scan KEV entry: %w", err)
+	}
+
+	return threatintel.ReconstituteKEVEntry(
+		cveID,
+		vendorProject.String,
+		product.String,
+		vulnerabilityName,
+		shortDescription.String,
+		dateAdded,
+		dueDate.Time,
+		ransomwareUse.String,
+		notes.String,
+		[]string(cwes),
+		createdAt,
+		updatedAt,
+	), nil
+}
+
+func (r *KEVRepository) scanKEVEntries(rows *sql.Rows) ([]*threatintel.KEVEntry, error) {
+	var entries []*threatintel.KEVEntry
+	for rows.Next() {
+		var (
+			cveID             string
+			vendorProject     sql.NullString
+			product           sql.NullString
+			vulnerabilityName string
+			shortDescription  sql.NullString
+			dateAdded         time.Time
+			dueDate           sql.NullTime
+			ransomwareUse     sql.NullString
+			notes             sql.NullString
+			cwes              pq.StringArray
+			createdAt         time.Time
+			updatedAt         time.Time
+		)
+
+		err := rows.Scan(&cveID, &vendorProject, &product, &vulnerabilityName, &shortDescription,
+			&dateAdded, &dueDate, &ransomwareUse, &notes, &cwes, &createdAt, &updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan KEV entry: %w", err)
+		}
+
+		entries = append(entries, threatintel.ReconstituteKEVEntry(
+			cveID,
+			vendorProject.String,
+			product.String,
+			vulnerabilityName,
+			shortDescription.String,
+			dateAdded,
+			dueDate.Time,
+			ransomwareUse.String,
+			notes.String,
+			[]string(cwes),
+			createdAt,
+			updatedAt,
+		))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating KEV entries: %w", err)
+	}
+
+	return entries, nil
+}
+
+// =============================================================================
+// Sync Status Repository
+// =============================================================================
+
+// SyncStatusRepository implements threatintel.SyncStatusRepository.
+type SyncStatusRepository struct {
+	db *DB
+}
+
+// GetBySource retrieves sync status by source name.
+func (r *SyncStatusRepository) GetBySource(ctx context.Context, source string) (*threatintel.SyncStatus, error) {
+	query := `
+		SELECT id, source_name, last_sync_at, last_sync_status, last_sync_error,
+			records_synced, sync_duration_ms, next_sync_at, sync_interval_hours,
+			is_enabled, metadata, created_at, updated_at
+		FROM threat_intel_sync_status WHERE source_name = $1
+	`
+	row := r.db.QueryRowContext(ctx, query, source)
+	return r.scanSyncStatus(row)
+}
+
+// GetAll retrieves all sync statuses.
+func (r *SyncStatusRepository) GetAll(ctx context.Context) ([]*threatintel.SyncStatus, error) {
+	query := `
+		SELECT id, source_name, last_sync_at, last_sync_status, last_sync_error,
+			records_synced, sync_duration_ms, next_sync_at, sync_interval_hours,
+			is_enabled, metadata, created_at, updated_at
+		FROM threat_intel_sync_status ORDER BY source_name
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sync statuses: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanSyncStatuses(rows)
+}
+
+// GetEnabled retrieves enabled sync statuses.
+func (r *SyncStatusRepository) GetEnabled(ctx context.Context) ([]*threatintel.SyncStatus, error) {
+	query := `
+		SELECT id, source_name, last_sync_at, last_sync_status, last_sync_error,
+			records_synced, sync_duration_ms, next_sync_at, sync_interval_hours,
+			is_enabled, metadata, created_at, updated_at
+		FROM threat_intel_sync_status WHERE is_enabled = TRUE ORDER BY source_name
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query enabled sync statuses: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanSyncStatuses(rows)
+}
+
+// GetDueForSync retrieves sources due for sync.
+func (r *SyncStatusRepository) GetDueForSync(ctx context.Context) ([]*threatintel.SyncStatus, error) {
+	query := `
+		SELECT id, source_name, last_sync_at, last_sync_status, last_sync_error,
+			records_synced, sync_duration_ms, next_sync_at, sync_interval_hours,
+			is_enabled, metadata, created_at, updated_at
+		FROM threat_intel_sync_status
+		WHERE is_enabled = TRUE
+		AND (next_sync_at IS NULL OR next_sync_at <= NOW())
+		AND last_sync_status != 'running'
+		ORDER BY source_name
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query due for sync statuses: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanSyncStatuses(rows)
+}
+
+// TryStart claims a source's run with one conditional UPDATE (see the
+// interface). The row is left running with the attempt time set; the run
+// writes its outcome with Update.
+func (r *SyncStatusRepository) TryStart(ctx context.Context, source string, staleAfter time.Duration) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE threat_intel_sync_status SET
+			last_sync_status = 'running', last_sync_at = NOW(), last_sync_error = NULL, updated_at = NOW()
+		WHERE source_name = $1
+		AND (last_sync_status <> 'running' OR updated_at < NOW() - make_interval(secs => $2))`,
+		source, staleAfter.Seconds())
+	if err != nil {
+		return false, fmt.Errorf("failed to start sync: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to start sync: %w", err)
+	}
+	return n == 1, nil
+}
+
+// Update updates a sync status.
+func (r *SyncStatusRepository) Update(ctx context.Context, status *threatintel.SyncStatus) error {
+	metadataJSON, err := json.Marshal(status.Metadata())
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	query := `
+		UPDATE threat_intel_sync_status SET
+			last_sync_at = $2, last_sync_status = $3, last_sync_error = $4,
+			records_synced = $5, sync_duration_ms = $6, next_sync_at = $7,
+			sync_interval_hours = $8, is_enabled = $9, metadata = $10, updated_at = NOW()
+		WHERE id = $1
+	`
+	_, err = r.db.ExecContext(ctx, query,
+		status.ID().String(),
+		status.LastSyncAt(),
+		status.LastSyncStatus().String(),
+		nullString(status.LastSyncError()),
+		status.RecordsSynced(),
+		status.SyncDurationMs(),
+		status.NextSyncAt(),
+		status.SyncIntervalHours(),
+		status.IsEnabled(),
+		metadataJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update sync status: %w", err)
+	}
+	return nil
+}
+
+func (r *SyncStatusRepository) scanSyncStatus(row *sql.Row) (*threatintel.SyncStatus, error) {
+	var (
+		id                string
+		sourceName        string
+		lastSyncAt        sql.NullTime
+		lastSyncStatus    string
+		lastSyncError     sql.NullString
+		recordsSynced     int
+		syncDurationMs    sql.NullInt64
+		nextSyncAt        sql.NullTime
+		syncIntervalHours int
+		isEnabled         bool
+		metadataJSON      []byte
+		createdAt         time.Time
+		updatedAt         time.Time
+	)
+
+	err := row.Scan(&id, &sourceName, &lastSyncAt, &lastSyncStatus, &lastSyncError,
+		&recordsSynced, &syncDurationMs, &nextSyncAt, &syncIntervalHours,
+		&isEnabled, &metadataJSON, &createdAt, &updatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, threatintel.ErrSyncStatusNotFound
+		}
+		return nil, fmt.Errorf("failed to scan sync status: %w", err)
+	}
+
+	var lastSyncTime *time.Time
+	if lastSyncAt.Valid {
+		lastSyncTime = &lastSyncAt.Time
+	}
+
+	var nextSyncTime *time.Time
+	if nextSyncAt.Valid {
+		nextSyncTime = &nextSyncAt.Time
+	}
+
+	syncState, _ := threatintel.ParseSyncState(lastSyncStatus)
+
+	var durationMs int
+	if syncDurationMs.Valid {
+		durationMs = int(syncDurationMs.Int64)
+	}
+
+	var metadata map[string]any
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+		}
+	}
+	if metadata == nil {
+		metadata = make(map[string]any)
+	}
+
+	return threatintel.ReconstituteSyncStatus(
+		shared.MustIDFromString(id),
+		sourceName,
+		lastSyncTime,
+		syncState,
+		lastSyncError.String,
+		recordsSynced,
+		durationMs,
+		nextSyncTime,
+		syncIntervalHours,
+		isEnabled,
+		metadata,
+		createdAt,
+		updatedAt,
+	), nil
+}
+
+func (r *SyncStatusRepository) scanSyncStatuses(rows *sql.Rows) ([]*threatintel.SyncStatus, error) {
+	var statuses []*threatintel.SyncStatus
+	for rows.Next() {
+		var (
+			id                string
+			sourceName        string
+			lastSyncAt        sql.NullTime
+			lastSyncStatus    string
+			lastSyncError     sql.NullString
+			recordsSynced     int
+			syncDurationMs    sql.NullInt64
+			nextSyncAt        sql.NullTime
+			syncIntervalHours int
+			isEnabled         bool
+			metadataJSON      []byte
+			createdAt         time.Time
+			updatedAt         time.Time
+		)
+
+		err := rows.Scan(&id, &sourceName, &lastSyncAt, &lastSyncStatus, &lastSyncError,
+			&recordsSynced, &syncDurationMs, &nextSyncAt, &syncIntervalHours,
+			&isEnabled, &metadataJSON, &createdAt, &updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan sync status: %w", err)
+		}
+
+		var lastSyncTime *time.Time
+		if lastSyncAt.Valid {
+			lastSyncTime = &lastSyncAt.Time
+		}
+
+		var nextSyncTime *time.Time
+		if nextSyncAt.Valid {
+			nextSyncTime = &nextSyncAt.Time
+		}
+
+		syncState, _ := threatintel.ParseSyncState(lastSyncStatus)
+
+		var durationMs int
+		if syncDurationMs.Valid {
+			durationMs = int(syncDurationMs.Int64)
+		}
+
+		var metadata map[string]any
+		if len(metadataJSON) > 0 {
+			if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+			}
+		}
+		if metadata == nil {
+			metadata = make(map[string]any)
+		}
+
+		statuses = append(statuses, threatintel.ReconstituteSyncStatus(
+			shared.MustIDFromString(id),
+			sourceName,
+			lastSyncTime,
+			syncState,
+			lastSyncError.String,
+			recordsSynced,
+			durationMs,
+			nextSyncTime,
+			syncIntervalHours,
+			isEnabled,
+			metadata,
+			createdAt,
+			updatedAt,
+		))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating sync statuses: %w", err)
+	}
+
+	return statuses, nil
+}
+
+// Note: nullTime helper is already defined in helpers.go

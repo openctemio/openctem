@@ -3,14 +3,14 @@
  * host:port. Format only: whether a target may be scanned (scope, zones,
  * private ranges, tiers) is the API's answer (POST /scope/check), never
  * decided here. The rules mirror the API's target validator
- * (api/pkg/validator/target.go) so that nothing accepted here is refused at
+ * (server/pkg/validator/target.go) so that nothing accepted here is refused at
  * create: CIDRs of at most 2^24 addresses (an IPv4 /8, an IPv6 /104; the
  * organization may set a lower bound), `[v6]:port`, service names
  * (`host:25/tcp`), and paths or repositories refused as network targets.
  * Unicode domain names are sent in their ASCII (punycode) form.
  * The CIDR bounds and their words are one contract with the API:
- * api/pkg/validator/testdata/cidr_targets.json is read by both test suites.
- * Design: research/418; large ranges: api/docs/rfcs/RFC-151-large-range-targets.md.
+ * server/pkg/validator/testdata/cidr_targets.json is read by both test suites.
+ * Design: research/418; large ranges: server/docs/rfcs/RFC-151-large-range-targets.md.
  */
 
 import type { Translate } from './translate'

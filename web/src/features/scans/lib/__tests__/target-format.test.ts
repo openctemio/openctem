@@ -266,11 +266,11 @@ describe('a range wider than one target', () => {
 })
 
 // The CIDR bounds are one contract with the API validator: both suites read
-// api/pkg/validator/testdata/cidr_targets.json.
+// server/pkg/validator/testdata/cidr_targets.json.
 describe('the CIDR bounds shared with the API', () => {
   const fixture = JSON.parse(
     readFileSync(
-      resolve(__dirname, '../../../../../../api/pkg/validator/testdata/cidr_targets.json'),
+      resolve(__dirname, '../../../../../../server/pkg/validator/testdata/cidr_targets.json'),
       'utf8'
     )
   ) as {

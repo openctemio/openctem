@@ -1,7 +1,7 @@
 /**
  * Guard: asset properties are read and written only by a registry key.
  *
- * The property schema is api/configs/asset-types.yaml, generated into
+ * The property schema is server/configs/asset-types.yaml, generated into
  * `AssetPropertyKey` (registry.generated.ts). Code that reaches into
  * `asset.metadata.<key>` names a key by hand, and such keys drifted from the
  * registry before (the per-type pages read `os`, `cpu_cores`, `cert_issuer`

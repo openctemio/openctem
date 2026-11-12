@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # helm-bump.sh: point the openctem chart at a new platform release
-# (api/docs/rfcs/RFC-037 §4.2).
+# (server/docs/rfcs/RFC-037 §4.2).
 #
 #   helm-bump.sh --chart PATH/Chart.yaml --app-version vX.Y.Z
 #

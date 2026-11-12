@@ -1,7 +1,7 @@
 name: Security Gate Label
 
 # Re-runs the `security-gate` check when `security-ack` is added or removed,
-# or the pull request is retargeted. Guide: api/docs/development/ci-cd.md#security-gate.
+# or the pull request is retargeted. Guide: server/docs/development/ci-cd.md#security-gate.
 #
 # Why: the organization ruleset that pins security-gate.yml to develop starts
 # that pinned run only on opened/synchronize/reopened, never on `labeled`. So

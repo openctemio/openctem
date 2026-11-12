@@ -8,11 +8,11 @@ import { humanizeIdentifier } from '@/lib/humanize-identifier'
  * shown as is.
  */
 const IDENTITY_PROVIDER_LABELS: Record<string, string> = {
-  // Organization SSO providers (api/pkg/domain/identityprovider)
+  // Organization SSO providers (server/pkg/domain/identityprovider)
   entra_id: 'Microsoft Entra ID',
   okta: 'Okta',
   google_workspace: 'Google Workspace',
-  // Account sign-in methods (api/pkg/domain/user)
+  // Account sign-in methods (server/pkg/domain/user)
   local: 'Email and password',
   google: 'Google',
   github: 'GitHub',

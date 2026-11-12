@@ -41,8 +41,8 @@ docker run -d --name console-e2e-redis -p 127.0.0.1:56379:6379 redis:7-alpine
 # 2. binaries and console
 make generate
 BIN=$PWD/.console-e2e-bin; mkdir -p $BIN
-go -C api build -o $BIN/server ./cmd/server
-go -C api build -o $BIN/openctem-migrate ./cmd/openctem-migrate
+go -C server build -o $BIN/server ./cmd/server
+go -C server build -o $BIN/openctem-migrate ./cmd/openctem-migrate
 ln -sf server $BIN/bootstrap-admin
 npm --prefix web run build:console
 

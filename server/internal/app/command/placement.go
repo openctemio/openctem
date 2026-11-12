@@ -1,0 +1,569 @@
+package command
+
+// Why a queued command waits (docs/architecture/placement.md).
+//
+// ExplainPlacement evaluates, for one command and every sensor of its
+// tenant, the checks a sensor's poll and claim apply, in the order they
+// apply them: the claim SQL's predicates (read back by the repository with
+// the same SQL), then the dispatch gate (grant, intensity, local policy,
+// private targets, opt-ins; the gate's own code), then the free slots. It
+// is read-only and never decides placement: the claim stays the authority,
+// and a test keeps the two in agreement (placement_db_test.go).
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/netip"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/openctemio/contract/politeness"
+
+	commanddom "github.com/openctemio/openctem/server/pkg/domain/command"
+	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+// MaxPlacementSensors bounds the sensors one explanation evaluates (by
+// name); a larger fleet is reported as truncated.
+const MaxPlacementSensors = 100
+
+// SensorPlacement is one sensor's verdict for a command.
+type SensorPlacement struct {
+	SensorID shared.ID
+	Name     string
+	// Eligible: the sensor may take the command (it may still be busy).
+	Eligible bool
+	// Busy: eligible, but it has no free scan slot now.
+	Busy bool
+	// Yields: eligible and free, but a less-loaded eligible sensor goes
+	// first while the command is fresh (claim_balance.go); it takes the
+	// command if that sensor has not claimed it once the window is over.
+	Yields bool
+	// Reasons are the checks that keep the command from this sensor, in
+	// the order the claim applies them (commanddom.Placement*).
+	Reasons []string
+	// Egress names the proxy pool whose use holds the command from this
+	// sensor (an egress_* reason); nil otherwise.
+	Egress *EgressWait
+}
+
+// EgressWait is the proxy pool a sensor's jobs go through when that holds
+// a command from it. PoolName is "" when the pool could not be read.
+type EgressWait struct {
+	PoolID   string
+	PoolName string
+}
+
+// ReasonCount is how many sensors one reason keeps the command from.
+type ReasonCount struct {
+	Code  string
+	Count int
+}
+
+// Placement explains where a command can go.
+type Placement struct {
+	Status commanddom.CommandStatus
+	// Platform: the command waits for platform scanning; no sensor is
+	// named or evaluated.
+	Platform bool
+	// JobReasons hold the command whatever the sensor.
+	JobReasons []string
+	// Sensors is the tenant's own sensors' verdicts (at most
+	// MaxPlacementSensors, by name); Truncated when there were more.
+	Sensors   []SensorPlacement
+	Truncated bool
+	// Eligible counts the sensors that may take it; Busy those of them
+	// with no free slot. Blocking counts each reason over the others, most
+	// frequent first.
+	Eligible int
+	Busy     int
+	Blocking []ReasonCount
+	// HostWait says, when the command waits for its hosts (host_busy),
+	// how many of them other tasks of the organization hold and which tasks
+	// (at most commanddom.MaxHostHolders). Nil otherwise.
+	HostWait *HostWait
+	// SharedFleet says, for a task none of the organization's sensors may
+	// take, whether the shared fleet was an option: SharedFleetNotUsed (the
+	// organization may use shared sensors, but this task was routed to its
+	// own sensors), SharedFleetNotAllowed (it may not now; SharedFleetReason
+	// is the access policy's reason, English). "" when a sensor of the
+	// organization may take it.
+	SharedFleet       string
+	SharedFleetReason string
+	// Withheld is the placement code of the dispatch gate's last refusal
+	// of the command by any sensor that polled for it, the organization's
+	// or a shared one (withheld.go), and WithheldAt when it was recorded:
+	// it names the reason for a platform job and for the shared fleet,
+	// whose sensors are never listed. "" when no gate withheld it.
+	Withheld   string
+	WithheldAt *time.Time
+}
+
+// SharedFleet values of Placement.
+const (
+	SharedFleetNotUsed    = "not_used"
+	SharedFleetNotAllowed = "not_allowed"
+)
+
+// HostWait is why a command waits for its hosts: Held of its Total hosts
+// are held by the Holders (the tasks holding the most of them first), and
+// CanStart of its Targets are on hosts nobody holds (-1: cannot tell). Only
+// counts and the organization's own tasks; never host names.
+type HostWait struct {
+	Held     int
+	Total    int
+	Targets  int
+	CanStart int
+	Holders  []commanddom.HostHolder
+}
+
+// ExplainPlacement explains why the command waits. Only a pending command
+// is evaluated; for any other status the result carries just the status.
+// A command of another tenant is shared.ErrNotFound.
+func (s *Service) ExplainPlacement(ctx context.Context, tenantID, commandID shared.ID) (*Placement, error) {
+	reader, ok := s.repo.(commanddom.PlacementReader)
+	if !ok {
+		return nil, errors.New("placement is not available")
+	}
+	job, claims, err := reader.PlacementPredicates(ctx, tenantID, commandID, MaxPlacementSensors+1)
+	if err != nil {
+		return nil, err
+	}
+	out := &Placement{Status: job.Status, Platform: job.IsPlatformJob,
+		Withheld: job.WithheldReason, WithheldAt: job.WithheldAt}
+	if job.Status != commanddom.CommandStatusPending || job.IsPlatformJob {
+		return out, nil
+	}
+	out.JobReasons = jobReasons(job)
+	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, fmt.Errorf("read command: %w", err)
+	}
+	if !job.HostFree {
+		hw, err := s.hostWait(ctx, cmd)
+		if err != nil {
+			return nil, err
+		}
+		out.HostWait = hw
+	}
+	if len(claims) > MaxPlacementSensors {
+		claims, out.Truncated = claims[:MaxPlacementSensors], true
+	}
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	for _, c := range claims {
+		sp, err := s.sensorPlacement(ctx, tenantID, cmd, c, now)
+		if err != nil {
+			return nil, err
+		}
+		out.Sensors = append(out.Sensors, sp)
+	}
+	if err := s.markYields(ctx, tenantID, cmd, out.Sensors, now); err != nil {
+		return nil, err
+	}
+	out.summarize()
+	if out.Eligible == 0 {
+		// Nobody of the organization can take it: say whether the shared
+		// fleet could have (research/191 W-1), so the run does not wait in
+		// silence until its timeout.
+		out.SharedFleet = SharedFleetNotAllowed
+		if s.sharedAccess != nil {
+			if ok, reason := s.sharedAccess(ctx, tenantID); ok {
+				out.SharedFleet, out.SharedFleetReason = SharedFleetNotUsed, ""
+			} else {
+				out.SharedFleetReason = reason
+			}
+		}
+	}
+	return out, nil
+}
+
+// ExplainRunTaskPlacement is ExplainPlacement for a task of a scan run: a
+// command that is not of that run (or not of the tenant) is
+// shared.ErrNotFound, so a run id cannot be used to read another run's
+// tasks.
+func (s *Service) ExplainRunTaskPlacement(ctx context.Context, tenantID, runID, commandID shared.ID) (*Placement, error) {
+	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if payloadRunID(cmd.Payload) != runID.String() {
+		return nil, fmt.Errorf("%w: task not found", shared.ErrNotFound)
+	}
+	return s.ExplainPlacement(ctx, tenantID, commandID)
+}
+
+// jobReasons are the job-level predicates that fail.
+func jobReasons(j commanddom.PlacementJob) []string {
+	var out []string
+	if !j.NotExpired {
+		out = append(out, commanddom.PlacementExpired)
+	}
+	if !j.Due {
+		out = append(out, commanddom.PlacementWindowClosed)
+	}
+	if !j.HostFree {
+		out = append(out, commanddom.PlacementHostBusy)
+	} else if j.SensorHostsBusy {
+		out = append(out, commanddom.PlacementSensorHostsBusy)
+	}
+	return out
+}
+
+// maxHostHoldersRead bounds the holders read to count the held hosts.
+const maxHostHoldersRead = 50
+
+// RunTaskHostWait is why a pending task of a run waits for its hosts; nil
+// when it does not (it is not pending, or nothing holds its hosts). A
+// command that is not of that run (or not of the tenant) is
+// shared.ErrNotFound.
+func (s *Service) RunTaskHostWait(ctx context.Context, tenantID, runID, commandID shared.ID) (*HostWait, error) {
+	cmd, err := s.repo.GetByTenantAndID(ctx, tenantID, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if payloadRunID(cmd.Payload) != runID.String() {
+		return nil, fmt.Errorf("%w: task not found", shared.ErrNotFound)
+	}
+	if cmd.Status != commanddom.CommandStatusPending {
+		return nil, nil
+	}
+	hw, err := s.hostWait(ctx, cmd)
+	if err != nil || hw == nil || hw.Held == 0 {
+		return nil, err
+	}
+	return hw, nil
+}
+
+// payloadRunID is the scan run a command payload names ("" when none).
+func payloadRunID(payload json.RawMessage) string {
+	var p struct {
+		RunID string `json:"scan_run_id"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return ""
+	}
+	return p.RunID
+}
+
+// hostWait counts the command's hosts that tasks of its tenant hold, how
+// many of its targets are on free hosts, and names the tasks holding the
+// most; nil when the repository cannot tell.
+func (s *Service) hostWait(ctx context.Context, cmd *commanddom.Command) (*HostWait, error) {
+	reader, ok := s.repo.(commanddom.HostHoldersReader)
+	if !ok {
+		return nil, nil
+	}
+	keys, holders, err := reader.HostHolders(ctx, cmd.TenantID, cmd.ID, maxHostHoldersRead)
+	if err != nil {
+		return nil, fmt.Errorf("read host holders: %w", err)
+	}
+	held := map[string]bool{}
+	var heldKeys []string
+	for _, h := range holders {
+		for _, k := range h.Keys {
+			held[k] = true
+			heldKeys = append(heldKeys, k)
+		}
+	}
+	targets := commanddom.PayloadTargets(cmd.Payload)
+	hw := &HostWait{Targets: len(targets), CanStart: -1}
+	if p, ok := commanddom.PartitionHeld(targets, payloadNetwork(cmd.Payload), keys, heldKeys); ok {
+		hw.CanStart = len(p.Free)
+	}
+	for _, k := range keys {
+		if strings.HasPrefix(k, commanddom.HostKeyAddrInBucket) {
+			continue // the bucket marker of an address: not a host of its own
+		}
+		hw.Total++
+		for _, c := range hostConflicts(k) {
+			if held[c] {
+				hw.Held++
+				break
+			}
+		}
+	}
+	if len(holders) > commanddom.MaxHostHolders {
+		holders = holders[:commanddom.MaxHostHolders]
+	}
+	hw.Holders = holders
+	return hw, nil
+}
+
+// hostConflicts is the keys that hold host key k back: k itself and, for
+// an address, the range key of its bucket (for a range key, the bucket's
+// address marker; politeness.Conflicts).
+func hostConflicts(k string) []string {
+	out := commanddom.HostKeyConflicts([]string{k})
+	addr, suffix, _ := strings.Cut(k, politeness.NetworkSep)
+	if a, err := netip.ParseAddr(addr); err == nil {
+		if suffix != "" {
+			suffix = politeness.NetworkSep + suffix
+		}
+		out = append(out, commanddom.HostKeyRangeBucket+commanddom.AddrBucket(a).String()+suffix)
+	}
+	return out
+}
+
+// sensorPlacement is one sensor's verdict: its state, the claim SQL's
+// predicates (c), then, only when those pass, the dispatch gate and the
+// free slots, as the poll applies them.
+func (s *Service) sensorPlacement(ctx context.Context, tenantID shared.ID, cmd *commanddom.Command, c commanddom.SensorClaim, now time.Time) (SensorPlacement, error) {
+	sp := SensorPlacement{SensorID: c.SensorID}
+	var sn *sensordom.Sensor
+	if s.sensors != nil {
+		var err error
+		sn, err = s.sensors.GetByTenantAndID(ctx, tenantID, c.SensorID)
+		if err != nil && !errors.Is(err, shared.ErrNotFound) {
+			return sp, fmt.Errorf("read sensor: %w", err)
+		}
+	}
+	if sn != nil {
+		sp.Name = sn.Name
+		if sn.Status != sensordom.SensorStatusActive {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementInactive)
+		}
+		if !sensorReachable(sn.Health) {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementOffline)
+		}
+		// The claim SQL withholds every new job from a cloned identity
+		// (identityNotClonedPredicate); say so instead of "eligible".
+		if sn.IdentityClonedAt != nil {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementIdentityCloned)
+		}
+	}
+	sp.Reasons = append(sp.Reasons, claimReasons(c)...)
+	if !c.FeaturesOK {
+		sp.Reasons = append(sp.Reasons, missingFeatureReasons(cmd, sn)...)
+	}
+	if len(sp.Reasons) > 0 {
+		return sp, nil
+	}
+	if r := s.gateFor(ctx, tenantID, &c.SensorID, []*commanddom.Command{cmd}).refusal(cmd); r != nil {
+		sp.Reasons = append(sp.Reasons, gateReason(r))
+		return sp, nil
+	}
+	// The sensor's jobs use a proxy pool it cannot honor: delivery keeps
+	// them from it, and the command waits for one that can.
+	d, err := s.egressFor(ctx, tenantID, c.SensorID.String(), []*commanddom.Command{cmd})
+	if err != nil {
+		return sp, err
+	}
+	if r := d.holdReason(cmd.Type); r != "" {
+		sp.Reasons = append(sp.Reasons, r)
+		sp.Egress = s.egressWait(ctx, tenantID, d)
+		return sp, nil
+	}
+	// The platform would hand it out, but the sensor said it claims nothing
+	// new until its local store recovers: that is why the command waits.
+	if sn != nil && sn.StoppedClaiming() {
+		sp.Reasons = append(sp.Reasons, commanddom.PlacementStoppedClaiming)
+		return sp, nil
+	}
+	sp.Eligible = true
+	if cmd.Type == commanddom.CommandTypeScan && sn != nil {
+		free := sn.FreeSlots(now)
+		sp.Busy = freeScanSlots(sn.EffectiveMaxConcurrentJobs(), c.HeldScans, &free) == 0
+		// Free slots that host pressure alone took away: say so instead of
+		// the plain "no free slot".
+		if sp.Busy && sn.PressureNarrowed(now) {
+			sp.Reasons = append(sp.Reasons, commanddom.PlacementSensorOverloaded)
+		}
+	}
+	return sp, nil
+}
+
+// egressWait names the pool of decision d (the pool name only when the
+// source can say it).
+func (s *Service) egressWait(ctx context.Context, tenantID shared.ID, d egressDecision) *EgressWait {
+	if d.egress == nil {
+		return nil
+	}
+	w := &EgressWait{PoolID: d.egress.PoolID}
+	if n, ok := s.egress.(PoolNamer); ok {
+		w.PoolName = n.PoolName(ctx, tenantID, d.egress.PoolID)
+	}
+	return w
+}
+
+// sensorReachable: the sensor checks in (online, or a little late).
+func sensorReachable(h sensordom.SensorHealth) bool {
+	return h == sensordom.SensorHealthOnline || h == sensordom.SensorHealthLate
+}
+
+// claimReasons are the claim SQL's per-sensor predicates that fail, in
+// the order the poll's WHERE lists them.
+func claimReasons(c commanddom.SensorClaim) []string {
+	var out []string
+	if !c.PinOK {
+		out = append(out, commanddom.PlacementPinnedElsewhere)
+	}
+	if !c.ZoneOK {
+		out = append(out, commanddom.PlacementOutsideZone)
+	}
+	if !c.ToolOK {
+		out = append(out, commanddom.PlacementToolMissing)
+	}
+	if !c.NotRefused {
+		out = append(out, commanddom.PlacementRefusedEarlier)
+	}
+	if !c.NotFailedHere {
+		out = append(out, commanddom.PlacementFailedHereEarlier)
+	}
+	if !c.CapabilityOK {
+		out = append(out, commanddom.PlacementCapabilityMissing)
+	}
+	return out
+}
+
+// featurePlacement is the placement code of each feature a command can
+// require (command.PayloadKeyRequiredFeatures).
+var featurePlacement = map[string]string{
+	sensordom.CapabilityNetConfined:     commanddom.PlacementNotConfined,
+	sensordom.CapabilityRuleSources:     commanddom.PlacementRuleSourcesUnsupported,
+	sensordom.CapabilityIsolationStrong: commanddom.PlacementStrongIsolationMissing,
+}
+
+// missingFeatureReasons names the features cmd requires that sn did not
+// report (every required one when the sensor is unknown). A feature with
+// no code of its own counts as not confined, the first such feature.
+func missingFeatureReasons(cmd *commanddom.Command, sn *sensordom.Sensor) []string {
+	var p struct {
+		Required []string `json:"required_features"`
+	}
+	if cmd != nil {
+		_ = json.Unmarshal(cmd.Payload, &p)
+	}
+	var reported []string
+	if sn != nil {
+		reported = sn.Reported.Capabilities
+	}
+	var out []string
+	for _, f := range p.Required {
+		if slices.Contains(reported, f) {
+			continue
+		}
+		code, ok := featurePlacement[f]
+		if !ok {
+			code = commanddom.PlacementNotConfined
+		}
+		if !slices.Contains(out, code) {
+			out = append(out, code)
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, commanddom.PlacementNotConfined)
+	}
+	return out
+}
+
+// gateReason is the placement code of a dispatch gate refusal.
+func gateReason(r *sensordom.DispatchRefusal) string {
+	switch {
+	case r.Layer == RefusalLayerGrant && r.Rule == RuleIntensity:
+		return commanddom.PlacementIntensity
+	case r.Layer == RefusalLayerEntitlement && r.Rule == RuleActiveScanning:
+		return commanddom.PlacementActiveScanning
+	case r.Layer == RefusalLayerGrant:
+		return commanddom.PlacementGrantPrefix + r.Rule
+	case r.Layer == sensordom.RefusalLayerManaged && r.Rule == "unavailable":
+		return commanddom.PlacementPolicyUnavailable
+	case r.Rule == sensordom.RulePrivateNeedsLocalPlcy:
+		return commanddom.PlacementPrivateNeedsPolicy
+	case r.Layer == sensordom.RefusalLayerManaged && (r.Rule == sensordom.RuleAllowInteractsh || r.Rule == sensordom.RuleAllowCustomTemplates):
+		return commanddom.PlacementOptInDisabled
+	default:
+		return commanddom.PlacementLocalPolicy
+	}
+}
+
+// summarize fills the counts: eligible and busy sensors, and each
+// blocking reason over the others, most frequent first.
+func (p *Placement) summarize() {
+	counts := map[string]int{}
+	for _, sp := range p.Sensors {
+		switch {
+		case sp.Eligible:
+			p.Eligible++
+			if sp.Busy {
+				p.Busy++
+				if slices.Contains(sp.Reasons, commanddom.PlacementSensorOverloaded) {
+					counts[commanddom.PlacementSensorOverloaded]++
+				}
+			}
+		default:
+			for _, r := range sp.Reasons {
+				counts[r]++
+			}
+		}
+	}
+	for code, n := range counts {
+		p.Blocking = append(p.Blocking, ReasonCount{Code: code, Count: n})
+	}
+	slices.SortFunc(p.Blocking, func(a, b ReasonCount) int {
+		if a.Count != b.Count {
+			return b.Count - a.Count
+		}
+		if a.Code < b.Code {
+			return -1
+		}
+		if a.Code > b.Code {
+			return 1
+		}
+		return 0
+	})
+}
+
+// markYields flags the eligible, free sensors that leave a fresh unassigned
+// scan command to a less-loaded one (claim_balance.go): the same loads and
+// order the claim uses, so the explanation says why the busier sensor did
+// not take it.
+func (s *Service) markYields(ctx context.Context, tenantID shared.ID, cmd *commanddom.Command, sensors []SensorPlacement, now time.Time) error {
+	window := s.claimBalanceWindow()
+	contester, ok := s.repo.(commanddom.ClaimContester)
+	if !ok || window <= 0 || cmd.SensorID != nil || cmd.Type != commanddom.CommandTypeScan {
+		return nil
+	}
+	since := cmd.CreatedAt
+	if cmd.ScheduledAt != nil && cmd.ScheduledAt.After(since) {
+		since = *cmd.ScheduledAt
+	}
+	if now.Sub(since) >= window {
+		return nil
+	}
+	var ids []shared.ID
+	for _, sp := range sensors {
+		if sp.Eligible && !sp.Busy {
+			ids = append(ids, sp.SensorID)
+		}
+	}
+	if len(ids) < 2 {
+		return nil
+	}
+	loads, err := contester.SensorLoads(ctx, tenantID, ids)
+	if err != nil {
+		return fmt.Errorf("read sensor loads: %w", err)
+	}
+	var best *commanddom.SensorLoad
+	for _, id := range ids {
+		if l, ok := loads[id]; ok && l.Free > 0 && (best == nil || l.LessLoaded(*best)) {
+			best = &l
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	for i := range sensors {
+		sp := &sensors[i]
+		if l, ok := loads[sp.SensorID]; ok && sp.Eligible && !sp.Busy && best.LessLoaded(l) {
+			sp.Yields = true
+		}
+	}
+	return nil
+}

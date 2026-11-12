@@ -1,0 +1,190 @@
+package handler
+
+// Install commands for a sensor that does not exist yet (the "Add sensor"
+// panel, docs/architecture/sensor-pairing.md "Onboarding"): the same
+// hardened templates as a sensor's own install, rendered without any key.
+// The sensor makes its own key on first start and pairs (RFC-052); a code
+// the console created first is passed as SENSOR_PAIRING_CODE.
+//
+// The code travels in the request body, never the URL (access logs). The
+// route renders text only: it neither checks nor spends the code, and the
+// approval still needs the fingerprint compare and step-up.
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"regexp"
+	"time"
+
+	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
+)
+
+// installSensorName is the name the onboarding snippets give the container,
+// service and volume; the administrator names the sensor when approving it.
+const installSensorName = "openctem-sensor"
+
+// installIntentRefused answers a purpose or allowed_ranges the install
+// commands cannot carry (sensorapp.InstallIntent.Apply).
+const installIntentRefused = "purpose must be internet, internal or both; allowed_ranges needs purpose internal and " +
+	"lists private networks only (inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7, at most /8, at most 64)"
+
+// maxInstallTemplatesBody bounds the request body.
+const maxInstallTemplatesBody = 4 << 10
+
+// jobSigningRootRegexp is the shape of a job-signing root id the snippets
+// may carry (it is shell- and YAML-quoted as well).
+var jobSigningRootRegexp = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// SensorInstallTemplatesRequest is the body of POST /sensors/install-templates.
+type SensorInstallTemplatesRequest struct {
+	// PairingCode is a code from POST /sensor-pairings/expectations
+	// (XXXX-XXXX). Empty: the snippets start the sensor without one and it
+	// prints a code to enter.
+	PairingCode string `json:"pairing_code"`
+	// Product is a sensor product id (GET /sensors/stats products) whose
+	// image to install; empty: the scanning sensor. Only products that use
+	// the scanning sensor's snippets can pair from these commands.
+	Product string `json:"product"`
+	// Purpose is what the sensor will scan: "internet" (default),
+	// "internal" or "both". internal and both add
+	// SENSOR_ALLOW_PRIVATE_TARGETS=1 to the commands (the host owner's
+	// consent to scan private networks, visible in the command they run);
+	// internet never does.
+	Purpose string `json:"purpose" enums:"internet,internal,both"`
+	// AllowedRanges, with purpose internal only, also pins the host to
+	// these private networks (SENSOR_ALLOWED_RANGES, CIDRs, addresses or
+	// a-b ranges inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or
+	// fc00::/7; at most 64). Empty: the sensor follows the platform's scope.
+	AllowedRanges []string `json:"allowed_ranges"`
+}
+
+// SetJobSigningRoot sets where the onboarding snippets read the job-signing
+// root from (signerclient.Client.RootKeyID). Optional.
+func (h *SensorHandler) SetJobSigningRoot(f func(ctx context.Context) string) { h.jobRoot = f }
+
+// InstallTemplates handles POST /api/v1/sensors/install-templates.
+//
+// @Summary Install commands for a new sensor that pairs
+// @Description Renders the docker run, Compose, Kubernetes and Linux (binary and systemd) install commands, and the sensor-local policy, for a sensor that does not exist yet: no API key; the sensor makes its own key on first start and pairs. With pairing_code (a code the console created) the commands pass it as SENSOR_PAIRING_CODE. purpose internal or both adds SENSOR_ALLOW_PRIVATE_TARGETS=1 with a comment that explains it (never for internet); allowed_ranges (purpose internal only) also pins the host to those private networks. When the platform uses a private CA (PLATFORM_CA_CERT_FILE) every command pins its root (SENSOR_CA_SHA256) and platform_ca describes it. The code is never checked or spent here.
+// @Tags Sensors
+// @Accept json
+// @Produce json
+// @Param body body SensorInstallTemplatesRequest true "Pairing code and product"
+// @Success 200 {object} SensorConfigTemplatesResponse
+// @Failure 400 {object} apierror.Error
+// @Failure 503 {object} apierror.Error "Template service not configured"
+// @Security BearerAuth
+// @Router /sensors/install-templates [post]
+func (h *SensorHandler) InstallTemplates(w http.ResponseWriter, r *http.Request) {
+	if h.templateService == nil {
+		apierror.New(http.StatusServiceUnavailable, "TEMPLATE_SERVICE_DISABLED",
+			"Sensor config template service is not configured").WriteJSON(w)
+		return
+	}
+	var req SensorInstallTemplatesRequest
+	dec := json.NewDecoder(io.LimitReader(r.Body, maxInstallTemplatesBody))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	h.renderInstallTemplates(w, r, req)
+}
+
+// InstallTemplatesRead handles GET /api/v1/sensors/install-templates: the
+// commands without a pairing code (the sensor prints a code to enter). Pure
+// read, so a page can load it; the code-carrying variant stays a POST so the
+// code is never in a URL, and is only asked after the user created a code.
+//
+// @Summary Install commands for a new sensor that pairs (no code)
+// @Description Same answer as POST /sensors/install-templates without a pairing code. Reads only; nothing is stored.
+// @Tags Sensors
+// @Produce json
+// @Param product query string false "Sensor product id"
+// @Param purpose query string false "What the sensor scans: internet (default), internal or both" Enums(internet, internal, both)
+// @Success 200 {object} SensorConfigTemplatesResponse
+// @Failure 400 {object} apierror.Error
+// @Failure 503 {object} apierror.Error "Template service not configured"
+// @Security BearerAuth
+// @Router /sensors/install-templates [get]
+func (h *SensorHandler) InstallTemplatesRead(w http.ResponseWriter, r *http.Request) {
+	if h.templateService == nil {
+		apierror.New(http.StatusServiceUnavailable, "TEMPLATE_SERVICE_DISABLED",
+			"Sensor config template service is not configured").WriteJSON(w)
+		return
+	}
+	q := r.URL.Query()
+	h.renderInstallTemplates(w, r, SensorInstallTemplatesRequest{Product: q.Get("product"), Purpose: q.Get("purpose")})
+}
+
+func (h *SensorHandler) renderInstallTemplates(w http.ResponseWriter, r *http.Request, req SensorInstallTemplatesRequest) {
+	code := ""
+	if req.PairingCode != "" {
+		norm, err := pairing.NormalizeCode(req.PairingCode)
+		if err != nil {
+			apierror.BadRequest("pairing_code is not a pairing code").WriteJSON(w)
+			return
+		}
+		code = pairing.FormatCode(norm)
+	}
+	s := &sensor.Sensor{Name: installSensorName, Type: sensor.SensorTypeWorker, ExecutionMode: sensor.ExecutionModeDaemon}
+	product, ok := h.installProduct(req.Product, s)
+	if !ok || (product.Install != "" && product.Install != sensorapp.InstallSensor) {
+		apierror.BadRequest("product is not a sensor product that pairs from these commands").WriteJSON(w)
+		return
+	}
+	baseURL := h.publicAPIURL
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+	ca := h.loadPlatformCA()
+	root := ""
+	if h.jobRoot != nil {
+		if v := h.jobRoot(r.Context()); jobSigningRootRegexp.MatchString(v) {
+			root = v
+		}
+	}
+	data := sensorapp.SensorTemplateData{
+		Sensor: s, BaseURL: baseURL, Image: product.Image, Install: product.Install,
+		ReleaseIdentity: product.ReleaseIdentity, Auth: sensorapp.AuthPair, PairingCode: code, JobSigningRoot: root,
+	}
+	intent := sensorapp.InstallIntent{Purpose: req.Purpose, AllowedRanges: req.AllowedRanges}
+	if err := intent.Apply(&data); err != nil {
+		apierror.BadRequest(installIntentRefused).WriteJSON(w)
+		return
+	}
+	data.SetPlatformCA(ca, time.Now())
+	rendered, err := h.templateService.Render(data)
+	if err != nil {
+		h.logger.Error("failed to render sensor install templates", "error", logger.SanitizeError(err))
+		apierror.InternalServerError("rendering the install commands failed").WriteJSON(w)
+		return
+	}
+	// A pairing install has no Helm variant (the chart's bundled sensor is
+	// installed with the platform), no config file and no env file: the
+	// panel shows the four ways a remote sensor runs, and the policy.
+	multi := sensorapp.MultiKitCommand(installSensorName, baseURL, code, data.CAPins)
+	if data.Policy.AllowPrivate {
+		multi += sensorapp.MultiKitPrivateNote
+	}
+	if data.HostAllowedRanges != "" {
+		// Only the docker, compose and CLI snippets read the pin.
+		multi += sensorapp.MultiKitPinNote
+		rendered.Kubernetes += sensorapp.KubernetesPinNote
+	}
+	resp := SensorConfigTemplatesResponse{
+		Docker: rendered.Docker, Compose: rendered.Compose, Kubernetes: rendered.Kubernetes, CLI: rendered.CLI,
+		Policy: rendered.Policy, Image: product.Image, Product: product.ID, APIURL: baseURL,
+		CACertificate: data.CACert, CAFingerprintSHA256: ca.Fingerprint(), PlatformCA: platformCAInfo(ca),
+		Multi: multi,
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}

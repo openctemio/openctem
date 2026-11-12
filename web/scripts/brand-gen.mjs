@@ -10,7 +10,7 @@
  *   src/assets/brand-data.generated.ts  the icon/OG drawings as strings (icon routes)
  *   src/assets/brand/manifest.json      sha256 of every source SVG
  *   public/brand/*.png                  manifest icons (192, 512, maskable 512)
- *   ../api/pkg/email/assets/logo@2x.png e-mail header (embedded, never remote)
+ *   ../server/pkg/email/assets/logo@2x.png e-mail header (embedded, never remote)
  *
  * Usage:
  *   node scripts/brand-gen.mjs          write everything
@@ -98,7 +98,7 @@ import { cn } from '@/lib/utils'
  * OpenCTEM logo: the Scope "Caught" symbol (two corner brackets with the
  * marker caught in the open corner) and the outlined Sora wordmark.
  * Construction, colour, clear space and minimum sizes are in
- * \`api/docs/architecture/brand.md\` and \`src/assets/brand/README.md\`.
+ * \`server/docs/architecture/brand.md\` and \`src/assets/brand/README.md\`.
  *
  * Every part is a path or a shape (nothing depends on installed fonts) and
  * draws in \`currentColor\`. The marker square is the only accent: it takes
@@ -220,9 +220,9 @@ await png('maskable-512.svg', { w: 512, h: 512 }, join(root, 'public/brand/maska
 const ink = read('lockup.svg')
   .replace(/currentColor/g, '#0A1628')
   .replace(/(<rect [^>]*fill=")#0A1628/, '$1#0D9488')
-mkdirSync(join(root, '../api/pkg/email/assets'), { recursive: true })
+mkdirSync(join(root, '../server/pkg/email/assets'), { recursive: true })
 await sharp(Buffer.from(ink), { density: 384 })
   .resize(280, 43)
   .png({ compressionLevel: 9 })
-  .toFile(join(root, '../api/pkg/email/assets/logo@2x.png'))
+  .toFile(join(root, '../server/pkg/email/assets/logo@2x.png'))
 console.log('brand assets written')

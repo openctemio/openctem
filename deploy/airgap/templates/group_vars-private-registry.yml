@@ -1,6 +1,6 @@
 # Ansible (openctemio/openctem-ansible, with registry mirror support): run
 # OpenCTEM from a private registry. Put these in group_vars/all.yml (or the
-# group of your OpenCTEM hosts). Guide: api/docs/deployment/air-gapped.md.
+# group of your OpenCTEM hosts). Guide: server/docs/deployment/air-gapped.md.
 #
 # The role keeps the image digests of versions.yml and only swaps the
 # registry prefix; it cosign-verifies every image AT THE MIRROR with the

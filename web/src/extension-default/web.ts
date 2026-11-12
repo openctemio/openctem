@@ -1,6 +1,6 @@
 /**
  * The default build's `@extension/web`: no extension, so nothing is added to the
- * tenant app (api/docs/development/editions.md, "Web").
+ * tenant app (server/docs/development/editions.md, "Web").
  */
 import { EXTENSION_API_VERSION, type WebExtension } from '@/lib/extension/types'
 

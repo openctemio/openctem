@@ -1,0 +1,139 @@
+package handler
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/openctemio/openctem/server/internal/app/module"
+)
+
+func TestRenderExecutiveSummaryHTML_ContainsHeadlineMetrics(t *testing.T) {
+	epss := 0.87
+	summary := &module.ExecutiveSummary{
+		Period:            "last 30 days",
+		RiskScoreCurrent:  72.4,
+		RiskScoreChange:   -3.1,
+		FindingsTotal:     142,
+		FindingsResolved:  35,
+		FindingsNew:       18,
+		P0Open:            4,
+		P0Resolved:        7,
+		P1Open:            22,
+		P1Resolved:        14,
+		SLACompliancePct:  ptrF(91.3),
+		SLABreached:       3,
+		MTTRCriticalHrs:   ptrF(14.2),
+		MTTRHighHrs:       ptrF(42.6),
+		CrownJewelsAtRisk: 2,
+		RegressionCount:   1,
+		RegressionRatePct: 0.7,
+		TopRisks: []module.TopRisk{
+			{
+				FindingTitle:  "Log4Shell reachable over the internet",
+				Severity:      "CRITICAL",
+				PriorityClass: "P0",
+				AssetName:     "api-gateway",
+				EPSSScore:     &epss,
+				IsInKEV:       true,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := renderExecutiveSummaryHTML(&buf, summary, "2026-04-20"); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+
+	// Headline metric values must appear verbatim.
+	mustContain := []string{
+		"last 30 days",
+		"2026-04-20",
+		"72.4",
+		"-3.1",
+		"142",
+		"91.3%",
+		"Log4Shell reachable over the internet",
+		"P0",
+		"api-gateway",
+		"0.87", // EPSS
+		"YES",  // KEV badge
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q", want)
+		}
+	}
+
+	// Print-styling assertion — the @media print block must ship so
+	// save-as-PDF produces a clean layout.
+	if !strings.Contains(out, "@media print") {
+		t.Error("output missing @media print CSS — PDF rendering will include navigation chrome")
+	}
+}
+
+func TestRenderExecutiveSummaryHTML_NoTopRisksOmitsTable(t *testing.T) {
+	summary := &module.ExecutiveSummary{
+		Period:   "last 7 days",
+		TopRisks: nil,
+	}
+	var buf bytes.Buffer
+	if err := renderExecutiveSummaryHTML(&buf, summary, "2026-04-20"); err != nil {
+		t.Fatalf("%v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "<h2>Top Risks</h2>") {
+		t.Error("Top Risks section should be omitted when list is empty")
+	}
+}
+
+func TestRenderExecutiveSummaryHTML_EscapesHTMLInRiskTitle(t *testing.T) {
+	// html/template auto-escapes but assert explicitly — a misused
+	// template.HTML cast would silently re-introduce XSS.
+	summary := &module.ExecutiveSummary{
+		Period: "last 30 days",
+		TopRisks: []module.TopRisk{
+			{
+				FindingTitle:  `<script>alert("pwn")</script>`,
+				Severity:      "HIGH",
+				PriorityClass: "P1",
+				AssetName:     "web-01",
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := renderExecutiveSummaryHTML(&buf, summary, "2026-04-20"); err != nil {
+		t.Fatalf("%v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "<script>alert") {
+		t.Fatal("finding title rendered unescaped — XSS risk")
+	}
+	if !strings.Contains(out, "&lt;script&gt;") {
+		t.Fatalf("expected HTML-encoded script tag, got: %s", out)
+	}
+}
+
+func ptrF(f float64) *float64 { return &f }
+
+// A figure that is not measured renders as a dash in the report, never as a
+// compliant 100% or a 0 h fix time.
+func TestRenderExecutiveSummaryHTML_NotMeasuredIsDash(t *testing.T) {
+	var buf bytes.Buffer
+	if err := renderExecutiveSummaryHTML(&buf, &module.ExecutiveSummary{Period: "last 30 days"}, "2026-04-20"); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	out := buf.String()
+	for _, label := range []string{"Open within SLA", "MTTR Critical", "MTTR High"} {
+		at := strings.Index(out, label)
+		if at < 0 {
+			t.Fatalf("report has no %q card", label)
+		}
+		end := strings.Index(out[at:], `<div class="delta">`)
+		card := out[at : at+end]
+		if strings.Contains(card, "0.0") || strings.Contains(card, "100") || !strings.Contains(card, "\u2014") {
+			t.Errorf("not-measured %q card = %q, want a dash", label, card)
+		}
+	}
+}

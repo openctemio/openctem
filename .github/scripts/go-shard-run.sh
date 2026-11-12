@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs shard i of n of the API Go test suite (the plan from go-shard.sh), one
-# `go test` process after another, from api/.
+# `go test` process after another, from server/.
 #
 #   go-shard-run.sh <i> <n> <json-out> [go test flags...]
 #

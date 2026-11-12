@@ -8,7 +8,7 @@
 # relevant part changed. When in doubt every output is true.
 #
 # Writes to $GITHUB_OUTPUT (and prints with the reason):
-#   api_code=true|false  Go API code (api/, except documentation), or a shared
+#   api_code=true|false  Go API code (server/, except documentation), or a shared
 #                        build file (Makefile, go.work, go.work.sum, deploy/).
 #   web_app=true|false   web application code: web/ except web/e2e/ and the
 #                        translation catalogs, or a shared build file. Unit
@@ -112,8 +112,8 @@ fi
 
 is_docs() {
   case "$1" in
-    api/docs/configuration/environment-variables.md) return 1 ;;
-    *.md | api/docs/* | .claude/* | */.claude/*) return 0 ;;
+    server/docs/configuration/environment-variables.md) return 1 ;;
+    *.md | server/docs/* | .claude/* | */.claude/*) return 0 ;;
   esac
   return 1
 }
@@ -124,7 +124,7 @@ while IFS= read -r f; do
   is_docs "$f" && continue
   case "$f" in
     Makefile | go.work | go.work.sum | deploy/*) api_code=${api_code:-$f} web_app=${web_app:-$f} ;;
-    api/*) api_code=${api_code:-$f} ;;
+    server/*) api_code=${api_code:-$f} ;;
     web/e2e/*) web_e2e=${web_e2e:-$f} ;;
     web/src/lib/i18n/dictionaries/*/*.json)
       web_i18n=${web_i18n:-$f} i18n_files+="${i18n_files:+ }${f#web/}"

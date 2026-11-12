@@ -1,5 +1,0 @@
-### Security: the bundled sensor is v0.41.0 and the served seccomp profile is that release's
-
-- `versions.yaml` `sensor.latest` is v0.41.0: the bundled sensor (`api/deploy/docker-compose.sensor.yml`) and the install snippets pin it. v0.40.0 and later pair only with a platform that signs its pairing answers, and v0.41.0 answers the platform's Certificate Transparency lookups (`lookup.ct@1`); this release has both.
-- The seccomp profile the platform serves to installs (`GET /api/v1/sensors/install/seccomp-profile`, both copies) is sensor v0.41.0's `docker/seccomp/sensor.json` (sha256 `f2ceafc7…1836`). It adds one rule: `chroot` is allowed, for the browser tool's Chromium renderer sandbox inside a user namespace it owns. The kernel still refuses `chroot` to a process without `CAP_SYS_CHROOT` in its own user namespace, and the sensor runs with every capability dropped.
-- **Upgrade note:** an existing install keeps the profile file it downloaded. Write it again (re-run the install snippet, or `openctemio-sensor seccomp-profile` from the new image) when you move a sensor to v0.40.0 or later. The browser tool needs the new rule; other tools do not.

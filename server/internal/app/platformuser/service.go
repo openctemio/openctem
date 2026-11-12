@@ -1,0 +1,273 @@
+// Package platformuser holds the platform admin console's support actions on
+// one account (Console > Users, RFC-022): revoke its sessions,
+// unlock it, send a password reset, resend email verification.
+//
+// They act on the account only, never on what an organization holds, and
+// never hand the administrator a credential: links go to the account's own
+// mailbox. Platform administrator accounts are refused (they are managed in
+// Security > Administrators), as are erased accounts.
+package platformuser
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/user"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/password"
+)
+
+var (
+	// ErrPlatformAdmin: the account is a platform administrator.
+	ErrPlatformAdmin = fmt.Errorf("%w: platform administrator accounts are managed in Security > Administrators", shared.ErrConflict)
+	// ErrErased: the account was erased.
+	ErrErased = fmt.Errorf("%w: the account was erased", shared.ErrConflict)
+	// ErrNotLocal: the account signs in through an identity provider.
+	ErrNotLocal = fmt.Errorf("%w: the account signs in through an identity provider and has no password", shared.ErrConflict)
+	// ErrAlreadyVerified: the email is already verified.
+	ErrAlreadyVerified = fmt.Errorf("%w: the email is already verified", shared.ErrConflict)
+	// ErrNotLocked: the account is not locked.
+	ErrNotLocked = fmt.Errorf("%w: the account is not locked", shared.ErrConflict)
+	// ErrEmailUnavailable: no email can be sent from this installation.
+	ErrEmailUnavailable = errors.New("email is not configured on this installation")
+	// ErrEmailAvailable: this installation can send email, so the account's
+	// own mailbox is the way (a link shown to an administrator is only for
+	// servers that cannot send mail).
+	ErrEmailAvailable = errors.New("email is configured on this installation")
+	// ErrMFANotEnabled: the account has no second factor to reset.
+	ErrMFANotEnabled = fmt.Errorf("%w: the account has no two-factor authentication to reset", shared.ErrConflict)
+)
+
+// SessionRevoker ends every session of an account.
+type SessionRevoker interface {
+	RevokeAllSessions(ctx context.Context, userID, exceptSessionID string) error
+}
+
+// ResetIssuer issues a password reset token (the forgot-password flow).
+type ResetIssuer interface {
+	ForgotPassword(ctx context.Context, input auth.ForgotPasswordInput) (*auth.ForgotPasswordResult, error)
+}
+
+// MFAResetter turns off an account's second factor and ends its sessions.
+type MFAResetter interface {
+	ResetUserMFAByConsole(ctx context.Context, id shared.ID, ip string) error
+}
+
+// Mailer sends the account's own links.
+type Mailer interface {
+	IsConfigured() bool
+	SendPasswordResetEmail(ctx context.Context, userEmail, userName, token string, expiresIn time.Duration, ipAddress string) error
+	SendVerificationEmail(ctx context.Context, userEmail, userName, token string, expiresIn time.Duration) error
+}
+
+// AccountStates reports whether an account is linked to a platform
+// administrator and whether it was erased.
+type AccountStates interface {
+	AccountState(ctx context.Context, id shared.ID) (isAdmin, erased bool, err error)
+	// ClearLockout clears the failed sign-in count and lockout (the user
+	// repository's Update deliberately never writes those columns).
+	ClearLockout(ctx context.Context, id shared.ID) error
+}
+
+// Durations of the links the actions send.
+type Durations struct {
+	PasswordReset     time.Duration
+	EmailVerification time.Duration
+}
+
+// Service runs the support actions.
+type Service struct {
+	users     user.Repository
+	sessions  SessionRevoker
+	resets    ResetIssuer
+	mailer    Mailer
+	states    AccountStates
+	durations Durations
+	// blocker and adminAudit: block / unblock (block.go).
+	blocker    Blocker
+	adminAudit AdminAudit
+	// mfa resets a second factor (SetMFAResetter).
+	mfa MFAResetter
+	log *logger.Logger
+}
+
+// NewService creates the service. Any dependency may be nil; the action that
+// needs it then answers ErrEmailUnavailable or an error.
+func NewService(users user.Repository, sessions SessionRevoker, resets ResetIssuer, mailer Mailer, states AccountStates, d Durations) *Service {
+	return &Service{users: users, sessions: sessions, resets: resets, mailer: mailer, states: states, durations: d, log: logger.NewNop()}
+}
+
+// target loads the account and refuses the ones the console must not touch.
+func (s *Service) target(ctx context.Context, id shared.ID) (*user.User, error) {
+	isAdmin, erased, err := s.states.AccountState(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if isAdmin {
+		return nil, ErrPlatformAdmin
+	}
+	if erased {
+		return nil, ErrErased
+	}
+	return s.users.GetByID(ctx, id)
+}
+
+// RevokeSessions signs the account out everywhere (every organization, every
+// device). Its permission caches are cleared with the sessions.
+func (s *Service) RevokeSessions(ctx context.Context, id shared.ID) error {
+	if _, err := s.target(ctx, id); err != nil {
+		return err
+	}
+	if s.sessions == nil {
+		return errors.New("session service not configured")
+	}
+	if err := s.sessions.RevokeAllSessions(ctx, id.String(), ""); err != nil {
+		return fmt.Errorf("revoke sessions: %w", err)
+	}
+	return nil
+}
+
+// Unlock clears a lockout from failed sign-ins.
+func (s *Service) Unlock(ctx context.Context, id shared.ID) error {
+	u, err := s.target(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !u.IsLocked() && u.FailedLoginAttempts() == 0 {
+		return ErrNotLocked
+	}
+	return s.states.ClearLockout(ctx, id)
+}
+
+// SendPasswordReset emails the account a password reset link (the same link
+// and lifetime as forgot-password). The administrator never sees it.
+func (s *Service) SendPasswordReset(ctx context.Context, id shared.ID) error {
+	u, err := s.target(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !u.IsLocalUser() {
+		return ErrNotLocal
+	}
+	if s.mailer == nil || !s.mailer.IsConfigured() || s.resets == nil {
+		return ErrEmailUnavailable
+	}
+	res, err := s.resets.ForgotPassword(ctx, auth.ForgotPasswordInput{Email: u.Email()})
+	if err != nil {
+		return fmt.Errorf("issue reset: %w", err)
+	}
+	if res == nil || res.Token == "" {
+		// The forgot-password flow refused (for example the email's domain
+		// lost its verified owner): nothing was issued.
+		return fmt.Errorf("%w: no reset link can be sent to this address", shared.ErrConflict)
+	}
+	return s.mailer.SendPasswordResetEmail(ctx, u.Email(), u.Name(), res.Token, s.durations.PasswordReset, "")
+}
+
+// ResendVerification emails a fresh verification link to an unverified
+// account; the previous link stops working.
+func (s *Service) ResendVerification(ctx context.Context, id shared.ID) error {
+	u, err := s.target(ctx, id)
+	if err != nil {
+		return err
+	}
+	if u.EmailVerified() {
+		return ErrAlreadyVerified
+	}
+	if s.mailer == nil || !s.mailer.IsConfigured() {
+		return ErrEmailUnavailable
+	}
+	token, err := password.GenerateVerificationToken()
+	if err != nil {
+		return fmt.Errorf("generate token: %w", err)
+	}
+	// Only the hash is stored; the raw token is emailed.
+	u.SetEmailVerificationToken(crypto.HashToken(token), time.Now().Add(s.durations.EmailVerification))
+	if err := s.users.Update(ctx, u); err != nil {
+		return fmt.Errorf("store token: %w", err)
+	}
+	return s.mailer.SendVerificationEmail(ctx, u.Email(), u.Name(), token, s.durations.EmailVerification)
+}
+
+// ResetLinkTTL is how long a password reset link an administrator copies
+// stays valid.
+const ResetLinkTTL = time.Hour
+
+// SetMFAResetter wires the console two-factor reset.
+func (s *Service) SetMFAResetter(m MFAResetter) { s.mfa = m }
+
+// IssueResetLink issues a one-hour password reset token for a local account
+// and returns it for the administrator to hand over. Only on an installation
+// that cannot send email (ErrEmailAvailable otherwise: the account's own
+// mailbox is the way). The token is a bearer secret: only its hash is stored,
+// the caller shows it once and nothing here logs it. Following the link does
+// not bypass the account's second factor.
+func (s *Service) IssueResetLink(ctx context.Context, id shared.ID) (string, time.Time, error) {
+	u, err := s.target(ctx, id)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if !u.IsLocalUser() {
+		return "", time.Time{}, ErrNotLocal
+	}
+	if s.mailer != nil && s.mailer.IsConfigured() {
+		return "", time.Time{}, ErrEmailAvailable
+	}
+	token, err := password.GenerateResetToken()
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("generate token: %w", err)
+	}
+	expires := time.Now().Add(ResetLinkTTL)
+	u.SetPasswordResetToken(crypto.HashToken(token), expires)
+	if err := s.users.Update(ctx, u); err != nil {
+		return "", time.Time{}, fmt.Errorf("store token: %w", err)
+	}
+	return token, expires, nil
+}
+
+// MarkVerified marks an unverified local account's email verified, for an
+// installation that cannot send the verification link. Refused when email
+// works (the person verifies by the link) and for an already verified one.
+func (s *Service) MarkVerified(ctx context.Context, id shared.ID) error {
+	u, err := s.target(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !u.IsLocalUser() {
+		return ErrNotLocal
+	}
+	if u.EmailVerified() {
+		return ErrAlreadyVerified
+	}
+	if s.mailer != nil && s.mailer.IsConfigured() {
+		return ErrEmailAvailable
+	}
+	u.VerifyEmail()
+	if err := s.users.Update(ctx, u); err != nil {
+		return fmt.Errorf("mark verified: %w", err)
+	}
+	return nil
+}
+
+// ResetMFA turns off the account's second factor and signs it out
+// everywhere. The caller has checked the second approval.
+func (s *Service) ResetMFA(ctx context.Context, id shared.ID, ip string) error {
+	if _, err := s.target(ctx, id); err != nil {
+		return err
+	}
+	if s.mfa == nil {
+		return errors.New("two-factor reset is not configured")
+	}
+	if err := s.mfa.ResetUserMFAByConsole(ctx, id, ip); err != nil {
+		if errors.Is(err, auth.ErrMFANotEnabled) {
+			return ErrMFANotEnabled
+		}
+		return err
+	}
+	return nil
+}

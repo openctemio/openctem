@@ -6,7 +6,7 @@ import { get } from '@/lib/api/client'
 import { usePermissions, Permission } from '@/lib/permissions'
 
 // GET /api/v1/attack-surface/attack-paths/{id}: the routes from internet-facing
-// entry points to one asset (api/docs/architecture/attack-paths.md).
+// entry points to one asset (server/docs/architecture/attack-paths.md).
 
 interface PathFindingResponse {
   id: string

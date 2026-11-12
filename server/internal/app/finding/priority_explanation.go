@@ -1,0 +1,228 @@
+package finding
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/scoring"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+)
+
+// PriorityExplanation is a read-only, human-auditable breakdown of WHY a
+// finding holds its priority class — the factors that fed the classifier and
+// the decision it reached. It mirrors what ClassifyFinding would compute but
+// persists nothing and emits no events.
+type PriorityExplanation struct {
+	FindingID string `json:"finding_id"`
+	// Decision: the class the finding holds. With a manual override that is
+	// the stored, person-set class (source "manual"); otherwise the class the
+	// engine computes now.
+	Class    string  `json:"priority_class"`
+	Reason   string  `json:"reason"`
+	Source   string  `json:"source"` // "auto" | "rule" | "manual"
+	RuleName *string `json:"rule_name,omitempty"`
+
+	// Override is set when a person set the class by hand: the engine's
+	// verdict (ComputedClass) is then not applied.
+	Override *PriorityOverride `json:"override,omitempty"`
+	// ComputedClass / ComputedReason are what the engine computes now from
+	// the factors below (with the tenant's rules and the platform floors).
+	ComputedClass  string `json:"computed_class"`
+	ComputedReason string `json:"computed_reason"`
+	// StoredClass / StoredReason are what the finding holds now ("" when it
+	// was never classified). Stale is true when an automatically classified
+	// finding's stored class differs from ComputedClass: a recompute is
+	// pending (queued input change or model upgrade) or the finding is closed
+	// and frozen.
+	StoredClass  string `json:"stored_class"`
+	StoredReason string `json:"stored_reason"`
+	Stale        bool   `json:"stale"`
+	// ModelVersion is the priority model version of this build, the one the
+	// computed class comes from (docs/architecture/scoring-versions.md).
+	ModelVersion int `json:"model_version"`
+
+	// Factors that fed the decision (so an operator can audit/tune).
+	Factors PriorityFactors `json:"factors"`
+
+	// ScoreBreakdown is the transparent CTEM composite score (ctem.org
+	// prioritization model) computed from the same factors: the four 0–5
+	// sub-scores and the final PriorityScore = (Impact + Likelihood + Exposure) ×
+	// (1 − ControlReduction). It EXPLAINS the class above without changing it —
+	// the P0–P3 cascade stays authoritative.
+	ScoreBreakdown vulnerability.PriorityScoreBreakdown `json:"score_breakdown"`
+}
+
+// PriorityOverride records a manual class override: who set it and when.
+type PriorityOverride struct {
+	By *string    `json:"by,omitempty"`
+	At *time.Time `json:"at,omitempty"`
+}
+
+// PriorityFactors are the inputs to the classifier, plus the two derived
+// booleans the rules actually gate on (reachable, critical_asset), so the
+// explanation is self-contained.
+type PriorityFactors struct {
+	Severity             string   `json:"severity"`
+	CVEID                string   `json:"cve_id,omitempty"`
+	EPSSScore            *float64 `json:"epss_score,omitempty"`
+	EPSSPercentile       *float64 `json:"epss_percentile,omitempty"`
+	IsInKEV              bool     `json:"is_in_kev"`
+	ValidatedExploitable bool     `json:"validated_exploitable"`
+	IsReachable          bool     `json:"is_reachable"`
+	IsInternetAccessible bool     `json:"is_internet_accessible"`
+	IsNetworkAccessible  bool     `json:"is_network_accessible"`
+	OnOpenThreatPath     bool     `json:"on_open_threat_path"`
+	// ReachabilityUnknown: no exposure, attack-path, threat-path or scanner
+	// signal decided reachability, so the classifier treats it as unknown.
+	ReachabilityUnknown bool   `json:"reachability_unknown"`
+	ReachableFromCount  int    `json:"reachable_from_count"`
+	AssetCriticality    string `json:"asset_criticality,omitempty"`
+	AssetExposure       string `json:"asset_exposure,omitempty"`
+	AssetIsCrownJewel   bool   `json:"asset_is_crown_jewel"`
+	AssetUnowned        bool   `json:"asset_unowned"`
+	// AttributionUnconfirmed is the asset's attribution state when it caps
+	// the class at P2 (needs_review, candidate, rejected); empty otherwise.
+	AttributionUnconfirmed string  `json:"attribution_unconfirmed,omitempty"`
+	IsProtected            bool    `json:"is_protected"`
+	ControlReductionPct    float64 `json:"control_reduction_pct"`
+
+	// CIA business-impact rating from the asset's critical-asset register. Score
+	// is the 0–5 impact contribution (MAX leg); Detail names the highest leg
+	// (e.g. "confidentiality=high"). Both zero/empty when no rating is set.
+	CIAImpactScore  float64 `json:"cia_impact_score"`
+	CIAImpactDetail string  `json:"cia_impact_detail,omitempty"`
+
+	// Derived gates (computed exactly as ClassifyPriority does).
+	Reachable     bool `json:"reachable"`
+	CriticalAsset bool `json:"critical_asset"`
+}
+
+// ExplainFinding computes the priority explanation for a single finding without
+// mutating it. It loads the finding and its asset, applies compensating-control
+// reduction, evaluates tenant override rules, and reports the resulting class
+// alongside every contributing factor.
+func (s *PriorityClassificationService) ExplainFinding(ctx context.Context, tenantID, findingID shared.ID) (*PriorityExplanation, error) {
+	f, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return nil, fmt.Errorf("get finding: %w", err)
+	}
+
+	var a *asset.Asset
+	if !f.AssetID().IsZero() {
+		// Asset is best-effort: pentest findings may have no inventory asset.
+		if loaded, aerr := s.assetRepo.GetByID(ctx, tenantID, f.AssetID()); aerr == nil {
+			a = loaded
+		}
+	}
+
+	// Effective (business-aligned) criticality — same input as the live classify
+	// path, so the explanation cannot drift from what ClassifyFinding does.
+	var effCrit asset.Criticality
+	var critReason string
+	if a != nil {
+		effCrit, critReason = asset.EffectiveCriticality(a.Criticality(),
+			s.businessContextFor(ctx, tenantID, f.AssetID()))
+	}
+
+	// Owner presence only feeds the explanation when the tenant enabled the floor
+	// (matches the live classify path — the reason must not appear when off).
+	var hasOwner map[shared.ID]bool
+	if s.ownershipFloorEnabled(ctx, tenantID) {
+		hasOwner = s.ownerPresence(ctx, tenantID, assetIDsOf(a))
+	}
+	pctx := s.buildPriorityContext(f, a, effCrit, s.reachableSet(ctx, tenantID), s.threatenedSet(ctx, tenantID), hasOwner)
+	if a != nil {
+		pctx.AttributionUnconfirmed = s.unconfirmedAssets(ctx, tenantID, []shared.ID{a.ID()})[a.ID()]
+	}
+
+	// Compensating-control reduction (same as the live classify path — shared
+	// helper, so the explanation cannot drift from what ClassifyFinding does).
+	s.applyControlProtection(ctx, tenantID, f.AssetID(), &pctx)
+
+	// Evaluate override rules first, then fall back to the default classifier —
+	// identical precedence to ClassifyFinding, but read-only.
+	classification, ruleName := s.classifyWithRules(ctx, tenantID, pctx)
+	classification.Reason = appendCriticalityReason(classification.Reason, critReason)
+
+	exp := &PriorityExplanation{
+		FindingID:      findingID.String(),
+		Class:          string(classification.Class),
+		Reason:         classification.Reason,
+		Source:         classification.Source,
+		RuleName:       ruleName,
+		ComputedClass:  string(classification.Class),
+		ComputedReason: classification.Reason,
+		StoredReason:   f.PriorityClassReason(),
+		ModelVersion:   scoring.PriorityModelVersion,
+		Factors: PriorityFactors{
+			Severity:               string(pctx.Severity),
+			CVEID:                  pctx.CVEID,
+			EPSSScore:              pctx.EPSSScore,
+			EPSSPercentile:         pctx.EPSSPercentile,
+			IsInKEV:                pctx.IsInKEV,
+			ValidatedExploitable:   pctx.ValidatedExploitable,
+			IsReachable:            pctx.IsReachable,
+			IsInternetAccessible:   pctx.IsInternetAccessible,
+			IsNetworkAccessible:    pctx.IsNetworkAccessible,
+			OnOpenThreatPath:       pctx.OnOpenThreatPath,
+			ReachabilityUnknown:    pctx.ReachabilityUnknown,
+			ReachableFromCount:     pctx.ReachableFromCount,
+			AssetCriticality:       pctx.AssetCriticality,
+			AssetExposure:          pctx.AssetExposure,
+			AssetIsCrownJewel:      pctx.AssetIsCrownJewel,
+			AssetUnowned:           pctx.AssetUnowned,
+			AttributionUnconfirmed: pctx.AttributionUnconfirmed,
+			IsProtected:            pctx.IsProtected,
+			ControlReductionPct:    pctx.ControlReductionFactor * 100,
+			CIAImpactScore:         pctx.CIAImpactScore,
+			CIAImpactDetail:        pctx.CIAImpactDetail,
+			Reachable:              pctx.IsReachable || pctx.IsInternetAccessible || pctx.OnOpenThreatPath,
+			CriticalAsset:          pctx.AssetCriticality == "critical" || pctx.AssetCriticality == "high",
+		},
+		// Transparent composite score derived from the SAME context — additive
+		// explanation only, never changes the class above.
+		ScoreBreakdown: vulnerability.ComputePriorityScore(pctx),
+	}
+	if pc := f.PriorityClass(); pc != nil {
+		exp.StoredClass = string(*pc)
+	}
+	if f.PriorityClassOverride() && exp.StoredClass != "" {
+		// A person's class stands: report it, with who and when, and keep
+		// the engine's verdict beside it.
+		ov := &PriorityOverride{At: f.PriorityClassOverriddenAt()}
+		if by := f.PriorityClassOverriddenBy(); by != nil {
+			id := by.String()
+			ov.By = &id
+		}
+		exp.Override = ov
+		exp.Class, exp.Reason, exp.Source, exp.RuleName = exp.StoredClass, exp.StoredReason, "manual", nil
+	} else {
+		exp.Stale = exp.StoredClass != exp.ComputedClass
+	}
+	return exp, nil
+}
+
+// classifyWithRules applies tenant override rules (first match wins) then the
+// default classifier. Returns the classification and the matched rule name (if
+// any). Read-only — no audit, no event.
+func (s *PriorityClassificationService) classifyWithRules(
+	ctx context.Context,
+	tenantID shared.ID,
+	pctx vulnerability.PriorityContext,
+) (vulnerability.PriorityClassification, *string) {
+	rules, err := s.ruleRepo.ListActiveByTenant(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("explain: failed to load override rules, using defaults", "error", err)
+		rules = nil
+	}
+	for _, rule := range rules {
+		if rule.Matches(pctx) {
+			name := rule.Name()
+			return ruleClassification(rule, pctx, true), &name
+		}
+	}
+	return vulnerability.ClassifyPriority(pctx), nil
+}

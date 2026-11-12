@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
       - name: Links, language and private addresses
         run: python3 scripts/docs_check.py .
-      # api/docs/rfcs/README.md index table is generated from the RFC headers.
+      # server/docs/rfcs/README.md index table is generated from the RFC headers.
       - name: RFC index is current
         run: |
           python3 scripts/rfc_index_test.py

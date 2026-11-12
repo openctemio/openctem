@@ -5,8 +5,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'find "$tmp" -delete' EXIT
 cd "$tmp"
 git init -q . && git config user.email t@example.invalid && git config user.name t
-mkdir -p api/deploy/gateway web deploy/allinone .github/actions/generate-contract .github/workflows .github/scripts docs
-for f in api/a.go api/deploy/gateway/g web/w.ts deploy/allinone/d .github/actions/generate-contract/action.yml docs/x.md .github/workflows/build-images.yml .github/scripts/image-key.sh; do echo 1 > "$f"; done
+mkdir -p server/deploy/gateway web deploy/allinone .github/actions/generate-contract .github/workflows .github/scripts docs
+for f in server/a.go server/deploy/gateway/g web/w.ts deploy/allinone/d .github/actions/generate-contract/action.yml docs/x.md .github/workflows/build-images.yml .github/scripts/image-key.sh; do echo 1 > "$f"; done
 git add -A && git commit -qm base
 K() { bash "$here/image-key.sh" "$1"; }
 declare -A base; for i in api web console allinone; do base[$i]="$(K $i)"; done
@@ -26,7 +26,7 @@ chk "web change" api same
 chk "web change" web diff; chk "web change" console diff; chk "web change" allinone diff
 for i in api web console allinone; do base[$i]="$(K $i)"; done
 
-echo 2 > api/a.go; git commit -qam api
+echo 2 > server/a.go; git commit -qam api
 chk "api change" api diff
 chk "api change" web diff   # the contract is generated from api
 chk "api change" allinone diff

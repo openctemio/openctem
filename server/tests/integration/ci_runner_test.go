@@ -1,0 +1,609 @@
+package integration
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
+	"encoding/json"
+	"math/big"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	jwtv5 "github.com/golang-jwt/jwt/v5"
+	"github.com/openctemio/ctis/v2"
+
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
+	"github.com/openctemio/openctem/server/internal/app/findingimport"
+	"github.com/openctemio/openctem/server/internal/app/ingest"
+	"github.com/openctemio/openctem/server/internal/app/ingestqueue"
+	"github.com/openctemio/openctem/server/internal/infra/controller"
+	infrahttp "github.com/openctemio/openctem/server/internal/infra/http"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestjob"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestpayload"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/oidc"
+)
+
+// ciIdP is a CI provider (GitLab-shaped, self-managed issuer) over TLS.
+type ciIdP struct {
+	srv *httptest.Server
+	key *rsa.PrivateKey
+	// url is the issuer the tokens name: a DNS name on the default port, since a
+	// CTIS 2.0 repository value is host/owner/name with a domain host and no
+	// port. client reaches it by dialing the test server.
+	url    string
+	client *http.Client
+}
+
+func newCIIdP(t *testing.T) *ciIdP {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &ciIdP{key: key}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"issuer": p.url, "jwks_uri": p.url + "/oauth/discovery/keys"})
+	})
+	mux.HandleFunc("/oauth/discovery/keys", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []map[string]string{{
+			"kty": "RSA", "kid": "k1", "use": "sig", "alg": "RS256",
+			"n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()),
+			"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes()),
+		}}})
+	})
+	p.srv = httptest.NewTLSServer(mux)
+	t.Cleanup(p.srv.Close)
+	p.url = "https://example.com"
+	tr := p.srv.Client().Transport.(*http.Transport).Clone()
+	addr := p.srv.Listener.Addr().String()
+	tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	p.client = &http.Client{Transport: tr}
+	return p
+}
+
+// token mints a GitLab CI ID token for project grp/<project> on ref.
+func (p *ciIdP) token(t *testing.T, aud, project, ref, sha string, over map[string]any) string {
+	t.Helper()
+	now := time.Now()
+	c := jwtv5.MapClaims{
+		"iss": p.url, "sub": "project_path:" + project + ":ref_type:branch:ref:" + ref, "aud": aud,
+		"exp": now.Add(5 * time.Minute).Unix(), "iat": now.Unix(), "nbf": now.Unix(), "jti": shared.NewID().String(),
+		"project_path": project, "project_id": "7", "namespace_path": strings.Split(project, "/")[0],
+		"ref": ref, "ref_type": "branch", "ref_protected": "false", "sha": sha, "user_login": "dev",
+		"pipeline_id": "1001", "pipeline_source": "push",
+	}
+	for k, v := range over {
+		if v == nil {
+			delete(c, k)
+		} else {
+			c[k] = v
+		}
+	}
+	tok := jwtv5.NewWithClaims(jwtv5.SigningMethodRS256, c)
+	tok.Header["kid"] = "k1"
+	s, err := tok.SignedString(p.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+type ciRig struct {
+	t      *testing.T
+	db     *postgres.DB
+	svc    *cirunapp.Service
+	worker *controller.IngestWorkerController
+	// jobs and jp build more workers (the load harness).
+	jobs   *postgres.IngestJobRepository
+	jp     *ingest.JobProcessor
+	runner *handler.CIRunnerHandler
+	// asyncTrust is the trust asyncRun opens runs under (made once).
+	asyncTrust *cirun.TrustConfig
+	repo       *postgres.CIRunRepository
+	srv        *httptest.Server
+	idp        *ciIdP
+	tenant     shared.ID
+	other      shared.ID
+}
+
+// ciSecretFingerprinter keys secret identities in the CI rig.
+var ciSecretFingerprinter = vulnerability.NewSecretFingerprinter([]byte("ci-rig-server-secret-0123456789abcdef")) //nolint:gochecknoglobals // test fixture
+
+func newCIRig(t *testing.T) *ciRig {
+	t.Helper()
+	return newCIRigWith(t, cirunapp.Config{WebBaseURL: "https://console.example"})
+}
+
+func newCIRigWith(t *testing.T, cfg cirunapp.Config, deps ...func(*cirunapp.Deps)) *ciRig {
+	t.Helper()
+	sqldb := setupTestDB(t)
+	t.Cleanup(func() { _ = sqldb.Close() })
+	db := &postgres.DB{DB: sqldb}
+	log := logger.NewNop()
+	ing := ingest.NewService(
+		postgres.NewAssetRepository(db), postgres.NewFindingRepository(db),
+		postgres.NewVulnerabilityRepository(db), postgres.NewComponentRepository(db),
+		postgres.NewSensorRepository(db), postgres.NewBranchRepository(db), postgres.NewTenantRepository(db),
+		postgres.NewAuditRepository(db), log)
+	ing.SetSecretFingerprinter(ciSecretFingerprinter)
+	idp := newCIIdP(t)
+	repo := postgres.NewCIRunRepository(db)
+	d := cirunapp.Deps{
+		Repo: repo, Verifier: oidc.NewClient(idp.client, nil), Assets: postgres.NewAssetRepository(db),
+		Branches: postgres.NewBranchRepository(db), Baseline: postgres.NewFindingRepository(db), Ingester: ing,
+		Units: repo, Audit: auditapp.NewAuditService(postgres.NewAuditRepository(db), log),
+	}
+	for _, f := range deps {
+		f(&d)
+	}
+	svc := cirunapp.NewService(d, cfg, log)
+	svc.SetStepUpGate(recentAuth{})
+	// Uploads are stored sealed and applied by the ingest worker; the rig
+	// drains the queue itself (drain).
+	sealer, err := ingestpayload.NewSealer(bytes.Repeat([]byte{7}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobsRepo := postgres.NewIngestJobRepository(db)
+	queue := ingestqueue.New(jobsRepo, postgres.NewIngestPayloadRepository(db), sealer)
+	svc.SetUploadQueue(queue, findingimport.NewService(ing, postgres.NewFindingRepository(db), postgres.NewIngestReceiptRepository(db),
+		ingest.SourceResolveDryRun, log))
+	jp := ingest.NewJobProcessor(ing)
+	jp.SetKind(ingestjob.KindCIResults, ingest.KindFuncs{ProcessFn: svc.ProcessUploadJob, DeadLetterFn: svc.DeadLetter})
+	worker := controller.NewIngestWorkerController(jobsRepo, jp, &controller.IngestWorkerControllerConfig{MaxPerTick: 500})
+
+	h := handler.NewCIRunnerHandler(svc, log)
+	h.SetSecretKeys(ciSecretFingerprinter)
+	router := infrahttp.NewChiRouter()
+	router.POST("/api/v1/ci/oidc/exchange", h.Exchange)
+	router.POST("/api/v1/ci/runs/{id}/results", h.UploadResults, h.AuthenticateRun)
+	router.GET("/api/v1/ci/runs/{id}/results/{report_id}", h.UploadStatus, h.AuthenticateRun)
+	router.POST("/api/v1/ci/runs/{id}/baseline-diff", h.BaselineDiff, h.AuthenticateRun)
+	router.POST("/api/v1/ci/runs/{id}/evaluate", h.Evaluate, h.AuthenticateRun)
+	srv := httptest.NewServer(router.Handler())
+	t.Cleanup(srv.Close)
+
+	r := &ciRig{t: t, db: db, svc: svc, repo: repo, srv: srv, idp: idp, worker: worker, runner: h, jobs: jobsRepo, jp: jp}
+	r.tenant, r.other = r.newTenant(), r.newTenant()
+	return r
+}
+
+// recentAuth is a step-up gate whose caller signed in recently (err nil) or
+// not (err set).
+// drain applies every queued upload, as the ingest worker does.
+func (r *ciRig) drain() {
+	r.t.Helper()
+	if _, err := r.worker.Reconcile(context.Background()); err != nil {
+		r.t.Fatalf("drain the ingest queue: %v", err)
+	}
+}
+
+// upload posts a report to the run and applies it: 202, then the worker.
+func (r *ciRig) upload(runID, token string, body any) (*http.Response, map[string]any) {
+	r.t.Helper()
+	resp, out := r.post("/api/v1/ci/runs/"+runID+"/results", token, body)
+	if resp.StatusCode != http.StatusAccepted {
+		return resp, out
+	}
+	r.drain()
+	uid, _ := out["upload_id"].(string)
+	st, status := r.get("/api/v1/ci/runs/"+runID+"/results/"+uid, token)
+	if st.StatusCode != http.StatusOK {
+		r.t.Fatalf("upload status %d: %v", st.StatusCode, status)
+	}
+	return resp, status
+}
+
+func (r *ciRig) get(path, bearer string) (*http.Response, map[string]any) {
+	r.t.Helper()
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, r.srv.URL+path, nil)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out := map[string]any{}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp, out
+}
+
+type recentAuth struct{ err error }
+
+func (g recentAuth) RequireRecentAuth(context.Context, string) error { return g.err }
+
+func (r *ciRig) newTenant() shared.ID {
+	r.t.Helper()
+	id := shared.NewID()
+	ctx := context.Background()
+	if _, err := r.db.ExecContext(ctx, `INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $2)`, id.String(), "ci-"+id.String()); err != nil {
+		r.t.Fatalf("seed tenant: %v", err)
+	}
+	r.t.Cleanup(func() {
+		_, _ = r.db.ExecContext(context.Background(), `DELETE FROM tenants WHERE id = $1`, id.String())
+	})
+	return id
+}
+
+func (r *ciRig) trust(tenant shared.ID, rules cirun.Rules) *cirun.TrustConfig {
+	r.t.Helper()
+	c, err := r.svc.CreateTrustConfig(context.Background(), tenant, cirunapp.TrustConfigInput{
+		Name: "gitlab-" + shared.NewID().String()[28:], Provider: "gitlab", Issuer: r.idp.url, Rules: rules,
+	}, cirunapp.Actor{Email: "admin@acme.test"})
+	if err != nil {
+		r.t.Fatalf("create trust config: %v", err)
+	}
+	return c
+}
+
+func (r *ciRig) post(path, bearer string, body any) (*http.Response, map[string]any) {
+	r.t.Helper()
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, r.srv.URL+path, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	out := map[string]any{}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp, out
+}
+
+func (r *ciRig) exchange(tenant shared.ID, tok string) (int, map[string]any) {
+	r.t.Helper()
+	resp, out := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": tenant.String(), "id_token": tok})
+	return resp.StatusCode, out
+}
+
+func (r *ciRig) auditCount(tenant shared.ID, action, needle string) int {
+	r.t.Helper()
+	var n int
+	if err := r.db.QueryRowContext(context.Background(), `SELECT count(*) FROM audit_logs
+		WHERE tenant_id = $1 AND action = $2 AND metadata::text LIKE '%' || $3 || '%'`,
+		tenant.String(), action, needle).Scan(&n); err != nil {
+		r.t.Fatal(err)
+	}
+	return n
+}
+
+func ciFinding(title, rule, sev string, typ ctis.FindingType, path string, line int) ctis.Finding {
+	return ctis.Finding{AssetRef: "repo", Type: typ, Title: title, RuleID: rule, Severity: ctis.Severity(sev),
+		Location: &ctis.FindingLocation{Path: path, StartLine: line}}
+}
+
+// ciReport is a CI upload body: the CTIS 2.0 document itself.
+func ciReport(repo string, findings ...ctis.Finding) ctis.Report {
+	return ctis.Report{
+		Version:  ctis.SchemaVersion,
+		Metadata: ctis.ReportMetadata{ID: ctis.NewReportID(), GeneratedAt: time.Now().UTC(), Channel: ctis.ChannelScanner},
+		Tool:     &ctis.Tool{Name: "semgrep"},
+		Assets:   []ctis.Asset{{ID: "repo", Type: ctis.AssetTypeRepository, Value: repo}},
+		Findings: findings,
+	}
+}
+
+// TestCIRunner_ExchangeUploadEvaluate is the R1+R2 acceptance, end to end
+// through the real token verification, ingest and gate (RFC-051).
+func TestCIRunner_ExchangeUploadEvaluate(t *testing.T) {
+	r := newCIRig(t)
+	ctx := context.Background()
+	cfg := r.trust(r.tenant, cirun.Rules{Owners: []string{"acme"}, Refs: []string{"main", "feature/*"}})
+	aud := cfg.Audience
+	const sha1 = "1111111111111111111111111111111111111111"
+	const sha2 = "2222222222222222222222222222222222222222"
+	host := strings.TrimPrefix(r.idp.url, "https://")
+	repoName := strings.ToLower(host) + "/acme/api"
+
+	// --- R1: identity ---------------------------------------------------
+	mainTok := r.idp.token(t, aud, "acme/api", "main", sha1, nil)
+	code, ex := r.exchange(r.tenant, mainTok)
+	if code != http.StatusCreated {
+		t.Fatalf("exchange: %d %v", code, ex)
+	}
+	token, _ := ex["token"].(string)
+	runID, _ := ex["run_id"].(string)
+	if !strings.HasPrefix(token, cirun.TokenPrefix) || ex["repository"] != repoName || ex["is_default_branch"] != true {
+		t.Fatalf("exchange response: %v", ex)
+	}
+	exp, _ := time.Parse(time.RFC3339Nano, ex["expires_at"].(string))
+	if d := time.Until(exp); d <= 0 || d > 15*time.Minute {
+		t.Fatalf("token lifetime %s, want at most 15 minutes", d)
+	}
+	// A run is not a sensor.
+	var sensors int
+	_ = r.db.QueryRowContext(ctx, `SELECT count(*) FROM sensors WHERE tenant_id = $1`, r.tenant.String()).Scan(&sensors)
+	if sensors != 0 {
+		t.Fatalf("a CI run created %d sensor rows", sensors)
+	}
+	if r.auditCount(r.tenant, "ci_run.token_issued", "acme/api") != 1 {
+		t.Fatal("exchange not audited")
+	}
+
+	// The same OIDC token again (an answer lost, a second step of the job):
+	// a fresh upload token for the SAME run; the first token keeps working.
+	code, reEx := r.exchange(r.tenant, mainTok)
+	if code != http.StatusCreated || reEx["run_id"] != runID || reEx["token"] == token {
+		t.Fatalf("re-exchanged token: %d %v, want a new token for run %s", code, reEx, runID)
+	}
+	if r.auditCount(r.tenant, "ci_run.token_issued", `"token_exchanges": 2`) != 1 {
+		t.Fatal("re-exchange not audited with its count")
+	}
+	// Another repository, an unlisted branch, a fork-capable event: refused and audited.
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, aud, "evil/api", "main", sha1, nil)); code != http.StatusUnauthorized {
+		t.Fatalf("other owner: %d", code)
+	}
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, aud, "acme/api", "dev", sha1, nil)); code != http.StatusUnauthorized {
+		t.Fatalf("unlisted ref: %d", code)
+	}
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, aud, "acme/api", "main", sha1,
+		map[string]any{"pipeline_source": "external_pull_request_event"})); code != http.StatusUnauthorized {
+		t.Fatalf("fork pull request: %d", code)
+	}
+	if r.auditCount(r.tenant, "ci_run.token_refused", "owner_not_allowed") != 1 ||
+		r.auditCount(r.tenant, "ci_run.token_refused", "ref_not_allowed") != 1 ||
+		r.auditCount(r.tenant, "ci_run.token_refused", "fork_pull_request") != 1 {
+		t.Fatal("refusals not audited with their reason")
+	}
+	// Wrong audience, expired, forged: refused; not verified, so nothing is
+	// written to the tenant's audit log.
+	before := r.auditCount(r.tenant, "ci_run.token_refused", "")
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, "openctem:tenant:"+r.other.String(), "acme/api", "main", sha1, nil)); code != http.StatusUnauthorized {
+		t.Fatalf("wrong audience: %d", code)
+	}
+	if code, _ := r.exchange(r.tenant, r.idp.token(t, aud, "acme/api", "main", sha1,
+		map[string]any{"exp": time.Now().Add(-time.Hour).Unix(), "iat": time.Now().Add(-2 * time.Hour).Unix()})); code != http.StatusUnauthorized {
+		t.Fatalf("expired: %d", code)
+	}
+	forged := r.idp.token(t, aud, "acme/api", "main", sha1, nil)
+	forged = forged[:strings.LastIndex(forged, ".")+1] + "AAAA"
+	if code, _ := r.exchange(r.tenant, forged); code != http.StatusUnauthorized {
+		t.Fatalf("forged: %d", code)
+	}
+	if after := r.auditCount(r.tenant, "ci_run.token_refused", ""); after != before {
+		t.Fatalf("unverified tokens wrote %d audit rows", after-before)
+	}
+	// Cross-tenant: the other tenant has no trust in this issuer.
+	if code, _ := r.exchange(r.other, r.idp.token(t, aud, "acme/api", "main", sha1, nil)); code != http.StatusUnauthorized {
+		t.Fatalf("other tenant: %d", code)
+	}
+
+	// --- R2: results and the gate ----------------------------------------
+	// Default branch: one medium finding, one secret. The secret fails the
+	// default-branch run (secrets always block).
+	medium := ciFinding("Weak hash", "go.weak-hash", "medium", ctis.FindingTypeVulnerability, "hash.go", 10)
+	secret := ciFinding("AWS key", "aws-access-key", "high", ctis.FindingTypeSecret, "config.go", 3)
+	resp, out := r.upload(runID, token, ciReport(repoName, medium, secret))
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("upload: %d %v", resp.StatusCode, out)
+	}
+	if r.auditCount(r.tenant, "ci_run.results_uploaded", "semgrep") != 1 {
+		t.Fatal("upload not audited")
+	}
+	resp, v := r.post("/api/v1/ci/runs/"+runID+"/evaluate", token, map[string]int{"scan_failures": 0})
+	if resp.StatusCode != http.StatusOK || v["verdict"] != "fail" || !hasReason(v, cirun.ReasonSecret) || hasReason(v, cirun.ReasonSeverity) {
+		t.Fatalf("default branch verdict: %d %v", resp.StatusCode, v)
+	}
+	// The report's branch is the token's, not the report's.
+	var branch string
+	_ = r.db.QueryRowContext(ctx, `SELECT COALESCE(last_seen_branch, '') FROM findings WHERE tenant_id = $1 AND title = 'Weak hash'`,
+		r.tenant.String()).Scan(&branch)
+	if branch != "main" {
+		t.Fatalf("finding branch = %q", branch)
+	}
+
+	// A report naming another repository is refused.
+	job := map[string]any{"job_id": "501"}
+	prTok := r.idp.token(t, aud, "acme/api", "feature/login", sha2, job)
+	code, ex2 := r.exchange(r.tenant, prTok)
+	if code != http.StatusCreated || ex2["is_default_branch"] != false || ex2["default_branch"] != "main" {
+		t.Fatalf("feature exchange: %d %v", code, ex2)
+	}
+	prToken, prRun := ex2["token"].(string), ex2["run_id"].(string)
+	if resp, out := r.upload(prRun, prToken, ciReport("github.com/someone/else", medium)); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("foreign repository report: %d %v", resp.StatusCode, out)
+	}
+	// One run's token cannot act on another run.
+	if resp, _ := r.post("/api/v1/ci/runs/"+runID+"/evaluate", prToken, nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("token for another run: %d", resp.StatusCode)
+	}
+
+	// A long job gets a fresh token for the same run; the old one stops.
+	resp, cont := r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, job), "run_id": prRun})
+	if resp.StatusCode != http.StatusCreated || cont["run_id"] != prRun || cont["token"] == prToken {
+		t.Fatalf("continuation: %d %v", resp.StatusCode, cont)
+	}
+	if resp, _ := r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("replaced token still works: %d", resp.StatusCode)
+	}
+	prToken = cont["token"].(string)
+	// Another commit, or another pipeline run, cannot take the run over.
+	resp, _ = r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha1, nil), "run_id": prRun})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("continuation by another commit: %d", resp.StatusCode)
+	}
+	resp, _ = r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, map[string]any{"pipeline_id": "2002"}), "run_id": prRun})
+	if resp.StatusCode != http.StatusUnauthorized || r.auditCount(r.tenant, "ci_run.token_refused", "run_mismatch") != 2 {
+		t.Fatalf("continuation by another pipeline run: %d", resp.StatusCode)
+	}
+	// Another job of the same pipeline run cannot renew this job's token.
+	resp, _ = r.post("/api/v1/ci/oidc/exchange", "", map[string]string{"tenant_id": r.tenant.String(),
+		"id_token": r.idp.token(t, aud, "acme/api", "feature/login", sha2, map[string]any{"job_id": "502"}), "run_id": prRun})
+	if resp.StatusCode != http.StatusUnauthorized || r.auditCount(r.tenant, "ci_run.token_refused", "run_mismatch") != 3 {
+		t.Fatalf("continuation by another job: %d", resp.StatusCode)
+	}
+	// The run records the job from the verified token, and the exchange
+	// audit names it.
+	var jobID string
+	_ = r.db.QueryRowContext(ctx, `SELECT external_job_id FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+		r.tenant.String(), prRun).Scan(&jobID)
+	if jobID != "501" || r.auditCount(r.tenant, "ci_run.token_issued", `"job_id": "501"`) < 2 {
+		t.Fatalf("job binding: job %q, issued audits %d", jobID, r.auditCount(r.tenant, "ci_run.token_issued", `"job_id": "501"`))
+	}
+
+	// The feature branch reports the old medium and a new high: the new
+	// high fails (new findings only); the old medium is pre-existing.
+	high := ciFinding("SQL injection", "go.sqli", "high", ctis.FindingTypeVulnerability, "db.go", 42)
+	if resp, out := r.upload(prRun, prToken, ciReport(repoName, medium, high)); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("feature upload: %d %v", resp.StatusCode, out)
+	}
+	resp, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil)
+	if resp.StatusCode != http.StatusOK || v["verdict"] != "fail" || !hasReason(v, cirun.ReasonSeverity) {
+		t.Fatalf("feature verdict: %v", v)
+	}
+	sum, _ := v["summary"].(map[string]any)
+	if sum["new"].(float64) != 1 || sum["pre_existing"].(float64) != 1 || sum["blocking"].(float64) != 1 {
+		t.Fatalf("summary = %v", sum)
+	}
+	links, _ := v["links"].(map[string]any)
+	runLink, err := url.Parse(links["run"].(string))
+	if err != nil {
+		t.Fatalf("links = %v: %v", links, err)
+	}
+	if q := runLink.Query(); runLink.Host != "console.example" || runLink.Path != "/ci-cd" ||
+		q.Get("view") != "runs" || q.Get("run") == "" || q.Get("org") != r.tenant.String() {
+		t.Fatalf("links = %v", links)
+	}
+	// The first verdict is final: evaluating again returns it unchanged and
+	// records no second verdict.
+	evaluatedBefore := r.auditCount(r.tenant, "ci_run.evaluated", prRun)
+	resp, again := r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, map[string]int{"scan_failures": 0})
+	if resp.StatusCode != http.StatusOK || again["verdict"] != "fail" {
+		t.Fatalf("re-evaluate: %d %v", resp.StatusCode, again)
+	}
+	if n := r.auditCount(r.tenant, "ci_run.evaluated", prRun); n != evaluatedBefore {
+		t.Fatalf("re-evaluate audited again: %d -> %d", evaluatedBefore, n)
+	}
+
+	// The scenarios below judge the same run under changed state: reopen it
+	// each time (a real re-run gets a new run).
+	rejudge := func() {
+		t.Helper()
+		if _, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'running' WHERE id = $1`, prRun); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Accepted risk is honored.
+	if _, err := r.db.ExecContext(ctx, `UPDATE findings SET status = 'accepted' WHERE tenant_id = $1 AND title = 'SQL injection'`,
+		r.tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	rejudge()
+	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" {
+		t.Fatalf("accepted risk: %v", v)
+	}
+	if _, err := r.db.ExecContext(ctx, `UPDATE findings SET status = 'confirmed' WHERE tenant_id = $1 AND title = 'SQL injection'`,
+		r.tenant.String()); err != nil {
+		t.Fatal(err)
+	}
+	// A scan failure fails.
+	rejudge()
+	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, map[string]int{"scan_failures": 1}); !hasReason(v, cirun.ReasonScanFailure) {
+		t.Fatalf("scan failure: %v", v)
+	}
+	// A repository policy in warn mode passes and says it would fail.
+	run, err := r.svc.GetRun(ctx, r.tenant, shared.MustIDFromString(prRun))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol, err := r.svc.CreateGatePolicy(ctx, r.tenant, cirunapp.GatePolicyInput{ScopeType: cirun.ScopeRepository,
+		ScopeID: &run.RepositoryAssetID, Mode: cirun.ModeWarn, Reason: "pilot repository, warn only"}, cirunapp.Actor{Email: "admin@acme.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejudge()
+	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" || v["would_fail"] != true {
+		t.Fatalf("warn policy: %v", v)
+	}
+	if err := r.svc.DeleteGatePolicy(ctx, r.tenant, pol.ID, "", cirunapp.Actor{}); err != nil {
+		t.Fatal(err)
+	}
+	// A policy for another tenant's repository is refused as not found.
+	if _, err := r.svc.CreateGatePolicy(ctx, r.other, cirunapp.GatePolicyInput{ScopeType: cirun.ScopeRepository,
+		ScopeID: &run.RepositoryAssetID}, cirunapp.Actor{}); err == nil {
+		t.Fatal("policy on another tenant's repository accepted")
+	}
+
+	// Break-glass for the commit passes the failing run, audited each use.
+	if _, err := r.svc.CreateOverride(ctx, r.tenant, cirunapp.OverrideInput{RepositoryAssetID: run.RepositoryAssetID,
+		CommitSHA: sha2, Reason: "hotfix for the login outage"}, cirunapp.Actor{Email: "admin@acme.test"}); err != nil {
+		t.Fatal(err)
+	}
+	rejudge()
+	if _, v = r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); v["verdict"] != "pass" || v["override"] == nil {
+		t.Fatalf("override: %v", v)
+	}
+	if r.auditCount(r.tenant, "ci_gate_override.used", prRun) != 1 || r.auditCount(r.tenant, "ci_gate_override.created", "hotfix") != 1 {
+		t.Fatal("break-glass not audited")
+	}
+	// Another tenant cannot break-glass this repository.
+	if _, err := r.svc.CreateOverride(ctx, r.other, cirunapp.OverrideInput{RepositoryAssetID: run.RepositoryAssetID,
+		CommitSHA: sha2, Reason: "cross-tenant attempt here"}, cirunapp.Actor{}); err == nil {
+		t.Fatal("override on another tenant's repository accepted")
+	}
+
+	// Cross-tenant reads of the run are not found.
+	if _, err := r.svc.GetRun(ctx, r.other, run.ID); err == nil {
+		t.Fatal("another tenant read the run")
+	}
+	if runs, total, err := r.svc.ListRuns(ctx, r.other, cirun.RunFilter{}); err != nil || total != 0 || len(runs) != 0 {
+		t.Fatalf("other tenant lists %d runs (%v)", total, err)
+	}
+
+	// An expired run token is refused.
+	if _, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET token_expires_at = now() - interval '1 second' WHERE id = $1`, prRun); err != nil {
+		t.Fatal(err)
+	}
+	if resp, _ := r.post("/api/v1/ci/runs/"+prRun+"/evaluate", prToken, nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expired run token: %d", resp.StatusCode)
+	}
+	// Garbage tokens are refused.
+	if resp, _ := r.post("/api/v1/ci/runs/"+prRun+"/evaluate", "octci_"+strings.Repeat("A", 43), nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unknown run token: %d", resp.StatusCode)
+	}
+
+	// No token, ours or the CI provider's, is ever written to the audit log.
+	var leaked int
+	_ = r.db.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1
+		AND (metadata::text LIKE '%octci_%' OR metadata::text LIKE '%' || $2 || '%' OR message LIKE '%octci_%')`,
+		r.tenant.String(), mainTok[:40]).Scan(&leaked)
+	if leaked != 0 {
+		t.Fatalf("%d audit rows carry a token", leaked)
+	}
+}
+
+func hasReason(v map[string]any, code string) bool {
+	rs, _ := v["reasons"].([]any)
+	for _, r := range rs {
+		if m, ok := r.(map[string]any); ok && m["code"] == code {
+			return true
+		}
+	}
+	return false
+}

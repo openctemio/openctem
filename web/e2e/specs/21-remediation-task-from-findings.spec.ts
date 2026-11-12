@@ -3,7 +3,7 @@ import { test, expect } from '../fixtures/authenticated-page'
 /**
  * A remediation task is created from selected findings, opened from the
  * confirmation toast, and put on hold and resumed from its page
- * (api/docs/rfcs/RFC-098-remediation-tasks.md). The task page shows the state
+ * (server/docs/rfcs/RFC-098-remediation-tasks.md). The task page shows the state
  * after each change.
  *
  * A finding belongs to one open task at a time, so a rerun of this test (a

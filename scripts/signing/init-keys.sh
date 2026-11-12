@@ -14,10 +14,10 @@
 #                      signed by the root, valid 365 days.
 #
 # The release feed has no key here: the release-feed workflow signs it keyless
-# (Sigstore, GitHub OIDC), see api/docs/architecture/version-check.md.
+# (Sigstore, GitHub OIDC), see server/docs/architecture/version-check.md.
 #
 # It prints ONLY public material (key ids, public key, file paths, commands).
-# It refuses to overwrite existing keys. See api/docs/architecture/signing-keys.md.
+# It refuses to overwrite existing keys. See server/docs/architecture/signing-keys.md.
 set -euo pipefail
 umask 077
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,7 +63,7 @@ Public material
   catalog online pub  : $catalog_pub
 
 1. Pin it in the code (one reviewed pull request):
-     api/pkg/contentpkg/  PinnedRoots  add  "$root_id"
+     server/pkg/contentpkg/  PinnedRoots  add  "$root_id"
    and commit the signed catalog key set (public):
      $dir/keyset.dsse.json
 

@@ -1,5 +1,5 @@
 # systemd-sysusers(8) entries for an OpenCTEM install from the release archives
-# (api/docs/deployment/binary-install.md). Install to
+# (server/docs/deployment/binary-install.md). Install to
 # /etc/sysusers.d/openctem.conf and run `systemd-sysusers`.
 #
 # Each service runs as its own system user with no login shell and no home.

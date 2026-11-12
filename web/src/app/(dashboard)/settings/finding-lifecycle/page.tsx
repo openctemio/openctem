@@ -6,7 +6,7 @@ import { FindingLifecycleSettings } from '@/features/findings/components/lifecyc
 import { PageHeader, PageStack } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 
-/** Settings > Finding lifecycle (api/docs/rfcs/RFC-110-tenant-lifecycles.md). */
+/** Settings > Finding lifecycle (server/docs/rfcs/RFC-110-tenant-lifecycles.md). */
 export default function FindingLifecycleSettingsPage() {
   const { t } = useTranslation()
   return (

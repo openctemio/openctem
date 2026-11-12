@@ -1,5 +1,5 @@
 /**
- * Ticket field and status mapping (api/docs/rfcs/RFC-097-ticket-field-mapping.md).
+ * Ticket field and status mapping (server/docs/rfcs/RFC-097-ticket-field-mapping.md).
  * Wire types of /api/v1/integrations/ticket-mappings.
  */
 

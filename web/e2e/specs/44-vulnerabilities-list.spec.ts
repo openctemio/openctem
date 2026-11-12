@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * The vulnerabilities list /vulnerabilities (api/docs/architecture/vulnerability-page.md, "The list").
+ * The vulnerabilities list /vulnerabilities (server/docs/architecture/vulnerability-page.md, "The list").
  *
  * - One row per CVE: the seeded CVE is listed, and its findings count equals
  *   the findings list filtered by that CVE (scope parity).

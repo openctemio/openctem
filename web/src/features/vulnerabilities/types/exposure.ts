@@ -1,6 +1,6 @@
 /**
  * The vulnerability page's answer for one CVE, inside the caller's data scope
- * (GET /api/v1/vulnerability-exposures/{id}, api/docs/architecture/vulnerability-page.md).
+ * (GET /api/v1/vulnerability-exposures/{id}, server/docs/architecture/vulnerability-page.md).
  */
 
 import type { EpssPoint } from './list'

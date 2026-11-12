@@ -1,0 +1,64 @@
+# =============================================================================
+# Dockerfile for Database Migrations
+# =============================================================================
+# Lightweight image containing only the migration files and the migration
+# runner (cmd/openctem-migrate, docs/rfcs/RFC-130-migration-applied-set.md).
+# Used by docker-compose and the deployment kit to run database migrations
+# independently.
+#
+# Build:
+#   docker build -f Dockerfile.migrations -t ghcr.io/openctemio/migrations:v0.1.0 .
+#
+# Usage (the password in PGPASSWORD, never in the URL):
+#   docker run --rm -e PGPASSWORD ghcr.io/openctemio/migrations:v0.1.0 \
+#     -path=/migrations \
+#     -database "postgres://user@host:5432/db?sslmode=require" \
+#     up
+#
+# Commands:
+#   up       - Apply every migration the database has not applied
+#   down N   - Roll back the N most recently applied migrations
+#   force V  - Clear the dirty flag and record V as applied (-1: only clear it)
+#   version  - Show the highest applied version
+#   status   - Show the pending migrations
+#
+# checkov:skip=CKV_DOCKER_2: One-time migration container, no healthcheck needed
+# =============================================================================
+
+# The runner is built from this tree with the pinned Go below; `go build`
+# verifies every module against go.sum. Built in the target platform's own
+# stage, so there is no arch-specific URL to get wrong.
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS build
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY cmd/openctem-migrate ./cmd/openctem-migrate
+COPY internal/migrate ./internal/migrate
+COPY pkg/version ./pkg/version
+RUN CGO_ENABLED=0 go build -trimpath \
+      -ldflags="-s -w -X github.com/openctemio/openctem/server/pkg/version.Version=${VERSION}" \
+      -o /usr/local/bin/openctem-migrate ./cmd/openctem-migrate
+
+# Alpine 3.20 reached end of support on 2026-04-01 (no more security fixes).
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates
+
+COPY --from=build /usr/local/bin/openctem-migrate /usr/local/bin/openctem-migrate
+
+# Copy migration files
+COPY migrations /migrations
+
+# The files are only read; the job needs no privileges (uid of the distroless
+# "nonroot" user, so Kubernetes runAsNonRoot accepts it).
+LABEL org.opencontainers.image.title="OpenCTEM migrations" \
+      org.opencontainers.image.description="OpenCTEM database migrations (the openctem-migrate runner and the migration files)" \
+      org.opencontainers.image.source="https://github.com/openctemio/openctem" \
+      org.opencontainers.image.licenses="GPL-3.0-only"
+
+USER 65532:65532
+
+# Default: show help. The arguments keep the form deployments already pass.
+ENTRYPOINT ["/usr/local/bin/openctem-migrate"]
+CMD ["-help"]

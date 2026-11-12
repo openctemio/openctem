@@ -1,0 +1,1106 @@
+// Package vulnmatch runs inventory vulnerability matching: it evaluates each
+// global catalog version once against its product's ranges, then reconciles
+// each organization's findings with the matches of the software it runs.
+//
+// Design: docs/rfcs/RFC-066-inventory-vulnerability-matching.md (§7, §8, §9).
+package vulnmatch
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strconv"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/app/closuremode"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreceipt"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/softwarematch"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnmatch"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// Batch sizes and the time one Run may take.
+const (
+	versionBatch    = 500
+	feedBatch       = 5000
+	tenantBatch     = 20
+	maxTenantRows   = 100_000
+	sweepEvery      = 24 * time.Hour
+	stateFeedCursor = "feed_cursor"
+	stateLastSweep  = "last_sweep"
+)
+
+// PolicyReader returns an organization's vulnerability matching policy.
+type PolicyReader interface {
+	VulnMatchingPolicy(ctx context.Context, tenantID shared.ID) (tenant.VulnMatchingSettings, error)
+}
+
+// FindingWriter persists findings (upsert on the tenant and fingerprint,
+// plan limit enforced).
+type FindingWriter interface {
+	CreateBatchWithResult(ctx context.Context, findings []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error)
+}
+
+// Classifier sets EPSS, KEV and the priority class before insert.
+type Classifier interface {
+	EnrichAndClassifyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, assets map[shared.ID]*asset.Asset) error
+}
+
+// SLAApplier sets SLA deadlines after classification.
+type SLAApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+}
+
+// AssetGetter loads an asset for the classifier.
+type AssetGetter interface {
+	GetByID(ctx context.Context, tenantID, assetID shared.ID) (*asset.Asset, error)
+}
+
+// Service is the matcher.
+type Service struct {
+	store      softwarematch.Store
+	policy     PolicyReader
+	findings   FindingWriter
+	classifier Classifier
+	sla        SLAApplier
+	assets     AssetGetter
+	links      LinkReader
+	logger     *logger.Logger
+	now        func() time.Time
+	keys       RemediationKeyApplier
+	alerts     AlertQueue
+	vex        VEXApplier
+	issueLinks IssueLinker
+	// closure reads the organization's closing mode (nil: review).
+	closure closuremode.SettingsReader
+	// maxRows bounds one pass's read of a tenant's matches (memory).
+	maxRows int
+	// receipts records the findings a pass stored on the platform's own
+	// receipt (nil: none recorded).
+	receipts ReceiptRecorder
+}
+
+// ReceiptRecorder writes receipt deltas (ingestreceipt.Repository).
+type ReceiptRecorder interface {
+	Record(ctx context.Context, d *ingestreceipt.Delta) (shared.ID, error)
+}
+
+// SetReceiptRecorder records the findings the matcher stores on a receipt
+// of the platform (one per organization and UTC day), so the intake shows
+// them as the platform's, never as the tool whose report named the software.
+func (s *Service) SetReceiptRecorder(r ReceiptRecorder) { s.receipts = r }
+
+// RemediationKeyApplier keys persisted findings into remediation groups
+// (*remediation.KeyApplier). Best-effort: a failure is logged, never fatal.
+type RemediationKeyApplier interface {
+	ApplyBatch(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) error
+}
+
+// SetRemediationKeyApplier wires remediation-group keys for matched findings.
+func (s *Service) SetRemediationKeyApplier(k RemediationKeyApplier) { s.keys = k }
+
+// AlertQueue plans emerging-threat alerts for the vulnerabilities of new
+// findings (*threatalert.Planner): matched findings are announced by the
+// alert, not one by one (docs/rfcs/RFC-117-emerging-threat-alerts.md).
+type AlertQueue interface {
+	QueueVulns(ctx context.Context, tenantID shared.ID, vulnIDs []string) error
+}
+
+// SetAlertQueue wires the emerging-threat planner (nil: matched findings
+// are not announced).
+func (s *Service) SetAlertQueue(q AlertQueue) { s.alerts = q }
+
+// VEXApplier applies the organization's VEX statements to the package
+// findings with these fingerprints (*vex.Service), the same sticky path
+// ingest uses for findings it creates.
+type VEXApplier interface {
+	ApplyToFingerprints(ctx context.Context, tenantID shared.ID, fingerprints []string) (int, error)
+}
+
+// SetVEXApplier wires the VEX statements (nil: matched findings are not
+// checked against them).
+func (s *Service) SetVEXApplier(v VEXApplier) { s.vex = v }
+
+// IssueLinker derives same-issue links for stored findings
+// (*postgres.FindingIssueLinkRepository): a version match created on an asset
+// where another technique already reported the CVE is linked to it.
+type IssueLinker interface {
+	DeriveIssueLinks(ctx context.Context, tenantID shared.ID, fingerprints []string) error
+}
+
+// SetIssueLinker wires same-issue links for matched findings (nil: off).
+func (s *Service) SetIssueLinker(l IssueLinker) { s.issueLinks = l }
+
+// NewService creates the matcher. classifier, sla and assets are optional.
+func NewService(store softwarematch.Store, policy PolicyReader, findings FindingWriter, log *logger.Logger) *Service {
+	return &Service{store: store, policy: policy, findings: findings, logger: log, now: time.Now, maxRows: maxTenantRows}
+}
+
+// SetClosureSettings wires the organization closing policy. Without it every
+// organization is in review: a version-change close is proposed, not made.
+func (s *Service) SetClosureSettings(r closuremode.SettingsReader) { s.closure = r }
+
+// SetEnrichment wires the optional pre-insert enrichment.
+func (s *Service) SetEnrichment(classifier Classifier, sla SLAApplier, assets AssetGetter) {
+	s.classifier, s.sla, s.assets = classifier, sla, assets
+}
+
+// SoftwareChanged queues a reconcile of the tenant (ingest's change sink).
+func (s *Service) SoftwareChanged(tenantID shared.ID, _ []shared.ID) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.store.QueueTenants(ctx, []shared.ID{tenantID}); err != nil {
+		s.logger.Warn("vulnerability matching: tenant not queued", "tenant_id", tenantID.String(), "error", err)
+	}
+}
+
+// Stats says what a Run did.
+type Stats struct {
+	VersionsReset     int
+	VersionsEvaluated int
+	VersionsChanged   int
+	Tenants           int
+	Created           int
+	Reopened          int
+	Closed            int
+	// Rekeyed counts matcher findings of package matches moved from the
+	// network identity to the package identity.
+	Rekeyed int
+	// CloseSkipped counts tenants whose close phase was skipped because
+	// the pass could not read all of their matches.
+	CloseSkipped int
+	// Failed counts findings the store refused; each is built again and
+	// retried on the organization's next reconcile.
+	Failed int
+	// Locations counts location rows written (added, sighted or moved).
+	Locations int
+}
+
+// Run does one pass within budget: feed changes reset the affected
+// versions, pending versions are evaluated, a daily sweep queues every
+// tenant, and queued tenants are reconciled.
+func (s *Service) Run(ctx context.Context, budget time.Duration) (Stats, error) {
+	var st Stats
+	deadline := s.now().Add(budget)
+	if err := s.feedDelta(ctx, &st, deadline); err != nil {
+		return st, err
+	}
+	if err := s.evaluate(ctx, &st, deadline); err != nil {
+		return st, err
+	}
+	if err := s.sweep(ctx); err != nil {
+		return st, err
+	}
+	for s.now().Before(deadline) {
+		ids, err := s.store.DequeueTenants(ctx, tenantBatch)
+		if err != nil {
+			return st, err
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for i, id := range ids {
+			if !s.now().Before(deadline) {
+				// Out of time: put the rest back.
+				if err := s.store.QueueTenants(ctx, ids[i:]); err != nil {
+					return st, err
+				}
+				return st, nil
+			}
+			if err := s.ReconcileTenant(ctx, id, &st); err != nil {
+				s.logger.Warn("vulnerability matching: reconcile failed", "tenant_id", id.String(), "error", err)
+				if qerr := s.store.QueueTenants(ctx, []shared.ID{id}); qerr != nil {
+					return st, qerr
+				}
+				continue
+			}
+			st.Tenants++
+		}
+	}
+	return st, nil
+}
+
+func (s *Service) feedDelta(ctx context.Context, st *Stats, deadline time.Time) error {
+	cursor, err := s.store.State(ctx, stateFeedCursor)
+	if err != nil {
+		return err
+	}
+	for s.now().Before(deadline) {
+		next, n, err := s.store.ResetVersionsForCVEsSince(ctx, cursor, feedBatch)
+		if err != nil {
+			return err
+		}
+		if !next.After(cursor) {
+			return nil
+		}
+		st.VersionsReset += n
+		cursor = next
+		if err := s.store.SetState(ctx, stateFeedCursor, cursor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) evaluate(ctx context.Context, st *Stats, deadline time.Time) error {
+	ranges := map[shared.ID][]vulnmatch.Range{}
+	for s.now().Before(deadline) {
+		versions, err := s.store.PendingVersions(ctx, versionBatch)
+		if err != nil {
+			return err
+		}
+		if len(versions) == 0 {
+			return nil
+		}
+		for _, v := range versions {
+			rs, ok := ranges[v.ProductID]
+			if !ok {
+				stored, err := s.store.RangesForProduct(ctx, v.ProductID)
+				if err != nil {
+					return err
+				}
+				rs = make([]vulnmatch.Range, len(stored))
+				for i, a := range stored {
+					rs[i] = a.Range
+				}
+				ranges[v.ProductID] = rs
+			}
+			changed, err := s.store.ReplaceVersionVulns(ctx, v.ID, EvaluateVersion(v, rs))
+			if err != nil {
+				return err
+			}
+			st.VersionsEvaluated++
+			if changed {
+				st.VersionsChanged++
+			}
+		}
+	}
+	return nil
+}
+
+// EvaluateVersion matches one version against its product's ranges.
+func EvaluateVersion(v softwarematch.Version, ranges []vulnmatch.Range) []softwarematch.VersionVuln {
+	results := vulnmatch.MatchVersion(vulnmatch.Observed{Version: v.Raw, Scheme: v.Scheme, Edition: v.Edition}, ranges)
+	out := make([]softwarematch.VersionVuln, 0, len(results))
+	for _, r := range results {
+		vv := softwarematch.VersionVuln{
+			CVEID:       r.VulnID,
+			RangeText:   r.Range.Describe(),
+			AllVersions: r.AllVersions,
+			Adjustment:  r.Adjustment,
+			Reasons:     r.Reasons,
+		}
+		if id, err := strconv.ParseInt(r.Range.ID, 10, 64); err == nil {
+			vv.AffectedID = id
+		}
+		if r.Range.Condition != "" {
+			if id, err := shared.IDFromString(r.Range.Condition); err == nil {
+				vv.ConditionProductID = &id
+			}
+		}
+		out = append(out, vv)
+	}
+	return out
+}
+
+func (s *Service) sweep(ctx context.Context) error {
+	last, err := s.store.State(ctx, stateLastSweep)
+	if err != nil {
+		return err
+	}
+	if s.now().Sub(last) < sweepEvery {
+		return nil
+	}
+	if _, err := s.store.QueueAllTenantsWithSoftware(ctx); err != nil {
+		return err
+	}
+	return s.store.SetState(ctx, stateLastSweep, s.now())
+}
+
+// candidate is one match that passes the policy.
+type candidate struct {
+	m          softwarematch.Match
+	confidence int
+	label      vulnmatch.Label
+	reasons    []string
+	key        vulnerability.IdentityKey
+	// legacy is the network identity a package match was keyed on before
+	// matches on packages took the package identity; set only for package
+	// matches.
+	legacy *vulnerability.IdentityKey
+}
+
+// ReconcileTenant brings one organization's matcher findings in line with
+// its current matches and policy (RFC-066 §8).
+func (s *Service) ReconcileTenant(ctx context.Context, tenantID shared.ID, st *Stats) error {
+	policy, err := s.policy.VulnMatchingPolicy(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("policy: %w", err)
+	}
+	if !policy.Enabled {
+		return nil
+	}
+	currentSince := s.now().Add(-softwarematch.StaleAfter)
+	// One row more than the pass keeps tells a complete read from a
+	// truncated one.
+	matches, err := s.store.TenantMatches(ctx, tenantID, currentSince, s.maxRows+1)
+	if err != nil {
+		return err
+	}
+	complete := len(matches) <= s.maxRows
+	if !complete {
+		matches = matches[:s.maxRows]
+		s.logger.Error("vulnerability matching: tenant has more matches than one pass reads; nothing is closed until it fits",
+			"tenant_id", tenantID.String(), "limit", s.maxRows)
+	}
+	s.attributeHosting(ctx, tenantID, matches)
+	desired, matched := s.plan(tenantID, policy, matches)
+
+	existing, err := s.store.MatcherFindings(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+	byFP := make(map[string]softwarematch.MatcherFinding, len(existing))
+	byID := make(map[shared.ID]softwarematch.MatcherFinding, len(existing))
+	for _, f := range existing {
+		byFP[f.Fingerprint] = f
+		byID[f.ID] = f
+	}
+	rekeyed, err := s.adoptLegacyKeys(ctx, tenantID, desired, byFP, st)
+	if err != nil {
+		return err
+	}
+	for _, f := range byFP {
+		byID[f.ID] = f
+	}
+	ix, err := s.loadLocations(ctx, tenantID)
+	if err != nil {
+		return err
+	}
+
+	var reopen []shared.ID
+	reopening := map[shared.ID]bool{}
+	var create []*candidate
+	var refresh []softwarematch.ObservedVersionRef
+	resolved := map[string]softwarematch.MatcherFinding{}
+	for _, fp := range sortedKeys(desired) {
+		c := desired[fp]
+		f, ok, skip := ix.resolve(fp, c, byFP, byID)
+		if skip {
+			continue // a finding the matcher does not own holds this location
+		}
+		if !ok {
+			create = append(create, c)
+			continue
+		}
+		resolved[fp] = f
+		anchor := f.Fingerprint == fp
+		if anchor && f.VersionID != nil && *f.VersionID != c.m.VersionID && isOpen(f.Status) {
+			// The product moved to another version that this CVE still
+			// matches: the finding stays open and records the version it is
+			// observed on now (the identity is the same for every version).
+			refresh = append(refresh, softwarematch.ObservedVersionRef{FindingID: f.ID, ProductID: c.m.ProductID,
+				VersionID: c.m.VersionID, Version: c.m.Version, Qualifier: c.m.Qualifier})
+		}
+		if !reopening[f.ID] && (f.Status == string(vulnerability.FindingStatusResolved) ||
+			(f.Stale && vulnerability.IsOpenStatus(vulnerability.FindingStatus(f.Status)))) {
+			// The store reopens the ones it closed as fixed and makes stale
+			// open ones present again; every other id is left alone.
+			reopening[f.ID] = true
+			reopen = append(reopen, f.ID)
+		}
+		if ix.enabled(c) {
+			ix.sight(c, f.ID, anchor)
+		}
+	}
+	if len(reopen) > 0 {
+		done, err := s.store.ReopenFindings(ctx, tenantID, reopen)
+		if err != nil {
+			return err
+		}
+		st.Reopened += len(done)
+	}
+	if len(refresh) > 0 {
+		if _, err := s.store.UpdateObservedVersion(ctx, tenantID, refresh); err != nil {
+			return err
+		}
+	}
+	created, err := s.create(ctx, tenantID, create, st, ix, ix.hostTargets(byID, resolved, desired))
+	if err != nil {
+		return err
+	}
+	if err := ix.flush(ctx, tenantID, st); err != nil {
+		return err
+	}
+	s.applyVEX(ctx, tenantID, append(created, rekeyed...))
+	s.cancelVersionProposals(ctx, tenantID, existing, matched, ix)
+	if !complete {
+		// matched lacks the matches past the limit, so their live findings
+		// would look unmatched and be closed. Creating and reopening from
+		// what was read is safe; closing is not.
+		st.CloseSkipped++
+		return nil
+	}
+	return s.close(ctx, tenantID, existing, matched, currentSince, st, ix)
+}
+
+func sortedKeys(m map[string]*candidate) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// plan scores every match and keeps, per finding identity, the most
+// confident one the policy lets through. matched holds the identities that
+// still have any findable match, policy or not.
+func (s *Service) plan(tenantID shared.ID, policy tenant.VulnMatchingSettings, matches []softwarematch.Match) (map[string]*candidate, map[string]bool) {
+	desired := map[string]*candidate{}
+	matched := map[string]bool{}
+	for _, m := range matches {
+		key, legacy, ok := MatchIdentity(m)
+		if !ok {
+			continue
+		}
+		fp := key.Fingerprint()
+		res := vulnmatch.Result{VulnID: m.Result.CVEID, AllVersions: m.Result.AllVersions,
+			Adjustment: m.Result.Adjustment, Reasons: m.Result.Reasons}
+		if m.Result.ConditionProductID != nil {
+			res.Range.Condition = m.Result.ConditionProductID.String()
+		}
+		conf, label, reasons := vulnmatch.Confidence(m.LinkConfidence, res, m.ConditionMet)
+		if res.Findable() {
+			// A finding still stored under its version-2 or legacy key is
+			// matched too: it must not be closed while it waits to be
+			// re-keyed.
+			for _, form := range key.KeyForms() {
+				matched[form] = true
+			}
+			if legacy != nil {
+				for _, form := range legacy.KeyForms() {
+					matched[form] = true
+				}
+			}
+		}
+		if !Passes(policy, m, res, conf) {
+			continue
+		}
+		if prev, ok := desired[fp]; ok && prev.confidence >= conf {
+			continue
+		}
+		desired[fp] = &candidate{m: m, confidence: conf, label: label, reasons: reasons, key: key, legacy: legacy}
+	}
+	_ = tenantID
+	return desired, matched
+}
+
+// Passes applies the organization's policy to one scored match.
+func Passes(policy tenant.VulnMatchingSettings, m softwarematch.Match, res vulnmatch.Result, confidence int) bool {
+	switch {
+	case !res.Findable():
+		return false
+	case confidence < policy.EffectiveMinConfidence():
+		return false
+	case m.Qualifier != "" && !policy.IncludeDistroBuilds:
+		return false
+	case policy.InternetFacingOnly && !m.InternetFacing:
+		return false
+	case policy.IsMuted(m.Product):
+		return false
+	}
+	return policy.SeverityPasses(m.CVE.Severity) || m.CVE.InKEV || m.CVE.EPSS >= tenant.DefaultVulnMatchMinEPSS
+}
+
+// create stores findings for the candidates no finding holds yet and
+// returns the fingerprints of the findings it built. A locatable candidate
+// joins an open finding of its host (same product, version and CVE, seen
+// alike by every user) as a location; the others of one host key are one
+// new finding on the oldest asset, with each service a location of it.
+func (s *Service) create(ctx context.Context, tenantID shared.ID, cands []*candidate, st *Stats,
+	ix *locIndex, targets map[string][]hostTarget,
+) ([]string, error) {
+	kept, err := s.unowned(ctx, tenantID, cands)
+	if err != nil || len(kept) == 0 {
+		return nil, err
+	}
+	sigs, err := s.scopeSignatures(ctx, tenantID, kept, ix, targets)
+	if err != nil {
+		return nil, err
+	}
+	joins, groups, plain := groupNew(kept, ix, sigs, targets)
+	for _, c := range kept {
+		if id, ok := joins[c]; ok {
+			ix.sight(c, id, false)
+		}
+	}
+	// anchors[i] builds findings[i]; rest[i] are the other services of its
+	// group, which become its locations once it is stored.
+	anchors := make([]*candidate, 0, len(groups)+len(plain))
+	rest := make([][]*candidate, 0, len(groups)+len(plain))
+	for _, g := range groups {
+		anchors = append(anchors, g.members[0])
+		rest = append(rest, g.members[1:])
+	}
+	for _, c := range plain {
+		anchors = append(anchors, c)
+		rest = append(rest, nil)
+	}
+	if len(anchors) == 0 {
+		return nil, nil
+	}
+	cves := make([]softwarematch.CVEInfo, 0, len(anchors))
+	for _, c := range anchors {
+		cves = append(cves, c.m.CVE)
+	}
+	defs, err := s.store.EnsureDefinitions(ctx, cves)
+	if err != nil {
+		return nil, err
+	}
+	findings := make([]*vulnerability.Finding, 0, len(anchors))
+	built := make([]int, 0, len(anchors)) // anchor index of each finding
+	for i, c := range anchors {
+		f, err := BuildFinding(tenantID, c.m, c.confidence, c.label, c.reasons, c.key)
+		if err != nil {
+			s.logger.Warn("vulnerability matching: finding not built", "cve", c.m.Result.CVEID, "error", err)
+			continue
+		}
+		if id, ok := defs[c.m.Result.CVEID]; ok {
+			f.SetVulnerabilityID(id)
+		}
+		findings = append(findings, f)
+		built = append(built, i)
+	}
+	s.enrich(ctx, tenantID, findings)
+	res, err := s.findings.CreateBatchWithResult(ctx, findings)
+	if err != nil {
+		return nil, err
+	}
+	if res != nil {
+		st.Created += res.Created
+		st.Failed += len(res.Errors)
+		for i, msg := range res.Errors {
+			cve := ""
+			if i >= 0 && i < len(findings) {
+				cve = findings[i].CVEID()
+			}
+			// Held for retry: the match it came from stays, and the next
+			// reconcile of the organization (its next software change, the
+			// daily sweep at the latest) builds and stores it again.
+			s.logger.Warn("vulnerability matching: finding not stored, retried on the next reconcile",
+				"tenant_id", tenantID.String(), "cve", cve, "error", logger.SanitizeText(msg))
+		}
+		placeServices(ix, res, findings, built, anchors, rest)
+	}
+	s.queueAlerts(ctx, tenantID, findings, res)
+	s.recordReceipt(ctx, tenantID, findings, res)
+	if s.keys != nil {
+		if err := s.keys.ApplyBatch(ctx, tenantID, findings); err != nil {
+			s.logger.Warn("vulnerability matching: remediation keys not derived", "tenant_id", tenantID.String(), "error", err)
+		}
+	}
+	fpsBuilt := make([]string, 0, len(findings))
+	for _, f := range findings {
+		fpsBuilt = append(fpsBuilt, f.Fingerprint())
+	}
+	if s.issueLinks != nil && len(fpsBuilt) > 0 {
+		if err := s.issueLinks.DeriveIssueLinks(ctx, tenantID, fpsBuilt); err != nil {
+			s.logger.Warn("vulnerability matching: same-issue links not derived", "tenant_id", tenantID.String(), "error", err)
+		}
+	}
+	return fpsBuilt, nil
+}
+
+// unowned keeps the candidates no finding owns yet: no open finding of the
+// CVE on the asset (any tool), and no finding (any status) holding the
+// identity.
+func (s *Service) unowned(ctx context.Context, tenantID shared.ID, cands []*candidate) ([]*candidate, error) {
+	if len(cands) == 0 {
+		return nil, nil
+	}
+	assets := make([]shared.ID, 0, len(cands))
+	seen := map[shared.ID]bool{}
+	for _, c := range cands {
+		if !seen[c.m.AssetID] {
+			seen[c.m.AssetID] = true
+			assets = append(assets, c.m.AssetID)
+		}
+	}
+	open, err := s.store.OpenCVEsOnAssets(ctx, tenantID, assets)
+	if err != nil {
+		return nil, err
+	}
+	fps := make([]string, 0, 2*len(cands))
+	for _, c := range cands {
+		// The version-2 form too: a finding the re-key has not reached yet
+		// owns this identity.
+		fps = append(fps, c.key.KeyForms()...)
+	}
+	taken, err := s.store.ExistingFingerprints(ctx, tenantID, fps)
+	if err != nil {
+		return nil, err
+	}
+	kept := cands[:0]
+	for _, c := range cands {
+		if open[c.m.AssetID][vulnerability.NormalizeCVEID(c.m.Result.CVEID)] {
+			continue // a scanner (or a person) already has this CVE open on the asset
+		}
+		if takenAny(taken, c.key.KeyForms()) {
+			continue // another tool's finding (open or closed) owns this identity
+		}
+		kept = append(kept, c)
+	}
+	return kept, nil
+}
+
+// placeServices records the locations of the findings just stored: the
+// anchor's own service (quiet: it is the finding) and the other services of
+// its group. A finding not stored, or stored before, is left to the next
+// pass.
+func placeServices(ix *locIndex, res *vulnerability.BatchCreateResult, findings []*vulnerability.Finding, built []int,
+	anchors []*candidate, rest [][]*candidate,
+) {
+	for i, f := range findings {
+		if _, failed := res.Errors[i]; failed || (res.Inserted != nil && !res.Inserted[i]) {
+			continue
+		}
+		id := f.ID()
+		if v, ok := res.IDs[i]; ok {
+			id = v
+		}
+		a := anchors[built[i]]
+		if !ix.enabled(a) {
+			continue
+		}
+		ix.sight(a, id, true)
+		for _, c := range rest[built[i]] {
+			ix.sight(c, id, false)
+		}
+	}
+}
+
+// scopeSignatures reads the scope signatures of the locatable candidates'
+// assets and of the findings they may join. Nil without a location store.
+func (s *Service) scopeSignatures(ctx context.Context, tenantID shared.ID, cands []*candidate, ix *locIndex,
+	targets map[string][]hostTarget,
+) (map[shared.ID]string, error) {
+	if ix.store == nil {
+		return map[shared.ID]string{}, nil
+	}
+	seen := map[shared.ID]bool{}
+	var ids []shared.ID
+	add := func(id shared.ID) {
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	for _, c := range cands {
+		if !ix.enabled(c) {
+			continue
+		}
+		add(c.m.AssetID)
+		for _, t := range targets[softwarematch.HostKey(c.m)] {
+			add(t.assetID)
+		}
+	}
+	if len(ids) == 0 {
+		return map[shared.ID]string{}, nil
+	}
+	return ix.store.ScopeSignatures(ctx, tenantID, ids)
+}
+
+// recordReceipt books the findings a pass stored on the platform's receipt
+// of the day: new rows as created, rows that already existed as still
+// detected. A failure is logged; the findings stand.
+func (s *Service) recordReceipt(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, res *vulnerability.BatchCreateResult) {
+	if s.receipts == nil || res == nil || len(findings) == 0 {
+		return
+	}
+	now := time.Now().UTC()
+	if s.now != nil {
+		now = s.now().UTC()
+	}
+	d := &ingestreceipt.Delta{
+		TenantID: tenantID,
+		Source:   ingestreceipt.Source{Kind: ingestreceipt.SourcePlatform, Ref: softwarematch.ToolName + ":" + now.Format("2006-01-02")},
+		Tool:     softwarematch.ToolName,
+		Instance: ingestreceipt.Instance{Kind: ingestreceipt.InstancePlatform, ID: ingestreceipt.InstancePlatform},
+		Reports:  1,
+		Received: len(findings),
+		Failed:   len(res.Errors),
+		At:       now,
+	}
+	for i, f := range findings {
+		if _, failed := res.Errors[i]; failed {
+			// A fixed code: the database's message may quote the value.
+			if len(d.Errors) < ingestreceipt.MaxErrors {
+				d.Errors = append(d.Errors, ingestreceipt.ErrorEntry{Index: i, Code: ingestreceipt.ErrorStoreFailed})
+			}
+			continue
+		}
+		inserted := res.Inserted == nil || res.Inserted[i]
+		id := f.ID()
+		if v, ok := res.IDs[i]; ok {
+			id = v
+		}
+		if inserted {
+			d.Created = append(d.Created, id)
+		} else {
+			d.StillDetected = append(d.StillDetected, f.Fingerprint())
+		}
+	}
+	if _, err := s.receipts.Record(ctx, d); err != nil {
+		s.logger.Warn("vulnerability matching: receipt not recorded", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+	}
+}
+
+// queueAlerts hands the vulnerabilities of the findings just stored to the
+// emerging-threat planner. A failure is logged: the findings stand, and the
+// next event or sweep plans the alert.
+func (s *Service) queueAlerts(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding, res *vulnerability.BatchCreateResult) {
+	if s.alerts == nil || res == nil || len(res.Inserted) == 0 {
+		return
+	}
+	vulns := make([]string, 0, len(res.Inserted))
+	for i, ok := range res.Inserted {
+		if ok && i >= 0 && i < len(findings) && findings[i].CVEID() != "" {
+			vulns = append(vulns, findings[i].CVEID())
+		}
+	}
+	if len(vulns) == 0 {
+		return
+	}
+	if err := s.alerts.QueueVulns(ctx, tenantID, vulns); err != nil {
+		s.logger.Warn("vulnerability matching: emerging-threat alerts not queued", "tenant_id", tenantID.String(), "error", err)
+	}
+}
+
+// enrich classifies priority (EPSS, KEV, asset context) and then caps a
+// potential match at P2 unless the CVE is known exploited: a banner version
+// alone must not make an emergency (RFC-066 §4).
+func (s *Service) enrich(ctx context.Context, tenantID shared.ID, findings []*vulnerability.Finding) {
+	if s.classifier != nil {
+		assets := map[shared.ID]*asset.Asset{}
+		if s.assets != nil {
+			for _, f := range findings {
+				if _, ok := assets[f.AssetID()]; ok {
+					continue
+				}
+				if a, err := s.assets.GetByID(ctx, tenantID, f.AssetID()); err == nil {
+					assets[f.AssetID()] = a
+				}
+			}
+		}
+		if err := s.classifier.EnrichAndClassifyBatch(ctx, tenantID, findings, assets); err != nil {
+			s.logger.Warn("vulnerability matching: priority classification failed", "error", err)
+		}
+	}
+	for _, f := range findings {
+		vulnerability.CapVersionMatchPriority(f)
+	}
+	if s.sla != nil {
+		if err := s.sla.ApplyBatch(ctx, tenantID, findings); err != nil {
+			s.logger.Warn("vulnerability matching: sla not applied", "error", err)
+		}
+	}
+}
+
+// HostingReader reads where the tenant's matched assets are served from
+// (softwarematch.HostFacts). Optional: without it nothing is attributed to a
+// provider.
+type HostingReader interface {
+	HostingFacts(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]softwarematch.HostFacts, error)
+}
+
+// attributeHosting sets HostedBy on the matches whose asset a provider's
+// shared front end serves. Best effort: a failed read attributes nothing
+// (the matches stay the organization's, the safe side for raising them).
+func (s *Service) attributeHosting(ctx context.Context, tenantID shared.ID, matches []softwarematch.Match) {
+	hr, ok := s.store.(HostingReader)
+	if !ok || len(matches) == 0 {
+		return
+	}
+	seen := map[shared.ID]bool{}
+	ids := make([]shared.ID, 0, 64)
+	for _, m := range matches {
+		if !seen[m.AssetID] {
+			seen[m.AssetID] = true
+			ids = append(ids, m.AssetID)
+		}
+	}
+	facts, err := hr.HostingFacts(ctx, tenantID, ids)
+	if err != nil {
+		s.logger.Warn("vulnerability matching: hosting facts not read", "tenant_id", tenantID.String(), "error", err)
+		return
+	}
+	c := edgeaddr.Default()
+	hosted := map[shared.ID]string{}
+	for id, f := range facts {
+		if p := softwarematch.HostedBy(c, f); p != "" {
+			hosted[id] = p
+		}
+	}
+	for i := range matches {
+		matches[i].HostedBy = hosted[matches[i].AssetID]
+	}
+}
+
+// close re-evaluates the open matcher findings no location of which
+// matches any more, location by location: a location whose version was
+// displaced by another, evaluated version is fixed, one whose advisory no
+// longer covers its version is not affected, one with nothing established
+// is not seen (still affected). A finding closes only when no location is
+// affected: as fixed through the closing mode when a location was fixed,
+// else as an advisory update; it is only marked stale when every affected
+// location is not seen. A finding with no stored location is its own one
+// location. Locations of a finding that still matches elsewhere move too,
+// and the finding stays open.
+func (s *Service) close(ctx context.Context, tenantID shared.ID, existing []softwarematch.MatcherFinding,
+	matched map[string]bool, currentSince time.Time, st *Stats, ix *locIndex,
+) error {
+	type unit struct {
+		f         softwarematch.MatcherFinding
+		locs      []softwarematch.Location
+		synthetic bool
+		matched   bool
+	}
+	var units []unit
+	var keys []softwarematch.LinkKey
+	seenKey := map[softwarematch.LinkKey]bool{}
+	for _, f := range existing {
+		if f.CVERejected || !isOpen(f.Status) {
+			continue
+		}
+		u := unit{f: f, locs: ix.byFinding[f.ID], matched: ix.matchedFinding(f, matched)}
+		if len(u.locs) == 0 {
+			if u.matched || f.ProductID == nil || f.VersionID == nil {
+				continue
+			}
+			u.synthetic = true
+			u.locs = []softwarematch.Location{{FindingID: f.ID, AssetID: f.AssetID, Key: f.Fingerprint,
+				ProductID: f.ProductID, VersionID: f.VersionID, LinkLocation: f.Location, State: softwarematch.LocationAffected}}
+		}
+		for _, l := range u.locs {
+			if matched[l.Key] || (u.matched && l.State != softwarematch.LocationAffected) {
+				continue
+			}
+			if k, ok := l.LinkKey(); ok && !seenKey[k] {
+				seenKey[k] = true
+				keys = append(keys, k)
+			}
+		}
+		units = append(units, u)
+	}
+	if len(units) == 0 {
+		return nil
+	}
+	states := map[softwarematch.LinkKey]softwarematch.LinkInfo{}
+	if len(keys) > 0 {
+		var err error
+		if states, err = s.store.LinkStates(ctx, tenantID, keys, currentSince); err != nil {
+			return err
+		}
+	}
+	toClose := map[softwarematch.CloseKind][]shared.ID{}
+	infoOf := map[shared.ID]softwarematch.LinkInfo{}
+	for _, u := range units {
+		var present, gone, fixed bool
+		var fixedInfo *softwarematch.LinkInfo
+		for _, l := range u.locs {
+			k, hasKey := l.LinkKey()
+			info, hasInfo := states[k]
+			if l.State != softwarematch.LocationAffected {
+				if l.State == softwarematch.LocationFixed {
+					fixed = true
+					if hasInfo && fixedInfo == nil {
+						fixedInfo = &info
+					}
+				}
+				continue
+			}
+			if matched[l.Key] || !hasKey || !hasInfo {
+				present = true
+				continue
+			}
+			switch {
+			case info.State == softwarematch.LinkUpgraded && (info.Now == nil || !info.Now.Evaluated):
+				// The displacing version has no evaluated matches yet, so the
+				// missing match says nothing about a fix: it may still be
+				// vulnerable. The location stays affected until the version
+				// has been evaluated (the next pass either matches it again
+				// or moves it).
+				present = true
+			case info.State == softwarematch.LinkUpgraded:
+				fixed = true
+				if fixedInfo == nil {
+					fixedInfo = &info
+				}
+				if !u.synthetic {
+					ix.move(l, softwarematch.LocationFixed, softwarematch.ReasonVersionChanged)
+				}
+			case info.State == softwarematch.LinkGone:
+				gone = true
+			case info.VersionEvaluated:
+				// Same software, evaluated against the current ranges, and
+				// the CVE no longer covers it: the advisory changed.
+				if !u.synthetic {
+					ix.move(l, softwarematch.LocationNotAffected, softwarematch.ReasonAdvisoryUpdated)
+				}
+			default:
+				present = true
+			}
+		}
+		switch {
+		case u.matched || present:
+			// Still affected somewhere: the finding stays as it is.
+		case gone:
+			toClose[softwarematch.CloseNotObserved] = append(toClose[softwarematch.CloseNotObserved], u.f.ID)
+		case fixed:
+			toClose[softwarematch.CloseVersionChanged] = append(toClose[softwarematch.CloseVersionChanged], u.f.ID)
+			if fixedInfo != nil {
+				infoOf[u.f.ID] = *fixedInfo
+			}
+		default:
+			toClose[softwarematch.CloseAdvisoryUpdated] = append(toClose[softwarematch.CloseAdvisoryUpdated], u.f.ID)
+		}
+	}
+	if err := ix.flush(ctx, tenantID, st); err != nil {
+		return err
+	}
+	for _, kind := range []softwarematch.CloseKind{softwarematch.CloseVersionChanged, softwarematch.CloseNotObserved, softwarematch.CloseAdvisoryUpdated} {
+		ids := toClose[kind]
+		if len(ids) == 0 {
+			continue
+		}
+		if kind == softwarematch.CloseVersionChanged {
+			// A fixed close (the inventory reports another version) goes
+			// through the organization's closing mode: close, propose to a
+			// person, or keep. The other kinds do not claim a fix.
+			ids = s.applyClosingMode(ctx, tenantID, ids, kind, infoOf)
+		}
+		done, err := s.store.CloseFindings(ctx, tenantID, ids, kind)
+		if err != nil {
+			return err
+		}
+		st.Closed += len(done)
+	}
+	return nil
+}
+
+// applyClosingMode sorts the findings the matcher would close as fixed:
+// those the organization's mode lets close are returned, those it asks a
+// person to confirm are recorded as Ready to close proposals (method
+// source_reported) with the version change as evidence, the rest stay open.
+func (s *Service) applyClosingMode(ctx context.Context, tenantID shared.ID, ids []shared.ID, kind softwarematch.CloseKind,
+	infoOf map[shared.ID]softwarematch.LinkInfo,
+) []shared.ID {
+	d := closuremode.Decider{Settings: s.closure, Repo: s.findings, Log: s.logger}
+	closeIDs, propose, _ := d.Split(ctx, tenantID, ids, vulnerability.ClosureMethodSourceReported)
+	if len(propose) > 0 {
+		at := s.now().UTC()
+		recs := make([]vulnerability.ClosureProposalRecord, len(propose))
+		for i, id := range propose {
+			evidence, evidenceAt := VersionChangeEvidence(kind, infoOf[id], at)
+			recs[i] = vulnerability.ClosureProposalRecord{FindingID: id, Method: vulnerability.ClosureMethodSourceReported,
+				Evidence: evidence, EvidenceAt: evidenceAt}
+		}
+		d.Record(ctx, tenantID, recs)
+	}
+	return closeIDs
+}
+
+// VersionChangeEvidence is what a "version changed" proposal shows: the
+// product, the version the finding was matched on, the version now
+// established, how the inventory knows it (source, evidence class,
+// confidence, sightings) and since when. Inventory facts only: no banner
+// text, URL or other evidence a source sent. evidenceAt is the established
+// version's latest reading (at when unknown), so a later sighting of the
+// finding cancels the proposal.
+func VersionChangeEvidence(kind softwarematch.CloseKind, info softwarematch.LinkInfo, at time.Time) (map[string]any, time.Time) {
+	ev := map[string]any{"source": "software_inventory", "kind": string(kind), "observed_at": at.Format(time.RFC3339)}
+	evidenceAt := at
+	if info.Product != "" {
+		ev["product"] = info.Product
+	}
+	if info.FromVersion != "" {
+		ev["from_version"] = info.FromVersion
+	}
+	if n := info.Now; n != nil {
+		ev["to_version"] = n.Version
+		ev["to_source"] = n.Source
+		ev["to_evidence_class"] = n.Class
+		ev["to_confidence"] = n.Confidence
+		ev["to_sightings"] = n.Sightings
+		ev["to_first_seen"] = n.FirstSeen.UTC().Format(time.RFC3339)
+		ev["observed_at"] = n.LastSeen.UTC().Format(time.RFC3339)
+		if !n.LastSeen.IsZero() && n.LastSeen.Before(at) {
+			evidenceAt = n.LastSeen.UTC()
+		}
+	}
+	return ev, evidenceAt
+}
+
+// cancelVersionProposals cancels the pending "version changed" proposals
+// of the open matcher findings whose identity matches again (the version
+// they were built on is established again, or the change was not
+// confirmed). Best-effort: logged, never fatal.
+func (s *Service) cancelVersionProposals(ctx context.Context, tenantID shared.ID, existing []softwarematch.MatcherFinding,
+	matched map[string]bool, ix *locIndex,
+) {
+	var ids []shared.ID
+	for _, f := range existing {
+		if ix.matchedFinding(f, matched) && isOpen(f.Status) {
+			ids = append(ids, f.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	if _, err := s.store.CancelVersionProposals(ctx, tenantID, ids); err != nil {
+		s.logger.Warn("vulnerability matching: version close proposals not canceled",
+			"tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
+	}
+}
+
+func isOpen(status string) bool {
+	switch vulnerability.FindingStatus(status) {
+	case vulnerability.FindingStatusNew, vulnerability.FindingStatusConfirmed,
+		vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied:
+		return true
+	}
+	return false
+}
+
+// TenantGetter loads an organization.
+type TenantGetter interface {
+	GetByID(ctx context.Context, id shared.ID) (*tenant.Tenant, error)
+}
+
+// TenantPolicy reads the policy from the organization's settings.
+func TenantPolicy(g TenantGetter) PolicyReader { return tenantPolicy{g} }
+
+type tenantPolicy struct{ g TenantGetter }
+
+func (p tenantPolicy) VulnMatchingPolicy(ctx context.Context, tenantID shared.ID) (tenant.VulnMatchingSettings, error) {
+	t, err := p.g.GetByID(ctx, tenantID)
+	if err != nil {
+		return tenant.VulnMatchingSettings{}, err
+	}
+	return t.TypedSettings().VulnMatching, nil
+}
+
+func takenAny(taken map[string]bool, keys []string) bool {
+	for _, k := range keys {
+		if taken[k] {
+			return true
+		}
+	}
+	return false
+}

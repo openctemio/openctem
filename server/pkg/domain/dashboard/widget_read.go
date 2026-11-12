@@ -1,0 +1,400 @@
+package dashboard
+
+import (
+	"context"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+// ReadScope is whose numbers a widget read computes. It is built by the
+// server from the authenticated caller or the organization, never from a
+// widget spec or the request.
+type ReadScope struct {
+	TenantID shared.ID
+	// Assets is the asset scope: nil reads the whole organization
+	// (findings without an asset included); otherwise the data scope of
+	// the person the numbers are for (Unrestricted: every asset but the
+	// private program assets hidden from them).
+	Assets *shared.DataScope
+	// CampaignViewer applies the pentest member-visibility rule: pentest
+	// findings count only for members of their campaign. Nil counts every
+	// published pentest finding (administrators, organization aggregates).
+	CampaignViewer *shared.ID
+}
+
+// CountRow is one group of an open-findings count. Keys follow the
+// requested group-by order; booleans are "true" / "false".
+type CountRow struct {
+	Keys  []string
+	Count int64
+}
+
+// DayRow is one UTC day of flows for one key (empty key without group-by).
+type DayRow struct {
+	Day      time.Time
+	Key      string
+	Opened   int64
+	Fixed    int64
+	NetDelta int64
+}
+
+// FixHistRow is the fix-hours histogram of one key (12 log2 buckets: under
+// 1 h, 1-2 h, ..., 512-1024 h, 1024 h and more).
+type FixHistRow struct {
+	Key  string
+	Hist [12]int64
+}
+
+// RankItem is one finding of a rank list, with what a list row shows.
+type RankItem struct {
+	FindingID     shared.ID
+	Title         string
+	Severity      string
+	PriorityClass string
+	AssetID       *shared.ID
+	AssetName     string
+	SortAt        *time.Time
+	SLADeadline   *time.Time
+	KEV           bool
+	// EPSS is the finding's exploitation probability (0 to 1), nil when the
+	// feed has no score for it.
+	EPSS *float64
+	// Pentest marks a pentest finding; CampaignID is its campaign (zero
+	// when it has none). Organization lists keep them so the viewer's
+	// campaign membership can be applied on read.
+	Pentest    bool
+	CampaignID shared.ID
+}
+
+// RankKind names a rank list of the facts.
+type RankKind string
+
+// Rank lists.
+const (
+	RankFixNext RankKind = "fix_next"
+	RankSLADue  RankKind = "sla_due"
+)
+
+// FactReader reads the dashboard fact tables for one scope. Every method
+// filters on scope.TenantID first and applies the asset scope and the
+// campaign rule; filter dimensions the table does not carry are ignored by
+// the caller's contract (the catalog only allows the ones it carries).
+type FactReader interface {
+	// FactsBuiltAt is when the tenant's facts were last fully built (nil:
+	// never, the first build has not finished).
+	FactsBuiltAt(ctx context.Context, tenantID shared.ID) (*time.Time, error)
+	// CountOpen counts open findings (F1) grouped by groupBy.
+	CountOpen(ctx context.Context, scope ReadScope, f WidgetFilter, groupBy []Dimension) ([]CountRow, error)
+	// SLAWithin returns open findings with an SLA not breached (num) and
+	// open findings with an SLA (den) (F1).
+	SLAWithin(ctx context.Context, scope ReadScope, f WidgetFilter) (num, den int64, err error)
+	// Days returns the daily flows (F2) for days in [from, to], by key.
+	Days(ctx context.Context, scope ReadScope, f WidgetFilter, groupBy Dimension, from, to time.Time) ([]DayRow, error)
+	// FixHist sums the fix-hours histograms (F2) of days in [from, to].
+	FixHist(ctx context.Context, scope ReadScope, f WidgetFilter, groupBy Dimension, from, to time.Time) ([]FixHistRow, error)
+	// Rank returns up to limit findings of a rank list (F3), merged across
+	// the in-scope assets, with their list fields, still open.
+	Rank(ctx context.Context, scope ReadScope, kind RankKind, f WidgetFilter, limit int) ([]RankItem, error)
+	// CampaignsOf lists the pentest campaigns userID is a member of in the
+	// tenant.
+	CampaignsOf(ctx context.Context, tenantID, userID shared.ID) ([]shared.ID, error)
+
+	// CrownJewels counts the crown jewels in scope (designated) and those
+	// with at least one open finding of the given priority classes (F1,
+	// campaign rule applied).
+	CrownJewels(ctx context.Context, scope ReadScope, priorities []string) (CrownJewelCounts, error)
+	// Discovery reads the coverage ledger (asset_coverage) for the assets in
+	// scope: assets the ledger tracks, and those with a successful run of
+	// any capability since the given time.
+	Discovery(ctx context.Context, scope ReadScope, since time.Time) (DiscoveryCounts, error)
+	// UncoveredCauses counts the uncovered assets in scope (tracked, not
+	// covered since the given time) by why they are uncovered, one cause per
+	// asset (no_sensor, platform_failure, paused, target_unreachable,
+	// never_run, overdue, out_of_scope, other).
+	UncoveredCauses(ctx context.Context, scope ReadScope, since time.Time) ([]CauseRow, error)
+	// HasFindings reports whether any published finding, in any status, is
+	// in the scope: until one is, a findings figure has nothing to count and
+	// is not measured (never a "0" or a met target).
+	HasFindings(ctx context.Context, scope ReadScope) (bool, error)
+	// Validation counts open findings in scope with validation evidence,
+	// and the retests completed since the given time.
+	Validation(ctx context.Context, scope ReadScope, since time.Time) (ValidationCounts, error)
+	// VisibleAssets keeps the ids that are assets of the tenant, not
+	// deleted, not program-only and inside the scope.
+	VisibleAssets(ctx context.Context, scope ReadScope, ids []shared.ID) (map[shared.ID]bool, error)
+
+	// Outcomes counts the findings in scope by where they went: in progress
+	// now, and fixed, accepted and false positive since the given time
+	// (resolved_at), with the findings list's rules (campaign rule applied).
+	Outcomes(ctx context.Context, scope ReadScope, since time.Time) (OutcomeCounts, error)
+	// OrgIntake sums the organization's receipts with activity since the
+	// given time, per source group and tool. Receipts are organization-wide
+	// (tool volumes are not asset-scoped): callers use it for an
+	// organization read only.
+	OrgIntake(ctx context.Context, tenantID shared.ID, since time.Time) ([]IntakeRow, error)
+	// TopFix returns the proposed remediation suggestion that clears the most
+	// risk points over its members that are open and inside the scope (asset
+	// rule, data scope, campaign rule), pentest findings left out; nil when no
+	// suggestion has such a member.
+	TopFix(ctx context.Context, scope ReadScope) (*FixLever, error)
+
+	// NewAssets counts the assets in scope added to the inventory
+	// (created_at) since from, and between prevFrom and from, by asset type.
+	NewAssets(ctx context.Context, scope ReadScope, from, prevFrom time.Time) ([]NewAssetRow, error)
+	// CertificateExpiry counts the certificates in scope by how soon they
+	// expire, measured from now.
+	CertificateExpiry(ctx context.Context, scope ReadScope, now time.Time) (CertificateExpiryCounts, error)
+	// AcceptanceExpiry counts the accepted findings in scope (campaign rule
+	// applied) by how soon their risk acceptance ends, measured from now.
+	AcceptanceExpiry(ctx context.Context, scope ReadScope, now time.Time) (AcceptanceExpiryCounts, error)
+
+	// ClosureQuality counts, for the findings in scope (campaign rule
+	// applied), the fixes by a person and by the platform and the fixed
+	// findings that came back, since from and between prevFrom and from, and
+	// the pending Ready to close proposals in the scope of the Ready to close
+	// list.
+	ClosureQuality(ctx context.Context, scope ReadScope, from, prevFrom time.Time) (ClosureQualityCounts, error)
+	// ActiveCampaigns returns the active remediation campaigns the reader of
+	// the scope may see, each with its task summary over the reader's view
+	// (the campaign list's visibility and summary rules).
+	ActiveCampaigns(ctx context.Context, scope ReadScope) ([]CampaignProgressRow, error)
+	// ClosedByTool counts, per tool, the findings in scope closed since from
+	// and those of them closed as false positive.
+	ClosedByTool(ctx context.Context, scope ReadScope, from time.Time) ([]ToolClosedRow, error)
+	// EmergingThreats counts the emerging-threat alerts with at least one
+	// asset in scope, with the alert list's own summary statement.
+	EmergingThreats(ctx context.Context, scope ReadScope) (EmergingThreatCounts, error)
+}
+
+// ClosureQualityCounts are the closure figures of a scope. Current is the
+// window, Previous the window before it (same comparisons).
+type ClosureQualityCounts struct {
+	Current, Previous ClosureWindowCounts
+	// ReadyToClose is the pending, eligible proposals now (not windowed).
+	ReadyToClose int64
+}
+
+// ClosureWindowCounts are the closes and reopens of one window.
+type ClosureWindowCounts struct {
+	// ByPerson: status resolved, resolved_at in the window, resolved_by set.
+	// Automatic: the same with no person recorded (resolved_by empty).
+	ByPerson, Automatic int64
+	// Reopened: a fixed finding came back (last_reopened_at in the window).
+	Reopened int64
+}
+
+// CampaignProgressRow is one active campaign with its task summary over the
+// reader's view.
+type CampaignProgressRow struct {
+	ID      shared.ID
+	Name    string
+	DueDate *time.Time
+	// Tasks are the tasks the reader sees, Done those done, Overdue the live
+	// ones past their deadline.
+	Tasks, Done, Overdue int64
+}
+
+// ToolClosedRow is one tool's closes in a window.
+type ToolClosedRow struct {
+	Tool string
+	// Closed: closed statuses with resolved_at in the window. FalsePositive:
+	// of them, closed as false positive.
+	Closed, FalsePositive int64
+}
+
+// EmergingThreatCounts are the emerging-threat alerts of a scope: Seen is
+// every alert in any state; the others count the open alerts (new,
+// acknowledged, remediating) by level, as the alert list's summary does.
+type EmergingThreatCounts struct {
+	Seen, Open, Immediate, Digest, Listed int64
+}
+
+// NewAssetRow is one asset type's additions: in the window and in the
+// window before it.
+type NewAssetRow struct {
+	AssetType string
+	Current   int64
+	Previous  int64
+}
+
+// CertificateExpiryCounts are the certificates of a scope by expiry band.
+// The bands use the asset list's expiry filters (expires_after is strictly
+// after, expires_before strictly before), so each band equals its list.
+type CertificateExpiryCounts struct {
+	// Total is every certificate in scope, with or without a known expiry.
+	Total int64
+	// Expired: expiry before now. Within7d: after now, before now + 7 days.
+	// Within30d: after now + 7 days, before now + 30 days. Within90d: after
+	// now + 30 days, before now + 90 days.
+	Expired, Within7d, Within30d, Within90d int64
+}
+
+// AcceptanceExpiryCounts are the accepted findings of a scope by when their
+// acceptance ends.
+type AcceptanceExpiryCounts struct {
+	// Accepted is every accepted finding in scope.
+	Accepted int64
+	// Within7d: ends at or before now + 7 days. Within30d: after now + 7
+	// days, at or before now + 30 days. Later: after now + 30 days.
+	Within7d, Within30d, Later int64
+}
+
+// FixLever is one remediation suggestion re-counted in a read's scope:
+// Findings open members, Assets their distinct assets, PriorityOpen those of
+// class P0 or P1, Points their risk points.
+type FixLever struct {
+	SuggestionID shared.ID
+	Title        string
+	Findings     int64
+	Assets       int64
+	PriorityOpen int64
+	Points       int64
+}
+
+// RiskPoints is the risk weight of n open findings, the same formula as
+// the remediation risk points: by priority class (P0 8, P1 4, P2 2, P3 1),
+// or by severity for an unclassified finding (critical 4, high 2, medium and
+// low 1).
+func RiskPoints(priorityClass, severity string, n int64) int64 {
+	switch priorityClass {
+	case "P0":
+		return 8 * n
+	case "P1":
+		return 4 * n
+	case "P2":
+		return 2 * n
+	case "P3":
+		return n
+	}
+	switch severity {
+	case "critical":
+		return 4 * n
+	case "high":
+		return 2 * n
+	case "medium", "low":
+		return n
+	}
+	return 0
+}
+
+// OutcomeCounts are the findings of a scope by outcome.
+type OutcomeCounts struct {
+	InProgress    int64
+	Fixed         int64
+	Accepted      int64
+	FalsePositive int64
+}
+
+// IntakeRow is the receipts of one source (a source group and a tool) in a
+// window: their sums, the latest receipt and the median time between
+// receipts (nil with fewer than three).
+type IntakeRow struct {
+	Origin        string
+	Tool          string
+	Receipts      int64
+	Received      int64
+	Created       int64
+	StillDetected int64
+	Reopened      int64
+	Closed        int64
+	Skipped       int64
+	Failed        int64
+	Suppressed    int64
+	LastAt        time.Time
+	LastStatus    string
+	LastReceiptID shared.ID
+	MedianGap     *time.Duration
+	// Assets is the assets the source's reports created or updated.
+	Assets int64
+	// Outcomes sums the receipt outcomes of the source's reports (where the
+	// received findings went beyond the counts above), by outcome code.
+	Outcomes map[string]int64
+	// Released is the reports of the source applied from the results
+	// quarantine (the sender stays the original sensor).
+	Released int64
+	// Instances are the senders of the source's reports (sensors, CI
+	// repositories, connectors), busiest first; their figures sum to the
+	// row's.
+	Instances []IntakeInstanceRow
+}
+
+// IntakeInstanceRow is what one sender of a source sent in the window.
+// Name is the sender's display name (a tenant sensor's current name, a CI
+// repository, a connector source); Owned is true for a sensor of the
+// tenant, the only kind with a page to open.
+type IntakeInstanceRow struct {
+	Kind       string
+	ID         string
+	Name       string
+	Owned      bool
+	Receipts   int64
+	Received   int64
+	Assets     int64
+	LastAt     time.Time
+	LastStatus string
+	MedianGap  *time.Duration
+	// Released is the reports of this sender applied from the results
+	// quarantine.
+	Released int64
+}
+
+// CrownJewelCounts are the crown jewels of a scope.
+type CrownJewelCounts struct {
+	Designated int64
+	Exposed    int64
+}
+
+// DiscoveryCounts are the coverage ledger figures of a scope. Uncovered =
+// Tracked - Covered.
+type DiscoveryCounts struct {
+	Tracked int64
+	Covered int64
+}
+
+// Coverage gap causes: why an uncovered asset is uncovered
+// (docs/architecture/dashboards.md, "Discovery coverage by cause").
+const (
+	CoverageCauseNoSensor          = "no_sensor"
+	CoverageCausePlatformFailure   = "platform_failure"
+	CoverageCausePaused            = "paused"
+	CoverageCauseTargetUnreachable = "target_unreachable"
+	CoverageCauseNeverRun          = "never_run"
+	CoverageCauseOverdue           = "overdue"
+	CoverageCauseOutOfScope        = "out_of_scope"
+	CoverageCauseOther             = "other"
+)
+
+// CoverageCauses lists the causes in precedence order (one cause per asset,
+// the first that applies): what the platform must fix, a paused pair, what
+// the organization owns, never run, overdue, refused by scope, other.
+func CoverageCauses() []string {
+	return []string{CoverageCauseNoSensor, CoverageCausePlatformFailure, CoverageCausePaused,
+		CoverageCauseTargetUnreachable, CoverageCauseNeverRun, CoverageCauseOverdue,
+		CoverageCauseOutOfScope, CoverageCauseOther}
+}
+
+// IsCoverageCause reports a known cause key.
+func IsCoverageCause(c string) bool {
+	for _, k := range CoverageCauses() {
+		if k == c {
+			return true
+		}
+	}
+	return false
+}
+
+// CauseRow is the uncovered assets of one coverage gap cause.
+type CauseRow struct {
+	Cause string
+	Count int64
+}
+
+// ValidationCounts are the validation figures of a scope.
+type ValidationCounts struct {
+	// Open findings, and those of them with validation evidence.
+	Open      int64
+	Validated int64
+	// RetestsRun is the retests completed in the window.
+	RetestsRun int64
+}

@@ -1,0 +1,282 @@
+package attack
+
+import (
+	"context"
+	"reflect"
+	"testing"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+)
+
+// fakeSurfaceAssets answers Count from a callback over the filter, so a test
+// can prove which filter produced which number.
+type fakeSurfaceAssets struct {
+	asset.Repository // unimplemented methods panic: GetStats must not call them
+	count            func(f asset.Filter) int64
+	list             []*asset.Asset
+	breakdown        map[string]asset.AssetTypeStats
+	listOpts         []asset.ListOptions
+	listFilters      []asset.Filter
+}
+
+func (f *fakeSurfaceAssets) Count(_ context.Context, filter asset.Filter) (int64, error) {
+	return f.count(filter), nil
+}
+
+func (f *fakeSurfaceAssets) List(_ context.Context, flt asset.Filter, opts asset.ListOptions, _ pagination.Pagination) (pagination.Result[*asset.Asset], error) {
+	f.listOpts = append(f.listOpts, opts)
+	f.listFilters = append(f.listFilters, flt)
+	return pagination.Result[*asset.Asset]{Data: f.list, Total: int64(len(f.list))}, nil
+}
+
+func (f *fakeSurfaceAssets) GetAssetTypeBreakdown(context.Context, shared.ID, *shared.DataScope, *attribution.StateFilter) (map[string]asset.AssetTypeStats, error) {
+	return f.breakdown, nil
+}
+
+func (f *fakeSurfaceAssets) GetAverageRiskScore(context.Context, shared.ID, *shared.DataScope, *attribution.StateFilter) (float64, error) {
+	return 42, nil
+}
+
+// countingHistory answers the newly exposed count and records the options.
+type countingHistory struct {
+	opts  []asset.ListStateHistoryOptions
+	total int
+}
+
+func (h *countingHistory) List(_ context.Context, _ shared.ID, opts asset.ListStateHistoryOptions) ([]*asset.AssetStateChange, int, error) {
+	h.opts = append(h.opts, opts)
+	return nil, h.total, nil
+}
+
+func (h *countingHistory) GetAssetRefs(context.Context, shared.ID, []shared.ID) (map[shared.ID]asset.StateChangeAssetRef, error) {
+	return nil, nil
+}
+
+// The overview counts internet-facing assets with the one definition
+// (asset.InternetFacing, not exposure alone), and newly exposed from the
+// state history exactly like Assets > What changed.
+func TestGetStats_InternetFacingAndNewlyExposedAgreeWithOtherPages(t *testing.T) {
+	before := time.Now().UTC().Add(-trendWindow)
+	repo := &fakeSurfaceAssets{count: func(f asset.Filter) int64 {
+		if len(f.Exposures) > 0 {
+			t.Errorf("a count filtered on exposure alone: %v", f.Exposures)
+		}
+		switch {
+		case f.CreatedAfter != nil:
+			if f.CreatedAfter.Before(before.Add(-time.Minute)) || f.CreatedAfter.After(time.Now().UTC().Add(-trendWindow).Add(time.Minute)) {
+				t.Errorf("CreatedAfter = %v, want about now-7d", f.CreatedAfter)
+			}
+			return 7
+		case f.InternetFacing != nil && *f.InternetFacing && len(f.Criticalities) > 0:
+			return 10
+		case f.InternetFacing != nil && *f.InternetFacing:
+			return 20
+		default:
+			return 100
+		}
+	}}
+	hist := &countingHistory{total: 3}
+	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	svc.SetStateHistory(hist)
+
+	got, err := svc.GetStats(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if got.TotalAssets != 100 || got.InternetFacingAssets != 20 || got.CriticalInternetFacingAssets != 10 {
+		t.Fatalf("totals = %d/%d/%d, want 100/20/10", got.TotalAssets, got.InternetFacingAssets, got.CriticalInternetFacingAssets)
+	}
+	if got.TotalAssetsChange != 7 || got.NewlyExposed != 3 {
+		t.Fatalf("trends = %d/%d, want 7/3", got.TotalAssetsChange, got.NewlyExposed)
+	}
+	want := asset.NewlyExposedHistory(asset.ListStateHistoryOptions{})
+	var counted bool
+	for _, o := range hist.opts {
+		if reflect.DeepEqual(o.ChangeTypes, want.ChangeTypes) && reflect.DeepEqual(o.NewValues, want.NewValues) && o.From != nil {
+			counted = true
+		}
+	}
+	if !counted {
+		t.Fatalf("newly exposed not counted with asset.NewlyExposedHistory: %+v", hist.opts)
+	}
+	if got.TrendWindowDays != 7 {
+		t.Fatalf("TrendWindowDays = %d, want 7", got.TrendWindowDays)
+	}
+	// The exposed list is ordered by risk, not by creation date, with the id
+	// tie-breaker the shared sort adds so pages never repeat or skip rows.
+	if len(repo.listOpts) == 0 || repo.listOpts[0].Sort == nil || repo.listOpts[0].Sort.IsEmpty() {
+		t.Fatalf("exposed list must be sorted, got %+v", repo.listOpts)
+	}
+	if sql := repo.listOpts[0].Sort.SQL(); sql != "risk_score DESC, last_seen DESC, id DESC" {
+		t.Fatalf("exposed list sort = %q", sql)
+	}
+}
+
+// Legacy names fold into their core type, every type the tenant has is
+// listed (the old fixed list hid subdomains, IPs and certificates), and the
+// largest bucket comes first.
+func TestFoldAssetTypeBreakdown(t *testing.T) {
+	got := foldAssetTypeBreakdown(map[string]asset.AssetTypeStats{
+		"application": {Total: 3, Exposed: 1},
+		"website":     {Total: 2, Exposed: 2}, // pre-000130 rows
+		"subdomain":   {Total: 9, Exposed: 4},
+		"ip_address":  {Total: 5, Exposed: 0},
+		"certificate": {Total: 5, Exposed: 0},
+		"repository":  {Total: 0, Exposed: 0},
+	})
+	want := []AssetTypeBreakdown{
+		{Type: "subdomain", Total: 9, Exposed: 4},
+		{Type: "application", Total: 5, Exposed: 3},
+		{Type: "certificate", Total: 5, Exposed: 0},
+		{Type: "ip_address", Total: 5, Exposed: 0},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("breakdown =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+type fakeHistory struct {
+	rows []*asset.AssetStateChange
+	refs map[shared.ID]asset.StateChangeAssetRef
+}
+
+func (h *fakeHistory) List(context.Context, shared.ID, asset.ListStateHistoryOptions) ([]*asset.AssetStateChange, int, error) {
+	return h.rows, len(h.rows), nil
+}
+
+func (h *fakeHistory) GetAssetRefs(context.Context, shared.ID, []shared.ID) (map[shared.ID]asset.StateChangeAssetRef, error) {
+	return h.refs, nil
+}
+
+func mustAsset(t *testing.T, tenant shared.ID, name string) *asset.Asset {
+	t.Helper()
+	a, err := asset.NewAsset(name, asset.AssetTypeDomain, asset.CriticalityMedium)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetTenantID(tenant)
+	return a
+}
+
+func change(t *testing.T, tenant, assetID shared.ID, ct asset.StateChangeType, at time.Time) *asset.AssetStateChange {
+	t.Helper()
+	c := asset.ReconstituteStateChange(shared.NewID(), tenant, assetID, ct, "", "", "", "", "", asset.ChangeSourceScan, nil, at, at)
+	return c
+}
+
+// Recent changes: additions from the inventory, removals and other changes
+// from state history, newest first; an "appeared" row of an asset already
+// listed as added is not shown twice; restricted members see additions only.
+func TestGetRecentChanges_MergesHistory(t *testing.T) {
+	tenant := shared.NewID()
+	added := mustAsset(t, tenant, "new.example.com")
+	gone, changed := shared.NewID(), shared.NewID()
+	now := time.Now().UTC()
+
+	repo := &fakeSurfaceAssets{list: []*asset.Asset{added}}
+	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	svc.SetStateHistory(&fakeHistory{
+		rows: []*asset.AssetStateChange{
+			change(t, tenant, added.ID(), asset.StateChangeAppeared, now),
+			change(t, tenant, gone, asset.StateChangeDisappeared, now.Add(time.Hour)),
+			change(t, tenant, changed, asset.StateChangeExposureChanged, now.Add(-time.Hour)),
+		},
+		refs: map[shared.ID]asset.StateChangeAssetRef{
+			added.ID(): {Name: "new.example.com", Type: "domain"},
+			gone:       {Name: "old.example.com", Type: "domain"},
+			changed:    {Name: "api.example.com", Type: "subdomain"},
+		},
+	})
+
+	got := svc.getRecentChanges(context.Background(), tenant, nil, approvedFilter(), 5)
+	var kinds []string
+	for _, c := range got {
+		kinds = append(kinds, c.Type+":"+c.AssetName)
+	}
+	want := []string{"removed:old.example.com", "added:new.example.com", "changed:api.example.com"}
+	if !reflect.DeepEqual(kinds, want) {
+		t.Fatalf("recent changes = %v, want %v", kinds, want)
+	}
+
+	scoped := svc.getRecentChanges(context.Background(), tenant, &shared.DataScope{TenantID: tenant, UserID: shared.NewID()}, approvedFilter(), 5)
+	if len(scoped) != 1 || scoped[0].Type != "added" {
+		t.Fatalf("restricted member must see only in-scope additions, got %+v", scoped)
+	}
+}
+
+type fakeRecords struct {
+	tenant shared.ID
+	recs   map[string]attribution.Record
+}
+
+func (f fakeRecords) Records(_ context.Context, tenantID shared.ID, ids []string) (map[string]attribution.Record, error) {
+	out := map[string]attribution.Record{}
+	if !tenantID.Equals(f.tenant) {
+		return out, nil
+	}
+	for _, id := range ids {
+		if r, ok := f.recs[id]; ok {
+			out[id] = r
+		}
+	}
+	return out, nil
+}
+
+func approvedFilter() attribution.StateFilter {
+	f, _, _ := attribution.ParseFilter([]string{attribution.FilterAttributed})
+	return f
+}
+
+// The overview's recent changes cover the same population as its stat tiles:
+// the "added" query carries the attribution filter, and a rejected or
+// needs-review name never appears, as an addition or as a history change.
+func TestGetRecentChanges_ExcludesRejectedAndNeedsReview(t *testing.T) {
+	tenant := shared.NewID()
+	review := mustAsset(t, tenant, "a.example.co.uk")
+	rejected := mustAsset(t, tenant, "no.example.com")
+	legacy := mustAsset(t, tenant, "legacy.example.com")
+	histRejected := shared.NewID()
+	now := time.Now().UTC()
+	repo := &fakeSurfaceAssets{list: []*asset.Asset{review, rejected, legacy}}
+	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	svc.SetStateHistory(&fakeHistory{
+		rows: []*asset.AssetStateChange{change(t, tenant, histRejected, asset.StateChangeDisappeared, now)},
+		refs: map[shared.ID]asset.StateChangeAssetRef{histRejected: {Name: "hist.example.com", Type: "domain"}},
+	})
+	svc.SetAttributionRecords(fakeRecords{tenant: tenant, recs: map[string]attribution.Record{
+		review.ID().String():   {State: attribution.StateNeedsReview},
+		rejected.ID().String(): {State: attribution.StateRejected},
+		histRejected.String():  {State: attribution.StateRejected},
+	}})
+	got := svc.getRecentChanges(context.Background(), tenant, nil, approvedFilter(), 5)
+	if len(got) != 1 || got[0].AssetName != "legacy.example.com" || got[0].AssetID != legacy.ID().String() {
+		t.Fatalf("recent changes = %+v, want only the legacy asset", got)
+	}
+	if len(repo.listFilters) == 0 || repo.listFilters[0].Attribution == nil {
+		t.Fatalf("the added query must carry the attribution filter, got %+v", repo.listFilters)
+	}
+}
+
+// research/22 P0-12: every count and the exposed list cover approved assets
+// only, so a rejected or unreviewed name is never shown as exposed surface.
+func TestGetStats_ApprovedOnly(t *testing.T) {
+	var unfiltered int
+	repo := &fakeSurfaceAssets{count: func(f asset.Filter) int64 {
+		if f.Attribution == nil || !f.Attribution.Unrecorded || len(f.Attribution.States) != 3 {
+			unfiltered++
+		}
+		return 1
+	}}
+	svc := NewSurfaceService(repo, nil, logger.NewNop())
+	if _, err := svc.GetStats(context.Background(), shared.NewID()); err != nil {
+		t.Fatal(err)
+	}
+	if unfiltered != 0 {
+		t.Fatalf("%d counts without the approved attribution filter", unfiltered)
+	}
+}

@@ -1,6 +1,6 @@
 /**
  * Scan zone API types (RFC-023): /api/v1/scan-zones.
- * Contract: api/docs/architecture/scan-zones.md ("UI contract").
+ * Contract: server/docs/architecture/scan-zones.md ("UI contract").
  */
 import type { components } from '@/lib/api/generated/api.types'
 import type { ScanTargetOptions, SkipGroup } from '@/lib/api/scan-types'

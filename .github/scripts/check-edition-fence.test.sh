@@ -18,10 +18,10 @@ newrepo() {
   local d
   d="$(mktemp -d)"
   git -C "$d" init -q -b main
-  mkdir -p "$d/api" "$d/web/src"
+  mkdir -p "$d/server" "$d/web/src"
   sed -n '/^# Extension mount points/,$p' "$here/../../.gitignore" > "$d/.gitignore"
-  printf 'module example.com/api\n\ngo 1.25\n' > "$d/api/go.mod"
-  git -C "$d" add -f .gitignore api/go.mod
+  printf 'module example.com/api\n\ngo 1.25\n' > "$d/server/go.mod"
+  git -C "$d" add -f .gitignore server/go.mod
   echo "$d"
 }
 
@@ -42,8 +42,8 @@ check "clean tree" 0
 check "mount point file tracked" 1 web/src/extensions/web.ts 'x'
 check "route group tracked" 1 'web/src/app/(dashboard)/(extensions)/a/page.tsx' 'x'
 check "console route group tracked" 1 'web/console/src/app/(console)/(extensions)/a/page.tsx' 'x'
-check "replace in api/go.mod" 1 api/go.mod $'module example.com/api\n\nreplace example.com/x => ../x\n'
-check "replace block in api/go.mod" 1 api/go.mod $'module example.com/api\n\nreplace (\n\texample.com/x => ../x\n)\n'
+check "replace in server/go.mod" 1 server/go.mod $'module example.com/api\n\nreplace example.com/x => ../x\n'
+check "replace block in server/go.mod" 1 server/go.mod $'module example.com/api\n\nreplace (\n\texample.com/x => ../x\n)\n'
 check "web direct mount import" 1 web/src/a.ts "import { x } from '@/extensions/web';"
 check "web relative mount import" 1 web/src/a/b.tsx "import x from '../extensions/y';"
 check "web alias import is fine" 0 web/src/a.ts "import { x } from '@extension/web';"
@@ -51,7 +51,7 @@ check "web default import is fine" 0 web/src/a.ts "import { x } from '@/extensio
 check "mount dir named in a non-config file" 1 web/src/b.ts "const p = 'src/extensions/';"
 check "mount dir named in next.config" 0 web/next.config.ts "const p = 'src/extensions/';"
 check "mount dir named in console next.config" 0 web/console/next.config.ts "const p = '../src/extensions';"
-check "restricted word in a source file" 1 api/internal/x/a.go "package x // $word"
+check "restricted word in a source file" 1 server/internal/x/a.go "package x // $word"
 check "restricted word, other case" 1 docs/a.md "About $(printf '%s' "$word" | tr a-z A-Z)"
 check "restricted word in a path" 1 "docs/$word.md" "x"
 

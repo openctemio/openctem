@@ -1,13 +1,13 @@
 name: Release Tooling
 
-# The release train's scripts and the version manifest (api/docs/rfcs/RFC-037).
+# The release train's scripts and the version manifest (server/docs/rfcs/RFC-037).
 #
 #   Release scripts       shellcheck + the shell tests of .github/scripts/release
 #                         (including the release-note labels and the Upgrade notes block)
 #   Version consistency   every versioned default agrees with versions.yaml
 #                         (the API embeds a copy of it: no Go file holds a
 #                         version),
-#                         web/package.json stays 0.0.0, and api/deploy/VERSION
+#                         web/package.json stays 0.0.0, and server/deploy/VERSION
 #                         (the tag checkout's install version, written on
 #                         release branches only) names an existing tag; on
 #                         release/vX.Y.Z (and on main right after it merges,
@@ -34,17 +34,17 @@ on:
       - .github/scripts/pr-labels.py
       - .github/workflows/pr-hygiene.yml
       - .github/workflows/release-*.yml
-      - api/scripts/changelog.py
-      - api/.env.example
-      - api/deploy/.env.example
-      - api/deploy/VERSION
-      - api/deploy/docker-compose.yml
-      - api/deploy/docker-compose.job-signer.yml
-      - api/internal/versions/**
-      - api/configs/sensor-products/**
-      - api/internal/app/sensor/seccomp/**
-      - api/deploy/sensor/**
-      - api/deploy/docker-compose.sensor.yml
+      - server/scripts/changelog.py
+      - server/.env.example
+      - server/deploy/.env.example
+      - server/deploy/VERSION
+      - server/deploy/docker-compose.yml
+      - server/deploy/docker-compose.job-signer.yml
+      - server/internal/versions/**
+      - server/configs/sensor-products/**
+      - server/internal/app/sensor/seccomp/**
+      - server/deploy/sensor/**
+      - server/deploy/docker-compose.sensor.yml
       - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   push:
@@ -57,17 +57,17 @@ on:
       - .github/scripts/pr-labels.py
       - .github/workflows/pr-hygiene.yml
       - .github/workflows/release-*.yml
-      - api/scripts/changelog.py
-      - api/.env.example
-      - api/deploy/.env.example
-      - api/deploy/VERSION
-      - api/deploy/docker-compose.yml
-      - api/deploy/docker-compose.job-signer.yml
-      - api/internal/versions/**
-      - api/configs/sensor-products/**
-      - api/internal/app/sensor/seccomp/**
-      - api/deploy/sensor/**
-      - api/deploy/docker-compose.sensor.yml
+      - server/scripts/changelog.py
+      - server/.env.example
+      - server/deploy/.env.example
+      - server/deploy/VERSION
+      - server/deploy/docker-compose.yml
+      - server/deploy/docker-compose.job-signer.yml
+      - server/internal/versions/**
+      - server/configs/sensor-products/**
+      - server/internal/app/sensor/seccomp/**
+      - server/deploy/sensor/**
+      - server/deploy/docker-compose.sensor.yml
       - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   workflow_dispatch:
@@ -143,9 +143,9 @@ jobs:
         env:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
-          for f in api/internal/app/sensor/seccomp/sensor.json api/deploy/sensor/seccomp.json; do
+          for f in server/internal/app/sensor/seccomp/sensor.json server/deploy/sensor/seccomp.json; do
             if ! cmp -s "$f" .sensor-release/docker/seccomp/sensor.json; then
-              echo "::error file=$f::differs from docker/seccomp/sensor.json of sensor $TAG: copy that file here (both copies) and update releasedSeccompSHA256 in api/internal/app/sensor/seccomp_test.go"
+              echo "::error file=$f::differs from docker/seccomp/sensor.json of sensor $TAG: copy that file here (both copies) and update releasedSeccompSHA256 in server/internal/app/sensor/seccomp_test.go"
               exit 1
             fi
           done
@@ -166,5 +166,5 @@ jobs:
         if: steps.guides.outputs.present == 'true'
         working-directory: .sensor-release
         env:
-          INSTALL_GUIDES_EXTRA: ${{ github.workspace }}/api/configs/sensor-products/sensor/*.tmpl
+          INSTALL_GUIDES_EXTRA: ${{ github.workspace }}/server/configs/sensor-products/sensor/*.tmpl
         run: go test -count=1 -run 'TestInstallGuides' .

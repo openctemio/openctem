@@ -1,0 +1,245 @@
+package ingest
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/openctemio/ctis/v2"
+
+	"github.com/openctemio/openctem/server/pkg/domain/ingestreport"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
+)
+
+// hexDigest is a CTIS 2.0 content digest: 64 lower-case hex characters.
+func hexDigest(c string) string { return strings.Repeat(c, 64) }
+
+func toolWithRelease(digest string) *ctis.Tool {
+	return &ctis.Tool{Name: "nuclei", Content: []ctis.ToolContent{
+		{Name: "trivy-db", SHA256: hexDigest("0")},
+		{Name: "nuclei-templates", Version: "v10.4.9", SHA256: digest},
+	}}
+}
+
+// ruleReport is a report whose rule catalog holds one template rule and one
+// finding naming it.
+func ruleReport(tool *ctis.Tool, rule ctis.Rule, f ctis.Finding) (*ctis.Report, *ctis.Finding) {
+	rule.ID = "r1"
+	f.RuleRef = "r1"
+	r := &ctis.Report{Tool: tool, Rules: []ctis.Rule{rule}, Findings: []ctis.Finding{f}}
+	return r, &r.Findings[0]
+}
+
+func TestFindingTemplateProvenance(t *testing.T) {
+	d := hexDigest("c")
+	rel := hexDigest("d")
+	r, f := ruleReport(toolWithRelease(rel), ctis.Rule{RuleID: "x", ContentSHA256: d, ContentPath: "http/x.yaml"}, ctis.Finding{})
+	got := findingTemplateProvenance(f, r)
+	if got.TemplateDigest != "sha256:"+d || got.TemplatePath != "http/x.yaml" || got.TemplatesVersion != "v10.4.9" || got.TemplatesDigest != "sha256:"+rel {
+		t.Fatalf("provenance %+v", got)
+	}
+	if !findingTemplateProvenance(&ctis.Finding{}, &ctis.Report{Tool: toolWithRelease(rel)}).Empty() {
+		t.Error("a finding without a digest has provenance")
+	}
+	// The properties of a finding carry no meaning: a planted digest is ignored.
+	planted := &ctis.Finding{Properties: ctis.Properties{"template_digest": "sha256:" + d, "template_path": "http/x.yaml"}}
+	if !findingTemplateProvenance(planted, &ctis.Report{Tool: toolWithRelease(rel)}).Empty() {
+		t.Error("properties.template_digest set provenance")
+	}
+	if v, dg := reportTemplateRelease(&ctis.Tool{Name: "nuclei", Content: []ctis.ToolContent{{Name: "other", SHA256: d}}}); v != "" || dg != "" {
+		t.Error("another content name read as the template release")
+	}
+	if v, dg := reportTemplateRelease(nil); v != "" || dg != "" {
+		t.Error("nil tool read")
+	}
+}
+
+// The exposure class comes from the template's tags as the sensor reported
+// them, and an attacking tag wins over an exposure tag.
+func TestFindingTemplateProvenance_ExposureClass(t *testing.T) {
+	rule := ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("c")}
+	r, f := ruleReport(nil, rule, ctis.Finding{Tags: []string{"exposure", "swagger"}})
+	if !findingTemplateProvenance(f, r).ExposureClass {
+		t.Error("an exposure template is not marked")
+	}
+	r, f = ruleReport(nil, rule, ctis.Finding{Tags: []string{"exposure", "sqli"}})
+	if findingTemplateProvenance(f, r).ExposureClass {
+		t.Error("an attacking template is marked exposure")
+	}
+	own := ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("c")}
+	own.Extensions.Set(ctis.OpenCTEMNamespace, "rule_source", "tenant")
+	r, f = ruleReport(nil, own, ctis.Finding{Tags: []string{"exposure"}})
+	if findingTemplateProvenance(f, r).ExposureClass {
+		t.Error("an organization's own rule is marked exposure")
+	}
+}
+
+// The run's template release is one value across its reports, else unknown.
+func TestDecideRunCoverage_TemplatesDigest(t *testing.T) {
+	rel1 := hexDigest("1")
+	rel2 := hexDigest("2")
+	report := func(rel string) ingestreport.CoverageReport {
+		h, _ := json.Marshal(V2Header{Tool: toolWithRelease(rel), Metadata: ctis.ReportMetadata{CoverageType: ctis.CoverageFull}})
+		return ingestreport.CoverageReport{Integrity: protov2.IntegritySingle, ReportID: shared.NewID().String(), State: protov2.StateCompleted, ToolName: "nuclei",
+			Header: h, TouchedAssetIDs: []shared.ID{shared.NewID()}}
+	}
+	cov := func(rs ...ingestreport.CoverageReport) *ingestreport.CommandCoverage {
+		return &ingestreport.CommandCoverage{CommandType: "scan", CommandStatus: "completed", Reports: rs}
+	}
+	if d := decideCoverage(cov(report(rel1), report(rel1))); !d.eligible() || d.query.TemplatesDigest != "sha256:"+rel1 {
+		t.Fatalf("agreeing reports: %+v", d)
+	}
+	if d := decideCoverage(cov(report(rel1), report(rel2))); d.query.TemplatesDigest != "" {
+		t.Fatalf("disagreeing reports gave %q", d.query.TemplatesDigest)
+	}
+	if d := decideCoverage(cov(report("not-a-digest"))); d.query.TemplatesDigest != "" {
+		t.Fatalf("malformed release digest kept: %q", d.query.TemplatesDigest)
+	}
+}
+
+// driftRepo adds the template-drift queries to the coverage fake.
+type driftRepo struct {
+	*coverageFindingRepo
+	drifted     map[shared.ID]bool
+	runDigest   string
+	notObserved []shared.ID
+	err         error
+}
+
+func (r *driftRepo) TemplateDriftedFindings(_ context.Context, _ shared.ID, ids []shared.ID, runDigest string) ([]shared.ID, error) {
+	r.runDigest = runDigest
+	if r.err != nil {
+		return nil, r.err
+	}
+	var out []shared.ID
+	for _, id := range ids {
+		if r.drifted[id] {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+func (r *driftRepo) MarkCoverageNotObserved(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
+	r.notObserved = append(r.notObserved, ids...)
+	return ids, nil
+}
+
+// A covered run that ran other template content does not close a finding
+// last seen with another release: it becomes not_observed; the others
+// close as before. A failed drift lookup closes nothing.
+func TestEvaluateCommandCoverage_TemplateDriftIsNotObserved(t *testing.T) {
+	svc, base := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
+	same, drifted := shared.NewID(), shared.NewID()
+	base.stale = []shared.ID{same, drifted}
+	repo := &driftRepo{coverageFindingRepo: base, drifted: map[shared.ID]bool{drifted: true}}
+	svc.findingRepo = repo
+	out := svc.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID())
+	if len(base.resolved) != 1 || base.resolved[0] != same {
+		t.Fatalf("resolved %v, want only the finding without drift", base.resolved)
+	}
+	if len(repo.notObserved) != 1 || repo.notObserved[0] != drifted || len(out.NotObserved) != 1 || len(out.TemplateDrift) != 1 {
+		t.Fatalf("not_observed %v outcome %+v", repo.notObserved, out)
+	}
+
+	// Dry run: neither resolves nor marks.
+	svc2, base2 := coverageService(t, CoverageAutoResolveDryRun, []string{"nuclei"})
+	base2.stale = []shared.ID{drifted}
+	repo2 := &driftRepo{coverageFindingRepo: base2, drifted: map[shared.ID]bool{drifted: true}}
+	svc2.findingRepo = repo2
+	if out := svc2.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID()); len(repo2.notObserved) != 0 || len(base2.resolved) != 0 || len(out.TemplateDrift) != 1 {
+		t.Fatalf("dry run changed state: %+v", out)
+	}
+
+	// Lookup error: fail closed.
+	svc3, base3 := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
+	svc3.findingRepo = &driftRepo{coverageFindingRepo: base3, err: errors.New("db down")}
+	if out := svc3.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID()); len(base3.resolved) != 0 || out.Reason != "error" {
+		t.Fatalf("drift lookup error: %+v resolved %v", out, base3.resolved)
+	}
+}
+
+// A sensor that reports the template file on its own disk gets only the
+// path inside the pack stored.
+func TestFindingTemplateProvenance_SensorLocalPath(t *testing.T) {
+	abs := "/var/lib/openctem/content/nuclei-templates/versions/20261005T083220.302831790Z-7ae245/http/x.yaml"
+	r, f := ruleReport(nil, ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("c"), ContentPath: abs}, ctis.Finding{})
+	got := findingTemplateProvenance(f, r)
+	if got.TemplatePath != "http/x.yaml" {
+		t.Fatalf("template path = %q", got.TemplatePath)
+	}
+}
+
+// An absolute path outside the content store names no pack template: it is
+// dropped, never stored as its last segments.
+func TestFindingTemplateProvenance_OtherAbsolutePathDropped(t *testing.T) {
+	d := hexDigest("c")
+	for _, abs := range []string{"/abs/path.yaml", "/tmp/nuclei-signed-123/x.yaml", "/var/lib/openctem/workspaces/t/j-1/x.yaml"} {
+		r, f := ruleReport(nil, ctis.Rule{RuleID: "x", ContentSHA256: d, ContentPath: abs}, ctis.Finding{})
+		got := findingTemplateProvenance(f, r)
+		if got.TemplatePath != "" || got.TemplateDigest != "sha256:"+d {
+			t.Fatalf("%s: provenance = %+v, want the digest kept and no path", abs, got)
+		}
+	}
+}
+
+// secretRepo adds the secret not-observed mark to the coverage fake.
+type secretRepo struct {
+	*coverageFindingRepo
+	marked []shared.ID
+	calls  int
+}
+
+func (r *secretRepo) MarkCoverageSecretsNotObserved(_ context.Context, _ shared.ID, _ ingestreport.CoverageQuery) ([]shared.ID, error) {
+	r.calls++
+	id := shared.NewID()
+	r.marked = append(r.marked, id)
+	return []shared.ID{id}, nil
+}
+
+// A covered scan that stops seeing a secret marks it not observed in enforce
+// mode (even when nothing else is stale) and never in dry run; the ordinary
+// stale finding still resolves.
+func TestEvaluateCommandCoverage_SecretsAreMarkedNotResolved(t *testing.T) {
+	svc, base := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
+	repo := &secretRepo{coverageFindingRepo: base}
+	svc.findingRepo = repo
+	out := svc.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID())
+	if len(base.resolved) != 1 || repo.calls != 1 || len(out.NotObserved) != 1 || out.NotObserved[0] != repo.marked[0] {
+		t.Fatalf("enforce: resolved %v, mark calls %d, outcome %+v", base.resolved, repo.calls, out)
+	}
+
+	// Nothing else stale: the secret is still marked.
+	svc2, base2 := coverageService(t, CoverageAutoResolveEnforce, []string{"nuclei"})
+	base2.stale = nil
+	repo2 := &secretRepo{coverageFindingRepo: base2}
+	svc2.findingRepo = repo2
+	if out := svc2.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID()); repo2.calls != 1 || len(out.NotObserved) != 1 {
+		t.Fatalf("no ordinary stale: mark calls %d, outcome %+v", repo2.calls, out)
+	}
+
+	// Dry run writes nothing.
+	svc3, base3 := coverageService(t, CoverageAutoResolveDryRun, []string{"nuclei"})
+	repo3 := &secretRepo{coverageFindingRepo: base3}
+	svc3.findingRepo = repo3
+	if svc3.EvaluateCommandCoverage(context.Background(), shared.NewID(), shared.NewID()); repo3.calls != 0 || len(base3.resolved) != 0 {
+		t.Fatalf("dry run: mark calls %d resolved %v", repo3.calls, base3.resolved)
+	}
+}
+
+// An import that is not the result of a command the platform dispatched (API,
+// CTIS or CI upload) cannot set the exposure class, whatever tags it carries.
+func TestSightingProvenance_ExposureOnlyForCommandBoundResults(t *testing.T) {
+	r, f := ruleReport(nil, ctis.Rule{RuleID: "x", ContentSHA256: hexDigest("a")}, ctis.Finding{Tags: []string{"exposure", "swagger"}})
+	if !sightingProvenance(f, r, &alterScope{commandBound: true}).ExposureClass {
+		t.Fatal("a command-bound result must keep the exposure class")
+	}
+	for name, sc := range map[string]*alterScope{"nil scope": nil, "unbound import": {}} {
+		if sightingProvenance(f, r, sc).ExposureClass {
+			t.Errorf("%s set the exposure class", name)
+		}
+	}
+}

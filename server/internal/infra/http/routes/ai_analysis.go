@@ -1,0 +1,98 @@
+package routes
+
+import (
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+)
+
+// registerAIAnalysisRoutes wires AI agents and their runs
+// (docs/architecture/ai-analysis.md):
+//
+//   - reading AI agents: ai_triage:read (every member who uses AI may see who
+//     the AI agents are and who answers for them);
+//   - creating, deleting, changing owners or the preset, and resuming:
+//     service_accounts:manage plus a recent sign-in (an AI agent is a service
+//     account); the role grant ceiling and the owners' ceiling apply in the
+//     service;
+//   - disabling (the kill switch): service_accounts:manage;
+//   - pausing, and attesting (with a recent sign-in): ai_triage:read on the route, and in the service
+//     an accountable owner, or service_accounts:manage (pause) or an
+//     administrator (attest);
+//   - runs: findings:read and ai_triage:read, and the caller's data scope on
+//     the run's subject in the service;
+//   - asking for an analysis: findings:read and ai_triage:trigger, the
+//     finding in the caller's scope, rate-limited; the AI agent acts within
+//     its own principal.
+func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authMiddleware, userSyncMiddleware, moduleGate Middleware, rateLimiter *middleware.AITriageRateLimiter) {
+	if h == nil {
+		return
+	}
+	tenant := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	gated := append(append([]Middleware{}, tenant...), moduleGate)
+	manage := middleware.Require(permission.ServiceAccountsManage)
+	router.Group("/api/v1/ai/agents", func(r Router) {
+		r.GET("/", h.ListAIAgents, middleware.Require(permission.AITriageRead))
+		r.POST("/", h.CreateAIAgent, manage, requireStepUpSensitive())
+		r.GET("/{id}", h.GetAIAgent, middleware.Require(permission.AITriageRead))
+		r.DELETE("/{id}", h.DeleteAIAgent, manage, requireStepUpSensitive())
+		r.PUT("/{id}/owners", h.SetOwners, manage, requireStepUpSensitive())
+		r.PUT("/{id}/preset", h.SetPreset, manage, requireStepUpSensitive())
+		r.POST("/{id}/reactivate", h.Resume, manage, requireStepUpSensitive())
+		r.POST("/{id}/disable", h.Disable, manage)
+		r.POST("/{id}/suspend", h.Pause, middleware.Require(permission.AITriageRead))
+		r.POST("/{id}/attest", h.Attest, middleware.Require(permission.AITriageRead), requireStepUpSensitive())
+	}, gated...)
+	router.Group("/api/v1/ai/runs", func(r Router) {
+		r.GET("/{id}", h.GetRun, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
+	}, gated...)
+	// Asking an AI agent to analyze a finding spends model tokens:
+	// ai_triage:trigger, the finding in the caller's scope, rate-limited like
+	// AI triage (the limiter runs before the permission check on that route
+	// only). What the AI agent then does is bounded by its own principal, not
+	// by the caller. One group: the router refuses to mount a prefix twice.
+	analyzeChecks := []Middleware{}
+	if rateLimiter != nil {
+		analyzeChecks = append(analyzeChecks, rateLimiter.RequestMiddleware())
+	}
+	analyzeChecks = append(analyzeChecks, middleware.RequireAll(permission.FindingsRead, permission.AITriageTrigger))
+	router.Group("/api/v1/findings/{id}/ai", func(r Router) {
+		r.GET("/runs", h.ListFindingRuns, middleware.RequireAll(permission.FindingsRead, permission.AITriageRead))
+		r.POST("/analyze", h.AnalyzeFinding, analyzeChecks...)
+	}, gated...)
+}
+
+// registerAIKnowledgeRoutes wires the knowledge organizations give their AI
+// agents (docs/architecture/ai-knowledge.md):
+//
+//   - reading sources (names, state, counts; never text): ai_knowledge:read;
+//   - every change, and previewing what an AI agent would retrieve (which
+//     shows text): ai_knowledge:manage;
+//   - approving (text starts reaching AI agents) and deleting a source: also
+//     a recent sign-in. The service refuses an approval by the person who
+//     added the text, unless they are the organization owner.
+//
+// The tenant always comes from the token; AI agents never hold these
+// permissions (deny list).
+func registerAIKnowledgeRoutes(router Router, h *handler.AIKnowledgeHandler, authMiddleware, userSyncMiddleware, moduleGate Middleware) {
+	if h == nil {
+		return
+	}
+	tenant := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	gated := append(append([]Middleware{}, tenant...), moduleGate)
+	read := middleware.Require(permission.AIKnowledgeRead)
+	manage := middleware.Require(permission.AIKnowledgeManage)
+	router.Group("/api/v1/ai/knowledge", func(r Router) {
+		r.GET("/sources", h.ListSources, read)
+		r.POST("/sources", h.CreateSource, manage)
+		r.GET("/sources/{id}", h.GetSource, read)
+		r.PATCH("/sources/{id}", h.UpdateSource, manage)
+		r.DELETE("/sources/{id}", h.DeleteSource, manage, requireStepUpSensitive())
+		r.POST("/sources/{id}/approve", h.ApproveSource, manage, requireStepUpSensitive())
+		r.POST("/sources/{id}/reject", h.RejectSource, manage)
+		r.POST("/sources/{id}/disable", h.DisableSource, manage)
+		r.POST("/sources/{id}/documents", h.AddDocument, manage)
+		r.DELETE("/documents/{id}", h.DeleteDocument, manage)
+		r.POST("/preview", h.Preview, manage)
+	}, gated...)
+}

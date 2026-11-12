@@ -10,7 +10,7 @@
  * - Channel subscription management (re-subscribed after every reconnect)
  * - Connection state tracking
  *
- * Design: api/docs/rfcs/RFC-045-websocket-auth.md.
+ * Design: server/docs/rfcs/RFC-045-websocket-auth.md.
  */
 
 import type {

@@ -3,7 +3,7 @@
 /**
  * A scan a platform policy owns (continuous coverage, automatic enrichment):
  * it carries the policy's runs, has no owner and cannot be edited, run,
- * scheduled or taken over from here (api/docs/architecture/managed-scans.md).
+ * scheduled or taken over from here (server/docs/architecture/managed-scans.md).
  * The banner says so in place of the "no active owner" notice, and points to
  * where the policy is changed.
  */

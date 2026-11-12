@@ -1,6 +1,6 @@
 /**
  * List page URLs use exactly the API's filter params (RFC-048 §3.9,
- * api/docs/rfcs/RFC-048-list-query-contract.md): `/findings?severity=critical,high&is_in_kev=true&q=log4j`
+ * server/docs/rfcs/RFC-048-list-query-contract.md): `/findings?severity=critical,high&is_in_kev=true&q=log4j`
  * is both the page link and, minus page-only state, the API query. One codec
  * replaces the per-page translation layers.
  *

@@ -113,9 +113,9 @@ docker-dev-d:
 	@echo "Starting development environment (detached)..."
 	docker compose -f $(COMPOSE_BASE) up -d --build
 
-## docker-prod: Production runs from api/deploy (one HTTPS port): see its docker-compose.yml
+## docker-prod: Production runs from server/deploy (one HTTPS port): see its docker-compose.yml
 docker-prod:
-	@echo "Production deployment, from the repository root: cd api/deploy && cp .env.example .env && docker compose up -d"
+	@echo "Production deployment, from the repository root: cd server/deploy && cp .env.example .env && docker compose up -d"
 
 ## docker-down: Stop all Docker Compose services
 docker-down:

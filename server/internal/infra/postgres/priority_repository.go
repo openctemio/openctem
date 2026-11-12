@@ -1,0 +1,406 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/server/internal/app/finding"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+)
+
+// --- EPSS Adapter (implements finding.EPSSRepository) ---
+
+// EPSSAdapter wraps the existing EPSS repository to implement the priority service interface.
+type EPSSAdapter struct {
+	repo *EPSSRepository
+}
+
+// NewEPSSAdapter creates a new adapter.
+func NewEPSSAdapter(repo *EPSSRepository) *EPSSAdapter {
+	return &EPSSAdapter{repo: repo}
+}
+
+func (a *EPSSAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[string]finding.EPSSData, error) {
+	scores, err := a.repo.GetByCVEIDs(ctx, cveIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]finding.EPSSData, len(scores))
+	for _, s := range scores {
+		result[s.CVEID()] = finding.EPSSData{
+			Score:      s.Score(),
+			Percentile: s.Percentile(),
+		}
+	}
+	return result, nil
+}
+
+// --- KEV Adapter (implements finding.KEVRepository) ---
+
+// KEVAdapter wraps the existing KEV repository.
+type KEVAdapter struct {
+	repo *KEVRepository
+}
+
+// NewKEVAdapter creates a new adapter.
+func NewKEVAdapter(repo *KEVRepository) *KEVAdapter {
+	return &KEVAdapter{repo: repo}
+}
+
+func (a *KEVAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[string]finding.KEVData, error) {
+	entries, err := a.repo.GetByCVEIDs(ctx, cveIDs)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]finding.KEVData, len(entries))
+	for _, e := range entries {
+		d := finding.KEVData{
+			Ransomware: e.KnownRansomwareCampaignUse(),
+		}
+		if dueDate := e.DueDate(); !dueDate.IsZero() {
+			d.DueDate = &dueDate
+		}
+		result[e.CVEID()] = d
+	}
+	return result, nil
+}
+
+// --- Priority Rule Repository (implements finding.PriorityRuleRepository) ---
+
+// PriorityRuleRepository handles priority override rules.
+type PriorityRuleRepository struct {
+	db *DB
+}
+
+// NewPriorityRuleRepository creates a new repository.
+func NewPriorityRuleRepository(db *DB) *PriorityRuleRepository {
+	return &PriorityRuleRepository{db: db}
+}
+
+// ListActiveByTenant returns the tenant's active rules in evaluation order:
+// highest evaluation_order first, ties broken by creation time then id, so
+// two overlapping rules with the same order always pick the same winner
+// (the class of a finding never flips between passes).
+func (r *PriorityRuleRepository) ListActiveByTenant(ctx context.Context, tenantID shared.ID) ([]*vulnerability.PriorityOverrideRule, error) {
+	query := `
+		SELECT id, tenant_id, name, COALESCE(description, ''), priority_class, conditions,
+			is_active, evaluation_order, created_by, updated_by, created_at, updated_at
+		FROM priority_override_rules
+		WHERE tenant_id = $1 AND is_active = true
+		ORDER BY evaluation_order DESC, created_at, id
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
+	if err != nil {
+		return nil, fmt.Errorf("list priority rules: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var rules []*vulnerability.PriorityOverrideRule
+	for rows.Next() {
+		var (
+			id, tid               string
+			name, description, pc string
+			conditionsJSON        []byte
+			isActive              bool
+			evalOrder             int
+			createdBy, updatedBy  sql.NullString
+			createdAt, updatedAt  time.Time
+		)
+		if err := rows.Scan(&id, &tid, &name, &description, &pc, &conditionsJSON,
+			&isActive, &evalOrder, &createdBy, &updatedBy, &createdAt, &updatedAt); err != nil {
+			return nil, fmt.Errorf("scan priority rule: %w", err)
+		}
+
+		var conditions []vulnerability.RuleCondition
+		if err := json.Unmarshal(conditionsJSON, &conditions); err != nil {
+			continue // skip corrupted rules
+		}
+
+		ruleID, _ := shared.IDFromString(id)
+		tenID, _ := shared.IDFromString(tid)
+		priorityClass, _ := vulnerability.ParsePriorityClass(pc)
+
+		data := vulnerability.PriorityOverrideRuleData{
+			ID:              ruleID,
+			TenantID:        tenID,
+			Name:            name,
+			Description:     description,
+			PriorityClass:   priorityClass,
+			Conditions:      conditions,
+			IsActive:        isActive,
+			EvaluationOrder: evalOrder,
+			CreatedAt:       createdAt,
+			UpdatedAt:       updatedAt,
+		}
+		if createdBy.Valid {
+			cbID, _ := shared.IDFromString(createdBy.String)
+			data.CreatedBy = &cbID
+		}
+
+		rules = append(rules, vulnerability.ReconstitutePriorityOverrideRule(data))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return rules, nil
+}
+
+// Create inserts a new priority override rule.
+func (r *PriorityRuleRepository) Create(ctx context.Context, rule *vulnerability.PriorityOverrideRule) error {
+	condJSON, err := json.Marshal(rule.Conditions())
+	if err != nil {
+		return fmt.Errorf("marshal conditions: %w", err)
+	}
+
+	query := `
+		INSERT INTO priority_override_rules (id, tenant_id, name, description, priority_class,
+			conditions, is_active, evaluation_order, created_by, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	`
+	var createdBy sql.NullString
+	// CreatedBy not exposed via getter yet — use nil
+	_, err = r.db.ExecContext(ctx, query,
+		rule.ID().String(), rule.TenantID().String(), rule.Name(), rule.Description(),
+		string(rule.PriorityClass()), condJSON, rule.IsActive(), rule.EvaluationOrder(),
+		createdBy, rule.CreatedAt(), rule.UpdatedAt(),
+	)
+	return err
+}
+
+// Delete removes a priority override rule.
+func (r *PriorityRuleRepository) Delete(ctx context.Context, tenantID, ruleID shared.ID) error {
+	_, err := r.db.ExecContext(ctx,
+		"DELETE FROM priority_override_rules WHERE id = $1 AND tenant_id = $2",
+		ruleID.String(), tenantID.String(),
+	)
+	return err
+}
+
+// --- Priority Audit Repository (implements finding.PriorityAuditRepository) ---
+
+// PriorityAuditRepository logs priority class changes.
+type PriorityAuditRepository struct {
+	db *DB
+}
+
+// NewPriorityAuditRepository creates a new repository.
+func NewPriorityAuditRepository(db *DB) *PriorityAuditRepository {
+	return &PriorityAuditRepository{db: db}
+}
+
+// CountOlderThan reports how many priority audit rows are older than before.
+// Used by the retention controller to report work-to-do before deleting.
+func (r *PriorityAuditRepository) CountOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	var count int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM priority_class_audit_log WHERE created_at < $1`,
+		before,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count old priority audit rows: %w", err)
+	}
+	return count, nil
+}
+
+// priorityAuditBatch is the number of rows one DELETE removes. Each batch is
+// its own transaction, so a long cleanup never holds back vacuum or blocks the
+// writers of the table.
+const priorityAuditBatch = 5000
+
+// priorityAuditMaxBatches bounds one call (5000 x 400 = 2M rows); the next
+// scheduled run continues.
+const priorityAuditMaxBatches = 400
+
+// deleteInBatches runs a DELETE ... LIMIT-style statement until a batch comes
+// back short, the context ends or the per-call bound is reached.
+func (r *PriorityAuditRepository) deleteInBatches(ctx context.Context, what, query string, args ...any) (int64, error) {
+	var total int64
+	for i := 0; i < priorityAuditMaxBatches; i++ {
+		res, err := r.db.ExecContext(ctx, query, append(args, priorityAuditBatch)...)
+		if err != nil {
+			return total, fmt.Errorf("delete %s: %w", what, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("rows affected: %w", err)
+		}
+		total += n
+		if n < priorityAuditBatch {
+			break
+		}
+		if cerr := ctx.Err(); cerr != nil {
+			return total, cerr
+		}
+	}
+	return total, nil
+}
+
+// DeleteOlderThan removes priority audit rows older than before, across all
+// tenants, in batches. Intended for the platform retention controller (F-13).
+// Per-tenant retention can be layered later via DeleteOlderThanForTenant when
+// tenant policy configuration exists.
+func (r *PriorityAuditRepository) DeleteOlderThan(ctx context.Context, before time.Time) (int64, error) {
+	return r.deleteInBatches(ctx, "old priority audit rows",
+		`DELETE FROM priority_class_audit_log WHERE ctid IN (
+			SELECT ctid FROM priority_class_audit_log WHERE created_at < $1 LIMIT $2)`,
+		before)
+}
+
+// PurgeNoOpAndOrphaned removes, in batches, the rows that carry no information:
+// entries whose class did not move (previous_class = new_class; the writers no
+// longer produce them) and entries of organizations that no longer exist (the
+// table has no foreign key to tenants, so deleting an organization used to
+// leave its rows behind). It is idempotent and cheap once the table is clean.
+func (r *PriorityAuditRepository) PurgeNoOpAndOrphaned(ctx context.Context) (noOp, orphaned int64, err error) {
+	noOp, err = r.deleteInBatches(ctx, "no-op priority audit rows",
+		`DELETE FROM priority_class_audit_log WHERE ctid IN (
+			SELECT ctid FROM priority_class_audit_log WHERE previous_class = new_class LIMIT $1)`)
+	if err != nil {
+		return noOp, 0, err
+	}
+	orphaned, err = r.deleteInBatches(ctx, "priority audit rows of deleted organizations",
+		`DELETE FROM priority_class_audit_log WHERE ctid IN (
+			SELECT a.ctid FROM priority_class_audit_log a
+			WHERE NOT EXISTS (SELECT 1 FROM tenants t WHERE t.id = a.tenant_id) LIMIT $1)`)
+	return noOp, orphaned, err
+}
+
+func (r *PriorityAuditRepository) LogChange(ctx context.Context, entry finding.PriorityAuditEntry) error {
+	query := `
+		INSERT INTO priority_class_audit_log (tenant_id, finding_id, previous_class, new_class,
+			reason, source, rule_id, actor_id, created_at)
+		SELECT $1::uuid, $2::uuid, $3::text, $4::text, $5::text, $6::text, $7::uuid, $8::uuid, NOW()
+		WHERE $3::text IS DISTINCT FROM $4::text
+	`
+	var prevClass sql.NullString
+	if entry.PreviousClass != nil {
+		prevClass = sql.NullString{String: string(*entry.PreviousClass), Valid: true}
+	}
+
+	_, err := r.db.ExecContext(ctx, query,
+		entry.TenantID.String(), entry.FindingID.String(),
+		prevClass, string(entry.NewClass),
+		entry.Reason, entry.Source,
+		nullIDPtr(entry.RuleID), nullIDPtr(entry.ActorID),
+	)
+	return err
+}
+
+// LogChanges writes many priority audit entries in one statement (one round
+// trip instead of one per finding on the ingest path). Each row keeps its own
+// tenant_id, exactly as LogChange would write it.
+func (r *PriorityAuditRepository) LogChanges(ctx context.Context, entries []finding.PriorityAuditEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	tenants := make([]string, len(entries))
+	findings := make([]string, len(entries))
+	prev := make([]sql.NullString, len(entries))
+	next := make([]string, len(entries))
+	reasons := make([]string, len(entries))
+	sources := make([]string, len(entries))
+	rules := make([]sql.NullString, len(entries))
+	actors := make([]sql.NullString, len(entries))
+	for i, e := range entries {
+		tenants[i] = e.TenantID.String()
+		findings[i] = e.FindingID.String()
+		if e.PreviousClass != nil {
+			prev[i] = sql.NullString{String: string(*e.PreviousClass), Valid: true}
+		}
+		next[i] = string(e.NewClass)
+		reasons[i] = e.Reason
+		sources[i] = e.Source
+		rules[i] = nullIDPtr(e.RuleID)
+		actors[i] = nullIDPtr(e.ActorID)
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO priority_class_audit_log (tenant_id, finding_id, previous_class, new_class,
+			reason, source, rule_id, actor_id, created_at)
+		SELECT u.tenant_id, u.finding_id, u.previous_class, u.new_class,
+			u.reason, u.source, u.rule_id, u.actor_id, NOW()
+		FROM unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::uuid[], $8::uuid[])
+			AS u(tenant_id, finding_id, previous_class, new_class, reason, source, rule_id, actor_id)
+		WHERE u.previous_class IS DISTINCT FROM u.new_class`,
+		pq.Array(tenants), pq.Array(findings), pq.Array(prev), pq.Array(next),
+		pq.Array(reasons), pq.Array(sources), pq.Array(rules), pq.Array(actors),
+	)
+	if err != nil {
+		return fmt.Errorf("log priority changes: %w", err)
+	}
+	return nil
+}
+
+// CompensatingControlLookupRepo provides batch effective control lookups.
+type CompensatingControlLookupRepo struct {
+	db *sql.DB
+}
+
+// NewCompensatingControlLookupRepo creates a new lookup adapter.
+func NewCompensatingControlLookupRepo(db *sql.DB) *CompensatingControlLookupRepo {
+	return &CompensatingControlLookupRepo{db: db}
+}
+
+// GetEffectiveForAssets returns max reduction_factor per asset with active,
+// tested-passing, non-expired controls. An untested control, a partial or
+// failed test, and a control without a review date (expires_at) count as no
+// reduction: a control nobody has verified must not lower a priority.
+func (r *CompensatingControlLookupRepo) GetEffectiveForAssets(ctx context.Context, tenantID shared.ID, assetIDs []shared.ID) (map[shared.ID]float64, error) {
+	if len(assetIDs) == 0 {
+		return map[shared.ID]float64{}, nil
+	}
+
+	idStrings := make([]string, len(assetIDs))
+	for i, id := range assetIDs {
+		idStrings[i] = id.String()
+	}
+
+	query := `
+		SELECT cca.asset_id, MAX(cc.reduction_factor)
+		FROM compensating_controls cc
+		JOIN compensating_control_assets cca ON cca.control_id = cc.id
+		WHERE cc.tenant_id = $1
+		  AND cca.asset_id = ANY($2)
+		  AND cc.status = 'active'
+		  AND cc.test_result = 'pass'
+		  AND cc.last_tested_at IS NOT NULL
+		  AND cc.expires_at > NOW()
+		GROUP BY cca.asset_id
+	`
+	rows, err := r.db.QueryContext(ctx, query, tenantID.String(), pq.Array(idStrings))
+	if err != nil {
+		return nil, fmt.Errorf("compensating controls lookup: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[shared.ID]float64)
+	for rows.Next() {
+		var aidStr string
+		var factor float64
+		if err := rows.Scan(&aidStr, &factor); err != nil {
+			continue
+		}
+		if aid, err := shared.IDFromString(aidStr); err == nil {
+			result[aid] = factor
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Verify interface compliance
+var (
+	_ finding.EPSSRepository            = (*EPSSAdapter)(nil)
+	_ finding.KEVRepository             = (*KEVAdapter)(nil)
+	_ finding.PriorityRuleRepository    = (*PriorityRuleRepository)(nil)
+	_ finding.PriorityAuditRepository   = (*PriorityAuditRepository)(nil)
+	_ finding.CompensatingControlLookup = (*CompensatingControlLookupRepo)(nil)
+)

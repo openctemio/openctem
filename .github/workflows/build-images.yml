@@ -1,7 +1,7 @@
 name: Build images
 
 # Reusable workflow: builds each CI image once per content key and hands every
-# caller the images by digest (api/docs/development/ci-cd.md, "Build images
+# caller the images by digest (server/docs/development/ci-cd.md, "Build images
 # once"). Callers: web-e2e.yml, allinone-ci.yml, on push and merge_group events
 # only. A pull request never calls this workflow (it holds packages: write); it
 # calls resolve-images.yml, which is read-only.
@@ -154,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           tar -czf "$RUNNER_TEMP/contract.tgz" \
-            api/api/openapi/swagger.yaml api/api/openapi/routes.txt \
+            server/api/openapi/swagger.yaml server/api/openapi/routes.txt \
             web/src/config/api-route-permissions.json web/src/config/authz-matrix.json \
             web/src/lib/api/generated/api.types.ts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -227,7 +227,7 @@ jobs:
         if: (steps.need.outputs.web == 'true' || steps.need.outputs.console == 'true')
         run: |
           set -euo pipefail
-          want='api/api/openapi/swagger.yaml api/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json web/src/lib/api/generated/api.types.ts'
+          want='server/api/openapi/swagger.yaml server/api/openapi/routes.txt web/src/config/api-route-permissions.json web/src/config/authz-matrix.json web/src/lib/api/generated/api.types.ts'
           got="$(tar -tzf "$RUNNER_TEMP/contract/contract.tgz" | sort | tr '\n' ' ')"
           # shellcheck disable=SC2086 # $want is split into its file names on purpose
           [ "$got" = "$(printf '%s\n' $want | sort | tr '\n' ' ')" ] || { echo "::error::unexpected contract artifact contents: $got"; exit 1; }
@@ -252,7 +252,7 @@ jobs:
         if: steps.need.outputs.api == 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: api
+          context: server
           target: production
           push: true
           tags: ${{ steps.meta.outputs.tag_api }}
@@ -361,7 +361,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: deploy/allinone
-          build-contexts: gateway=api/deploy/gateway
+          build-contexts: gateway=server/deploy/gateway
           build-args: |
             API_IMAGE=${{ steps.refs.outputs.api }}
             WEB_IMAGE=${{ steps.refs.outputs.web }}
