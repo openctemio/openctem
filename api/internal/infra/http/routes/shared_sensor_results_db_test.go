@@ -139,14 +139,10 @@ func (h *ctlHarness) processReports(sensorID string) {
 			if err != nil {
 				h.t.Fatal(err)
 			}
-			if _, err := proc.Process(ctx, job); err != nil {
-				h.t.Fatalf("process: %v", err)
-			}
+			processV2(h.t, proc, job)
 		}
 		if job, err := jobs.GetV2Commit(ctx, rid); err == nil {
-			if _, err := proc.Process(ctx, job); err != nil {
-				h.t.Fatalf("process commit: %v", err)
-			}
+			processV2(h.t, proc, job)
 		}
 	}
 }

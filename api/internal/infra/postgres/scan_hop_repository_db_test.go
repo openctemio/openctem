@@ -209,3 +209,59 @@ func TestScanHops_PendingIngestAndCommandLookup(t *testing.T) {
 		t.Fatalf("another tenant resolved A's command: %v", err)
 	}
 }
+
+// A step run's info observation count adds up, and another tenant cannot
+// change it (its tenant id does not match the run's).
+func TestAddStepInfoObservations(t *testing.T) {
+	db := openHopDB(t)
+	repo := NewScanHopRepository(&DB{DB: db})
+	ctx := context.Background()
+	a, b := newHopTenant(t, db, 0), newHopTenant(t, db, 0)
+	for _, n := range []int{12, 3, 0, -4} {
+		if err := repo.AddStepInfoObservations(ctx, a.tenant, a.stepRun, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.AddStepInfoObservations(ctx, b.tenant, a.stepRun, 100); err != nil {
+		t.Fatal(err)
+	}
+	var got int
+	if err := db.QueryRowContext(ctx, `SELECT info_observations FROM scan_run_steps WHERE id = $1`, a.stepRun.String()).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != 15 {
+		t.Fatalf("info_observations = %d, want 15 (another tenant's 100 must not count)", got)
+	}
+	runs := NewStepRunRepository(&DB{DB: db})
+	sr, err := runs.GetByID(ctx, a.stepRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sr.InfoObservations != 15 {
+		t.Fatalf("step run InfoObservations = %d", sr.InfoObservations)
+	}
+}
+
+// A step run's held and refused finding counts add up, and another tenant
+// cannot change them.
+func TestAddStepFindingDispositions(t *testing.T) {
+	db := openHopDB(t)
+	repo := NewScanHopRepository(&DB{DB: db})
+	ctx := context.Background()
+	a, b := newHopTenant(t, db, 0), newHopTenant(t, db, 0)
+	for _, d := range [][2]int{{10, 2}, {3, 0}, {0, 0}, {-4, -1}} {
+		if err := repo.AddStepFindingDispositions(ctx, a.tenant, a.stepRun, d[0], d[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := repo.AddStepFindingDispositions(ctx, b.tenant, a.stepRun, 100, 100); err != nil {
+		t.Fatal(err)
+	}
+	sr, err := NewStepRunRepository(&DB{DB: db}).GetByID(ctx, a.stepRun)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sr.FindingsHeld != 13 || sr.FindingsRefused != 2 {
+		t.Fatalf("held %d refused %d, want 13 and 2 (another tenant's 100 must not count)", sr.FindingsHeld, sr.FindingsRefused)
+	}
+}

@@ -21,6 +21,13 @@ const posture = (p: Partial<SensorPosture>): { posture: SensorPosture } => ({
 })
 
 describe('postureIssues', () => {
+  it('maps tools_unconfined to its fix', () => {
+    const [issue] = postureIssues(posture({ unhardened: ['tools_unconfined'] }))
+    expect(issue.reason).toBe('tools_unconfined')
+    expect(issue.label).toBe('Tools run without the sandbox')
+    expect(issue.fix).toContain('Run the sensor on Linux')
+  })
+
   it('maps every reason to its fix, in the API order', () => {
     const issues = postureIssues(
       posture({ unhardened: ['pin_none', 'policy_none', 'network_unenforced', 'bearer_key'] })

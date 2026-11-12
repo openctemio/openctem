@@ -137,7 +137,7 @@ func operatorMessage(capability string, list []covdom.PlatformFailureCount, pair
 	}
 	subject := fmt.Sprintf("[WARNING] Coverage %s cannot run on %d assets (platform side)", capability, pairs)
 	body := fmt.Sprintf("<p>Automatic coverage of <strong>%s</strong> failed %d or more times in a row on the platform "+
-		"or sensor side for %d assets (at least %d organizations). The check did not run, so this says nothing about "+
+		"or sensor side for %d assets (at least %d organizations). The platform or a sensor could not complete the check (no task was planned, the run stalled, the task failed or the tool broke); the outcomes below say which. A target that does not answer or a name no task carried is not counted here: the organization sees those as coverage gaps. This says nothing about "+
 		"the assets, and the organizations are not told their assets are failing.</p><ul>%s</ul>"+
 		"<p>Check the sensor fleet, proxy health and scan runs in the platform console.</p>",
 		html.EscapeString(capability), covdom.PlatformFailingStreak, pairs, tenants, strings.Join(parts, ""))

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -565,37 +566,39 @@ func (s *Service) JobEgress(ctx context.Context, tenantID, sensorID shared.ID) (
 	return &eg, nil
 }
 
-// Credential is one endpoint's credentials for a leasing sensor.
+// Credential is one endpoint's credentials for the sensor holding a job's
+// lease.
 type Credential struct {
 	EndpointID string
 	Username   string
 	Password   string
 }
 
-// CredentialsFor returns the credentials of poolID's endpoints for a sensor,
-// only when poolID is the pool its jobs use now (the caller checked that the
-// sensor holds the command's lease). Anything else is ErrPoolNotFound: the
-// answer never tells a pool of another tenant from one that does not exist.
-func (s *Service) CredentialsFor(ctx context.Context, tenantID, sensorID shared.ID, poolID string) ([]Credential, error) {
+// PoolCredentials returns the credentials of the endpoints of tenantID's
+// pool poolID that may carry a job's traffic now: the pool a job's secrets
+// recorded when the job was claimed (never the sensor's current pool, which
+// may have changed since). The caller checked the sensor's lease and the
+// recorded grant. A disabled pool carries nothing (BuildJobEgress lists no
+// endpoint). A pool of another tenant, or one deleted since, is
+// ErrPoolNotFound. Only the endpoints in signed (the ids of the egress block
+// the job was signed with) are returned: an endpoint added to the pool or
+// recovered since the claim is not part of the job.
+func (s *Service) PoolCredentials(ctx context.Context, tenantID shared.ID, poolID string, signed []string) ([]Credential, error) {
 	pid, err := parseRef(poolID, pooldom.ErrPoolNotFound)
 	if err != nil {
 		return nil, err
 	}
-	p, _, err := s.Effective(ctx, tenantID, sensorID)
+	p, err := s.repo.GetPool(ctx, tenantID, pid)
 	if err != nil {
 		return nil, err
 	}
-	if p == nil || p.ID != pid {
-		return nil, pooldom.ErrPoolNotFound
-	}
 	out := []Credential{}
 	if !p.Enabled {
-		// A disabled pool carries nothing (BuildJobEgress lists no endpoint).
 		return out, nil
 	}
 	now := s.now()
 	for _, e := range p.Endpoints {
-		if !e.HasCredentials() || !e.Enabled || !e.Health.Eligible(now) {
+		if !e.HasCredentials() || !e.Enabled || !e.Health.Eligible(now) || !slices.Contains(signed, e.ID.String()) {
 			continue
 		}
 		c, err := s.openCredentials(e)
@@ -608,6 +611,32 @@ func (s *Service) CredentialsFor(ctx context.Context, tenantID, sensorID shared.
 		out = append(out, Credential{EndpointID: e.ID.String(), Username: c.Username, Password: c.Password})
 	}
 	return out, nil
+}
+
+// PoolHasCredentials reports whether tenantID's pool poolID has an endpoint
+// with credentials (a job on it then lists the pool's credentials among its
+// secrets). A pool that cannot be found has none.
+func (s *Service) PoolHasCredentials(ctx context.Context, tenantID shared.ID, poolID string) (bool, error) {
+	pid, err := parseRef(poolID, pooldom.ErrPoolNotFound)
+	if errors.Is(err, pooldom.ErrPoolNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	p, err := s.repo.GetPool(ctx, tenantID, pid)
+	if errors.Is(err, pooldom.ErrPoolNotFound) || errors.Is(err, shared.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, e := range p.Endpoints {
+		if e.HasCredentials() {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Report is a sensor's health report for one job.

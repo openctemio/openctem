@@ -26,7 +26,7 @@ can run it, and says why when nothing can.
 | `custom_check` | the finding has a retest check | the check's template, as before | the tool verdict |
 | `template` | a scanner rule (nuclei template, or a tool with a retest handler) | that rule, with its own tool | the tool verdict (or the template re-run plus reachability probe on older sensors) |
 | `version_recheck` | a `version-match` finding no scanner has reported since | the fingerprint that read the version, as an ad-hoc scan of the asset | the version seen, evaluated against the CVE's affected ranges |
-| `none` | a person reported it (manual, pentest, bug bounty, red team, or the manual channel), or a leaked secret | nothing; the retest is refused with a reason | |
+| `none` | a person reported it (source manual, pentest, bug bounty or red team: `no_automatic_retest`), a scanner's report a person brought in (the manual channel with a scanner's source, such as a Nessus file import: `reimport_to_verify`, re-checked by importing a newer report of the same scan), or a leaked secret | nothing; the retest is refused with a reason | |
 
 A `version-match` finding that a scanner has reported since (its latest
 sighting's tool is another tool) is a `template` finding of that scanner.
@@ -148,7 +148,7 @@ tester retests). Strings are in `findings.retestPanel.*`,
 `ObservedSince`), `finding_template_sightings.go`,
 `finding_retest_repository.go`; `internal/app/validation/run.go`
 (`signatureInstalled`), `retest_command.go` (`SensorID`);
-`cmd/server/services.go` (`retestFingerprinter`, sensor candidates);
+`internal/server/services.go` (`retestFingerprinter`, sensor candidates);
 migration `003529_retest_version_recheck`. Tests: `internal/app/retest/strategy_test.go`,
 `provenance_test.go`, `internal/infra/postgres/retest_version_evidence_db_test.go`,
 `internal/infra/http/handler/finding_retest_errors_test.go`,

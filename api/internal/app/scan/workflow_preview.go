@@ -185,14 +185,8 @@ func (s *Service) previewStepAtDepth(ctx context.Context, tenantID shared.ID, zo
 		}
 		return node
 	}
-	at := step
-	if len(overlay.Params) > 0 {
-		cp := *step
-		cp.Config = step.RunPolicy.ConfigAt(step.Config, depth)
-		at = &cp
-	}
-	node := s.previewStep(ctx, tenantID, zoneID, at)
-	node.DepthParams, node.MaxTargets = overlay.Params, overlay.MaxTargets
+	node := s.previewStep(ctx, tenantID, zoneID, StepAtDepth(step, depth))
+	node.DepthParams, node.MaxTargets = previewDepthParams(step, depth, overlay.Params), overlay.MaxTargets
 	if node.Blocking != nil && step.RunPolicy.Optional && node.Blocking.Code == codeNoMatchingTool {
 		node.Skipped = &PreviewError{Code: CodeToolNotInstalled,
 			Message: "Skipped: available when a tool that runs this capability is installed."}
@@ -257,4 +251,28 @@ func (s *Service) previewStep(ctx context.Context, tenantID shared.ID, zoneID *s
 		node.Blocking = &PreviewError{Code: CodeNoSensorForTool, Message: toolUnavailableMessage(ta, step.StepKey, zoneID != nil)}
 	}
 	return node
+}
+
+// previewDepthParams are the params the step takes from its depth: the
+// overlay's, and the capability's depth defaults for the params neither the
+// step nor the overlay sets (stage.DepthDefaults).
+func previewDepthParams(step *scanworkflow.Step, depth scanworkflow.Depth, overlay map[string]any) map[string]any {
+	st, ok := stage.ForStep(step.Tool, step.Capabilities)
+	if !ok {
+		return overlay
+	}
+	defs := st.DepthDefaults(string(depth))
+	if len(defs) == 0 {
+		return overlay
+	}
+	out := make(map[string]any, len(overlay)+len(defs))
+	for k, v := range defs {
+		if cur, set := step.Config[k]; !set || cur == nil {
+			out[k] = v
+		}
+	}
+	for k, v := range overlay {
+		out[k] = v
+	}
+	return out
 }

@@ -225,9 +225,9 @@ All non-empty condition fields must match for a rule to fire. Empty conditions =
 | `finding_severity` | `string[]` | Severity levels | Case-insensitive, value in list |
 | `finding_source` | `string[]` | Finding source (sast, dast, etc.) | Case-insensitive, value in list |
 | `finding_type` | `string[]` | Type (vulnerability, misconfiguration) | Case-insensitive, value in list |
-| `asset_tags` | `string[]` | Tags on the finding | Any tag match (OR within field) |
+| `asset_tags` | `string[]` | Tags on the finding's asset (never the finding's own tags) | Case-insensitive, any tag match (OR within field) |
 | `file_path_pattern` | `string` | Glob pattern for file path | `path.Match()` (Go stdlib) |
-| `asset_type` | `string[]` | Asset type filter | Not evaluated (findings lack asset type) |
+| `asset_type` | `string[]` | Asset type filter | Matched on the finding's asset (stored type and sub-type) |
 
 **Example**: A rule with `finding_severity: ["critical", "high"]` AND `finding_source: ["dast"]` will only match findings that are both critical/high severity AND from a DAST source.
 
@@ -523,7 +523,7 @@ Every query includes `WHERE tenant_id = ?` to prevent cross-tenant data access:
 | `internal/infra/http/handler/assignment_rule_handler.go` | Assignment rule HTTP handler |
 | `internal/infra/http/handler/scope_rule_handler.go` | Scope rule HTTP handler |
 | `internal/infra/http/routes/access_control.go` | Route registration |
-| `cmd/server/services.go` | DI wiring (`AssignmentEngine` instantiation) |
+| `internal/server/services.go` | DI wiring (`AssignmentEngine` instantiation) |
 
 ### Migrations
 

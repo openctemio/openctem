@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-11); platform side implemented, sensor `screenshot` tool in the sensor repository |
-| Scope | api (`pkg/domain/webevidence`, `internal/app/webevidence`, ingest step 10, `asset_web_evidence` migration, two routes, retention controller, EASM setting), web (asset page card, monitoring card switch), sensor (optional `screenshot` tool image) |
+| Status | Accepted (2026-10-11); platform side implemented, routed as `capture.screenshot`; sensor tool `webshot` in the sensor's `browser` image |
+| Scope | api (`pkg/domain/webevidence`, `internal/app/webevidence`, ingest step 10, `asset_web_evidence` migration, two routes, retention controller, EASM setting), web (asset page card, monitoring card switch), sensor (tool `webshot`, `browser` image) |
 | Architecture | [easm.md §4j](../architecture/easm.md#4j-web-evidence-and-screenshots-built) |
 | Related | RFC-036 (EASM; O7 retention: screenshots 30 days), RFC-040 (mutual distrust; results are hostile input), RFC-057 / finding-evidence.md (masking), research/106 §10 decision 1 |
 
@@ -72,24 +72,36 @@ counted, never fatal. Captures attach only to assets the report may change
 
 ### 3.1 Sensor tool (sensor repository)
 
-`screenshot` is a tool in the optional `evidence` sensor image:
+`webshot` implements the capability `capture.screenshot@1` and is shipped in
+the sensor's `browser` image. It is a Go tool that drives headless Chromium
+over the DevTools pipe (no network debugging port), with Chromium's own
+sandbox kept:
 
-- headless Chromium driven per target with a fresh profile, no extensions,
-  no persistent storage, downloads and file chooser disabled, permissions
-  (camera, geolocation, notifications, clipboard) denied;
-- JavaScript runs (pages need it to render) but the browser's network is
-  limited to the target's origin and its redirects inside the job's scope;
-  requests to any other origin, to private ranges not in scope and to the
-  sensor's own platform endpoint are blocked by the sensor's egress policy
-  (local policy and the outbound guard), so a page cannot exfiltrate through
-  the sensor;
-- a fixed viewport (1280x800), a 15 s page budget, one page at a time per
-  job, output capped before upload;
-- runs inside the per-task sandbox (unprivileged user, private workdir,
-  rlimits, seccomp, no access to the sensor key, outbox or config) and only
-  when the sensor's local policy enables the `screenshot` capability;
-- only for targets the job carries (typed, in scope, active-allowed assets):
-  the platform's active-probe gate already applies.
+- a fresh profile per task, no extensions, no persistent storage, downloads
+  and file chooser disabled, camera, geolocation, notifications and clipboard
+  denied; a fixed viewport (1280x800), a 15 s page budget, one page at a time,
+  output capped before upload;
+- the task's network is confined: the browser may reach only the target's
+  origin and its redirects inside the job's scope, never private ranges not in
+  scope or the sensor's own platform endpoint, and sends GET and HEAD only, so
+  a page cannot exfiltrate through the sensor or change state on the target;
+- it runs only for targets the job carries (in-scope, active-allowed web
+  services; the platform's active-probe gate applies) and only when the
+  sensor's local policy allows the capability;
+- it re-reports each web origin it was given with the `web_evidence`
+  property of section 3.
+
+The platform plans the capability as stage `capture.screenshot` (tool
+`webshot`, input `http_service`, active tier, 10 targets per task) and as a
+coverage rule on `http_service` (every 30 days, only the named service when an
+address and a name serve the same page). The organization's switch gates
+planning, not only storage: while `web_screenshots_enabled` is off the pair
+is paused with readiness reason `feature_off` ("screenshots are off for this
+organization") and no job is created, so the picture is never taken. A
+settings read error counts as off. Turning the switch on makes the pairs due
+on the next pass. A web service whose title, status code, redirect target or
+favicon hash changed in a probe is captured again at once, at most once a day
+per asset ([asset-coverage.md](../architecture/asset-coverage.md)).
 
 ## 4. Platform design
 
@@ -137,7 +149,7 @@ counted, never fatal. Captures attach only to assets the report may change
 
 Migration `asset_web_evidence` (two new tables, a trigger). Nothing changes
 until a sensor sends captures; screenshots also need the organization's
-switch. The sensor tool follows in the sensor repository.
+switch. The sensor tool `webshot` and the capability's routing follow; the org switch gates dispatch.
 
 ## 7. Tests
 

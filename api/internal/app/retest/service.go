@@ -28,6 +28,7 @@ import (
 	"unicode"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
+	"github.com/openctemio/openctem/api/internal/app/closuremode"
 	evidenceapp "github.com/openctemio/openctem/api/internal/app/evidence"
 	"github.com/openctemio/openctem/api/internal/app/validation"
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
@@ -218,6 +219,7 @@ type Service struct {
 	regressionSLA RegressionSLA
 	announcer     Announcer
 	policy        Policy
+	closure       closuremode.SettingsReader
 	evidence      EvidenceStore
 	runs          RunRecorder
 	checks        CheckSource
@@ -572,6 +574,8 @@ func strategyOf(f *vulnerability.Finding, chk *CustomCheck) (Strategy, string) {
 		return Strategy{Kind: StrategyVersionRecheck, Rule: strings.TrimSpace(f.RuleID())}, ""
 	case isHumanFinding(f):
 		return Strategy{Kind: StrategyNone}, ReasonNoAutomaticRetest
+	case isBroughtIn(f):
+		return Strategy{Kind: StrategyNone}, ReasonReimportToVerify
 	}
 	return Strategy{Kind: StrategyTemplate, Rule: strings.TrimSpace(f.RuleID()), Tool: recheckTool(f)}, ""
 }
@@ -616,6 +620,8 @@ func (s *Service) eligible(ctx context.Context, tenantID, findingID shared.ID, m
 		// A leaked secret is not fixed by a check that stops matching it: only
 		// rotation or revocation is, and a person verifies that.
 		return c, ineligible(reason, fmt.Errorf("%w: a leaked secret is verified by rotating it, not by a re-check", retestdom.ErrNotEligible))
+	case ReasonReimportToVerify:
+		return c, ineligible(reason, fmt.Errorf("%w: an imported scanner report is re-checked by importing a newer report (or attach a retest check)", retestdom.ErrNotEligible))
 	default:
 		return c, ineligible(reason, fmt.Errorf("%w: a finding a person reported has no automatic retest (attach a retest check)", retestdom.ErrNotEligible))
 	}
@@ -1233,7 +1239,8 @@ func (s *Service) readCheck(ctx context.Context, tenantID shared.ID, id *shared.
 		if outcome == "" {
 			return retestdom.CheckResult{Missing: true}, true
 		}
-		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests}, true
+		stopped, _ := commanddom.RunStopped(cmd.Result)
+		return retestdom.CheckResult{Outcome: outcome, Summary: summary, TemplateDigest: digest, Evidence: items, Requests: requests, Stopped: stopped}, true
 	case commanddom.CommandStatusFailed, commanddom.CommandStatusExpired, commanddom.CommandStatusCanceled:
 		return retestdom.CheckResult{Missing: true, Summary: cmd.ErrorMessage}, true
 	default:
@@ -1339,6 +1346,14 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 	if rt.SensorID != nil {
 		changes["sensor_id"] = rt.SensorID.String()
 	}
+	// A confirmed fix the tenant lets resolve still passes the organization's
+	// closing mode: review proposes it to a person, off keeps it open.
+	decision := ""
+	if autoResolve && outcome == retestdom.OutcomeConfirmedFixed {
+		decision = s.closureDecision(ctx, rt.TenantID, rt.FindingID)
+		autoResolve = decision == closureDecisionClose
+		changes["closure_decision"] = decision
+	}
 	source := activitySource(rt.Trigger)
 	var regression bool
 	res, err := s.store.Settle(ctx, retestdom.SettleInput{
@@ -1363,6 +1378,10 @@ func (s *Service) settle(ctx context.Context, rt *retestdom.Retest, v retestdom.
 		// recorded the attempt as inconclusive and moved nothing.
 		v = retestdom.StaleFixVerdict()
 		outcome = v.Outcome
+	}
+	if res.Applied && !res.Stale && !res.Moved && decision == closureDecisionPropose && retestdom.EligibleStatus(res.PriorStatus) &&
+		res.PriorStatus != vulnerability.FindingStatusResolved {
+		s.proposeFix(ctx, rt, checkedAt)
 	}
 	if res.Applied {
 		s.finishRun(ctx, rt, v)

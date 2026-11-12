@@ -4,7 +4,7 @@
 |---|---|
 | Status | Partially implemented (2026-10-31): data model, ingest of fetch results, server-side change detection and diff, alerts, watch management API and the Attack surface › Page changes page. The fetch itself waits for the `monitor.web_content` capability in the capability taxonomy and its sensor implementation (§9). |
 | Scope | api (`pkg/domain/pagemon`, `internal/app/pagemon`, `internal/app/ingest/web_content.go`, `/api/v1/easm/page-monitoring`, `page-monitoring` controller, exposure type `third_party_script_added`, one migration), web (Attack surface › Page changes) |
-| Architecture | [easm.md §4o](../architecture/easm.md#4o-page-monitoring-partly-built) |
+| Architecture | [easm.md §4o](../architecture/easm.md#4o-page-monitoring-built) |
 | Related | RFC-036 (EASM), RFC-046 (stage catalog), RFC-055 (capability taxonomy), RFC-056 (web endpoints), RFC-081 (web evidence), RFC-040 (mutual distrust sensor/platform) |
 
 ## 1. Summary

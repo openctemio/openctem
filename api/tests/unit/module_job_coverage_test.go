@@ -37,6 +37,7 @@ var jobSkipProof = map[string]struct{ dir, test string }{
 	"EASMLookalikeController":         {"internal/infra/controller", "TestEASMLookalike_SkipsTenantWithAttackSurfaceOff"},
 	"PageMonitorController":           {"internal/infra/controller", "TestPageMonitor_SkipsTenantWithAttackSurfaceOff"},
 	"EASMNetworkSeedController":       {"internal/infra/controller", "TestEASMNetworkSeed_SkipsTenantWithAttackSurfaceOff"},
+	"EASMAddressAutoAddController":    {"internal/infra/controller", "TestEASMAddressAutoAdd_SkipsTenantWithAttackSurfaceOff"},
 	"EASMPostureController":           {"internal/app/posture", "TestRefreshDue_SkipsTenantWithAttackSurfaceOff"},
 	"EASMWeeklyDigestController":      {"internal/infra/controller", "TestEASMWeeklyDigest_SkipsTenantWithAttackSurfaceOff"},
 	"GraphEnrichmentController":       {"internal/infra/controller", "TestGraphEnrichment_SkipsTenantWithModuleDisabled"},
@@ -132,7 +133,7 @@ func TestEveryModuleJobSkipsADisabledTenant(t *testing.T) {
 // module that can be switched off is a decision, not an accident (RFC-064 R2).
 func TestEveryJobBelongsToAModule(t *testing.T) {
 	root := repoRoot(t)
-	dir := filepath.Join(root, "cmd", "server")
+	dir := filepath.Join(root, "internal", "server")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)

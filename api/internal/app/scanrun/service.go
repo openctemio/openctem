@@ -181,11 +181,30 @@ type SharedUseObserver interface {
 // SetSharedUseObserver wires the observer.
 func (s *Service) SetSharedUseObserver(o SharedUseObserver) { s.sharedUse = o }
 
+// StepGate says why a workflow step must not run for a tenant ("" = it
+// may): an organization switch the step needs is off (scan.Service).
+type StepGate interface {
+	StepSkipReason(ctx context.Context, tenantID shared.ID, step *scanworkflow.Step) string
+}
+
+// SetStepGate sets the gate. Without one a step is never skipped by it.
+func (s *Service) SetStepGate(g StepGate) { s.stepGate = g }
+
+// stepGateReason is the gate's reason to skip the step ("" = run it).
+func (s *Service) stepGateReason(ctx context.Context, run *scanrun.Run, step *scanworkflow.Step) string {
+	if s.stepGate == nil {
+		return ""
+	}
+	return s.stepGate.StepSkipReason(ctx, run.TenantID, step)
+}
+
 type Service struct {
 	// sharedUse receives the targets of every step job queued for shared
 	// sensors (anomaly signals, docs/rfcs/RFC-100-shared-sensors.md §9);
 	// nil: none.
 	sharedUse SharedUseObserver
+	// stepGate skips a step an organization switch holds off (nil = none).
+	stepGate StepGate
 	// toolConfig checks a pinned step's tool options against the sensors'
 	// tool settings (WithToolConfigChecker).
 	toolConfig ToolConfigChecker
@@ -201,7 +220,8 @@ type Service struct {
 	commandRepo       command.Repository
 	toolRepo          tool.Repository // For deriving capabilities from tools
 	securityValidator SecurityValidator
-	sensorSelector    SensorSelector // Optional: for platform sensor support
+	sensorSelector    SensorSelector    // Optional: for platform sensor support
+	pathGate          PathDiscoveryGate // nil: path discovery steps are skipped (path_discovery.go)
 	auditService      AuditService
 	scanDeactivator   ScanDeactivator           // Optional: for cascade scan deactivation
 	scanRunRecorder   ScanRunRecorder           // Optional: records run outcome back onto the scan

@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
@@ -641,8 +642,14 @@ type SensorConfigConfig struct {
 	// the openctem-ci action and image; CI_RUNNER_LATEST_VERSION, default
 	// versions.yaml ci.latest). CI runners have their own release line,
 	// so a pipeline's runner is compared with this, never with the sensor's.
-	// Empty turns the "update available" comparison off.
+	// Empty turns the "update available" comparison off. Unless
+	// CIRunnerLatestPinned, it is only the start-up value: the server
+	// resolves the effective release (raised by the verified release feed)
+	// per use.
 	CIRunnerLatestVersion string
+	// CIRunnerLatestPinned is true when CI_RUNNER_LATEST_VERSION is set: the
+	// operator's value then wins over the release feed.
+	CIRunnerLatestPinned bool
 	// CIRunnerMinVersion is the oldest CI runner release still accepted
 	// (CI_RUNNER_MIN_VERSION, default versions.yaml ci.min; empty = no
 	// minimum). An older runner is refused at the token exchange and its
@@ -1246,11 +1253,6 @@ type SensorConfig struct {
 	// disable outbound crt.sh polling entirely.
 	CertMonitorEnabled bool
 
-	// CertMonitorFeedBaseURL is the CT-log aggregator the cert-monitor controller
-	// queries per tenant domain. Set CERT_MONITOR_FEED_URL to override; defaults
-	// to https://crt.sh. Queried via the SSRF-guarded SafeHTTPClient.
-	CertMonitorFeedBaseURL string
-
 	// CertMonitorInterval is how often the CT sweep runs across all tenants.
 	// Defaults to 24h (daily), matching the threat-intel refresh.
 	CertMonitorInterval time.Duration
@@ -1299,11 +1301,14 @@ type SensorConfig struct {
 	// AssetCoverageDailyBudget caps the pairs one tenant's automatic
 	// coverage attempts per 24 h. ASSET_COVERAGE_DAILY_BUDGET, default 5000.
 	AssetCoverageDailyBudget int
-
-	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
-	// (free tier), when crt.sh still fails after its retries. Set
-	// CERT_MONITOR_CERTSPOTTER_URL=off to disable the fallback.
-	CertMonitorCertSpotterURL string
+	// PathDiscoveryRequestsPerOrigin is the request cap of one origin's path
+	// discovery job (signed into its web scope), one run per origin per 30
+	// days. PATH_DISCOVERY_REQUESTS_PER_ORIGIN, default 300 (50..100000).
+	PathDiscoveryRequestsPerOrigin int
+	// PathDiscoveryDailyRequests is one organization's path discovery
+	// request budget per 24 h; what does not fit is deferred.
+	// PATH_DISCOVERY_DAILY_REQUESTS, default 50000.
+	PathDiscoveryDailyRequests int
 
 	// AssetTechnologyBackfillReportOnly makes the asset-technology-backfill
 	// job count and log the component links it would remove instead of
@@ -1635,6 +1640,7 @@ func Load() (*Config, error) {
 			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
 			CACertFile:            platformCACertFile(),
 			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
+			CIRunnerLatestPinned:  strings.TrimSpace(os.Getenv("CI_RUNNER_LATEST_VERSION")) != "",
 			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
 		},
 		Storage: StorageConfig{
@@ -1822,7 +1828,6 @@ func Load() (*Config, error) {
 			VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
 			VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
 			CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),
-			CertMonitorFeedBaseURL:            getEnv("CERT_MONITOR_FEED_URL", "https://crt.sh"),
 			CertMonitorInterval:               getEnvDuration("CERT_MONITOR_INTERVAL", 24*time.Hour),
 			CertMonitorMaxDomainsPerRun:       getEnvInt("CERT_MONITOR_MAX_DOMAINS_PER_RUN", 50),
 			AssetEnrichmentEnabled:            getEnvBool("ASSET_ENRICHMENT_ENABLED", true),
@@ -1830,12 +1835,13 @@ func Load() (*Config, error) {
 			AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
 			AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
 			AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
+			PathDiscoveryRequestsPerOrigin:    min(max(getEnvInt("PATH_DISCOVERY_REQUESTS_PER_ORIGIN", 300), 50), 100000),
+			PathDiscoveryDailyRequests:        max(getEnvInt("PATH_DISCOVERY_DAILY_REQUESTS", 50000), 0),
 			EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
 			EASMDNSInterval:                   getEnvDuration("EASM_DNS_CHECK_INTERVAL", 24*time.Hour),
 			EASMDNSMaxNamesPerRun:             getEnvInt("EASM_DNS_MAX_NAMES_PER_RUN", 500),
-			CertMonitorCertSpotterURL:         getEnv("CERT_MONITOR_CERTSPOTTER_URL", "https://api.certspotter.com"),
 			AssetTechnologyBackfillReportOnly: getEnvBool("ASSET_TECHNOLOGY_BACKFILL_REPORT_ONLY", true),
 			InvitationPurgeInterval:           getEnvDuration("INVITATION_PURGE_INTERVAL", time.Hour),
 			AdminSessionPurgeInterval:         getEnvDuration("ADMIN_SESSION_PURGE_INTERVAL", time.Hour),
@@ -2089,6 +2095,9 @@ func (c *Config) validateStorage() error {
 	}
 	if c.Storage.SSEKMSKeyID != "" && c.Storage.SSE != "aws:kms" {
 		return fmt.Errorf("STORAGE_SSE_KMS_KEY_ID needs STORAGE_SSE=aws:kms")
+	}
+	if (c.Storage.SSE != "" || c.Storage.SSEKMSKeyID != "") && attachment.IsR2Endpoint(c.Storage.Endpoint) {
+		return errors.New(attachment.ErrR2SSE)
 	}
 	switch c.Storage.Provider {
 	case "", "local":
@@ -2840,10 +2849,17 @@ func (r retiredName) instead() string {
 // smtpMoved is the hint for the SMTP_* variables.
 const smtpMoved = "unset it; the platform SMTP server is set in the admin console (Console > Settings > E-mail); headless installs pass BOOTSTRAP_SMTP_* to bootstrap-admin"
 
+// ctMoved: the CT sources are the platform sensor's settings now.
+const ctMoved = "unset it; the platform makes no CT request, its platform sensors query CT (sensor settings SENSOR_CT_CRTSH_URL, SENSOR_CT_CERTSPOTTER_URL, SENSOR_CT_CERTSPOTTER_KEY)"
+
 // removedEnv lists settings that were removed without a replacement
 // variable. Startup refuses to run while one is set, saying what to do
 // instead, so an operator never believes a removed setting still applies.
 var removedEnv = []struct{ Name, Instead string }{
+	// The platform makes no CT request: its platform sensors do.
+	{"CERT_MONITOR_FEED_URL", ctMoved},
+	{"CERT_MONITOR_CERTSPOTTER_URL", ctMoved},
+	{"CERT_MONITOR_CERTSPOTTER_KEY", ctMoved},
 	// Knobs that were read but switched nothing.
 	{"APP_DEBUG", "unset it; it switched nothing on (use LOG_LEVEL=debug outside production)"},
 	{"GRPC_PORT", "unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR"},

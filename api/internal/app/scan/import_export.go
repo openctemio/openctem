@@ -32,6 +32,9 @@ type ScanConfigExport struct {
 	Intensity string `json:"intensity,omitempty"`
 	// Depth is how much of the workflow each run executes.
 	Depth string `json:"depth,omitempty"`
+	// StepParams are the per-step overrides of standard params; checked
+	// against the workflow on import like on create.
+	StepParams scan.StepParams `json:"step_params,omitempty"`
 
 	// Scan Type
 	ScanType       string         `json:"scan_type"`
@@ -124,6 +127,7 @@ func (s *Service) ExportConfigWithOptions(ctx context.Context, tenantID, scanID 
 	}
 	export.Intensity = string(sc.EffectiveIntensity())
 	export.Depth = string(sc.EffectiveDepth())
+	export.StepParams = sc.StepParams
 	if !sc.TargetOptions.IsZero() {
 		o := sc.TargetOptions
 		export.TargetOptions = &o
@@ -197,6 +201,13 @@ func decodeScanConfigExport(data []byte) (ScanConfigExport, error) {
 // on the direct targets; a scan without an owner would run its schedule as
 // the system (research 21b H3, RFC-050 W2).
 func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []byte, actorID string) (*scan.Scan, error) {
+	return s.ImportConfigConfirmed(ctx, tenantID, data, actorID, false)
+}
+
+// ImportConfigConfirmed is ImportConfig with the caller's confirmation of
+// direct targets that name a range wider than a /16 (confirm_large_range):
+// the exported file never confirms one by itself.
+func (s *Service) ImportConfigConfirmed(ctx context.Context, tenantID shared.ID, data []byte, actorID string, confirmLargeRange bool) (*scan.Scan, error) {
 	s.logger.Info("importing scan config", "tenant_id", tenantID.String())
 	if actor, err := shared.IDFromString(actorID); err != nil || actor.IsZero() {
 		return nil, ErrScanActorRequired
@@ -204,7 +215,8 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 
 	export, err := decodeScanConfigExport(data)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid scan config JSON: %s", shared.ErrValidation, err.Error())
+		s.logger.Info("scan config import refused: invalid JSON", "tenant_id", tenantID.String(), "error", err)
+		return nil, fmt.Errorf("%w: the file is not a valid scan configuration (JSON)", shared.ErrValidation)
 	}
 
 	// Validate required fields
@@ -246,6 +258,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		TargetOptions:       export.TargetOptions,
 		Intensity:           export.Intensity,
 		Depth:               export.Depth,
+		StepParams:          export.StepParams,
 		ScheduleType:        export.ScheduleType,
 		ScheduleCron:        export.ScheduleCron,
 		ScheduleRRule:       export.ScheduleRRule,
@@ -258,6 +271,7 @@ func (s *Service) ImportConfig(ctx context.Context, tenantID shared.ID, data []b
 		SensorPreference:    export.SensorPreference,
 		ProfileID:           export.ProfileID,
 		RuleSources:         export.RuleSources,
+		ConfirmLargeRange:   confirmLargeRange,
 		TimeoutSeconds:      export.TimeoutSeconds,
 		MaxRetries:          export.MaxRetries,
 		RetryBackoffSeconds: export.RetryBackoffSeconds,

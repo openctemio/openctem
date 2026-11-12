@@ -187,14 +187,16 @@ function GroupTitle({ group }: { group: FindingGroup }) {
         />
       )}
       {Boolean(meta.cisa_kev) && <KevBadge />}
-      <span className="tabular-nums">, {facts.join(', ')}</span>
+      <span className="tabular-nums">{facts.join(', ')}</span>
     </span>
   )
 }
 
 /**
- * Status mix and verified share, compact enough for a header row. A status
- * is coloured only when it has findings.
+ * Status mix and verified share, the group header's summary slot. The counts
+ * and the progress each stay on one line, and the progress moves under the
+ * counts when the header is narrow. A status is coloured only when it has
+ * findings.
  */
 export function GroupStatusSummary({ stats }: { stats: FindingGroupStats }) {
   const { t } = useTranslation()
@@ -218,8 +220,11 @@ export function GroupStatusSummary({ stats }: { stats: FindingGroupStats }) {
   ]
   const pct = Math.max(0, Math.min(100, stats.progress_pct))
   return (
-    <span className="hidden items-center gap-3 tabular-nums lg:flex">
-      <span className="flex items-center gap-2.5">
+    <span
+      data-slot="group-status-summary"
+      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 tabular-nums"
+    >
+      <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
         {parts.map((p) => (
           <span key={p.label} className="flex items-center gap-1 whitespace-nowrap">
             <span
@@ -488,15 +493,13 @@ export function FindingGroupsTable<TRow extends { id: string }>({
         const g = byKey.get(key)
         return g ? <GroupTitle group={g} /> : key
       },
+      renderSummary: (key) => {
+        const g = byKey.get(key)
+        return g ? <GroupStatusSummary stats={g.stats ?? EMPTY_STATS} /> : null
+      },
       renderActions: (key) => {
         const g = byKey.get(key)
-        if (!g) return null
-        return (
-          <>
-            <GroupStatusSummary stats={g.stats ?? EMPTY_STATS} />
-            {renderGroupActions?.(g)}
-          </>
-        )
+        return g ? (renderGroupActions?.(g) ?? null) : null
       },
       renderFooter: (key, shown) => {
         const g = byKey.get(key)

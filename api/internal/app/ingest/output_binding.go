@@ -36,6 +36,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/openctemio/openctem/api/pkg/safetext"
+
 	"github.com/openctemio/ctis/v2"
 
 	auditapp "github.com/openctemio/openctem/api/internal/app/audit"
@@ -126,6 +128,11 @@ type contractHolds struct {
 type outputRules struct {
 	stages   []stage.Stage
 	declared *sensor.ToolContract
+	// waive, set only for a verified first-party tool (contract_mismatch.go),
+	// lets an asset the catalog allows but the descriptor does not declare
+	// pass when it lies inside the job's targets; flagMismatch records what
+	// passed that way (flagMismatch reads what was let through).
+	waive func(a *ctis.Asset) bool
 }
 
 func (r outputRules) empty() bool { return len(r.stages) == 0 && r.declared == nil }
@@ -139,13 +146,24 @@ func (r outputRules) assetAllowed(a *ctis.Asset) (bool, string) {
 		return false, stage.Label(ref)
 	}
 	if r.declared != nil && !r.declared.Declares(sensor.ProduceAsset, string(a.Type)) {
+		if r.waive != nil && r.waive(a) {
+			return true, ""
+		}
 		return false, sensor.ProduceAsset + ":" + sanitizeContractLabel(string(a.Type))
 	}
 	return true, ""
 }
 
+// findingAllowed: a finding of an undeclared type is held, unless the rules
+// waive it (a verified first-party tool); splitByContract still holds a
+// finding whose asset is held.
 func (r outputRules) findingAllowed(f *ctis.Finding) bool {
-	return r.declared == nil || r.declared.Declares(sensor.ProduceFinding, string(f.Type))
+	if r.declared == nil || r.declared.Declares(sensor.ProduceFinding, string(f.Type)) {
+		return true
+	}
+	// Only a finding on an asset of its report can be checked against the
+	// job's targets (a held asset still holds its findings).
+	return r.waive != nil && f.AssetRef != ""
 }
 
 // endpointsAllowed reports whether the tool may report web endpoints: a
@@ -170,9 +188,7 @@ func sanitizeContractLabel(v string) string {
 		}
 		return r
 	}, strings.ToLower(strings.TrimSpace(v)))
-	if len(v) > 64 {
-		v = v[:64]
-	}
+	v = safetext.TruncateBytes(v, 64)
 	if v == "" {
 		return "(none)"
 	}
@@ -271,18 +287,30 @@ func (sp *contractSplit) anyHeld() bool {
 // sensor report and returns the report to apply. In quarantine mode the
 // out-of-contract part is stored for review (never applied, even when the
 // quarantine cannot take it); in warn mode the report is applied whole.
+// held counts the findings kept for review in the quarantine; lost those
+// the quarantine could not take (they are not applied either).
 func (s *Service) bindOutputTypes(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
 	report *ctis.Report, opts Options,
-) *ctis.Report {
-	kept, _ := s.bindOutputTypesHolds(ctx, agt, tenantID, binding, report, opts)
-	return kept
+) (kept *ctis.Report, held, lost int) {
+	kept, held, lost, _, _ = s.bindOutputTypesFlagged(ctx, agt, tenantID, binding, report, opts)
+	return kept, held, lost
 }
 
 // bindOutputTypesHolds is bindOutputTypes that also names the items it took
 // out of the report (nil when nothing was taken out).
 func (s *Service) bindOutputTypesHolds(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
 	report *ctis.Report, opts Options,
-) (kept *ctis.Report, holds *contractHolds) {
+) (kept *ctis.Report, held, lost int, holds *contractHolds) {
+	kept, held, lost, holds, _ = s.bindOutputTypesFlagged(ctx, agt, tenantID, binding, report, opts)
+	return kept, held, lost, holds
+}
+
+// bindOutputTypesFlagged is bindOutputTypesHolds that also returns what a
+// verified first-party tool reported without declaring it (ingested and
+// flagged, contract_mismatch.go); nil when nothing.
+func (s *Service) bindOutputTypesFlagged(ctx context.Context, agt *sensor.Sensor, tenantID shared.ID, binding Binding,
+	report *ctis.Report, opts Options,
+) (kept *ctis.Report, held, lost int, holds *contractHolds, flagged *contractMismatch) {
 	if report != nil && binding.Kind != BindingCommand {
 		// Only a command binds a report to a capability; a claim alone
 		// never drives capability-specific handling.
@@ -290,7 +318,7 @@ func (s *Service) bindOutputTypesHolds(ctx context.Context, agt *sensor.Sensor, 
 	}
 	if binding.Kind != BindingCommand || report == nil ||
 		(len(report.Assets) == 0 && len(report.Findings) == 0 && len(report.Dependencies) == 0 && len(report.Endpoints) == 0) {
-		return report, nil
+		return report, 0, 0, nil, nil
 	}
 	tool := binding.Tool
 	if tool == "" && report.Tool != nil {
@@ -302,11 +330,27 @@ func (s *Service) bindOutputTypesHolds(ctx context.Context, agt *sensor.Sensor, 
 	setReportCapability(report, boundCapability(rules, reportCapability(report), tool))
 	s.checkCapabilityContract(ctx, agt, tenantID, tool, report)
 	if rules.empty() {
-		return report, nil // no contract: a tool the catalog does not know, without a declaration
+		return report, 0, 0, nil, nil // no contract: a tool the catalog does not know, without a declaration
 	}
 	sp := splitByContract(report, rules)
+	if sp.anyHeld() {
+		// A verified first-party tool whose descriptor lags its importer: what
+		// the catalog allows and the job's targets cover is ingested and
+		// flagged instead of held (contract_mismatch.go).
+		if c := s.firstPartyContract(ctx, agt, tenantID, tool); c != nil {
+			rules.waive = jobCovers(binding)
+			sp = splitByContract(report, rules)
+			applied := report
+			if sp.kept != nil {
+				applied = sp.kept
+			}
+			if flagged = flagMismatch(applied, c); flagged != nil {
+				s.reportContractMismatch(ctx, agt, tenantID, binding, tool, c, flagged)
+			}
+		}
+	}
 	if !sp.anyHeld() {
-		return report, nil
+		return report, 0, 0, nil, flagged
 	}
 	mode := s.ResultPolicy(ctx, tenantID).Mode
 	event := auditapp.NewSuccessEvent(audit.ActionSensorResultsQuarantined, audit.ResourceTypeSensor, agt.ID.String()).
@@ -334,7 +378,7 @@ func (s *Service) bindOutputTypesHolds(ctx context.Context, agt *sensor.Sensor, 
 		s.auditAsync(auditapp.AuditContext{TenantID: tenantID.String()},
 			event.WithMessage(fmt.Sprintf("Sensor report applied with %d asset(s), %d finding(s) and %d dependency(ies) its tool does not produce (warn mode)",
 				sp.heldCount(), sp.heldFindings, sp.heldDependencies)))
-		return report, nil
+		return report, 0, 0, nil, flagged
 	}
 
 	quarantineID := ""
@@ -364,5 +408,9 @@ func (s *Service) bindOutputTypesHolds(ctx context.Context, agt *sensor.Sensor, 
 		event.WithMetadata("quarantine_id", quarantineID).
 			WithMessage(fmt.Sprintf("%d asset(s), %d finding(s) and %d dependency(ies) of types the tool does not produce were held for review, not applied",
 				sp.heldCount(), sp.heldFindings, sp.heldDependencies)))
-	return sp.kept, &contractHolds{assetRefs: sp.heldAssetRefs, findings: sp.heldFindingIdx, lost: quarantineID == ""}
+	holds = &contractHolds{assetRefs: sp.heldAssetRefs, findings: sp.heldFindingIdx, lost: quarantineID == ""}
+	if quarantineID == "" {
+		return sp.kept, 0, sp.heldFindings, holds, flagged
+	}
+	return sp.kept, sp.heldFindings, 0, holds, flagged
 }

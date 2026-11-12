@@ -20,6 +20,38 @@ in the database, and each is bounded (depth, rows, statement time). The
 reader is `AssetRelationshipRepository` (`assetdom.GraphReader`: lineage and
 neighborhood); nothing else walks the graph per request.
 
+## How edges are written (ingest)
+
+Checked against the code of v0.19.1 and develop on 2026-11-05. Edges come
+from two places in `AssetProcessor.processBatch`, after the assets of the
+report are stored: the relationships the report states, and edges the
+platform derives.
+
+```mermaid
+flowchart TD
+  R["CTIS relationship: type, from_ref, to_ref"] --> V{"CTIS validation: known type,<br/>both refs name assets of the report,<br/>no self edge, confidence 0-100,<br/>has_address ends at an ip_address,<br/>at most 10,000"}
+  V -- no --> X["Report refused (schema-invalid)"]
+  V -- yes --> S["storedReportAssets: both ends<br/>resolved to assets of this tenant"]
+  S --> P{"planReportRelationships:<br/>self edge, or the report may not<br/>change the source asset, or the type<br/>not allowed between these asset types?"}
+  P -- yes --> SK["Edge skipped"]
+  P -- no --> M["mapReportRelationship: one stored direction<br/>(subdomain_of, member_of, hosted_by from an address<br/>become contains, deployed_from becomes deployed_to,<br/>routes_to becomes load_balances)"]
+  M --> I["INSERT asset_relationships ON CONFLICT<br/>(tenant, source, target, type): last_verified refreshed"]
+  D["Derived: subdomain contains,<br/>DNS resolves_to (creates address assets),<br/>port exposes, host name to address"] --> I
+```
+
+- Both ends belong to the tenant twice over: the lookups are tenant-scoped
+  in code (`report_relationships.go`), and composite foreign keys
+  `(tenant_id, source_asset_id)` and `(tenant_id, target_asset_id)` refuse a
+  cross-tenant edge in the database.
+- From v0.20.0: the derived port `exposes` and host-name `resolves_to` edges
+  also need permission to change the source asset (`mayLinkName`,
+  `internal/app/ingest/ports.go`).
+- The comment at the top of `report_relationships.go` says hypervisor
+  placement comes from a collector's `esxi_host` property; that property is
+  removed from every report the platform did not build itself
+  (`ctis2_members.go`), so this placement only applies to server-built
+  reports.
+
 ## Neighborhood
 
 `GET /api/v1/assets/{id}/neighborhood` (`assets:read`, relationships module):

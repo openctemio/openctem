@@ -57,7 +57,7 @@ func (r *IntegrationNotificationExtensionRepository) createWithExecutor(ctx cont
 		INSERT INTO integration_notification_extensions (
 			integration_id,
 			enabled_severities, enabled_event_types,
-			message_template, include_details, min_interval_minutes
+			message_template, detail_level, min_interval_minutes
 		) VALUES (
 			$1, $2, $3, $4, $5, $6
 		)
@@ -68,7 +68,7 @@ func (r *IntegrationNotificationExtensionRepository) createWithExecutor(ctx cont
 		severitiesJSON,
 		eventTypesJSON,
 		ext.MessageTemplate(),
-		ext.IncludeDetails(),
+		string(ext.DetailLevel()),
 		ext.MinIntervalMinutes(),
 	)
 	if err != nil {
@@ -88,7 +88,7 @@ func (r *IntegrationNotificationExtensionRepository) GetByIntegrationID(ctx cont
 		SELECT integration_id,
 			   COALESCE(enabled_severities, '["critical", "high"]'::jsonb),
 			   COALESCE(enabled_event_types, '["new_finding", "new_exposure"]'::jsonb),
-			   message_template, include_details, min_interval_minutes
+			   message_template, detail_level, min_interval_minutes
 		FROM integration_notification_extensions
 		WHERE integration_id = $1
 	`
@@ -117,7 +117,7 @@ func (r *IntegrationNotificationExtensionRepository) Update(ctx context.Context,
 			enabled_severities = $2,
 			enabled_event_types = $3,
 			message_template = $4,
-			include_details = $5,
+			detail_level = $5,
 			min_interval_minutes = $6
 		WHERE integration_id = $1
 	`
@@ -127,7 +127,7 @@ func (r *IntegrationNotificationExtensionRepository) Update(ctx context.Context,
 		severitiesJSON,
 		eventTypesJSON,
 		ext.MessageTemplate(),
-		ext.IncludeDetails(),
+		string(ext.DetailLevel()),
 		ext.MinIntervalMinutes(),
 	)
 	if err != nil {
@@ -202,7 +202,7 @@ func (r *IntegrationNotificationExtensionRepository) ListIntegrationsWithNotific
 			i.config, i.metadata, i.stats, i.created_at, i.updated_at, i.created_by,
 			COALESCE(n.enabled_severities, '["critical", "high"]'::jsonb),
 			COALESCE(n.enabled_event_types, '["new_finding", "new_exposure"]'::jsonb),
-			n.message_template, n.include_details, n.min_interval_minutes
+			n.message_template, n.detail_level, n.min_interval_minutes
 		FROM integrations i
 		LEFT JOIN integration_notification_extensions n ON i.id = n.integration_id
 		WHERE i.tenant_id = $1 AND i.category = 'notification'
@@ -239,14 +239,14 @@ func (r *IntegrationNotificationExtensionRepository) scanNotificationExtension(r
 		enabledSeveritiesDB []byte // JSONB
 		enabledEventTypesDB []byte // JSONB
 		messageTemplate     sql.NullString
-		includeDetails      bool
+		detailLevel         string
 		minIntervalMinutes  int
 	)
 
 	err := row.Scan(
 		&integrationID,
 		&enabledSeveritiesDB, &enabledEventTypesDB,
-		&messageTemplate, &includeDetails, &minIntervalMinutes,
+		&messageTemplate, &detailLevel, &minIntervalMinutes,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -270,7 +270,7 @@ func (r *IntegrationNotificationExtensionRepository) scanNotificationExtension(r
 		enabledSeverities,
 		enabledEventTypes,
 		messageTemplate.String,
-		includeDetails,
+		detailLevel,
 		minIntervalMinutes,
 	), nil
 }
@@ -342,7 +342,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 		enabledSeveritiesDB []byte // JSONB
 		enabledEventTypesDB []byte // JSONB
 		messageTemplate     sql.NullString
-		includeDetails      sql.NullBool
+		detailLevel         sql.NullString
 		minIntervalMinutes  sql.NullInt32
 	)
 
@@ -354,7 +354,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 		&configJSON, &metadataJSON, &statsJSON, &createdAt, &updatedAt, &createdBy,
 		// Notification extension
 		&enabledSeveritiesDB, &enabledEventTypesDB,
-		&messageTemplate, &includeDetails, &minIntervalMinutes,
+		&messageTemplate, &detailLevel, &minIntervalMinutes,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scan integration with notification row: %w", err)
@@ -387,7 +387,7 @@ func (r *IntegrationNotificationExtensionRepository) scanIntegrationWithNotifica
 			enabledSeverities,
 			enabledEventTypes,
 			messageTemplate.String,
-			includeDetails.Bool,
+			detailLevel.String,
 			int(minIntervalMinutes.Int32),
 		)
 	}

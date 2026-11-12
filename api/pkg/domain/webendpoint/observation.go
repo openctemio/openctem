@@ -44,6 +44,9 @@ type Observation struct {
 	OutOfScope bool
 	// ExclusionID names the path exclusion that holds it (OutOfScope).
 	ExclusionID *shared.ID
+	// Evidence is the response evidence of a path discovery hit (source
+	// guess only; nil otherwise). It is set by BindSource, never by Observe.
+	Evidence *Evidence
 }
 
 // ResponseSig is the hash of what "changed" means for an endpoint: its

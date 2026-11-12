@@ -136,3 +136,57 @@ export function toolsMissingParams(
   }
   return out
 }
+
+/** The depths whose overlay the inspector edits (passive sends no traffic). */
+export const OVERLAY_DEPTHS = ['standard', 'deep'] as const
+export type OverlayDepth = (typeof OVERLAY_DEPTHS)[number]
+
+interface PolicyLike {
+  depths?: Record<string, { params?: Record<string, unknown>; max_targets?: number } | undefined>
+  [key: string]: unknown
+}
+
+function policyOf(step: object): PolicyLike {
+  return (step as { run_policy?: PolicyLike }).run_policy ?? {}
+}
+
+/**
+ * The standard params the step's depth overlay sets at a depth. At that
+ * depth they replace the step's own value of the same param.
+ */
+export function depthParams(step: object, depth: OverlayDepth): Record<string, unknown> {
+  return policyOf(step).depths?.[depth]?.params ?? {}
+}
+
+/** The depths whose overlay replaces the step's own value of a param. */
+export function depthsOverriding(step: object, name: string): OverlayDepth[] {
+  return OVERLAY_DEPTHS.filter((d) => name in depthParams(step, d))
+}
+
+/**
+ * The step with one param of one depth's overlay set (or removed when value
+ * is undefined). An overlay left with nothing is dropped, and so is a policy
+ * left with nothing, so the saved step carries no empty shells; other
+ * policy fields (min_depth, max_targets, optional) are kept.
+ */
+export function withDepthParam<T extends object>(
+  step: T,
+  depth: OverlayDepth,
+  name: string,
+  value: unknown
+): T {
+  const policy = policyOf(step)
+  const depths = { ...(policy.depths ?? {}) }
+  const overlay = { ...(depths[depth] ?? {}) }
+  const params = withParam(overlay.params, name, value)
+  if (Object.keys(params).length > 0) overlay.params = params
+  else delete overlay.params
+  if (Object.keys(overlay).length > 0) depths[depth] = overlay
+  else delete depths[depth]
+  const next: PolicyLike = { ...policy, depths }
+  if (Object.keys(depths).length === 0) delete next.depths
+  const out = { ...step } as T & { run_policy?: PolicyLike }
+  if (Object.keys(next).length > 0) out.run_policy = next
+  else delete out.run_policy
+  return out
+}

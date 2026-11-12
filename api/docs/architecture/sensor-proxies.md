@@ -106,8 +106,9 @@ before enabling). One test per pool per minute (`429`), audited as
 
 The command carries every endpoint of the pool (no credentials), applying to
 all targets, and the platform's echo. The sensor fetches the credentials under
-the command's lease (`egress-credentials` names the command's own pool, which
-may be one no sensor uses), tests each endpoint (TCP and TLS to the proxy, the
+the command's lease as the test's task secret (the `p1` ref names the
+command's own pool, which may be one no sensor uses;
+[task-secrets.md](task-secrets.md)), tests each endpoint (TCP and TLS to the proxy, the
 credentials, a tunnel to the echo, TLS in the tunnel and one GET) and completes
 with one result per endpoint: `{endpoint_id, ok, class, handshake_ms, exit_ip,
 families, port_restricted, error}`. Its attempts reach the endpoints' health
@@ -206,21 +207,27 @@ still goes out with an empty list and the sensor fails the job
 
 ## Sensor API
 
-Both under `/api/v2/sensor/commands/{command_id}/`, header
-`X-OpenCTEM-Lease-Epoch`, v2 HTTPS only (protocol v3 does not carry them):
+The pool's credentials are a task secret ([task-secrets.md](task-secrets.md)):
+a claimed job whose egress member lists an endpoint that needs credentials
+(or a proxy test whose pool has one) carries the ref `p1` (kind
+`egress_proxy`, the pool id, consumer the forwarder) in its signed `secrets`
+member, and the sensor's forwarder fetches the values once per job from the
+sealed `POST /api/v2/sensor/commands/{command_id}/secrets`. Only a trusted,
+key-bound lease holder gets them, for the pool recorded at claim (never the
+sensor's current pool); a disabled pool gives none. The former
+`egress-credentials` route is removed.
 
-- `POST egress-credentials` `{pool_id}` → `{credentials: [{endpoint_id, username, password}]}`
-  with `Cache-Control: no-store`. Answered only to the sensor holding the
-  command's live lease (acknowledged or running, matching epoch), only for
-  the pool its jobs use now. Everything else is `404 command-not-found`.
-  Never logged, never stored with the command.
-- `POST egress-report` `{pool_id, endpoints: [{endpoint_id, ok, proxy_down, proxy_auth,
+Under `/api/v2/sensor/commands/{command_id}/`, v2 HTTPS only (protocol v3 does
+not carry it):
+
+- `POST egress-report` `{lease_epoch, pool_id, endpoints: [{endpoint_id, ok, proxy_down, proxy_auth,
   target_unreachable, target_refused, handshake_ms_p50, handshake_ms_p95, last_error}]}` → 204.
-  From the sensor the command is assigned to (while it runs and up to 15
-  minutes after it ended), at most 64 endpoints; the pool must be the one
-  that sensor's jobs use now (a sensor never moves the health of another
-  pool, even one of its own organization); unknown endpoints are ignored; `last_error` is sanitized again (one line, 200 characters, URL
-  user information removed).
+  From the sensor the command is assigned to under the lease epoch in the
+  body (a header is not read; while it runs and up to 15 minutes after it
+  ended), at most 64 endpoints; the pool must be the one that sensor's jobs
+  use now (a sensor never moves the health of another pool, even one of its
+  own organization); unknown endpoints are ignored; `last_error` is sanitized
+  again (one line, 200 characters, URL user information removed).
 
 ## In the sensor
 
@@ -310,7 +317,7 @@ which it always receives:
 
 | Threat | Control |
 |---|---|
-| Credential leak (database, API, logs, job payload) | Encrypted at rest and bound to tenant and endpoint; never in a response, the audit log, an error or the job payload; fetched per job by the lease holder only; the sensor keeps them in the forwarder's memory and tools never see them (they talk to the task relay). |
+| Credential leak (database, API, logs, job payload) | Encrypted at rest and bound to tenant and endpoint; never in a response, the audit log, an error or the job payload; fetched per job by the trusted, key-bound lease holder only, sealed to a single-use key (task secrets); the sensor keeps them in the forwarder's memory and tools never see them (they talk to the task relay). |
 | Tenant A's pool used for tenant B | Every query is tenant-scoped; composite foreign keys; credentials only for the pool the claiming sensor's tenant set for it; shared sensors never get an organization pool. |
 | Proxy endpoint as SSRF (metadata, loopback, the operator's services) | Deny list at save; the sensor re-checks every resolved address at dial. Private addresses are allowed for organization sensors (the organization's own network). |
 | A proxy widens what a job reaches | The forwarder checks the target (scope, pinned addresses, port and path limits) before the upstream dial and connects by the checked address; the proxy only carries an admitted connection. |

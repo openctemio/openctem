@@ -136,7 +136,7 @@ func ExposureCategory(eventType string) (Category, bool) {
 	switch eventType {
 	case "dangling_cname", "dangling_ns", "subdomain_takeover":
 		return CatHijackable, true
-	case "port_open", "service_detected", "api_exposed", "web_interface_exposed", "mcp_server_exposed":
+	case "port_open", "service_detected", "risky_service_exposed", "api_exposed", "web_interface_exposed", "mcp_server_exposed":
 		return CatExposedServices, true
 	case "bucket_public":
 		return CatCloudStorage, true
@@ -155,7 +155,7 @@ func ExposureTypes() map[Category][]string {
 	out := map[Category][]string{}
 	for _, t := range []string{
 		"dangling_cname", "dangling_ns", "subdomain_takeover",
-		"port_open", "service_detected", "api_exposed", "web_interface_exposed", "mcp_server_exposed",
+		"port_open", "service_detected", "risky_service_exposed", "api_exposed", "web_interface_exposed", "mcp_server_exposed",
 		"bucket_public",
 		"ssl_issue", "certificate_expiring", "certificate_expired", "email_security_weak", "header_missing", "misconfiguration", "repo_public",
 		"credential_leaked", "lookalike_domain", "sensitive_data_exposed", "mail_server_blocklisted",

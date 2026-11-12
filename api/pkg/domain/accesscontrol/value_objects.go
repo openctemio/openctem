@@ -83,50 +83,6 @@ func (t OwnershipType) ReceivesAllNotifications() bool {
 	return t == OwnershipPrimary || t == OwnershipSecondary
 }
 
-// ScopeType represents the type of permission scope.
-type ScopeType string
-
-const (
-	// ScopeAll applies to all resources.
-	ScopeAll ScopeType = "all"
-	// ScopeOwnedAssets applies only to assets owned by the group.
-	ScopeOwnedAssets ScopeType = "owned_assets"
-	// ScopeAssetType applies to specific asset types.
-	ScopeAssetType ScopeType = "asset_type"
-	// ScopeAssetTags applies to assets with specific tags.
-	ScopeAssetTags ScopeType = "asset_tags"
-	// ScopeSeverity applies to findings with specific severity levels.
-	ScopeSeverity ScopeType = "severity"
-)
-
-// AllScopeTypes returns all valid scope types.
-func AllScopeTypes() []ScopeType {
-	return []ScopeType{
-		ScopeAll,
-		ScopeOwnedAssets,
-		ScopeAssetType,
-		ScopeAssetTags,
-		ScopeSeverity,
-	}
-}
-
-// IsValid checks if the scope type is valid.
-func (s ScopeType) IsValid() bool {
-	return slices.Contains(AllScopeTypes(), s)
-}
-
-// String returns the string representation.
-func (s ScopeType) String() string {
-	return string(s)
-}
-
-// ScopeValue represents the configuration for a scope.
-type ScopeValue struct {
-	AssetTypes  []string `json:"asset_types,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	MinSeverity string   `json:"min_severity,omitempty"`
-}
-
 // AssignmentConditions represents conditions for auto-assignment rules.
 type AssignmentConditions struct {
 	AssetTypes      []string `json:"asset_type,omitempty"`

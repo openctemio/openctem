@@ -8,11 +8,12 @@ const state = vi.hoisted(() => ({
   decide: vi.fn(),
   mutate: vi.fn(),
   perms: [] as string[],
+  requested: undefined as string | null | undefined,
 }))
 
 vi.mock('../../hooks/use-asset-attribution', () => ({
-  useAssetAttribution: () => ({
-    attribution: state.attribution,
+  useAssetAttribution: (id: string | null) => ({
+    attribution: ((state.requested = id), state.attribution),
     error: state.error,
     isLoading: false,
     mutate: state.mutate,
@@ -44,6 +45,25 @@ vi.mock('@/features/integrations/components/scanners/tenable-scan-now', () => ({
     </button>
   ),
 }))
+
+const registryState = vi.hoisted(() => ({ scannable: ['host'] as string[] }))
+vi.mock('@/features/asset-types', async (orig) => {
+  const actual = await orig<typeof import('@/features/asset-types')>()
+  return {
+    ...actual,
+    useAssetTypeRegistry: () => ({
+      registry: {
+        types: [
+          { type: 'subdomain', scannable_by: registryState.scannable },
+          { type: 'ip_address', scannable_by: registryState.scannable },
+          { type: 'host', scannable_by: registryState.scannable },
+          { type: 'repository', scannable_by: registryState.scannable },
+          { type: 'credential', scannable_by: [] },
+        ],
+      },
+    }),
+  }
+})
 
 import { AssetScanningSection } from '../asset-scanning-section'
 
@@ -187,5 +207,22 @@ describe('AssetScanningSection', () => {
     render(<AssetScanningSection asset={SUBDOMAIN} />)
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(state.mutate).toHaveBeenCalled()
+  })
+})
+
+describe('AssetScanningSection for a type scans do not reach', () => {
+  it('says it does not apply and never asks for the attribution', () => {
+    state.attribution = undefined
+    state.error = new Error('Asset not found')
+    render(<AssetScanningSection asset={{ id: 'c1', name: 'leak', type: 'credential' as never }} />)
+    expect(screen.getByText(/do not apply/)).toBeInTheDocument()
+    expect(screen.queryByText(/Asset not found/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument()
+    expect(state.requested).toBeNull()
+  })
+
+  it('still asks for a type scans reach', () => {
+    render(<AssetScanningSection asset={SUBDOMAIN} />)
+    expect(state.requested).toBe('a1')
   })
 })

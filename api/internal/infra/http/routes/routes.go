@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/api/internal/app/accesscontrol"
-	authapp "github.com/openctemio/openctem/api/internal/app/auth"
 	tenantapp "github.com/openctemio/openctem/api/internal/app/tenant"
 	"github.com/openctemio/openctem/api/internal/config"
+	"github.com/openctemio/openctem/api/internal/extensionhost"
 	infrahttp "github.com/openctemio/openctem/api/internal/infra/http"
 	"github.com/openctemio/openctem/api/internal/infra/http/handler"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -25,6 +25,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/platformauthz"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	signupdom "github.com/openctemio/openctem/api/pkg/domain/signup"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 	"github.com/openctemio/openctem/api/pkg/domain/tenant"
 	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/api/pkg/jwt"
@@ -90,6 +91,7 @@ type Handlers struct {
 	DashboardFacts *handler.DashboardFactsHandler
 	SavedView      *handler.SavedViewHandler   // nil if not initialized - saved list views (D15, RFC-048)
 	NavPin         *handler.NavPinHandler      // nil if not initialized - the caller's sidebar pins
+	Inbox          *handler.InboxHandler       // nil if not initialized - the caller's Inbox counts
 	Audit          *handler.AuditHandler       // nil if not initialized (no database)
 	Branch         *handler.BranchHandler      // nil if not initialized (no database)
 	SLA            *handler.SLAHandler         // nil if not initialized (no database)
@@ -158,7 +160,11 @@ type Handlers struct {
 	SensorResults *handler.SensorResultHandler  // unsolicited results policy + quarantine review (RFC-040); nil without a database
 	ScanZone      *handler.ScanZoneHandler      // nil if not initialized (no database)
 	ProxyPool     *handler.ProxyPoolHandler     // nil if not initialized (no database)
-	ScanWindow    *handler.ScanWindowHandler    // nil if not initialized (no database)
+	// ToolSource serves the organization's tool source keys; nil without a database.
+	ToolSource *handler.ToolSourceHandler
+	// TaskSecrets serves the sealed task secrets fetch of sensors; nil: not mounted.
+	TaskSecrets handler.TaskSecrets
+	ScanWindow  *handler.ScanWindowHandler // nil if not initialized (no database)
 	// FindingLifecycle serves sub-statuses and lifecycle schemes (RFC-110); nil without a database.
 	FindingLifecycle *handler.FindingLifecycleHandler
 	ScanWorkflow     *handler.ScanWorkflowHandler // nil if not initialized (no database)
@@ -182,6 +188,7 @@ type Handlers struct {
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	FeedRelay           *handler.FeedRelayHandler           // feed relay (RFC-142): sensor and admin routes; nil if not initialized
+	LookupJobs          *handler.LookupJobHandler           // lookup jobs (lookup.ct@1) of platform sensors; nil if not initialized
 	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	AdminConfiguration  *handler.AdminConfigurationHandler  // Configuration page: setting sources (RFC-022 rev. 22)
 	// AdminPlatformSettings serves the settings moved from the environment
@@ -285,8 +292,11 @@ type Handlers struct {
 	AssetImport *handler.AssetImportHandler // nil if not initialized
 
 	// Finding import (exports of other tools, VEX documents)
-	FindingImport *handler.FindingImportHandler // nil if not initialized
-	IngestReceipt *handler.IngestReceiptHandler // receipts of uploads and runs (RFC-122); nil if not initialized
+	FindingImport    *handler.FindingImportHandler    // nil if not initialized
+	SourceRetirement *handler.SourceRetirementHandler // retired import sources; nil if not initialized
+	IngestReceipt    *handler.IngestReceiptHandler    // receipts of uploads and runs (RFC-122); nil if not initialized
+	Story            *handler.StoryHandler            // how a finding or asset was found; nil if not initialized
+	ExplorationLeads *handler.ExplorationLeadHandler  // exploration leads; nil if not initialized
 
 	// Configuration handlers (read-only system config)
 	FindingSource *handler.FindingSourceHandler // nil if not initialized (no database)
@@ -337,6 +347,10 @@ type Handlers struct {
 	// IdleReadOnly refuses changes to an idle Free organization (read-only
 	// after 90 days without a sign-in).
 	IdleReadOnly middleware.IdleReadOnlyChecker
+	// ExtensionRoutes are the routes of the build's extensions (none in the
+	// Community build); Grants enforces their grant keys.
+	ExtensionRoutes []extensionhost.Route
+	Grants          GrantChecker
 	// EntryChecker applies the URL organization's entry requirements on
 	// /api/v1/tenants/{tenant}/... routes (AuthService.CheckEntry).
 	EntryChecker middleware.EntryChecker
@@ -426,6 +440,9 @@ type Handlers struct {
 	// local auth handler's (sessions.step_up_at); route tests that are not
 	// about step-up pass a stub. No checker at all refuses those routes.
 	StepUp middleware.RecentAuthChecker
+	// StepUpPolicies reads each organization's re-verification policy
+	// (NewStepUpPolicyProvider). Nil applies the legacy policy (tests).
+	StepUpPolicies middleware.StepUpPolicyProvider
 }
 
 // AuthConfig holds authentication configuration for route registration.
@@ -499,6 +516,7 @@ func Register(
 	if stepUpChecker == nil && h.LocalAuth != nil {
 		stepUpChecker = h.LocalAuth.RecentAuthChecker()
 	}
+	stepUpPolicies = h.StepUpPolicies
 	credentialFactorChecker = nil
 	ownSignInChecker = nil
 	if h.LocalAuth != nil {
@@ -692,6 +710,13 @@ func Register(
 	}
 	if h.FindingImport != nil || h.IngestReceipt != nil {
 		registerFindingImportRoutes(router, h.FindingImport, h.IngestReceipt, authMiddleware, userSync)
+		registerSourceRetirementRoutes(router, h.SourceRetirement, authMiddleware, userSync)
+	}
+	if h.Story != nil {
+		registerStoryRoutes(router, h.Story, authMiddleware, userSync)
+	}
+	if h.ExplorationLeads != nil {
+		registerExplorationLeadRoutes(router, h.ExplorationLeads, authMiddleware, userSync)
 	}
 	if h.ImportMapping != nil {
 		registerImportMappingRoutes(router, h.ImportMapping, authMiddleware, userSync)
@@ -1084,6 +1109,9 @@ func Register(
 		if ctl != nil && h.FeedRelay != nil {
 			ctl.SetFeedRelay(h.FeedRelay)
 		}
+		if ctl != nil && h.LookupJobs != nil {
+			ctl.SetLookupJobs(h.LookupJobs)
+		}
 		budgets := newSensorV2Budgets(ingestRateLimiter, log)
 		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)
 		if h.SensorV3 != nil && ctl != nil {
@@ -1108,6 +1136,9 @@ func Register(
 	// Scan zone routes (tenant from JWT token)
 	if h.ScanZone != nil {
 		registerScanZoneRoutes(router, h.ScanZone, authMiddleware, userSync)
+	}
+	if h.ToolSource != nil {
+		registerToolSourceRoutes(router, h.ToolSource, authMiddleware, userSync)
 	}
 	if h.ProxyPool != nil {
 		registerProxyPoolRoutes(router, h.ProxyPool, authMiddleware, userSync)
@@ -1231,6 +1262,9 @@ func Register(
 	if h.NavPin != nil {
 		registerNavPinRoutes(router, h.NavPin, authMiddleware, userSync)
 	}
+	if h.Inbox != nil {
+		registerInboxRoutes(router, h.Inbox, authMiddleware, userSync)
+	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)
 	if h.Permission != nil {
@@ -1278,6 +1312,12 @@ func Register(
 	// Platform Stats routes (tenant-scoped platform sensor statistics)
 	if h.PlatformScanning != nil {
 		registerPlatformScanningRoutes(router, h.PlatformScanning, authMiddleware, userSync)
+	}
+
+	// Routes of the build's extensions, after every core route so one that
+	// would replace a core route is refused.
+	if len(h.ExtensionRoutes) > 0 {
+		registerExtensionRoutes(router, h.ExtensionRoutes, h.Grants, buildTokenTenantMiddlewares(authMiddleware, userSync))
 	}
 
 	// ==========================================================================
@@ -1446,11 +1486,30 @@ func requireCredentialFactor() Middleware {
 	return middleware.RequireCredentialFactor(credentialFactorChecker)
 }
 
-// requireStepUp is the middleware for a sensitive route: the caller's session
-// must have signed in or stepped up within authapp.StepUpWindow, otherwise
-// 403 STEP_UP_REQUIRED. Mount it after the route's permission check.
+// stepUpPolicies reads each organization's re-verification policy. Set once
+// during Register from Handlers.StepUpPolicies; nil applies the legacy policy
+// (tests).
+var stepUpPolicies middleware.StepUpPolicyProvider //nolint:gochecknoglobals // set once during init
+
+// requireStepUp is the middleware for a critical route (control of the
+// organization: roles, sign-in, credentials, secrets, deletion, approving
+// active scanning, exports): the caller re-authenticates as the
+// organization's critical rule says (every time, or once per 10 minutes),
+// otherwise 403 STEP_UP_REQUIRED. Mount it after the route's permission
+// check. A new route behind step-up is critical unless it is classified.
 func requireStepUp() Middleware {
-	return middleware.RequireRecentAuth(stepUpChecker, authapp.StepUpWindow)
+	return requireStepUpTier(stepup.TierCritical)
+}
+
+// requireStepUpSensitive is requireStepUp for a sensitive route (governance
+// settings, decisions that hide or lower risk, bulk closes): it follows the
+// organization's sensitive rule, which may be off.
+func requireStepUpSensitive() Middleware {
+	return requireStepUpTier(stepup.TierSensitive)
+}
+
+func requireStepUpTier(tier stepup.Tier) Middleware {
+	return middleware.RequireStepUp(stepUpChecker, stepUpPolicies, tier)
 }
 
 // requireStepUpWhenClosing is requireStepUp for POST /findings/bulk/status
@@ -1463,9 +1522,48 @@ func requireStepUp() Middleware {
 // valid open status skips the gate: a body that cannot be parsed, or names no
 // or an unknown status, is gated too (the handler then rejects it).
 func requireStepUpWhenClosing() Middleware {
-	gate := requireStepUp()
+	sensitive, routine := requireStepUpSensitive(), requireStepUpTier(stepup.TierRoutine)
 	return func(next http.Handler) http.Handler {
-		gated := gate(next)
+		gatedSensitive, gatedRoutine := sensitive(next), routine(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+			if err != nil {
+				apierror.BadRequest("Invalid request body").WriteJSON(w)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var req struct {
+				Status     string   `json:"status"`
+				FindingIDs []string `json:"finding_ids"`
+			}
+			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil {
+				if st, err := vulnerability.ParseFindingStatus(req.Status); err == nil {
+					switch {
+					case !st.IsClosed():
+						next.ServeHTTP(w, r)
+						return
+					case len(req.FindingIDs) == 1:
+						// One finding: the same decision as its own status
+						// change, a routine action.
+						gatedRoutine.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
+			gatedSensitive.ServeHTTP(w, r)
+		})
+	}
+}
+
+// requireStepUpWhenClosingOne is the routine gate of one finding's status
+// change (PATCH /findings/{id}/status) when the target status closes it.
+// It follows the organization's routine rule (off by default), so it asks
+// only where the organization chose to. Moves between open states, and a
+// body the gate cannot read (the handler rejects it), pass to the handler.
+func requireStepUpWhenClosingOne() Middleware {
+	routine := requireStepUpTier(stepup.TierRoutine)
+	return func(next http.Handler) http.Handler {
+		gated := routine(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
 			if err != nil {
@@ -1487,14 +1585,14 @@ func requireStepUpWhenClosing() Middleware {
 	}
 }
 
-// requireStepUpWhenConfirming gates every Ready to close confirm, single or
-// bulk, behind a recent re-authentication (a stolen session cannot close
-// findings one by one either; the step-up window lets one proof cover a short
-// burst). Only a dismissal, which keeps findings open, passes.
+// requireStepUpWhenConfirming gates Ready to close confirms: confirming
+// several proposals is a bulk close (sensitive); confirming one is that
+// finding's close (routine). A dismissal, which keeps findings open, passes.
+// A body the gate cannot read is gated as sensitive.
 func requireStepUpWhenConfirming() Middleware {
-	gate := requireStepUp()
+	sensitive, routine := requireStepUpSensitive(), requireStepUpTier(stepup.TierRoutine)
 	return func(next http.Handler) http.Handler {
-		gated := gate(next)
+		gated, gatedRoutine := sensitive(next), routine(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
 			if err != nil {
@@ -1503,12 +1601,18 @@ func requireStepUpWhenConfirming() Middleware {
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			var req struct {
-				Decision string `json:"decision"`
+				Decision    string   `json:"decision"`
+				ProposalIDs []string `json:"proposal_ids"`
 			}
-			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil &&
-				req.Decision == "dismiss" {
-				next.ServeHTTP(w, r)
-				return
+			if json.NewDecoder(bytes.NewReader(body)).Decode(&req) == nil {
+				switch {
+				case req.Decision == "dismiss":
+					next.ServeHTTP(w, r)
+					return
+				case req.Decision == "confirm" && len(req.ProposalIDs) == 1:
+					gatedRoutine.ServeHTTP(w, r)
+					return
+				}
 			}
 			gated.ServeHTTP(w, r)
 		})
@@ -1541,6 +1645,28 @@ func (a tenantSecurityPolicyAdapter) SecuritySettings(ctx context.Context, tenan
 	// Strict: an unreadable security section is an error (the IP allowlist
 	// gate then denies), never the permissive defaults.
 	return t.SecuritySettingsStrict()
+}
+
+// NewStepUpPolicyProvider reads each organization's re-verification policy
+// from the tenant repository (the services' step-up gate uses the same
+// reader as the routes). A nil repository gives nil: the legacy policy.
+func NewStepUpPolicyProvider(repo tenant.Repository) middleware.StepUpPolicyProvider {
+	if repo == nil {
+		return nil
+	}
+	return tenantSecurityPolicyAdapter{repo: repo}
+}
+
+// StepUpPolicy implements middleware.StepUpPolicyProvider: the
+// organization's re-verification policy in force. Strict like the IP
+// allowlist: an unreadable security section is an error (the gate refuses),
+// never a default.
+func (a tenantSecurityPolicyAdapter) StepUpPolicy(ctx context.Context, tenantID string) (stepup.Policy, error) {
+	sec, err := a.SecuritySettings(ctx, tenantID)
+	if err != nil {
+		return stepup.Policy{}, err
+	}
+	return sec.EffectiveStepUp(), nil
 }
 
 // tenantSSOEnforcedAdapter adapts tenant.Repository to

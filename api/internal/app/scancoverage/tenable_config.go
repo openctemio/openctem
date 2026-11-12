@@ -43,11 +43,18 @@ type Rotation string
 const (
 	RotationOff     Rotation = "off"
 	RotationAging   Rotation = "aging"
+	RotationPurge   Rotation = "purge"
 	RotationRecycle Rotation = "recycle"
 )
 
-// DefaultRotationWaitHours is the aging wait after a batch.
-const DefaultRotationWaitHours = 12
+// Aging waits. Repository lifetimes are whole days (at least 1) and
+// Tenable.sc removes aged data only at its nightly cleanup, so a wait under
+// a day plus a margin can never see the capacity freed.
+const (
+	DefaultRotationWaitHours = 26
+	MinRotationWaitHours     = 24
+	MaxRotationWaitHours     = 72
+)
 
 // TenableConfig is the normalized config of a Tenable integration, read from the
 // integration's JSONB config map.
@@ -67,9 +74,13 @@ type TenableConfig struct {
 	SafetyMargin int
 	// Rotation is how license capacity comes back between batches
 	// (research/143 §4): off (default: cover what the license holds),
-	// aging (the rotation repository's lifetimes free it at Tenable.sc's
-	// nightly cleanup) or recycle (the sensor deletes and recreates the
-	// rotation repository). Anything but off needs RotationAcknowledged.
+	// aging (recommended: 1-day lifetimes on a dedicated universal rotation
+	// repository free it at Tenable.sc's nightly cleanup), purge (the
+	// sensor removes the previous batch's addresses with an imported empty
+	// result; unverified) or recycle (the sensor replaces the rotation
+	// repository by a verified copy and deletes the old one; needs an
+	// administrator key on the connector; unverified). Anything but off
+	// needs RotationAcknowledged.
 	Rotation Rotation
 	// RotationAcknowledged: an administrator confirmed that the customer's
 	// Tenable license terms allow rotating more assets than licensed.
@@ -120,10 +131,10 @@ func ParseTenableConfig(config map[string]any) (TenableConfig, error) {
 	c.Rotation = RotationOff
 	if v := strings.ToLower(strings.TrimSpace(stringFromConfig(config, "coverage_rotation"))); v != "" {
 		switch Rotation(v) {
-		case RotationOff, RotationAging, RotationRecycle:
+		case RotationOff, RotationAging, RotationPurge, RotationRecycle:
 			c.Rotation = Rotation(v)
 		default:
-			return c, fmt.Errorf("invalid coverage_rotation %q (want off|aging|recycle)", v)
+			return c, fmt.Errorf("invalid coverage_rotation %q (want off|aging|purge|recycle)", v)
 		}
 	}
 	c.RotationAcknowledged = boolFromConfig(config, "coverage_rotation_acknowledged")
@@ -131,8 +142,9 @@ func ParseTenableConfig(config map[string]any) (TenableConfig, error) {
 	if c.RotationWaitHours == 0 {
 		c.RotationWaitHours = DefaultRotationWaitHours
 	}
-	if c.RotationWaitHours < 1 || c.RotationWaitHours > 72 {
-		return c, fmt.Errorf("coverage_rotation_wait_hours must be 1..72")
+	if c.RotationWaitHours < MinRotationWaitHours || c.RotationWaitHours > MaxRotationWaitHours {
+		return c, fmt.Errorf("coverage_rotation_wait_hours must be %d..%d: Tenable.sc frees aged data only at its nightly cleanup, so the wait is at least a day",
+			MinRotationWaitHours, MaxRotationWaitHours)
 	}
 	if c.Rotation != RotationOff && !c.RotationAcknowledged {
 		return c, fmt.Errorf("coverage_rotation %q needs coverage_rotation_acknowledged: an administrator confirms the customer's Tenable license terms allow rotating more assets than licensed", c.Rotation)

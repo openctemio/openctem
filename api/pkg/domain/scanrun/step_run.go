@@ -100,9 +100,22 @@ type StepRun struct {
 	ConditionResult    *bool
 	SkipReason         string
 
+	// EffectiveConfig is what the platform dispatched the step with and
+	// SensorSettings what the sensor reported it ran with (nil: none).
+	EffectiveConfig *EffectiveConfig
+	SensorSettings  *SensorSettings
+
 	// Results
 	FindingsCount int
-	Output        map[string]any
+	// InfoObservations counts the template scanner info matches the step
+	// run's reports filed as exposures instead of findings.
+	InfoObservations int
+	// FindingsHeld counts reported findings held for review (results
+	// quarantine); FindingsRefused those not stored. FindingsCount is what
+	// the sensor reported: stored + held + refused + info observations.
+	FindingsHeld    int
+	FindingsRefused int
+	Output          map[string]any
 
 	// Retry tracking
 	Attempt     int

@@ -206,6 +206,17 @@ export function validateOrdinal(colors, { surface }) {
   return { fails, warns }
 }
 
+/** The single-measure ink reads at 4.5:1 on the surface; its weak step (a track) stays distinct from it. */
+export function validateInk([ink, weak], { surface }) {
+  const fails = []
+  const ratio = contrast(ink, surface)
+  if (ratio < INK_MIN)
+    fails.push(`ink ${ink} is ${ratio.toFixed(2)}:1 on ${surface}, needs ${INK_MIN}:1`)
+  if (contrast(ink, weak) < CONTRAST_MIN)
+    fails.push(`ink ${ink} and its weak step ${weak} are under ${CONTRAST_MIN}:1 apart`)
+  return { fails, warns: [] }
+}
+
 /** The --viz-* tokens the palette defines, by mode. */
 export function expectedTokens(p, mode) {
   const t = {}
@@ -217,6 +228,7 @@ export function expectedTokens(p, mode) {
   p.categorical[mode].forEach((c, i) => (t[`--viz-cat-${i + 1}`] = c))
   t['--viz-cat-other'] = p.categorical.other[mode]
   p.diverging.keys.forEach((k, i) => (t[`--viz-div-${k}`] = p.diverging[mode][i]))
+  p.ink.keys.forEach((k, i) => (t[`--viz-${k}`] = p.ink[mode][i]))
   p.sequential[mode].forEach((c, i) => (t[`--viz-seq-${i + 1}`] = c))
   p.sequential.ink[mode].forEach((c, i) => (t[`--viz-seq-ink-${i + 1}`] = c))
   return t
@@ -255,6 +267,7 @@ export function checkAll(palette, css) {
     add(`level/${mode}`, validateOrdinal(palette.level[mode], { surface }))
     add(`categorical/${mode}`, validateCategorical(palette.categorical[mode], { mode, surface }))
     add(`diverging/${mode}`, validateCategorical(palette.diverging[mode], { mode, surface }))
+    add(`ink/${mode}`, validateInk(palette.ink[mode], { surface }))
     add(
       `sequential/${mode}`,
       validateSequential(palette.sequential[mode], palette.sequential.ink[mode], { mode, surface })
@@ -269,6 +282,7 @@ export function checkAll(palette, css) {
       palette.categorical.other[mode],
       ...palette.diverging[mode],
       ...palette.sequential[mode],
+      ...palette.ink[mode],
     ]
     const teal = accentBandHits(data)
     if (teal.length)

@@ -36,6 +36,7 @@ import {
   useFlowFocus,
   useWireAnchors,
   FlowWire,
+  FlowWireLayer,
   wirePath,
   type FlowTipContent,
 } from './flow-parts'
@@ -46,6 +47,7 @@ import {
   sourceName,
   sourceRankRows,
   sourceViewFor,
+  sourceWires,
   useSourceView,
 } from './source-view'
 import { StackedBar } from './stacked-bar'
@@ -82,6 +84,30 @@ export const NOISE_PARTS = [
   { key: 'suppressed', color: 'var(--viz-cat-3)' },
   { key: 'not_stored', color: 'var(--warning)' },
 ] as const
+
+type NoiseKey = (typeof NOISE_PARTS)[number]['key']
+
+/**
+ * The bar's segments and the noise removed. The receipt counts suppressed
+ * apart from created (a suppressed new finding is never counted as created),
+ * so New does not contain it: each part is drawn as the API gives it, and
+ * New, Merged, Suppressed and Not stored sum to Received. Everything that is
+ * not New or reopened is removed noise.
+ */
+export function noiseSegments(noise: IntakeData['noise']): {
+  segments: Record<NoiseKey, number>
+  removed: number
+} {
+  return {
+    segments: {
+      new: noise.new,
+      merged: noise.merged,
+      suppressed: noise.suppressed,
+      not_stored: noise.not_stored,
+    },
+    removed: Math.max(0, noise.received - noise.new),
+  }
+}
 
 export function IntakeViz({ result }: { result: IntakeResult }) {
   const { t, locale } = useTranslation()
@@ -159,7 +185,12 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
     // their figure: any change of the data re-measures.
     `${band}:${m}:${g}:${rows.map((r) => `${r.key}=${r.value}/${r.health ?? 'ok'}`).join(',')}`
   )
-  const max = Math.max(1, ...rows.map((r) => r.value))
+  // The wires carry the findings each row sent into the summary, whatever the
+  // bars rank by (assets never enter the findings figures).
+  const { wires, max } = useMemo(
+    () => sourceWires(data.sources, instances, g),
+    [data.sources, instances, g]
+  )
   const periodLabel = t('dashboardKit.flow.period', '{days} days', { days: data.days })
   const lit = (k: string) => !!active && (k === active || k === 'summary' || k === `w:${active}`)
   const activeSource = data.sources.find((s) => `s:${s.id}` === active)
@@ -250,6 +281,7 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
           hasInstances={hasInstances}
           setMeasure={setMeasure}
           setGroup={setGroup}
+          wired={band !== 'narrow'}
         />
       </header>
       <div className="@container">
@@ -266,13 +298,8 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
           {...containerProps}
         >
           {layout && band !== 'narrow' && (
-            <svg
-              aria-hidden
-              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-              width={layout.width}
-              height={layout.height}
-            >
-              {rows.map((r) => {
+            <FlowWireLayer width={layout.width} height={layout.height}>
+              {wires.map((r) => {
                 const from = layout.out[r.key]
                 const to = layout.in.summary
                 if (!from || !to) return null
@@ -282,15 +309,15 @@ function ConnectorPanel({ data }: { data: IntakeData }) {
                     key={k}
                     wireKey={k}
                     d={wirePath(from.x + FRAME_INSET, from.y, to.x, to.y)}
-                    value={r.value}
+                    value={r.received}
                     max={max}
-                    health={r.health ?? 'ok'}
+                    health={r.health}
                     focused={lit(k)}
                     className={dimClass(active, lit(k))}
                   />
                 )
               })}
-            </svg>
+            </FlowWireLayer>
           )}
 
           <div
@@ -436,17 +463,13 @@ function NoiseReduction({ data }: { data: IntakeData }) {
   const { t, locale } = useTranslation()
   const n = (v: number) => formatCount(v, locale)
   const noise = data.noise
-  // New or reopened is the receipt list's New plus Reopened. Suppressed is
-  // the part of it an approved rule closed on arrival, so the bar draws it
-  // inside New, and the removed noise adds it back (it was never opened).
-  const removed = Math.max(0, noise.received - noise.new) + noise.suppressed
-  const segment = (key: (typeof NOISE_PARTS)[number]['key']) =>
-    key === 'new' ? Math.max(0, noise.new - noise.suppressed) : noise[key]
-  const label = (key: (typeof NOISE_PARTS)[number]['key']) =>
+  const { segments, removed } = noiseSegments(noise)
+  const segment = (key: NoiseKey) => segments[key]
+  const label = (key: NoiseKey) =>
     ({
       new: t('dashboardKit.intake.noise.new', 'New or reopened'),
       merged: t('dashboardKit.intake.noise.merged', 'Merged'),
-      suppressed: t('dashboardKit.intake.noise.suppressed', 'of which suppressed by rules'),
+      suppressed: t('dashboardKit.intake.noise.suppressed', 'Suppressed by rules'),
       not_stored: t('dashboardKit.intake.noise.notStored', 'Not stored'),
     })[key]
   const days = data.days
@@ -493,7 +516,7 @@ function NoiseReduction({ data }: { data: IntakeData }) {
           className="mb-2 h-2.5 rounded-sm"
           ariaLabel={t(
             'dashboardKit.intake.noiseBarAria',
-            'Received split into new or reopened (some suppressed by rules), merged and not stored'
+            'Received split into new or reopened, merged, suppressed by rules and not stored'
           )}
           parts={NOISE_PARTS.map((p) => ({ key: p.key, value: segment(p.key), color: p.color }))}
         />
@@ -505,10 +528,10 @@ function NoiseReduction({ data }: { data: IntakeData }) {
             <span className="text-muted-foreground">{label(p.key)}</span>
             <FlowLink
               to={data.drill}
-              label={`${label(p.key)}: ${n(noise[p.key])}`}
+              label={`${label(p.key)}: ${n(segment(p.key))}`}
               className="font-semibold tabular-nums hover:underline"
             >
-              {n(noise[p.key])}
+              {n(segment(p.key))}
             </FlowLink>
           </li>
         ))}

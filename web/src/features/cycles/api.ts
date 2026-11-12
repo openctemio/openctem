@@ -115,8 +115,29 @@ const TRANSITION_ENDPOINT: Record<CycleTransition, string> = {
   close: 'close',
 }
 
-export function transitionCycle(id: string, action: CycleTransition): Promise<CtemCycle> {
-  return post<CtemCycle>(`${cycleKey(id)}/${TRANSITION_ENDPOINT[action]}`)
+/**
+ * The body of a close that overrides a validation coverage check that could
+ * not run (the API refuses the close with COVERAGE_CHECK_FAILED otherwise).
+ * The reason is audited. It never lifts an enforced coverage SLO.
+ */
+export interface CloseOverride {
+  override_coverage_check: true
+  override_reason: string
+}
+
+/** The API's code when a close was refused because the coverage check failed. */
+export const COVERAGE_CHECK_FAILED = 'COVERAGE_CHECK_FAILED'
+
+/** Shortest override reason the API accepts. */
+export const MIN_OVERRIDE_REASON = 10
+
+export function transitionCycle(
+  id: string,
+  action: CycleTransition,
+  override?: CloseOverride
+): Promise<CtemCycle> {
+  const url = `${cycleKey(id)}/${TRANSITION_ENDPOINT[action]}`
+  return override ? post<CtemCycle>(url, override) : post<CtemCycle>(url)
 }
 
 export function saveScopeRefinement(id: string, notes: string): Promise<unknown> {

@@ -18,12 +18,14 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/datascope"
 	scansvc "github.com/openctemio/openctem/api/internal/app/scan"
 	"github.com/openctemio/openctem/api/internal/app/scancoverage"
+	"github.com/openctemio/openctem/api/internal/infra/http/filterquery"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/permission"
 	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/domain/user"
+	"github.com/openctemio/openctem/api/pkg/filterspec"
 	"github.com/openctemio/openctem/api/pkg/logger"
 	"github.com/openctemio/openctem/api/pkg/validator"
 )
@@ -106,14 +108,18 @@ type CreateScanRequest struct {
 	// Depth is how much of the workflow each run executes: passive (only
 	// steps that send nothing to the targets), standard (default) or deep.
 	// A depth at which no first step can run is refused (DEPTH_RUNS_NOTHING).
-	Depth          string         `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScanType       string         `json:"scan_type" validate:"required,oneof=workflow single"`
-	ScanWorkflowID string         `json:"scan_workflow_id" validate:"omitempty,uuid"`
-	ScannerName    string         `json:"scanner_name" validate:"max=100"`
-	ScannerConfig  map[string]any `json:"scanner_config"`
-	TargetsPerJob  int            `json:"targets_per_job"`
-	ScheduleType   string         `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron   string         `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams override capability standard params per workflow step:
+	// {"<step_key>" or "*:<capability>": {"<param>": value}}. Standard
+	// params only (INVALID_STEP_PARAMS otherwise).
+	StepParams     scan.StepParams `json:"step_params"`
+	ScanType       string          `json:"scan_type" validate:"required,oneof=workflow single"`
+	ScanWorkflowID string          `json:"scan_workflow_id" validate:"omitempty,uuid"`
+	ScannerName    string          `json:"scanner_name" validate:"max=100"`
+	ScannerConfig  map[string]any  `json:"scanner_config"`
+	TargetsPerJob  int             `json:"targets_per_job"`
+	ScheduleType   string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron   string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -145,6 +151,12 @@ type CreateScanRequest struct {
 	// codes in skipped_targets and on every run. Nothing the gate refuses is
 	// saved or scanned.
 	SkipRefusedTargets bool `json:"skip_refused_targets"`
+	// ConfirmLargeRange confirms direct targets that name a range wider than
+	// a /16 (scanned live hosts first in /16 chunks). Required for such a
+	// scan: without it the request is refused with LARGE_RANGE_UNCONFIRMED,
+	// whose message and details carry the ranges and their address and
+	// chunk counts.
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // UpdateScanRequest represents the request body for updating a scan.
@@ -160,9 +172,11 @@ type UpdateScanRequest struct {
 	// Intensity: omitted = unchanged.
 	Intensity string `json:"intensity" validate:"omitempty,oneof=passive active intrusive"`
 	// Depth: omitted = unchanged.
-	Depth        string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
-	ScheduleType string `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
-	ScheduleCron string `json:"schedule_cron" validate:"max=100"`
+	Depth string `json:"depth" validate:"omitempty,oneof=passive standard deep"`
+	// StepParams: omitted = unchanged, {} clears.
+	StepParams   scan.StepParams `json:"step_params"`
+	ScheduleType string          `json:"schedule_type" validate:"omitempty,oneof=manual daily weekly monthly crontab rrule once"`
+	ScheduleCron string          `json:"schedule_cron" validate:"max=100"`
 	// ScheduleRRule is an RFC 5545 rule (RRULE parts) for schedule_type rrule,
 	// evaluated in timezone; at most every 15 minutes.
 	ScheduleRRule string  `json:"schedule_rrule" validate:"max=500"`
@@ -196,6 +210,9 @@ type UpdateScanRequest struct {
 	// AssetGroupIDs: omitted = unchanged; given = the scan's asset groups
 	// ([] = none; the scan must keep a target or a group).
 	AssetGroupIDs *[]string `json:"asset_group_ids" validate:"omitempty,max=100,dive,uuid"`
+	// ConfirmLargeRange confirms new targets that name a range wider than a
+	// /16; required for such an edit (LARGE_RANGE_UNCONFIRMED without it).
+	ConfirmLargeRange bool `json:"confirm_large_range"`
 }
 
 // TriggerScanRequest represents the request body for triggering a scan.
@@ -296,16 +313,18 @@ type ScanDetailResponse struct {
 	// intrusive.
 	Intensity string `json:"intensity" enums:"passive,active,intrusive"`
 	// Depth is how much of the workflow each run executes.
-	Depth          string         `json:"depth" enums:"passive,standard,deep"`
-	ScanType       string         `json:"scan_type"`
-	ScanWorkflowID *string        `json:"scan_workflow_id,omitempty"`
-	ScannerName    string         `json:"scanner_name,omitempty"`
-	ScannerConfig  map[string]any `json:"scanner_config,omitempty"`
+	Depth string `json:"depth" enums:"passive,standard,deep"`
+	// StepParams are the scan's per-step overrides of standard params.
+	StepParams     scan.StepParams `json:"step_params,omitempty"`
+	ScanType       string          `json:"scan_type"`
+	ScanWorkflowID *string         `json:"scan_workflow_id,omitempty"`
+	ScannerName    string          `json:"scanner_name,omitempty"`
+	ScannerConfig  map[string]any  `json:"scanner_config,omitempty"`
 	// ScannerConfigWarnings lists scanner_config values that look like
-	// secrets (a token, a password, an Authorization header). The config is
-	// sent to the sensor in clear inside every command, so a secret there
-	// travels and rests unprotected. A warning, never a refusal; the value
-	// itself is never echoed.
+	// secrets. A certain credential is refused on save and blocks a run
+	// (SCANNER_CONFIG_SECRET); what is listed here is what only looks like
+	// one (a random-looking value), or a scan stored before the refusal.
+	// The value itself is never echoed.
 	ScannerConfigWarnings []scan.ConfigSecretWarning `json:"scanner_config_warnings,omitempty"`
 	TargetsPerJob         int                        `json:"targets_per_job"`
 	ScheduleType          string                     `json:"schedule_type"`
@@ -328,13 +347,18 @@ type ScanDetailResponse struct {
 	RetryBackoffSeconds int     `json:"retry_backoff_seconds"`
 	Status              string  `json:"status"`
 	// AdHoc: an unsaved quick scan (not listed as a configuration until saved).
-	AdHoc          bool    `json:"ad_hoc"`
-	LastRunID      *string `json:"last_run_id,omitempty"`
-	LastRunAt      *string `json:"last_run_at,omitempty"`
-	LastRunStatus  string  `json:"last_run_status,omitempty"`
-	TotalRuns      int     `json:"total_runs"`
-	SuccessfulRuns int     `json:"successful_runs"`
-	FailedRuns     int     `json:"failed_runs"`
+	AdHoc         bool    `json:"ad_hoc"`
+	LastRunID     *string `json:"last_run_id,omitempty"`
+	LastRunAt     *string `json:"last_run_at,omitempty"`
+	LastRunStatus string  `json:"last_run_status,omitempty"`
+	// LastMissedAt/LastMissedReason: the last scheduled occurrence that was
+	// skipped because it was missed (reason is a code the UI translates).
+	// Cleared when a later scheduled run starts.
+	LastMissedAt     *string `json:"last_missed_at,omitempty"`
+	LastMissedReason string  `json:"last_missed_reason,omitempty"`
+	TotalRuns        int     `json:"total_runs"`
+	SuccessfulRuns   int     `json:"successful_runs"`
+	FailedRuns       int     `json:"failed_runs"`
 	// PartialRuns: runs that kept results but lost some work.
 	PartialRuns int `json:"partial_runs"`
 	// BlockedRuns: triggers refused before anything was dispatched; each
@@ -380,7 +404,7 @@ type ScanStatsResponse struct {
 
 // CreateScan handles POST /api/v1/scans
 // @Summary      Create scan
-// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response).
+// @Description  Create a new scan configuration with scheduling options. With start_when_scope_approved, a scan whose direct targets are refused only because pending scope entries cover them is saved and starts once those entries are approved (starts_when_scope_approved in the response). Direct targets that name a range wider than a /16 need confirm_large_range: true and an organization limit that allows them (Scoping settings, max_range_prefix; a /16 by default); without the confirmation the request is refused (400 LARGE_RANGE_UNCONFIRMED, with the address and chunk counts).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -459,6 +483,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
 		Depth:               req.Depth,
+		StepParams:          req.StepParams,
 		ScanType:            req.ScanType,
 		ScanWorkflowID:      req.ScanWorkflowID,
 		ScannerName:         req.ScannerName,
@@ -484,6 +509,7 @@ func (h *ScanHandler) CreateScan(w http.ResponseWriter, r *http.Request) {
 
 		StartWhenScopeApproved: req.StartWhenScopeApproved,
 		SkipRefusedTargets:     req.SkipRefusedTargets,
+		ConfirmLargeRange:      req.ConfirmLargeRange,
 	}
 
 	s, err := h.service.CreateScan(r.Context(), input)
@@ -557,20 +583,96 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.toScanResponse(r.Context(), s))
 }
 
+// scansListDeprecatedAt and scansListSunsetAt date the old GET /scans param
+// names (search, tags): the list query contract's alias window
+// (docs/rfcs/RFC-048-list-query-contract.md).
+var (
+	scansListDeprecatedAt = time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC)
+	scansListSunsetAt     = time.Date(2027, 5, 8, 0, 0, 0, 0, time.UTC)
+)
+
+// scansListRoute is GET /scans (and POST /scans/search) on the list query
+// contract: strict params, the old names as aliases. include_ad_hoc is a
+// list option, not a filter.
+func (h *ScanHandler) scansListRoute(name string) filterquery.Route {
+	return filterquery.Route{
+		Name:         name,
+		Registry:     scan.Fields,
+		Options:      filterspec.Options{Unknown: filterspec.UnknownStrict, Extra: []string{"include_ad_hoc"}},
+		DeprecatedAt: scansListDeprecatedAt,
+		SunsetAt:     scansListSunsetAt,
+		Logger:       h.logger,
+		NoEchoValues: true,
+	}
+}
+
 // ListScans handles GET /api/v1/scans
 // @Summary      List scans
-// @Description  Get a paginated list of scans
+// @Description  The tenant's saved scans, filtered and sorted by the list query contract: every field accepts
+// @Description  a comma list (any of), a _not list (none of) and, where its type allows, _contains, _gte, _lte,
+// @Description  _gt and _lt. q searches the name and the description. Quick scans that were never saved are left
+// @Description  out unless include_ad_hoc=true or origin=system. The old names search (now q) and tags (now tag)
+// @Description  still work and answer with Deprecation, Sunset and Warning headers. An unknown param is 400.
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
-// @Param        asset_group_id  query     string  false  "Filter by asset group"
-// @Param        scan_workflow_id     query     string  false  "Filter by scan workflow"
-// @Param        scan_type       query     string  false  "Filter by scan type (workflow, single)"
-// @Param        schedule_type   query     string  false  "Filter by schedule type"
-// @Param        status          query     string  false  "Filter by status"
-// @Param        search          query     string  false  "Search by name"
+// filterspec-params: scans GET /scans
+// @Param  id  query  []string  false  "id: any of (comma list)"  collectionFormat(csv)
+// @Param  id_not  query  []string  false  "id: none of (comma list)"  collectionFormat(csv)
+// @Param  name  query  []string  false  "scan name pattern (* any characters, ? one): any of (comma list)"  collectionFormat(csv)
+// @Param  name_contains  query  string  false  "scan name pattern (* any characters, ? one) contains"
+// @Param  name_not  query  []string  false  "scan name pattern (* any characters, ? one): none of (comma list)"  collectionFormat(csv)
+// @Param  status  query  []string  false  "status: any of (comma list)"  collectionFormat(csv)  Enums(active, paused, disabled)
+// @Param  status_not  query  []string  false  "status: none of (comma list)"  collectionFormat(csv)  Enums(active, paused, disabled)
+// @Param  scan_type  query  []string  false  "scan type: any of (comma list)"  collectionFormat(csv)  Enums(workflow, single)
+// @Param  scan_type_not  query  []string  false  "scan type: none of (comma list)"  collectionFormat(csv)  Enums(workflow, single)
+// @Param  schedule_type  query  []string  false  "schedule type: any of (comma list)"  collectionFormat(csv)  Enums(manual, daily, weekly, monthly, crontab, rrule, once)
+// @Param  schedule_type_not  query  []string  false  "schedule type: none of (comma list)"  collectionFormat(csv)  Enums(manual, daily, weekly, monthly, crontab, rrule, once)
+// @Param  sensor_preference  query  []string  false  "sensor preference: any of (comma list)"  collectionFormat(csv)  Enums(auto, tenant, platform)
+// @Param  sensor_preference_not  query  []string  false  "sensor preference: none of (comma list)"  collectionFormat(csv)  Enums(auto, tenant, platform)
+// @Param  origin  query  string  false  "origin equals"  Enums(user, system)
+// @Param  tag  query  []string  false  "scan tag: any of (comma list)"  collectionFormat(csv)
+// @Param  tag_not  query  []string  false  "scan tag: none of (comma list)"  collectionFormat(csv)
+// @Param  asset_group_id  query  []string  false  "asset group the scan covers: any of (comma list)"  collectionFormat(csv)
+// @Param  asset_group_id_not  query  []string  false  "asset group the scan covers: none of (comma list)"  collectionFormat(csv)
+// @Param  scan_workflow_id  query  []string  false  "scan workflow id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_workflow_id_not  query  []string  false  "scan workflow id: none of (comma list)"  collectionFormat(csv)
+// @Param  profile_id  query  []string  false  "profile id: any of (comma list)"  collectionFormat(csv)
+// @Param  profile_id_not  query  []string  false  "profile id: none of (comma list)"  collectionFormat(csv)
+// @Param  scan_zone_id  query  []string  false  "scan zone id: any of (comma list)"  collectionFormat(csv)
+// @Param  scan_zone_id_not  query  []string  false  "scan zone id: none of (comma list)"  collectionFormat(csv)
+// @Param  scanner_name  query  []string  false  "scanner name: any of (comma list)"  collectionFormat(csv)
+// @Param  scanner_name_contains  query  string  false  "scanner name contains"
+// @Param  scanner_name_not  query  []string  false  "scanner name: none of (comma list)"  collectionFormat(csv)
+// @Param  last_run_status  query  []string  false  "last run status: any of (comma list)"  collectionFormat(csv)
+// @Param  last_run_status_not  query  []string  false  "last run status: none of (comma list)"  collectionFormat(csv)
+// @Param  created_by  query  []string  false  "created by: any of (comma list)"  collectionFormat(csv)
+// @Param  created_by_not  query  []string  false  "created by: none of (comma list)"  collectionFormat(csv)
+// @Param  created_at_gte  query  string  false  "created at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lte  query  string  false  "created at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_gt  query  string  false  "created at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  created_at_lt  query  string  false  "created at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_gte  query  string  false  "last run at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_lte  query  string  false  "last run at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_gt  query  string  false  "last run at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  last_run_at_lt  query  string  false  "last run at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_gte  query  string  false  "next run at at least (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_lte  query  string  false  "next run at at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_gt  query  string  false  "next run at greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  next_run_at_lt  query  string  false  "next run at less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
+// @Param  total_runs  query  []integer  false  "total runs: any of (comma list)"  collectionFormat(csv)
+// @Param  total_runs_gte  query  integer  false  "total runs at least"
+// @Param  total_runs_lte  query  integer  false  "total runs at most"
+// @Param  total_runs_gt  query  integer  false  "total runs greater than"
+// @Param  total_runs_lt  query  integer  false  "total runs less than"
+// @Param  failed_runs  query  []integer  false  "failed runs: any of (comma list)"  collectionFormat(csv)
+// @Param  failed_runs_gte  query  integer  false  "failed runs at least"
+// @Param  failed_runs_lte  query  integer  false  "failed runs at most"
+// @Param  failed_runs_gt  query  integer  false  "failed runs greater than"
+// @Param  failed_runs_lt  query  integer  false  "failed runs less than"
+// end filterspec-params
+// @Param        q               query     string  false  "Search the name and the description"
 // @Param        include_ad_hoc  query     bool    false  "Also list unsaved quick scans (ad_hoc)"
-// @Param        origin          query     string  false  "Who owns the scan: user (people's scans) or system (scans the platform manages)" Enums(user, system)
 // @Param        sort            query     string  false  "One sort key, - for descending: name, created_at, last_run_at, next_run_at, total_runs" default(name)
 // @Param        page            query     int     false  "Page number" default(1)
 // @Param        per_page        query     int     false  "Items per page" default(20)
@@ -580,35 +682,73 @@ func (h *ScanHandler) GetScan(w http.ResponseWriter, r *http.Request) {
 // @Security     BearerAuth
 // @Router       /scans [get]
 func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
-	tenantID := middleware.GetTenantID(r.Context())
-	page, ok := listPage(w, r, 20)
+	route := h.scansListRoute("GET /scans")
+	spec, ok := route.ParseQuery(w, r)
 	if !ok {
 		return
 	}
+	h.writeScanList(w, r, route, spec, r.URL.Query().Get("include_ad_hoc") == queryParamTrue)
+}
 
-	input := scansvc.ListScansInput{
-		TenantID:       tenantID,
-		AssetGroupID:   r.URL.Query().Get("asset_group_id"),
-		ScanWorkflowID: r.URL.Query().Get("scan_workflow_id"),
-		ScanType:       r.URL.Query().Get("scan_type"),
-		ScheduleType:   r.URL.Query().Get("schedule_type"),
-		Status:         r.URL.Query().Get("status"),
-		Tags:           parseQueryArray(r.URL.Query().Get("tags")),
-		Search:         r.URL.Query().Get("search"),
-		IncludeAdHoc:   r.URL.Query().Get("include_ad_hoc") == "true",
-		Origin:         r.URL.Query().Get("origin"),
-		Sort:           r.URL.Query().Get("sort"),
-		Page:           page.Page,
-		PerPage:        page.PerPage,
+// ScanSearchRequest documents the FilterDocument body of POST /scans/search.
+// The server parses the raw body with filterspec.ParseDocument; this type
+// exists for the OpenAPI spec.
+type ScanSearchRequest struct {
+	// V is the document version (1).
+	V int `json:"v,omitempty" example:"1"`
+	// Filter is a node ({"all":[...]}, {"any":[...]}, {"not":{...}} or a
+	// {"field","op","value"} leaf) or the flat-name shorthand
+	// ({"status":["active"],"total_runs_gte":3}).
+	Filter map[string]any `json:"filter,omitempty"`
+	// Q searches the name and the description.
+	Q string `json:"q,omitempty"`
+	// Sort keys, "-" for descending.
+	Sort []string `json:"sort,omitempty"`
+	// Page selects the page: {"page": 1, "per_page": 50}.
+	Page *FindingSearchPage `json:"page,omitempty"`
+}
+
+// SearchScans handles POST /api/v1/scans/search
+// @Summary      Search scans with a filter document
+// @Description  Lists the scans selected by a FilterDocument: all/any/not groups with field/op/value leaves, for
+// @Description  OR, nesting and id lists. Same fields, permission, visibility and response as GET /scans.
+// @Description  Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400 INVALID_FILTER with the JSON path
+// @Description  of each problem. Read-only.
+// @Tags         Scans
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request         body      ScanSearchRequest  true   "Filter document"
+// @Param        include_ad_hoc  query     bool               false  "Also list unsaved quick scans (ad_hoc)"
+// @Success      200  {object}  ListResponse[ScanDetailResponse]
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Router       /scans/search [post]
+func (h *ScanHandler) SearchScans(w http.ResponseWriter, r *http.Request) {
+	route := h.scansListRoute("POST /scans/search")
+	spec, ok := route.ParseBody(w, r)
+	if !ok {
+		return
 	}
+	h.writeScanList(w, r, route, spec, r.URL.Query().Get("include_ad_hoc") == queryParamTrue)
+}
 
-	result, err := h.service.ListScans(r.Context(), input)
+// writeScanList runs a decoded filter as the caller's tenant and writes the
+// list response (shared by GET /scans and POST /scans/search).
+func (h *ScanHandler) writeScanList(w http.ResponseWriter, r *http.Request, route filterquery.Route, spec *filterspec.Spec, includeAdHoc bool) {
+	ctx := r.Context()
+	tenantID := middleware.GetTenantID(ctx)
+	result, err := h.service.ListScansBySpec(ctx, tenantID, spec, includeAdHoc)
 	if err != nil {
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			route.WriteError(w, err)
+			return
+		}
 		h.handleServiceError(w, err)
 		return
 	}
 
-	ctx := r.Context()
 	// Batch-resolve creator names in one query to avoid an N+1 (previously each
 	// row triggered its own users lookup inside toScanResponse).
 	nameByID := h.resolveScanCreatorNames(ctx, result.Data)
@@ -639,7 +779,7 @@ func (h *ScanHandler) ListScans(w http.ResponseWriter, r *http.Request) {
 
 // UpdateScan handles PUT /api/v1/scans/{id}
 // @Summary      Update scan
-// @Description  Update an existing scan configuration
+// @Description  Update an existing scan configuration. New targets that name a range wider than a /16 need confirm_large_range: true (400 LARGE_RANGE_UNCONFIRMED without it).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
@@ -689,6 +829,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		TargetOptions:       req.TargetOptions,
 		Intensity:           req.Intensity,
 		Depth:               req.Depth,
+		StepParams:          req.StepParams,
 		ScheduleType:        req.ScheduleType,
 		ScheduleCron:        req.ScheduleCron,
 		ScheduleRRule:       req.ScheduleRRule,
@@ -709,6 +850,7 @@ func (h *ScanHandler) UpdateScan(w http.ResponseWriter, r *http.Request) {
 		AssetIDs:            req.AssetIDs,
 		AssetGroupIDs:       req.AssetGroupIDs,
 		ActorID:             middleware.GetUserID(r.Context()),
+		ConfirmLargeRange:   req.ConfirmLargeRange,
 	}
 
 	s, err := h.service.UpdateScan(h.auditCtx(r), input)
@@ -964,9 +1106,9 @@ func formatBulkMessage(action string, successful, failed int) string {
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                  true   "Scan ID"
-// @Param        request  body      TriggerScanExecRequest  false  "Trigger context"
+// @Param        request  body      TriggerScanExecRequest  false  "Trigger context: only the key reason (text, at most 500 characters); any other key is refused with TRIGGER_CONTEXT_REFUSED"
 // @Success      201  {object}  RunResponse
-// @Failure      400  {object}  apierror.Error
+// @Failure      400  {object}  apierror.Error  "TRIGGER_CONTEXT_REFUSED: the context sets a key a caller may not set"
 // @Failure      403  {object}  apierror.Error  "caller may not start this scan"
 // @Failure      404  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error  "SCAN_WINDOW_NEVER_OPENS: a target's scan window never opens"
@@ -981,6 +1123,12 @@ func (h *ScanHandler) TriggerScan(w http.ResponseWriter, r *http.Request) {
 	var req TriggerScanExecRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	// The run context reaches the run's sensor jobs and decides its outcome:
+	// a caller may only set the allow-listed keys.
+	if err := scansvc.ValidateCallerTriggerContext(req.Context); err != nil {
+		h.handleServiceError(w, err)
 		return
 	}
 
@@ -1540,6 +1688,7 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 		SkippedTargets:        s.SkippedTargets,
 		Intensity:             string(s.EffectiveIntensity()),
 		Depth:                 string(s.EffectiveDepth()),
+		StepParams:            s.StepParams,
 		ScanType:              string(s.ScanType),
 		ScannerName:           s.ScannerName,
 		ScannerConfig:         scannerConfigFor(s.ScannerConfig, revealSecrets),
@@ -1591,6 +1740,10 @@ func buildScanResponse(s *scan.Scan, createdByName *string, revealSecrets bool) 
 	if s.ScheduleRunAt != nil {
 		ra := s.ScheduleRunAt.UTC().Format(time.RFC3339)
 		resp.ScheduleRunAt = &ra
+	}
+	if s.LastMissedAt != nil {
+		lma := s.LastMissedAt.Format(time.RFC3339)
+		resp.LastMissedAt = &lma
 	}
 	if s.NextRunAt != nil {
 		nra := s.NextRunAt.Format(time.RFC3339)
@@ -1933,10 +2086,11 @@ func (h *ScanHandler) ExportConfig(w http.ResponseWriter, r *http.Request) {
 
 // ImportConfig handles POST /api/v1/scans/import
 // @Summary      Import scan configuration
-// @Description  Create a new scan from an imported JSON configuration
+// @Description  Create a new scan from an imported JSON configuration. A configuration whose targets name a range wider than a /16 needs ?confirm_large_range=true (400 LARGE_RANGE_UNCONFIRMED without it).
 // @Tags         Scans
 // @Accept       json
 // @Produce      json
+// @Param        confirm_large_range  query  bool  false  "Confirm targets wider than a /16"
 // @Param        request  body      object  true  "Scan configuration JSON (exported format)"
 // @Success      201  {object}  ScanDetailResponse
 // @Failure      400  {object}  apierror.Error
@@ -1959,7 +2113,8 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := h.service.ImportConfig(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()))
+	sc, err := h.service.ImportConfigConfirmed(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()),
+		r.URL.Query().Get("confirm_large_range") == queryParamTrue)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

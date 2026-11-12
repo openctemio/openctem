@@ -121,7 +121,6 @@ func TestScanZonePreview_ReportsWhatTheTriggerWouldRefuse(t *testing.T) {
 		in   scanservice.ZoneRoutingPreviewInput
 		code string
 	}{
-		{"workflow across zones", scanservice.ZoneRoutingPreviewInput{ScanType: "workflow", Targets: []string{"10.1.0.1", "10.2.0.1"}}, "ZONE_SPLIT_REQUIRED"},
 		{"every target excluded", scanservice.ZoneRoutingPreviewInput{ScannerName: "nuclei", Targets: []string{"8.8.8.8"}}, "ALL_TARGETS_EXCLUDED"},
 		{"zone without sensors", scanservice.ZoneRoutingPreviewInput{ScannerName: "nuclei", Targets: []string{"10.3.0.1"}}, "NO_ZONE_COVERAGE"},
 		{"private target no zone covers", scanservice.ZoneRoutingPreviewInput{ScannerName: "nuclei", Targets: []string{"10.1.0.1", "192.168.1.1"}}, "INVALID_TARGET"},
@@ -146,6 +145,12 @@ func TestScanZonePreview_ReportsWhatTheTriggerWouldRefuse(t *testing.T) {
 	p = preview(t, svc, scanservice.ZoneRoutingPreviewInput{TenantID: tenant.String(), ScanType: "workflow", Targets: []string{"10.1.0.1"}})
 	if p.Error != nil || len(p.Zones) != 1 || p.Zones[0].QueuedJobs != 0 {
 		t.Errorf("single-zone workflow: error=%+v zones=%+v", p.Error, p.Zones)
+	}
+	// A workflow across zones is not refused: the preview shows one run per
+	// zone group.
+	p = preview(t, svc, scanservice.ZoneRoutingPreviewInput{TenantID: tenant.String(), ScanType: "workflow", Targets: []string{"10.1.0.1", "10.2.0.1", "10.3.0.1"}})
+	if p.Error != nil || p.ZoneRuns != 2 || len(p.Zones) != 2 || p.UncoveredTargets != 1 {
+		t.Errorf("workflow across zones: error=%+v zone_runs=%d zones=%+v uncovered=%d", p.Error, p.ZoneRuns, p.Zones, p.UncoveredTargets)
 	}
 }
 

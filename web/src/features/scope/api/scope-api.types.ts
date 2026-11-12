@@ -16,6 +16,7 @@ import type {
   CheckScopeResponse,
   ScopeStatsResponse,
   ScopeTargetResponse,
+  ScopeReplaceResponse,
 } from '@/lib/api/generated'
 
 // Types imported from '../types' are used for reference only - actual API values are strings
@@ -37,6 +38,15 @@ import type {
 export type ApiScopeTarget = ScopeTargetResponse
 export type ApiScopeExclusion = ScopeExclusionResponse
 export type ApiScopeStats = ScopeStatsResponse
+// POST /scope/targets/{id}/replace (and /replace/preview): a pattern
+// replacement, done or previewed.
+export type ApiScopeReplace = ScopeReplaceResponse
+
+/** Input of a pattern replacement: the new pattern and why. */
+export interface ReplaceScopeTargetInput {
+  pattern: string
+  reason: string
+}
 // POST /scope/check is a dry run of the active-probe gate (RFC-054 §6.4).
 export type ApiCheckScopeResponse = CheckScopeResponse
 // POST /scope/targets/bulk: one result per item (RFC-054 §14).
@@ -147,16 +157,38 @@ export interface UpdateScopeSettingsInput {
    */
   unclassified_scans?: UnclassifiedScans
   /**
+   * Addresses in-scope names resolve to (research/425): added automatically
+   * when the organization's own network holds them (default), asked for, or
+   * never suggested; sent only when the API reports it.
+   */
+  address_auto_add?: AddressAutoAdd
+  /**
    * Automatic coverage (RFC-093): the organization's explicit choice; omitted
    * keeps the stored one (the default is on, except under Strict approval).
    */
   auto_coverage?: boolean
+  /** Info pass of continuous coverage on or off (default on); omitted keeps the stored one. */
+  info_coverage?: boolean
+  /** Interval of the info pass in days, 7 to 90 (default 30); omitted keeps the stored one. */
+  info_coverage_days?: number
   /**
    * A CI trust's new repository entries wait for a verified pipeline run
    * (opt-in, default off); omitted keeps the stored value.
    */
   ci_scope_requires_proof?: boolean
+  /**
+   * The widest range one scan target may name, as an IPv4 prefix length
+   * (8 to 24; IPv6 gets the same address count). Omitted keeps the stored
+   * value (RFC-151).
+   */
+  max_range_prefix?: number
 }
+
+/** The widest range choices of the scope policy (IPv4 prefix lengths). */
+export const RANGE_PREFIX_CHOICES = [8, 12, 16, 20, 24] as const
+
+/** The address setting: what happens to addresses in-scope names resolve to. */
+export type AddressAutoAdd = 'auto_strong' | 'ask' | 'never'
 
 /** The unclassified-scans setting (RFC-054 §16). */
 export type UnclassifiedScans = 'off' | 'low_impact' | 'full'
@@ -188,6 +220,8 @@ export interface CreateScopeExclusionInput {
   path_prefix?: string
   /** Methods the path rule blocks; empty blocks every method. */
   methods?: string[]
+  /** Confirms closing open critical, P0 or KEV findings (after a 409 EXCLUSION_CLOSES_CRITICAL_FINDINGS). */
+  confirm_critical?: boolean
 }
 
 /**

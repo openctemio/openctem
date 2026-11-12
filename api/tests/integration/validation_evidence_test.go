@@ -14,7 +14,7 @@ import (
 )
 
 // findingMutator adapts the postgres FindingRepository (GetByID) to the
-// validation.FindingMutator + VerdictRecorder interfaces, mirroring cmd/server's
+// validation.FindingMutator + VerdictRecorder interfaces, mirroring internal/server's
 // adapter.
 type findingMutator struct{ repo *postgres.FindingRepository }
 

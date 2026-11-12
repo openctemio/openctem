@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crewjam/saml"
+	"github.com/openctemio/saml"
 
 	"github.com/openctemio/openctem/api/internal/config"
 	"github.com/openctemio/openctem/api/pkg/crypto"

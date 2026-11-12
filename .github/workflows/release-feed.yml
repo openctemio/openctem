@@ -7,8 +7,9 @@ name: Release Feed
 #
 #   release.yml calls it after every release;
 #   the run every 6 hours picks up new releases of the first-party components
-#   (the sensor products of versions.yaml and sdk-go: .github/scripts/release/feed-components.sh
-#   reads their public release lists), so a sensor or SDK release reaches the
+#   (the sensor products of versions.yaml, sdk-go and the CI runner openctemio/ci:
+#   .github/scripts/release/feed-components.sh reads their public release
+#   lists), so a sensor, SDK or CI runner release reaches the
 #   instances without an OpenCTEM change or release
 #   (api/docs/rfcs/RFC-037-versioning-and-release-train.md §12), and re-signs
 #   the feed so it never expires (a feed is valid 30 days; instances refuse one

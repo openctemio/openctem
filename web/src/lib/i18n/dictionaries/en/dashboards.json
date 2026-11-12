@@ -60,7 +60,6 @@
   "dashboards.coverage.cause.platform_failure": "Sensor or proxy failure",
   "dashboards.coverage.cause.target_unreachable": "Target did not answer",
   "dashboards.coverage.causesTitle": "Why assets are not covered",
-  "dashboards.description": "How exposed you are, whether it is getting better, and what to do next.",
   "dashboards.dimension.age_band.inTitle": "age",
   "dashboards.dimension.age_band.name": "Age",
   "dashboards.dimension.age_band.values.0_30": "0-30 days",

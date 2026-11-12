@@ -16,7 +16,7 @@ const HINTS: Record<string, string> = {
   NO_RESOLVING_TARGETS:
     'No target name resolves in DNS. Fix the DNS records, or scan the addresses instead.',
   ZONE_SPLIT_REQUIRED:
-    'A workflow runs in one zone. Split the targets into one scan per zone, or pick a zone.',
+    'This run stays in one zone (a workflow scan over several zones runs one zone run per zone). Start one run per zone, or pick a zone.',
   TOO_MANY_JOBS: 'The scan would create more than 1000 jobs. Raise targets per job or split it.',
   NO_TARGETS:
     'The scan resolves to no target: its asset groups are empty and it has no direct targets.',

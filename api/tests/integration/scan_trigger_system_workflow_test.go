@@ -13,7 +13,7 @@ import (
 
 // deepReconWorkflowID is the seeded "Deep recon" system template: stored
 // under the platform's system tenant, with optional steps on capabilities no
-// tool implements yet (capture.screenshot, detect.services).
+// tool implements yet (detect.services, fingerprint.tech).
 const deepReconWorkflowID = "a0000002-0000-0000-0000-000000000015"
 
 func seedWorkflowScan(ctx context.Context, t *testing.T, tenantID shared.ID, workflowID, status string) shared.ID {

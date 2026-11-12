@@ -156,6 +156,14 @@ first so the masking can read it) and structured (`method`, `url`,
    the response, the curl command, extracted values), the same value the same
    placeholder; body match ranges move to where the matched text sits after
    masking.
+   - E-mail addresses (personal data, research/292) are masked last, in every
+     free string and header value: the local part becomes `***`, the domain
+     is kept (`***@example.com`, URL-encoded `***%40example.com`;
+     `safetext.MaskEmails`). They are never stored, not even encrypted. Ingest
+     already masks them in the whole CTIS finding before anything is stored
+     (`internal/app/ingest/email_mask.go`), moving marked spans and match
+     ranges with the text; this step covers every other writer (retests,
+     uploads).
 4. **Encrypt**: each value is AES-256-GCM encrypted with the platform key
    (`APP_ENCRYPTION_KEY`, re-keyed by `cmd/rekey`). The plaintext is bound to
    tenant, item and placeholder (`evidence:v1|tenant|item|placeholder|value`):
@@ -256,6 +264,7 @@ response never appeared there.
 | Hostile tool content (XSS, bidi tricks, huge bodies) | text-only rendering with escapes; caps at ingest; DB size check |
 | Storage exhaustion | per-item, per-finding and per-tenant caps; dedup; retention |
 | A tester's recorded request/response carries session cookies, tokens, passwords | same masking and encryption as tool evidence; never kept in `findings.metadata`; legacy entries moved and removed at start-up |
+| A scanned page or response lists people's e-mail addresses | local part masked at ingest (every tool, every finding member but its identifiers) and again in `evidence.Mask`; the sensor never runs nuclei templates that only harvest personal data |
 | Key rotation | `finding_evidence_secrets.ciphertext` is a `cmd/rekey` location |
 
 ## Code

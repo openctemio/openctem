@@ -148,7 +148,7 @@ func registerTenantRoutes(
 
 		// Risk scoring settings (admin+)
 		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUp())
+		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
 		r.POST("/settings/risk-scoring/preview", h.PreviewRiskScoringChanges, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.POST("/settings/risk-scoring/recalculate", h.RecalculateRiskScores, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
 		r.GET("/settings/risk-scoring/presets", h.GetRiskScoringPresets, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
@@ -158,8 +158,8 @@ func registerTenantRoutes(
 		// AI), so every write needs a fresh step-up; the validate and
 		// preview dry-runs change nothing and do not.
 		r.GET("/settings/modules", h.GetTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
-		r.PATCH("/settings/modules", h.UpdateTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUp())
-		r.POST("/settings/modules/reset", h.ResetTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUp())
+		r.PATCH("/settings/modules", h.UpdateTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
+		r.POST("/settings/modules/reset", h.ResetTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
 		// Platform-wide module dependency graph (static spec from
 		// pkg/domain/module/dependency.go). UI uses this to render
 		// dependency badges + "disabling X will also affect Y" dialogs.
@@ -174,7 +174,7 @@ func registerTenantRoutes(
 		// UpdateTenantModules scan workflow (validation + audit reuse).
 		r.GET("/settings/modules/presets", h.ListModulePresets, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
 		r.POST("/settings/modules/presets/{presetId}/preview", h.PreviewModulePreset, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
-		r.POST("/settings/modules/presets/{presetId}/apply", h.ApplyModulePreset, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUp())
+		r.POST("/settings/modules/presets/{presetId}/apply", h.ApplyModulePreset, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
 
 		// Security settings (owner only - sensitive)
 		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())

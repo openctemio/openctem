@@ -1,12 +1,52 @@
 # SIEM ingest → CTEM Detect/Respond
 
-> **Retired 2026-10-05.** This route was part of sensor protocol v1
+> **Retired 2026-10-05.** The inbound route was part of sensor protocol v1
 > (`/api/v1/agent/telemetry-events`), which was removed
 > ([RFC-029](../rfcs/RFC-029-sensor-protocol-v2-and-sdk-stability.md)).
 > Protocol v2 has no telemetry route yet, so SIEM inbound is unavailable
 > until one ships. Stored events and the IOC catalogue are kept.
 
-How a SIEM/EDR/XDR (Splunk, Sentinel, CrowdStrike, …) pushes detections **into**
+## Flow (current state)
+
+Checked against the code of v0.19.1 and develop on 2026-11-05 (no change
+between them).
+
+```mermaid
+flowchart LR
+  subgraph External["SIEM, EDR, XDR (outside)"]
+    S["detection"]
+  end
+  subgraph API["API"]
+    R["no runtime-event route<br/>(/api/v1/agent/* answers 404)"]
+    C["internal/app/ioc Correlator<br/>(NewCorrelator has no caller)"]
+    I["/api/v1/iocs CRUD<br/>threat_intel:read / threat_intel:write, iocs module"]
+    M["GET /api/v1/iocs/matches, /{id}/matches<br/>(ioc_matches, read only)"]
+    N["notification outbox: Splunk HEC provider<br/>(internal/infra/notifier/splunk.go)"]
+  end
+  subgraph Splunk["Splunk HEC (outside)"]
+    H["POST /services/collector/event"]
+  end
+  S -. "nothing accepts it" .-> R
+  R -. "never called" .-> C
+  I --- C
+  C -. "no new rows" .-> M
+  N -->|"Authorization: Splunk token, SSRF-guarded dial"| H
+```
+
+- `internal/server/services.go` keeps only `s.IOCRepo = repos.IOC`; the
+  correlator and its `FindingReopener` adapter (`ioc.NewFindingReopener`) are
+  built in tests only, so `ReopenForIOCMatch` never runs.
+- The web console still shows **Threat intel > Detections**, whose empty
+  state says detections appear "when a collector sensor forwards a runtime
+  event"; no sensor can today.
+- The outbound direction is a notification provider: [notification-system.md](notification-system.md).
+
+## Historical design (protocol v1, removed)
+
+The rest of this page describes the removed v1 path, for whoever builds the
+protocol v2 successor. Routes and setup steps below no longer work.
+
+How a SIEM, EDR or XDR pushed detections **into**
 OpenCTEM so they close the CTEM Stage-4 Detect/Respond loop: a runtime detection
 that matches a known indicator auto-reopens the finding it came from.
 

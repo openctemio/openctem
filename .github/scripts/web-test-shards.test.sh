@@ -13,6 +13,10 @@ git add -A; git commit -q -m base; git push -q origin main
 # Many tests import web/src/lib/b.ts; a.ts has none.
 echo 1 > web/src/lib/b.ts
 for i in $(seq 1 400); do echo "import { b } from '@/lib/b'" > "web/src/lib/t$i.test.ts"; done
+# Many tests reach a JSON dictionary through b.ts's sibling (the i18n shape).
+echo '{}' > web/src/lib/dict.json
+echo "import dict from './dict.json'; export default dict" > web/src/lib/catalog.ts
+for i in $(seq 1 400); do echo "import c from '@/lib/catalog'" > "web/src/lib/j$i.test.ts"; done
 git add -A; git commit -q -m tests; git push -q origin main
 check() { # <want> <event> <full> <file>
   git checkout -q -B w main; echo 2 >> "$4"; git add -A; git commit -q -m c
@@ -22,6 +26,7 @@ check() { # <want> <event> <full> <file>
 }
 check '[1]' pull_request false web/src/lib/a.ts
 check '[1,2,3]' pull_request false web/src/lib/b.ts   # 400 tests reached: three shards
+check '[1,2,3]' pull_request false web/src/lib/dict.json  # a dictionary reaches 400 tests through the catalog
 check '[1,2,3]' pull_request true web/src/lib/a.ts
 check '[1,2,3]' pull_request false web/scripts/s.sh
 check '[1,2,3]' merge_group false web/src/lib/a.ts

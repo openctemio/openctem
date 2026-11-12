@@ -23,6 +23,7 @@ import (
 
 	"github.com/openctemio/contract/outcome"
 
+	"github.com/openctemio/openctem/api/pkg/domain/scan"
 	"github.com/openctemio/openctem/api/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/api/pkg/domain/scanworkflow"
 
@@ -332,6 +333,11 @@ func StepCommandPayload(run *scanrun.Run, step *scanworkflow.Step, toolName, ste
 	if toolName == "" {
 		return nil, shared.NewDomainError(codeNoMatchingTool,
 			fmt.Sprintf("step %s has no tool to run", step.StepKey), shared.ErrValidation)
+	}
+	// A step saved before the save-time check, or written around it, must
+	// not put a credential in a command.
+	if err := scan.RefuseConfigSecrets(step.Config); err != nil {
+		return nil, err
 	}
 	config, err := scanworkflow.NormalizeStepConfig(toolName, step.Config)
 	if err != nil {

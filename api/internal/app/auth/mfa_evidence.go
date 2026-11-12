@@ -3,7 +3,7 @@ package auth
 import (
 	"strings"
 
-	"github.com/crewjam/saml"
+	"github.com/openctemio/saml"
 
 	"github.com/openctemio/openctem/api/pkg/oidc"
 )

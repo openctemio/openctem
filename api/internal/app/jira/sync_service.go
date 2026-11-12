@@ -621,6 +621,11 @@ func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, f
 	if ok, err := s.statusPushAllowed(ctx, tenantID, findingID); !ok {
 		return err
 	}
+	// Closed because its asset is out of scope: nothing was fixed, so the
+	// issue is commented, never moved to a done status.
+	if handled, err := s.commentOutOfScope(ctx, tenantID, findingID, mapping); handled {
+		return err
+	}
 	// A published mapping profile for the issue's project decides the move
 	// itself (its status map is the explicit opt-in for that destination).
 	if s.profiles != nil {
@@ -681,6 +686,50 @@ func (s *SyncService) SyncFindingStatusToTicket(ctx context.Context, tenantID, f
 		"finding_id", findingID.String(), "issue_key", issueKey,
 		"finding_status", finding.Status(), "jira_status", target)
 	return nil
+}
+
+// outOfScopeComment is the note left on the issue of a finding closed
+// because its asset was marked out of scope (research/438).
+func outOfScopeComment() string {
+	return brand.Name() + " closed this finding as out of scope: its asset was marked not ours or retired. " +
+		"It was not fixed, so this issue was not moved. Close it here if the work is no longer needed.\n\n" +
+		"If the asset is re-included, " + brand.Name() + " reopens the finding."
+}
+
+// commentOutOfScope handles the push of a finding closed as out of scope
+// (resolved, closure reason out_of_scope): a comment on its linked issue,
+// with no transition, so a Jira board never shows such a finding as done.
+// Outbound writes stay opt-in (mapping.SyncEnabled), like every comment.
+// handled is false for any other finding, which takes the usual path.
+func (s *SyncService) commentOutOfScope(ctx context.Context, tenantID, findingID shared.ID, mapping MappingConfig) (bool, error) {
+	finding, err := s.findingRepo.GetByID(ctx, tenantID, findingID)
+	if err != nil {
+		return false, nil //nolint:nilerr // the usual path reads the finding again and reports the error
+	}
+	if finding.Status() != vulnerability.FindingStatusResolved ||
+		finding.ClosureReason() != vulnerability.ClosureReasonOutOfScope {
+		return false, nil
+	}
+	if !mapping.SyncEnabled {
+		return true, nil
+	}
+	integrationID, issueKey, err := s.findingIssue(ctx, tenantID, finding)
+	if err != nil {
+		return true, err
+	}
+	if issueKey == "" {
+		return true, nil
+	}
+	client, err := s.clientFor(ctx, tenantID, integrationID)
+	if err != nil {
+		return true, err
+	}
+	if err := client.AddComment(ctx, issueKey, jiraCommentBody(outOfScopeComment())); err != nil {
+		return true, fmt.Errorf("comment on jira issue: %w", err)
+	}
+	s.logger.Info("jira outbound: finding closed as out of scope, commented",
+		"finding_id", findingID.String(), "issue_key", issueKey)
+	return true, nil
 }
 
 // CreateTicketFromFinding auto-creates a Jira ticket from a finding and links it.

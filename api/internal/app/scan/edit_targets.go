@@ -43,8 +43,15 @@ func (s *Service) applyTargetEdit(ctx context.Context, sc *scan.Scan, in UpdateS
 			return err
 		}
 		probe := CreateScanInput{TenantID: tenantID.String(), Targets: merged}
-		validated, err := s.validateScanTargets(ctx, probe)
+		rangeBits, err := s.tenantRangeHostBits(ctx, tenantID)
 		if err != nil {
+			return err
+		}
+		validated, err := s.validateScanTargets(ctx, probe, rangeBits)
+		if err != nil {
+			return err
+		}
+		if err := requireLargeRangeConfirmed(validated, in.ConfirmLargeRange); err != nil {
 			return err
 		}
 		if err := s.refuseOutOfActScope(ctx, tenantID, actor, validated); err != nil {

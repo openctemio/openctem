@@ -84,11 +84,21 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 	if h.assetCount(h.tenantID, root) != 1 || h.assetCount(h.tenantID, sub) != 1 {
 		t.Fatalf("assets inside the job's targets were not created")
 	}
-	if n := h.assetCount(h.tenantID, evil); n != 0 {
-		t.Fatalf("a host outside the job's targets was created (%d)", n)
+	// A host outside the job's targets is recorded in tenant A, never
+	// dropped (research 436), and never confirmed by the report.
+	if n := h.assetCount(h.tenantID, evil); n != 1 {
+		t.Fatalf("a host outside the job's targets was not recorded (%d)", n)
 	}
-	if n := h.findingsAnywhere("jb-evil-" + label); n != 0 {
-		t.Fatalf("%d findings on a host outside the job's targets were stored", n)
+	if n := h.findingsAnywhere("jb-evil-" + label); n != 1 {
+		t.Fatalf("%d findings on the host outside the job's targets, want 1 (in tenant A only)", n)
+	}
+	var confirmed int
+	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM asset_attributions aa JOIN assets a ON a.id = aa.asset_id
+		WHERE a.tenant_id = $1 AND a.name = $2 AND aa.state = 'confirmed'`, h.tenantID, evil).Scan(&confirmed); err != nil {
+		t.Fatal(err)
+	}
+	if confirmed != 0 {
+		t.Fatal("a host outside the job's targets was confirmed by the report")
 	}
 	var channel string
 	if err := h.db.QueryRowContext(context.Background(),
@@ -110,7 +120,7 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 		t.Fatalf("tenant B's asset changed: count %d, last_seen %v -> %v", nB, seenB, seenAfter)
 	}
 
-	// The drop is in tenant A's audit log (written asynchronously).
+	// The recording is in tenant A's audit log (written asynchronously).
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var n int
@@ -123,7 +133,7 @@ func TestSensorResults_ChannelAndJobTargetsArePlatformAssigned(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("audit rows for the drop: %d, want 1", n)
+			t.Fatalf("audit rows for the report: %d, want 1", n)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

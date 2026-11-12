@@ -532,7 +532,11 @@ A dedicated Tenable.sc user for OpenCTEM with a custom role: for pull, view
 only on the allowed repositories (and their asset lists); for scan, add
 "create scans" with the allowed policies shared to it and no administrative
 rights. Its API keys are generated for that user only. The install guide shows
-the role.
+the role. Rotation by recycle needs a second key pair of a Tenable.sc
+Administrator (only administrators manage repositories, and they cannot read
+vulnerability data), used only for the two rotation repositories; aging and
+purge need none. Tenable.sc answers rejected keys and missing permissions
+with HTTP 400; the connector reports them as rejected keys or forbidden.
 
 ### 8.4 Hostile Tenable.sc responses (sensor)
 
@@ -579,11 +583,30 @@ previous run's reports completed (RFC-007's "do not trust instant reclaim").
 
 ### 9.3 Reclaim
 
-Tenable.sc frees licensed IPs when data leaves its repositories (aging, or an
-administrator removing vulnerability data). P2 does **not** delete data from
-Tenable.sc. The coverage UI shows the license numbers and that reclaim is the
-Tenable administrator's aging setting. An optional, separately allow-listed
-`reclaim` operation is question Q4.
+Tenable.sc frees licensed IPs when data leaves its repositories. P2 shipped
+with aging only; Q4 (b) was later built as license rotation (research/143 §4,
+revised by the API audit research/450, 2026-11-06), described in
+[architecture/tenable-sc-connector.md](../architecture/tenable-sc-connector.md):
+
+- **aging** (recommended): 1-day lifetimes on a dedicated universal rotation
+  repository, freed at Tenable.sc's nightly cleanup; the platform waits at
+  least 24 hours (default 26) after a batch;
+- **purge** (opt-in, unverified): the connector imports an empty `.nessus`
+  whose `TARGET` lists exactly the previous batch's hosts, which Tenable's
+  knowledge base documents as removing those addresses' data at once, and
+  confirms it by an analysis query and a lower license count
+  (`purge_unverified` stalls rotation otherwise); organization user keys
+  only;
+- **recycle** (opt-in, unverified): two alternating rotation repositories;
+  the connector creates the replacement (universal, from the documented
+  `typeFields` and `organizations[].groupAssign`), verifies it and only then
+  deletes the old one; it needs a Tenable.sc Administrator key on the
+  connector.
+
+Every mode needs the administrator's acknowledgement that the customer's
+Tenable license terms allow rotation. A `Blocked` import imported nothing and
+is imported again later (`POST /rest/scanResult/{id}/import`); it never
+stalls rotation.
 
 ## 10. Platform side
 
@@ -670,8 +693,13 @@ The Tenable connector UI stays hidden (#990) until P0 runs end to end. Then:
    now": findings appear with the right identity, a second sync after a
    fixture moves a row to mitigated resolves it (enforce) or only audits it
    (dry run).
-6. **Real instance** (before Accepted → Implemented): one run against a
-   customer or trial Tenable.sc to confirm the *unverified* rows of §2.2.
+6. **Real instance** (before Beta ends): one run against a customer or trial
+   Tenable.sc to confirm the *unverified* rows of §2.2 and the open points of
+   research/450 §5: the `maxScanTime` unit and the rollover scan's name;
+   whether a repository delete and a purge import lower `activeIPs` at once;
+   the `/status` licence fields on 6.9; the repository filter's behaviour;
+   `groupAssign` ""; `trendingDays` on 6.9; the error codes of licence
+   refusals; the name of an imported purge result.
 
 ## 13. Alternatives considered
 

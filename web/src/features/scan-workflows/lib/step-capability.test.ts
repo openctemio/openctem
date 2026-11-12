@@ -150,3 +150,18 @@ describe('toStepRequest round trip', () => {
     expect(roundPosition({ x: 1.4, y: -0.6 })).toEqual({ x: 1, y: -1 })
   })
 })
+
+describe('toStepRequest depth policy', () => {
+  it('sends the run policy back so a save does not reset the depth overlays', () => {
+    const step = {
+      id: '0192f0b4-0000-7000-8000-000000000002',
+      step_key: 'vuln',
+      name: 'Vuln',
+      order: 1,
+      run_policy: { depths: { standard: { params: { severity: ['low', 'high'] } } } },
+    } as unknown as ScanWorkflowStep
+    expect(toStepRequest(step, 0)).toMatchObject({
+      run_policy: { depths: { standard: { params: { severity: ['low', 'high'] } } } },
+    })
+  })
+})

@@ -60,7 +60,8 @@
   "protocol": 2,
   "features": [
     "results",
-    "results_manifest"
+    "results_manifest",
+    "results_lease_epoch"
   ],
   "media_types": [
     "application/vnd.ctis+json; version=2.0"
@@ -97,6 +98,7 @@
   "features": [
     "results",
     "results_manifest",
+    "results_lease_epoch",
     "heartbeat",
     "commands",
     "suppressions",

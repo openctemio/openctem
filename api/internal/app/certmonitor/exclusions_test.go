@@ -55,7 +55,7 @@ func TestMonitorTenant_ExcludedHostIsNotDiscovered(t *testing.T) {
 	defer srv.Close()
 
 	expRepo := newFakeExposureRepo()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, expRepo, srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, expRepo, srv.URL)
 	svc.setHTTPClient(srv.Client())
 	svc.SetExclusions(exclusionsFor([]*scopedom.Exclusion{
 		approvedExclusion(tenant, scopedom.ExclusionTypeDomain, "vpn.example.com"),
@@ -90,7 +90,7 @@ func TestMonitorTenant_ExcludedRootIsNotQueried(t *testing.T) {
 	defer srv.Close()
 
 	expRepo := newFakeExposureRepo()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, expRepo, srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, expRepo, srv.URL)
 	svc.setHTTPClient(srv.Client())
 	svc.SetExclusions(exclusionsFor([]*scopedom.Exclusion{
 		approvedExclusion(tenant, scopedom.ExclusionTypeDomain, "example.com"),
@@ -115,7 +115,7 @@ func TestMonitorTenant_ExclusionLookupFailureStopsTheSweep(t *testing.T) {
 	defer srv.Close()
 
 	expRepo := newFakeExposureRepo()
-	svc := NewService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, expRepo, srv.URL, testLogger())
+	svc := newTestService(&fakeAssetRepo{assets: []*assetdom.Asset{mustDomainAsset(t, tenant, "example.com")}}, expRepo, srv.URL)
 	svc.setHTTPClient(srv.Client())
 	svc.SetExclusions(exclusionsFor(nil, errors.New("db down")))
 

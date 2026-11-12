@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useId, useMemo, useState } from 'react'
-import { AlertTriangle, BadgeCheck, Info, Loader2 } from 'lucide-react'
+import { BadgeCheck, Info, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -32,6 +32,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -192,7 +193,16 @@ export function ScopeEntryDialog({
     () => (letters ?? []).filter((l) => l.in_effect && !l.revoked_at),
     [letters]
   )
-  const [error, setError] = useState<string | null>(null)
+  // Why the last submit failed, shown above the buttons (DialogSubmitError),
+  // with the server's request id to quote to support.
+  const [failure, setFailure] = useState<{ message: string; requestId?: string } | null>(null)
+  const error = failure?.message ?? null
+  const setError = (message: string | null, cause?: unknown) => {
+    const id = (cause as { requestId?: unknown } | null | undefined)?.requestId
+    setFailure(
+      message ? { message, requestId: typeof id === 'string' && id ? id : undefined } : null
+    )
+  }
   // The organization already has this pattern: which row, for the pattern sent.
   const [dup, setDup] = useState<{ row: ScopeDuplicate; pattern: string } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -350,7 +360,7 @@ export function ScopeEntryDialog({
         await invalidateScopeCache()
         setOutcome(result)
       } catch (err) {
-        setError(scopeErrorMessage(t, err, t('scope.bulk.failed', 'Could not add to scope')))
+        setError(scopeErrorMessage(t, err, t('scope.bulk.failed', 'Could not add to scope')), err)
       } finally {
         setSaving(false)
       }
@@ -413,7 +423,8 @@ export function ScopeEntryDialog({
         return
       }
       setError(
-        scopeErrorMessage(t, err, t('scope.entry.errSave', 'Could not save the scope entry.'))
+        scopeErrorMessage(t, err, t('scope.entry.errSave', 'Could not save the scope entry.')),
+        err
       )
     } finally {
       setSaving(false)
@@ -452,18 +463,6 @@ export function ScopeEntryDialog({
             </Alert>
           ) : outcome ? (
             <div className="space-y-3">
-              {outcome.error != null && (
-                <Alert variant="destructive">
-                  <AlertTriangle />
-                  <AlertDescription>
-                    {scopeErrorMessage(
-                      t,
-                      outcome.error,
-                      t('scope.bulk.failed', 'Could not add to scope')
-                    )}
-                  </AlertDescription>
-                </Alert>
-              )}
               <ScopeBulkResult
                 results={outcome.results}
                 created={outcome.created}
@@ -474,12 +473,6 @@ export function ScopeEntryDialog({
             </div>
           ) : (
             <form id={formId} onSubmit={submit} className="space-y-4">
-              {error && (
-                <Alert variant="destructive">
-                  <AlertTriangle />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
               {dup && dup.pattern === pattern && (
                 <ScopeExistingNotice
                   dup={dup.row}
@@ -834,6 +827,20 @@ export function ScopeEntryDialog({
             </form>
           )}
         </DialogBody>
+
+        <DialogSubmitError
+          message={
+            error ??
+            (outcome?.error != null
+              ? scopeErrorMessage(
+                  t,
+                  outcome.error,
+                  t('scope.bulk.failed', 'Could not add to scope')
+                )
+              : null)
+          }
+          requestId={failure?.requestId}
+        />
 
         <DialogFooter>
           {outcome ? (

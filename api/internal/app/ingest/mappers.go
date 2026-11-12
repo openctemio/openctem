@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"net"
 	"strings"
 	"time"
 
@@ -163,7 +164,9 @@ func mapSDKSeverity(sev severity.Level) vulnerability.Severity {
 	case severity.Low:
 		return vulnerability.SeverityLow
 	case severity.Info:
-		return vulnerability.SeverityNone
+		// An informational finding is info, not none: none is a CVSS score of
+		// zero, and a list filtered on info must show it.
+		return vulnerability.SeverityInfo
 	default:
 		return vulnerability.SeverityMedium
 	}
@@ -395,11 +398,44 @@ func buildServiceProperties(svc *ctis.ServiceTechnical) map[string]any {
 	if svc.IsAuthRequired {
 		props["auth_required"] = true
 	}
+	// Only an access the probe saw is recorded: false is also what an
+	// unmeasured report sends.
+	if svc.HasAnonymousAccess {
+		props[asset.PropKeyHasAnonymousAccess] = true
+	}
 	if len(svc.AuthMethods) > 0 {
 		props["auth_methods"] = svc.AuthMethods
 	}
+	addLocalListenerProperties(props, svc.Details)
 
 	return props
+}
+
+// The local view of a service (technical.service.details.observed_from).
+const (
+	propObservedFrom    = "observed_from"
+	observedFromHost    = "host"
+	observedFromNetwork = "network"
+)
+
+// addLocalListenerProperties keeps the local view of a service a host
+// reported about itself (a credentialed scan's listening sockets):
+// observed_from "host" means only the host's own socket table shows it, and
+// the scanner did not reach it over the network; "network" means both. Only
+// these keys of technical.service.details are read, with bounded values.
+func addLocalListenerProperties(props map[string]any, d map[string]string) {
+	switch d[propObservedFrom] {
+	case observedFromHost, observedFromNetwork:
+		props[propObservedFrom] = d[propObservedFrom]
+	default:
+		return
+	}
+	if b := strings.TrimSpace(d["bind_address"]); b == "any" || net.ParseIP(b) != nil {
+		props["bind_address"] = b
+	}
+	if pr := strings.TrimSpace(d["process"]); pr != "" && len(pr) <= 128 {
+		props["process"] = pr
+	}
 }
 
 // buildCertificateProperties builds properties from CTIS CertificateTechnical.

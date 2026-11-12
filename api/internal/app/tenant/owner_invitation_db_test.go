@@ -40,6 +40,7 @@ type oiMailer struct {
 	mu       sync.Mutex
 	invites  []string // email|org
 	canceled []string
+	noEmail  bool // the installation cannot send email
 }
 
 func (m *oiMailer) SendOwnershipInvitation(_ context.Context, email, _, org string, _ time.Time) {
@@ -53,6 +54,8 @@ func (m *oiMailer) NotifyOwnershipTransfer(_ context.Context, email, _, _, _ str
 	defer m.mu.Unlock()
 	m.canceled = append(m.canceled, email)
 }
+
+func (m *oiMailer) CanDeliverSystem() bool { return !m.noEmail }
 
 func (m *oiMailer) counts() (int, int) {
 	m.mu.Lock()
@@ -512,5 +515,70 @@ func TestOwnerInvitation_NewEmailPathUnchanged(t *testing.T) {
 	}
 	if n := e.count(`SELECT count(*) FROM organization_owner_invitations WHERE tenant_id = $1`, created.Tenant.ID().String()); n != 0 {
 		t.Fatal("new email path wrote an invitation")
+	}
+}
+
+// Without email the invitation is recorded as never sent (send_count 0, no
+// last_sent_at), "send again" is refused instead of counting a send that did
+// not happen, and inviting the same account again renews an expired one.
+func TestOwnerInvitation_NoEmail(t *testing.T) {
+	e := newOIEnv(t)
+	e.mailer.noEmail = true
+	owner := e.account(true)
+	created, inv := e.create(owner)
+	ctx := context.Background()
+	if inv.SendCount != 0 || inv.LastSentAt != nil {
+		t.Fatalf("send_count %d, last_sent_at %v: want never sent", inv.SendCount, inv.LastSentAt)
+	}
+	var sends int
+	var sentAt sql.NullTime
+	if err := e.db.QueryRowContext(ctx, `SELECT send_count, last_sent_at FROM organization_owner_invitations WHERE id = $1`,
+		inv.ID.String()).Scan(&sends, &sentAt); err != nil {
+		t.Fatal(err)
+	}
+	if sends != 0 || sentAt.Valid {
+		t.Fatalf("stored send_count %d, last_sent_at %v: want 0 and NULL", sends, sentAt)
+	}
+	if n := e.count(`SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND metadata->>'invitee_emailed' = 'false'`,
+		created.Tenant.ID().String()); n != 1 {
+		t.Fatalf("audit rows with invitee_emailed=false: %d, want 1", n)
+	}
+	if _, err := e.svc.ResendOwnerInvitation(ctx, created.Tenant.ID(), adminActx()); !errors.Is(err, tenantapp.ErrOwnerInvitationEmailUnavailable) {
+		t.Fatalf("resend without email: err = %v", err)
+	}
+	if n := e.count(`SELECT send_count FROM organization_owner_invitations WHERE id = $1`, inv.ID.String()); n != 0 {
+		t.Fatalf("a refused resend counted a send: %d", n)
+	}
+	// The invitee still finds it in the app.
+	if offers, err := e.svc.ListMyOwnerInvitations(ctx, owner.ID()); err != nil || len(offers) != 1 {
+		t.Fatalf("offers = %v, %v; want the invitation", offers, err)
+	}
+	// Expired: inviting the same account again gives seven more days.
+	e.exec(`UPDATE organization_owner_invitations SET expires_at = now() - interval '1 minute' WHERE id = $1`, inv.ID.String())
+	again, err := e.svc.InviteOwner(ctx, created.Tenant.ID(), owner, shared.ID{}, adminActx())
+	if err != nil {
+		t.Fatalf("invite again: %v", err)
+	}
+	if again.SendCount != 0 || !again.IsOpen(time.Now()) {
+		t.Fatalf("renewed invitation %+v: want open and never sent", again)
+	}
+	if _, err := e.svc.AcceptOwnerInvitation(ctx, again.ID, owner, inviteeActx(owner)); err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+}
+
+// Once email works, a never-sent invitation can be sent at once.
+func TestOwnerInvitation_NeverSentThenEmail(t *testing.T) {
+	e := newOIEnv(t)
+	e.mailer.noEmail = true
+	owner := e.account(true)
+	created, _ := e.create(owner)
+	e.mailer.noEmail = false
+	got, err := e.svc.ResendOwnerInvitation(context.Background(), created.Tenant.ID(), adminActx())
+	if err != nil {
+		t.Fatalf("first send once email works: %v", err)
+	}
+	if got.SendCount != 1 || got.LastSentAt == nil {
+		t.Fatalf("send_count %d, last_sent_at %v: want 1 and set", got.SendCount, got.LastSentAt)
 	}
 }

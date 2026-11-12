@@ -138,6 +138,13 @@ export interface AdminOrganization {
    * account and waiting for that account to accept (absent once accepted).
    */
   owner_invitation?: AdminOwnerInvitation
+  /**
+   * The installation can send email (the organization's own page and the
+   * create answer only; absent in the list). False: an invited account is
+   * not told, and a new owner's set-password link is handed over by the
+   * administrator.
+   */
+  email_delivery?: boolean
 }
 
 /** pending | expired | declined | canceled */
@@ -147,12 +154,16 @@ export interface AdminOwnerInvitation {
   status: AdminOwnerInvitationStatus
   /** ops_admin and above only. */
   invitee_email?: string
+  /** Times the invitee was emailed; 0 when it was never sent (no email). */
   send_count: number
   resends_left: number
-  /** Earliest next send (absent when no send is left). */
+  /** Earliest next send (absent when no send is left or it was never sent). */
   resend_available_at?: string
   expires_at: string
-  last_sent_at: string
+  /** Absent when the invitee was never emailed. */
+  last_sent_at?: string
+  /** Web app page where the invitee accepts after signing in (open invitations, not a secret). */
+  accept_url?: string
   created_at: string
   responded_at?: string
 }
@@ -943,9 +954,16 @@ export interface SettingChange {
 /** The platform layer of the scan identification markers. */
 export interface ScanIdentificationSettings extends SettingChange {
   user_agent: string
+  /** A rotation list instead of user_agent. */
+  user_agents: string[]
+  /** Locks the User-Agent or the list. */
   user_agent_enforced: boolean
   headers: { name: string; value: string; enforced: boolean }[]
+  query?: { name: string; value: string } | null
+  query_enforced: boolean
+  identification_required: boolean
   max_headers: number
+  max_user_agents: number
   stored: boolean
   version: number
 }

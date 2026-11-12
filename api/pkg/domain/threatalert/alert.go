@@ -377,20 +377,27 @@ type Alert struct {
 	Confirmed       int
 	Possible        int
 	InternetFacing  int
-	LastEventKind   string
-	SourceAt        *time.Time
-	EventAt         *time.Time
-	NotifiedLevel   string
-	NotifiedTier    string
-	NotifiedAt      *time.Time
-	DigestPending   bool
-	Held            bool
-	Baseline        bool
-	PlannedAt       time.Time
-	AcknowledgedAt  *time.Time
-	ResolvedAt      *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Critical counts the affected assets of criticality "critical" (the
+	// crown jewels); Product is the product the best match names and
+	// ProductCount how many distinct products match. Like the three counts
+	// above, they are read over the viewer's in-scope assets only.
+	Critical       int
+	Product        string
+	ProductCount   int
+	LastEventKind  string
+	SourceAt       *time.Time
+	EventAt        *time.Time
+	NotifiedLevel  string
+	NotifiedTier   string
+	NotifiedAt     *time.Time
+	DigestPending  bool
+	Held           bool
+	Baseline       bool
+	PlannedAt      time.Time
+	AcknowledgedAt *time.Time
+	ResolvedAt     *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // Counts sets the asset counts from the affected assets.

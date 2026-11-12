@@ -77,7 +77,7 @@ describe('EmergingThreatsSettingsForm', () => {
 
   it('does not save a value out of bounds', async () => {
     renderForm()
-    const input = screen.getByLabelText('Immediate threshold')
+    const input = screen.getByLabelText('Act now threshold')
     await userEvent.clear(input)
     await userEvent.type(input, '50')
     await userEvent.click(screen.getByRole('button', { name: /Save/ }))

@@ -55,6 +55,11 @@ const (
 	// EventTypeMailServerBlocklisted: a mail server address listed on a DNS
 	// blocklist.
 	EventTypeMailServerBlocklisted EventType = "mail_server_blocklisted"
+	// EventTypeRiskyServiceExposed: an internet-facing service whose
+	// measured kind is risky (remote access, file sharing, a database, an
+	// industrial protocol, ...; docs/architecture/service-kinds.md). A kind
+	// guessed from the port never raises one.
+	EventTypeRiskyServiceExposed EventType = "risky_service_exposed"
 
 	// Identity exposures (CTEM Discovery "exposure ≠ vulnerability" — the
 	// identity attack surface). Emitted by the EntraID/IdP identity-exposure
@@ -104,6 +109,7 @@ func AllEventTypes() []EventType {
 		EventTypeWebInterfaceExposed,
 		EventTypeMCPServerExposed,
 		EventTypeMailServerBlocklisted,
+		EventTypeRiskyServiceExposed,
 		EventTypeCustom,
 	}
 }
@@ -139,7 +145,8 @@ func (t EventType) IsPositiveExposure() bool {
 		EventTypeIdentityOverprivileged,
 		EventTypeDanglingCNAME, EventTypeDanglingNS, EventTypeEmailSecurityWeak,
 		EventTypeSubdomainTakeover, EventTypeLookalikeDomain, EventTypeThirdPartyScriptAdded,
-		EventTypeWebInterfaceExposed, EventTypeMCPServerExposed, EventTypeMailServerBlocklisted:
+		EventTypeWebInterfaceExposed, EventTypeMCPServerExposed, EventTypeMailServerBlocklisted,
+		EventTypeRiskyServiceExposed:
 		return true
 	default:
 		return false

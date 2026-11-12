@@ -73,7 +73,7 @@ func TestBuildRefusals(t *testing.T) {
 }
 
 // components lists every built-in sensor product with its repository and
-// image, and the SDK.
+// image, the SDK and the CI runner.
 func TestComponents(t *testing.T) {
 	got := runOK(t, "components")
 	lines := strings.Split(strings.TrimSpace(got), "\n")
@@ -83,8 +83,14 @@ func TestComponents(t *testing.T) {
 	if !strings.Contains(got, "sensor openctemio/sensor ghcr.io/openctemio/sensor\n") {
 		t.Fatalf("no scanning sensor line in %q", got)
 	}
-	if lines[len(lines)-1] != "sdk openctemio/sdk-go -" {
-		t.Fatalf("last line %q", lines[len(lines)-1])
+	if !strings.Contains(got, "connector-tenable openctemio/connector-tenable ghcr.io/openctemio/connector-tenable\n") {
+		t.Fatalf("no connector-tenable line in %q", got)
+	}
+	if !strings.Contains(got, "\nsdk openctemio/sdk-go -\n") {
+		t.Fatalf("no sdk line in %q", got)
+	}
+	if lines[len(lines)-1] != "ci openctemio/ci ghcr.io/openctemio/ci" {
+		t.Fatalf("last line %q, want the CI runner", lines[len(lines)-1])
 	}
 	for _, l := range lines {
 		if f := strings.Fields(l); len(f) != 3 || !strings.HasPrefix(f[1], "openctemio/") {

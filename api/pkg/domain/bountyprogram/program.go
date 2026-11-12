@@ -100,8 +100,15 @@ type Rules struct {
 	RateLimitRPS    int      `json:"rate_limit_rps,omitempty"`
 	RequiredHeaders []Header `json:"required_headers,omitempty"`
 	UserAgent       string   `json:"user_agent,omitempty"`
-	Forbidden       []string `json:"forbidden,omitempty"`
-	Notes           string   `json:"notes,omitempty"`
+	// UserAgents is a User-Agent rotation list (instead of UserAgent).
+	UserAgents []string `json:"user_agents,omitempty"`
+	// IdentificationRequired: jobs on the program's targets must carry the
+	// identification headers or query parameter on every request; a tool
+	// that cannot is skipped with a reason. New programs default to on in
+	// the console; rows saved before keep it off.
+	IdentificationRequired bool     `json:"identification_required,omitempty"`
+	Forbidden              []string `json:"forbidden,omitempty"`
+	Notes                  string   `json:"notes,omitempty"`
 	// TestingWindows: when the program allows testing (none: any time).
 	TestingWindows []TestingWindow `json:"testing_windows,omitempty"`
 }
@@ -109,7 +116,8 @@ type Rules struct {
 // Normalize trims the rules and sorts the forbidden list (the terms hash
 // must not depend on the order a person typed them).
 func (r Rules) Normalize() Rules {
-	out := Rules{RateLimitRPS: r.RateLimitRPS, UserAgent: strings.TrimSpace(r.UserAgent), Notes: strings.TrimSpace(r.Notes)}
+	out := Rules{RateLimitRPS: r.RateLimitRPS, UserAgent: strings.TrimSpace(r.UserAgent), Notes: strings.TrimSpace(r.Notes),
+		UserAgents: scanident.NormalizeUserAgents(r.UserAgents), IdentificationRequired: r.IdentificationRequired}
 	for _, w := range r.TestingWindows {
 		w.Timezone = strings.TrimSpace(w.Timezone)
 		w.Days = lower(w.Days)
@@ -144,6 +152,9 @@ func (r Rules) Validate() error {
 		return fmt.Errorf("%w: user_agent must be at most %d printable characters", shared.ErrValidation, MaxUserAgent)
 	case len(r.Notes) > MaxNotes:
 		return fmt.Errorf("%w: notes must be at most %d characters", shared.ErrValidation, MaxNotes)
+	}
+	if err := scanident.CheckUserAgents(r.UserAgent, r.UserAgents); err != nil {
+		return fmt.Errorf("user_agents: %w", err)
 	}
 	for _, h := range r.RequiredHeaders {
 		if h.Name == "" || len(h.Name) > MaxHeaderName || !isToken(h.Name) {

@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/ingestreceipt"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/vulnerability"
 )
 
 // =============================================================================
@@ -95,6 +96,15 @@ type Input struct {
 // docs/rfcs/RFC-026-sensor-results-ingest.md). Each is off in the zero value,
 // so v1 ingest is unchanged.
 type Options struct {
+	// FindingsRefusedBeforeIngest counts the producer's findings a caller
+	// refused before calling Ingest (protocol v2: a finding that names no
+	// asset of its segment). They count as received, with the outcome
+	// unresolved_ref, so the receipt reconciles with what the producer sent.
+	FindingsRefusedBeforeIngest int
+	// RefusedItems are findings the caller refused before ingest (protocol
+	// v2: a finding that names no asset of its segment). They are booked on
+	// the receipt's item log with the rest of the report.
+	RefusedItems []ingestreceipt.Item
 	// RequireAssetForFindings: no fallback asset. A report with findings but
 	// no assets gets no asset made up from its metadata, and a finding is
 	// attached only to the asset its asset_ref names, never to "the only
@@ -141,6 +151,14 @@ type Options struct {
 	// own). Nil derives it from the binding: the command's scan run or the
 	// command, the CI run, the connector run, or the sensor's report.
 	Receipt *ingestreceipt.Source
+	// ReleasedFromQuarantine: the report was held in the results quarantine
+	// and is applied now (by the platform or a person). The ingest keeps its
+	// trusted binding; only the receipt differs: it names the original
+	// sensor as sender, not a connector, and carries the release marker.
+	ReleasedFromQuarantine bool
+	// SenderName is the display name of the sender sensor for the receipt
+	// (the applying path has only the stored item, not a live session).
+	SenderName string
 	// NoExposureProjection: the report lists targets someone published, not
 	// what was observed (program targets, RFC-065 §16.8), so its service
 	// assets open no exposure.
@@ -216,8 +234,12 @@ type Output struct {
 	// branch is then skipped: it would mark the findings this scan did see as
 	// no longer on the branch.
 	BranchOccurrencesFailed bool `json:"-"`
-	AssetsCreated           int  `json:"assets_created"`
-	AssetsUpdated           int  `json:"assets_updated"`
+	// SourceRetired is set when the report came from a source the
+	// organization stopped using: nothing of it was applied, and its
+	// receipt counts its findings as source_retired.
+	SourceRetired bool `json:"source_retired,omitempty"`
+	AssetsCreated int  `json:"assets_created"`
+	AssetsUpdated int  `json:"assets_updated"`
 	// AssetsSkippedExcluded counts new assets not added because they match
 	// an active scope exclusion (RFC-042 F16).
 	AssetsSkippedExcluded int `json:"assets_skipped_excluded,omitempty"`
@@ -225,22 +247,58 @@ type Output struct {
 	// change (Options.Actor): existing assets outside their data scope and
 	// hosts that would have been new. Their findings are skipped.
 	AssetsSkippedOutOfScope int `json:"assets_skipped_out_of_scope,omitempty"`
-	// AssetsOutsideChunk counts report assets dropped because they name
+	// AssetsOutsideChunk counts report assets recorded although they name
 	// only addresses outside the addresses and ranges their command was
-	// given (RFC-088 output binding). Their findings are skipped.
+	// given (RFC-088 output binding; research 436: recorded, never dropped).
 	AssetsOutsideChunk int `json:"assets_outside_chunk,omitempty"`
-	// AssetsOutsideJob counts report assets dropped because they lie outside
-	// the targets of the hostname-scoped command the report is bound to
-	// (job_bound.go); FindingsOutsideJob counts the findings dropped with
-	// them. OutsideJobAssetRefs are their report refs.
-	AssetsOutsideJob     int             `json:"assets_outside_job,omitempty"`
-	FindingsOutsideJob   int             `json:"findings_outside_job,omitempty"`
-	OutsideJobAssetRefs  map[string]bool `json:"-"`
-	FindingsCreated      int             `json:"findings_created"`
-	FindingsUpdated      int             `json:"findings_updated"`
-	FindingsSkipped      int             `json:"findings_skipped"`
-	FindingsAutoResolved int             `json:"findings_auto_resolved,omitempty"`
-	FindingsAutoReopened int             `json:"findings_auto_reopened,omitempty"`
+	// AssetsOutsideJob counts report assets recorded although they lie
+	// outside the targets of the hostname-scoped command the report is bound
+	// to (job_bound.go); FindingsOutsideJob counts the findings stored on
+	// assets of either rule. OutsideJobAssetRefs are the report refs of
+	// both: their findings run no new-finding automations.
+	AssetsOutsideJob    int             `json:"assets_outside_job,omitempty"`
+	FindingsOutsideJob  int             `json:"findings_outside_job,omitempty"`
+	OutsideJobAssetRefs map[string]bool `json:"-"`
+	// AssetsOverCap counts report assets outside the targets refused because
+	// the report already recorded maxOutsideTargetAssets of them;
+	// FindingsOverCap the findings refused with them. OverCapAssetRefs are
+	// their report refs.
+	AssetsOverCap    int             `json:"assets_over_cap,omitempty"`
+	FindingsOverCap  int             `json:"findings_over_cap,omitempty"`
+	OverCapAssetRefs map[string]bool `json:"-"`
+	// OutsideTargetAssetIDs are the persisted assets of OutsideJobAssetRefs.
+	OutsideTargetAssetIDs map[shared.ID]bool `json:"-"`
+	// practiceFacts are the practice facts of the assets this ingest
+	// persisted, by id (practice_facts.go). The finding insert derives the
+	// practice from them instead of reading the assets again.
+	practiceFacts map[shared.ID]vulnerability.PracticeAssetFacts
+	// ContractMismatchTypes are the types a verified first-party tool
+	// reported without declaring them (ingested and flagged);
+	// ContractMismatchRefs are the report refs of those assets
+	// (contract_mismatch.go).
+	ContractMismatchTypes []string        `json:"contract_mismatch_types,omitempty"`
+	ContractMismatchRefs  map[string]bool `json:"-"`
+	FindingsCreated       int             `json:"findings_created"`
+	FindingsUpdated       int             `json:"findings_updated"`
+	FindingsSkipped       int             `json:"findings_skipped"`
+	// InfoObservations counts the template scanner info matches filed as
+	// exposures instead of findings (info_matches.go).
+	InfoObservations int `json:"info_observations,omitempty"`
+	// InfoFacts counts the info matches of InfoObservations the template
+	// facts mapping stored as asset facts or discarded, not as exposures
+	// (docs/architecture/template-facts.md).
+	InfoFacts int `json:"info_facts,omitempty"`
+	// InfoUnmapped counts the info matches the mapping does not name, filed
+	// as generic exposures so the templates get reviewed.
+	InfoUnmapped int `json:"info_unmapped,omitempty"`
+	// FindingsHeld counts findings held for review in the results quarantine
+	// (output_binding.go), not applied.
+	FindingsHeld int `json:"findings_held,omitempty"`
+	// FindingsLost counts findings of out-of-contract assets the full
+	// quarantine could not keep: neither applied nor held.
+	FindingsLost         int `json:"findings_lost,omitempty"`
+	FindingsAutoResolved int `json:"findings_auto_resolved,omitempty"`
+	FindingsAutoReopened int `json:"findings_auto_reopened,omitempty"`
 	// FindingsSourceResolved counts open findings resolved because their
 	// source reported them mitigated (Tenable.sc, RFC-047); in dry_run mode
 	// FindingsSourceWouldResolve counts them instead.
@@ -274,14 +332,17 @@ type Output struct {
 	// the sub-inventory; EndpointsRefused those dropped (unparseable, an
 	// origin the report may not write to); EndpointsStatic static files
 	// counted and not stored; EndpointsOverCap new endpoints or parameters
-	// beyond the per-origin caps.
-	EndpointsCreated int      `json:"endpoints_created,omitempty"`
-	EndpointsUpdated int      `json:"endpoints_updated,omitempty"`
-	EndpointsRefused int      `json:"endpoints_refused,omitempty"`
-	EndpointsStatic  int      `json:"endpoints_static,omitempty"`
-	EndpointsOverCap int      `json:"endpoints_over_cap,omitempty"`
-	Errors           []string `json:"errors,omitempty"`
-	Warnings         []string `json:"warnings,omitempty"`
+	// beyond the per-origin caps; EndpointsNoEvidence the path discovery
+	// endpoints refused for missing response evidence (also counted in
+	// EndpointsRefused).
+	EndpointsCreated    int      `json:"endpoints_created,omitempty"`
+	EndpointsUpdated    int      `json:"endpoints_updated,omitempty"`
+	EndpointsRefused    int      `json:"endpoints_refused,omitempty"`
+	EndpointsNoEvidence int      `json:"endpoints_no_evidence,omitempty"`
+	EndpointsStatic     int      `json:"endpoints_static,omitempty"`
+	EndpointsOverCap    int      `json:"endpoints_over_cap,omitempty"`
+	Errors              []string `json:"errors,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
 
 	// Binding is the authority the report was applied under: command,
 	// unsolicited or trusted (RFC-040 §5.3).
@@ -316,6 +377,19 @@ type Output struct {
 	// report sighted (after alias resolution). Not exposed; the CI gate
 	// records them for its run (RFC-051).
 	SightedFingerprints []string `json:"-"`
+	// CompliancePassed are the compliance results the report says passed,
+	// on an existing finding of the same check (observation.go): not a
+	// sighting of it. A finding import resolves the open one with them.
+	CompliancePassed []CompliancePass `json:"-"`
+	// fileObserved: the findings carry when the file saw them
+	// (last_seen_at), and that time, not the ingest's, is their sighting
+	// time (an upload; observation.go).
+	fileObserved bool
+	// retryErr is the first transient store error of this ingest (a lost
+	// connection, a lock or statement timeout, a write conflict): the
+	// report is not finished, so Ingest returns ErrRetryLater instead of
+	// recording what that error kept out as rejected.
+	retryErr error
 	// FingerprintsByIndex maps the index of a finding in the report to the
 	// stored fingerprints it became (one, or one per CVE of a split network
 	// finding). A CI job uses it to learn which of its own results carry a
@@ -328,15 +402,9 @@ type Output struct {
 	ExcludedAssetRefs map[string]bool `json:"-"`
 
 	// OutOfScopeAssetRefs are the CTIS asset ids of the report skipped
-	// because the upload's actor may not change them (Options.Actor), or
-	// because they lie outside their command's addresses. Their findings
-	// are skipped, never attached to another asset of the report.
+	// because the upload's actor may not change them (Options.Actor). Their
+	// findings are skipped, never attached to another asset of the report.
 	OutOfScopeAssetRefs map[string]bool `json:"-"`
-
-	// OutsideChunkAssetRefs are the refs of OutOfScopeAssetRefs that lie
-	// outside their command's addresses (not the actor's data scope), so the
-	// segment outcome names the right reason.
-	OutsideChunkAssetRefs map[string]bool `json:"-"`
 
 	// HeldAssetRefs are the CTIS asset ids, and HeldFindings the indices of
 	// the input findings, that the output-type binding took out of the
@@ -351,6 +419,11 @@ type Output struct {
 	// policy and version that decided them: the receipt records both.
 	Decided []ingestreceipt.PolicyAction `json:"-"`
 	Items   []ingestreceipt.Item         `json:"-"`
+	// FindingsReceived is what the producer sent (before any filter, with
+	// Options.FindingsRefusedBeforeIngest); Outcomes counts where the
+	// findings went beyond the action counts (ingestreceipt.Outcome*).
+	FindingsReceived int            `json:"-"`
+	Outcomes         map[string]int `json:"-"`
 
 	// policy is the snapshot this ingest applies.
 	policy *PolicySnapshot
@@ -413,4 +486,15 @@ func withReportID(ctx context.Context, id string) context.Context {
 func reportIDOf(ctx context.Context) string {
 	id, _ := ctx.Value(reportIDKey{}).(string)
 	return id
+}
+
+// addOutcome counts n received findings under an outcome code.
+func (o *Output) addOutcome(code string, n int) {
+	if o == nil || n <= 0 {
+		return
+	}
+	if o.Outcomes == nil {
+		o.Outcomes = map[string]int{}
+	}
+	o.Outcomes[code] += n
 }

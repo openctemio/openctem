@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/contract/ctlookup"
+
 	certmonitorapp "github.com/openctemio/openctem/api/internal/app/certmonitor"
 	assetdom "github.com/openctemio/openctem/api/pkg/domain/asset"
 	exposuredom "github.com/openctemio/openctem/api/pkg/domain/exposure"
@@ -102,6 +104,25 @@ func TestEASMNetworkSeed_SkipsTenantWithAttackSurfaceOff(t *testing.T) {
 	onlyOn(t, r.worked, on)
 }
 
+type autoAddStub struct {
+	*skipRunner
+	a, b shared.ID
+}
+
+func (s autoAddStub) Run(_ context.Context, skip func(shared.ID) bool) (int, error) {
+	return s.work(s.a, s.b, skip), nil
+}
+
+func TestEASMAddressAutoAdd_SkipsTenantWithAttackSurfaceOff(t *testing.T) {
+	on, off := shared.NewID(), shared.NewID()
+	r := &skipRunner{}
+	c := NewEASMAddressAutoAddController(autoAddStub{r, on, off}, offFor(moduledom.ModuleAttackSurface, off), 0)
+	if _, err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	onlyOn(t, r.worked, on)
+}
+
 type digestStub struct{ sent []shared.ID }
 
 func (d *digestStub) RunTenant(_ context.Context, id shared.ID) (bool, error) {
@@ -134,10 +155,21 @@ type ctExposures struct{}
 
 func (ctExposures) BulkUpsert(context.Context, []*exposuredom.ExposureEvent) error { return nil }
 
+// ctSource stands in for the platform sensor that answers CT lookups; it
+// answers every query with no certificates.
+type ctSource struct{}
+
+func (ctSource) Available(context.Context) bool { return true }
+
+func (ctSource) Lookup(context.Context, shared.ID, string) (ctlookup.Output, error) {
+	return ctlookup.Output{SourceStatus: []ctlookup.SourceStatus{{Source: ctlookup.SourceCRTSH, State: ctlookup.StateOK}}}, nil
+}
+
 func TestCertMonitor_SkipsTenantWithAttackSurfaceOff(t *testing.T) {
 	on, off := shared.NewID(), shared.NewID()
 	assets := &ctAssets{}
-	svc := certmonitorapp.NewService(assets, ctExposures{}, "", logger.NewNop())
+	svc := certmonitorapp.NewService(assets, ctExposures{}, logger.NewNop())
+	svc.SetSource(ctSource{})
 	c := NewCertMonitorController(svc, &fakeTenantLister{ids: []shared.ID{on, off}},
 		&CertMonitorControllerConfig{ModuleGuard: offFor(moduledom.ModuleAttackSurface, off)})
 	if _, err := c.Reconcile(context.Background()); err != nil {

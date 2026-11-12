@@ -232,6 +232,14 @@ export function EASMMonitoringCard() {
               'Your domain names are sent to crt.sh and Cert Spotter to find certificates issued for them. Turn this off to keep them private; no new names are then discovered this way.'
             )}
           </p>
+          {settings.ct_unavailable_reason === 'needs_platform_sensor' && (
+            <p className="text-xs text-muted-foreground" role="status">
+              {t(
+                'attackSurface.monitoring.ctNeedsPlatformSensor',
+                'Certificate Transparency lookups run only through a platform sensor: the platform never contacts crt.sh or Cert Spotter itself, and none is set up to carry them yet. Names from certificate logs still reach the inventory through the passive subdomain discovery on your sensors.'
+              )}
+            </p>
+          )}
           <div className="flex items-center justify-between gap-3 text-sm">
             <span className="text-muted-foreground">
               {t('attackSurface.monitoring.lastRun', 'Last run')}
@@ -331,7 +339,7 @@ export function EASMMonitoringCard() {
             <Switch
               id="easm-lookalike-ct"
               checked={!!settings.lookalike_ct_enabled}
-              disabled={!canSettings || busy}
+              disabled={!canSettings || busy || !settings.ct_available}
               onCheckedChange={(on) =>
                 on ? setPending('lookalike') : void save({ lookalike_ct_enabled: false })
               }
@@ -390,6 +398,25 @@ export function EASMMonitoringCard() {
               'webEvidence.settings.description',
               'Keep the screenshots that sensors with the screenshot tool take of your web assets, for 30 days. A screenshot shows whatever the page shows, so this is off by default. Status, title and a short masked response are kept either way.'
             )}
+          </p>
+        </section>
+        <section
+          className="space-y-3 md:col-span-2"
+          aria-label={t('attackSurface.infoMatches.title')}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="easm-info-matches" className="font-medium">
+              {t('attackSurface.infoMatches.title')}
+            </Label>
+            <Switch
+              id="easm-info-matches"
+              checked={!!settings.info_matches_as_findings}
+              disabled={!canSettings || busy}
+              onCheckedChange={(on) => void save({ info_matches_as_findings: on })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t('attackSurface.infoMatches.description')}
           </p>
         </section>
         <DigestSection settings={settings} disabled={!canSettings || busy} onSave={save} />

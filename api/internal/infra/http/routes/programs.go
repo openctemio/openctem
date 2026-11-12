@@ -22,7 +22,7 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 		r.GET("/catalog", h.Catalog, middleware.Require(permission.ProgramsRead))
 		r.POST("/subscriptions", h.Subscribe, middleware.Require(permission.ProgramsWrite))
 		r.POST("/preview", h.Preview, middleware.Require(permission.ProgramsWrite))
-		r.POST("/", h.Import, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.POST("/", h.Import, middleware.Require(permission.ProgramsWrite), requireStepUpSensitive())
 		r.GET("/{id}", h.Get, middleware.Require(permission.ProgramsRead))
 		// Accepting a program's terms changes no authorization; it unlocks a
 		// private program's details for the caller.
@@ -30,26 +30,26 @@ func registerProgramRoutes(router Router, h *handler.BountyProgramHandler, authM
 		// Confirming targets the feed only suggested widens a followed
 		// program; its entries then wait for a new acceptance (step-up there).
 		r.POST("/{id}/targets/approve", h.ConfirmTargets, middleware.Require(permission.ProgramsWrite))
-		r.PUT("/{id}/scope", h.Reimport, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.PUT("/{id}/scope", h.Reimport, middleware.Require(permission.ProgramsWrite), requireStepUpSensitive())
 		r.POST("/{id}/suspend", h.Pause, middleware.Require(permission.ProgramsWrite))
 		r.POST("/{id}/end", h.End, middleware.Require(permission.ProgramsWrite))
-		r.POST("/{id}/reactivate", h.Resume, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.POST("/{id}/reactivate", h.Resume, middleware.Require(permission.ProgramsWrite), requireStepUpSensitive())
 		// Scope source and sync (RFC-065 §14): setting the source stores a
 		// credential (step-up); a sync narrows at once and keeps additions
 		// pending; applying them is the attestation (step-up).
-		r.PUT("/{id}/source", h.SetSource, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.PUT("/{id}/source", h.SetSource, middleware.Require(permission.ProgramsWrite), requireStepUpSensitive())
 		r.POST("/{id}/sync", h.Sync, middleware.Require(permission.ProgramsWrite))
 		r.GET("/{id}/pending", h.Pending, middleware.Require(permission.ProgramsRead))
-		r.POST("/{id}/pending/apply", h.ApplyPending, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.POST("/{id}/pending/apply", h.ApplyPending, middleware.Require(permission.ProgramsWrite), requireStepUpSensitive())
 		// Delivery of events about the program's private assets (RFC-065
 		// §15.4). Attaching a channel widens who receives them (step-up);
 		// the organization-channel opt-in is owner-only in the service,
 		// with a reason (step-up). Both are audited.
 		r.GET("/{id}/delivery", h.Delivery, middleware.Require(permission.ProgramsRead))
 		r.PUT("/{id}/notification-channels/{integration_id}", h.AttachChannel,
-			middleware.RequireAll(permission.ProgramsWrite, permission.IntegrationsManage), requireStepUp())
+			middleware.RequireAll(permission.ProgramsWrite, permission.IntegrationsManage), requireStepUpSensitive())
 		r.DELETE("/{id}/notification-channels/{integration_id}", h.DetachChannel,
 			middleware.RequireAll(permission.ProgramsWrite, permission.IntegrationsManage))
-		r.PUT("/{id}/org-channels", h.SetOrgChannels, middleware.Require(permission.ProgramsWrite), requireStepUp())
+		r.PUT("/{id}/org-channels", h.SetOrgChannels, middleware.Require(permission.ProgramsWrite), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }

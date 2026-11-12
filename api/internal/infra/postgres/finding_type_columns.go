@@ -25,14 +25,14 @@ import (
 // findingTypeScan.dests must list the columns in the same order.
 const findingTypeColumnsSQL = `finding_type,
 			secret_type, secret_service, secret_valid, secret_revoked, secret_entropy, secret_expires_at,
-			compliance_framework, compliance_control_id, compliance_control_name, compliance_result, compliance_section,
+			compliance_framework, compliance_control_id, compliance_control_name, compliance_result, compliance_section, compliance_level,
 			web3_chain, web3_chain_id, web3_contract_address, web3_swc_id, web3_function_signature, web3_tx_hash,
 			misconfig_policy_id, misconfig_resource_type, misconfig_resource_name, misconfig_resource_path,
 			misconfig_expected, misconfig_actual,
 			type_details`
 
 // findingTypeColumnCount is the number of columns in findingTypeColumnsSQL.
-const findingTypeColumnCount = 25
+const findingTypeColumnCount = 26
 
 // complianceResults are the values chk_compliance_result accepts.
 var complianceResults = map[string]bool{
@@ -93,6 +93,7 @@ func findingTypeArgs(f *vulnerability.Finding) []any {
 		nullClip(d.ComplianceControlName, 500),
 		nullString(result),
 		nullClip(d.ComplianceSection, 100),
+		nullComplianceLevel(d.ComplianceLevel),
 		nullClip(d.Web3Chain, 50),
 		chainID,
 		nullClip(d.Web3ContractAddress, 66),
@@ -125,7 +126,7 @@ func typeDetailsDoc(d vulnerability.TypeDetails) any {
 func findingTypeConflictSQL() string {
 	cols := []string{
 		"secret_type", "secret_service", "secret_valid", "secret_revoked", "secret_entropy", "secret_expires_at",
-		"compliance_framework", "compliance_control_id", "compliance_control_name", "compliance_result", "compliance_section",
+		"compliance_framework", "compliance_control_id", "compliance_control_name", "compliance_result", "compliance_section", "compliance_level",
 		"web3_chain", "web3_chain_id", "web3_contract_address", "web3_swc_id", "web3_function_signature", "web3_tx_hash",
 		"misconfig_policy_id", "misconfig_resource_type", "misconfig_resource_name", "misconfig_resource_path",
 		"misconfig_expected", "misconfig_actual", "type_details",
@@ -169,6 +170,7 @@ type findingTypeScan struct {
 	secretExpiresAt                                                   sql.NullTime
 	complianceFramework, complianceControlID, complianceControlName   sql.NullString
 	complianceResult, complianceSection                               sql.NullString
+	complianceLevel                                                   sql.NullInt16
 	web3Chain                                                         sql.NullString
 	web3ChainID                                                       sql.NullInt64
 	web3ContractAddress, web3SWCID, web3FunctionSignature, web3TxHash sql.NullString
@@ -181,7 +183,7 @@ func (s *findingTypeScan) dests() []any {
 	return []any{
 		&s.findingType,
 		&s.secretType, &s.secretService, &s.secretValid, &s.secretRevoked, &s.secretEntropy, &s.secretExpiresAt,
-		&s.complianceFramework, &s.complianceControlID, &s.complianceControlName, &s.complianceResult, &s.complianceSection,
+		&s.complianceFramework, &s.complianceControlID, &s.complianceControlName, &s.complianceResult, &s.complianceSection, &s.complianceLevel,
 		&s.web3Chain, &s.web3ChainID, &s.web3ContractAddress, &s.web3SWCID, &s.web3FunctionSignature, &s.web3TxHash,
 		&s.misconfigPolicyID, &s.misconfigResourceType, &s.misconfigResourceName, &s.misconfigResourcePath,
 		&s.misconfigExpected, &s.misconfigActual,
@@ -220,6 +222,7 @@ func (s *findingTypeScan) details() vulnerability.TypeDetails {
 		ComplianceControlName: s.complianceControlName.String,
 		ComplianceResult:      s.complianceResult.String,
 		ComplianceSection:     s.complianceSection.String,
+		ComplianceLevel:       vulnerability.ComplianceLevel(s.complianceLevel.Int16),
 		Web3Chain:             s.web3Chain.String,
 		Web3ChainID:           s.web3ChainID.Int64,
 		Web3ContractAddress:   s.web3ContractAddress.String,
@@ -240,3 +243,12 @@ func (s *findingTypeScan) details() vulnerability.TypeDetails {
 }
 
 func placeholder(n int) string { return "$" + strconv.Itoa(n) }
+
+// nullComplianceLevel is the compliance_level value: NULL for an unknown
+// level, so the column's CHECK (1 to 3) never fails a batch.
+func nullComplianceLevel(l vulnerability.ComplianceLevel) sql.NullInt64 {
+	if !l.IsKnown() {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: int64(l), Valid: true}
+}

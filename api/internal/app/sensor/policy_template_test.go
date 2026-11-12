@@ -24,7 +24,7 @@ type policyDoc struct {
 		Allow []string `yaml:"allow"`
 	} `yaml:"tools"`
 	AllowCustomTemplates bool   `yaml:"allow_custom_templates"`
-	AllowInteractsh      bool   `yaml:"allow_interactsh"`
+	AllowInteractsh      *bool  `yaml:"allow_interactsh"`
 	KillSwitchFile       string `yaml:"kill_switch_file"`
 }
 
@@ -68,7 +68,7 @@ func TestTemplates_PolicyIsValid(t *testing.T) {
 		d := parsePolicyDoc(t, r.Policy)
 		if d.APIVersion != "openctem.io/sensor-policy/v1" || strings.Join(d.Targets.Allow, ",") != "10.20.0.0/16,203.0.113.0/24" ||
 			!d.Targets.AllowPrivate || d.Tools == nil || strings.Join(d.Tools.Allow, ",") != "nuclei,trivy" ||
-			d.AllowCustomTemplates || d.AllowInteractsh || d.KillSwitchFile != "/etc/openctem/STOP" {
+			d.AllowCustomTemplates || d.AllowInteractsh != nil || d.KillSwitchFile != "/etc/openctem/STOP" {
 			t.Errorf("[%s] policy %+v\n%s", dir, d, r.Policy)
 		}
 		// Private ranges: every daemon snippet turns the private switch on too.

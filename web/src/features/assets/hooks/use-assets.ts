@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef } from 'react'
 import useSWR from 'swr'
 import { get, post, put, del } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
+import { fetchAdvancedAssets } from '../api/advanced-fetch'
 import { primeView, type ViewResponse } from '@/lib/api/view-prime'
 import { isCoverageCause, type CoverageCause } from '../lib/coverage-cause'
 import { useTenant } from '@/context/tenant-provider'
@@ -26,6 +27,8 @@ import type {
   RepoVisibility,
   AssetTechnologyBrief,
   AssetEdge,
+  AssetLiveness,
+  AssetLivenessState,
 } from '../types'
 
 /**
@@ -44,6 +47,8 @@ interface BackendListResponse<T> {
     next?: string
     last?: string
   }
+  /** More than 10,000 match: `total` is then 10,000. */
+  total_capped?: boolean
 }
 
 /**
@@ -128,10 +133,13 @@ export interface AssetSearchFilters {
   scopeStatus?: string[]
   /** The derived monitoring state (monitored, not_monitored, pending_decision, ...). */
   monitoringState?: string[]
+  /** Liveness states (unknown, alive, unreachable, unresolvable, gone). */
+  liveness?: string[]
   /** Only primary assets: the organization's root domains (the API reads primary=true only). */
   isPrimary?: boolean
   discoveredBy?: string[]
   firstSeenAfter?: string
+  firstSeenBefore?: string
   /** Ask each row's triage (attribution and the scan gate's answer). */
   withTriage?: boolean
 
@@ -141,8 +149,25 @@ export interface AssetSearchFilters {
   // Sorting (e.g., "-created_at", "name", "-risk_score")
   sort?: string
 
+  /** List filters the inventory has no control for, under the API's own names (`ip`, `network`...). */
+  extra?: Record<string, string>
+  /**
+   * A filter chips cannot show, as query text. The list then runs the filter
+   * document the server made of it (never the text itself).
+   */
+  advanced?: string
+
   // Skip fetching (for lazy loading dialogs)
   skip?: boolean
+}
+
+/** What the IP addresses tab shows beside an address (matches Go AssetIPView). */
+interface BackendAssetIP {
+  network?: string
+  names?: string[]
+  names_total?: number
+  ports?: { port: number; transport?: string; service?: string }[]
+  ports_total?: number
 }
 
 // Backend asset type mapping (matches Go AssetResponse struct)
@@ -167,6 +192,8 @@ interface BackendAsset {
   is_control_plane?: boolean // CTEM Scoping: asset governs other assets (api #467)
   is_crown_jewel?: boolean // the assets.is_crown_jewel column
   pending_risk_request?: RiskRequest // a lowering of risk inputs waiting for approval
+  /** An address's network, the names resolving to it and its open ports (IP addresses tab). */
+  ip?: BackendAssetIP
   system_tags?: string[] // derived from bug-bounty program links; never editable
   program_only?: boolean // came with a program; no own scope covers it
   edge?: AssetEdge // a provider's shared address, or served through one
@@ -206,6 +233,16 @@ interface BackendAsset {
   first_seen: string
   last_seen: string
   lifecycle_paused_until?: string | null
+  liveness?: {
+    state: string
+    reason?: string
+    since?: string
+    last_checked_at?: string
+    last_checked_by?: string
+    last_capability?: string
+    last_outcome?: string
+    last_alive_at?: string
+  }
   manual_status_override?: boolean
   created_at: string
   updated_at: string
@@ -213,6 +250,45 @@ interface BackendAsset {
 }
 
 // Transform backend asset to frontend format
+const LIVENESS_STATES: readonly AssetLivenessState[] = [
+  'unknown',
+  'alive',
+  'unreachable',
+  'unresolvable',
+  'gone',
+]
+
+/** The API liveness block, camelCased; an unknown state reads as unknown. */
+export function transformLiveness(l: BackendAsset['liveness']): AssetLiveness | undefined {
+  if (!l) return undefined
+  const state = (LIVENESS_STATES as readonly string[]).includes(l.state)
+    ? (l.state as AssetLivenessState)
+    : 'unknown'
+  return {
+    state,
+    reason: l.reason || undefined,
+    since: l.since,
+    lastCheckedAt: l.last_checked_at,
+    lastCheckedBy: l.last_checked_by || undefined,
+    lastCapability: l.last_capability,
+    lastOutcome: l.last_outcome,
+    lastAliveAt: l.last_alive_at,
+  }
+}
+
+function transformIP(ip: BackendAssetIP | undefined): Asset['ip'] {
+  if (!ip) return undefined
+  const names = ip.names ?? []
+  const ports = ip.ports ?? []
+  return {
+    network: ip.network || undefined,
+    names,
+    namesTotal: Math.max(ip.names_total ?? 0, names.length),
+    ports,
+    portsTotal: Math.max(ip.ports_total ?? 0, ports.length),
+  }
+}
+
 function transformAsset(backend: BackendAsset): Asset {
   return {
     id: backend.id,
@@ -220,6 +296,7 @@ function transformAsset(backend: BackendAsset): Asset {
     type: backend.type as AssetType,
     subType: backend.sub_type || undefined,
     category: (backend.category as AssetCategory) || undefined,
+    ip: transformIP(backend.ip),
     provider: backend.provider,
     criticality: backend.criticality as Criticality,
     status: backend.status as Asset['status'],
@@ -295,6 +372,7 @@ function transformAsset(backend: BackendAsset): Asset {
     createdAt: backend.created_at,
     updatedAt: backend.updated_at,
     lifecyclePausedUntil: backend.lifecycle_paused_until ?? null,
+    liveness: transformLiveness(backend.liveness),
     manualStatusOverride: backend.manual_status_override ?? false,
     repository: backend.repository ? transformRepositoryExtension(backend.repository) : undefined,
     pendingRiskRequest: backend.pending_risk_request,
@@ -467,25 +545,29 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   if (!filters) return {}
 
   const params: Record<string, string> = {}
+  const list = (name: string, values: readonly string[] | undefined) => {
+    if (values?.length) params[name] = values.join(',')
+  }
+  const flag = (name: string, value: boolean | undefined) => {
+    if (value !== undefined) params[name] = String(value)
+  }
 
   // Pagination
   if (filters.page) params.page = String(filters.page)
   if (filters.pageSize) params.per_page = String(filters.pageSize)
 
-  // Filtering - arrays need to be comma-separated for backend
+  // The API's own parameter names (the list query contract); arrays are comma lists.
   if (filters.name) params.name = filters.name
-  if (filters.types?.length) params.types = filters.types.join(',')
-  if (filters.lenses?.length) params.lenses = filters.lenses.join(',')
+  list('type', filters.types)
+  list('lens', filters.lenses)
   if (filters.subType) params.sub_type = filters.subType
-  if (filters.criticalities?.length) params.criticalities = filters.criticalities.join(',')
-  if (filters.statuses?.length) params.statuses = filters.statuses.join(',')
-  if (filters.scopes?.length) params.scopes = filters.scopes.join(',')
-  if (filters.exposures?.length) params.exposures = filters.exposures.join(',')
-  if (filters.tags?.length) {
-    params.tags = filters.tags.join(',')
-    if (filters.tagsMode === 'all') params.tags_mode = 'all'
-  }
-  if (filters.excludeTags?.length) params.exclude_tags = filters.excludeTags.join(',')
+  list('criticality', filters.criticalities)
+  list('status', filters.statuses)
+  list('scope', filters.scopes)
+  list('exposure', filters.exposures)
+  // "Every tag" is its own parameter; the other tag filter is any-of.
+  list(filters.tagsMode === 'all' ? 'tag_all' : 'tag', filters.tags)
+  list('tag_not', filters.excludeTags)
 
   // Properties filter (JSONB key:value pairs, multi-value per key)
   if (filters.propertiesFilter && Object.keys(filters.propertiesFilter).length > 0) {
@@ -495,17 +577,14 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
   }
 
   // Search
-  if (filters.search) params.search = filters.search
+  if (filters.search) params.q = filters.search
 
   // Risk score range
-  if (filters.minRiskScore !== undefined) params.min_risk_score = String(filters.minRiskScore)
-  if (filters.maxRiskScore !== undefined) params.max_risk_score = String(filters.maxRiskScore)
+  if (filters.minRiskScore !== undefined) params.risk_score_gte = String(filters.minRiskScore)
+  if (filters.maxRiskScore !== undefined) params.risk_score_lte = String(filters.maxRiskScore)
 
-  // Has findings
-  if (filters.hasFindings !== undefined) params.has_findings = String(filters.hasFindings)
-
-  // Crown jewel
-  if (filters.isCrownJewel !== undefined) params.is_crown_jewel = String(filters.isCrownJewel)
+  flag('has_findings', filters.hasFindings)
+  flag('crown_jewel', filters.isCrownJewel)
 
   // Primary assets (root domains); there is no "not primary" filter
   if (filters.isPrimary) params.primary = 'true'
@@ -520,37 +599,54 @@ export function buildAssetQueryParams(filters?: AssetSearchFilters): Record<stri
     params.coverage = filters.coverage
   if (filters.coverageCause && isCoverageCause(filters.coverageCause))
     params.coverage_cause = filters.coverageCause
-  if (filters.technologies?.length) params.technology = filters.technologies.join(',')
-  if (filters.technologyCategories?.length)
-    params.technology_category = filters.technologyCategories.join(',')
+  list('technology', filters.technologies)
+  list('technology_category', filters.technologyCategories)
   if (filters.technologyVersion !== undefined && filters.technologies?.length)
     params.technology_version = filters.technologyVersion
 
   // CTEM inventory dimensions
-  if (filters.businessUnitIds?.length) params.business_unit_ids = filters.businessUnitIds.join(',')
-  if (filters.hasOwner !== undefined) params.has_owner = String(filters.hasOwner)
-  if (filters.dataClassifications?.length)
-    params.data_classifications = filters.dataClassifications.join(',')
-  if (filters.isControlPlane !== undefined) params.is_control_plane = String(filters.isControlPlane)
-  if (filters.isInternetFacing !== undefined)
-    params.internet_facing = String(filters.isInternetFacing)
-  if (filters.environments?.length) params.environments = filters.environments.join(',')
-  if (filters.providers?.length) params.providers = filters.providers.join(',')
-  if (filters.lastSeenBefore) params.last_seen_before = filters.lastSeenBefore
-  if (filters.lastSeenAfter) params.last_seen_after = filters.lastSeenAfter
-  if (filters.expiresAfter) params.expires_after = filters.expiresAfter
-  if (filters.expiresBefore) params.expires_before = filters.expiresBefore
-  if (filters.attribution?.length) params.attribution = filters.attribution.join(',')
-  if (filters.scopeStatus?.length) params.scope_status = filters.scopeStatus.join(',')
-  if (filters.monitoringState?.length) params.monitoring_state = filters.monitoringState.join(',')
-  if (filters.discoveredBy?.length) params.discovered_by = filters.discoveredBy.join(',')
-  if (filters.firstSeenAfter) params.first_seen_after = filters.firstSeenAfter
+  list('business_unit', filters.businessUnitIds)
+  flag('has_owner', filters.hasOwner)
+  list('data_classification', filters.dataClassifications)
+  flag('control_plane', filters.isControlPlane)
+  flag('internet_facing', filters.isInternetFacing)
+  list('environment', filters.environments)
+  list('provider', filters.providers)
+  if (filters.lastSeenBefore) params.last_seen_lte = filters.lastSeenBefore
+  if (filters.lastSeenAfter) params.last_seen_gte = filters.lastSeenAfter
+  if (filters.expiresAfter) params.expires_gt = filters.expiresAfter
+  if (filters.expiresBefore) params.expires_lt = filters.expiresBefore
+  list('attribution', filters.attribution)
+  list('scope_status', filters.scopeStatus)
+  list('monitoring_state', filters.monitoringState)
+  list('liveness', filters.liveness)
+  list('discovered_by', filters.discoveredBy)
+  if (filters.firstSeenAfter) params.created_at_gte = filters.firstSeenAfter
+  if (filters.firstSeenBefore) params.created_at_lte = filters.firstSeenBefore
   if (filters.withTriage) params.with_triage = 'true'
+
+  // The list's other registry fields (ip, network, port...), as the API names them.
+  for (const [k, v] of Object.entries(filters.extra ?? {})) {
+    if (v !== '' && !(k in params)) params[k] = v
+  }
+
+  // A filter chips cannot show: the list runs its checked document.
+  if (filters.advanced) params.fq = filters.advanced
 
   // Sorting
   if (filters.sort) params.sort = filters.sort
 
   return params
+}
+
+/**
+ * One page of the asset list for a list URL: a filter chips cannot show
+ * (`fq`) runs as its checked document, anything else is the plain list.
+ */
+function fetchAssetPage(url: string): Promise<BackendListResponse<BackendAsset>> {
+  return /[?&]fq=/.test(url)
+    ? fetchAdvancedAssets<BackendListResponse<BackendAsset>>(url)
+    : get<BackendListResponse<BackendAsset>>(url)
 }
 
 /**
@@ -574,7 +670,7 @@ export async function fetchAllAssets(
     const params = buildAssetQueryParams({ ...filters, page, pageSize: perPage })
     const queryString =
       Object.keys(params).length > 0 ? '?' + new URLSearchParams(params).toString() : ''
-    const resp = await get<BackendListResponse<BackendAsset>>(`/api/v1/assets${queryString}`)
+    const resp = await fetchAssetPage(`/api/v1/assets${queryString}`)
     for (const a of resp.data ?? []) {
       all.push(transformAsset(a))
     }
@@ -610,7 +706,7 @@ export function useAssets(filters?: AssetSearchFilters) {
   // Use stable string key (queryString) instead of object reference to prevent cache bloat
   const { data, error, isLoading, mutate } = useSWR<BackendListResponse<BackendAsset>>(
     shouldFetch ? `/api/v1/assets${queryString}` : null,
-    () => get<BackendListResponse<BackendAsset>>(`/api/v1/assets${queryString}`),
+    () => fetchAssetPage(`/api/v1/assets${queryString}`),
     {
       revalidateOnFocus: false,
       dedupingInterval: 10000,
@@ -621,6 +717,8 @@ export function useAssets(filters?: AssetSearchFilters) {
     () => ({
       assets: data?.data?.map(transformAsset) || [],
       total: data?.total || 0,
+      /** More than 10,000 match: `total` is then 10,000 (shown as "10,000+"). */
+      totalCapped: data?.total_capped === true,
       page: data?.page || 1,
       pageSize: data?.per_page || 20,
       totalPages: data?.total_pages || 1,
@@ -1113,4 +1211,48 @@ export async function deactivateAsset(assetId: string): Promise<Asset> {
 export async function archiveAsset(assetId: string): Promise<Asset> {
   const response = await post<BackendAsset>(endpoints.assets.archive(assetId), {})
   return transformAsset(response)
+}
+
+// ============================================
+// GROUP BY NETWORK
+// ============================================
+
+/** One network of the group by network (GET /assets/networks) and how many addresses it holds. */
+export interface AssetNetworkCount {
+  network: string
+  count: number
+}
+
+/** Params of the list URL that are not part of the filter. */
+const NETWORK_SKIP = new Set(['page', 'per_page', 'sort', 'with_triage', 'cursor'])
+
+/**
+ * The networks (the /24 of IPv4, the /64 of IPv6) of the addresses a filter
+ * lists, most addresses first, at most 500 (`capped` when there are more). Same
+ * parameters as the list; not available for a filter given as query text.
+ */
+export function useAssetNetworks(filters: AssetSearchFilters, enabled: boolean) {
+  const { currentTenant } = useTenant()
+  const { can } = usePermissions()
+  const params = buildAssetQueryParams(filters)
+  const search = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (!NETWORK_SKIP.has(k)) search.set(k, v)
+  const key =
+    enabled && currentTenant && can(Permission.AssetsRead) && !params.fq
+      ? `/api/v1/assets/networks?${search.toString()}`
+      : null
+  const { data, error, isLoading, mutate } = useSWR<{
+    data?: AssetNetworkCount[]
+    capped?: boolean
+  }>(key, (url: string) => get<{ data?: AssetNetworkCount[]; capped?: boolean }>(url), {
+    revalidateOnFocus: false,
+    dedupingInterval: 10000,
+  })
+  return {
+    networks: data?.data ?? [],
+    capped: data?.capped === true,
+    isLoading: key ? isLoading : false,
+    isError: !!error,
+    mutate,
+  }
 }

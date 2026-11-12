@@ -483,7 +483,7 @@ const (
 // Empty array = all events enabled (backward compatible)
 ```
 
-**NotificationExtension** config: `enabledSeverities`, `enabledEventTypes`, `messageTemplate`, `includeDetails`, `minIntervalMinutes`.
+**NotificationExtension** config: `enabledSeverities`, `enabledEventTypes`, `messageTemplate` (closed variable set, `pkg/notifymsg`), `detailLevel` (minimal, standard, full), `minIntervalMinutes`. Channel messages are `notifymsg.Card`s rendered per provider (`docs/architecture/notification-system.md`, "Channel messages").
 Provider-specific config in `Integration.Metadata` (non-sensitive) and `Integration.CredentialsEncrypted` (sensitive).
 
 **Adding new event type:** Add constant → update `AllKnownEventTypes()` → no migration needed.

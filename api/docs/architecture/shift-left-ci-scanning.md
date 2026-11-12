@@ -18,12 +18,12 @@ graph TD
     SRC["checked-out repository"]
     R["openctem-ci scan --capability sast|sca|secrets|iac|container<br/>per-tool image, signed"]
     G["openctem-ci gate<br/>(aggregate: one verdict for every capability job)"]
-    OUT["SARIF · GitLab security report · status file"]
+    OUT["SARIF, GitLab security report, status file"]
     SRC --> R --> OUT
   end
   subgraph API["OpenCTEM platform (multi-tenant)"]
     EX["POST /ci/oidc/exchange → run token"]
-    UP["POST /ci/runs/{id}/results<br/>CTIS, SARIF or a tool export"]
+    UP["POST /ci/runs/{id}/results<br/>CTIS, SARIF or a tool export<br/>202, applied by the ingest worker"]
     IN["ingest, binding ci_run<br/>repository asset only, never resolves"]
     FD["findings + finding_branch_occurrences"]
     EV["POST /ci/runs/{id}/evaluate<br/>central gate policy"]
@@ -36,23 +36,35 @@ graph TD
 
 ## 2. End-to-end data flow (one pull request)
 
+Verified against openctemio/ci v0.4.0 (`cmd/openctem-ci`, `internal/platform`)
+and the platform at v0.19.1 (unchanged on develop since). The steps on the
+platform are detailed in [ci-runner-identity.md](ci-runner-identity.md#flow).
+
 ```mermaid
 sequenceDiagram
+  autonumber
   participant CI as CI job
   participant RUN as openctem-ci
   participant API as OpenCTEM API
-  CI->>RUN: scan (capability)
+  participant WK as Ingest worker
+  CI->>RUN: scan --capability (one per job)
   RUN->>RUN: read CI env (repository, branch, commit, PR, fork)
   RUN->>RUN: run the tool (fixed argv, filtered env), convert to CTIS, mask secrets
-  RUN->>API: exchange the job's OIDC token (trust configuration)
-  API-->>RUN: run token (15 min, one run, one repository)
-  RUN->>API: upload results (branch/commit come from the token)
-  API->>API: dedup by fingerprint; branch occurrences; branch-only findings
-  RUN->>API: evaluate (scan failures)
-  API->>API: new vs default branch, accepted risk, KEV/EPSS/severity, break-glass
-  API-->>RUN: pass | fail + reasons + links
-  RUN-->>CI: exit 0 / 1 / 2 (scan not trustworthy)
+  RUN->>API: POST /api/v1/ci/oidc/exchange with the job's OIDC token
+  API-->>RUN: 201 run token (15 min, one run, one repository) and the secret hashing key
+  RUN->>API: POST /api/v1/ci/runs/<id>/results (gzip, parts up to 24 MB)
+  API-->>RUN: 202 upload id
+  WK->>WK: ScopeReport, ingest with binding ci_run, branch occurrences, branch-only findings
+  RUN->>API: GET /api/v1/ci/runs/<id>/results/<upload>?wait=10
+  API-->>RUN: applied, counts, known (results already decided)
+  RUN->>API: POST /api/v1/ci/runs/<id>/evaluate (scan failures, capabilities, .openctem.yml)
+  API->>API: wait for the uploads, new vs baseline, decisions, KEV/EPSS/severity, break-glass
+  API-->>RUN: pass or fail with reasons and links (503 INGEST_PENDING while uploads apply)
+  RUN-->>CI: exit 0 pass, 1 fail, 2 not trustworthy
 ```
+
+The branch, commit and pull request on the stored findings come from the
+verified token, never from the report (`cirunapp.ScopeReport`).
 
 ## 3. Finding storage: repo vs branch
 
@@ -94,7 +106,8 @@ decision — **backfilled** when an existing finding is reported again
 (`FindingRepository.BackfillFindingBranches`, ingest Step 6):
 
 - a finding with **no branch** (first ingested without branch info, or before
-  branch tracking worked; see migration 000174) takes the scanned branch;
+  branch tracking worked; that migration is now part of `001146_baseline`)
+  takes the scanned branch;
 - a finding on another branch **moves to the default branch** when the scan is
   of the repository's default branch, as recorded in `repository_branches`
   (never as claimed by the report — same anti-abuse rule as above);
@@ -140,9 +153,9 @@ calls either today (RFC-077 decides their client).
 openctemio/ci cmd/openctem-ci/{scan,gate}.go       runner commands
 openctemio/ci internal/platform/run.go              OIDC exchange, upload, evaluate client
 openctemio/ci internal/{scanner,redact,sarif,gitlab} tools, secret masking, outputs
-api internal/app/cirun/                             exchange, gate, pipelines, coverage
+api internal/app/cirun/                             exchange, upload accept and worker job, gate, pipelines, coverage
 api internal/app/ingest/ci_run.go                   ci_run binding
 api internal/app/ingest/processor_findings.go       occurrence write (Step 6)
 api internal/app/ingest/service.go                  default-branch + full-coverage auto-resolve gate
-migrations/000173_finding_branch_occurrences.up.sql per-branch occurrence model
+migrations/001146_baseline.up.sql                  per-branch occurrence model (finding_branch_occurrences; squashed)
 ```

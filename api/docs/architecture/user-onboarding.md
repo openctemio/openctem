@@ -19,6 +19,72 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
 | Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
 
+## Flow
+
+Self-registration, email verification and the first organization:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web (registerAction, /onboarding/create-team)
+    box API, public auth group
+    participant H as LocalAuthHandler
+    participant S as AuthService
+    end
+    participant DB as Postgres users, tenants, tenant_members
+    W->>H: POST /api/v1/auth/register (crossSite, registerRL 3/min/IP, optional CAPTCHA)
+    H->>S: Register
+    S->>S: pendingInvitationFor, signupdom.Admit (SIGNUP_MODE ceiling + console policy)
+    S-->>W: 403 SIGNUP_NOT_AVAILABLE or SSO_REQUIRED, nothing written
+    S->>S: password policy before any lookup (400 PASSWORD_*)
+    alt email exists
+        S-->>W: 201 same body as a new account, set-password link mailed to an unverified local account
+    else new
+        S->>DB: users (bcrypt), email_verification_token SHA-256, 24 h
+        S->>DB: signup_events account_created, audit user.registered
+        S-->>W: 201 requires_verification, mail sent async
+    end
+    W->>H: POST /api/v1/auth/verify-email (crossSite, 3/min) - 400 INVALID_VERIFICATION_TOKEN
+    W->>H: POST /api/v1/auth/login, then /auth/account-token (no membership)
+    W->>H: POST /api/v1/auth/create-first-team (crossSite, registerRL, refresh token)
+    S->>S: selfServiceTenantCreation else 403 ORGANIZATION_CREATION_DISABLED
+    S->>DB: CreateWithOwner (tenants + owner membership), audit tenant.created
+    S->>S: enforceMFAPolicy after the organization exists - 403 MFA_ENROLLMENT_REQUIRED, no token
+    S-->>W: spend refresh token (no grace), owner access token
+```
+
+Invitation accept (`POST /api/v1/invitations/accept-with-refresh`, account
+with no organization yet):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web /invitations
+    box API
+    participant S as AuthService
+    participant T as TenantService
+    end
+    participant DB as Postgres
+    W->>S: POST /api/v1/invitations/accept-with-refresh {token} (refresh cookie + CSRF pair)
+    S->>S: refresh token valid, unused, session active
+    S->>T: acceptInvitation(email, token hash)
+    T->>T: email equals, pending, not expired, no active membership, requireInvitable, authorizeInvitationGrant
+    T->>DB: AcceptInvitationTx - membership + roles + teams, invitation accepted, audit invitation.accepted
+    S->>S: policy chain - email verification, SSO, IdP binding, MFA, personal, outside-privilege
+    alt a policy refuses
+        S-->>W: 403 (MFA_ENROLLMENT_REQUIRED, EMAIL_NOT_VERIFIED ...), the membership already exists
+    else
+        S-->>W: spend refresh token, new pair, cookies auth_token, refresh_token, app_tenant, csrf_token
+    end
+```
+
+`AcceptInvitationWithRefreshToken` and `CreateFirstTeam` read the refresh
+token themselves instead of through `refreshForMint`, so they do not re-check
+that the account is active, not break-glass and that the organization is
+open; a blocked account is stopped only because blocking revokes its refresh
+tokens. Their policy checks run after the membership or organization is
+written.
+
 ## Sign-up ceiling
 
 The deployment's server configuration sets a **ceiling** that no API can
@@ -412,6 +478,22 @@ emailed, never returned**. The suspended owners are left as they are. The
 request is audited as `organization.owner_recovery` in `admin_audit_logs` (high
 severity, refusals included) and as `user.created` with `owner_recovery: true`
 at critical severity in the organization's audit log.
+
+### Running without email
+
+Many self-hosted installations have no mail server (`email_delivery` false on
+`GET /api/v1/auth/providers`, the session bootstrap and the console's
+organization and user pages). Nothing is promised by email then, and every
+flow has a hand-over path:
+
+| Flow | Without email |
+|---|---|
+| Organization admin creates a user | The one-time set-password link is shown once to the administrator (`setup_token`); a new one from the Members page ("Get setup link"). |
+| Organization invitation | The invitation link is shown to the inviter; the Members page says invitation emails are not sent and offers Copy link. |
+| Console: new organization owner (new person) | The set-password link is shown once as the web app's address (`setup_url`); a lost or expired one is replaced with New setup link on the organization's Users tab. |
+| Console: organization for an existing account | The ownership invitation is recorded as not sent; the console shows the accept address to hand over, and the person sees a banner after signing in ([ownership invitations](organization-ownership-invitations.md#running-without-email)). |
+| Password reset | Forgot-password says reset by email is not available; a super admin copies a one-hour reset link from the user's page in the console. |
+| Email verification | A super admin marks the address verified from the user's page in the console. |
 
 ### Ownership transfer (RFC-095 §3.5)
 

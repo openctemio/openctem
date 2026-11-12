@@ -120,6 +120,11 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	// its command covers.
 	opts.Binding = s.bindingFromCommandID(ctx, prov.TenantID, prov.CommandID)
 	opts.Admitted = true
+	// A finding that names no asset of its segment was refused above; it
+	// still counts as received on the receipt (outcome unresolved_ref).
+	opts.FindingsRefusedBeforeIngest = len(report.Findings) - len(kept)
+	// is still booked on the run's receipt item log.
+	opts.RefusedItems = refusedV2Items(report, keptIdx)
 	// The report id of the URL path is the scan identity of every finding
 	// of every segment, which is what lets the commit tell seen from stale.
 	// metadata.id stays the producer's idempotency key.
@@ -141,9 +146,14 @@ func (s *Service) IngestV2Segment(ctx context.Context, prov Provenance, report *
 	o.Errors = itemErrs
 
 	why := notStoredReasonsOf(out)
-	res.Touched = assetOutcomesWhy(o, filtered.Assets, assetIdx, out.AssetMap, why)
+	res.Touched = assetOutcomes(o, filtered.Assets, assetIdx, out.AssetMap, why, out.OutsideTargetAssetIDs)
 
 	findingOutcomes(o, kept, keptIdx, out, why)
+
+	// The step run of a command shows what became of the findings its
+	// sensor reported: the held ones are in the quarantine, the rejected
+	// ones were not stored (their item errors say why).
+	s.recordStepDispositions(ctx, prov.TenantID, opts.Binding, o.QuarantinedFindings, o.RejectedFindings)
 	return res, nil
 }
 
@@ -192,9 +202,9 @@ func findingOutcomes(o *ingestreport.SegmentOutcome, kept []ctis.Finding, keptId
 // notStoredReasons says why an item of a segment was not applied, from what
 // the ingest recorded about it (Output).
 type notStoredReasons struct {
-	excluded, held, outsideJob, outsideChunk, outOfScope map[string]bool
-	heldFindings                                         map[int]bool
-	holdLost                                             bool
+	excluded, held, overCap, outOfScope map[string]bool
+	heldFindings                        map[int]bool
+	holdLost                            bool
 }
 
 func notStoredReasonsOf(out *Output) notStoredReasons {
@@ -202,8 +212,8 @@ func notStoredReasonsOf(out *Output) notStoredReasons {
 		return notStoredReasons{}
 	}
 	return notStoredReasons{
-		excluded: out.ExcludedAssetRefs, held: out.HeldAssetRefs, outsideJob: out.OutsideJobAssetRefs,
-		outsideChunk: out.OutsideChunkAssetRefs, outOfScope: out.OutOfScopeAssetRefs,
+		excluded: out.ExcludedAssetRefs, held: out.HeldAssetRefs, overCap: out.OverCapAssetRefs,
+		outOfScope:   out.OutOfScopeAssetRefs,
 		heldFindings: out.HeldFindings, holdLost: out.HoldLost,
 	}
 }
@@ -223,8 +233,8 @@ func (r notStoredReasons) assetCode(ref string) (code, detail string) {
 		return protov2.CodeQuarantineFull, protov2.DetailHeldNotKept
 	case r.held[ref]:
 		return protov2.CodeHeldForReview, protov2.DetailHeldForReview
-	case r.outsideJob[ref], r.outsideChunk[ref]:
-		return protov2.CodeOutsideTargets, protov2.DetailOutsideTargets
+	case r.overCap[ref]:
+		return protov2.CodeTooMany, protov2.DetailOutsideTargetsOverCap
 	case r.outOfScope[ref]:
 		return protov2.CodeOutOfScope, protov2.DetailOutOfScope
 	}
@@ -234,7 +244,7 @@ func (r notStoredReasons) assetCode(ref string) (code, detail string) {
 // findingCode is the item error of a finding whose asset was not stored.
 func (r notStoredReasons) findingCode(assetRef string) (code, detail string) {
 	switch c, d := r.assetCode(assetRef); c {
-	case protov2.CodeOutsideTargets, protov2.CodeOutOfScope:
+	case protov2.CodeTooMany, protov2.CodeOutOfScope:
 		return c, d
 	}
 	return protov2.CodeAssetUnresolved, protov2.DetailAssetNotStored
@@ -245,18 +255,14 @@ func (r notStoredReasons) findingCode(assetRef string) (code, detail string) {
 // exclusion of the organization kept out is neither accepted nor rejected:
 // the organization chose not to track it, the sensor did nothing wrong, and
 // counting it as rejected made every complete collector report look like it
-// lost assets, so its source's not-seen sweep never ran. Anything else that
-// was not persisted is rejected.
+// lost assets, so its source's not-seen sweep never ran. One refused because
+// the report recorded as many assets outside its command's targets as one
+// report may is rejected with too_many. Anything else that was not persisted
+// is rejected. An asset recorded outside the command's targets is accepted
+// but not returned as touched: the command did not cover it, so its run
+// proves nothing about the asset's other findings.
 func assetOutcomes(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx []int,
-	stored map[string]shared.ID, excluded map[string]bool) []shared.ID {
-	return assetOutcomesWhy(o, assets, assetIdx, stored, notStoredReasons{excluded: excluded})
-}
-
-// assetOutcomesWhy is assetOutcomes with every reason an asset was not
-// stored: one held for review is quarantined (not rejected), and each
-// unstored asset's item error names its reason.
-func assetOutcomesWhy(o *ingestreport.SegmentOutcome, assets []ctis.Asset, assetIdx []int,
-	stored map[string]shared.ID, why notStoredReasons) []shared.ID {
+	stored map[string]shared.ID, why notStoredReasons, outside map[shared.ID]bool) []shared.ID {
 	var touched []shared.ID
 	seen := map[shared.ID]bool{}
 	skipped := 0
@@ -276,13 +282,15 @@ func assetOutcomesWhy(o *ingestreport.SegmentOutcome, assets []ctis.Asset, asset
 				skipped++
 			case protov2.CodeHeldForReview:
 				o.QuarantinedAssets++
+			case protov2.CodeTooMany:
+				o.RejectedAssets++
 			default:
 				o.RejectedAssets++
 			}
 			addItemError(o, protov2.ItemError{Pointer: "/assets/" + strconv.Itoa(assetIdx[i]), Code: code, Detail: detail})
 			continue
 		}
-		if !seen[id] {
+		if !seen[id] && !outside[id] {
 			seen[id] = true
 			touched = append(touched, id)
 		}
@@ -404,7 +412,8 @@ func SensorDeclaresTool(tools []string, toolName string) bool {
 // CommitV2Report runs the report-level steps once, after every segment of a
 // committed report was processed: auto-resolve over the assets the report
 // touched (full coverage on a default branch, a tool the sensor declares,
-// behind the blinding guard), the per-branch occurrence sweep. Failures are logged; they never fail the report, as in v1.
+// behind the blinding guard), the per-branch occurrence sweep of an unbound
+// report (a bound one is swept with its run). Failures are logged; they never fail the report, as in v1.
 //
 //nolint:cyclop // a sequence of guarded, independent steps
 func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2Header, touched []shared.ID, guard BlindingGuard) CommitResult {
@@ -475,8 +484,12 @@ func (s *Service) CommitV2Report(ctx context.Context, prov Provenance, header V2
 		}
 	}
 
-	// Per-branch occurrences: any full scan, on the branch it scanned.
-	if input.IsFullCoverage() && s.branchRepo != nil && md.Branch != nil && md.Branch.Name != "" {
+	// Per-branch occurrences: any full scan, on the branch it scanned. A
+	// report bound to a command is swept with its run, once the command
+	// completed by itself (EvaluateCommandCoverage, sweepRunBranchOccurrences):
+	// a killed run must never mark what it did not reach as fixed. An unbound
+	// report (warn mode) carries no exit code: only its own metadata decides.
+	if commitSweepsBranch(prov, md) && s.branchRepo != nil {
 		for _, assetID := range scoped {
 			br, err := s.branchRepo.GetByName(ctx, assetID, md.Branch.Name)
 			if err != nil || br == nil {

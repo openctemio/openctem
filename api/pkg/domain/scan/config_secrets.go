@@ -2,12 +2,15 @@ package scan
 
 // Secrets in scanner_config (RFC-032 Phase 0, G7).
 //
-// A scan's scanner_config is passed to the sensor verbatim inside the
-// command, and it is stored in the scans and commands tables. A token,
-// password or Authorization header typed into it therefore travels and rests
-// in clear. Until sealed credentials (RFC-032 Phase 3) give such values a
-// proper home, the platform warns when a value looks like a secret. It never
-// blocks the save and never echoes the value.
+// A scan's scanner_config is passed to the sensor inside the command, and it
+// is stored in the scans and commands tables. A token, password or
+// Authorization header typed into it would therefore travel and rest in
+// clear. Secrets reach a sensor's tools only as task secrets
+// (docs/architecture/task-secrets.md), so a value that is certainly a
+// credential is refused (RefusedConfigSecrets): on scan create and update,
+// and at trigger, before it is copied into a command. Values that only
+// look random (high entropy) are warned about, never refused: identifiers
+// and names reach that bar too. Neither path echoes the value.
 
 import (
 	"math"
@@ -16,6 +19,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
 
 // ConfigSecretWarning is one scanner_config value that looks like a secret.
@@ -41,6 +46,9 @@ const (
 	SecretReasonKnownFormat ConfigSecretReason = "known_format"
 	// SecretReasonHighEntropy: a long random-looking string.
 	SecretReasonHighEntropy ConfigSecretReason = "high_entropy"
+	// SecretReasonTooDeep: the value is nested deeper than the scan looks;
+	// what is below that depth cannot be checked, so it is refused.
+	SecretReasonTooDeep ConfigSecretReason = "too_deep"
 )
 
 // Detection limits.
@@ -105,10 +113,69 @@ func DetectConfigSecrets(cfg map[string]any) []ConfigSecretWarning {
 
 type secretDetector struct {
 	out []ConfigSecretWarning
+	// refuse keeps only the values RefusedConfigSecrets refuses.
+	refuse bool
+}
+
+// RefusedConfigSecrets returns the scanner_config values that are
+// credentials beyond doubt, in a stable order, without the values: a known
+// credential format (a bearer or basic header, a private key block, a
+// provider token, credentials in a URL), or a value under a credential key
+// name ("password", "api_key", "authorization", ...) unless the value is a
+// mode word from a short allowlist ("basic", "bearer", "none", ...), which such
+// keys also hold to name a mode. A value nested deeper than the scan looks is
+// refused, since it cannot be checked. High-entropy values are not refused.
+func RefusedConfigSecrets(cfg map[string]any) []ConfigSecretWarning {
+	if len(cfg) == 0 {
+		return nil
+	}
+	d := &secretDetector{refuse: true}
+	d.walkMap("", cfg, 0)
+	slices.SortFunc(d.out, func(a, b ConfigSecretWarning) int { return strings.Compare(a.Path, b.Path) })
+	if len(d.out) > maxSecretWarnings {
+		d.out = d.out[:maxSecretWarnings]
+	}
+	return d.out
+}
+
+// modeWords are the values a credential-named key holds to name a mode
+// ("auth": "basic"), not a credential. The list is explicit and small: any
+// other value under such a key is refused.
+var modeWords = map[string]bool{
+	"basic": true, "bearer": true, "digest": true, "none": true, "oauth2": true,
+	"apikey": true, "header": true, "query": true, "cookie": true, "form": true,
+}
+
+// refused reports whether a flagged value is refused, not only warned
+// about.
+func refused(reason ConfigSecretReason, value string) bool {
+	switch reason {
+	case SecretReasonKnownFormat, SecretReasonTooDeep:
+		return true
+	case SecretReasonKeyName:
+		return !modeWords[strings.ToLower(strings.TrimSpace(value))]
+	}
+	return false
+}
+
+// isFileKey reports whether key names a file or a path (so a value that is
+// a path is a reference to a secret stored elsewhere, not the secret).
+func isFileKey(key string) bool {
+	lk := strings.ToLower(strings.TrimSpace(key))
+	if lk == "file" || lk == "path" {
+		return true
+	}
+	for _, suf := range []string{"_file", "_path", "-file", "-path"} {
+		if strings.HasSuffix(lk, suf) {
+			return true
+		}
+	}
+	return strings.HasSuffix(key, "File") || strings.HasSuffix(key, "Path")
 }
 
 func (d *secretDetector) walkMap(prefix string, m map[string]any, depth int) {
 	if depth > maxSecretScanDepth {
+		d.tooDeep(prefix)
 		return
 	}
 	for k, v := range m {
@@ -126,20 +193,29 @@ func (d *secretDetector) walk(path, key string, v any, depth int) {
 		d.walkMap(path, val, depth)
 	case []any:
 		if depth > maxSecretScanDepth {
+			d.tooDeep(path)
 			return
 		}
 		for i, item := range val {
 			d.walk(path+"["+strconv.Itoa(i)+"]", key, item, depth+1)
 		}
 	case []string:
+		if depth > maxSecretScanDepth {
+			d.tooDeep(path)
+			return
+		}
 		for i, item := range val {
 			d.walk(path+"["+strconv.Itoa(i)+"]", key, item, depth+1)
 		}
 	case string:
-		if reason, ok := secretReason(key, val); ok {
+		if reason, ok := secretReason(key, val); ok && (!d.refuse || refused(reason, val)) {
 			d.out = append(d.out, ConfigSecretWarning{Path: path, Reason: reason})
 		}
 	}
+}
+
+func (d *secretDetector) tooDeep(path string) {
+	d.out = append(d.out, ConfigSecretWarning{Path: path, Reason: SecretReasonTooDeep})
 }
 
 // secretReason classifies one string value under its key.
@@ -159,7 +235,7 @@ func secretReason(key, value string) (ConfigSecretReason, bool) {
 		// and password in it) counts as a secret there.
 		return "", false
 	}
-	if isSecretKeyName(key) && !isPlaceholder(value) {
+	if isSecretKeyName(key) && !isPlaceholder(key, value) {
 		return SecretReasonKeyName, true
 	}
 	if looksHighEntropy(value) {
@@ -192,8 +268,8 @@ func isSecretKeyName(key string) bool {
 }
 
 // isPlaceholder reports values that are clearly not a secret: references to
-// one stored elsewhere (${VAR}, {{ .x }}, env:NAME, file paths) and booleans.
-func isPlaceholder(v string) bool {
+// one stored elsewhere (${VAR}, {{ .x }}, env:NAME, a path under a file key) and booleans.
+func isPlaceholder(key, v string) bool {
 	lv := strings.ToLower(v)
 	switch lv {
 	case "true", "false", "none", "null", "yes", "no", "on", "off":
@@ -201,7 +277,7 @@ func isPlaceholder(v string) bool {
 	}
 	return strings.HasPrefix(v, "${") || strings.HasPrefix(v, "{{") ||
 		strings.HasPrefix(lv, "env:") || strings.HasPrefix(lv, "file:") ||
-		strings.HasPrefix(v, "/") || strings.HasPrefix(v, "./")
+		(isFileKey(key) && (strings.HasPrefix(v, "/") || strings.HasPrefix(v, "./")))
 }
 
 // looksHighEntropy reports long, random-looking strings: no spaces, at least
@@ -299,4 +375,26 @@ func shannonBitsPerChar(s string) float64 {
 		h -= p * math.Log2(p)
 	}
 	return h
+}
+
+// CodeScannerConfigSecret refuses a scanner_config that holds a credential
+// (on save), and blocks a run of a scan whose stored scanner_config still
+// holds one (at trigger): the value is never copied into a command.
+const CodeScannerConfigSecret = "SCANNER_CONFIG_SECRET"
+
+// RefuseConfigSecrets is the validation error for a scanner_config that
+// RefusedConfigSecrets flags, naming the keys only; nil when none.
+func RefuseConfigSecrets(cfg map[string]any) error {
+	found := RefusedConfigSecrets(cfg)
+	if len(found) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(found))
+	for _, f := range found {
+		paths = append(paths, f.Path)
+	}
+	return shared.NewDomainError(CodeScannerConfigSecret,
+		"the scan settings hold a credential at "+strings.Join(paths, ", ")+
+			": remove it; credentials reach scan tools only as organization keys or sensor-local values, never in scan settings",
+		shared.ErrValidation)
 }

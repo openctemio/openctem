@@ -8,6 +8,29 @@ flapping, "fixed" claims from one weak sighting). Code:
 `internal/app/vulnmatch/service.go` (closing and proposals). Design and edge
 cases: RFC-066 §5.2 and §8, this page.
 
+## Flow
+
+Verified against `develop` (2026-11-05); unchanged since v0.19.1. One history per
+(tenant, asset, product, location); `software.ApplySightings` runs inside `UpsertLinks` under the
+history's advisory lock.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Established: first sighting of the history
+  [*] --> Candidate: new version while another is established
+  Candidate --> Candidate: sighting adds history, streak grows or resets
+  Candidate --> Established: Strong(class, confidence) and class >= the established class
+  Candidate --> Established: streak >= PromoteSightings (3) over >= PromoteMinSpan (12 h)
+  Established --> Superseded: another version promoted (superseded_at = confirming reading)
+  Superseded --> Candidate: seen again after superseded_at (rollback needs the same evidence)
+  Established --> Established: neutral sighting (no version, coarser, other distro build)
+```
+
+The matcher reads only `version_state = 'established' AND superseded_at IS NULL AND last_seen_at >=
+now - 30 d` (`SoftwareMatchRepository.TenantMatches`); `LinkStates` reports `LinkUpgraded` (another
+version established, this one superseded), `LinkGone` (nothing established and recent) or current,
+which drive the close kinds in [vulnerability-matching.md](vulnerability-matching.md#flow).
+
 ## Model
 
 A history is one (tenant, asset, product, location): the location is

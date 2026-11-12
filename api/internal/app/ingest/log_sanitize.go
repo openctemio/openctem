@@ -1,6 +1,10 @@
 package ingest
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/openctemio/openctem/api/pkg/safetext"
+)
 
 // sanitizeIngestLogField strips CR/LF from an attacker-influenceable
 // string value before it hits the structured logger. Scanner-authored
@@ -20,9 +24,7 @@ import "strings"
 // Closes CodeQL go/log-injection flagged at ingest/service.go:139.
 func sanitizeIngestLogField(s string) string {
 	const maxLen = 512
-	if len(s) > maxLen {
-		s = s[:maxLen]
-	}
+	s = safetext.TruncateBytes(s, maxLen)
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.ReplaceAll(s, "\n", " ")
 	return s

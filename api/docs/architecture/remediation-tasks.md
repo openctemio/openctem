@@ -15,6 +15,120 @@ manual states (on hold, canceled).
 | Membership | `remediation_task_members` | `primary` (one active task per finding) or `related`; history kept with `left_at` |
 | Timeline | `remediation_task_events` | created, members added, updated, state changed |
 
+## Flow
+
+### Remediation groups: fix keys
+
+A remediation group (RFC-015, "solution family") is the set of open findings that share one fix key in
+`finding_remediation_keys` (one row per finding, `key_version` = `KeyAlgorithmVersion`, now 4). Groups are not
+stored: they are a `GROUP BY` over that table. Suggestions build tasks from the keys; the group routes list and
+mark-fix a group directly.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Writers: ingest, vulnmatch,<br/>manual create, licensepolicy
+  participant KA as remediation.KeyApplier
+  participant KR as FindingRemediationKeyRepository
+  participant SG as SuggestionService.RunTenant
+  actor U as Member
+  participant H as RemediationGroupHandler
+  participant GS as remediation.GroupService
+  participant FS as finding bulk path
+  W->>KA: ApplyBatch(created) or ApplyByFingerprints(re-sighted)
+  KA->>KR: KeySources + SiblingKeySources (same package version)
+  KA->>KA: ConsolidateUpgrades, DeriveKey per finding<br/>pentest = no key, boilerplate advice = no key
+  KA->>KR: Upsert(key, title) or Delete (best effort, logged)
+  SG->>KA: HasStaleKeys? then Backfill (500 per batch)
+  U->>H: GET /api/v1/findings/remediation-groups (findings:read)
+  H->>GS: ListGroups
+  GS->>KR: ListGroups: WHERE frk.tenant_id = $1, source <> pentest,<br/>status not closed, data scope on f.asset_id
+  U->>H: POST /api/v1/findings/remediation-groups/{key}/resolve (findings:write)
+  H->>GS: ResolveGroup(status fix_applied only, note required)
+  GS->>GS: findings:fix_apply held? else 403
+  GS->>KR: OpenFindingIDs(key) in the caller's data scope
+  GS->>GS: Guard.CheckBulk(size, approved)
+  GS->>FS: BulkUpdateFindingsStatus WalkToFixApplied
+  FS-->>U: updated, skipped, failed rows with reasons
+```
+
+- Key kinds (`DeriveKey`, `pkg/domain/remediation/group.go`): `rotate:secret:<fingerprint>` (same secret value),
+  `upgrade:<ecosystem>:<name>:<target>` (one target per installed package version: the highest any open finding
+  of that version needs, `ConsolidateUpgrades`), `sol:<source>:<sha256>` (only sentences that name a version or an
+  advisory id; for `sast`, `iac`, `sarif`, `cspm` the rule id is part of the hash). A key never contains `/`.
+- A group resolve never closes a finding (`ErrGroupResolveClosesNothing`); each finding is verified on its own.
+- "A finding belongs to at most one remediation" is enforced on tasks, not on groups: a key is a grouping signal,
+  the primary membership below is the claim.
+
+### Claiming findings into a task
+
+Every path that adds primary members (create, add members, accept a suggestion, query re-run and auto include)
+claims through `claimFindingsInTx` (`internal/infra/postgres/remediation_claim.go`).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as Member
+  participant H as RemediationTaskHandler
+  participant TS as remediation.TaskService
+  participant DS as datascope.Enforcer
+  participant R as RemediationTaskRepository
+  participant DB as Postgres
+  U->>H: POST /api/v1/remediation/tasks (findings:remediation:write, module remediation)
+  H->>TS: CreateTask
+  TS->>R: FindingStatuses WHERE tenant_id = $1
+  TS->>DS: FilterFindings: any id outside scope or tenant = one 404
+  TS->>TS: closed primary = 400, pentest primary = 400
+  TS->>TS: checkOwner (active member, group in tenant), checkOwnerAccess (422)
+  TS->>TS: checkCampaignChange (draft or active, writable)
+  TS->>R: CreateTask(rec)
+  R->>DB: BEGIN, lock move-source tasks in id order
+  R->>DB: lock findings in id order (FOR UPDATE)
+  R->>DB: classify: closed, taken by another active task, free
+  alt taken and not resolved by skip or move
+    R-->>TS: FindingsInOtherTaskError
+    TS-->>U: 409 FINDINGS_IN_OTHER_TASK, details.conflicts
+  else
+    R->>DB: moved: end source membership left_reason moved, recompute source
+    R->>DB: INSERT members, ux_remediation_task_members_primary decides races
+    R->>DB: recompute state, deadline, counters, COMMIT
+    TS->>TS: audit remediation_task.created, notifyNewOwner
+    TS-->>U: 201 task
+  end
+```
+
+### Task state
+
+`DeriveState` (`pkg/domain/remediation/task.go`) runs on every recompute (in the changing transaction, and in the
+`remediation-tasks` controller):
+
+```mermaid
+stateDiagram-v2
+  [*] --> open
+  open --> in_progress: InProgress + FixApplied > 0
+  in_progress --> verifying: FixApplied > 0 and FixApplied >= Total - Closed
+  verifying --> in_progress: a member leaves fix_applied while open
+  in_progress --> done: Closed >= Total and Verified > 0
+  verifying --> done: Closed >= Total and Verified > 0
+  verifying --> closed_unverified: Closed >= Total and Verified = 0
+  open --> on_hold: manual_state on_hold
+  in_progress --> on_hold: manual_state on_hold
+  verifying --> on_hold: manual_state on_hold
+  on_hold --> open: resume, state derived again
+  open --> canceled: manual_state canceled, members released
+  in_progress --> canceled: manual_state canceled, members released
+  open --> archived: emptied by a move or merge
+  in_progress --> archived: emptied by a move or merge
+  done --> [*]
+  closed_unverified --> [*]
+  canceled --> [*]
+  archived --> [*]
+```
+
+Precedence in `DeriveState`: archived, then canceled, then on hold, then no members (`open`), then counts. A
+reopened member of a `done` or `closed_unverified` task moves to a new `Regression: <title>` task at the next
+recompute (below); the closed task keeps its state.
+
 ## State and deadline
 
 - States: `open`, `in_progress`, `verifying`, `done`, `closed_unverified`, `on_hold`, `canceled`, `archived`
@@ -215,8 +329,23 @@ A restricted member sees a suggestion through its in-scope findings only (no ids
   `SetMoveNotifier`; `internal/app/remediation/move_notify.go`) once per move, split, detach and once per merge
   source, with a `TaskMoveEvent`. `Comments()` (`pkg/domain/remediation/move.go`) words one comment per task
   touched from counts and task titles only. The task ticket integration implements the notifier for tasks with
-  an active issue; it must not block the request and logs its own failures. Not wired in `cmd/server` until then
+  an active issue; it must not block the request and logs its own failures. Not wired in `internal/server` until then
   (listed in the wiring guard's optional setters with that reason).
+
+## Notices to task owners
+
+In-app notices (`internal/app/remediation/task_notify.go`, wired with `TaskService.SetNotifier` in
+`internal/server/services.go`), type `remediation_task`, best effort (a failure is logged):
+
+- `CreateTask` and an owner change in `UpdateTask`: "A remediation task was assigned to you" to the owner user
+  (not when they are the actor) and to the owner group.
+- Every stored move, split, detach and merge source (`notifyMove`): "Findings left your remediation task" to the
+  source owners and "Findings joined your remediation task" to the target owners, with counts and task titles.
+- Auto include additions and suspensions (Tasks from a query, below).
+
+A notice names the task and counts, never a finding title; the inbox and the live push show it only to members who
+can read at least one finding of the task (`notificationScopeCond`). The tracker-comment notifier
+(`SetMoveNotifier`) is separate and still unwired.
 
 ## Mark fixed and regressions
 

@@ -141,6 +141,6 @@ The page hides what the member cannot do; the API enforces every gate.
 `pkg/contentpkg` (format, trust, bundle), `pkg/domain/contentcatalog`, `internal/app/contentcatalog`,
 `internal/infra/postgres/content_catalog_repository.go`, `internal/infra/http/handler/content_catalog_handler.go`,
 `internal/infra/http/handler/admin_content_catalog_handler.go`, `internal/infra/http/routes/content_catalog.go`,
-`cmd/server/content_catalog.go`; console: `web/src/features/content-catalog`,
+`internal/server/content_catalog.go`; console: `web/src/features/content-catalog`,
 `web/src/app/(dashboard)/settings/content/page.tsx`. Tests: `pkg/contentpkg/*_test.go`,
 `internal/infra/http/routes/content_catalog_db_test.go`.

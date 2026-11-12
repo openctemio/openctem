@@ -69,6 +69,20 @@ describe('StepUpDialogHost', () => {
     })
   })
 
+  it('says the action continues once the identity is confirmed, whatever the action is', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { method: 'password', window_seconds: 600 }))
+    render(<StepUpDialogHost />)
+    let result: Promise<boolean> = Promise.resolve(false)
+    act(() => {
+      result = requestStepUp()
+    })
+    expect(await screen.findByText(/continues right away/)).toBeInTheDocument()
+    // The old copy claimed every guarded action changes how the organization is secured.
+    expect(screen.queryByText(/how your organization is secured/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(await result).toBe(false)
+  })
+
   it('asks an authenticator account for a 6-digit code and sends it as totp', async () => {
     const user = userEvent.setup()
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>

@@ -41,7 +41,7 @@ const (
 )
 
 // PlatformQueueLimitMinutes is how long a platform job waits for a slot
-// before it fails (cmd/server workers.go MaxQueueMinutes).
+// before it fails (internal/server workers.go MaxQueueMinutes).
 const PlatformQueueLimitMinutes = 60
 
 // PlatformRegion is one region of the service and its state.

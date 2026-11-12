@@ -1,0 +1,21 @@
+{
+  "assetLiveness.band.aria": "Asset liveness",
+  "assetLiveness.cannotVerify": "Its findings stay open and their SLA keeps running: they cannot be verified while the asset does not answer.",
+  "assetLiveness.filter.any": "Any liveness",
+  "assetLiveness.filter.label": "Liveness",
+  "assetLiveness.goneFindings": "Open findings close as obsolete asset (not fixed) where the organization turned it on, and reopen by themselves if the asset is seen again.",
+  "assetLiveness.lastChecked": "Last checked {when}",
+  "assetLiveness.lastCheckedBy": "Last checked {when} by {by}",
+  "assetLiveness.reason.dangling": "The name points to a target with no address: a takeover risk. It stays tracked and is never marked gone.",
+  "assetLiveness.reason.host_gone": "Its host name is gone.",
+  "assetLiveness.reason.no_answer": "The last checks got no answer (timed out or refused), although the name resolves.",
+  "assetLiveness.reason.nxdomain": "The name has no address (NXDOMAIN).",
+  "assetLiveness.reason.nxdomain_confirmed": "The name has had no address long enough, seen by enough sensors.",
+  "assetLiveness.reason.resolver_failed": "The DNS lookup failed (SERVFAIL). It may be the sensor's own DNS.",
+  "assetLiveness.since": "{state} since {date}",
+  "assetLiveness.state.alive": "Alive",
+  "assetLiveness.state.gone": "Gone",
+  "assetLiveness.state.unknown": "Not checked",
+  "assetLiveness.state.unreachable": "Unreachable",
+  "assetLiveness.state.unresolvable": "Unresolvable"
+}

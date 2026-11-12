@@ -14,7 +14,9 @@ Read `web/CLAUDE.md` first; it points to the detailed guides in `web/.claude/`.
    test enforces this.
 3. **Text** goes through `useTranslation()` (`@/context/i18n-provider`). Add every key to
    `src/lib/i18n/dictionaries/en/<namespace>.json` and `vi/<namespace>.json` (namespace = the key's
-   first segment) in the same PR.
+   first segment) in the same PR. `src/lib/__tests__/literal-ui-text-ratchet.test.ts` fails when a file gains
+   literal screen text (JSX text, title/aria-label/placeholder, label properties, toasts); when you clean a
+   file, lower its count with `UPDATE_LITERAL_DEBT=1 npx vitest run src/lib/__tests__/literal-ui-text-ratchet.test.ts`.
 4. **Permissions:** `<Can permission={Permission.X}>` or `usePermissions()` to hide or disable actions; the API
    is the only authority, so never rely on the UI check. Module-gated pages follow the API's module state.
 5. **Links and data:** import links from `@/components/link`, not `next/link` directly (the request-hygiene
@@ -24,5 +26,7 @@ Read `web/CLAUDE.md` first; it points to the detailed guides in `web/.claude/`.
    path; no redirects or aliases for renamed pages.
 7. **Verify:** `npm run validate`, vitest for touched areas, then load the real page at about 390px and at
    desktop width, light and dark, and check the console. When the contract changed, run `make generate` first.
+   A page in `web/e2e/design/manifest.ts` (or redesigned to its board, which adds it there) must pass the
+   design gate: `npx playwright test -c playwright.design.config.ts` (`web/docs/ui/design-gate.md`).
 8. **Design quality:** follow `web/.claude/style-guide.md`; keep pages space-efficient and consistent with
    their siblings.

@@ -81,7 +81,8 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 		return nil, ErrBulkTargetsTooMany
 	}
 	origin := in.Origin
-	if origin != scopedom.OriginRefusalFix && origin != scopedom.OriginConfirmed && origin != scopedom.OriginConnector {
+	if origin != scopedom.OriginRefusalFix && origin != scopedom.OriginConfirmed && origin != scopedom.OriginConnector &&
+		origin != scopedom.OriginAutoAddress {
 		origin = scopedom.OriginImport
 	}
 
@@ -115,7 +116,7 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 		}
 		out = append(out, o)
 	}
-	if len(added) > 0 && !in.Actor.system() {
+	if len(added) > 0 && (!in.Actor.system() || in.Actor.Automatic) {
 		s.NotifyAdmins(ctx, tenantID, bulkTitle(len(added)), bulkBody(added))
 	}
 	return out, nil

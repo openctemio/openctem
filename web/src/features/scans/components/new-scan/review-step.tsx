@@ -27,6 +27,7 @@ import type { ScanReview } from '../../hooks/use-scan-review'
 import type { ScanWizardStep } from './scan-stepper'
 import { WorkflowPreviewBody } from './workflow-preview'
 import { ReadinessLine, RefusalGroups } from './refusal-groups'
+import { ZoneSensorsReadiness } from '@/features/sensors/components/sensor-readiness'
 
 interface ReviewStepProps {
   data: NewScanFormData
@@ -280,6 +281,11 @@ export function ReviewStep({
                 name: zones.find((z) => z.id === data.scanZoneId)?.name ?? data.scanZoneId,
               })}
             </span>
+          )}
+          {data.scanZoneId && (
+            <ZoneSensorsReadiness
+              sensorIds={zones.find((z) => z.id === data.scanZoneId)?.sensor_ids ?? []}
+            />
           )}
         </Row>
         {takesRuleSources(data) && (

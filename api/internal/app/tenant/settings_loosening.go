@@ -13,8 +13,14 @@ import (
 // lifecycleLoosened reports a change that lets the lifecycle worker demote
 // more assets sooner, or with fewer guards: turning it on, a shorter stale
 // threshold or grace period, running while an integration is unhealthy, or
-// fewer source types left out of it.
+// fewer source types left out of it; or one that closes findings of gone
+// assets sooner (tenantdom.LivenessLoosened).
 func lifecycleLoosened(before, after tenantdom.AssetLifecycleSettings) bool {
+	// Closing findings of gone assets, or closing them sooner, is a
+	// loosening whether or not the stale demotion is on.
+	if tenantdom.LivenessLoosened(before.LivenessSettings(), after.LivenessSettings()) {
+		return true
+	}
 	if !after.Enabled {
 		return false
 	}

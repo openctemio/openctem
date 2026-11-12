@@ -121,6 +121,18 @@ export default function SlaPoliciesPage() {
                     {t('settings.slaPolicies.page.badgeAsset', 'Asset override')}
                   </Badge>
                 )}
+                {p.practice === 'compliance' && (
+                  <Badge
+                    variant="outline"
+                    className="text-xs"
+                    title={t(
+                      'settings.slaPolicies.page.badgeComplianceHint',
+                      'Governs compliance findings only; vulnerability policies never govern them.'
+                    )}
+                  >
+                    {t('settings.slaPolicies.practice.compliance', 'Compliance')}
+                  </Badge>
+                )}
                 {!p.is_default && !p.asset_id && (
                   <Badge
                     variant="outline"

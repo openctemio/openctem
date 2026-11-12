@@ -78,6 +78,7 @@ func (s *Service) GovernanceSubjectOf(ctx context.Context, sc *scan.Scan) (scang
 		ScannerName:       sc.ScannerName,
 		ScannerConfig:     sc.ScannerConfig,
 		WorkflowSteps:     steps,
+		StepParams:        map[string]map[string]any(sc.StepParams),
 		Intensity:         scangov.IntensityName(tier),
 		ScheduleType:      string(sc.ScheduleType),
 		ScheduleCron:      sc.ScheduleCron,

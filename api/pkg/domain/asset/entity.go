@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/tag"
 )
 
 // FindingSeverityCounts holds per-severity finding counts for an asset.
@@ -116,10 +117,10 @@ const MaxNameLength = 255
 // 21 times could not be saved from the UI, even to remove a tag.
 // The request structs in the HTTP handler repeat it in their `validate`
 // tags (a struct tag cannot name a constant); a test keeps them equal.
-const MaxTagsPerAsset = 50
+const MaxTagsPerAsset = tag.MaxPerObject
 
 // MaxTagLength is the longest single tag, in characters.
-const MaxTagLength = 50
+const MaxTagLength = tag.MaxLength
 
 // validateName checks a normalized name against what assets.name can hold.
 // A longer name is refused rather than truncated: the name is the asset's
@@ -763,19 +764,25 @@ func (a *Asset) CalculateRiskScore() {
 // An asset holds at most MaxTagsPerAsset tags. A tag past the cap is not
 // added (ingest merges scanner tags into existing assets on every run, and
 // without the cap an asset grew past what the update API accepts).
-func (a *Asset) AddTag(tag string) {
-	if tag == "" {
+//
+// A tag the shared validator refuses (too long, hidden characters, markup,
+// reserved namespace) is not added either: every writer goes through this
+// method, so none can store what the API would refuse. Callers that must
+// tell a person why validate first (tag.ValidateNew).
+func (a *Asset) AddTag(raw string) {
+	t, why := tag.Check(raw)
+	if why != "" {
 		return
 	}
-	for _, t := range a.tags {
-		if t == tag {
+	for _, have := range a.tags {
+		if have == t {
 			return
 		}
 	}
 	if len(a.tags) >= MaxTagsPerAsset {
 		return
 	}
-	a.tags = append(a.tags, tag)
+	a.tags = append(a.tags, t)
 	a.updatedAt = time.Now().UTC()
 }
 

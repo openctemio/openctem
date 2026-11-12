@@ -7,6 +7,9 @@ import {
   standardOnly,
   toolsMissingParams,
   withParam,
+  depthParams,
+  depthsOverriding,
+  withDepthParam,
   withSelection,
 } from './step-settings'
 
@@ -124,5 +127,29 @@ describe('config editing', () => {
   it('names the tools that cannot run the node with its settings', () => {
     expect(toolsMissingParams(ports, { top_n: 100, ports: '80' })).toEqual({ masscan: ['top_n'] })
     expect(toolsMissingParams(ports, {})).toEqual({})
+  })
+})
+
+describe('depth overlay helpers', () => {
+  const base = { id: 's', step_key: 'k', name: 'n', order: 1 } as unknown as ScanWorkflowStep
+  it('sets and reads a depth param without touching other policy fields', () => {
+    const withMin = { ...base, run_policy: { min_depth: 'standard' } } as ScanWorkflowStep
+    const set = withDepthParam(withMin, 'standard', 'severity', ['low', 'high'])
+    expect(depthParams(set, 'standard')).toEqual({ severity: ['low', 'high'] })
+    expect(depthParams(set, 'deep')).toEqual({})
+    expect((set as { run_policy?: { min_depth?: string } }).run_policy?.min_depth).toBe('standard')
+    expect(depthsOverriding(set, 'severity')).toEqual(['standard'])
+    expect(depthsOverriding(set, 'tags')).toEqual([])
+    // the input is not changed
+    expect(depthParams(withMin, 'standard')).toEqual({})
+  })
+  it('drops empty overlays and an empty policy', () => {
+    const set = withDepthParam(base, 'deep', 'severity', ['critical'])
+    const cleared = withDepthParam(set, 'deep', 'severity', undefined)
+    expect('run_policy' in cleared).toBe(false)
+    const two = withDepthParam(set, 'standard', 'tags', ['cve'])
+    const one = withDepthParam(two, 'standard', 'tags', undefined)
+    expect(depthParams(one, 'deep')).toEqual({ severity: ['critical'] })
+    expect(depthParams(one, 'standard')).toEqual({})
   })
 })

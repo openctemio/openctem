@@ -232,7 +232,7 @@ func (r *LimitsRepository) ReplaceOrigin(ctx context.Context, tenantID shared.ID
 // findings limit applies: the count runs over the largest table, so an
 // organization without that limit never pays for it.
 func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFindings bool) (map[limits.Key]int, error) {
-	var seats, assets, sensors, keys, trusts, invites, subStatuses, schemes, storageMB, sources, contentMB int
+	var seats, assets, sensors, keys, trusts, ssoConns, invites, subStatuses, schemes, storageMB, sources, contentMB int
 	err := r.db.QueryRowContext(ctx, `
 		SELECT
 		  (SELECT count(*) FROM tenant_members m WHERE m.tenant_id = $1 AND m.status <> 'offboarded'
@@ -241,6 +241,8 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		  (SELECT count(*) FROM sensors WHERE tenant_id = $1 AND scope = 'organization' AND status <> 'revoked'),
 		  (SELECT count(*) FROM api_keys WHERE tenant_id = $1 AND status = 'active'),
 		  (SELECT count(*) FROM ci_trust_configs WHERE tenant_id = $1),
+		  (SELECT count(*) FROM tenant_identity_providers WHERE tenant_id = $1)
+		    + (SELECT count(*) FROM saml_providers WHERE tenant_id = $1),
 		  (SELECT count(*) FROM tenant_invitations WHERE tenant_id = $1 AND created_at > now() - interval '24 hours'),
 		  (SELECT count(*) FROM lifecycle_sub_statuses WHERE tenant_id = $1 AND archived_at IS NULL),
 		  (SELECT count(*) FROM lifecycle_schemes WHERE tenant_id = $1 AND archived_at IS NULL),
@@ -250,13 +252,13 @@ func (r *LimitsRepository) Usage(ctx context.Context, tenantID shared.ID, withFi
 		    WHERE b.tenant_id = $1 AND EXISTS (
 		      SELECT 1 FROM content_packs p JOIN content_source_snapshots s ON s.content_pack_id = p.id
 		      WHERE p.tenant_id = b.tenant_id AND p.digest = b.digest))`,
-		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &invites, &subStatuses, &schemes, &storageMB, &sources, &contentMB)
+		tenantID.String()).Scan(&seats, &assets, &sensors, &keys, &trusts, &ssoConns, &invites, &subStatuses, &schemes, &storageMB, &sources, &contentMB)
 	if err != nil {
 		return nil, fmt.Errorf("count usage: %w", err)
 	}
 	usage := map[limits.Key]int{
 		limits.Seats: seats, limits.Assets: assets, limits.Sensors: sensors,
-		limits.APIKeys: keys, limits.CITrusts: trusts, limits.InvitesPerDay: invites,
+		limits.APIKeys: keys, limits.CITrusts: trusts, limits.SSOConnections: ssoConns, limits.InvitesPerDay: invites,
 		limits.LifecycleSubStatuses: subStatuses, limits.LifecycleSchemes: schemes,
 		limits.StorageMB:      storageMB,
 		limits.ContentSources: sources, limits.ContentStorageMB: contentMB,

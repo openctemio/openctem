@@ -144,11 +144,10 @@ func (b *Builder) Build(ctx context.Context, in Input) (*Bundle, error) {
 	if err := b.egress.CheckFinding(ctx, in.TenantID, in.Finding); err != nil {
 		return nil, err
 	}
-	m, err := aimask.New(in.RunKey, in.Policy)
+	m, err := NewMasker(in)
 	if err != nil {
 		return nil, err
 	}
-	seed(m, in)
 
 	cands := candidates(in)
 	names := make([]aipolicy.Field, 0, len(cands))
@@ -274,6 +273,19 @@ func (b *Builder) knowledge(m *aimask.Masker, in []Excerpt, ceiling aipolicy.Cla
 
 func carriesSecret(f *vulnerability.Finding) bool {
 	return f.FindingType() == vulnerability.FindingTypeSecret || f.Source() == vulnerability.FindingSourceSecret
+}
+
+// NewMasker returns the run's masker for an input: the organization's policy,
+// the run key, and the asset's and organization's names seeded. AI triage
+// uses it for its own prompt so both AI paths mask the same values the same
+// way.
+func NewMasker(in Input) (*aimask.Masker, error) {
+	m, err := aimask.New(in.RunKey, in.Policy)
+	if err != nil {
+		return nil, err
+	}
+	seed(m, in)
+	return m, nil
 }
 
 func seed(m *aimask.Masker, in Input) {

@@ -42,7 +42,7 @@ Stored as one row per tenant in **`tenant_identity_providers`** (tenant-scoped; 
 
 ## 2. Login — how a request reaches the *right* tenant's Azure
 
-The app cannot guess which tenant a user belongs to. The user enters through a **tenant-specific entry point**: `/login?org=<slug>`. That slug — carried inside an **HMAC-signed OAuth `state`** — selects which tenant's config to use, both when redirecting to Azure and when completing the callback.
+The app cannot guess which tenant a user belongs to. The user enters through a **tenant-specific entry point**: `/login?org=<slug>`. That slug — kept in the server-side record behind the **HMAC-signed, single-use OAuth `state` handle** — selects which tenant's config to use, both when redirecting to Azure and when completing the callback.
 
 ```
 ① AUTHORIZE  (before auth)                     ② CALLBACK  (after auth)
@@ -61,10 +61,10 @@ login.microsoftonline.com/A1b2…/oauth2/…            │  reject if the token
 
 Step by step for an **Acme** employee:
 
-1. **User opens Acme's login** — `/login?org=acme`. The slug `acme` is the tenant context (a routing hint, signed into `state`).
+1. **User opens Acme's login** — `/login?org=acme`. The slug `acme` is the tenant context (a routing hint, stored server-side under the `state` handle).
 2. **App looks up Acme's config** — `GetBySlug("acme")` → the `tenant_identity_providers` row → build the authorize URL against **Acme's Azure directory + Acme's client_id**.
 3. **Redirect to Acme's Azure AD** — `login.microsoftonline.com/A1b2…/…`. The Acme employee signs in against **Acme's own directory** (their users, their MFA). Globex's directory is never involved.
-4. **Callback — verify the token is really Acme's** — recover `org=acme` from the signed state; verify the id_token signature + nonce, and **pin `tid` = Acme's directory**.
+4. **Callback — verify the token is really Acme's** — recover `org=acme` from the state record (taken once); verify the id_token signature + nonce, and **pin `tid` = Acme's directory**.
 5. **Identity + membership → Acme session** — key the user by immutable `oid+tid` (never the mutable email), confirm they're a member of Acme (or JIT-provision if their email is on Acme's DNS-**verified domain**), and issue a tenant-scoped session.
 
 Globex runs the exact same flow in parallel, fully isolated: `org=globex` → Globex's app → `…/9x8y…` → `tid` must equal `9x8y…` → a Globex session.
@@ -89,7 +89,7 @@ The signed `state` is likewise a routing hint, not a trust boundary: knowing ano
 ## Edge cases
 
 - **A user belongs to multiple tenants** — each tenant has its own `?org=<slug>` entry; whichever slug is in the state wins. There is no cross-tenant "pick an org" step for SSO (the app resolves exactly the tenant in the state).
-- **A user belongs to no tenant yet** — if the provider allows JIT and the user's email is on a verified domain of that tenant, a membership is provisioned on the fly; otherwise they get a session with no tenant access (invite-only). See the [verified-domain JIT gate](sso-authentication.md).
+- **A user belongs to no tenant yet** — if the provider allows JIT and the user's email is on a verified domain of that tenant, a membership is provisioned on the fly; otherwise the sign-in is refused with 403 `SSO_NOT_A_MEMBER` and nothing is created (invite-only). See the [verified-domain JIT gate](sso-authentication.md).
 - **A tenant with no Entra configured** (Initech) — simply has no `tenant_identity_providers` row and uses local email/password login.
 
 ---
@@ -110,7 +110,7 @@ The signed `state` is likewise a routing hint, not a trust boundary: knowing ano
 |---|---|
 | Per-tenant config storage | `tenant_identity_providers` table · `pkg/domain/identityprovider` |
 | Resolve config for a login | `internal/app/auth/sso.go` — `resolveProvider`, `GetProvidersForTenant`; tenant via `GetBySlug(orgSlug)` |
-| Build authorize URL + signed state | `sso.go` — `GenerateAuthorizeURL`, `generateState` (HMAC + `?org` + nonce) |
+| Build authorize URL + signed state | `sso.go` — `GenerateAuthorizeURL`, `generateState` (HMAC-signed handle; org, nonce and PKCE verifier stored server-side) |
 | id_token verification + **`tid` pin** | `pkg/oidc/issuers.go` — `EntraIssuer` (pins the directory when a GUID is configured) |
 | Immutable-id keying + `xms_edov` | `sso.go` — `entraUserInfoFromClaims` (email trusted only with `xms_edov`; keys on `oid`/`sub`+`iss`) |
 | Verified-domain JIT gate | `internal/app/auth/domainverify/` · `sso.go` — `jitProvisioningAllowed` |

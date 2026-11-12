@@ -36,6 +36,10 @@ type BulkCreateScopeExclusionsRequest struct {
 	// is set (an end date only pauses scanning).
 	Kind      string     `json:"kind,omitempty" validate:"omitempty,oneof=do_not_scan not_ours retired"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// ConfirmCritical confirms closing open critical, P0 or KEV findings;
+	// without it such a request is refused with
+	// EXCLUSION_CLOSES_CRITICAL_FINDINGS (409) and nothing is written.
+	ConfirmCritical bool `json:"confirm_critical,omitempty"`
 }
 
 // BulkScopeExclusionResult is what happened to one item, in request order.
@@ -84,6 +88,7 @@ func (h *ScopeHandler) BulkCreateExclusions(w http.ResponseWriter, r *http.Reque
 	outcomes, err := h.service.CreateExclusions(r.Context(), scope.BulkExclusionsInput{
 		TenantID: tenantID, Items: bulkExclusionItems(req.Items), Reason: req.Reason,
 		CreatedBy: middleware.GetUserID(r.Context()), Kind: req.Kind, ExpiresAt: req.ExpiresAt,
+		ConfirmCritical: req.ConfirmCritical,
 	})
 	if err != nil {
 		h.handleServiceError(w, "Scope exclusion", err)
@@ -134,6 +139,9 @@ type ScopeExclusionPreviewItem struct {
 	// OpenFindings is how many open findings those assets have: what a
 	// permanent not_ours or retired exclusion would close.
 	OpenFindings int `json:"open_findings"`
+	// CriticalFindings is how many of them are critical, P0 or KEV: closing
+	// those needs confirm_critical.
+	CriticalFindings int `json:"critical_findings"`
 	// ClosingNeedsFullAccess is true when the caller has limited data access
 	// and this is not an exact hostname or IP: as a not_ours or retired rule
 	// it needs full data access.
@@ -198,6 +206,7 @@ func (h *ScopeHandler) PreviewBulkExclusions(w http.ResponseWriter, r *http.Requ
 func previewItem(p scope.ExclusionPreview) ScopeExclusionPreviewItem {
 	item := ScopeExclusionPreviewItem{ExclusionType: p.Item.ExclusionType, Pattern: p.Item.Pattern,
 		Matched: p.Match.Matched, Sample: p.Match.Sample, OpenFindings: p.Match.OpenFindings,
+		CriticalFindings:       p.Match.CriticalFindings,
 		ClosingNeedsFullAccess: p.ClosingNeedsFullAccess}
 	if item.Sample == nil {
 		item.Sample = []string{}

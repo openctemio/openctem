@@ -375,37 +375,28 @@ type SuppressionList struct {
 	Rules []SuppressionRule `json:"rules"`
 }
 
-// Proxy pools for scan traffic (docs/architecture/sensor-proxies.md). Both
-// actions live under CommandsPath + "/{command_id}" and are answered only to
-// the sensor holding the command's lease (HeaderLeaseEpoch). Protocol v3
-// does not carry them: they stay on v2 HTTPS.
+// SecretsAction: POST under CommandsPath + "/{command_id}", the values of
+// the secret refs a claimed job's signed payload lists, for one task
+// (docs/architecture/task-secrets.md). The body is a contract
+// secretref.FetchRequest (with the lease epoch) in a request signed by the
+// sensor's key-bound identity; the answer is a secretref.SealedAnswer
+// (content type secretref.ContentType, Cache-Control: no-store) sealed to the
+// request's single-use reply key. Every refusal is command-not-found.
+// Protocol v3 does not carry it: it stays on v2 HTTPS.
+const SecretsAction = "secrets"
+
+// Proxy pools for scan traffic (docs/architecture/sensor-proxies.md). The
+// report lives under CommandsPath + "/{command_id}" and is accepted only from
+// the sensor holding the command's lease under the epoch its body states.
+// The pool's credentials are a task secret (SecretsAction). Protocol v3 does
+// not carry the report: it stays on v2 HTTPS.
 const (
-	// EgressCredentialsAction: POST, the credentials of the job's proxy pool.
-	EgressCredentialsAction = "egress-credentials"
 	// EgressReportAction: POST, the sensor's per-endpoint health report of
 	// the job, sent before complete or fail.
 	EgressReportAction = "egress-report"
 	// MaxEgressReportEndpoints bounds the endpoints of one report.
 	MaxEgressReportEndpoints = 64
 )
-
-// EgressCredentialsRequest is the body of POST /commands/{id}/egress-credentials.
-type EgressCredentialsRequest struct {
-	PoolID string `json:"pool_id"`
-}
-
-// EgressCredential is one endpoint's credentials.
-type EgressCredential struct {
-	EndpointID string `json:"endpoint_id"`
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-}
-
-// EgressCredentialsResponse answers POST /commands/{id}/egress-credentials:
-// the pool's endpoints that have credentials. Never stored with the command.
-type EgressCredentialsResponse struct {
-	Credentials []EgressCredential `json:"credentials"`
-}
 
 // EgressEndpointReport is what a sensor saw through one endpoint during a
 // job: connections, failures by class, the proxy handshake latency and the
@@ -424,6 +415,9 @@ type EgressEndpointReport struct {
 
 // EgressReportRequest is the body of POST /commands/{id}/egress-report.
 type EgressReportRequest struct {
-	PoolID    string                 `json:"pool_id"`
-	Endpoints []EgressEndpointReport `json:"endpoints"`
+	// LeaseEpoch is the epoch of the lease the sensor holds on the command
+	// (required; the lease is decided by the body, never by a header).
+	LeaseEpoch int64                  `json:"lease_epoch"`
+	PoolID     string                 `json:"pool_id"`
+	Endpoints  []EgressEndpointReport `json:"endpoints"`
 }

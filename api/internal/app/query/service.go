@@ -53,11 +53,13 @@ type Service struct {
 	limiter   *limiter
 	logger    *logger.Logger
 	now       func() time.Time
+	values    *valuesCache
 }
 
 // NewService returns a query service.
 func NewService(exec querylang.Executor, dataScope *datascope.Enforcer, log *logger.Logger) *Service {
-	return &Service{exec: exec, dataScope: dataScope, limiter: newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess), logger: log, now: time.Now}
+	return &Service{exec: exec, dataScope: dataScope, limiter: newLimiter(MaxPerUser, MaxPerTenant, MaxPerProcess), logger: log, now: time.Now,
+		values: newValuesCache()}
 }
 
 // Explanation is what Explain returns.

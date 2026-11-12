@@ -3,7 +3,7 @@ package auth
 import (
 	"testing"
 
-	"github.com/crewjam/saml"
+	"github.com/openctemio/saml"
 
 	"github.com/openctemio/openctem/api/pkg/oidc"
 )

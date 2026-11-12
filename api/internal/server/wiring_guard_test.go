@@ -1,0 +1,437 @@
+package server
+
+import (
+	"bytes"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
+	"os"
+	"reflect"
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/openctemio/openctem/api/internal/app/finding"
+)
+
+// This guards a defect class this codebase keeps producing: code that runs but
+// can never have an effect.
+//
+// PriorityClassificationService exposes optional collaborators through Set*
+// seams and nil-guards every one of them, so forgetting to call a setter in the
+// composition root produces no build error, no vet warning, no panic and no log
+// line — the feature simply never happens. That is exactly how
+// SetChangePublisher stayed unwired: the service emitted a PriorityChangeEvent
+// on every class transition, publishIfChanged returned early on the nil
+// publisher, and the PriorityFloodGuard that was wired sat guarding a fan-out
+// that could not occur. A finding escalating from P3 to P0 notified nobody.
+//
+// The test resolves the Set* seams by reflection rather than a hand-written
+// list, so a NEW optional collaborator added later is caught too: it must
+// either be wired in internal/server or be given an explicit, documented entry in
+// optionalPrioritySeams below. "I forgot" is not a passing state.
+
+// optionalPrioritySeams lists Set* seams on PriorityClassificationService that
+// are deliberately NOT wired in internal/server, each with the reason. Empty today:
+// every seam is wired. Adding an entry is a conscious decision that shows up in
+// review.
+var optionalPrioritySeams = map[string]string{}
+
+// prioritySeamsWiredInCmdServer parses this package's non-test sources and
+// returns the set of method names invoked on the Services.PriorityClassification
+// field.
+//
+// It matches on the selector expression rather than the bare method name on
+// purpose: internal/server/handlers.go also calls a method named SetChangePublisher,
+// on the unrelated CompensatingControlHandler. A bare name search would match
+// that and pass while the priority publisher stayed nil.
+//
+// Limitation: a call made through a local alias (pc := s.PriorityClassification;
+// pc.SetX(...)) is not recognized and would fail this test. That is the safe
+// direction to be wrong in, and the fix is to call it on the field.
+func prioritySeamsWiredInCmdServer(t *testing.T) map[string]bool {
+	t.Helper()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read internal/server: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	wired := make(map[string]bool)
+	parsed := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		parsed++
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			var buf bytes.Buffer
+			if err := printer.Fprint(&buf, fset, sel.X); err != nil {
+				return true
+			}
+			if strings.HasSuffix(buf.String(), ".PriorityClassification") {
+				wired[sel.Sel.Name] = true
+			}
+			return true
+		})
+	}
+	// Without this the test passes vacuously if the sources ever move.
+	if parsed == 0 {
+		t.Fatal("parsed no internal/server sources; the guard is not guarding anything")
+	}
+	return wired
+}
+
+// selectorCall is one method-call selector found in the sources: the printed
+// receiver expression (e.g. "services.Email", "s.AITriage") and the method name.
+type selectorCall struct {
+	recv   string
+	method string
+}
+
+// allSelectorCallsInCmdServer parses this package's non-test sources and returns
+// every method-call selector, so callers can assert that a specific
+// receiver-field.method pair is present. Same AST approach (and same local-alias
+// limitation) as prioritySeamsWiredInCmdServer.
+func allSelectorCallsInCmdServer(t *testing.T) []selectorCall {
+	t.Helper()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read internal/server: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	var calls []selectorCall
+	parsed := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		parsed++
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			var buf bytes.Buffer
+			if err := printer.Fprint(&buf, fset, sel.X); err != nil {
+				return true
+			}
+			calls = append(calls, selectorCall{recv: buf.String(), method: sel.Sel.Name})
+			return true
+		})
+	}
+	if parsed == 0 {
+		t.Fatal("parsed no internal/server sources; the guard is not guarding anything")
+	}
+	return calls
+}
+
+// guardedInertSeams are Set* collaborators that were built but never injected at
+// the composition root, so the feature they feed silently never ran. Each was
+// fixed; this list keeps them from regressing. The field is the trailing
+// selector on the Services value (works for both `s.X` and `services.X`).
+var guardedInertSeams = []struct {
+	field   string // e.g. ".Email"
+	setter  string
+	feature string
+}{
+	{".Email", "SetTenantSMTPResolver", "per-tenant SMTP"},
+	{".AITriage", "SetWorkflowDispatcher", "AI-triage workflow events"},
+	{".Pentest", "SetTenantMemberChecker", "pentest cross-tenant member check"},
+	{".Tenant", "SetMemberStatusEmailNotifier", "member suspend/reactivate emails"},
+	{".Tenant", "SetInvitationTeams", "teams on invitations"},
+	{".Tenant", "SetOwnershipTransferNotifier", "ownership transfer emails"},
+	{".Tenant", "SetOwnershipTransferRepository", "ownership transfer"},
+	{".Module", "SetWSBroadcaster", "module.updated WebSocket push on module toggle"},
+	{".SCIMProvisioning", "SetDomainVerifier", "SCIM attaches existing accounts only on a verified domain"},
+	{".OAuth", "SetClaimGuard", "a social sign-in adopts a provisioned account only when its organizations verified the domain"},
+}
+
+// TestInertWiringSeams_StayWired asserts each previously-dead Set* seam is
+// invoked on its Services field in internal/server. Because these are nil-guarded,
+// dropping the wire produces no build or vet error — only this test catches it.
+func TestInertWiringSeams_StayWired(t *testing.T) {
+	calls := allSelectorCallsInCmdServer(t)
+	for _, seam := range guardedInertSeams {
+		found := false
+		for _, c := range calls {
+			if c.method == seam.setter && strings.HasSuffix(c.recv, seam.field) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Services%s.%s (%s) is never called in internal/server.\n"+
+				"The service nil-guards this collaborator, so leaving it unwired silently disables the feature.\n"+
+				"Re-wire it in internal/server (services.go or main.go).", seam.field, seam.setter, seam.feature)
+		}
+	}
+}
+
+func TestPriorityClassificationSeams_AreWiredOrExplicitlyOptional(t *testing.T) {
+	seams := make([]string, 0, 8)
+	typ := reflect.TypeOf(&finding.PriorityClassificationService{})
+	for i := 0; i < typ.NumMethod(); i++ {
+		if name := typ.Method(i).Name; strings.HasPrefix(name, "Set") {
+			seams = append(seams, name)
+		}
+	}
+	// Without this the test passes vacuously if the service is ever renamed or
+	// its setters restructured — the same silent-no-op failure it exists to
+	// catch.
+	if len(seams) == 0 {
+		t.Fatal("reflection found no Set* seams on PriorityClassificationService; the guard is not guarding anything")
+	}
+
+	wired := prioritySeamsWiredInCmdServer(t)
+
+	for _, seam := range seams {
+		if reason, exempt := optionalPrioritySeams[seam]; exempt {
+			t.Logf("%s intentionally unwired: %s", seam, reason)
+			continue
+		}
+		if !wired[seam] {
+			t.Errorf("PriorityClassificationService.%s is never called on Services.PriorityClassification in internal/server.\n"+
+				"The service nil-guards this collaborator, so leaving it unwired silently disables the feature it feeds.\n"+
+				"Either wire it in internal/server/services.go or add it to optionalPrioritySeams with a reason.", seam)
+		}
+	}
+}
+
+// servicesReceiver matches the expressions internal/server uses for the Services
+// value: `s` inside its methods, `services` in main.go, `svc` in the handler
+// and worker builders.
+var servicesReceiver = regexp.MustCompile(`^(s|services|svc)\.([A-Z]\w*)$`)
+
+// cmdServerServicesUsage parses internal/server's non-test sources and returns, per
+// Services field, every place it is assigned and the set of methods called on it.
+func cmdServerServicesUsage(t *testing.T) (assigned map[string][]string, called map[string]bool) {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read internal/server: %v", err)
+	}
+	fset := token.NewFileSet()
+	assigned = map[string][]string{}
+	called = map[string]bool{}
+	parsed := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		parsed++
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.AssignStmt:
+				for _, lhs := range v.Lhs {
+					var b bytes.Buffer
+					if printer.Fprint(&b, fset, lhs) == nil {
+						if m := servicesReceiver.FindStringSubmatch(b.String()); m != nil {
+							assigned[m[2]] = append(assigned[m[2]], fset.Position(v.Pos()).String())
+						}
+					}
+				}
+			case *ast.SelectorExpr:
+				var b bytes.Buffer
+				if printer.Fprint(&b, fset, v.X) == nil {
+					if m := servicesReceiver.FindStringSubmatch(b.String()); m != nil {
+						called[m[2]+"."+v.Sel.Name] = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	if parsed == 0 {
+		t.Fatal("parsed no internal/server sources; the guard is not guarding anything")
+	}
+	return assigned, called
+}
+
+// TestServices_EachServiceConstructedOnce guards the split-brain composition
+// root. main.go used to replace services.Tenant with a second
+// tenant.NewTenantService; every Set* applied to the first instance was silently
+// lost (six features, including GET /settings/data-scope returning 500), and
+// adapters that had captured the first instance kept using it. A Services
+// field must be assigned in exactly one place. Add a missing collaborator with
+// a setter on the existing instance instead of constructing another one.
+func TestServices_EachServiceConstructedOnce(t *testing.T) {
+	assigned, _ := cmdServerServicesUsage(t)
+	if len(assigned) == 0 {
+		t.Fatal("found no Services field assignments; the guard is not guarding anything")
+	}
+	for field, sites := range assigned {
+		if len(sites) > 1 {
+			t.Errorf("Services.%s is constructed %d times (%s). The later construction discards every "+
+				"setter applied to the earlier one; wire the extra collaborator with a setter instead.",
+				field, len(sites), strings.Join(sites, ", "))
+		}
+	}
+}
+
+// optionalServiceSetters are Set* methods on Services fields that are
+// deliberately NOT called in internal/server, each with the reason. Everything else
+// must be wired: the services nil-guard their collaborators, so an unwired
+// setter is a feature that silently never runs.
+var optionalServiceSetters = map[string]string{
+	"RemediationTask.SetMoveNotifier":       "tracker comments on moves: wired by the task ticket integration once tasks carry an issue; until then a move writes the task timeline only",
+	"Module.SetPlatformModules":             "no module is platform-scoped yet; unwired, a platform-scoped module is off for every organization (fail closed) until the installation switch is wired with the first such module",
+	"VEX.SetClock":                          "test seam: replaces the clock; production uses time.Now",
+	"ScopeNames.SetClock":                   "test seam: replaces the clock; production uses time.Now",
+	"AIAnalysis.SetClock":                   "test seam: replaces the clock; production uses time.Now",
+	"WebEvidence.SetClock":                  "test seam: replaces the clock; production uses time.Now",
+	"PageMonitor.SetClock":                  "test seam: replaces the clock; production uses time.Now",
+	"RetestCheck.SetClock":                  "test seam: replaces the clock; production uses time.Now",
+	"OrgDeletion.SetClock":                  "test seam: replaces the clock; production uses time.Now",
+	"SignupEvents.SetClock":                 "test seam: replaces the clock; production uses time.Now",
+	"ContentSource.SetClock":                "test seam: replaces the clock; production uses time.Now",
+	"ContentSource.SetFetcher":              "test seam: replaces the git fetch and the private-host check; production uses the SSRF-guarded fetcher",
+	"ContentSource.SetCredential":           "request operation (stores a rule source's credential), called by the content source handler",
+	"ContentSource.SetMaxConcurrentFetches": "test seam: replaces the fetch cap; production uses the default of 3 per process",
+	"CertMonitor.SetFetcher":                "CT requests go through a platform-owned sensor (no CT client in the platform); until that sensor capability ships, CT monitoring is off and reports ct_unavailable_reason=needs_platform_sensor",
+
+	// Business operations named Set*, not collaborator seams.
+	"DeploymentRegion.Set":              "business operation (the console's one-time region setting), not a collaborator seam",
+	"PlatformAlert.SetHTTPClient":       "test seam: a local receiver the SSRF guard would refuse; production uses the guarded client",
+	"Branch.SetDefaultBranch":           "request operation, called by the branch handler",
+	"PermVersion.Set":                   "cache operation, not a seam",
+	"Role.SetUserRoles":                 "request operation, called by the role handler",
+	"Group.SetTeamAccess":               "request operation (sets the access a team carries), called by the group access handler",
+	"Participation.SetSelf":             "request operation (the caller sets their own watch state), called by the participation handler",
+	"RemediationTask.SetQueryAutoState": "request operation, called by the task query handler",
+	"SCIMGroups.SetRoleMappings":        "request operation, called by the SCIM token handler",
+	"SCIMProvisioning.SetActive":        "SCIM PATCH operation, not a seam",
+	"ScanProfile.SetDefaultScanProfile": "request operation, called by the scan profile handler",
+	"ThreatIntel.SetSyncEnabled":        "request operation, called by the threat-intel handler",
+	"UserDashboard.SetDefault":          "request operation, called by the dashboard handler",
+	"UserDashboard.SetOrgAudience":      "request operation, called by the dashboard handler",
+	"UserDashboard.SetOrgDefault":       "request operation, called by the dashboard handler",
+	"UserDashboard.SetOrgSchedule":      "request operation, called by the dashboard handler",
+	"UserDashboard.SetPersonalSchedule": "request operation, called by the dashboard handler",
+	"Vulnerability.SetFindingTags":      "request operation, called by the finding handler",
+	"Sensor.SetBearerKeysAllowed":       "request operation, called by the sensor identity-policy handler",
+	"Sensor.SetKeyBindRequiresApproval": "request operation, called by the sensor identity-policy handler",
+	// Real seams left at their defaults on purpose.
+	"ScannerTemplate.SetQuota":            "default quota applies; the override exists for tests and future config",
+	"SensorPairing.SetClock":              "test hook; the service uses time.Now",
+	"SensorPairing.SetMaxOpen":            "the RFC-052 default cap applies; the override exists for tests",
+	"Retest.SetClock":                     "test clock; production uses time.Now",
+	"ScanGovernance.SetClock":             "test clock; production uses time.Now",
+	"ScanGovernance.SetMode":              "request operation, called by the scan governance handler",
+	"ScanGovernance.SetRules":             "request operation, called by the scan governance handler",
+	"ScanGovernance.Settings":             "read operation, called by the scan governance handler",
+	"WebSocketHub.SetAuthorizeFunc":       "superseded by SetChannelAccessChecker",
+	"WebSocketHub.SetPublisher":           "set by websocket.NewRedisBridge on the hub it is given",
+	"WebSocketHub.SetRevocationPublisher": "set by websocket.NewRedisBridge on the hub it is given",
+}
+
+// TestServices_EverySetterWiredOrExplicitlyOptional reflects over every
+// Services field and requires each of its Set* methods to be called on that
+// field somewhere in internal/server, or to be listed in optionalServiceSetters with
+// a reason. This generalizes the per-service guards above: a collaborator added
+// later, on any service, cannot ship unwired.
+func TestServices_EverySetterWiredOrExplicitlyOptional(t *testing.T) {
+	_, called := cmdServerServicesUsage(t)
+	typ := reflect.TypeOf(Services{})
+	checked := 0
+	for i := 0; i < typ.NumField(); i++ {
+		f := typ.Field(i)
+		if f.Type.Kind() != reflect.Ptr {
+			continue
+		}
+		for j := 0; j < f.Type.NumMethod(); j++ {
+			m := f.Type.Method(j).Name
+			if !strings.HasPrefix(m, "Set") {
+				continue
+			}
+			checked++
+			key := f.Name + "." + m
+			if _, ok := optionalServiceSetters[key]; ok {
+				continue
+			}
+			if !called[key] {
+				t.Errorf("Services.%s is never called in internal/server. The service nil-guards this collaborator, "+
+					"so leaving it unwired silently disables the feature. Wire it, or add it to "+
+					"optionalServiceSetters with a reason.", key)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("reflection found no Set* methods on Services fields; the guard is not guarding anything")
+	}
+	for key := range optionalServiceSetters {
+		if called[key] {
+			t.Errorf("%s is listed as optional but is wired; remove it from optionalServiceSetters", key)
+		}
+	}
+}
+
+// The finding-lifecycle service checks the organization's limits only through
+// the checker passed to its constructor, and a nil checker means "no limits":
+// dropping the argument builds, vets and runs, and the sub-status and scheme
+// caps silently stop applying. Assert the composition root passes the
+// entitlement service.
+func TestFindingLifecycleLimitCheckerIsWired(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read internal/server: %v", err)
+	}
+	fset := token.NewFileSet()
+	found := false
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "NewService" {
+				return true
+			}
+			if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "findinglifecycleapp" {
+				return true
+			}
+			found = true
+			var buf bytes.Buffer
+			if len(call.Args) < 3 || printer.Fprint(&buf, fset, call.Args[2]) != nil || !strings.HasSuffix(buf.String(), ".Entitlement") {
+				t.Errorf("%s: findinglifecycleapp.NewService must be given the entitlement service as its limit checker (3rd argument), got %q",
+					name, buf.String())
+			}
+			return true
+		})
+	}
+	if !found {
+		t.Fatal("findinglifecycleapp.NewService is not constructed in internal/server; the guard guards nothing")
+	}
+}

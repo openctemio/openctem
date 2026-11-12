@@ -26,6 +26,8 @@ import { Permission, useHasPermission } from '@/lib/permissions'
 import { maxDurationInput, optionsError, takesRuleSources } from '@/features/scans/lib/scan-form'
 import { templateTypeForScanner } from '@/features/scans/lib/rule-templates'
 import { RuleSourcesSection } from './rule-sources-section'
+import { StepSettingsSection } from './step-settings-section'
+import type { WorkflowPreviewRequest } from './workflow-preview'
 import { CommittedNumberInput } from '@/components/ui/committed-number-input'
 import { usePlatformScanning } from '@/lib/api/platform-hooks'
 import { gateSummary } from '@/features/scan-profiles/gate-summary'
@@ -38,6 +40,8 @@ interface OptionsStepProps {
   onChange: (data: Partial<NewScanFormData>) => void
   /** Offer the scan profile (a new scan; Edit keeps the stored one). */
   showProfile?: boolean
+  /** The workflow preview request: the step settings show each step's value from it. */
+  workflowRequest?: WorkflowPreviewRequest
 }
 
 const DEFAULT_PROFILE = 'default'
@@ -48,7 +52,12 @@ const PREFERENCE_ICONS: Record<SensorPreference, React.ReactNode> = {
   platform: <Cloud className="h-4 w-4" aria-hidden />,
 }
 
-export function OptionsStep({ data, onChange, showProfile = false }: OptionsStepProps) {
+export function OptionsStep({
+  data,
+  onChange,
+  showProfile = false,
+  workflowRequest,
+}: OptionsStepProps) {
   const { t } = useTranslation()
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const { offered: platformOffered } = usePlatformScanning()
@@ -133,6 +142,15 @@ export function OptionsStep({ data, onChange, showProfile = false }: OptionsStep
           customTemplateIds={data.customTemplateIds}
           onChange={onChange}
           error={optionsError(data, t)}
+        />
+      )}
+
+      {data.mode === 'workflow' && data.workflowId && workflowRequest && (
+        <StepSettingsSection
+          workflowId={data.workflowId}
+          request={workflowRequest}
+          value={data.stepParams}
+          onChange={(stepParams) => onChange({ stepParams })}
         />
       )}
 

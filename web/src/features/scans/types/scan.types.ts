@@ -4,7 +4,12 @@
  * Type definitions for scan management
  */
 
-import type { RuleSources, ScanIntensity, ScanTargetOptions } from '@/lib/api/scan-types'
+import type {
+  RuleSources,
+  ScanIntensity,
+  ScanStepParams,
+  ScanTargetOptions,
+} from '@/lib/api/scan-types'
 import type { Status } from '@/features/shared/types'
 
 // ============================================
@@ -176,6 +181,11 @@ export interface ScanTargets {
   expandedTargets?: string[]
   /** How each run resolves `*.x` and CIDR targets from the inventory (RFC-068). */
   targetOptions?: ScanTargetOptions
+  /**
+   * The large ranges (wider than a /16) the person confirmed sweeping, as
+   * their key (largeRangeKey); a change of ranges asks again (RFC-151).
+   */
+  largeRangeConfirmed?: string
 }
 
 export const DEFAULT_TARGETS: ScanTargets = {
@@ -223,6 +233,13 @@ export interface NewScanFormData {
   customTemplateIds: string[]
   sensorPreference: SensorPreference // Platform sensor selection
   profileId?: string // Optional scan profile (drives quality gate evaluation)
+  /**
+   * The scan's own settings for steps of the chosen workflow (API step_params:
+   * step key or `*:<capability>` -> standard params). Workflow mode only.
+   */
+  stepParams: ScanStepParams
+  /** The saved scan's depth (Edit keeps it; the preview shows the workflow at it). */
+  depth?: 'passive' | 'standard' | 'deep'
 
   // Step 2: Targets
   targets: ScanTargets
@@ -255,6 +272,7 @@ export const DEFAULT_NEW_SCAN: NewScanFormData = {
   customTemplateIds: [],
   sensorPreference: 'auto',
   profileId: undefined,
+  stepParams: {},
   targets: DEFAULT_TARGETS,
   maxConcurrent: 10,
   timeoutSeconds: 0,

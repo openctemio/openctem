@@ -497,6 +497,25 @@ ras_asset = {
 
 Future versions will maintain backward compatibility where possible.
 
+## Asset tags
+
+Tags are free labels or `key:value` pairs stored in `assets.tags`. One validator (`pkg/domain/tag`) checks them on every write path: the create, update, repository-create and CSV import APIs, and CTIS ingest (sensor reports, connectors, importers).
+
+- 1 to 50 characters (the console's own limit), at most 50 tags per asset, at most 20 set by one import.
+- No control, bidirectional, zero-width or newline characters; no `<` or `>`; no leading `=`, `+`, `-` or `@` (CSV formula injection).
+- Reserved namespaces only the platform writes: `sys:`, `system:`, `program:`, `source:`, `platform:`, `bug-bounty`, `dangling_cname`.
+- A person gets a validation error; an import drops the tag and counts it in `openctem_ingest_asset_tags_dropped_total{reason}`. A tag an asset already carries is never re-checked, so it cannot make the asset unsavable.
+
+### Governing tags
+
+A tag is governing when an enabled team access rule (tag match), scan approval rule, scan window or assignment rule names it. A governing `key:value` tag governs its whole key (`env:staging` is a change when a rule reads `env:prod`). Changing a governing tag changes who sees an asset, whether a scan needs approval, when it may run or who receives findings, so:
+
+- Creating, updating or CSV-importing an asset with a changed governing tag needs the permission that edits that kind of rule: `team:groups:write` (team access rule), `team:assignment_rules:write` (assignment rule), `scans:windows:manage` (scan window), an owner or administrator (scan approval rule). `assets:write` alone returns 403. If the rules cannot be read, the change is refused (503).
+- An import (sensor report, connector, importer) never sets a governing tag: it is dropped and counted as `openctem_ingest_asset_tags_dropped_total{reason="protected"}`.
+- An allowed change is audited as `asset.governed_tags_changed` (tags and kinds of rule, never values of other fields); a refused one is audited with the result `denied`.
+- The set is cached for 15 seconds per organization, so a rule change applies within that time.
+- Jira routing rules read the finding's tags, not the asset's, and are not part of this set.
+
 ## Related Documentation
 
 - [Data Sources Architecture](./data-sources.md)

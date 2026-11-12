@@ -30,6 +30,7 @@ func TestMissingFeatureReasonsNameTheFeature(t *testing.T) {
 		{"confinement missing", cmdWith(sensordom.CapabilityNetConfined), sensorWith(sensordom.CapabilityRuleSources), []string{commanddom.PlacementNotConfined}},
 		{"only the missing one", cmdWith(sensordom.CapabilityNetConfined, sensordom.CapabilityRuleSources), sensorWith(sensordom.CapabilityNetConfined), []string{commanddom.PlacementRuleSourcesUnsupported}},
 		{"both missing", cmdWith(sensordom.CapabilityNetConfined, sensordom.CapabilityRuleSources), nil, []string{commanddom.PlacementNotConfined, commanddom.PlacementRuleSourcesUnsupported}},
+		{"strong isolation missing", cmdWith(sensordom.CapabilityIsolationStrong), sensorWith(sensordom.CapabilityNetConfined), []string{commanddom.PlacementStrongIsolationMissing}},
 		{"nothing readable", &commanddom.Command{}, nil, []string{commanddom.PlacementNotConfined}},
 	}
 	for _, c := range cases {

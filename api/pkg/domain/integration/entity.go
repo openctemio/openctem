@@ -127,7 +127,7 @@ func (p Provider) IsValid() bool {
 // is on, as Beta: the connector runs as its own image,
 // ghcr.io/openctemio/connector-tenable (openctemio/connector-tenable), paired
 // like a sensor. Turning it off refuses new Tenable integrations
-// (HasClient), stops registering the controllers (cmd/server/workers.go) and,
+// (HasClient), stops registering the controllers (internal/server/workers.go) and,
 // with the web flag TENABLE_CONNECTOR_ENABLED, hides the connector; stored
 // rows are kept.
 const TenableConnectorEnabled = true

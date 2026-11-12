@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -437,6 +438,14 @@ func (s *VulnerabilityService) IncludeInformational(ctx context.Context, tenantI
 // includeInformational shapes the work views (IncludeInformational). It
 // fails closed like every filtered read.
 func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCaller, includeInformational bool) ([]QuickViewCount, error) {
+	return s.CountQuickViewsOf(ctx, c, includeInformational, nil)
+}
+
+// CountQuickViewsOf is CountQuickViews for the named views only (nil: every
+// view), in display order; an unknown key is ignored. The Inbox summary
+// counts its four finding queues this way: the same params and the same
+// compile path as the quick views, without the facets it does not show.
+func (s *VulnerabilityService) CountQuickViewsOf(ctx context.Context, c FilterCaller, includeInformational bool, keys []string) ([]QuickViewCount, error) {
 	repo, ok := s.findingRepo.(findingFacetRepo)
 	if !ok {
 		return nil, errNoFindingWhereRepo
@@ -446,6 +455,12 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 		return nil, err
 	}
 	views := vulnerability.FindingQuickViews(includeInformational)
+	if keys != nil {
+		views = slices.DeleteFunc(views, func(v vulnerability.FindingQuickView) bool { return !slices.Contains(keys, v.Key) })
+		if len(views) == 0 {
+			return []QuickViewCount{}, nil
+		}
+	}
 	parse := func(key, params string) (*filterspec.Spec, error) {
 		q, perr := url.ParseQuery(params)
 		if perr != nil {
@@ -516,4 +531,55 @@ func (s *VulnerabilityService) CountSpecs(ctx context.Context, c FilterCaller, s
 		return nil, err
 	}
 	return repo.CountFacetsWhere(ctx, where, preds)
+}
+
+// PracticeCounts is the caller's findings per practice
+// (docs/architecture/finding-practices.md) under one filter.
+type PracticeCounts struct {
+	// Total is every finding the filter selects, whatever its practice.
+	Total int64
+	// ByPractice is the count per practice, every practice present.
+	ByPractice map[vulnerability.Practice]int64
+}
+
+// CountPractices counts, as the caller, the findings each practice holds
+// under spec with its practice condition removed (the counts beside the
+// findings list's practice switch), in one statement: facets over the
+// caller's scoped WHERE, so a count never reaches outside the caller's
+// tenant, data scope or pentest membership, and each count equals the total
+// of the same list with that practice.
+func (s *VulnerabilityService) CountPractices(ctx context.Context, c FilterCaller, spec *filterspec.Spec) (*PracticeCounts, error) {
+	repo, ok := s.findingRepo.(findingFacetRepo)
+	if !ok {
+		return nil, errNoFindingWhereRepo
+	}
+	actor, err := s.FilterActor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	if spec == nil {
+		spec = &filterspec.Spec{}
+	}
+	base := spec.Without("practice")
+	practices := vulnerability.AllPractices()
+	facets := make([]*filterspec.Spec, 0, len(practices)+1)
+	facets = append(facets, &filterspec.Spec{})
+	for _, p := range practices {
+		facets = append(facets, &filterspec.Spec{Root: &filterspec.Node{Leaf: &filterspec.Leaf{
+			Field: "practice", Op: filterspec.OpIn, Values: []any{p.String()},
+		}}})
+	}
+	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(base), facets, vulnerability.FindingFields, actor)
+	if err != nil {
+		return nil, err
+	}
+	counts, err := repo.CountFacetsWhere(ctx, withAITLP(where, c.PentestAIAllowTLP), preds)
+	if err != nil {
+		return nil, err
+	}
+	out := &PracticeCounts{Total: counts[0], ByPractice: make(map[vulnerability.Practice]int64, len(practices))}
+	for i, p := range practices {
+		out.ByPractice[p] = counts[i+1]
+	}
+	return out, nil
 }

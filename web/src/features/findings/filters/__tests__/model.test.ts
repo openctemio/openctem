@@ -292,6 +292,7 @@ describe('pickableFields', () => {
     expect(groupOf('severity')).toBe('finding')
     expect(groupOf('asset_tag')).toBe('asset')
     expect(groupOf('assigned_to')).toBe('work')
+    expect(groupOf('retired_source_only')).toBe('finding')
     expect(groupOf('zzz')).toBe('other')
   })
 })
@@ -330,5 +331,67 @@ describe('owned fields', () => {
 describe('humanize', () => {
   it('makes a label out of a field name', () => {
     expect(humanize('first_detected_at')).toBe('First detected at')
+  })
+})
+
+describe('asset filters (type, domain, name pattern)', () => {
+  const assetContract: FilterContract = {
+    fields: [
+      {
+        name: 'asset_type',
+        type: 'enum',
+        ops: ['in', 'not_in'],
+        enum: ['domain', 'subdomain', 'repository'],
+      },
+      { name: 'asset_domain', type: 'string', ops: ['in', 'not_in'] },
+      { name: 'asset_name', type: 'string', ops: ['in', 'not_in'] },
+    ],
+  }
+  const f = (n: string) => assetContract.fields.find((x) => x.name === n) as FieldContract
+
+  it('round-trips through the URL, wildcards kept', () => {
+    let q = withFilter(new URLSearchParams(), f('asset_domain'), 'in', [
+      'example.com.vn',
+      '*.example.com',
+    ])
+    q = withFilter(q, f('asset_type'), 'not_in', ['repository'])
+    q = withFilter(q, f('asset_name'), 'in', ['api-*'])
+    expect(q.get('asset_domain')).toBe('example.com.vn,*.example.com')
+    expect(q.get('asset_type_not')).toBe('repository')
+    const read = readFilters(new URLSearchParams(q.toString()), assetContract).filters
+    expect(read).toEqual([
+      {
+        param: 'asset_domain',
+        field: 'asset_domain',
+        op: 'in',
+        values: ['example.com.vn', '*.example.com'],
+      },
+      { param: 'asset_type_not', field: 'asset_type', op: 'not_in', values: ['repository'] },
+      { param: 'asset_name', field: 'asset_name', op: 'in', values: ['api-*'] },
+    ])
+  })
+
+  it('a saved view on them reads back as locked chips', () => {
+    const doc = {
+      v: 1,
+      filter: {
+        all: [
+          { field: 'asset_domain', op: 'in', value: ['*.example.com.vn'] },
+          { field: 'asset_type', op: 'in', value: ['domain', 'subdomain'] },
+        ],
+      },
+    }
+    const { filters, complex } = viewFilters(doc, assetContract)
+    expect(complex).toBe(false)
+    expect(filters.map((x) => [x.param, x.values])).toEqual([
+      ['asset_domain', ['*.example.com.vn']],
+      ['asset_type', ['domain', 'subdomain']],
+    ])
+  })
+
+  it('are grouped under the asset', () => {
+    expect(groupOf('asset_type')).toBe('asset')
+    expect(groupOf('asset_domain')).toBe('asset')
+    expect(groupOf('asset_name')).toBe('asset')
   })
 })

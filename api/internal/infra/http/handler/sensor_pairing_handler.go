@@ -19,9 +19,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	authapp "github.com/openctemio/openctem/api/internal/app/auth"
+	"github.com/openctemio/openctem/api/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/api/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/api/pkg/apierror"
+	"github.com/openctemio/openctem/api/pkg/domain/permission"
+	"github.com/openctemio/openctem/api/pkg/domain/scanzone"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
@@ -329,7 +332,9 @@ func (h *SensorPairingHandler) actor(r *http.Request) (sensorpairing.Actor, bool
 		}
 	}
 	return sensorpairing.Actor{TenantID: tid, UserID: uid, SessionID: middleware.GetSessionID(r.Context()),
-		Email: auditActorEmail(r.Context()), IP: getClientIP(r), UserAgent: r.UserAgent()}, true
+		Email: auditActorEmail(r.Context()), IP: getClientIP(r), UserAgent: r.UserAgent(),
+		CanWiden:      middleware.HasPermission(r.Context(), string(permission.SensorsGrantWiden)),
+		CanWriteZones: middleware.HasPermission(r.Context(), string(permission.ScanZonesWrite))}, true
 }
 
 func (h *SensorPairingHandler) writeUserError(w http.ResponseWriter, err error) {
@@ -353,6 +358,17 @@ func (h *SensorPairingHandler) writeUserError(w http.ResponseWriter, err error) 
 		apierror.New(http.StatusConflict, "ORGANIZATION_MISMATCH", "The organization changed since the review; review the request again in the organization the sensor is meant for").WriteJSON(w)
 	case errors.Is(err, sensorpairing.ErrLookupLocked):
 		apierror.TooManyRequests("Too many failed pairing code lookups; try again later").WriteJSON(w)
+	case errors.Is(err, sensorpairing.ErrTrustNotAllowed):
+		apierror.New(http.StatusBadRequest, "TRUST_NOT_ALLOWED", "This sensor cannot be trusted at approval (a code the sensor started, an enrollment token, a re-pair, or a profile with credentials or push ingest); approve it and promote it afterwards").WriteJSON(w)
+	case errors.Is(err, sensorgrant.ErrWidenForbidden):
+		apierror.Forbidden("Trusting a sensor needs the sensors:grant:widen permission").WriteJSON(w)
+	case errors.Is(err, sensorpairing.ErrZonesForbidden):
+		apierror.Forbidden("Setting up a sensor's networks needs the sensors:zones:write permission").WriteJSON(w)
+	case errors.Is(err, sensorpairing.ErrRangesInvalid):
+		apierror.New(http.StatusBadRequest, "INVALID_RANGES", "The networks must be private ranges (inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or fc00::/7, at most /8, outside loopback, link-local and reserved space), for a profile that scans zones, within the organization's zone limit").WriteJSON(w)
+	case errors.Is(err, scanzone.ErrZoneNameTaken):
+		apierror.Conflict("A scan zone with that name was created meanwhile; approve again").WriteJSON(w)
+	case middleware.WriteStepUpError(w, err, authapp.StepUpWindow):
 	case errors.Is(err, sensorpairing.ErrInvalid), errors.Is(err, shared.ErrValidation):
 		apierror.BadRequest("Invalid pairing request").WriteJSON(w)
 	case errors.Is(err, sensorpairing.ErrCapacity):
@@ -507,11 +523,25 @@ type PairingApproveRequest struct {
 	// REPAIR_NOT_ACKNOWLEDGED. A re-pair ignores name, type, zone_ids and
 	// grant_profile: the sensor keeps its registration and grant.
 	RepairSensorID string `json:"repair_sensor_id"`
+	// Trusted makes the new sensor Trusted for active scanning at once.
+	// Only for a request that attached to this organization's console code
+	// (view.trust_eligible), a profile without credentials or push ingest
+	// (internal-network-scanner, easm-external, scan-connector), and an
+	// approver with sensors:grant:widen; else 400 TRUST_NOT_ALLOWED or 403.
+	// Audited and notified like a promotion.
+	Trusted bool `json:"trusted"`
+	// Ranges are the private networks the sensor scans (CIDRs, addresses or
+	// a-b ranges inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or
+	// fc00::/7). A scan zone with exactly these ranges gets the sensor, else
+	// a new zone "<name> networks" is created with it, in the approval's
+	// transaction. Needs sensors:zones:write (403) and a profile that scans
+	// zones; 400 INVALID_RANGES otherwise.
+	Ranges []string `json:"ranges"`
 }
 
 // Approve godoc
 // @Summary      Approve a sensor pairing
-// @Description  Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint (the one of the review's fingerprint_choices the host shows; any other closes the request, 409 FINGERPRINT_MISMATCH), organization_id equal to the session's organization (409 ORGANIZATION_MISMATCH otherwise) and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified.
+// @Description  Binds the sensor's key to this organization: a new sensor, or the registration being re-paired (its earlier keys revoked). Needs fingerprint (the one of the review's fingerprint_choices the host shows; any other closes the request, 409 FINGERPRINT_MISMATCH), organization_id equal to the session's organization (409 ORGANIZATION_MISMATCH otherwise) and step-up re-authentication (TOTP, else password, else a sign-in younger than 10 minutes). Audited at high severity; every administrator is notified. With trusted the sensor starts Trusted (console-started requests and profiles without credentials or push only, sensors:grant:widen; audited as a promotion). With ranges the sensor joins the zone of exactly those private networks, or a new one, in the same transaction (sensors:zones:write).
 // @Tags         sensor-pairing
 // @Accept       json
 // @Produce      json
@@ -548,6 +578,7 @@ func (h *SensorPairingHandler) Approve(w http.ResponseWriter, r *http.Request) {
 	v, err := h.svc.Approve(r.Context(), a, id, sensorpairing.ApproveInput{
 		Code: req.Code, Fingerprint: req.Fingerprint, OrganizationID: req.OrganizationID, StepUp: req.StepUp, Name: req.Name,
 		Type: sensordom.SensorType(req.Type), ZoneIDs: zones, Profile: req.GrantProfile, RepairSensorID: req.RepairSensorID,
+		Trusted: req.Trusted, Ranges: req.Ranges,
 	})
 	if err != nil {
 		h.writeUserError(w, err)
