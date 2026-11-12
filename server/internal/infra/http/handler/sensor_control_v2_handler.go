@@ -905,8 +905,11 @@ func (h *SensorControlV2Handler) transitionFailed(w http.ResponseWriter, route s
 // leaseEpochHeader is the lease epoch a sensor states it holds the command
 // under (X-OpenCTEM-Lease-Epoch, the lease_epoch it was given); nil when
 // absent or not a number.
-func leaseEpochHeader(r *http.Request) *int {
-	v := strings.TrimSpace(r.Header.Get(protov2.HeaderLeaseEpoch))
+func leaseEpochHeader(r *http.Request) *int { return intHeader(r, protov2.HeaderLeaseEpoch) }
+
+// intHeader is a non-negative integer header; nil when absent or malformed.
+func intHeader(r *http.Request, name string) *int {
+	v := strings.TrimSpace(r.Header.Get(name))
 	if v == "" {
 		return nil
 	}

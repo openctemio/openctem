@@ -277,6 +277,14 @@ message PutResultRequest {
   // as command-not-found; set, it also commits the sensor to sending it on
   // every call of a command-bound report (v2 feature results_lease_epoch).
   optional int64 lease_epoch = 8;
+  // A late report (v2: X-OpenCTEM-Late-Command, X-OpenCTEM-Late-Lease-Epoch):
+  // a report of no command that names the command and lease epoch it was
+  // made for, after the command was refused as command-not-found. Provenance,
+  // never a binding: when the platform handed the command out again since,
+  // the call fails with the problem lease-superseded (final). Set only with
+  // command_id "".
+  optional string late_command_id = 9;
+  optional int64 late_lease_epoch = 10;
 }
 
 message PutResultResponse {
@@ -295,6 +303,9 @@ message CommitResultRequest {
   bytes body_json = 3;
   // The lease epoch of the report's command, as on PutResultRequest.
   optional int64 lease_epoch = 4;
+  // The late report provenance, as on PutResultRequest.
+  optional string late_command_id = 5;
+  optional int64 late_lease_epoch = 6;
 }
 
 message CommitResultResponse {

@@ -220,6 +220,26 @@ func setLeaseEpoch(h http.Header, epoch *int64) error {
 	return nil
 }
 
+// setLate carries a late report's provenance to the v2 handler
+// (ingest/v2_late.go). An id that is not a lower-case UUID, or a negative
+// epoch, is an invalid argument.
+func setLate(h http.Header, commandID *string, epoch *int64) error {
+	if commandID == nil || *commandID == "" {
+		return nil
+	}
+	if protov2.ValidateUUID(*commandID) != nil {
+		return invalid("late_command_id")
+	}
+	h.Set(protov2.HeaderLateCommand, *commandID)
+	if epoch != nil {
+		if *epoch < 0 {
+			return invalid("late_lease_epoch")
+		}
+		h.Set(protov2.HeaderLateLeaseEpoch, strconv.FormatInt(*epoch, 10))
+	}
+	return nil
+}
+
 // PutResult uploads a report or a segment (PUT /results/{report}[/segments/{n}]).
 func (s *Server) PutResult(ctx context.Context, req *connect.Request[sensorv3.PutResultRequest]) (*connect.Response[sensorv3.PutResultResponse], error) {
 	m := req.Msg
@@ -239,6 +259,9 @@ func (s *Server) PutResult(ctx context.Context, req *connect.Request[sensorv3.Pu
 		h.Set(protov2.HeaderContentDigest, d)
 	}
 	if err := setLeaseEpoch(h, m.LeaseEpoch); err != nil {
+		return nil, err
+	}
+	if err := setLate(h, m.LateCommandId, m.LateLeaseEpoch); err != nil {
 		return nil, err
 	}
 	a, err := s.serveV2(ctx, v2Call{method: http.MethodPut, path: path, header: h, body: m.GetContent()})
@@ -261,6 +284,9 @@ func (s *Server) CommitResult(ctx context.Context, req *connect.Request[sensorv3
 	}
 	h := jsonHeader()
 	if err := setLeaseEpoch(h, req.Msg.LeaseEpoch); err != nil {
+		return nil, err
+	}
+	if err := setLate(h, req.Msg.LateCommandId, req.Msg.LateLeaseEpoch); err != nil {
 		return nil, err
 	}
 	a, err := s.serveV2(ctx, v2Call{method: http.MethodPost, path: path + "/commit", header: h, body: req.Msg.GetBodyJson()})

@@ -74,6 +74,10 @@ Openctem-Protocol: 2
 Content-Type: application/problem+json
 Openctem-Protocol: 2
 {"type":"https://openctem.io/problems/sensor/key-bind-refused","title":"Key bind refused","status":409,"detail":"This sensor cannot bind a signing key: it is not an active bearer-key sensor, the key is already registered, or the proof of possession is invalid.","retryable":false}
+## lease-superseded
+Content-Type: application/problem+json
+Openctem-Protocol: 2
+{"type":"https://openctem.io/problems/ingest/lease-superseded","title":"Lease superseded","status":409,"detail":"The report was made under a lease the platform took back and handed out again; the replacing run's results are the record. Do not send it again.","retryable":false}
 ## length-required
 Content-Type: application/problem+json
 Openctem-Protocol: 2

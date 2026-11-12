@@ -415,6 +415,7 @@ fixed per type. Extension members: `errors[]` (`pointer`, `code`,
 | 403 | `scope-denied` | key not scoped for `results`; platform sensor on the unsolicited form | No |
 | 404 | `command-not-found` | command not this sensor's, or not open | No |
 | 409 | `report-conflict`, `report-committed`, `segment-header-mismatch`, `segment-set-mismatch`, `binding-mismatch` | idempotency and state conflicts | No |
+| 409 | `lease-superseded` | a late report (`X-OpenCTEM-Late-Command`) of a run the platform handed out again ([sensor result binding](../architecture/sensor-result-binding.md#late-results)) | No: final, dead-letter it |
 | 411 | `length-required` | no `Content-Length` | No |
 | 413 | `content-too-large`, `decompressed-too-large`, `report-too-large` | limits (with `limit`) | No: **split into more segments** |
 | 415 | `unsupported-media-type`, `unsupported-encoding` | with `Accept` / `Accept-Encoding` | No |

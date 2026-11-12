@@ -227,6 +227,31 @@ epoch sent" below:
 - **Protocol v3.** `PutResult` and `CommitResult` carry `lease_epoch`; the
   transport passes it to the v2 handler as `X-OpenCTEM-Lease-Epoch` together
   with the `results_lease_epoch` feature, so the rules above apply unchanged.
+- **Late reports** (`internal/app/ingest/v2_late.go`). A current sdk-go whose
+  command-bound report was refused as `command-not-found` sends it again
+  without the command, naming the command and the epoch it was made for:
+  `X-OpenCTEM-Late-Command` and `X-OpenCTEM-Late-Lease-Epoch` on the unbound
+  PUT and commit (protocol v3: `late_command_id` and `late_lease_epoch` on
+  `PutResultRequest` and `CommitResultRequest`). The headers are provenance,
+  never a binding. The command is looked up in the sensor's own tenant only
+  (a shared job never counts):
+  - the command was claimed again after the stated epoch, or it is no longer
+    held by this sensor (taken back or handed to another sensor): `409
+    lease-superseded`, nothing stored. The problem is final: the sensor
+    dead-letters the report and never sends it under another id. The
+    replacing run's results are the record;
+  - the stated epoch is the command's last and this sensor holds it: the
+    report goes on as an unsolicited report (logged with the command id);
+  - anything else (no such command in the tenant, another tenant's command,
+    an epoch the command never had, no epoch, a header that is not a UUID):
+    exactly as if no header was sent. So the header cannot probe another
+    tenant's commands; `lease-superseded` is only ever an answer about a
+    command of the sensor's own tenant whose lease moved past the stated
+    epoch.
+
+  Counted in `ingest_late_reports_total{outcome="superseded"|"accepted"|"unknown"}`;
+  a refusal is logged with the command id, sensor id and both epochs, never
+  the payload.
 
 ## How a report names its command
 

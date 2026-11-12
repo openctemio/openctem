@@ -241,6 +241,18 @@ var (
 		[]string{"outcome"},
 	)
 
+	// IngestLateReportsTotal counts unbound sensor reports that name the
+	// command and lease epoch they were made for (late reports): refused
+	// because the lease was superseded, taken as unsolicited because it is
+	// the command's last one, or unknown in the sensor's tenant.
+	IngestLateReportsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "ingest_late_reports_total",
+			Help: "Late sensor reports (X-OpenCTEM-Late-Command), by outcome (superseded, accepted, unknown)",
+		},
+		[]string{"outcome"},
+	)
+
 	// SensorResultsOutsideJobTotal counts items of command-bound sensor
 	// reports that lie outside the command's targets or addresses, by kind:
 	// asset and finding (recorded as discoveries), asset_refused and
