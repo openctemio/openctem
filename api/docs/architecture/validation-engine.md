@@ -207,6 +207,18 @@ Since RFC-039 D3 the rule no longer acts on a `safe-check` result (see above). P
 described above; the only remaining Phase 2b gap is the **sensor-side executor**
 (see "Not yet shipped" below).
 
+## Planned: validation recorded by a person (RFC-155)
+
+Designed, not built ([RFC-155](../rfcs/RFC-155-validation-recorded-by-a-person.md)).
+A person with `findings:verify` records a result on a finding in
+`validation_evidence` (`executor_kind = person`). "Exploitable" sets
+`validation_outcome = reproducible` at once (P1 floor). "Not exploitable" may
+ask to lower priority by one level through the approval policy kind
+`validation_lower` (two people by default, a KEV finding never below P1, the
+SLA deadline never extended). An applied lowering sets the new outcome
+`not_exploitable`, lasts 90 days or until the cycle ends (organization
+maximum 180), is suspended by a material change and expires by itself.
+
 ## Not yet shipped (deferred)
 
 - **Sensor-side executor** — the API enqueues `validate` commands, but the sensor
