@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
+import { ErrorState } from '@/features/shared/components/error-state'
 import {
   PageHeader,
   PageStack,
@@ -229,8 +230,13 @@ function FrameworkCard({
 export default function CompliancePage() {
   const { t } = useTranslation()
   // ── API data ──────────────────────────────────────────────────────────────
-  const { data: frameworksData, isLoading: loadingFrameworks } = useFrameworks()
-  const { data: apiStats } = useComplianceStats()
+  const {
+    data: frameworksData,
+    isLoading: loadingFrameworks,
+    error: frameworksError,
+    mutate: retryFrameworks,
+  } = useFrameworks()
+  const { data: apiStats, error: statsError, mutate: retryStats } = useComplianceStats()
 
   const frameworks = useMemo(() => frameworksData?.data ?? [], [frameworksData])
 
@@ -517,7 +523,15 @@ export default function CompliancePage() {
               <TabsTrigger value="controls">Controls</TabsTrigger>
             </TabsList>
 
-            <MetricStrip items={metrics} />
+            {statsError && !apiStats ? (
+              <ErrorState
+                title={t('scoping.compliance.statsErrorTitle', 'compliance summary')}
+                error={statsError}
+                onRetry={() => void retryStats()}
+              />
+            ) : (
+              <MetricStrip items={metrics} />
+            )}
 
             <TabsContent value="frameworks">
               {loadingFrameworks ? (
@@ -526,6 +540,12 @@ export default function CompliancePage() {
                     <Skeleton key={i} className="h-48 rounded-xl" />
                   ))}
                 </div>
+              ) : frameworksError && !frameworksData ? (
+                <ErrorState
+                  title={t('scoping.compliance.frameworksErrorTitle', 'frameworks')}
+                  error={frameworksError}
+                  onRetry={() => void retryFrameworks()}
+                />
               ) : frameworks.length === 0 ? (
                 <EmptyState
                   icon={Shield}
