@@ -142,3 +142,33 @@ func TestDerivePosture_ToolsUnconfined(t *testing.T) {
 		}
 	}
 }
+
+// A sensor that checks no job signature (signed jobs off) is flagged
+// jobs_unsigned; required and verified_when_present are shown as reported;
+// a value outside the closed set is dropped (unknown).
+func TestDerivePosture_SignedJobs(t *testing.T) {
+	base := PostureInput{Seen: true, KeyBound: true, LocalPolicy: &LocalPolicyReport{State: LocalPolicyEnforced}}
+	for signed, want := range map[string]struct {
+		shown  string
+		reason bool
+	}{
+		"off":                   {SignedJobsOff, true},
+		" OFF ":                 {SignedJobsOff, true},
+		"required":              {SignedJobsRequired, false},
+		"verified_when_present": {SignedJobsVerifiedWhenPresent, false},
+		"bogus":                 {SignedJobsUnknown, false},
+	} {
+		in := base
+		in.Posture = SanitizeManifestPosture(&ManifestPosture{Jobs: &JobsPosture{Signed: signed}})
+		got := DerivePosture(in)
+		if got.SignedJobs != want.shown || slices.Contains(got.Unhardened, UnhardenedJobsUnsigned) != want.reason {
+			t.Errorf("%q: %+v", signed, got)
+		}
+	}
+	if got := DerivePosture(base); got.SignedJobs != SignedJobsUnknown || len(got.Unhardened) != 0 {
+		t.Errorf("not reported: %+v", got)
+	}
+	if !slices.Contains(UnhardenedKinds(), UnhardenedJobsUnsigned) {
+		t.Error("jobs_unsigned is not in UnhardenedKinds")
+	}
+}

@@ -48,6 +48,25 @@ const (
 	ToolsUnconfinedAcknowledged = "acknowledged"
 )
 
+// Signed-job checking a sensor reports (posture.jobs.signed; sdk-go
+// core.JobsSigned*), and the display value when it reports none.
+const (
+	// SignedJobsRequired: the sensor pinned the platform's job signer and
+	// refuses every job that is not signed by it.
+	SignedJobsRequired = "required"
+	// SignedJobsVerifiedWhenPresent: a signature is checked when a job
+	// carries one; an unsigned job still runs.
+	SignedJobsVerifiedWhenPresent = "verified_when_present"
+	// SignedJobsOff: the sensor pins no job signer: it verifies no job, and
+	// refuses jobs that need platform secrets (rule secrets_unverified).
+	SignedJobsOff = "off"
+	// SignedJobsUnknown: the sensor reported no signed-job posture.
+	SignedJobsUnknown = "unknown"
+)
+
+// SignedJobsOffFix tells an operator how a sensor gets a pinned job signer.
+const SignedJobsOffFix = "pair the sensor again, or set SENSOR_JOB_SIGNING_ROOT to the platform's job-signing root on its host"
+
 // Local policy postures the console shows (SensorPosture.LocalPolicy).
 const (
 	PostureLocalPolicyEnforced       = "enforced"
@@ -74,17 +93,29 @@ const (
 	// UnhardenedToolsUnconfined: tools run without the sandbox (refused for
 	// active tools, or acknowledged by the operator).
 	UnhardenedToolsUnconfined = "tools_unconfined"
+	// UnhardenedJobsUnsigned: the sensor checks no job signature (signed
+	// jobs off), so it trusts every job and refuses those that need
+	// platform secrets.
+	UnhardenedJobsUnsigned = "jobs_unsigned"
 )
 
 // UnhardenedKinds are the unhardened reasons in display order.
 func UnhardenedKinds() []string {
-	return []string{UnhardenedPolicyNone, UnhardenedPinNone, UnhardenedToolsUnconfined, UnhardenedNetworkUnenforced, UnhardenedBearerKey}
+	return []string{UnhardenedPolicyNone, UnhardenedPinNone, UnhardenedJobsUnsigned, UnhardenedToolsUnconfined,
+		UnhardenedNetworkUnenforced, UnhardenedBearerKey}
 }
 
 // ManifestPosture is the manifest member "posture".
 type ManifestPosture struct {
 	PlatformTLS *PlatformTLSPosture `json:"platform_tls,omitempty"`
 	Sandbox     *SandboxPosture     `json:"sandbox,omitempty"`
+	Jobs        *JobsPosture        `json:"jobs,omitempty"`
+}
+
+// JobsPosture is how the sensor checks the platform's job signatures.
+type JobsPosture struct {
+	// Signed is a SignedJobs* value other than SignedJobsUnknown.
+	Signed string `json:"signed"`
 }
 
 // PlatformTLSPosture is the platform TLS pin of the sensor's HTTPS client.
@@ -134,7 +165,13 @@ func SanitizeManifestPosture(p *ManifestPosture) *ManifestPosture {
 		}
 		out.Sandbox = sb
 	}
-	if out.PlatformTLS == nil && out.Sandbox == nil {
+	if p.Jobs != nil {
+		switch v := strings.ToLower(strings.TrimSpace(p.Jobs.Signed)); v {
+		case SignedJobsRequired, SignedJobsVerifiedWhenPresent, SignedJobsOff:
+			out.Jobs = &JobsPosture{Signed: v}
+		}
+	}
+	if out.PlatformTLS == nil && out.Sandbox == nil && out.Jobs == nil {
 		return nil
 	}
 	return out
@@ -156,6 +193,9 @@ type SensorPosture struct {
 	// ToolsUnconfinedAcknowledged when the sensor runs its tools without the
 	// sandbox; "" when it runs them sandboxed or did not say.
 	ToolsUnconfined string
+	// SignedJobs is a SignedJobs* value: SignedJobsUnknown when the sensor
+	// did not report it.
+	SignedJobs string
 	// Unhardened lists the Unhardened* reasons, in UnhardenedKinds order;
 	// never nil.
 	Unhardened []string
@@ -178,7 +218,8 @@ type PostureInput struct {
 // what the sensor reported (or, for the local policy and the key, what the
 // platform stored): an unknown pin or sandbox is not flagged.
 func DerivePosture(in PostureInput) SensorPosture {
-	out := SensorPosture{LocalPolicy: PostureLocalPolicyUnknown, PlatformPin: PlatformPinUnknown, Unhardened: []string{}}
+	out := SensorPosture{LocalPolicy: PostureLocalPolicyUnknown, PlatformPin: PlatformPinUnknown, SignedJobs: SignedJobsUnknown,
+		Unhardened: []string{}}
 	switch lp := in.LocalPolicy; {
 	case lp == nil:
 	case lp.State == LocalPolicyEnforced:
@@ -192,6 +233,9 @@ func DerivePosture(in PostureInput) SensorPosture {
 	if p != nil && p.PlatformTLS != nil {
 		out.PlatformPin = p.PlatformTLS.Pin
 	}
+	if p != nil && p.Jobs != nil {
+		out.SignedJobs = p.Jobs.Signed
+	}
 	if p != nil && p.Sandbox != nil {
 		v := p.Sandbox.NetworkEnforced
 		out.NetworkEnforced = &v
@@ -202,6 +246,9 @@ func DerivePosture(in PostureInput) SensorPosture {
 	}
 	if out.PlatformPin == PlatformPinNone {
 		out.Unhardened = append(out.Unhardened, UnhardenedPinNone)
+	}
+	if out.SignedJobs == SignedJobsOff {
+		out.Unhardened = append(out.Unhardened, UnhardenedJobsUnsigned)
 	}
 	if out.ToolsUnconfined != "" {
 		out.Unhardened = append(out.Unhardened, UnhardenedToolsUnconfined)
