@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -14,6 +13,44 @@ import (
 	"strings"
 	"time"
 )
+
+// The platform never connects to a CT source itself (zero platform egress:
+// the platform talks only to its sensors). Every CT request goes through a
+// Fetcher, which relays it through a platform-owned sensor. Without one the
+// sweep queries nothing and the platform reports CT monitoring as
+// unavailable with ReasonNeedsPlatformSensor; certificate-transparency
+// names still reach the inventory through the passive subdomain discovery
+// that runs on sensors (subfinder's crt.sh and Cert Spotter sources).
+
+// ReasonNeedsPlatformSensor is why CT monitoring is unavailable when no
+// Fetcher is wired.
+const ReasonNeedsPlatformSensor = "needs_platform_sensor"
+
+// ErrNeedsPlatformSensor: a CT query was asked for and no platform sensor
+// can carry it.
+var ErrNeedsPlatformSensor = errors.New("certificate transparency lookups need a platform sensor; the platform makes no CT request itself")
+
+// CTRequest is one GET of a CT source.
+type CTRequest struct {
+	// Source is SourceCRTSH or SourceCertSpotter.
+	Source string
+	// URL is the full request URL (the source's base URL and query).
+	URL string
+	// Header holds the request headers (Accept, User-Agent, and the Cert
+	// Spotter key as Authorization when one is configured).
+	Header http.Header
+	// MaxBytes bounds the response body: a longer one is ErrResponseTooLarge
+	// as a whole, never a truncated body.
+	MaxBytes int64
+}
+
+// Fetcher performs CT requests for the platform through a platform-owned
+// sensor. It returns the body of a 200 answer and, for any other answer, an
+// error from NewStatusError, so retries, back-off and the source fallback
+// work as for a direct answer.
+type Fetcher interface {
+	FetchCT(ctx context.Context, req CTRequest) ([]byte, error)
+}
 
 // Names of the CT sources, recorded per domain in ct_monitor_state.last_source.
 const (
@@ -52,6 +89,12 @@ var errNotRetryable = errors.New("not retryable")
 
 // errRateLimited marks a 429 from a source: the rest of the run skips it.
 var errRateLimited = errors.New("rate limited")
+
+// NewStatusError is the error of a non-200 answer from a CT source;
+// retryAfter is the answer's Retry-After header ("" none).
+func NewStatusError(source string, status int, retryAfter string) error {
+	return &statusError{source: source, status: status, retryAfter: parseRetryAfter(retryAfter)}
+}
 
 // statusError is a non-200 answer from a CT source.
 type statusError struct {
@@ -268,36 +311,29 @@ func (s *Service) queryCertSpotter(ctx context.Context, domain string) ([]crtEnt
 	return out, nil
 }
 
-// get performs one bounded GET against a CT source and returns the body of a
-// 200 answer; any other status is a *statusError.
+// get performs one bounded GET of a CT source through the Fetcher and
+// returns the body of a 200 answer; any other status is a *statusError.
 func (s *Service) get(ctx context.Context, rawURL, source string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build %s request: %w", source, err)
-	}
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("%s request failed: %w", source, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-		return nil, &statusError{source: source, status: resp.StatusCode, retryAfter: parseRetryAfter(resp.Header.Get("Retry-After"))}
+	if s.fetcher == nil {
+		return nil, ErrNeedsPlatformSensor
 	}
 	limit := s.maxBody
 	if limit <= 0 {
 		limit = maxBodyBytes
 	}
-	// Read one byte past the cap: a body that reaches it is refused as a
-	// whole instead of being cut into truncated JSON (RFC-036 appendix T-4).
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %s response: %w", source, err)
+	h := http.Header{}
+	h.Set("User-Agent", userAgent)
+	h.Set("Accept", "application/json")
+	if source == SourceCertSpotter && s.certSpotterKey != "" {
+		h.Set("Authorization", "Bearer "+s.certSpotterKey)
 	}
+	body, err := s.fetcher.FetchCT(ctx, CTRequest{Source: source, URL: rawURL, Header: h, MaxBytes: limit})
+	if err != nil {
+		return nil, err
+	}
+	// The cap holds whatever the fetcher did: a body that reaches it is
+	// refused as a whole instead of being read as truncated JSON (RFC-036
+	// appendix T-4).
 	if int64(len(body)) > limit {
 		return nil, fmt.Errorf("%w: %s response exceeds %d bytes", ErrResponseTooLarge, source, limit)
 	}

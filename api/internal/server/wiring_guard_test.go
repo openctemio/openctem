@@ -312,6 +312,7 @@ var optionalServiceSetters = map[string]string{
 	"ContentSource.SetFetcher":              "test seam: replaces the git fetch and the private-host check; production uses the SSRF-guarded fetcher",
 	"ContentSource.SetCredential":           "request operation (stores a rule source's credential), called by the content source handler",
 	"ContentSource.SetMaxConcurrentFetches": "test seam: replaces the fetch cap; production uses the default of 3 per process",
+	"CertMonitor.SetFetcher":                "CT requests go through a platform-owned sensor (no CT client in the platform); until that sensor capability ships, CT monitoring is off and reports ct_unavailable_reason=needs_platform_sensor",
 
 	// Business operations named Set*, not collaborator seams.
 	"DeploymentRegion.Set":              "business operation (the console's one-time region setting), not a collaborator seam",
