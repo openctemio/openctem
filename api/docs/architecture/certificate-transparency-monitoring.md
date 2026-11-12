@@ -6,20 +6,26 @@
 > with no credentials and no traffic to the tenant's hosts. RFC-019; rotation,
 > retries and fallback from RFC-036 P0.
 >
-> **Zero platform egress.** The platform makes no CT request itself: every
-> query goes through a `certmonitor.Fetcher` that a platform-owned sensor
-> carries. No such fetcher is wired yet, so the sweep is off and the EASM
-> settings report `ct_available: false` with
-> `ct_unavailable_reason: needs_platform_sensor` (the console says so on the
-> monitoring card). Certificate Transparency **names** still reach the
+> **Zero platform egress.** The platform makes no CT request itself. Each
+> domain is a **lookup job** (capability `lookup.ct@1`, command type
+> `lookup`) that a platform-owned, instance-scope sensor answers for one
+> organization: the sensor queries crt.sh, then Cert Spotter, and returns a
+> typed answer (contract package `ctlookup`: certificate records and
+> per-source status). The sweep runs only while such a sensor is connected
+> (active, seen in the last 5 minutes, reporting `lookup.ct@1`) and a job
+> signer is configured; otherwise the EASM settings report
+> `ct_available: false` with `ct_unavailable_reason: needs_platform_sensor`
+> and the monitoring card says so. Availability is checked per request and per
+> sweep, so connecting a sensor turns monitoring on without a restart. A
+> platform sensor serves CT lookups by default when it is a shared sensor with
+> a pinned job-signing key (sensor setting `SENSOR_CT_LOOKUP`, sdk-go
+> `pkg/ctlog`; the bundled sensor of a compose, Helm or Ansible install is
+> one). Older sensors do not report the capability, so the platform works with
+> them and keeps CT off. Certificate Transparency **names** also reach the
 > inventory through the passive subdomain discovery (`discover.subdomains`)
-> that runs on sensors: its subfinder queries crt.sh and Cert Spotter (with
-> the organization's or the operator's Cert Spotter key, when one is set)
-> through the sensor's forwarder. What waits for the platform-sensor fetcher
-> is the CT-specific part below: the `subdomain_discovered`,
-> `certificate_expiring` and `certificate_expired` exposures and their
-> rotation state. The lookalike certificate count (RFC-083) waits for the same
-> route.
+> that runs on sensors (subfinder's crt.sh and Cert Spotter sources). The
+> lookalike certificate count (RFC-083) does not use lookup jobs yet and stays
+> off.
 
 ## What it does
 
@@ -44,21 +50,26 @@ sequenceDiagram
   participant DB as Postgres, tenant-scoped
   participant P as promote.go, ingest path
   end
-  box Internet, httpsec.SafeDialContext
-  participant A as crt.sh
-  participant B as Cert Spotter
+  participant J as sensor_lookup_jobs
   end
+  box Platform sensor (instance scope, lookup.ct@1)
+  participant N as sdk-go pkg/ctlog
+  end
+  participant A as crt.sh, then Cert Spotter
   CT->>S: tenant run, attack_surface module on, ct_enabled read (unreadable: skip)
+  S->>S: a platform sensor serves lookup.ct@1? (no: nothing queried, no state change)
   S->>DB: lease ct_monitor:tenant
   S->>DB: gatherRoots: approved domain assets, verified domains, discovery-on domain or subdomain entries
   S->>DB: exclusions (failed lookup: skip the tenant), ct_monitor_state: due names, 50 max
   loop each due name, 1 s apart, 30 min budget
-    S->>A: q=%.name, 3 attempts, 2 s to 30 s backoff or Retry-After
-    alt crt.sh failed
-      S->>B: issuances, up to 10 pages, 429 stops it for the sweep
-    end
-    alt both failed
-      S->>DB: failure, back off 12 h doubling to 7 d
+    S->>J: lookup job for this tenant and name, wait up to 120 s
+    N->>J: claim (GET /api/v2/sensor/lookups/next), statement signed for the tenant, instance scope, this sensor
+    N->>A: q=%.name (3 attempts, pace, Retry-After), then issuances (10 pages)
+    N->>J: answer (POST /api/v2/sensor/lookups/{id}/done)
+    J->>S: answer, read by (tenant, job id); job row deleted
+    S->>S: ctlookup.Validate against the name asked: drop names outside it
+    alt no source ok, timeout or a broken answer
+      S->>DB: failure, back off 12 h doubling to 7 d (or the source's Retry-After)
     else answer
       S->>S: keep valid host names at or below the name, drop excluded and rejected
     end
@@ -162,27 +173,35 @@ Current behaviour:
 
 ## Sources, retries and fallback
 
+The sources are queried by the platform sensor (sdk-go `pkg/ctlog`), never by
+the platform:
+
 | Step | Behaviour |
 |---|---|
-| crt.sh | `GET /?q=%.<domain>&output=json&deduplicate=Y`; up to 3 attempts on network errors, 408, 429 and 5xx, waiting 2 s → 30 s with jitter or the server's `Retry-After` (≤ 60 s). A 50 s response-header timeout (crt.sh is slow for busy domains) |
-| Cert Spotter | Used when crt.sh still fails: `GET /v1/issuances?domain=<d>&include_subdomains=true&expand=dns_names&expand=issuer`, with `Authorization: Bearer <CERT_MONITOR_CERTSPOTTER_KEY>` when a commercial key is set (else the unauthenticated tier), up to 10 pages. A 429 stops Cert Spotter for the rest of that sweep. It lists only unexpired certificates, so it never yields `certificate_expired` |
-| Both fail | The failure and error are stored on the domain's state row and it backs off |
+| crt.sh | `GET /?q=%.<domain>&output=json&deduplicate=Y`; up to 3 attempts on network errors, 408 and 5xx, waiting 2 s to 30 s with jitter or the server's `Retry-After` (at most 60 s). A 429 is reported `rate_limited` at once |
+| Cert Spotter | Used when crt.sh is not ok: `GET /v1/issuances?domain=<d>&include_subdomains=true&expand=dns_names&expand=issuer`, up to 10 pages, with `Authorization: Bearer <key>` when the sensor has a key (`SENSOR_CT_CERTSPOTTER_KEY`, sent only to the Cert Spotter host), else the unauthenticated tier. It lists only unexpired certificates, so it never yields `certificate_expired` |
+| Pace and cache | One request per second per source for the whole sensor, a cool-down after a 429 or `Retry-After` (a source cooling down for over 60 s is reported `rate_limited` without a request), a 48 MiB body cap (over it: `too_large`, nothing used), and a 20 h answer cache per (organization, domain) that is never shared across organizations |
+| Answer | `{records, source_status}`: a source failure is a status (`rate_limited`, `unavailable`, `too_large`, with `retry_after_s`), never a failed job |
+| Both fail | The platform stores the failure on the domain's state row; it backs off 12 h doubling to 7 d, or longer when a source asked for it |
 
-Configuration: `CERT_MONITOR_ENABLED` (default true), `CERT_MONITOR_INTERVAL`
-(24h), `CERT_MONITOR_FEED_URL` (`https://crt.sh`),
-`CERT_MONITOR_CERTSPOTTER_URL` (`https://api.certspotter.com`, `off`
-disables), `CERT_MONITOR_CERTSPOTTER_KEY` (commercial key for SaaS, sent only
-through the platform sensor; none is bought yet), `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50).
-`CERT_MONITOR_INTERVAL` is the platform default
-interval: the controller ticks hourly, a domain is re-queried once its window
-passed, and a tenant may set its own interval (6 h to 168 h) or turn the
-monitor off (`/api/v1/easm/settings`; then its names are not sent to crt.sh
-or Cert Spotter).
+Configuration on the platform: `CERT_MONITOR_ENABLED` (default true),
+`CERT_MONITOR_INTERVAL` (24h), `CERT_MONITOR_MAX_DOMAINS_PER_RUN` (50).
+`CERT_MONITOR_INTERVAL` is the platform default interval: the controller
+ticks hourly, a domain is re-queried once its window passed, and a tenant may
+set its own interval (6 h to 168 h) or turn the monitor off
+(`/api/v1/easm/settings`; then its names are not sent to crt.sh or Cert
+Spotter). The source settings are the platform sensor's: `SENSOR_CT_LOOKUP`,
+`SENSOR_CT_CRTSH_URL`, `SENSOR_CT_CERTSPOTTER_URL` (`off` disables the
+fallback) and `SENSOR_CT_CERTSPOTTER_KEY` (or `_FILE`). The former platform
+settings `CERT_MONITOR_FEED_URL`, `CERT_MONITOR_CERTSPOTTER_URL` and
+`CERT_MONITOR_CERTSPOTTER_KEY` are removed: the API refuses to start while one
+is set and names the sensor setting instead.
 
 Data-source note (RFC-036 O1): only the watched domain names are sent to crt.sh
 and Cert Spotter, and only from a platform sensor. crt.sh publishes no terms of
-use, and Cert Spotter's unauthenticated tier is for personal use: a commercial
-service (SaaS) uses a Cert Spotter key (`CERT_MONITOR_CERTSPOTTER_KEY`).
+use, and Cert Spotter's unauthenticated tier is for personal use: the operator
+of the platform sensor answers for the sources' terms, and a commercial
+service gives its sensors a Cert Spotter key.
 
 Source tag on everything emitted: `cert_transparency`
 (`internal/app/certmonitor/service.go`, `Source`).
@@ -195,30 +214,48 @@ never scanned.
 ## Safety & isolation
 
 - **No platform egress:** the service holds no HTTP client or dialer
-  (`TestNoOutboundClientInTheService`); every query goes through the
-  platform-sensor `Fetcher`, which receives the URL, headers and the 48 MiB
-  body cap. A body over the cap is refused whole. The sweep waits 1 s between
-  domains.
+  (`TestNoOutboundClientInTheService`); every query is a lookup job a
+  platform sensor answers. The sweep waits 1 s between domains.
+- **Only platform sensors are asked:** a lookup job is offered and accepted
+  only from an active instance-scope sensor with no organization that reports
+  `lookup.ct@1` (`internal/app/lookupjob`); an organization's sensor gets 403
+  on both routes. The job signer signs a `lookup` statement only for the
+  instance scope, the `ctlog` tool and one canonical root domain
+  (`internal/signer/lookup.go`), and the scope ledger's exclusions apply.
+- **Mutual distrust:** the answer is decoded strictly (unknown fields refused,
+  8 MiB cap) and passed through `ctlookup.Validate` against the domain the
+  platform asked about: a name outside it is dropped and counted, a leading
+  wildcard label is kept (a wildcard certificate proves no host), an unknown
+  source or state refuses the whole answer. A job is answered once, only by
+  the sensor that claimed it.
 - **Untrusted names:** a CT name is kept only if it is a syntactically valid
   hostname at or below the queried domain; markup, control characters and
   over-long labels are dropped before they reach an exposure.
 - **Tenant isolation:** the tenant is taken from the **asset being queried, never
-  from the CT response**; every emitted exposure is stamped with that tenant.
+  from the CT response or the sensor**; the lookup job is created for that
+  tenant, its answer is read back by (tenant, job id), and every emitted
+  exposure is stamped with that tenant.
 - **Fail-open:** a failure on one domain or one tenant is logged and skipped — it
   never aborts the sweep.
 
 ## Wiring
 
-- **Service:** `internal/app/certmonitor/service.go` (query building, parser
-  and exposure emission; requests through `Fetcher`, `ctlog.go`).
+- **Service:** `internal/app/certmonitor/service.go` (selection, discovery and
+  exposure emission); the CT source in `ctlog.go` (`CTSource`, `SensorSource`).
+- **Lookup jobs:** `internal/app/lookupjob` (ask, claim, sign, answer),
+  `internal/infra/postgres/lookup_job_repository.go` (table
+  `sensor_lookup_jobs`, migration `20261112040823_sensor_lookup_jobs`: open
+  questions only, deleted once answered, purged after a day), sensor routes
+  `GET /api/v2/sensor/lookups/next` and `POST /api/v2/sensor/lookups/{id}/done`
+  (`internal/infra/http/handler/lookup_job_handler.go`), stage catalog entry
+  `lookup.ct` (cross-cutting, T0, tool `ctlog`).
 - **Controller:** `internal/infra/controller/cert_monitor_refresh.go` — a
   background sweep across all active tenants on a **24-hour** default cadence (CT
   data changes on the order of days). Each tenant is handled serially; a
   per-tenant failure is skipped fail-open. Tenants with the `attack_surface`
   module disabled are skipped.
 - **Rotation state:** `internal/infra/postgres/ct_monitor_state_repository.go`
-  (table `ct_monitor_state`); sources and retries in
-  `internal/app/certmonitor/ctlog.go`, selection in `selection.go`.
+  (table `ct_monitor_state`); selection in `selection.go`.
 - **Assurance:** use cases, edge cases and the threat model with their tests
   are in [RFC-036 appendix](../rfcs/RFC-036-appendix-assurance.md).
 

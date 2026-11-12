@@ -337,12 +337,9 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `CERT_MONITOR_CERTSPOTTER_URL` | string | `https://api.certspotter.com` |  |  | Fallback CT search service when the primary fails, queried only through a platform sensor (the platform makes no CT request itself). `off` disables the fallback. |
-| `CERT_MONITOR_CERTSPOTTER_KEY` | string | empty |  | yes | Commercial Cert Spotter API key (SaaS). Sent only with the Cert Spotter requests a platform sensor carries, never by the platform itself. Empty: the unauthenticated tier. |
 | `VERSION_CHECK_ENABLED` | bool | `true` |  |  | Daily version check: one anonymous download of the signed release feed (no instance id, version or counts), compared with the running version on the instance; the platform console shows newer and security releases. `false` stops the download; offline import in the console still works. See `docs/architecture/version-check.md`. |
 | `VERSION_CHECK_URL` | url | `https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json` |  |  | Where the version check reads the signed release feed (https only). Point it at an internal mirror if needed; the signature, not the host, is trusted. A mirror on a private address also needs the private egress allowlist. |
-| `CERT_MONITOR_ENABLED` | bool | `true` |  |  | Certificate Transparency discovery sweep (passive, public data). The platform makes no CT request itself: the sweep runs only when a platform sensor carries CT lookups, and otherwise reports `needs_platform_sensor`. Certificate Transparency names still reach the inventory through the passive subdomain discovery that runs on sensors. |
-| `CERT_MONITOR_FEED_URL` | string | `https://crt.sh` |  |  | CT-log search service queried per organization domain, only through a platform sensor. |
+| `CERT_MONITOR_ENABLED` | bool | `true` |  |  | Certificate Transparency discovery sweep (passive, public data). The platform makes no CT request itself: each domain is a lookup job (`lookup.ct@1`) that a platform (instance-scope) sensor answers, so the sweep runs only while such a sensor is connected and otherwise reports `needs_platform_sensor`. The CT sources and the optional Cert Spotter key are that sensor's settings (`SENSOR_CT_*`). Certificate Transparency names still reach the inventory through the passive subdomain discovery that runs on sensors. |
 | `CERT_MONITOR_INTERVAL` | duration | `24h` |  |  | How often the CT sweep runs. |
 | `CERT_MONITOR_MAX_DOMAINS_PER_RUN` | int | `50` |  |  | Domains of one organization queried per sweep; the rest rotate in on later runs. |
 | `EASM_DNS_CHECK_INTERVAL` | duration | `24h` |  |  | How often the DNS checks run. |
@@ -673,6 +670,9 @@ The API refuses to start while one of these is set, and says what to do instead.
 | `AGENT_LB_MAX_NETWORK_THROUGHPUT_MBPS` | rename it to `SENSOR_LB_MAX_NETWORK_THROUGHPUT_MBPS` |
 | `SENSOR_TRANSPORT_V3_ENABLED` | rename it to `SENSOR_TRANSPORT_V3=auto\|off` |
 | `SCOPE_ACTIVE_PROOF` | remove it; a platform administrator sets "Require a verified domain before platform sensors scan a target" in Console > Scanning > Platform scanning |
+| `CERT_MONITOR_FEED_URL` | unset it; the platform makes no CT request, its platform sensors query CT (sensor settings SENSOR_CT_CRTSH_URL, SENSOR_CT_CERTSPOTTER_URL, SENSOR_CT_CERTSPOTTER_KEY) |
+| `CERT_MONITOR_CERTSPOTTER_URL` | unset it; the platform makes no CT request, its platform sensors query CT (sensor settings SENSOR_CT_CRTSH_URL, SENSOR_CT_CERTSPOTTER_URL, SENSOR_CT_CERTSPOTTER_KEY) |
+| `CERT_MONITOR_CERTSPOTTER_KEY` | unset it; the platform makes no CT request, its platform sensors query CT (sensor settings SENSOR_CT_CRTSH_URL, SENSOR_CT_CERTSPOTTER_URL, SENSOR_CT_CERTSPOTTER_KEY) |
 | `APP_DEBUG` | unset it; it switched nothing on (use LOG_LEVEL=debug outside production) |
 | `GRPC_PORT` | unset it; nothing listened on it, sensors reach protocol v3 on SENSOR_MTLS_LISTEN_ADDR |
 | `LOG_SKIP_HEALTH` | unset it; health, readiness and metrics requests are never written to the request log |
