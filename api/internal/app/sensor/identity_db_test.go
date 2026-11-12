@@ -22,7 +22,7 @@ import (
 
 const testEncryptionKey = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
 
-// newPepperedService is a sensor service configured the way cmd/server
+// newPepperedService is a sensor service configured the way internal/server
 // configures it, with the multi-key store and the activity timeline wired.
 func newPepperedService(h *activityHarness, explicit string) *sensorapp.SensorService {
 	h.t.Helper()

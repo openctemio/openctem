@@ -24,3 +24,28 @@ func registerStoryRoutes(router Router, h *handler.StoryHandler, authMiddleware,
 		r.GET("/", h.AssetStory, middleware.Require(permission.AssetsRead))
 	}, tenantMiddlewares...)
 }
+
+// registerExplorationLeadRoutes registers /api/v1/exploration/leads
+// (docs/architecture/exploration.md, "Approvals and people"). Reading
+// follows assets:read and the caller's data scope (the service reads every
+// lead through it: out of scope answers 404). Opening a lead asks for a
+// step, so it needs scans:execute; approving lets an active step run, so
+// it needs scans:approve and a fresh step-up; rejecting (dismissing) needs
+// scans:approve.
+func registerExplorationLeadRoutes(router Router, h *handler.ExplorationLeadHandler, authMiddleware, userSyncMiddleware Middleware) {
+	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
+	router.Group("/api/v1/exploration/leads", func(r Router) {
+		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.POST("/", h.Open, middleware.Require(permission.ScansExecute))
+		r.POST("/approve", h.Approve, middleware.Require(permission.ScansApprove), requireStepUp())
+		r.POST("/reject", h.Dismiss, middleware.Require(permission.ScansApprove))
+		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+	// The figures follow the viewer: organization-wide (precomputed) for a
+	// caller who sees the organization or views organization dashboards,
+	// live within the caller's data scope otherwise.
+	router.Group("/api/v1/exploration/summary", func(r Router) {
+		r.GET("/", h.Summary, middleware.Require(permission.AssetsRead))
+		r.POST("/refresh", h.RefreshSummary, middleware.Require(permission.AssetsRead))
+	}, tenantMiddlewares...)
+}

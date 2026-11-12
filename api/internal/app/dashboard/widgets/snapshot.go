@@ -94,7 +94,7 @@ func (s *Service) read(ctx context.Context, c dashboardapp.Caller, d *dashboard.
 		if snap != nil && snap.ScopeKey == key && snap.LayoutHash == lh && snap.Kind == d.Kind() && snap.OwnerID == d.UserID() {
 			var out DashboardData
 			uerr := json.Unmarshal(snap.Data, &out)
-			if uerr == nil && !s.moduleBackOn(ctx, &out, d.TenantID()) {
+			if uerr == nil && !s.moduleBackOn(ctx, &out, d.TenantID()) && !s.factsNowBuilt(ctx, &out, d.TenantID()) {
 				s.decorate(ctx, &out, d, snap)
 				if terr := s.snapshots.TouchSnapshot(ctx, d.TenantID(), d.ID(), s.now()); terr != nil {
 					s.logger.Warn("touch dashboard snapshot", "error", terr.Error())
@@ -145,6 +145,23 @@ func (s *Service) sameScope(ctx context.Context, d *dashboard.Dashboard, scope d
 		return false
 	}
 	return after == key
+}
+
+// factsNowBuilt reports whether out was computed before the organization's
+// dashboard facts were first built and the facts exist now. Such a snapshot
+// holds only "being built" widgets; served until its next scheduled refresh
+// (an hour by default), it would hide figures that are ready. A read error
+// keeps the snapshot (the next open asks again).
+func (s *Service) factsNowBuilt(ctx context.Context, out *DashboardData, tenantID shared.ID) bool {
+	if out.FactsBuiltAt != nil || s.facts == nil {
+		return false
+	}
+	builtAt, err := s.facts.FactsBuiltAt(ctx, tenantID)
+	if err != nil {
+		s.logger.Warn("dashboard facts status", "error", err.Error())
+		return false
+	}
+	return builtAt != nil
 }
 
 // decorate adds the schedule and freshness of a stored snapshot.

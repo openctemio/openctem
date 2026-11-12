@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# The startup schema check (cmd/server/schema_check.go) only compares the
+# The startup schema check (internal/server/schema_check.go) only compares the
 # migration VERSION. It cannot tell whether the columns the code actually
 # references exist. That gap shipped a run of bugs that were invisible to
 # `go build`, `go vet`, the linters and the unit tests, and only failed when a

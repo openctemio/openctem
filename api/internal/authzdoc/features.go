@@ -35,7 +35,7 @@ var Features = []Feature{
 		Registers: []string{
 			"registerVulnerabilityRoutes", "registerFindingActivityRoutes", "registerFindingEvidenceItemRoutes",
 			"registerFindingImportRoutes", "registerSourceRetirementRoutes", "registerStoryRoutes", "registerImportMappingRoutes", "registerFindingRetestRoutes", "registerFindingRetestCheckRoutes", "registerFindingSourceRoutes", "registerFindingLifecycleRoutes", "registerVerificationChecklistRoutes",
-			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAIKnowledgeRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerQueryRoutes",
+			"registerAITriageRoutes", "registerAIAnalysisRoutes", "registerAIKnowledgeRoutes", "registerAttachmentRoutes", "registerSavedViewRoutes", "registerNavPinRoutes", "registerInboxRoutes", "registerQueryRoutes",
 		},
 		Prefixes: []string{"/api/v1/verification-checklists"},
 	},
@@ -59,11 +59,11 @@ var Features = []Feature{
 	},
 	{
 		ID: "attack-surface", Title: "Attack surface and EASM",
-		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths and the scoping summary.",
+		Description: "External attack surface management: discovery candidates, verified domains, sweeps, attack paths, the scoping summary and exploration leads (next steps, approvals).",
 		Stages:      []string{StageScoping, StageDiscovery, StagePrioritization},
 		Registers: []string{
 			"registerAttackSurfaceRoutes", "registerEASMRoutes", "registerEASMSettingsRoutes", "registerEASMDiscoveryRoutes", "registerAssetWebEvidenceRoutes", "registerEASMNetworkSeedRoutes", "registerEASMLookalikeRoutes", "registerPageMonitorRoutes",
-			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes",
+			"registerEASMVerifiedDomainRoutes", "registerScopingRoutes", "registerExplorationLeadRoutes",
 		},
 	},
 	{

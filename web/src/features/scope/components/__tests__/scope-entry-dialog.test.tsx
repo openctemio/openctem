@@ -493,4 +493,55 @@ describe('ScopeEntryDialog: a pasted list', () => {
       )
     )
   })
+
+  it('a refused DENY_LIST says what and why, keeps the dialog open, and sits above the buttons', async () => {
+    api.post.mockRejectedValue(
+      Object.assign(new Error('the platform does not allow this target; contact support'), {
+        code: 'DENY_LIST',
+        requestId: 'req-7f3a',
+      })
+    )
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ScopeEntryDialog open onOpenChange={onOpenChange} />)
+    await user.type(await screen.findByLabelText('What'), 'agency.example.gov.xx')
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/does not allow this target/)
+    expect(alert).toHaveTextContent('Reference: req-7f3a')
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    // Outside the scrolling body, right before the footer with the buttons.
+    expect(alert.closest('[data-slot="dialog-body"]')).toBeNull()
+    const slot = alert.closest('[data-slot="dialog-submit-error"]')
+    expect(slot).not.toBeNull()
+    expect(slot!.nextElementSibling).toHaveAttribute('data-slot', 'dialog-footer')
+  })
+
+  it('a refused GOVERNMENT_NAME says who can lift it, keeps the dialog open, and sits above the buttons', async () => {
+    api.post.mockRejectedValue(
+      Object.assign(new Error('the platform does not allow this target; contact support'), {
+        code: 'GOVERNMENT_NAME',
+        requestId: 'req-7f3a',
+      })
+    )
+    const onOpenChange = vi.fn()
+    const user = userEvent.setup()
+    wrap(<ScopeEntryDialog open onOpenChange={onOpenChange} />)
+    await user.type(await screen.findByLabelText('What'), 'agency.example.gov.xx')
+    await user.click(screen.getByRole('button', { name: 'Add to scope' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      /Government and military domains are blocked on this installation/
+    )
+    expect(alert).toHaveTextContent(/platform administrator can grant an exception/)
+    expect(alert).toHaveTextContent('Reference: req-7f3a')
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    // Outside the scrolling body, right before the footer with the buttons.
+    expect(alert.closest('[data-slot="dialog-body"]')).toBeNull()
+    const slot = alert.closest('[data-slot="dialog-submit-error"]')
+    expect(slot).not.toBeNull()
+    expect(slot!.nextElementSibling).toHaveAttribute('data-slot', 'dialog-footer')
+  })
 })

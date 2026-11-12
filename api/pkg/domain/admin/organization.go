@@ -52,9 +52,11 @@ type OwnerInvitationSummary struct {
 	InviteeEmail string
 	SendCount    int
 	ExpiresAt    time.Time
-	LastSentAt   time.Time
-	CreatedAt    time.Time
-	RespondedAt  *time.Time
+	// LastSentAt is nil when the invitee was never emailed (the
+	// installation cannot send email).
+	LastSentAt  *time.Time
+	CreatedAt   time.Time
+	RespondedAt *time.Time
 }
 
 // Owner filter values for OrganizationFilter.Owner.

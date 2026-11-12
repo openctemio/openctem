@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -597,13 +598,10 @@ function FieldEditDialog({
                 </div>
               </>
             )}
-            {serverError && (
-              <Alert variant="destructive" role="alert">
-                <AlertDescription>{serverError}</AlertDescription>
-              </Alert>
-            )}
           </div>
         </DialogBody>
+        <DialogSubmitError message={serverError} />
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             {t('common.cancel', 'Cancel')}

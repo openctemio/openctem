@@ -161,10 +161,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 		return nil, err
 	}
 
-	g := scopedom.DefaultGuardrails()
-	if s.guardrails != nil {
-		g = *s.guardrails
-	}
+	g := s.guardrailsFor(tenantID)
 	if err := g.CheckPattern(targetType, input.Pattern); err != nil {
 		return nil, err
 	}
@@ -654,10 +651,7 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 	if err := scopedom.ValidatePattern(target.TargetType(), target.Pattern()); err != nil {
 		return nil, err
 	}
-	g := scopedom.DefaultGuardrails()
-	if s.guardrails != nil {
-		g = *s.guardrails
-	}
+	g := s.guardrailsFor(parsedTenantID)
 	if err := g.CheckPattern(target.TargetType(), target.Pattern()); err != nil {
 		return nil, err
 	}

@@ -76,7 +76,7 @@ func (h *CTEMCycleHandler) WithDataScope(e *datascope.Enforcer) *CTEMCycleHandle
 
 // NewCTEMCycleHandler creates a new handler. metrics may be nil (metric
 // computation/serving is then disabled but the cycle lifecycle still
-// works); cmd/server wires the postgres implementation.
+// works); internal/server wires the postgres implementation.
 func NewCTEMCycleHandler(db *sql.DB, metrics ctemcycle.MetricsRepository, log *logger.Logger) *CTEMCycleHandler {
 	return &CTEMCycleHandler{db: db, metrics: metrics, logger: log}
 }

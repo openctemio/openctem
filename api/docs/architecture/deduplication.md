@@ -57,7 +57,7 @@ flowchart TD
   correlation.
 - **Re-key**: on start, after the asset canonical pass, the server re-keys
   stored findings under an advisory lock in batches of 500
-  (`internal/app/refingerprint`, `cmd/server/finding_rekey.go`).
+  (`internal/app/refingerprint`, `internal/server/finding_rekey.go`).
 - **Isolation**: every lookup and the unique index are per tenant; the
   tenant comes from the stored report row, never the document.
 
@@ -153,7 +153,7 @@ key `partial_fingerprints["sensor/fingerprint"]` and is never the identity
 ### Recipe versions and the re-key
 
 - **On server start** the API re-keys stored findings to the current version
-  (`refingerprint.Service.RunAll`, `cmd/server/finding_rekey.go`): per tenant,
+  (`refingerprint.Service.RunAll`, `internal/server/finding_rekey.go`): per tenant,
   in batches, under a session advisory lock (one replica at a time), with
   scan auto-resolve paused for the tenant while its run is open. A version-2
   row is re-keyed from its stored tuple alone, only when the tuple reproduces

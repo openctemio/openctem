@@ -15,6 +15,7 @@ package remediation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -448,6 +449,35 @@ func (s *TaskService) ListTasks(ctx context.Context, in ListTasksInput, page pag
 		}
 	}
 	return res, nil
+}
+
+// taskCounter counts a task list without reading a page
+// (*postgres.RemediationTaskRepository).
+type taskCounter interface {
+	CountTasks(ctx context.Context, tenantID shared.ID, f remediationdom.TaskFilter) (int64, error)
+}
+
+// CountTasks counts the tasks ListTasks would list for the same input (its
+// total): the same filter, data scope and pentest visibility, one statement.
+func (s *TaskService) CountTasks(ctx context.Context, in ListTasksInput) (int64, error) {
+	r, ok := s.repo.(taskCounter)
+	if !ok {
+		return 0, errors.New("remediation task count not configured")
+	}
+	f := in.Filter
+	if in.Mine {
+		if in.CallerID == nil {
+			return 0, nil
+		}
+		f.AssigneeID, f.Mine = in.CallerID, true
+	}
+	scope, err := s.resolveScope(ctx, in.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	f.Scope = scope
+	ctx, _ = s.viewerCtx(ctx)
+	return r.CountTasks(ctx, in.TenantID, f)
 }
 
 // writableTask loads a task for a change: visible to the caller and with no

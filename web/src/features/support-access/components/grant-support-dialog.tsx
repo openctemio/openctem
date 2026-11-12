@@ -12,7 +12,6 @@ import { useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -25,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -149,11 +149,6 @@ export function GrantSupportDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-4">
-            {serverError && (
-              <Alert variant="destructive">
-                <AlertDescription>{serverError}</AlertDescription>
-              </Alert>
-            )}
             <div className="space-y-2">
               <Label htmlFor="support-admin-email">
                 {t('supportAccess.grant.email', 'Support administrator’s email')}
@@ -255,6 +250,8 @@ export function GrantSupportDialog({
               />
             </div>
           </DialogBody>
+          <DialogSubmitError message={serverError} />
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel', 'Cancel')}

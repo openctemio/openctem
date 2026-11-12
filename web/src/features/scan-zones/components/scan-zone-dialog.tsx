@@ -1,12 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { useTranslation } from '@/context/i18n-provider'
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -18,6 +17,7 @@ import {
   DialogForm,
   DialogBody,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -152,14 +152,6 @@ export function ScanZoneDialog({
           }}
         >
           <DialogBody className="space-y-4">
-            {serverError && (
-              <Alert variant="destructive" role="alert" data-testid="zone-server-error">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>{serverError.message}</AlertTitle>
-                {serverError.hint && <AlertDescription>{serverError.hint}</AlertDescription>}
-              </Alert>
-            )}
-
             <div className="space-y-1.5">
               <Label htmlFor="zone-name">{t('scans.zones.dialog.name')}</Label>
               <Input
@@ -255,6 +247,10 @@ export function ScanZoneDialog({
               )}
             </div>
           </DialogBody>
+
+          <DialogSubmitError message={serverError?.message} testId="zone-server-error">
+            {serverError?.hint && <p>{serverError.hint}</p>}
+          </DialogSubmitError>
 
           <DialogFooter>
             <Button

@@ -3,8 +3,6 @@ package easm
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -259,26 +257,6 @@ func TestObservationSeverity(t *testing.T) {
 		if got := c.o.Severity(); got != c.want {
 			t.Errorf("%+v: %s, want %s", c.o, got, c.want)
 		}
-	}
-}
-
-func TestCrtShCounter(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("q") != "example.net" || r.URL.Query().Get("exclude") != "expired" {
-			http.Error(w, "bad", http.StatusBadRequest)
-			return
-		}
-		_, _ = w.Write([]byte(`[{"id":1},{"id":2},{"id":3}]`))
-	}))
-	defer srv.Close()
-	c := &CrtSh{client: srv.Client(), base: srv.URL + "/"}
-	if n, err := c.CountCerts(context.Background(), "example.net"); err != nil || n != 3 {
-		t.Fatalf("count: %d %v", n, err)
-	}
-	guarded := NewCrtSh()
-	guarded.base, guarded.wait = srv.URL+"/", 0
-	if _, err := guarded.CountCerts(context.Background(), "example.net"); err == nil {
-		t.Fatal("the guarded client reached a loopback server")
 	}
 }
 

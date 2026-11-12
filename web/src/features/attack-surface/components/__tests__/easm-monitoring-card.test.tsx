@@ -69,6 +69,28 @@ beforeEach(() => {
 })
 
 describe('EASMMonitoringCard', () => {
+  it('says CT lookups need a platform sensor and offers no CT switch then', async () => {
+    api.get.mockReset().mockResolvedValue({
+      ...settings,
+      ct_available: false,
+      ct_unavailable_reason: 'needs_platform_sensor',
+    })
+    wrap(<EASMMonitoringCard />)
+    expect(await screen.findByRole('status')).toHaveTextContent(/only through a platform sensor/)
+    expect(
+      screen.getByRole('switch', { name: 'Certificate Transparency discovery' })
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('switch', { name: 'Certificate checks of lookalike domains' })
+    ).toBeDisabled()
+  })
+
+  it('shows no platform-sensor note while CT runs', async () => {
+    wrap(<EASMMonitoringCard />)
+    await screen.findByRole('switch', { name: 'Certificate Transparency discovery' })
+    expect(screen.queryByText(/only through a platform sensor/)).toBeNull()
+  })
+
   it('turns lookalike certificate checks off with only that field changed', async () => {
     wrap(<EASMMonitoringCard />)
     const sw = await screen.findByRole('switch', {

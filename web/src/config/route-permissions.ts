@@ -534,6 +534,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     permission: Permission.ScansRead,
     module: Module.Scans,
   },
+  // Exploration: the next steps; approving needs scans:approve (in the API).
+  '/exploration': {
+    permission: Permission.AssetsRead,
+    module: Module.Scans,
+  },
   '/ci-cd': {
     permission: Permission.CIRead,
     module: Module.Scans,
