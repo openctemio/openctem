@@ -1,0 +1,6 @@
+### Fixed: port scans without ports reach sensors that list ports.allow
+
+- A sensor whose local policy lists `ports.allow` refuses a port scan (`scan.ports`) that names no ports, because the tool would run its own default list (sdk-go: local policy ports checked in every settings layer). The platform now fills the ports of such a job, for that sensor only, with the ports the scan would probe that the policy allows (the 100 most common TCP ports, or every port for a top-N above 100). The job is signed with those ports.
+- When the policy allows none of them, the job is not sent to that sensor. It waits for another sensor that allows some; when it is pinned to the sensor or no other sensor may run it, it fails with `PORTS_NOT_ALLOWED` and its step is skipped with the reason "the sensor's local policy allows none of the ports the port scan would probe", so the rest of the run goes on.
+- The sensor stays the enforcer of its policy. New metric `sensor_port_scan_ports_total{outcome}`.
+- Docs: server/docs/architecture/sensors.md ("Port scans without ports")

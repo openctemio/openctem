@@ -90,8 +90,14 @@ type Job struct {
 	Interactsh bool
 	// CustomTemplates is how many custom templates the job carries.
 	CustomTemplates int
-	// Ports is the job's port list setting (config "ports"); "" = none.
+	// Ports is the job's port list setting ("ports" of config, else of
+	// scanner_config); "" = none.
 	Ports string
+	// TopPorts is the job's top-N setting ("top_ports" or "top_n" of config
+	// or scanner_config); "" = none.
+	TopPorts string
+	// PortScan: the job runs the scan.ports capability.
+	PortScan bool
 	// Private: a target is private, loopback, link-local or CGNAT, or a
 	// host name of a private namespace (HasPrivateTarget).
 	Private bool
@@ -132,6 +138,7 @@ func JobOf(cmdType string, payload json.RawMessage) Job {
 		Collector       string            `json:"collector"`
 		ExecutorKind    string            `json:"executor_kind"`
 		Config          map[string]any    `json:"config"`
+		ScannerConfig   map[string]any    `json:"scanner_config"`
 		CustomTemplates []json.RawMessage `json:"custom_templates"`
 		Capability      string            `json:"capability"`
 	}
@@ -159,7 +166,18 @@ func JobOf(cmdType string, payload json.RawMessage) Job {
 	job.Capability = strings.TrimSpace(p.Capability)
 	job.Interactsh = ConfigAsksInteractsh(p.Config)
 	job.CustomTemplates = len(p.CustomTemplates)
-	job.Ports = portSetting(p.Config["ports"])
+	for _, cfg := range []map[string]any{p.Config, p.ScannerConfig} {
+		if job.Ports == "" {
+			job.Ports = portSetting(cfg["ports"])
+		}
+		for _, k := range []string{"top_ports", "top_n"} {
+			if job.TopPorts == "" {
+				job.TopPorts = portSetting(cfg[k])
+			}
+		}
+	}
+	base, _, _ := strings.Cut(job.Capability, "@")
+	job.PortScan = strings.EqualFold(strings.TrimSpace(base), CapabilityScanPorts)
 	job.Private = HasPrivateTarget(payload)
 	job.PrivateAddress = HasPrivateAddress(payload)
 	job.NetworkTarget = HasNetworkTarget(payload)
@@ -347,6 +365,10 @@ func Accepts(r *LocalPolicyReport, job Job, opts DispatchOptions) *DispatchRefus
 	// Out-of-band callbacks a sensor's local policy turns off are no reason
 	// to keep the job from it: the sensor runs the job without them and its
 	// result says why (oob state "unavailable", reason "local_policy").
+	if NoAllowedPorts(r, job) {
+		return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RulePortsAllow,
+			Detail: fmt.Sprintf("%s (%s)", NoAllowedPortsDetail, s.Ports)}
+	}
 	if job.Ports != "" && s.Ports != "" {
 		if p, ok := firstPortOutside(job.Ports, s.Ports); ok {
 			return &DispatchRefusal{Layer: RefusalLayerLocal, Rule: RulePortsAllow,
