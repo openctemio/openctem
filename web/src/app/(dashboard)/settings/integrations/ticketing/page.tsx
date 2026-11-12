@@ -82,7 +82,7 @@ import type { Integration } from '@/features/integrations/types/integration.type
 import { toast } from 'sonner'
 import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
-import { mutate } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
 

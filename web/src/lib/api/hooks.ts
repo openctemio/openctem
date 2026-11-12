@@ -249,7 +249,7 @@ export function useAsset(assetId: string | null, config?: SWRConfiguration) {
  * Mutate (revalidate) multiple SWR keys
  */
 export async function mutateMultiple(keys: string[]) {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await Promise.all(keys.map((key) => mutate(key)))
 }
 
@@ -257,7 +257,7 @@ export async function mutateMultiple(keys: string[]) {
  * Clear all SWR cache
  */
 export async function clearAllCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(() => true, undefined, { revalidate: false })
 }
 
@@ -269,7 +269,7 @@ export async function optimisticUpdate<T>(
   optimisticData: T,
   updateFn: () => Promise<T>
 ) {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
 
   await mutate(key, updateFn(), {
     optimisticData,

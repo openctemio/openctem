@@ -269,7 +269,7 @@ export function ConsentView({ requestId }: ConsentViewProps) {
             {tenants.length > 1 ? (
               <Select
                 value={tenantId}
-                onValueChange={(id) => void switchTeam(id)}
+                onValueChange={(id) => void switchTeam(id, { keepLocation: true })}
                 disabled={isSwitching || deciding !== null}
               >
                 <SelectTrigger

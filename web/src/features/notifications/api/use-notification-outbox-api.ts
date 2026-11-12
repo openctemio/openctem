@@ -184,7 +184,7 @@ export function useDeleteOutboxEntryApi(entryId: string) {
  * Invalidate notification outbox cache
  */
 export async function invalidateNotificationOutboxCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/notification-outbox'),
     undefined,
@@ -196,7 +196,7 @@ export async function invalidateNotificationOutboxCache() {
  * Invalidate notification outbox stats cache
  */
 export async function invalidateNotificationOutboxStatsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/notification-outbox/stats'),
     undefined,

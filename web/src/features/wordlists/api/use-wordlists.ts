@@ -49,7 +49,7 @@ export function useWordlistPreview(root: string | null, depth: 'standard' | 'dee
 
 /** Revalidates every wordlist request, keeping the data on screen. */
 export async function invalidateWordlists() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.startsWith(API_BASE.WORDLISTS))
 }
 

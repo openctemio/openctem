@@ -6,7 +6,8 @@
 
 'use client'
 
-import useSWR, { type SWRConfiguration, mutate } from 'swr'
+import useSWR, { type SWRConfiguration } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import useSWRMutation from 'swr/mutation'
 import { get, post, put, del } from './client'
 import { handleApiError } from './error-handler'

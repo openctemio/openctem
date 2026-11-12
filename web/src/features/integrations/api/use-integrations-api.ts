@@ -527,7 +527,7 @@ export function useNotificationEventsApi(
  * Invalidate notification events cache
  */
 export async function invalidateNotificationEventsCache(integrationId: string) {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) =>
       typeof key === 'string' && key.includes(`/integrations/${integrationId}/notification-events`),
@@ -540,7 +540,7 @@ export async function invalidateNotificationEventsCache(integrationId: string) {
  * Invalidate notification integrations cache
  */
 export async function invalidateNotificationIntegrationsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/integrations/notifications'),
     undefined,
@@ -556,7 +556,7 @@ export async function invalidateNotificationIntegrationsCache() {
  * Invalidate all integrations-related caches
  */
 export async function invalidateIntegrationsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/integrations'), undefined, {
     revalidate: true,
   })
@@ -566,7 +566,7 @@ export async function invalidateIntegrationsCache() {
  * Invalidate a specific integration cache
  */
 export async function invalidateIntegrationCache(integrationId: string) {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes(`/integrations/${integrationId}`),
     undefined,
@@ -578,7 +578,7 @@ export async function invalidateIntegrationCache(integrationId: string) {
  * Invalidate SCM integrations cache
  */
 export async function invalidateSCMIntegrationsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/integrations/scm'), undefined, {
     revalidate: true,
   })

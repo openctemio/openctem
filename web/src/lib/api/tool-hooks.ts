@@ -261,7 +261,7 @@ export function useDisableTool() {
  * availability, single tools).
  */
 export async function invalidateToolsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.startsWith('/api/v1/tools'), undefined, {
     revalidate: true,
   })

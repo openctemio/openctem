@@ -54,7 +54,7 @@ import { CONTROL_TEST_RESULTS } from '@/features/simulation/vocabulary'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { Can, Permission } from '@/lib/permissions'
 import { toast } from 'sonner'
-import { mutate } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatDateSafe } from '@/lib/format-date'
 
