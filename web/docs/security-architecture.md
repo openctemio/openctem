@@ -448,7 +448,7 @@ Runs on: push/PR to main/develop + weekly (Monday 00:00 UTC)
 | Code quality | ESLint            | Yes       |
 | Formatting   | Prettier          | Yes       |
 | Unit tests   | Vitest + coverage | Yes       |
-| Build        | `next build`      | Push only |
+| Build        | `next build`      | Merge queue and push |
 
 ### 10.3 Pre-commit Hooks (`.githooks/` + lint-staged)
 
