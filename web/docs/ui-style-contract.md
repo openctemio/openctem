@@ -204,12 +204,23 @@ reference implementations.
   findings.
 - **Group by is a toolbar select** (`Layers` icon, "No grouping" / "Group" as
   the first option) and lives in the URL (`?group=`). Not tabs.
-- **The header row** (`renderHeader`): the group's name first (`font-medium`,
-  foreground), then muted meta joined with `·` (type, owner, CVSS, counts).
-  Summary counts go on the end (`renderActions`), compact: a status mix such
-  as `3 open · 1 fixing · 0 applied · 2 resolved` with a dot coloured only when
-  the number is above zero, and at most one mini bar (`% verified`). Hide the
-  summary below `lg` before it wraps the name.
+- **The header row** is one cell spanning every column, laid out as one
+  wrapping line of three slots, never positioned over the columns:
+  - identity (`renderHeader`): the group's name first (`font-medium`,
+    foreground), then muted meta joined with commas (type, owner, CVSS,
+    counts);
+  - summary (`renderSummary`): a compact status mix such as `3 open`,
+    `1 fixing`, `0 applied`, `2 resolved` as separate items with a dot
+    coloured only when the number is above zero, and at most one mini bar
+    (`% verified`);
+  - actions (`renderActions`): buttons only, in their own slot that never
+    shrinks, aligned to the end.
+
+  When the header is too narrow for one line, the summary and then the
+  actions move to the next line; nothing overflows the frame (an overflowing
+  header widens the table and slides its buttons under the pinned row-actions
+  column).
+
 - **Group actions** (`renderActions`): `size="sm"` buttons at `h-7`, ghost for
   navigation (View), outline for a change (Mark fixed, Approve). Gate each on
   its permission **and** on the API being able to do it for that group type;
@@ -322,6 +333,21 @@ load.
   without the next page, the clicked row shows a moving bar and the window a
   top progress bar. Sidebar links use `SidebarLink`, which prefetches on hover
   or focus rather than on render.
+- **Progress feedback, one kind each**:
+  - route navigation: the top-of-window `NavProgressBar`
+    (`src/components/layout/nav-progress.tsx`), for navigation only;
+  - first load (no rows yet): skeletons (`isLoading` on `DataTable`, or the
+    page's own skeleton);
+  - data refresh (rows already on screen are re-read after a filter, sort or
+    page change, or a background revalidation): `isRefreshing` on
+    `DataTable`. It draws `TableRefreshBar`, a thin indeterminate bar on the
+    top edge of the table frame, below the toolbar and the search box,
+    absolutely positioned so nothing moves. It is a `progressbar` (pass
+    `refreshingLabel` for a specific name) only while active, waits 120 ms so
+    fast refetches stay quiet, and is a static faint line under reduced
+    motion. A list that is not a `DataTable` puts `TableRefreshBar` as the
+    first child of its own `relative` frame. Never draw a bar above the
+    toolbar or between the toolbar and the frame.
 - **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
   next step, optional primary action, optional secondary link such as docs).
   Three kinds, each worded for its case:

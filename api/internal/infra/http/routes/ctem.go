@@ -114,14 +114,14 @@ func registerPriorityRuleRoutes(
 		// class down to the platform floors), so every rule change needs a
 		// recent sign-in (step-up), like other tenant-wide security settings.
 		r.GET("/", h.List, middleware.Require(permission.PriorityRulesRead))
-		r.POST("/", h.Create, middleware.Require(permission.PriorityRulesWrite), requireStepUp())
+		r.POST("/", h.Create, middleware.Require(permission.PriorityRulesWrite), requireStepUpSensitive())
 		// Dry-run a DRAFT rule against live findings — read-only evaluation, so it
 		// takes the READ permission. Registered before "/{id}" (distinct static
 		// path, no capture conflict).
 		r.POST("/dry-run", h.DryRun, middleware.Require(permission.PriorityRulesRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.PriorityRulesRead))
-		r.PUT("/{id}", h.Update, middleware.Require(permission.PriorityRulesWrite), requireStepUp())
-		r.DELETE("/{id}", h.Delete, middleware.Require(permission.PriorityRulesWrite), requireStepUp())
+		r.PUT("/{id}", h.Update, middleware.Require(permission.PriorityRulesWrite), requireStepUpSensitive())
+		r.DELETE("/{id}", h.Delete, middleware.Require(permission.PriorityRulesWrite), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }
 

@@ -57,7 +57,7 @@ import {
   type DataTableSearch,
   type FilterPanelToggleProps,
 } from '@/features/shared'
-import { AssetStatusBadge } from '@/features/asset-lifecycle'
+import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
@@ -68,6 +68,7 @@ import { isPlainLeftClick } from '../../lib/plain-click'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
 import { AssetNameCell } from './asset-name-cell'
 import { typeKeyOf } from '../../lib/inventory-lenses'
+import { NamesCell, NetworkCell, PortsCell } from './ip-cells'
 import { Permission, usePermissions } from '@/lib/permissions'
 import type { Asset } from '../../types/asset.types'
 import { SORT_FIELDS, sortToSorting, sortingToSort } from '../../lib/inventory-url'
@@ -129,6 +130,8 @@ function daysSinceISO(iso?: string | null): number | undefined {
 interface InventoryTableProps {
   assets: Asset[]
   total: number
+  /** More than 10,000 match: `total` is then 10,000 (shown as "10,000+"). */
+  totalCapped?: boolean
   /** 1-based page, as in the URL. */
   page: number
   pageSize: number
@@ -165,11 +168,14 @@ interface InventoryTableProps {
   filterTags?: string[]
   /** Clicking a tag chip (row or detail sheet) adds it to, or removes it from, the filter. */
   onToggleTagFilter?: (tag: string) => void
+  /** A click on an address's network filters the list to it (the IP addresses tab). */
+  onFilterNetwork?: (network: string) => void
 }
 
 export function InventoryTable({
   assets,
   total,
+  totalCapped,
   page,
   pageSize,
   sort,
@@ -193,6 +199,7 @@ export function InventoryTable({
   emptyDescription,
   filterTags,
   onToggleTagFilter,
+  onFilterNetwork,
 }: InventoryTableProps) {
   const [selectedSnapshot, setSelectedAsset] = useState<Asset | null>(null)
   // The repository a row's Scan was clicked on, until the user confirms it.
@@ -248,6 +255,8 @@ export function InventoryTable({
     [onAssetUpdated, t]
   )
 
+  // The IP addresses list (the tab, or the type picked another way) has its own columns.
+  const ipColumns = typeView?.type === 'ip_address' && !typeView.subType
   const columns = useMemo<ColumnDef<Asset>[]>(() => {
     const sortable = (id: string) => id in SORT_FIELDS
     const all: ColumnDef<Asset>[] = [
@@ -319,6 +328,38 @@ export function InventoryTable({
         ),
         cell: ({ row }) => <AttributeCell asset={row.original} attribute={attribute} />,
       })),
+      // The IP addresses tab: where an address sits, what resolves to it, what listens.
+      ...(ipColumns
+        ? ([
+            {
+              id: 'ip_network',
+              enableSorting: false,
+              header: ({ column }) => (
+                <DataTableColumnHeader
+                  column={column}
+                  title={t('assets.ip.network', 'Network /24')}
+                />
+              ),
+              cell: ({ row }) => <NetworkCell ip={row.original.ip} onFilter={onFilterNetwork} />,
+            },
+            {
+              id: 'ip_names',
+              enableSorting: false,
+              header: ({ column }) => (
+                <DataTableColumnHeader column={column} title={t('assets.ip.names', 'Names')} />
+              ),
+              cell: ({ row }) => <NamesCell ip={row.original.ip} />,
+            },
+            {
+              id: 'ip_ports',
+              enableSorting: false,
+              header: ({ column }) => (
+                <DataTableColumnHeader column={column} title={t('assets.ip.ports', 'Open ports')} />
+              ),
+              cell: ({ row }) => <PortsCell ip={row.original.ip} />,
+            },
+          ] satisfies ColumnDef<Asset>[])
+        : []),
       {
         id: 'risk',
         accessorKey: 'riskScore',
@@ -518,6 +559,7 @@ export function InventoryTable({
                 snoozedUntil={row.original.lifecyclePausedUntil}
               />
             )}
+            <AssetLivenessBadge liveness={row.original.liveness} />
           </span>
         ),
       },
@@ -622,9 +664,15 @@ export function InventoryTable({
       },
     ]
     return all.filter(
-      (c) => !typeView || (c.id !== 'type' && (c.id !== 'service' || showsServiceFacts(typeView)))
+      (c) =>
+        !typeView ||
+        (c.id !== 'type' &&
+          // An address's ports have their own column here.
+          (c.id !== 'service' || (!ipColumns && showsServiceFacts(typeView))))
     )
   }, [
+    ipColumns,
+    onFilterNetwork,
     classAndLens,
     registry,
     canWriteAssets,
@@ -673,6 +721,7 @@ export function InventoryTable({
         getRowId={(a) => a.id}
         manualPagination
         rowCount={total}
+        rowCountCapped={totalCapped}
         pagination={{ pageIndex: Math.max(0, page - 1), pageSize }}
         onPaginationChange={(p) => onPageChange(p.pageIndex + 1, p.pageSize)}
         pageSize={pageSize}
@@ -759,6 +808,7 @@ export function InventoryTable({
                     snoozedUntil={a.lifecyclePausedUntil}
                   />
                 )}
+                <AssetLivenessBadge liveness={a.liveness} />
               </div>
               {hasSurfaceFacts(a) && (
                 <div className="pointer-events-none relative z-10 mt-1.5 min-w-0 ps-7 [&_a]:pointer-events-auto [&_button]:pointer-events-auto">

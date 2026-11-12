@@ -1306,6 +1306,14 @@ type SensorConfig struct {
 	// AssetCoverageDailyBudget caps the pairs one tenant's automatic
 	// coverage attempts per 24 h. ASSET_COVERAGE_DAILY_BUDGET, default 5000.
 	AssetCoverageDailyBudget int
+	// PathDiscoveryRequestsPerOrigin is the request cap of one origin's path
+	// discovery job (signed into its web scope), one run per origin per 30
+	// days. PATH_DISCOVERY_REQUESTS_PER_ORIGIN, default 300 (50..100000).
+	PathDiscoveryRequestsPerOrigin int
+	// PathDiscoveryDailyRequests is one organization's path discovery
+	// request budget per 24 h; what does not fit is deferred.
+	// PATH_DISCOVERY_DAILY_REQUESTS, default 50000.
+	PathDiscoveryDailyRequests int
 
 	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
 	// (free tier), when crt.sh still fails after its retries. Set
@@ -1843,6 +1851,8 @@ func Load() (*Config, error) {
 			AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
 			AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
 			AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
+			PathDiscoveryRequestsPerOrigin:    min(max(getEnvInt("PATH_DISCOVERY_REQUESTS_PER_ORIGIN", 300), 50), 100000),
+			PathDiscoveryDailyRequests:        max(getEnvInt("PATH_DISCOVERY_DAILY_REQUESTS", 50000), 0),
 			EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),

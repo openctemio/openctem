@@ -47,7 +47,16 @@ export interface DataTableRowGroups<TData> {
    * table's `select` column; off by default.
    */
   selectable?: boolean
-  /** Group actions, right-aligned in the header (e.g. View, Mark fixed). */
+  /**
+   * Group status (counts, progress) between the name and the actions. It
+   * wraps onto its own line when the header is too narrow for one line.
+   */
+  renderSummary?: (key: string, rows: TData[]) => React.ReactNode
+  /**
+   * Group actions at the end of the header (e.g. View, Mark fixed, Approve),
+   * in their own slot: they never shrink and never overlap the name or the
+   * summary; on a narrow header they move to the next line, end-aligned.
+   */
   renderActions?: (key: string, rows: TData[]) => React.ReactNode
   /** A row after an expanded group's rows, e.g. "Show 20 more". */
   renderFooter?: (key: string, rows: TData[]) => React.ReactNode
@@ -181,9 +190,18 @@ interface GroupHeaderProps<TData> {
 }
 
 /**
- * The content of a group header: chevron, group checkbox, the page's own
- * content, then the group actions on the end. A header with none of the
- * controls renders the page's content as it is.
+ * The content of a group header, one wrapping line of three slots:
+ *
+ * - identity: chevron, group checkbox and the page's content (name, facts);
+ * - summary: the group's status (`renderSummary`), wraps under the identity
+ *   when they do not fit side by side;
+ * - actions: `renderActions`, never shrunk, aligned to the end.
+ *
+ * Nothing is positioned over the table: when the header is narrower than its
+ * slots, slots move to the next line instead of overflowing the frame (an
+ * overflowing header widened the table and slid its buttons under the
+ * pinned row-actions column). A header with none of the controls renders the
+ * page's content as it is.
  */
 export function GroupHeaderContent<TData>({
   rowGroups,
@@ -199,51 +217,75 @@ export function GroupHeaderContent<TData>({
   const { t } = useTranslation()
   const originals = groupRows ?? rows.map((r) => r.original)
   const content = rowGroups.renderHeader(groupKey, originals)
+  const summary = rowGroups.renderSummary?.(groupKey, originals)
   const actions = rowGroups.renderActions?.(groupKey, originals)
   const selectable = canSelect && !!rowGroups.selectable
   const label = rowGroups.getLabel?.(groupKey) ?? groupKey
-  if (!rowGroups.collapsible && !selectable && !actions) {
+  if (!rowGroups.collapsible && !selectable && !actions && !summary) {
     return <div id={headerId}>{content}</div>
   }
   const selected = rows.filter((r) => r.getIsSelected()).length
   const checked = rows.length > 0 && selected === rows.length
   return (
-    <div className="flex min-h-7 items-center gap-2">
-      {rowGroups.collapsible && (
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={controlsId}
-          aria-label={
-            expanded
-              ? t('common.table.collapseGroup', 'Collapse {label}', { label })
-              : t('common.table.expandGroup', 'Expand {label}', { label })
-          }
-          className="-ms-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <ChevronRight
-            className={cn(
-              'size-4 transition-transform motion-reduce:transition-none rtl:rotate-180',
-              expanded && 'rotate-90 rtl:rotate-90'
-            )}
+    <div
+      data-slot="row-group-header-content"
+      className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5"
+    >
+      <div
+        data-slot="row-group-identity"
+        className="flex min-w-0 flex-[1_1_18rem] items-center gap-2"
+      >
+        {rowGroups.collapsible && (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={controlsId}
+            aria-label={
+              expanded
+                ? t('common.table.collapseGroup', 'Collapse {label}', { label })
+                : t('common.table.expandGroup', 'Expand {label}', { label })
+            }
+            className="-ms-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ChevronRight
+              className={cn(
+                'size-4 transition-transform motion-reduce:transition-none rtl:rotate-180',
+                expanded && 'rotate-90 rtl:rotate-90'
+              )}
+            />
+          </button>
+        )}
+        {selectable && (
+          <Checkbox
+            checked={checked || (selected > 0 && 'indeterminate')}
+            disabled={rows.length === 0}
+            onCheckedChange={(value) => {
+              for (const r of rows) r.toggleSelected(!!value)
+            }}
+            aria-label={`Select the ${rows.length} rows of ${label}`}
           />
-        </button>
-      )}
-      {selectable && (
-        <Checkbox
-          checked={checked || (selected > 0 && 'indeterminate')}
-          disabled={rows.length === 0}
-          onCheckedChange={(value) => {
-            for (const r of rows) r.toggleSelected(!!value)
-          }}
-          aria-label={`Select the ${rows.length} rows of ${label}`}
-        />
-      )}
-      <div id={headerId} className="min-w-0 flex-1">
-        {content}
+        )}
+        <div id={headerId} className="min-w-0 flex-1">
+          {content}
+        </div>
       </div>
-      {actions && <div className="ms-auto flex shrink-0 items-center gap-1.5">{actions}</div>}
+      {summary && (
+        <div
+          data-slot="row-group-summary"
+          className="flex min-w-0 max-w-full flex-wrap items-center gap-x-3 gap-y-1"
+        >
+          {summary}
+        </div>
+      )}
+      {actions && (
+        <div
+          data-slot="row-group-actions"
+          className="ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1.5"
+        >
+          {actions}
+        </div>
+      )}
     </div>
   )
 }

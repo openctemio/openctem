@@ -314,6 +314,13 @@ func registerVulnerabilityRoutes(
 		r.POST("/closure/proposals/decide", h.DecideClosureProposals, middleware.Require(permission.FindingsVerify), requireStepUpWhenConfirming())
 		r.GET("/closure/auto-closed", h.ListRecentlyAutoClosed, middleware.Require(permission.FindingsRead))
 
+		// Compliance check state (must be before /{id}): the posture per
+		// benchmark, a benchmark's controls and a control's assets, in the
+		// caller's data scope.
+		r.GET("/compliance/benchmarks", h.ListComplianceBenchmarks, middleware.Require(permission.FindingsRead))
+		r.GET("/compliance/benchmarks/{key}/controls", h.ListComplianceControls, middleware.Require(permission.FindingsRead))
+		r.GET("/compliance/benchmarks/{key}/assets", h.ListComplianceControlAssets, middleware.Require(permission.FindingsRead))
+
 		// Single finding operations
 		r.GET("/{id}", h.GetFinding, middleware.Require(permission.FindingsRead))
 		r.GET("/{id}/view", findingView.View, middleware.Require(permission.FindingsRead))
@@ -322,10 +329,16 @@ func registerVulnerabilityRoutes(
 		// Why this is one finding: recipe and field names of its key, the tools
 		// that reported it, the merged duplicates in the caller's scope.
 		r.GET("/{id}/identity", h.GetFindingIdentity, middleware.Require(permission.FindingsRead))
+		// What each source reported (per-source records), side by side where
+		// they disagree; same scope as the detail, the sensor per sensors:read.
+		r.GET("/{id}/source-records", h.GetFindingSources, middleware.Require(permission.FindingsRead))
+		// The history of the benchmark control a compliance finding fails;
+		// same scope as the detail.
+		r.GET("/{id}/compliance-history", h.GetFindingComplianceHistory, middleware.Require(permission.FindingsRead))
 
 		// Write operations
 		r.POST("/", h.CreateFinding, middleware.Require(permission.FindingsWrite))
-		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus), handler.FindingIfMatch)
+		r.PATCH("/{id}/status", h.UpdateFindingStatus, middleware.Require(permission.FindingsStatus), requireStepUpWhenClosingOne(), handler.FindingIfMatch)
 		r.POST("/{id}/reopen", h.ReopenAutoClosedNotFixed, middleware.Require(permission.FindingsStatus))
 		// The transition engine: the caller's allowed moves of one finding,
 		// and a bulk dry run. Reading them needs only findings:read; each
@@ -348,7 +361,7 @@ func registerVulnerabilityRoutes(
 		// A severity downgrade waiting for approval: approving or rejecting it
 		// is an approval decision (findings:approve, eligibility checked by
 		// the approval policy in the service); the requester withdraws it.
-		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove), requireStepUp())
+		r.POST("/{id}/severity-requests/{request_id}/approve", h.ApproveSeverityRequest, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
 		r.POST("/{id}/severity-requests/{request_id}/reject", h.RejectSeverityRequest, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/severity-requests/{request_id}/cancel", h.CancelSeverityRequest, middleware.Require(permission.FindingsSeverity))
 
@@ -421,7 +434,7 @@ func registerVulnerabilityRoutes(
 		}
 
 		// Delete operations
-		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete), requireStepUp())
+		r.DELETE("/{id}", h.DeleteFinding, middleware.Require(permission.FindingsDelete), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 
 	// Operations (docs/architecture/operations.md): long-running work a person
@@ -476,7 +489,7 @@ func registerVulnerabilityRoutes(
 	// Approval management routes - tenant from JWT token
 	router.Group("/api/v1/approvals", func(r Router) {
 		r.GET("/", h.ListApprovals, middleware.Require(permission.FindingsRead))
-		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove), requireStepUp())
+		r.POST("/{id}/approve", h.ApproveApproval, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
 		r.POST("/{id}/reject", h.RejectApproval, middleware.Require(permission.FindingsApprove))
 		r.POST("/{id}/cancel", h.CancelApproval, middleware.Require(permission.FindingsWrite))
 		r.POST("/{id}/remind", h.RemindApprovals, middleware.Require(permission.FindingsWrite))
@@ -488,7 +501,7 @@ func registerVulnerabilityRoutes(
 		// the service checks every member is in the caller's data scope.
 		r.GET("/batches", h.ListApprovalBatches, middleware.Require(permission.FindingsRead))
 		r.GET("/batches/{id}", h.GetApprovalBatch, middleware.Require(permission.FindingsRead))
-		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove), requireStepUp())
+		r.POST("/batches/{id}/approve", h.ApproveApprovalBatch, middleware.Require(permission.FindingsApprove), requireStepUpSensitive())
 		r.POST("/batches/{id}/reject", h.RejectApprovalBatch, middleware.Require(permission.FindingsApprove))
 		r.POST("/batches/{id}/cancel", h.CancelApprovalBatch, middleware.Require(permission.FindingsWrite))
 	}, tenantMiddlewares...)
@@ -499,7 +512,7 @@ func registerVulnerabilityRoutes(
 	// recent re-authentication (audited, approvers told).
 	router.Group("/api/v1/organization/settings/finding-approvals", func(r Router) {
 		r.GET("/", h.GetFindingApprovalSettings, middleware.Require(permission.FindingsRead))
-		r.PATCH("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUp())
+		r.PATCH("/", h.UpdateFindingApprovalSettings, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite), requireStepUpSensitive())
 	}, tenantMiddlewares...)
 }
 

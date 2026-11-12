@@ -7,6 +7,7 @@ import "testing"
 func TestToolFor(t *testing.T) {
 	for _, argv0 := range []string{
 		"/app/bootstrap-admin", "./refingerprint", "repomerge", "/app/ci-trust-scope-plan", "/app/asset-canonical",
+		"/app/receipt-reattribute", "/app/finding-practice", "/app/finding-source-backfill", "/app/compliance-checks",
 	} {
 		if toolFor(argv0) == nil {
 			t.Errorf("toolFor(%q) = nil, want the command", argv0)

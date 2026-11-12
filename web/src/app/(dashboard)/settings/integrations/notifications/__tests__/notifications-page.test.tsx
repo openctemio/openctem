@@ -57,7 +57,7 @@ const channel = (enabledEventTypes: string[]) => ({
   notification_extension: {
     enabled_severities: ['critical', 'high'],
     enabled_event_types: enabledEventTypes,
-    include_details: true,
+    detail_level: 'full',
     min_interval_minutes: 5,
   },
 })

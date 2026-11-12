@@ -35,14 +35,6 @@ import {
 } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Slider } from '@/components/ui/slider'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCreateNotificationIntegrationApi } from '@/features/integrations'
 import {
   ALL_NOTIFICATION_SEVERITIES,
@@ -52,9 +44,9 @@ import {
 import { useTenantEventTypes } from '@/features/integrations/api/use-event-types'
 import { EventTypeSelector } from './event-type-selector'
 import { cn } from '@/lib/utils'
-import { useAppOrigin } from '@/hooks/use-app-origin'
 import { normalizePresetWebhookUrl } from '../lib/chat-presets'
-import { TEMPLATE_PRESETS, renderMessageTemplatePreview } from '../lib/message-template'
+import { DEFAULT_DETAIL_LEVEL, DETAIL_LEVELS } from '../lib/message-template'
+import { ChannelMessageSettings } from './channel-message-settings'
 import { SEVERITY_TEXT_COLORS, type SeverityLevel } from '@/lib/severity-colors'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
@@ -74,7 +66,7 @@ const formSchema = z
     enabled_event_types: enabledEventTypesSchema,
     // Advanced settings
     message_template: z.string().max(2000).optional(),
-    include_details: z.boolean(),
+    detail_level: z.enum(DETAIL_LEVELS),
     min_interval_minutes: z.number().min(5).max(60),
     // Email-specific fields
     smtp_host: z.string().optional(),
@@ -218,8 +210,6 @@ export function AddNotificationDialog({
   const [step, setStep] = useState<'provider' | 'config'>('provider')
   const [selectedProvider, setSelectedProvider] = useState<(typeof PROVIDERS)[number] | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [selectedPreset, setSelectedPreset] = useState('default')
-  const [templateTab, setTemplateTab] = useState<'edit' | 'preview'>('edit')
 
   // The event-type catalog comes from the API, module-filtered for this tenant.
   // Only fetched once the dialog is open.
@@ -253,7 +243,7 @@ export function AddNotificationDialog({
       enabled_event_types: [],
       // Advanced settings defaults
       message_template: '',
-      include_details: false,
+      detail_level: DEFAULT_DETAIL_LEVEL,
       min_interval_minutes: 5,
       // Email defaults
       smtp_host: '',
@@ -303,23 +293,9 @@ export function AddNotificationDialog({
     setStep('provider')
     setSelectedProvider(null)
     setAdvancedOpen(false)
-    setSelectedPreset('default')
-    setTemplateTab('edit')
     reset()
     onOpenChange(false)
   }
-
-  const handlePresetChange = (presetId: string) => {
-    setSelectedPreset(presetId)
-    const preset = TEMPLATE_PRESETS.find((p) => p.id === presetId)
-    if (preset && presetId !== 'custom') {
-      setValue('message_template', preset.template)
-    }
-  }
-
-  const appOrigin = useAppOrigin()
-  const renderTemplatePreview = (template: string) =>
-    renderMessageTemplatePreview(template, appOrigin)
 
   const onSubmit = async (data: FormValues) => {
     try {
@@ -368,7 +344,7 @@ export function AddNotificationDialog({
         enabled_event_types: data.enabled_event_types,
         // Advanced settings
         message_template: data.message_template || undefined,
-        include_details: data.include_details,
+        detail_level: data.detail_level,
         min_interval_minutes: data.min_interval_minutes,
       })
 
@@ -703,78 +679,15 @@ export function AddNotificationDialog({
                   </Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="space-y-4 pt-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label>Message Template</Label>
-                      <Select value={selectedPreset} onValueChange={handlePresetChange}>
-                        <SelectTrigger className="w-[180px] h-8">
-                          <SelectValue placeholder="Select preset" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {TEMPLATE_PRESETS.map((preset) => (
-                            <SelectItem key={preset.id} value={preset.id}>
-                              {preset.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Tabs
-                      value={templateTab}
-                      onValueChange={(v) => setTemplateTab(v as 'edit' | 'preview')}
-                    >
-                      <TabsList className="h-8">
-                        <TabsTrigger value="edit" className="text-xs">
-                          Edit
-                        </TabsTrigger>
-                        <TabsTrigger value="preview" className="text-xs">
-                          Preview
-                        </TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="edit" className="mt-2">
-                        <Textarea
-                          id="message_template"
-                          placeholder="Custom notification message (leave empty for default)"
-                          className="resize-none min-h-[100px] font-mono text-sm"
-                          disabled={selectedPreset !== 'custom' && selectedPreset !== 'default'}
-                          {...register('message_template')}
-                        />
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Variables: <code className="bg-muted px-1 rounded">{'{title}'}</code>{' '}
-                          <code className="bg-muted px-1 rounded">{'{severity}'}</code>{' '}
-                          <code className="bg-muted px-1 rounded">{'{severity_emoji}'}</code>{' '}
-                          <code className="bg-muted px-1 rounded">{'{body}'}</code>{' '}
-                          <code className="bg-muted px-1 rounded">{'{url}'}</code>{' '}
-                          <code className="bg-muted px-1 rounded">{'{timestamp}'}</code>
-                        </p>
-                      </TabsContent>
-                      <TabsContent value="preview" className="mt-2">
-                        <div className="rounded-md border bg-muted/50 p-3 min-h-[100px]">
-                          <pre className="text-sm whitespace-pre-wrap font-sans">
-                            {renderTemplatePreview(watch('message_template') || '')}
-                          </pre>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Preview with sample data
-                        </p>
-                      </TabsContent>
-                    </Tabs>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="include_details"
-                      checked={watch('include_details')}
-                      onCheckedChange={(checked) => setValue('include_details', !!checked)}
-                    />
-                    <label htmlFor="include_details" className="text-sm font-normal cursor-pointer">
-                      {t('notificationTypes.includeDetails.label')}
-                    </label>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t('notificationTypes.includeDetails.hint')}
-                  </p>
+                  <ChannelMessageSettings
+                    idPrefix="add"
+                    detailLevel={watch('detail_level')}
+                    onDetailLevelChange={(level) =>
+                      setValue('detail_level', level, { shouldDirty: true })
+                    }
+                    template={watch('message_template') || ''}
+                    onTemplateChange={(v) => setValue('message_template', v, { shouldDirty: true })}
+                  />
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">

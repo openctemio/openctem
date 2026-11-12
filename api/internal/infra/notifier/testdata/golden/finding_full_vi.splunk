@@ -1,0 +1,34 @@
+{
+  "time": 0,
+  "sourcetype": "openctem:notification",
+  "source": "openctem.io",
+  "event": {
+    "event_type": "new_finding",
+    "title": "Phát hiện mới",
+    "body": "Mức độ: Nghiêm trọng\nTài sản: shop.example.com (domain)\nNội dung: CVE-2026-12345: Remote code execution in the file upload handler\nVì sao quan trọng: Đã bị khai thác thực tế (CISA KEV); EPSS 42%: có khả năng sớm bị khai thác\nBước tiếp theo: Vá hoặc giảm thiểu trước tiên: lỗ hổng đang bị khai thác.\nChi tiết: The upload endpoint accepts a crafted archive that writes outside the upload directory.\nTổ chức: Example Corp",
+    "severity": "critical",
+    "url": "https://ctem.example.com/findings",
+    "source": "openctem.io",
+    "notification": {
+      "schema": "openctem.notification/v1",
+      "detail_level": "full",
+      "locale": "vi",
+      "headline": "Phát hiện mới",
+      "severity": "critical",
+      "organization": "Example Corp",
+      "subject": {
+        "name": "shop.example.com",
+        "type": "domain"
+      },
+      "what": "CVE-2026-12345: Remote code execution in the file upload handler",
+      "why": "Đã bị khai thác thực tế (CISA KEV); EPSS 42%: có khả năng sớm bị khai thác",
+      "next_step": "Vá hoặc giảm thiểu trước tiên: lỗ hổng đang bị khai thác.",
+      "description": "The upload endpoint accepts a crafted archive that writes outside the upload directory.",
+      "text": "Mức độ: Nghiêm trọng\nTài sản: shop.example.com (domain)\nNội dung: CVE-2026-12345: Remote code execution in the file upload handler\nVì sao quan trọng: Đã bị khai thác thực tế (CISA KEV); EPSS 42%: có khả năng sớm bị khai thác\nBước tiếp theo: Vá hoặc giảm thiểu trước tiên: lỗ hổng đang bị khai thác.\nChi tiết: The upload endpoint accepts a crafted archive that writes outside the upload directory.\nTổ chức: Example Corp",
+      "action": {
+        "label": "Mở phát hiện",
+        "url": "https://ctem.example.com/findings"
+      }
+    }
+  }
+}

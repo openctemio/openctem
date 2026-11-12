@@ -186,3 +186,35 @@ func TestSharedFrontEnd(t *testing.T) {
 		t.Fatalf("dedicated prefixes = %v", d)
 	}
 }
+
+// Shared mail and SaaS providers: the addresses mail.* and autodiscover.*
+// names resolve to are never the organization's.
+func TestDefault_SharedMailAndSaaSProviders(t *testing.T) {
+	c := Default()
+	for _, a := range []string{"40.107.5.5", "52.96.1.1", "2a01:111:f400::1"} {
+		r := c.Address(a, "", "")
+		if r.Provider != "Microsoft 365" || r.Class != CloudShared || r.Basis != BasisRange || !r.Shared() {
+			t.Errorf("%s: %+v", a, r)
+		}
+		if _, ok := c.SharedFrontEnd(a); !ok {
+			t.Errorf("%s: not a shared front end", a)
+		}
+	}
+	for org, provider := range map[string]string{"ZOHO-AS": "Zoho", "Proofpoint, Inc.": "Proofpoint", "MIMECAST": "Mimecast", "SENDGRID": "SendGrid"} {
+		if r := c.Address("192.0.2.1", "", org); r.Provider != provider || !r.ProviderSpace() {
+			t.Errorf("%s: %+v", org, r)
+		}
+	}
+	for host, provider := range map[string]string{
+		"autodiscover.outlook.com": "Microsoft 365", "example-com.mail.protection.outlook.com": "Microsoft 365",
+		"aspmx.l.google.com": "Google", "mx1.example.pphosted.com": "Proofpoint",
+	} {
+		if r := c.Host(host); r.Provider != provider || !r.Shared() {
+			t.Errorf("%s: %+v", host, r)
+		}
+	}
+	// A look-alike is not the provider.
+	if r := c.Host("outlook.com.example.org"); r.Provider != "" {
+		t.Errorf("look-alike: %+v", r)
+	}
+}

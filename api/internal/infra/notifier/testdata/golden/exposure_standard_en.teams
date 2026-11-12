@@ -1,0 +1,65 @@
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": [
+          {
+            "type": "Container",
+            "style": "warning",
+            "items": [
+              {
+                "type": "TextBlock",
+                "text": "🟠 New exposure",
+                "weight": "Bolder",
+                "size": "Medium",
+                "wrap": true
+              }
+            ]
+          },
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Severity",
+                "value": "High"
+              },
+              {
+                "title": "Asset",
+                "value": "admin.example.com (subdomain)"
+              },
+              {
+                "title": "What",
+                "value": "Admin panel reachable on port 8443 (web interface exposed)"
+              },
+              {
+                "title": "Why it matters",
+                "value": "An admin or login page is reachable from the internet"
+              },
+              {
+                "title": "Next step",
+                "value": "Restrict access to the interface, or confirm it is meant to be public."
+              },
+              {
+                "title": "Organization",
+                "value": "Example Corp"
+              }
+            ]
+          }
+        ],
+        "actions": [
+          {
+            "type": "Action.OpenUrl",
+            "title": "Open exposure",
+            "url": "https://ctem.example.com/exposures"
+          }
+        ]
+      }
+    }
+  ]
+}

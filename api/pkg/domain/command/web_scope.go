@@ -26,6 +26,14 @@ type CreateGuard interface {
 	GuardCreate(ctx context.Context, cmd *Command) error
 }
 
+// CreateReleaser is implemented by a guard that records something while it
+// checks a command (the path discovery ledger claim): the repository calls
+// ReleaseCreate when it could not store the command after the guard accepted
+// it, so the record is given back.
+type CreateReleaser interface {
+	ReleaseCreate(ctx context.Context, cmd *Command)
+}
+
 // ErrWebScopeUnwired refuses a web job when no web scope guard is wired:
 // its path exclusions could not be attached (fail closed).
 var ErrWebScopeUnwired = errors.New("web scope is not configured; a web job is not dispatched")
@@ -43,6 +51,41 @@ type WebJob struct {
 	Bindable bool
 	// Verify: a validate or retest job (it re-checks a finding).
 	Verify bool
+	// Discovery: a path discovery job (enumerate.web_paths). Its web scope
+	// is the strict one (GET and HEAD, every non-allowed exclusion denied,
+	// a per-host request cap) and is attached even with no exclusion.
+	Discovery bool
+}
+
+// DiscoveryCapability is the capability of a path discovery job.
+const DiscoveryCapability = "enumerate.web_paths"
+
+// DiscoveryTool is the tool that runs path discovery.
+const DiscoveryTool = "webguess"
+
+// IsDiscoveryJob reports whether a scan payload runs path discovery: its
+// capability or one of its required capability words names
+// enumerate.web_paths (a workflow step sends the words, whatever tool the
+// sensor picks), or its tool is the discovery tool.
+func IsDiscoveryJob(payload json.RawMessage) bool {
+	var p struct {
+		Capability           string `json:"capability"`
+		RequiredCapabilities []any  `json:"required_capabilities"`
+	}
+	_ = json.Unmarshal(payload, &p)
+	names := func(w string) bool {
+		base, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(w)), "@")
+		return base == DiscoveryCapability
+	}
+	if names(p.Capability) {
+		return true
+	}
+	for _, c := range p.RequiredCapabilities {
+		if w, ok := c.(string); ok && names(w) {
+			return true
+		}
+	}
+	return strings.EqualFold(strings.TrimSpace(PayloadTool(payload)), DiscoveryTool)
 }
 
 // verifyBindsWebScope are the tools whose validate and retest jobs the
@@ -68,7 +111,7 @@ func WebJobOf(cmd *Command) (WebJob, bool) {
 		if !stage.WebTool(tool) && !webCapabilityPayload(cmd.Payload) {
 			return WebJob{}, false
 		}
-		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload), Bindable: true}, true
+		return WebJob{Tool: tool, Targets: PayloadTargets(cmd.Payload), Bindable: true, Discovery: IsDiscoveryJob(cmd.Payload)}, true
 	case CommandTypeRetest:
 		tool := strings.ToLower(strings.TrimSpace(PayloadTool(cmd.Payload)))
 		if !stage.WebTool(tool) {

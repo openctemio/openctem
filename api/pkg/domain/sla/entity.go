@@ -10,9 +10,12 @@ import (
 
 // Policy represents an SLA policy for findings remediation.
 type Policy struct {
-	id           shared.ID
-	tenantID     shared.ID
-	assetID      *shared.ID // nil = tenant default policy
+	id       shared.ID
+	tenantID shared.ID
+	assetID  *shared.ID // nil = tenant default policy
+	// practice is "" (governs every finding except compliance) or
+	// PracticeCompliance (governs only compliance findings). Set at create.
+	practice     string
 	name         string
 	description  string
 	isDefault    bool
@@ -72,6 +75,39 @@ var DefaultPriorityDays = map[string]int{
 	"P1": 5,  // High EPSS + reachable + critical asset.
 	"P2": 15, // Mitigated by compensating control OR unreachable critical.
 	"P3": 30, // Everything else.
+}
+
+// PracticeCompliance is the practice of benchmark check results
+// (docs/architecture/finding-practices.md). A policy with it governs only
+// compliance findings; a policy without one never governs them. Kept as a
+// string so the SLA domain does not import findings.
+const PracticeCompliance = "compliance"
+
+// DefaultCompliancePriorityDays are the platform's compliance windows per
+// priority class: a hardening control is remediated in change windows, not
+// in an incident's days. Compliance is never P0 automatically; the P0 value
+// only covers a tenant rule that raises one.
+var DefaultCompliancePriorityDays = map[string]int{
+	"P0": 30,
+	"P1": 30,
+	"P2": 90,
+	"P3": 180,
+}
+
+// DefaultComplianceSLADays are the compliance windows per severity, for a
+// finding without a priority class.
+var DefaultComplianceSLADays = map[string]int{
+	"critical": 30,
+	"high":     30,
+	"medium":   90,
+	"low":      180,
+	"info":     NoSLA,
+}
+
+// IsValidPractice reports whether a policy practice is accepted: "" or
+// compliance.
+func IsValidPractice(practice string) bool {
+	return practice == "" || practice == PracticeCompliance
 }
 
 // DefaultKEVCapDays is the default known exploited deadline cap: a finding
@@ -255,6 +291,49 @@ func (p *Policy) P3Days() int { return p.p3Days }
 
 // KEVCapDays returns the known exploited deadline cap in days (0 = off).
 func (p *Policy) KEVCapDays() int { return p.kevCapDays }
+
+// Practice returns "" (every finding except compliance) or
+// PracticeCompliance.
+func (p *Policy) Practice() string { return p.practice }
+
+// WithPractice attaches the persisted practice to a reconstituted Policy.
+func (p *Policy) WithPractice(practice string) *Policy {
+	if IsValidPractice(practice) {
+		p.practice = practice
+	}
+	return p
+}
+
+// SetPractice sets the practice of a new policy. A compliance policy starts
+// from the platform's compliance windows (the caller then applies the days
+// it was given) and has no known exploited cap (a check has no CVE).
+func (p *Policy) SetPractice(practice string) error {
+	if !IsValidPractice(practice) {
+		return fmt.Errorf("%w: practice must be empty or compliance", shared.ErrValidation)
+	}
+	p.practice = practice
+	if practice == PracticeCompliance {
+		p.criticalDays = DefaultComplianceSLADays["critical"]
+		p.highDays = DefaultComplianceSLADays["high"]
+		p.mediumDays = DefaultComplianceSLADays["medium"]
+		p.lowDays = DefaultComplianceSLADays["low"]
+		p.infoDays = DefaultComplianceSLADays["info"]
+		p.p0Days = DefaultCompliancePriorityDays["P0"]
+		p.p1Days = DefaultCompliancePriorityDays["P1"]
+		p.p2Days = DefaultCompliancePriorityDays["P2"]
+		p.p3Days = DefaultCompliancePriorityDays["P3"]
+		p.kevCapDays = 0
+	}
+	p.updatedAt = time.Now().UTC()
+	return nil
+}
+
+// Governs reports whether the policy may govern a finding of the given
+// practice: a compliance policy only compliance findings, any other policy
+// every finding except compliance.
+func (p *Policy) Governs(findingPractice string) bool {
+	return (p.practice == PracticeCompliance) == (findingPractice == PracticeCompliance)
+}
 
 // GetDaysForSeverity returns the remediation days for a given severity.
 func (p *Policy) GetDaysForSeverity(severity string) int {

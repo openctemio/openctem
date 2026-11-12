@@ -26,6 +26,8 @@ func TestStrategyOf_FollowsProvenance(t *testing.T) {
 	imported.SetIngestChannel(vulnerability.IngestChannelIntegration)
 	manualChannel := finding(t, vulnerability.FindingSourceVA, "scanner", "R-1")
 	manualChannel.SetIngestChannel(vulnerability.IngestChannelManual)
+	manualSourceManualChannel := finding(t, vulnerability.FindingSourcePentest, "pentest", "")
+	manualSourceManualChannel.SetIngestChannel(vulnerability.IngestChannelManual)
 	cases := []struct {
 		name   string
 		f      *vulnerability.Finding
@@ -40,7 +42,11 @@ func TestStrategyOf_FollowsProvenance(t *testing.T) {
 		{"manual", finding(t, vulnerability.FindingSourceManual, "manual", ""), nil, StrategyNone, ReasonNoAutomaticRetest, ""},
 		{"bug bounty", finding(t, vulnerability.FindingSourceBugBounty, "bug-bounty", ""), nil, StrategyNone, ReasonNoAutomaticRetest, ""},
 		{"pentest", finding(t, vulnerability.FindingSourcePentest, "pentest", ""), nil, StrategyNone, ReasonNoAutomaticRetest, ""},
-		{"manual channel", manualChannel, nil, StrategyNone, ReasonNoAutomaticRetest, ""},
+		// A scanner's report imported from a file arrives on the manual
+		// channel: it is not a person's finding, a newer import re-checks it.
+		{"manual channel scanner report", manualChannel, nil, StrategyNone, ReasonReimportToVerify, ""},
+		{"manual channel person source", manualSourceManualChannel, nil, StrategyNone, ReasonNoAutomaticRetest, ""},
+		{"manual channel with retest check", manualChannel, &CustomCheck{NucleiID: "retest-check-1"}, StrategyCustomCheck, "", "nuclei"},
 		{"secret", secret, nil, StrategyNone, ReasonSecretNeedsRotation, ""},
 		{"custom check wins", finding(t, vulnerability.FindingSourceBugBounty, "bug-bounty", ""), &CustomCheck{NucleiID: "retest-check-1"}, StrategyCustomCheck, "", "nuclei"},
 	}

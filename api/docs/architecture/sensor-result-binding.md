@@ -24,7 +24,7 @@ sequenceDiagram
   participant W as ingest.V2JobProcessor
   participant G as ingest.Service gate
   participant Q as sensor_result_quarantine
-  S->>R: PUT /api/v2/sensor/commands/{command_id}/results/{report_id}<br/>X-OpenCTEM-Lease-Epoch optional
+  S->>R: PUT /api/v2/sensor/commands/{command_id}/results/{report_id}<br/>X-OpenCTEM-Lease-Epoch (required when the request names results_lease_epoch)
   R->>R: OpenCommand: same tenant, not is_platform_job, held by S,<br/>open or finished under 15 min, stated epoch equals lease_epoch
   alt any check fails
     R-->>S: 404 command-not-found, nothing stored
@@ -195,10 +195,14 @@ epoch sent" below:
 - **At accept.** An organization sensor that sends `X-OpenCTEM-Lease-Epoch`
   must send the command's current `lease_epoch`; an old epoch is
   `404 command-not-found` and nothing is stored (`OpenCommand`). A shared
-  sensor must always send it (above). An organization sensor that sends no
-  epoch (sdk-go before v0.16.0, or a current sdk-go that no longer knows the
-  epoch, for example a report replayed from its outbox after a restart) is
-  checked only for holding the command and the grace window.
+  sensor must always send it (above). A request that names the
+  `results_lease_epoch` feature in `X-OpenCTEM-Sensor-Features` (sdk-go that
+  stores the epoch with each outbox report, and every protocol v3 result call
+  that carries `lease_epoch`) commits the sensor to stating the epoch: the
+  same request without one is `404 command-not-found`. An organization sensor
+  that neither states an epoch nor names the feature (an older sdk-go, or a
+  report an older sdk-go stored before an upgrade) is checked only for
+  holding the command and the grace window.
 - **At processing.** Each report records the lease epoch of its command when
   it was accepted (`ingest_reports.command_lease_epoch`, migration
   `ingest_reports_command_lease_epoch`). The ingest worker processes a queued
@@ -209,14 +213,20 @@ epoch sent" below:
   and the drop is audited (`ingest.failed`, denied, with the reason). Reports
   accepted before the migration have no recorded epoch: only the holder is
   checked.
-- **No epoch sent.** The recorded epoch is the command's epoch when the
+- **No epoch sent** (senders that do not name `results_lease_epoch`). The
+  recorded epoch is the command's epoch when the
   report was accepted (`V2Receiver.createReport`), not the epoch of the run
   that produced the results. So for a sender with no epoch the worker only
   catches a take-back that happens between accept and processing. When the
   platform took the run back and handed it to the same sensor again before
   the late report arrived, the old run's results are accepted under the new
   run's epoch and applied as the new run's. A run handed to another sensor
-  is refused at accept (holder check).
+  is refused at accept (holder check). A current sdk-go states the epoch the
+  report was made under (kept in the outbox item), so its late report is
+  refused at accept instead.
+- **Protocol v3.** `PutResult` and `CommitResult` carry `lease_epoch`; the
+  transport passes it to the v2 handler as `X-OpenCTEM-Lease-Epoch` together
+  with the `results_lease_epoch` feature, so the rules above apply unchanged.
 
 ## How a report names its command
 
@@ -266,6 +276,77 @@ Reviewed items (accepted or discarded) are deleted 30 days after review by the
 `sensor-result-quarantine-purge` controller (daily, one replica at a time);
 pending items are never purged. `SENSOR_RESULT_QUARANTINE_RETENTION` (default
 `720h`) and `SENSOR_RESULT_QUARANTINE_PURGE_INTERVAL` (default `24h`) change it.
+
+### A verified first-party tool that lags its descriptor is ingested
+
+A bound report may carry only the types its tool's descriptor declares
+(`output_binding.go`); the rest used to be held for review. A descriptor that
+lags its importer is a tool bug, not a risk, so findings the tool was asked to
+produce are no longer parked (`app/ingest/contract_mismatch.go`). The part of
+the report the platform catalog allows for the tool and the command's targets
+cover is ingested normally and flagged, when ALL of these hold:
+
+- the tool is one a released sensor compiles in and its contract claims origin
+  `builtin` (`sensor.ToolTrust` is `builtin`);
+- the sensor's grant is `trusted`;
+- the sensor's current manifest was sent by the sensor, and its descriptor for
+  the tool hashes to the contract digest;
+- the asset has a located type (name, address, service, web application) and a
+  target of the bound command covers it (the same target matching as the
+  job-target binding above; a command with no targets covers nothing).
+
+Flagged: the receipt gets an error entry `contract_mismatch` for each finding
+of an undeclared-type asset, the audit gets `sensor_result.contract_mismatch`
+(tool, tool version, types, descriptor digest), the platform administrators
+get one notice per (tool, type, tool version) per 24 hours (in memory, the
+coverage operator's notifier), and
+`sensor_unsolicited_results_total{outcome="contract_mismatch_ingested"}` counts
+it.
+
+Still held (or refused), unchanged: a third-party, unsigned or untrusted
+descriptor or tool; an unverified sensor; an asset outside the command's
+targets or with no location to check; dependencies and endpoints; anything the
+catalog does not allow for the tool; and every quarantine cap. Another tenant's
+sensor never reaches this path.
+
+Not done: held items already in the quarantine from a first-party tool are not
+released by this rule, because a held item does not store its command's
+targets, so the scope check cannot be repeated at release time. They are
+released by the descriptor rule below once the tool's descriptor declares the
+types. A signed-release check of the descriptor is a follow-up.
+
+### Automatic release of out-of-contract holds
+
+A report held as `out_of_contract` usually means the tool's descriptor lags
+its importer (the importer emits a type the descriptor does not declare yet).
+When the sensor's next release declares it, nobody should have to approve each
+item. The platform re-checks held items against the tool's CURRENT descriptor
+(`app/ingest/quarantine_release.go`):
+
+- When: every 5 minutes (`sensor-result-auto-release`, one replica at a time,
+  at most 100 items examined per run), and right after the sensor registers a
+  manifest that differs from its current one (only that tenant and sensor).
+- Which items: same tenant, same active sensor, same tool; reason
+  `out_of_contract`; pending; younger than `SENSOR_RESULT_QUARANTINE_RETENTION`;
+  not being applied.
+- Which descriptor counts: the sensor's current manifest, sent by the sensor
+  itself (a manifest the platform derived from a heartbeat declares nothing),
+  with a full descriptor kept for the tool (kept only when it hashes to the
+  contract digest). The descriptor can only narrow; the catalog stages still
+  apply as for a fresh report.
+- Release: the payload is split again by the same function a fresh report goes
+  through; only an item with nothing left out of contract is applied, by the
+  same path as a person's accept (the same scope and protections, nothing
+  auto-resolved). A failed apply leaves it pending.
+- Audit: `sensor_result.auto_accepted`, actor `system`, message "the tool's
+  signed descriptor now declares <types>"; the item's `result` carries
+  `auto_accepted` and the reason, `reviewed_by` is empty.
+- Everything else (other reasons, still-undeclared types, an unverified
+  descriptor, another tenant's or sensor's items) stays pending for a person.
+
+Follow-up: the descriptor is trusted as the sensor sent it (digest-checked, over
+the sensor's authenticated channel). A signed-release check of the descriptor
+is not part of it yet.
 
 ## Code
 

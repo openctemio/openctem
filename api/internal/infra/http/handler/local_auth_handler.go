@@ -1024,7 +1024,7 @@ type ForgotPasswordRequest struct {
 
 // ForgotPassword handles forgot password request.
 // @Summary      Forgot password
-// @Description  Sends password reset email
+// @Description  Sends password reset email. The answer is the same whether or not the address has an account. When the server cannot send email nothing is issued, so an administrator's one-time setup or reset link for the account keeps working: ask an administrator for a link.
 // @Tags         Authentication
 // @Accept       json
 // @Produce      json
@@ -1060,6 +1060,14 @@ func (h *LocalAuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request
 // local account) and emails the link, after the response and detached from
 // the request, so neither the lookup nor the email shows in the latency.
 func (h *LocalAuthHandler) sendResetLinkAsync(r *http.Request, email string) {
+	// Without email nothing is issued: a reset token that cannot be sent
+	// would only replace the account's stored link, which is also where an
+	// administrator's one-time setup or reset link lives. Anyone who knows an
+	// address could otherwise void the link an administrator handed over.
+	// The answer stays the same (anti-enumeration).
+	if !h.EmailDeliveryAvailable() {
+		return
+	}
 	ipAddress := getClientIP(r)
 	resetDuration := h.authConfig.PasswordResetDuration
 	go func() {

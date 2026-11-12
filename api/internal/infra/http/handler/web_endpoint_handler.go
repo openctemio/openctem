@@ -64,6 +64,12 @@ type WebEndpointResponse struct {
 	LastSeenAt    time.Time  `json:"last_seen_at"`
 	LastChangedAt *time.Time `json:"last_changed_at,omitempty"`
 	LastTool      string     `json:"last_tool,omitempty"`
+	// RespSize and RespHash are the response evidence of a path discovery
+	// hit: the body size in bytes and the first 16 hex characters of the
+	// sha-256 of the normalised body (never the body). Absent unless the
+	// endpoint was found by path discovery (source guess).
+	RespSize *int   `json:"resp_size,omitempty"`
+	RespHash string `json:"resp_hash,omitempty"`
 }
 
 // WebEndpointParamResponse is one parameter name of an endpoint (never a
@@ -110,6 +116,7 @@ func toWebEndpointResponse(e *webendpoint.Endpoint) WebEndpointResponse {
 		Technologies: nonNilStrings(e.Technologies), Labels: nonNilStrings(e.Labels), State: string(e.State),
 		InScope: e.InScope, CatalogKey: e.CatalogKey, ParamCount: e.ParamCount, FirstSeenAt: e.FirstSeenAt,
 		LastSeenAt: e.LastSeenAt, LastChangedAt: e.LastChangedAt, LastTool: e.LastTool,
+		RespSize: e.RespSize, RespHash: e.RespHash,
 	}
 	if e.CatalogKey != "" {
 		resp.Catalog = webendpoint.DefaultCatalog.ByKey(e.CatalogKey)
@@ -186,7 +193,7 @@ func (h *WebEndpointHandler) writeList(w http.ResponseWriter, r *http.Request, s
 // @Param  state  query  []string  false  "state: any of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  state_not  query  []string  false  "state: none of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  in_scope  query  boolean  false  "in scope equals"
-// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import, guess)
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)
@@ -282,7 +289,7 @@ func (h *WebEndpointHandler) ListByAsset(w http.ResponseWriter, r *http.Request)
 // @Param  state  query  []string  false  "state: any of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  state_not  query  []string  false  "state: none of (comma list)"  collectionFormat(csv)  Enums(active, gone, ignored)
 // @Param  in_scope  query  boolean  false  "in scope equals"
-// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import)
+// @Param  source  query  []string  false  "source: any of (comma list)"  collectionFormat(csv)  Enums(crawl, js, sitemap, robots, spec, har, archive, dast, probe, import, guess)
 // @Param  label  query  []string  false  "label: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key  query  []string  false  "catalog key: any of (comma list)"  collectionFormat(csv)
 // @Param  catalog_key_not  query  []string  false  "catalog key: none of (comma list)"  collectionFormat(csv)

@@ -72,6 +72,9 @@ function formFromProgram(p: ProgramDetail): ProgramFormValues {
     rateLimit: p.rules.rate_limit_rps ? String(p.rules.rate_limit_rps) : '',
     headers: (p.rules.required_headers ?? []).map((h) => `${h.name}: ${h.value}`).join('\n'),
     userAgent: p.rules.user_agent ?? '',
+    userAgents: (p.rules.user_agents ?? []).join('\n'),
+    // A program saved before the switch keeps it off until someone turns it on.
+    identificationRequired: !!p.rules.identification_required,
     forbidden: p.rules.forbidden ?? [],
     notes: p.rules.notes ?? '',
     windows: (p.rules.testing_windows ?? []).map(formatWindow).join('\n'),
@@ -265,7 +268,19 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
               <span className="text-muted-foreground">
                 {t('programs.form.ua', 'Required User-Agent')}:{' '}
               </span>
-              <span className="font-mono">{p.rules.user_agent || '-'}</span>
+              <span className="font-mono">
+                {p.rules.user_agents?.length
+                  ? t('programs.rotatingOver', 'Rotating over {n} values', {
+                      n: p.rules.user_agents.length,
+                    })
+                  : p.rules.user_agent || '-'}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">
+                {t('programs.identificationRequired', 'Identification required')}:{' '}
+              </span>
+              {p.rules.identification_required ? t('common.yes', 'Yes') : t('common.no', 'No')}
             </div>
             <div className="sm:col-span-2">
               <span className="text-muted-foreground">

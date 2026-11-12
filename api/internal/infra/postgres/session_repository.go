@@ -409,6 +409,37 @@ func (r *SessionRepository) MarkStepUp(ctx context.Context, sessionID, userID sh
 	return n == 1, nil
 }
 
+// recentAuthExpr is the moment of the session's latest proof of identity
+// (RecentAuthAt).
+const recentAuthExpr = `CASE
+			WHEN auth_method IN ('sso', 'saml') AND idp_tenant_id IS NOT NULL
+				THEN COALESCE(step_up_at, 'epoch'::timestamptz)
+			ELSE GREATEST(created_at, COALESCE(step_up_at, created_at))
+		END`
+
+// SpendRecentAuth spends the session's latest proof of identity for an
+// action that asks every time: it succeeds when that proof was given at or
+// after notBefore and was not spent yet, and records it as spent. The proof's
+// own timestamp is what is recorded, so the clocks of the API and the
+// database never let a proof be spent twice, and a concurrent second spend of
+// the same proof finds the row already updated and fails.
+func (r *SessionRepository) SpendRecentAuth(ctx context.Context, sessionID, userID shared.ID, notBefore time.Time) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE sessions SET step_up_spent_at = `+recentAuthExpr+`
+		WHERE id = $1 AND user_id = $2 AND status = 'active' AND expires_at > NOW()
+			AND `+recentAuthExpr+` >= $3
+			AND (step_up_spent_at IS NULL OR step_up_spent_at < `+recentAuthExpr+`)`,
+		sessionID.String(), userID.String(), notBefore)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
+}
+
 // RecentAuthAt returns when userID last proved their identity in sessionID:
 // the later of the sign-in that created the session and its last step-up.
 // For a session created by an organization's identity provider (auth_method
@@ -420,11 +451,7 @@ func (r *SessionRepository) MarkStepUp(ctx context.Context, sessionID, userID sh
 func (r *SessionRepository) RecentAuthAt(ctx context.Context, sessionID, userID shared.ID) (time.Time, error) {
 	var at time.Time
 	err := r.db.QueryRowContext(ctx, `
-		SELECT CASE
-			WHEN auth_method IN ('sso', 'saml') AND idp_tenant_id IS NOT NULL
-				THEN COALESCE(step_up_at, 'epoch'::timestamptz)
-			ELSE GREATEST(created_at, COALESCE(step_up_at, created_at))
-		END
+		SELECT `+recentAuthExpr+`
 		FROM sessions
 		WHERE id = $1 AND user_id = $2 AND status = 'active' AND expires_at > NOW()`,
 		sessionID.String(), userID.String()).Scan(&at)

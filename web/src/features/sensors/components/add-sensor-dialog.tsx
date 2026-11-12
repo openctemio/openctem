@@ -1,7 +1,8 @@
 'use client'
 
-import { Plus } from 'lucide-react'
+import { Plus, ShieldCheck } from 'lucide-react'
 
+import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -26,6 +27,21 @@ export function AddSensorButton({ onClick }: { onClick: () => void }) {
     <Button size="sm" onClick={onClick}>
       <Plus className="h-4 w-4" />
       {t('sensors.onboard.add')}
+    </Button>
+  )
+}
+
+/** Page-header link to the approve page (/activate); hidden without sensors:pair, as the route is. */
+export function ApproveSensorButton() {
+  const { t } = useTranslation()
+  const canPair = useHasPermission(Permission.SensorsPair)
+  if (!canPair) return null
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link href="/activate">
+        <ShieldCheck className="h-4 w-4" />
+        {t('sensors.list.approve')}
+      </Link>
     </Button>
   )
 }

@@ -169,6 +169,9 @@ const (
 	StatusPending Status = "pending"
 	// StatusRejected: a reviewer declined it. It never takes effect.
 	StatusRejected Status = "rejected"
+	// StatusSuperseded: a scope entry whose pattern was replaced by another
+	// entry (replace.go). It authorizes nothing and keeps its history.
+	StatusSuperseded Status = "superseded"
 )
 
 // String returns the string representation of the status.
@@ -179,7 +182,7 @@ func (s Status) String() string {
 // IsValid returns true if the status is valid.
 func (s Status) IsValid() bool {
 	switch s {
-	case StatusActive, StatusInactive, StatusExpired, StatusPending, StatusRejected:
+	case StatusActive, StatusInactive, StatusExpired, StatusPending, StatusRejected, StatusSuperseded:
 		return true
 	}
 	return false

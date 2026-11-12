@@ -1,0 +1,47 @@
+{
+  "text": "New exposure (High)",
+  "attachments": [
+    {
+      "color": "#ea580c",
+      "blocks": [
+        {
+          "type": "header",
+          "text": {
+            "type": "plain_text",
+            "text": "🟠 New exposure",
+            "emoji": true
+          }
+        },
+        {
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Severity:* High\n*Next step:* Open it in the console to triage."
+          }
+        },
+        {
+          "type": "context",
+          "elements": [
+            {
+              "type": "mrkdwn",
+              "text": "Example Corp"
+            }
+          ]
+        },
+        {
+          "type": "actions",
+          "elements": [
+            {
+              "type": "button",
+              "text": {
+                "type": "plain_text",
+                "text": "Open exposure"
+              },
+              "url": "https://ctem.example.com/exposures"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

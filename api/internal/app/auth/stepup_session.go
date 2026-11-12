@@ -35,6 +35,7 @@ var ErrStepUpUnavailable = errors.New("step-up re-authentication unavailable for
 type StepUpSessionStore interface {
 	MarkStepUp(ctx context.Context, sessionID, userID shared.ID, at time.Time) (bool, error)
 	RecentAuthAt(ctx context.Context, sessionID, userID shared.ID) (time.Time, error)
+	SpendRecentAuth(ctx context.Context, sessionID, userID shared.ID, notBefore time.Time) (bool, error)
 }
 
 // StepUpState tells the client what to ask for and whether the session is
@@ -77,6 +78,19 @@ func (s *AuthService) RecentAuthAt(ctx context.Context, userID, sessionID string
 		return time.Time{}, ErrStepUpUnavailable
 	}
 	return at, err
+}
+
+// SpendRecentAuth spends the session's latest proof for an action the
+// organization asks for every time (stepup.ModeEveryTime): true once per
+// proof given at or after notBefore. ErrStepUpUnavailable when the session
+// cannot be used.
+func (s *AuthService) SpendRecentAuth(ctx context.Context, userID, sessionID string, notBefore time.Time) (bool, error) {
+	st := s.stepUpStore()
+	uid, sid, ok := parseStepUpIDs(userID, sessionID)
+	if st == nil || !ok {
+		return false, ErrStepUpUnavailable
+	}
+	return st.SpendRecentAuth(ctx, sid, uid, notBefore)
 }
 
 // GetStepUpState reports the method the account needs and the open window.

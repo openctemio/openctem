@@ -79,6 +79,10 @@ var assetMergeRefs = []mergeRef{
 	// of a watch name the asset too and move with it.
 	{table: "web_watches", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "web_changes", column: "asset_id", tenantCol: "tenant_id"},
+	// The services a version-match finding is observed on follow their asset
+	// (the location key is unique per tenant, not per asset, so a move cannot
+	// conflict); the matcher refreshes them on its next pass.
+	{table: "finding_locations", column: "asset_id", tenantCol: "tenant_id"},
 
 	// UNIQUE keys: drop the merged row when the kept asset already has the key.
 	{table: "asset_services", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
@@ -130,6 +134,11 @@ var assetMergeRefs = []mergeRef{
 	// Same for the finding-priority queue: the moved findings queue the kept
 	// asset themselves (asset_id trigger).
 	{table: "finding_priority_queue", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
+	// The path discovery ledger (one row per web origin): the kept origin's
+	// row wins; a merged origin's row moves when the kept one has none, so
+	// the per-origin request cap survives the merge.
+	{table: "web_path_discovery_runs", column: "origin_asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{}}},
 	{table: "business_unit_assets", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
 		keys: []mergeKey{{cols: []string{"business_unit_id"}}}},
@@ -194,6 +203,11 @@ var assetMergeRefs = []mergeRef{
 	// moves.
 	{table: "asset_coverage", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
 		keys: []mergeKey{{cols: []string{"capability", "vantage"}}}},
+	// Asset liveness (docs/architecture/asset-liveness.md): one row per
+	// asset; the kept asset's evidence wins, a merged asset's row moves only
+	// when the kept one has none.
+	{table: "asset_liveness", column: "asset_id", tenantCol: "tenant_id", idCol: "ctid",
+		keys: []mergeKey{{}}},
 	// Scan stage chaining (research/27 P0-3): what a step produced follows
 	// the asset (one row per step run and asset), and a run's target
 	// provenance names the kept asset.
@@ -201,6 +215,20 @@ var assetMergeRefs = []mergeRef{
 		keys: []mergeKey{{cols: []string{"scan_run_step_id"}}}},
 	{table: "scan_run_targets", column: "asset_id", tenantCol: "tenant_id"},
 	{table: "scan_run_targets", column: "parent_asset_id", tenantCol: "tenant_id"},
+	// Compliance check state (docs/architecture/compliance-checks.md): the
+	// kept asset's state of a control wins; a merged asset's state moves
+	// when the kept one has none. The history of every control moves whole
+	// (nothing is lost, a dropped state's rows keep their control).
+	{table: "compliance_check_states", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"benchmark_key", "control_id"}}}},
+	{table: "compliance_check_results", column: "asset_id", tenantCol: "tenant_id"},
+	// Exploration (docs/architecture/exploration.md): a lead about a merged
+	// asset is about the kept one; a link to a merged asset names the kept
+	// one, and a lead's link the kept asset already has is dropped (one
+	// link per lead, relation and asset).
+	{table: "exploration_leads", column: "subject_asset_id", tenantCol: "tenant_id"},
+	{table: "exploration_links", column: "asset_id", tenantCol: "tenant_id", idCol: "id",
+		keys: []mergeKey{{cols: []string{"lead_id", "rel"}}}},
 }
 
 // assetMergeEdgeRefs are directed edges between two assets. An edge between
@@ -221,9 +249,15 @@ var assetMergeSpecialRefs = map[string]string{
 	"dash_asset_day.asset_id":                  "derived dashboard facts: the merged asset's are deleted and the kept asset is marked for a recompute",
 	"dash_asset_rank.asset_id":                 "derived dashboard facts: the merged asset's are deleted and the kept asset is marked for a recompute",
 	"dash_dirty_assets.asset_id":               "the merged asset's change marks are deleted; the kept asset is marked",
+	"compliance_posture.asset_id":              "derived compliance posture: the merged asset's rows are deleted and the kept asset is marked for a recompute",
 	"asset_dedup_review.keep_asset_id":         "other pending reviews about a merged asset are dropped",
 	"asset_dedup_review.merge_asset_ids":       "other pending reviews about a merged asset are dropped",
 	"asset_attributions.asset_id":              "the kept asset keeps the most recent human decision of any merged asset; automatic records of merged assets are dropped (the moved evidence re-derives them)",
+	"asset_domain_memberships.asset_id":        "derived: the merged asset's rows are deleted and the kept asset is queued so the worker recomputes its rows",
+	"asset_domain_queue.asset_id":              "the merged asset's queue rows are deleted and the kept asset is queued",
+	"asset_ports.asset_id":                     "derived: the merged asset's rows are deleted and the kept asset is queued so the worker recomputes its rows",
+	"asset_ports.port_asset_id":                "derived: rows naming a merged port asset are deleted; the kept asset is queued and recomputed",
+	"asset_port_queue.asset_id":                "the merged asset's queue rows are deleted and the kept asset is queued",
 	"asset_attributions.follows_host_id":       "children of a merged host follow the kept asset (the kept asset itself follows nobody it absorbed)",
 }
 
@@ -285,7 +319,50 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	if err := repointNonFKRefs(ctx, tx, tenantID, reviewID, keepID, mergeIDs); err != nil {
 		return err
 	}
+	if err := mergeDomainMembership(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
+	if err := mergeAssetPorts(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
 	return mergeDashboardFacts(ctx, tx, tenantID, keepID, mergeIDs)
+}
+
+// mergeDomainMembership drops the merged assets' domain memberships and queue
+// rows (derived data, recomputed by the asset-domain-membership worker) and
+// queues the kept asset, which now holds the merged assets' edges.
+func mergeDomainMembership(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	for _, table := range []string{"asset_domain_memberships", "asset_domain_queue"} {
+		//nolint:gosec // G201: table names come from the fixed list above.
+		q := fmt.Sprintf(`DELETE FROM %s WHERE tenant_id = $1 AND asset_id = ANY($2)`, table)
+		if _, err := tx.ExecContext(ctx, q, tenantID, pq.Array(mergeIDs)); err != nil {
+			return fmt.Errorf("merge domain membership (%s): %w", table, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_domain_queue (asset_id, tenant_id) VALUES ($1, $2)
+		ON CONFLICT (asset_id) DO NOTHING`, keepID, tenantID); err != nil {
+		return fmt.Errorf("queue kept asset for domain membership: %w", err)
+	}
+	return nil
+}
+
+// mergeAssetPorts drops the merged assets' open port rows (as the asset or
+// as the port) and queue rows, derived data the asset-ports worker
+// recomputes, and queues the kept asset, which now holds their edges.
+func mergeAssetPorts(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_ports WHERE tenant_id = $1 AND (asset_id = ANY($2) OR port_asset_id = ANY($2))`,
+		tenantID, pq.Array(mergeIDs)); err != nil {
+		return fmt.Errorf("merge asset ports: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_port_queue WHERE tenant_id = $1 AND asset_id = ANY($2)`,
+		tenantID, pq.Array(mergeIDs)); err != nil {
+		return fmt.Errorf("merge asset ports queue: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_port_queue (asset_id, tenant_id) VALUES ($1, $2)
+		ON CONFLICT (asset_id) DO NOTHING`, keepID, tenantID); err != nil {
+		return fmt.Errorf("queue kept asset for asset ports: %w", err)
+	}
+	return nil
 }
 
 // mergeDashboardFacts drops the merged assets' dashboard facts and change
@@ -293,7 +370,7 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 // loop recomputes it from the findings it received. Runs last: moving the
 // findings above marked the merged assets too.
 func mergeDashboardFacts(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
-	for _, table := range []string{"dash_asset_state", "dash_asset_day", "dash_asset_rank", "dash_dirty_assets"} {
+	for _, table := range []string{"dash_asset_state", "dash_asset_day", "dash_asset_rank", "dash_dirty_assets", "compliance_posture"} {
 		//nolint:gosec // G201: table names come from the fixed list above.
 		q := fmt.Sprintf(`DELETE FROM %s WHERE tenant_id = $1 AND asset_id = ANY($2)`, table)
 		if _, err := tx.ExecContext(ctx, q, tenantID, pq.Array(mergeIDs)); err != nil {

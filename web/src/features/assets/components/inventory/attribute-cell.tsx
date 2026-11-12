@@ -27,6 +27,7 @@ import type { Asset } from '../../types'
 import { attributeStrings, attributeValue } from '../../lib/attribute-value'
 import { OverflowChips } from '../service-cells/overflow-chips'
 import { propertyLabel } from '@/features/asset-types/lib/property-schema'
+import { attributeValueLabel, KIND_SOURCE_GUESS } from '@/features/asset-types/lib/attribute-values'
 
 /** Days before an expiry turns amber (the certificate-health window). */
 const EXPIRY_WARN_DAYS = 30
@@ -50,7 +51,7 @@ function ExpiryCell({ value }: { value: string }) {
 }
 
 export function AttributeCell({ asset, attribute }: { asset: Asset; attribute: TypeAttribute }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { key, kind } = attribute
   const format = ASSET_PROPERTIES[key]?.format
 
@@ -92,10 +93,20 @@ export function AttributeCell({ asset, attribute }: { asset: Asset; attribute: T
     )
   }
   if (kind === 'enum') {
+    // A kind guessed from the port is always shown as a guess.
+    const guessed =
+      key === 'service_kind' && attributeValue(asset, 'kind_source') === KIND_SOURCE_GUESS
     return (
-      <Badge variant="outline" className="font-normal">
-        {text}
-      </Badge>
+      <span className="inline-flex items-center gap-1">
+        <Badge variant="outline" className="font-normal">
+          {attributeValueLabel(key, text, locale)}
+        </Badge>
+        {guessed && (
+          <span className="text-xs text-muted-foreground">
+            {t('assets.serviceKind.guess', 'Guess')}
+          </span>
+        )}
+      </span>
     )
   }
   if (kind === 'int' || kind === 'number') {

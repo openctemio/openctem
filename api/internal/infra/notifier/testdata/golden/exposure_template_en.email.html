@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New exposure</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background: #ea580c; color: #fff; padding: 20px; }
+        .header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+        .severity-badge { display: inline-block; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+        .content { padding: 20px; }
+        .body { margin-bottom: 20px; white-space: pre-wrap; }
+        .fields { background: #f8f9fa; border-radius: 6px; padding: 15px; margin: 15px 0; }
+        .field { margin-bottom: 10px; }
+        .field:last-child { margin-bottom: 0; }
+        .field-label { font-weight: 600; color: #666; font-size: 12px; text-transform: uppercase; margin-bottom: 2px; }
+        .field-value { color: #333; }
+        .button { display: inline-block; background: #ea580c; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 15px 0; }
+        .button:hover { opacity: 0.9; }
+        .footer { background: #f8f9fa; padding: 15px 20px; font-size: 12px; color: #666; border-top: 1px solid #eee; }
+        .footer a { color: #ea580c; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="severity-badge">High</div>
+            <h1>New exposure</h1>
+        </div>
+        <div class="content">
+            
+            
+            
+            <div class="fields">
+                
+                <div class="field">
+                    
+                    <div class="field-value">admin.example.com needs a look: Admin panel reachable on port 8443 (web interface exposed)</div>
+                </div>
+                
+                <div class="field">
+                    
+                    <div class="field-value">Owner team: platform</div>
+                </div>
+                
+            </div>
+            
+            <a href="https://ctem.example.com/exposures" class="button">Open exposure</a>
+        </div>
+        <div class="footer">
+            
+            Sent by OpenCTEM at <now>
+        </div>
+    </div>
+</body>
+</html>

@@ -16,6 +16,9 @@ import { useTenant } from '@/context/tenant-provider'
 import {
   type AssetLifecycleSettings,
   DEFAULT_LIFECYCLE_SETTINGS,
+  LIVENESS_BOUNDS,
+  LIVENESS_DEFAULTS,
+  type LivenessNumberField,
   MIN_THRESHOLD_DAYS,
   MAX_THRESHOLD_DAYS,
   MIN_GRACE_DAYS,
@@ -52,7 +55,17 @@ type FormState = {
   pause_on_integration_failure: boolean
   excluded_source_types: string[]
   dry_run_completed_at?: number | null
+  close_findings_when_gone: boolean
+  liveness: Record<LivenessNumberField, string>
 }
+
+const LIVENESS_FIELDS: LivenessNumberField[] = [
+  'unreachable_attempts',
+  'unreachable_window_hours',
+  'gone_window_hours',
+  'gone_single_observer_window_hours',
+  'max_gone_per_day',
+]
 
 function toFormState(s: AssetLifecycleSettings): FormState {
   return {
@@ -71,6 +84,10 @@ function toFormState(s: AssetLifecycleSettings): FormState {
     excluded_source_types:
       s.excluded_source_types ?? DEFAULT_LIFECYCLE_SETTINGS.excluded_source_types ?? [],
     dry_run_completed_at: s.dry_run_completed_at ?? null,
+    close_findings_when_gone: s.liveness?.close_findings_when_gone ?? false,
+    liveness: Object.fromEntries(
+      LIVENESS_FIELDS.map((f) => [f, String(s.liveness?.[f] || LIVENESS_DEFAULTS[f])])
+    ) as Record<LivenessNumberField, string>,
   }
 }
 
@@ -83,6 +100,13 @@ function toPayload(form: FormState): AssetLifecycleSettings {
     pause_on_integration_failure: form.pause_on_integration_failure,
     excluded_source_types: form.excluded_source_types,
     dry_run_completed_at: form.dry_run_completed_at,
+    liveness: {
+      close_findings_when_gone: form.close_findings_when_gone,
+      ...(Object.fromEntries(LIVENESS_FIELDS.map((f) => [f, Number(form.liveness[f])])) as Record<
+        LivenessNumberField,
+        number
+      >),
+    },
   }
 }
 
@@ -103,6 +127,30 @@ function validate(form: FormState, t: Translate): string | null {
       'settings.assetLifecycle.graceRange',
       'Grace period must be between {min} and {max} days.',
       { min: MIN_GRACE_DAYS, max: MAX_GRACE_DAYS }
+    )
+  }
+  for (const f of LIVENESS_FIELDS) {
+    const v = Number(form.liveness[f])
+    const [min, max] = LIVENESS_BOUNDS[f]
+    if (!Number.isInteger(v) || v < min || v > max) {
+      return t(
+        'settings.assetLifecycle.liveness.range',
+        '{field} must be between {min} and {max}.',
+        {
+          field: t(`settings.assetLifecycle.liveness.${f}`, f),
+          min,
+          max,
+        }
+      )
+    }
+  }
+  if (
+    Number(form.liveness.gone_single_observer_window_hours) <
+    Number(form.liveness.gone_window_hours)
+  ) {
+    return t(
+      'settings.assetLifecycle.liveness.windowOrder',
+      'The one-sensor window must not be shorter than the two-sensor window.'
     )
   }
   return null
@@ -304,6 +352,51 @@ export function LifecycleSettingsForm({
                   </button>
                 )
               })}
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4" data-testid="liveness-settings">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="close-findings-when-gone" className="font-medium">
+                  {t(
+                    'settings.assetLifecycle.liveness.close',
+                    'Close findings of assets that are gone'
+                  )}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'settings.assetLifecycle.liveness.closeHint',
+                    'A name that has had no address long enough is gone. Its open findings close as obsolete asset, never as fixed, and reopen with their SLA deadline if it comes back. Unreachable assets keep their findings open. Run the dry run first.'
+                  )}
+                </p>
+              </div>
+              <Switch
+                id="close-findings-when-gone"
+                checked={form.close_findings_when_gone}
+                onCheckedChange={(c) => setForm((s) => ({ ...s, close_findings_when_gone: c }))}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {LIVENESS_FIELDS.map((f) => (
+                <div key={f} className="space-y-2">
+                  <Label htmlFor={`liveness-${f}`}>
+                    {t(`settings.assetLifecycle.liveness.${f}`, f)}
+                  </Label>
+                  <Input
+                    id={`liveness-${f}`}
+                    type="number"
+                    min={LIVENESS_BOUNDS[f][0]}
+                    max={LIVENESS_BOUNDS[f][1]}
+                    value={form.liveness[f]}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, liveness: { ...s.liveness, [f]: e.target.value } }))
+                    }
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

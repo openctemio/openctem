@@ -344,3 +344,31 @@ func TestRender_RefusesAMalformedPin(t *testing.T) {
 		t.Fatal("a malformed pin was rendered")
 	}
 }
+
+// The signed pairing grant names the live roots by the SHA-256 of their
+// SubjectPublicKeyInfo (what a sensor pins), never an intermediate or an
+// expired root; a bundle without a root names none.
+func TestPlatformCA_TLSAnchors(t *testing.T) {
+	later := time.Now().Add(24 * time.Hour)
+	root := issue(t, "Root", true, later, nil)
+	inter := issue(t, "Intermediate", true, later, root)
+	expired := issue(t, "Expired Root", true, time.Now().Add(-time.Hour), nil)
+	ca, err := ParsePlatformCA(join(inter.pem, root.pem, expired.pem))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spki := sha256.Sum256(root.cert.RawSubjectPublicKeyInfo)
+	if got := ca.TLSAnchors(time.Now()); len(got) != 1 || got[0] != "sha256:"+hex.EncodeToString(spki[:]) {
+		t.Fatalf("anchors = %q", got)
+	}
+	only, err := ParsePlatformCA(inter.pem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := only.TLSAnchors(time.Now()); len(got) != 0 {
+		t.Fatalf("an intermediate-only bundle names %q", got)
+	}
+	if (*PlatformCA)(nil).TLSAnchors(time.Now()) != nil {
+		t.Fatal("nil bundle")
+	}
+}

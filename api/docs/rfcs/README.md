@@ -96,7 +96,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-078](RFC-078-passkeys-and-security-notices.md) | Passkeys and account security notices | Partially implemented: the platform console part (§7, 2026-10-16); the user-account phases P1 and P3 are Proposed |
 | [RFC-079](RFC-079-console-platform-settings.md) | Run-time settings in the console instead of environment variables | Accepted, partly implemented (2026-10-18) |
 | [RFC-080](RFC-080-attack-surface-changes-and-digest.md) | Typed attack-surface changes and the weekly digest | Implemented (2026-10-11) |
-| [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, sensor `screenshot` tool in the sensor repository |
+| [RFC-081](RFC-081-web-evidence-screenshots.md) | Web evidence and screenshots of web assets | Accepted (2026-10-11); platform side implemented, routed as `capture.screenshot`; sensor tool `webshot` in the sensor's `browser` image |
 | [RFC-082](RFC-082-network-seeds.md) | Network seeds (AS numbers, organizations, CIDR) | Implemented (2026-10-11) |
 | [RFC-083](RFC-083-lookalike-domains.md) | Passive lookalike-domain monitoring | Implemented (2026-10-11) |
 | [RFC-084](RFC-084-file-storage.md) | File upload and storage | Implemented: P0 (#1900, #1901) and P1 (#1934, #1936, #1939, #1942), 2026-10-12; logo upload, asynchronous imports and exports later (§6) |
@@ -158,6 +158,11 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-147](RFC-147-managed-scanning-fleet.md) | Managed scanning fleet: demand scaling, owned egress proxies, proxy selection | Proposed (2026-11-02); nothing here is built unless a section says "shipped" |
 | [RFC-148](RFC-148-asset-neighborhood.md) | Asset neighborhood and lineage graph read | Implemented (2026-11-04) |
 | [RFC-149](RFC-149-task-secrets.md) | Task secrets | Implemented (2026-11-05): the platform side; the sensor SDK side ships in the same release |
+| [RFC-150](RFC-150-web-path-discovery.md) | Web path discovery | Partially implemented (2026-11-05): platform planning, derived list, strict job scope, budgets, program rules, coverage reasons and the workflow step |
+| [RFC-151](RFC-151-large-range-targets.md) | Large range targets | Implemented (2026-11-06) |
+| [RFC-152](RFC-152-finding-practices.md) | Finding practices | Partly implemented (2026-11-08): practice column, derivation, filters, backfill command, compliance SLA policy, findings switch, compliance check state with history and posture, control remediation key, compliance priority, compliance-checks command |
+| [RFC-153](RFC-153-exploration.md) | Exploration | Partially implemented (2026-11-07): "how we found this" for findings and assets (read only, no new tables); leads, links and verdicts are designed, not built |
+| [RFC-154](RFC-154-blocked-target-names.md) | Blocked target names and exceptions | Implemented (2026-11-11) |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.

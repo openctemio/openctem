@@ -100,6 +100,11 @@ type StepRun struct {
 	ConditionResult    *bool
 	SkipReason         string
 
+	// EffectiveConfig is what the platform dispatched the step with and
+	// SensorSettings what the sensor reported it ran with (nil: none).
+	EffectiveConfig *EffectiveConfig
+	SensorSettings  *SensorSettings
+
 	// Results
 	FindingsCount int
 	// InfoObservations counts the template scanner info matches the step

@@ -75,6 +75,7 @@ var categoryOf = map[EventType]DisplayCategory{
 	EventTypePortClosed:             CategoryExposedPorts,
 	EventTypeServiceDetected:        CategoryExposedPorts,
 	EventTypeServiceChanged:         CategoryExposedPorts,
+	EventTypeRiskyServiceExposed:    CategoryExposedPorts,
 	EventTypeWebInterfaceExposed:    CategoryWebInterfaces,
 	EventTypeAPIExposed:             CategoryExposedAPIs,
 	EventTypeAPIRemoved:             CategoryExposedAPIs,
@@ -151,18 +152,6 @@ type Summary struct {
 	Args    map[string]string
 }
 
-// wellKnownPorts names the service usually behind a port, used when the
-// producer did not name it.
-var wellKnownPorts = map[int]string{
-	21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS", 80: "HTTP", 110: "POP3", 111: "RPC",
-	135: "MSRPC", 139: "NetBIOS", 143: "IMAP", 389: "LDAP", 443: "HTTPS", 445: "SMB", 465: "SMTPS",
-	587: "SMTP", 636: "LDAPS", 873: "rsync", 993: "IMAPS", 995: "POP3S", 1433: "MS SQL", 1521: "Oracle",
-	2049: "NFS", 2375: "Docker API", 2379: "etcd", 3306: "MySQL", 3389: "RDP", 5000: "HTTP", 5432: "PostgreSQL",
-	5601: "Kibana", 5672: "AMQP", 5900: "VNC", 5984: "CouchDB", 6379: "Redis", 6443: "Kubernetes API",
-	8080: "HTTP", 8443: "HTTPS", 9000: "HTTP", 9092: "Kafka", 9200: "Elasticsearch", 11211: "Memcached",
-	27017: "MongoDB",
-}
-
 // SummaryOf renders the one-line description of an event from its type,
 // title and details. It never fails: without the values a sentence needs it
 // falls back to the title.
@@ -179,19 +168,17 @@ func SummaryOf(t EventType, title string, details map[string]any) Summary {
 
 // summaryArgs are the cleaned detail values the sentences use.
 type summaryArgs struct {
-	details               map[string]any
-	port, service, domain string
+	details                      map[string]any
+	port, service, guess, domain string
 }
 
 func newSummaryArgs(details map[string]any) summaryArgs {
 	a := summaryArgs{details: details}
 	a.port = a.arg("port")
-	a.service = a.arg("service", "product")
-	if a.service == "" && a.port != "" {
-		if n, err := strconv.Atoi(a.port); err == nil {
-			a.service = wellKnownPorts[n]
-		}
-	}
+	// The service a producer or a measurement named. A kind guessed from
+	// the port is only ever shown as a guess (service_guess).
+	a.service = a.arg("service_label", "service", "product")
+	a.guess = a.arg("service_guess")
 	a.domain = a.arg("domain", "host", "subject_cn", "name")
 	return a
 }
@@ -218,6 +205,8 @@ func networkSummary(t EventType, a summaryArgs) (Summary, bool) {
 		switch {
 		case port != "" && service != "":
 			return mkSummary("", fmt.Sprintf("Port %s (%s) is open to the internet", port, service), map[string]string{"port": port, "service": service}), true
+		case port != "" && a.guess != "":
+			return mkSummary("guess", fmt.Sprintf("Port %s is open to the internet (probably %s)", port, a.guess), map[string]string{"port": port, "service": a.guess}), true
 		case port != "":
 			return mkSummary("port", fmt.Sprintf("Port %s is open to the internet", port), map[string]string{"port": port}), true
 		}
@@ -231,6 +220,14 @@ func networkSummary(t EventType, a summaryArgs) (Summary, bool) {
 			return mkSummary("", fmt.Sprintf("%s is reachable from the internet on port %s", service, port), map[string]string{"service": service, "port": port}), true
 		case service != "":
 			return mkSummary("service", fmt.Sprintf("%s is reachable from the internet", service), map[string]string{"service": service}), true
+		}
+	case EventTypeRiskyServiceExposed:
+		label := a.arg("service_label", "service")
+		switch {
+		case label != "" && port != "":
+			return mkSummary("", fmt.Sprintf("%s is reachable from the internet on port %s", label, port), map[string]string{"service": label, "port": port}), true
+		case label != "":
+			return mkSummary("service", fmt.Sprintf("%s is reachable from the internet", label), map[string]string{"service": label}), true
 		}
 	case EventTypeServiceChanged:
 		if port != "" {

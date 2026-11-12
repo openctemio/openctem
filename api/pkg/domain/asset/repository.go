@@ -361,6 +361,7 @@ type Filter struct {
 	ExpiresAfter  *time.Time
 	ExpiresBefore *time.Time
 	CreatedAfter  *time.Time // Filter assets added to the inventory at/after this time
+	CreatedBefore *time.Time // Filter assets added to the inventory at/before this time
 	// ExposureChangedOrCreatedAfter keeps assets that were added, or whose
 	// exposure level last changed, at/after this time. Combined with an
 	// Exposures filter it answers "newly exposed since t".
@@ -387,7 +388,10 @@ type Filter struct {
 	// MonitoringStates keeps the assets whose derived monitoring state
 	// (MonitoringStateOf) is one of these; UnclassifiedScanned is the
 	// tenant's input to it (its unclassified-scans mode is not off).
-	MonitoringStates    []string
+	MonitoringStates []string
+	// LivenessStates: the asset's liveness state (asset_liveness; unknown
+	// when it has no row).
+	LivenessStates      []string
 	UnclassifiedScanned bool
 	// Primary keeps the organization's root domains only (PrimarySQL).
 	Primary             bool
@@ -774,5 +778,6 @@ func (f Filter) IsEmpty() bool {
 		f.ExpiresAfter == nil &&
 		f.ExpiresBefore == nil &&
 		f.CreatedAfter == nil &&
+		f.CreatedBefore == nil &&
 		f.ExposureChangedOrCreatedAfter == nil
 }

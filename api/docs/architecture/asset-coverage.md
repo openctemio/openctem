@@ -160,7 +160,7 @@ organization at all. The first failing check is the reason:
 | Reason | Check |
 |---|---|
 | `policy_disabled` | the capability's default tool is switched off for the organization; or the trigger refused for an organization policy (scan approval, a window that never opens, the managed scan paused) |
-| `no_scope` | the organization has no active, unexpired scope entry (the gate would refuse every target) |
+| `no_scope` | the organization has no active, unexpired scope entry and its unclassified-scans setting in force is `off` or unreadable (the gate would refuse every active target). With `low_impact` or `full` the capability is not paused: everything found is in scope unless excluded, and the gate decides each target (RFC-054 §16) |
 | `tool_missing` | no sensor of the organization reports the tool |
 | `tool_not_allowed` | sensors report the tool, but their grant or local policy does not allow it |
 | `sensor_offline` | sensors with the tool exist and none takes work now |
@@ -413,6 +413,63 @@ failed pairs back by the batch wait; the next pass plans them as any due pair
 runs through the run cancel and the next pass settles them. Details and gates:
 [EASM, section 4o](easm.md#4o-discovery-management-built).
 
+## Info pass
+
+Continuous coverage runs `vuln.templates` in two passes so no template runs
+twice and the cost of info templates (many, and slow) can be tuned on its own:
+
+- the **regular pass**, ledger key `vuln.templates`, severity low to critical
+  (explicit in the scan's config), on the registry cadence (7 days);
+- the **info pass**, ledger key `vuln.templates_info`, the same stage at
+  severity `info` only. The key has its own row per web service, so its
+  state, last success, failures and coverage gaps never mix with the regular
+  pass; the asset page lists it as its own capability.
+
+The info pass is due on the asset's first coverage (a new row is due at
+once), after the organization's interval from its last success (default 30
+days, 7 to 90), and early when the asset's technologies changed
+(`asset_change_events`, attribute `technologies`) or a web endpoint of the
+asset appeared or returned (`web_endpoint_events`) since the last success.
+The change signals are the ones the change timeline already records; there
+is no new detector. A change brings the pass forward at most once per 7 days.
+
+Setting (scope settings, console Scoping > Settings, "Info checks"):
+`info_coverage` (default on) and `info_coverage_days` (7 to 90, default 30).
+Off parks the organization's info rows as `not_applicable` with reason
+`info_pass_off` (never a gap, never planned); on revives them on their
+cadence. A shorter interval pulls covered rows forward; a longer one applies
+from the next settlement. No migration: the ledger key is a capability like
+any other and the setting lives in the tenant's scope settings.
+
+Everything else is unchanged: the info pass goes through the same dispatch
+gate (scope entries, exclusions, tier, politeness, approvals), the same
+batch and daily budget, the same readiness checks and the same claim path
+as any coverage run. It has its own managed scan (one active run per
+capability), so it never blocks the regular pass or discovery. Info matches
+are filed as info exposures, not findings (exposure-taxonomy.md). Isolation:
+the setting, the rows and both change queries are read per tenant.
+
+## Screenshots
+
+`http_service` carries the rule `capture.screenshot` every 30 days, only when
+no named service serves the same address and port (`no_named_twin`, as for
+`vuln.templates`). The tool is the sensor's `webshot`
+([RFC-081](../rfcs/RFC-081-web-evidence-screenshots.md)).
+
+- **Organization switch.** Readiness checks `web_screenshots_enabled` of the
+  organization's attack surface settings before any run. While it is off, or
+  the setting cannot be read, the capability is paused with reason
+  `feature_off` ("screenshots are off for this organization"; the alert asks
+  an administrator to turn it on): no run, no job, no picture taken. Only the
+  tenant's own setting is read, so one organization's switch never plans
+  another's pairs. Turning it on makes the paused pairs due on the next pass.
+- **On change.** When ingest merges a probe into a stored `http_service` and
+  its title, status code, redirect target or favicon hash changed, the asset's
+  `capture.screenshot` pair moves to due now (`AssetCoverageRepository.PagesChanged`,
+  tenant-scoped). A pair attempted in the last 24 hours stays as it is, so a
+  page that flaps is captured at most once a day. A first value is not a
+  change, and a pair that is paused, queued or not applicable keeps its state.
+
 ## Gap detection
 
 After planning (tenants with automatic coverage on), at most every 15
@@ -468,6 +525,12 @@ the console's alert webhook) with a warning log line
 counts per outcome and the number of organizations, never a tenant, asset
 or target. This aggregate is the one read across organizations, on purpose
 and counts only; the state is held by the loop's single replica.
+
+## Readers
+
+- Asset liveness ([asset-liveness.md](asset-liveness.md)): every settled run hands its per-target verdicts (with the
+  task's zone or sensor) to the liveness recorder: answered, no answer, resolved, NXDOMAIN or resolver failed. It never
+  changes the ledger and never fails a settlement.
 
 ## Other writers
 

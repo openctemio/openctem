@@ -13,7 +13,7 @@ import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import type { LegalSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveLegalSettings } from '../api/use-legal-settings'
-import { StepUpCodeField, stepUpCodeReady, useStepUpCodeOptional } from './step-up-code-hint'
+import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 
 type TextKey =
   | 'terms_url'
@@ -80,9 +80,7 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
   const id = useId()
   const [form, setForm] = useState<FormState>(() => toForm(settings))
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [code, setCode] = useState('')
-  const codeOptional = useStepUpCodeOptional()
-  const [codeError, setCodeError] = useState<string | null>(null)
+  const rc = useReasonAndCode(confirmOpen)
   const [busy, setBusy] = useState(false)
 
   // The saved values: on load, after a save and on Discard.
@@ -111,16 +109,19 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
 
   const save = async () => {
     setBusy(true)
-    setCodeError(null)
+    rc.setCodeError(null)
     try {
-      await saveLegalSettings({ ...form, version: settings.version ?? 0, totp_code: code.trim() })
+      await saveLegalSettings({
+        ...form,
+        version: settings.version ?? 0,
+        totp_code: rc.code.trim(),
+      })
       setConfirmOpen(false)
       toast.success(t('admin.legal.saved', 'Legal settings saved'))
       onSaved()
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
-        setCodeError(e.message)
-        setCode('')
+        rc.refuseCode(e.message)
         return
       }
       setConfirmOpen(false)
@@ -272,8 +273,6 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
                 dirty={dirty}
                 saving={busy}
                 onSave={() => {
-                  setCode('')
-                  setCodeError(null)
                   setConfirmOpen(true)
                 }}
                 onDiscard={reset}
@@ -298,7 +297,7 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
           'admin.legal.confirmDesc',
           'Visitors see the change within a minute. It is recorded in the admin audit log.'
         )}
-        disabled={!stepUpCodeReady(code, codeOptional)}
+        disabled={!rc.codeOk}
         isLoading={busy}
         handleConfirm={() => void save()}
         confirmText={
@@ -312,13 +311,7 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
           )
         }
       >
-        <StepUpCodeField
-          id={`${id}-code`}
-          value={code}
-          onChange={setCode}
-          optional={codeOptional}
-          error={codeError}
-        />
+        <ReasonAndCodeFields id={`${id}-code`} state={rc} withReason={false} />
       </ConfirmDialog>
     </>
   )

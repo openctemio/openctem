@@ -1,9 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertCircle, KeyRound, Loader2 } from 'lucide-react'
+import { KeyRound, Loader2 } from 'lucide-react'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -14,6 +13,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import {
   SetupLinkResult,
   type SetupLinkOutcome,
@@ -87,14 +87,10 @@ export function SetupLinkDialog({ target, onOpenChange, issue }: SetupLinkDialog
                 )}
               </p>
             )}
-            {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
           </div>
         </DialogBody>
+
+        <DialogSubmitError message={error} />
 
         <DialogFooter>
           {outcome ? (

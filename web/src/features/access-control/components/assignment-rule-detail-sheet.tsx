@@ -214,7 +214,7 @@ export function AssignmentRuleDetailSheet({
     finding_severity: t('org.assignmentRules.cond.finding_severity', 'Severity'),
     finding_type: t('org.assignmentRules.cond.finding_type', 'Finding type'),
     finding_source: t('org.assignmentRules.cond.finding_source', 'Source'),
-    asset_tags: t('org.assignmentRules.cond.asset_tags', 'Tags'),
+    asset_tags: t('org.assignmentRules.cond.asset_tags', 'Asset tags'),
     file_path_pattern: t('org.assignmentRules.cond.file_path_pattern', 'File path'),
   }
 

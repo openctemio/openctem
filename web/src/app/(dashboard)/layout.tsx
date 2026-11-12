@@ -21,6 +21,7 @@ import { ShellBannerSlot } from '@/components/layout/shell-banner-slot'
 import { PendingLinkPrompt } from '@/features/account/components/pending-link-prompt'
 import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
 import { AccountShell } from '@/features/account/components/account-shell'
+import { OwnershipInvitationBanner } from '@/features/account/components/ownership-invitation-banner'
 import { env } from '@/lib/env'
 
 type SiteLayoutProps = {
@@ -76,6 +77,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                       <PlatformAnnouncementBanner />
                       {/* Platform support can read this organization's data now (RFC-063). */}
                       <SupportAccessBanner />
+                      {/* An organization created for this account waits for it to accept ownership. */}
+                      <OwnershipInvitationBanner className="mx-4 mt-2" />
                     </ShellBannerSlot>
                     {/*
                     `flex flex-1 flex-col` propagates the flex context

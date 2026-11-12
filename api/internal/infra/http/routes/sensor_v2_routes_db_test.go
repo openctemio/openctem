@@ -55,6 +55,8 @@ type v2Harness struct {
 	ingest   *ingest.Service
 	sensors  *sensor.SensorService
 	jwtToken string
+	// dropped counts the jobs the worker's re-check refused (work).
+	dropped int
 }
 
 type v2HarnessOpts struct {
@@ -262,15 +264,29 @@ func (h *v2Harness) work(reportID string) {
 		if err != nil {
 			h.t.Fatal(err)
 		}
-		if _, err := h.proc.Process(ctx, job); err != nil {
-			h.t.Fatalf("process: %v", err)
-		}
+		h.dropped += processV2(h.t, h.proc, job)
 	}
 	if job, err := h.jobs.GetV2Commit(ctx, rep.ID); err == nil {
-		if _, err := h.proc.Process(ctx, job); err != nil {
-			h.t.Fatalf("process commit: %v", err)
-		}
+		h.dropped += processV2(h.t, h.proc, job)
 	}
+}
+
+// processV2 runs one v2 job as the worker would and returns 1 when the
+// worker's re-check refused to apply it: a permanent report_dropped
+// failure, which the worker turns into a dead job that keeps its payload
+// (never a completed, emptied one). Any other error fails the test.
+func processV2(t *testing.T, proc *ingest.V2JobProcessor, job *ingestjob.Job) int {
+	t.Helper()
+	_, err := proc.Process(context.Background(), job)
+	var perm *ingestjob.PermanentError
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &perm) && perm.Code == ingest.ErrorReportDropped:
+		return 1
+	}
+	t.Fatalf("process: %v", err)
+	return 0
 }
 
 func newReportID() string {
@@ -806,6 +822,9 @@ func TestSensorV2_QueuedReportOfRevokedSensorIsDropped(t *testing.T) {
 			}
 
 			h.work(id) // fails the test if the worker returns an error (a retry)
+			if h.dropped == 0 {
+				t.Fatal("the report was not refused as dropped (a dead job that keeps its payload)")
+			}
 
 			var findings, assets int
 			_ = h.db.QueryRow(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1`, h.tenantID).Scan(&findings)

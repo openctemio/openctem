@@ -57,6 +57,10 @@ type Service struct {
 	// linkBase is the console's base URL: the console-relative link of an
 	// event is sent out absolute (empty: sent as stored).
 	linkBase string
+
+	// facts reads what a message says about the event's object (nil: the
+	// producer's own text only).
+	facts FactsSource
 }
 
 // SetLinkBase sets the console base URL the links of delivered events are
@@ -534,7 +538,7 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 		return result
 	}
 
-	msg := s.buildMessage(intg, entry, delivery)
+	msg := s.buildMessage(ctx, intg, entry, delivery)
 
 	// Send with timeout
 	sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -566,37 +570,6 @@ func (s *Service) sendToIntegration(ctx context.Context, intg *integration.Integ
 	return result
 }
 
-// buildMessage builds the message for one integration. F-6: it carries an
-// idempotency key derived from the outbox entry ID so provider-side
-// deduplication suppresses duplicate deliveries if the worker crashes
-// between "provider ACK" and "UPDATE status='completed'" — a race that would
-// otherwise re-queue the entry after UnlockStale. The names of private
-// programs the integration is not attached to are scrubbed from the title
-// and body before any template sees them.
-func (s *Service) buildMessage(intg *integration.IntegrationWithNotification, entry *outboxdom.Outbox, delivery bountyprogram.Delivery) notificationclient.Message {
-	msg := notificationclient.Message{
-		Title:          delivery.Scrub(intg.Integration.ID(), entry.Title()),
-		Body:           delivery.Scrub(intg.Integration.ID(), entry.Body()),
-		Severity:       entry.Severity().String(),
-		URL:            deliveryLink(s.linkBase, entry),
-		IdempotencyKey: idempotencyKey(entry),
-		EventType:      entry.EventType(),
-		EventVersion:   integration.EventPayloadVersion(integration.EventType(entry.EventType())),
-		OccurredAt:     entry.CreatedAt(),
-	}
-	// Minimal by default: unless the channel opted in to details, nothing
-	// that names a finding or an asset leaves the platform, only the kind
-	// of event, its severity and a link back to it.
-	if ext := intg.Notification; ext == nil || !ext.IncludeDetails() {
-		msg.Title = minimalTitle(entry)
-		msg.Body = "Open the link to see the details."
-	}
-	if ext := intg.Notification; ext != nil && ext.MessageTemplate() != "" {
-		msg = s.applyTemplate(msg, ext.MessageTemplate())
-	}
-	return msg
-}
-
 // deliveryLink is the event's console link as a channel receives it:
 // absolute (a chat button or an e-mail needs the host) and naming the
 // event's organization (pkg/weblink), so a member of several organizations
@@ -625,19 +598,6 @@ func idempotencyKey(entry *outboxdom.Outbox) string {
 		}
 	}
 	return "outbox-" + entry.ID().String()
-}
-
-// minimalTitle is the title of a message that carries no details: the event
-// type ("new_finding" becomes "New finding") and the severity.
-func minimalTitle(entry *outboxdom.Outbox) string {
-	kind := strings.ReplaceAll(entry.EventType(), "_", " ")
-	if kind != "" {
-		kind = strings.ToUpper(kind[:1]) + kind[1:]
-	}
-	if kind == "" {
-		kind = "Notification"
-	}
-	return kind + " (" + entry.Severity().String() + ")"
 }
 
 // configureClientFromCredentials configures the notification client based on provider type.
@@ -731,25 +691,6 @@ func (s *Service) configureClientFromCredentials(
 	}
 
 	return nil
-}
-
-// applyTemplate applies a custom message template with variable substitution.
-// Supported variables: {title}, {body}, {severity}, {url}
-func (s *Service) applyTemplate(msg notificationclient.Message, template string) notificationclient.Message {
-	if template == "" {
-		return msg
-	}
-
-	replacer := strings.NewReplacer(
-		"{title}", msg.Title,
-		"{body}", msg.Body,
-		"{severity}", msg.Severity,
-		"{url}", msg.URL,
-	)
-
-	result := replacer.Replace(template)
-	msg.Body = result
-	return msg
 }
 
 // =============================================================================

@@ -516,6 +516,28 @@ export interface ApiFinding {
   scanner_output?: { text: string; updated_at?: string; truncated: boolean }
   /** Detail only: what the source knew (CTIS 1.4). Untrusted: render as text. */
   source_data?: ApiFindingSourceData
+  /**
+   * Detail only: the services of its host a version-match finding is observed
+   * on, each with its own state; only those inside the caller's data scope.
+   */
+  locations?: ApiFindingServiceLocation[]
+}
+
+/** One service a version-match finding is observed on. */
+export interface ApiFindingServiceLocation {
+  asset_id: string
+  asset_name: string
+  /** Scheme (or transport) and port: "https:443". */
+  label: string
+  port?: number
+  state: 'affected' | 'fixed' | 'not_affected'
+  state_reason?: string
+  state_at: string
+  version?: string
+  /** What the version was read from. Untrusted plain text. */
+  evidence?: string
+  first_seen_at: string
+  last_seen_at: string
 }
 
 /** GET /findings/{id} source_data (FindingSourceDataResponse). */
@@ -593,6 +615,15 @@ export interface ApiFindingListResponse {
   per_page: number
   total_pages: number
   links?: PaginationLinks
+  /** Present with include=practice_counts (use-practice-counts.ts). */
+  practice_counts?: ApiPracticeCounts
+}
+
+/** practice_counts of GET /findings: the list's filter without its practice condition, per practice. */
+export interface ApiPracticeCounts {
+  total: number
+  vulnerabilities: number
+  practices: { practice: string; count: number }[]
 }
 
 // ============================================
@@ -708,6 +739,8 @@ export interface AddCommentInput {
 // ============================================
 
 export interface FindingApiFilters {
+  /** A filter chips cannot show, as canonical query text (the URL's fq). */
+  fq?: string
   asset_id?: string
   branch_id?: string
   /** Per-branch occurrence state (only meaningful with branch_id): open | fixed | all */
@@ -755,6 +788,11 @@ export interface FindingApiFilters {
   families?: string[]
   /** Filters the page URL carries that the typed fields above do not: param name to value, sent as they are. */
   extra?: Record<string, string>
+  /** The practice switch (lib/practice.ts): practices to show, or to leave out. */
+  practice?: string
+  practice_not?: string
+  /** Response options of the list: `practice_counts` adds the practice switch's counts. */
+  include?: string
   /** An approval request for the finding is pending (or, with false, is not). Sent as `pending_approval`. */
   pending_approval?: boolean
   /** Informational findings (info and none) only, or (false) none of them. Sent as `informational`. */

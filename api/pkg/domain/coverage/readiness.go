@@ -50,6 +50,17 @@ const (
 	// supplies (a wordlist pack) and the platform has none yet; an instance
 	// administrator imports it.
 	ReadyContentMissing = "content_missing"
+	// ReadySwitchedOff: the organization turned the capability off (path
+	// discovery's switch in the scope settings).
+	ReadySwitchedOff = "switched_off"
+	// ReadyBudgetSpent: the organization's daily request budget of the
+	// capability is spent; the pairs are deferred (never covered) and
+	// resume when the budget allows.
+	ReadyBudgetSpent = "budget"
+	// ReadyFeatureOff: the capability keeps something an organization must
+	// switch on (web screenshots), and its switch is off or cannot be read.
+	// Nothing is dispatched, so the sensor never takes the picture.
+	ReadyFeatureOff = "feature_off"
 )
 
 // The not_claimed pause: after NotClaimedStreak runs in a row that no
@@ -89,7 +100,7 @@ func (h Hold) Active() bool { return h.Streak >= NotClaimedStreak }
 var readinessReasons = []string{
 	ReadyPolicyDisabled, ReadyNoScope, ReadyToolMissing, ReadyToolNotAllowed, ReadySensorOffline,
 	ReadySensorOutdated, ReadyNoEligibleSensor, ReadyCredentialsMissing, ReadyQuotaExhausted,
-	ReadyNotClaimed, ReadyContentMissing,
+	ReadyNotClaimed, ReadyContentMissing, ReadySwitchedOff, ReadyBudgetSpent, ReadyFeatureOff,
 }
 
 // ReadinessReasons returns the closed set of readiness reasons.

@@ -487,6 +487,17 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
       networkService: api.network_service || undefined,
     },
     sourceData: mapFindingSourceData(api.source_data),
+    locations: api.locations?.length
+      ? api.locations.map((l) => ({
+          assetId: l.asset_id,
+          assetName: l.asset_name,
+          label: l.label,
+          state: l.state,
+          stateAt: l.state_at,
+          version: l.version || undefined,
+          lastSeenAt: l.last_seen_at,
+        }))
+      : undefined,
     scannerOutput: api.scanner_output?.text
       ? {
           text: api.scanner_output.text,
@@ -535,6 +546,32 @@ const SOURCE_LABELS: Record<string, string> = {
 export function findingSourceLabel(source: string | undefined): string {
   if (!source) return 'Unknown'
   return SOURCE_LABELS[source] ?? source.charAt(0).toUpperCase() + source.slice(1)
+}
+
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+/** findingSourceLabel, translated. */
+export function findingSourceText(t: Translate, source: string | undefined): string {
+  return t(`findings.source.${source || 'unknown'}`, findingSourceLabel(source))
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  vulnerability: 'Vulnerability',
+  compliance: 'Configuration check',
+  misconfiguration: 'Misconfiguration',
+  secret: 'Leaked secret',
+  license: 'License issue',
+  web3: 'Smart contract issue',
+}
+
+/**
+ * What kind of problem the finding is, in words a reader tells apart at a
+ * glance: a configuration check that failed is not a vulnerability, whatever
+ * tool reported it (the source says that, separately).
+ */
+export function findingTypeText(t: Translate, type: string | undefined): string {
+  const key = type || 'vulnerability'
+  return t(`findings.kind.${key}`, TYPE_LABELS[key] ?? key)
 }
 
 function same(a?: string, b?: string) {

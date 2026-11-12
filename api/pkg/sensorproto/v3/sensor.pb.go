@@ -975,6 +975,12 @@ type PutResultRequest struct {
 	ContentEncoding string `protobuf:"bytes,6,opt,name=content_encoding,json=contentEncoding,proto3" json:"content_encoding,omitempty"`
 	// RFC 9530 Content-Digest of content as sent (sha-256 or sha-512).
 	ContentDigest string `protobuf:"bytes,7,opt,name=content_digest,json=contentDigest,proto3" json:"content_digest,omitempty"`
+	// The lease epoch the sensor held command_id under when it produced the
+	// report (v2: X-OpenCTEM-Lease-Epoch); absent for a report of no command.
+	// When set it must be the command's current epoch, else the call fails
+	// as command-not-found; set, it also commits the sensor to sending it on
+	// every call of a command-bound report (v2 feature results_lease_epoch).
+	LeaseEpoch    *int64 `protobuf:"varint,8,opt,name=lease_epoch,json=leaseEpoch,proto3,oneof" json:"lease_epoch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1058,6 +1064,13 @@ func (x *PutResultRequest) GetContentDigest() string {
 	return ""
 }
 
+func (x *PutResultRequest) GetLeaseEpoch() int64 {
+	if x != nil && x.LeaseEpoch != nil {
+		return *x.LeaseEpoch
+	}
+	return 0
+}
+
 type PutResultResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// True when this call created the report or segment (v2: 202).
@@ -1126,7 +1139,9 @@ type CommitResultRequest struct {
 	ReportId  string                 `protobuf:"bytes,1,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
 	CommandId string                 `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
 	// The protocol v2 commit body, application/json.
-	BodyJson      []byte `protobuf:"bytes,3,opt,name=body_json,json=bodyJson,proto3" json:"body_json,omitempty"`
+	BodyJson []byte `protobuf:"bytes,3,opt,name=body_json,json=bodyJson,proto3" json:"body_json,omitempty"`
+	// The lease epoch of the report's command, as on PutResultRequest.
+	LeaseEpoch    *int64 `protobuf:"varint,4,opt,name=lease_epoch,json=leaseEpoch,proto3,oneof" json:"lease_epoch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1180,6 +1195,13 @@ func (x *CommitResultRequest) GetBodyJson() []byte {
 		return x.BodyJson
 	}
 	return nil
+}
+
+func (x *CommitResultRequest) GetLeaseEpoch() int64 {
+	if x != nil && x.LeaseEpoch != nil {
+		return *x.LeaseEpoch
+	}
+	return 0
 }
 
 type CommitResultResponse struct {
@@ -2141,7 +2163,7 @@ const file_openctem_sensor_v3_sensor_proto_rawDesc = "" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x1b\n" +
 	"\tbody_json\x18\x02 \x01(\fR\bbodyJson\"@\n" +
 	"\x19AppendCommandLogsResponse\x12#\n" +
-	"\rresponse_json\x18\x01 \x01(\fR\fresponseJson\"\x88\x02\n" +
+	"\rresponse_json\x18\x01 \x01(\fR\fresponseJson\"\xbe\x02\n" +
 	"\x10PutResultRequest\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12\x1d\n" +
 	"\n" +
@@ -2150,19 +2172,25 @@ const file_openctem_sensor_v3_sensor_proto_rawDesc = "" +
 	"\acontent\x18\x04 \x01(\fR\acontent\x12!\n" +
 	"\fcontent_type\x18\x05 \x01(\tR\vcontentType\x12)\n" +
 	"\x10content_encoding\x18\x06 \x01(\tR\x0fcontentEncoding\x12%\n" +
-	"\x0econtent_digest\x18\a \x01(\tR\rcontentDigestB\n" +
+	"\x0econtent_digest\x18\a \x01(\tR\rcontentDigest\x12$\n" +
+	"\vlease_epoch\x18\b \x01(\x03H\x01R\n" +
+	"leaseEpoch\x88\x01\x01B\n" +
 	"\n" +
-	"\b_segment\"~\n" +
+	"\b_segmentB\x0e\n" +
+	"\f_lease_epoch\"~\n" +
 	"\x11PutResultResponse\x12\x18\n" +
 	"\acreated\x18\x01 \x01(\bR\acreated\x12\x1f\n" +
 	"\vstatus_json\x18\x02 \x01(\fR\n" +
 	"statusJson\x12.\n" +
-	"\x13retry_after_seconds\x18\x03 \x01(\x05R\x11retryAfterSeconds\"n\n" +
+	"\x13retry_after_seconds\x18\x03 \x01(\x05R\x11retryAfterSeconds\"\xa4\x01\n" +
 	"\x13CommitResultRequest\x12\x1b\n" +
 	"\treport_id\x18\x01 \x01(\tR\breportId\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x02 \x01(\tR\tcommandId\x12\x1b\n" +
-	"\tbody_json\x18\x03 \x01(\fR\bbodyJson\"\x81\x01\n" +
+	"\tbody_json\x18\x03 \x01(\fR\bbodyJson\x12$\n" +
+	"\vlease_epoch\x18\x04 \x01(\x03H\x00R\n" +
+	"leaseEpoch\x88\x01\x01B\x0e\n" +
+	"\f_lease_epoch\"\x81\x01\n" +
 	"\x14CommitResultResponse\x12\x18\n" +
 	"\acreated\x18\x01 \x01(\bR\acreated\x12\x1f\n" +
 	"\vstatus_json\x18\x02 \x01(\fR\n" +
@@ -2357,6 +2385,7 @@ func file_openctem_sensor_v3_sensor_proto_init() {
 	}
 	file_openctem_sensor_v3_sensor_proto_msgTypes[10].OneofWrappers = []any{}
 	file_openctem_sensor_v3_sensor_proto_msgTypes[14].OneofWrappers = []any{}
+	file_openctem_sensor_v3_sensor_proto_msgTypes[16].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

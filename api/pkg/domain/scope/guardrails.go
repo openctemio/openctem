@@ -7,9 +7,12 @@ package scope
 //   - no entry may be, or wildcard, a public suffix (the ICANN and private
 //     sections of the Public Suffix List, embedded through
 //     golang.org/x/net/publicsuffix: no network call);
-//   - government and military names, shared-provider apexes as wildcard
-//     roots, the whole address space, link-local and cloud metadata
-//     addresses, and the operator's own names and ranges are denied;
+//   - shared-provider apexes as wildcard roots, the whole address space,
+//     link-local and cloud metadata addresses, and the operator's own names
+//     and ranges are denied;
+//   - government and military names are denied by a rule the operator
+//     controls in the console, with per-organization exceptions
+//     (blocked_names.go, docs/rfcs/RFC-154-blocked-target-names.md);
 //   - public CIDRs larger than the operator's caps are refused (private
 //     ranges are gated by scan zones).
 
@@ -31,7 +34,7 @@ import (
 // Guardrail refusal codes.
 var (
 	ErrPublicSuffix = shared.NewDomainError("PUBLIC_SUFFIX", "the pattern is, or covers, a public suffix shared by many organizations", shared.ErrValidation)
-	ErrDenyList     = shared.NewDomainError("DENY_LIST", "the platform does not allow this target; contact support", shared.ErrValidation)
+	ErrDenyList     = shared.NewDomainError("DENY_LIST", "the platform does not allow this target", shared.ErrValidation)
 	ErrCIDRTooLarge = shared.NewDomainError("CIDR_TOO_LARGE", "the public address range is larger than the platform allows", shared.ErrValidation)
 	// ErrSharedCodeHost refuses a whole-host repository entry on a code host
 	// many organizations share: name a namespace (host/namespace/*).
@@ -98,6 +101,25 @@ type Guardrails struct {
 	// codeHosts are the code hosts many organizations share
 	// (public_code_hosts.txt plus the operator's).
 	codeHosts []string
+	// names is the platform's blocked-names policy (nil: the built-in
+	// government rule, no exceptions); tenant is the organization whose
+	// exceptions apply (zero: none).
+	names  *NamePolicy
+	tenant shared.ID
+}
+
+// For returns the guardrails as seen by one organization: its exceptions to
+// the government and military rule apply.
+func (g Guardrails) For(tenantID shared.ID) Guardrails {
+	g.tenant = tenantID
+	return g
+}
+
+// WithNamePolicy sets the blocked-names policy (tests; the server sets the
+// platform's with SetPlatformNamePolicy before building the guardrails).
+func (g Guardrails) WithNamePolicy(p *NamePolicy) Guardrails {
+	g.names = p
+	return g
 }
 
 // NewGuardrails builds the guardrails with the operator's caps (0: default)
@@ -111,7 +133,7 @@ func NewGuardrails(maxV4, maxV6 int, extra []string) (g Guardrails, bad []string
 	if g.MaxPublicCIDRv6 <= 0 || g.MaxPublicCIDRv6 > 128 {
 		g.MaxPublicCIDRv6 = DefaultMaxPublicCIDRv6
 	}
-	g.deniedSuffixes = append(g.deniedSuffixes, deniedNames...)
+	g.names = platformNames.Load()
 	g.codeHosts = append(g.codeHosts, builtinPublicCodeHosts...)
 	for _, p := range builtinDeniedPrefixes {
 		g.deniedPrefixes = append(g.deniedPrefixes, netip.MustParsePrefix(p))
@@ -175,8 +197,8 @@ func (g Guardrails) CheckPattern(t TargetType, pattern string) error {
 	switch t {
 	case TargetTypeRepository:
 		host := RepositoryPatternHost(pattern)
-		if g.deniedHost(host) {
-			return ErrDenyList
+		if err := g.deniedHost(host, false); err != nil {
+			return err
 		}
 		if RepositoryHostWide(pattern) && g.PublicCodeHost(host) {
 			return ErrSharedCodeHost
@@ -215,8 +237,8 @@ func (g Guardrails) checkHost(host string, wildcard bool) error {
 	if !strings.Contains(host, ".") {
 		return ErrPublicSuffix // a bare top-level label
 	}
-	if g.deniedHost(host) {
-		return ErrDenyList
+	if err := g.deniedHost(host, wildcard); err != nil {
+		return err
 	}
 	if ps, _ := publicsuffix.PublicSuffix(host); ps == host {
 		return ErrPublicSuffix
@@ -255,24 +277,21 @@ func (g Guardrails) checkSet(set ipSet) error {
 	return nil
 }
 
-// deniedHost reports whether host is, or is under, a government or military
-// name or an operator-denied name.
-func (g Guardrails) deniedHost(host string) bool {
-	labels := strings.Split(host, ".")
-	n := len(labels)
-	last := labels[n-1]
-	if last == "gov" || last == "mil" {
-		return true
-	}
-	if n >= 2 && len(last) == 2 && governmentSLDs[labels[n-2]] {
-		return true
-	}
-	for _, s := range g.deniedSuffixes {
-		if host == s || strings.HasSuffix(host, "."+s) {
-			return true
+// deniedHost refuses host (the root of a wildcard entry when wildcard) when
+// it is, or is under, an operator-denied name (DENY_LIST), or a government or
+// military name no exception of the organization lifts (GOVERNMENT_NAME).
+func (g Guardrails) deniedHost(host string, wildcard bool) error {
+	for _, list := range [][]string{g.deniedSuffixes, g.names.operatorNames()} {
+		for _, s := range list {
+			if host == s || strings.HasSuffix(host, "."+s) {
+				return ErrDenyList
+			}
 		}
 	}
-	return false
+	if g.names.governmentDenied(g.tenant, host, wildcard) {
+		return ErrGovernmentName
+	}
+	return nil
 }
 
 // Denies reports whether a dispatch target (name, address, CIDR, URL or
@@ -295,7 +314,7 @@ func (g Guardrails) Denies(target string) bool {
 		a := ap.Addr().Unmap()
 		return g.checkSet(ipSet{lo: a, hi: a}) == ErrDenyList //nolint:errorlint // sentinel identity
 	}
-	_, host := splitDomainWildcard(v)
+	wild, host := splitDomainWildcard(v)
 	if i := strings.LastIndexByte(host, ':'); i > 0 && !strings.Contains(host[i:], "]") {
 		host = host[:i]
 	}
@@ -305,7 +324,7 @@ func (g Guardrails) Denies(target string) bool {
 	if host == "" || !strings.Contains(host, ".") {
 		return false
 	}
-	return g.deniedHost(host)
+	return g.deniedHost(host, wild) != nil
 }
 
 // urlHost is the host of a URL ("" when s is not one).

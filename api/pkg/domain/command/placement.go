@@ -78,6 +78,11 @@ const (
 	// PlacementNotConfined: the command needs network confinement
 	// (PayloadKeyRequiredFeatures) and the sensor did not report it.
 	PlacementNotConfined = "not_confined"
+	// PlacementStrongIsolationMissing: the command's tool needs strong
+	// isolation (PayloadKeyRequiredFeatures) and the sensor did not report
+	// a proven strong isolation backend; the job waits for one and is never
+	// run on the process sandbox.
+	PlacementStrongIsolationMissing = "strong_isolation_missing"
 	// PlacementRuleSourcesUnsupported: the command runs only the
 	// organization's templates and the sensor did not report that its
 	// scanners honor rule sources (an older sensor would also run the
@@ -132,6 +137,11 @@ const (
 	// sensor, but the sensor reports that it claims no new jobs because its
 	// local store is full (storage, disk or unacknowledged results).
 	PlacementStoppedClaiming = "stopped_claiming"
+	// PlacementSourceRetired: the organization stopped using the job's tool
+	// on this sensor as a source of findings
+	// (docs/architecture/source-retirement.md); the job waits for another
+	// sensor of the organization that runs the tool.
+	PlacementSourceRetired = "source_retired"
 )
 
 // PayloadKeyRequiredFeatures lists what a sensor must enforce to take the
@@ -229,6 +239,7 @@ var withheldText = map[string]string{
 	PlacementPrivateNeedsPolicy: "private targets need a sensor with a local policy",
 	PlacementOptInDisabled:      "the organization has not enabled this sensor opt-in",
 	PlacementLocalPolicy:        "the sensor's local policy refuses it",
+	PlacementSourceRetired:      "the organization stopped using this tool on the sensor as a source",
 }
 
 // WithheldTexts returns the English phrase of each non-grant withheld code.

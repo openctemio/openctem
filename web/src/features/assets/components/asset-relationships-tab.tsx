@@ -136,7 +136,7 @@ export function AssetRelationshipsTab({
     async (query: string): Promise<AssetOption[]> => {
       if (!currentTenant) return []
       const params = new URLSearchParams({ per_page: String(PICKER_PAGE_SIZE) })
-      if (query.trim()) params.set('search', query.trim())
+      if (query.trim()) params.set('q', query.trim())
       try {
         const response = await get<BackendAssetsListResponse>(`/api/v1/assets?${params.toString()}`)
         return (response.data ?? []).map((a) => ({

@@ -14,7 +14,7 @@ import (
 // it reports (assets or findings).
 // annotatesInputs are the stages that report no asset of their own: their
 // result is a property of the asset they were given (monitor.web_content).
-var annotatesInputs = map[Key]bool{MonitorWebContent: true}
+var annotatesInputs = map[Key]bool{MonitorWebContent: true, CaptureScreenshot: true}
 
 func TestCatalog_EntriesAreWellFormed(t *testing.T) {
 	keys := map[Key]bool{}

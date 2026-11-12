@@ -16,6 +16,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/openctemio/openctem/api/pkg/domain/asset"
 	"github.com/openctemio/openctem/api/pkg/domain/scangov"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 )
@@ -432,16 +433,20 @@ func (r *ScanApprovalRepository) TargetAssetFacts(ctx context.Context, tenantID 
 		likes = append(likes, "%."+escapeApprovalLike(w))
 	}
 	var (
-		f    scangov.AssetFacts
-		tags pq.StringArray
-		rank int
+		f     scangov.AssetFacts
+		tags  pq.StringArray
+		ids   pq.StringArray
+		crits pq.StringArray
 	)
+	// Deleted assets are not scan targets. The criticality rule reads each
+	// asset's effective criticality (business units, services and control
+	// planes raise it), the same value finding priority uses.
 	err := r.db.QueryRowContext(ctx, `
 		WITH a AS (
 			SELECT a.id, a.tags, a.criticality, a.is_crown_jewel,
 			       NOT (a.name = ANY($2)) AS expanded
 			FROM assets a
-			WHERE a.tenant_id = $1 AND (
+			WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND (
 			      a.name = ANY($2)
 			   OR a.id IN (SELECT m.asset_id FROM asset_group_members m
 			               JOIN asset_groups g ON g.id = m.asset_group_id AND g.tenant_id = $1
@@ -451,16 +456,32 @@ func (r *ScanApprovalRepository) TargetAssetFacts(ctx context.Context, tenantID 
 		)
 		SELECT count(*) FILTER (WHERE expanded),
 		       COALESCE((SELECT array_agg(t) FROM (SELECT DISTINCT t FROM a, unnest(a.tags) t LIMIT $6) x), '{}'),
-		       COALESCE(max(CASE lower(criticality) WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2
-		                    WHEN 'low' THEN 1 ELSE 0 END), 0),
+		       COALESCE(array_agg(id::text), '{}'),
+		       COALESCE(array_agg(lower(COALESCE(criticality, ''))), '{}'),
 		       COALESCE(bool_or(is_crown_jewel), false)
 		FROM a`,
 		tenantID.String(), pq.Array(names), pq.Array(groups), pq.Array(roots), pq.Array(likes), maxFactTags,
-	).Scan(&f.Expanded, &tags, &rank, &f.CrownJewel)
+	).Scan(&f.Expanded, &tags, &ids, &crits, &f.CrownJewel)
 	if err != nil {
 		return f, fmt.Errorf("read target asset facts: %w", err)
 	}
 	f.Tags = tags
+	own := make(map[shared.ID]asset.Criticality, len(ids))
+	for i, s := range ids {
+		id, perr := shared.IDFromString(s)
+		if perr != nil || i >= len(crits) {
+			continue
+		}
+		own[id] = asset.Criticality(crits[i])
+	}
+	eff, err := NewBusinessContextLookupRepo(r.db.DB).EffectiveCriticalities(ctx, tenantID, own)
+	if err != nil {
+		return f, fmt.Errorf("read target asset effective criticality: %w", err)
+	}
+	rank := 0
+	for _, c := range eff {
+		rank = max(rank, scangov.CriticalityRank(string(c)))
+	}
 	f.MaxCriticality = [...]string{"none", "low", "medium", "high", "critical"}[min(max(rank, 0), 4)]
 	return f, nil
 }

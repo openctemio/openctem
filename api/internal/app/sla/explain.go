@@ -35,8 +35,24 @@ const (
 )
 
 // ExplainDeadline explains the deadline of a finding with this asset (""
-// for none), priority class and severity.
-func (s *Service) ExplainDeadline(ctx context.Context, tenantID, assetID, priorityClass string, severity vulnerability.Severity) (*Explanation, error) {
+// for none), practice ("" or compliance), priority class and severity.
+func (s *Service) ExplainDeadline(ctx context.Context, tenantID, assetID, practice, priorityClass string, severity vulnerability.Severity) (*Explanation, error) {
+	if practice == sladom.PracticeCompliance {
+		resolve, err := s.policyResolver(ctx, tenantID)
+		if err != nil {
+			return nil, err
+		}
+		p := resolve(assetID, practice)
+		var missing error
+		if p == nil {
+			missing = sladom.ErrNotFound // the platform's compliance windows
+		}
+		eff, err := effectivePolicy(tenantID, p, missing)
+		if err != nil {
+			return nil, err
+		}
+		return explain(eff, practice, priorityClass, severity), nil
+	}
 	var eff *EffectivePolicy
 	var err error
 	if assetID != "" {
@@ -47,15 +63,18 @@ func (s *Service) ExplainDeadline(ctx context.Context, tenantID, assetID, priori
 	if err != nil {
 		return nil, err
 	}
-	return explain(eff, priorityClass, severity), nil
+	return explain(eff, "", priorityClass, severity), nil
 }
 
-func explain(eff *EffectivePolicy, priorityClass string, severity vulnerability.Severity) *Explanation {
+func explain(eff *EffectivePolicy, practice, priorityClass string, severity vulnerability.Severity) *Explanation {
 	p := eff.Policy
 	out := &Explanation{PolicyID: p.ID().String(), PolicyName: p.Name(), KEVCapDays: p.KEVCapDays()}
 	switch {
 	case eff.PlatformDefault:
 		out.PolicyID, out.PolicyScope, out.KEVCapDays = "", "platform", sladom.DefaultKEVCapDays
+		if practice == sladom.PracticeCompliance {
+			out.KEVCapDays = 0 // a benchmark check has no CVE
+		}
 	case p.AssetID() != nil:
 		out.PolicyScope = "asset"
 	default:
@@ -67,11 +86,15 @@ func explain(eff *EffectivePolicy, priorityClass string, severity vulnerability.
 			out.Basis = BasisNone
 			return out
 		}
-		if days := sladom.DefaultPriorityDays[priorityClass]; days > 0 {
+		priorityDays, severityDays := sladom.DefaultPriorityDays, sladom.DefaultSLADays
+		if practice == sladom.PracticeCompliance {
+			priorityDays, severityDays = sladom.DefaultCompliancePriorityDays, sladom.DefaultComplianceSLADays
+		}
+		if days := priorityDays[priorityClass]; days > 0 {
 			out.Basis, out.Days = BasisPriority, days
 			return out
 		}
-		out.Basis, out.Days = BasisSeverity, sladom.DefaultSLADays[severity.String()]
+		out.Basis, out.Days = BasisSeverity, severityDays[severity.String()]
 		return out
 	}
 	if severity.IsInformational() && !p.InformationalHasSLA() {

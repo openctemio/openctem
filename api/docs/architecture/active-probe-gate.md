@@ -95,9 +95,11 @@ Operator settings, never tenant settings:
 
 - **New entries** (`scope.Service.CreateTarget`, `pkg/domain/scope/guardrails.go`):
   no public suffix or wildcard of one (embedded Public Suffix List), no
-  government or military name, no shared-provider apex as a wildcard root,
-  no `0.0.0.0/0`, `::/0`, link-local or metadata address, nothing in
-  `SCOPE_DENY_EXTRA`, no public range larger than the CIDR caps.
+  government or military name unless the organization holds an exception,
+  no shared-provider apex as a wildcard root, no `0.0.0.0/0`, `::/0`,
+  link-local or metadata address, nothing in `SCOPE_DENY_EXTRA` or the
+  console's blocked names, no public range larger than the CIDR caps
+  ([scope-guardrails.md](scope-guardrails.md), RFC-154).
 - **Dispatch** (the ownership gate below): a deny-listed target is refused
   on every path (`platform_denied`).
 - **Platform sensors** (`scan/active_proof.go`): with the platform setting
@@ -185,8 +187,12 @@ For each target, in order:
    (`198.51.100.0/24` minus `198.51.100.7` is eight pieces), each piece then
    goes through every check below on its own, with the range's inventory
    asset entry. A range with nothing left is excluded (refused `deny_list`
-   when only the deny list removed it); a range wider than 2^16 addresses is
-   refused; more than 4 096 pieces in one dispatch refuses it
+   when only the deny list removed it). A range wider than 2^16 addresses is
+   refused, except at the run start of a live-hosts-first scan, which takes
+   up to the organization's widest range (a /8 at most, RFC-151): such a
+   range is first cut to the tenant's own in-scope address entries (refused
+   `no_entry` when none covers any of it) and dispatched in pieces no wider
+   than a /16. More than 4 096 pieces in one dispatch refuses it
    (`RANGE_TOO_FRAGMENTED`). The run's warnings name every cut range. Paths
    that map the result back onto their own target list (coverage, validation,
    connectors, the claim-time re-check, the dry run) keep the whole-target

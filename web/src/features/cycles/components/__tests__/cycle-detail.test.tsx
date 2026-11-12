@@ -14,6 +14,7 @@ import { CycleLifecycleAction, nextTransition } from '../cycle-lifecycle-actions
 import { syncCycleProfiles } from '../../api'
 import CycleDetailPage from '@/app/(dashboard)/(scoping)/cycles/[id]/page'
 import type { CtemCycle } from '../../types'
+import { ApiClientError } from '@/lib/api/error-handler'
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -180,6 +181,51 @@ describe('CycleLifecycleAction', () => {
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByRole('textbox')).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: /close/i })).toBeDisabled()
+  })
+
+  it('asks for a reason and closes with an audited override when the coverage check failed', async () => {
+    const onDone = vi.fn()
+    api.post
+      .mockRejectedValueOnce(
+        new ApiClientError(
+          'The validation coverage check could not run',
+          'COVERAGE_CHECK_FAILED',
+          409
+        )
+      )
+      .mockResolvedValueOnce({ ...CYCLE, status: 'closed' })
+    wrap(<CycleLifecycleAction cycle={{ ...CYCLE, status: 'review' }} onDone={onDone} />)
+    await userEvent.click(screen.getByRole('button', { name: /close/i }))
+    let dialog = await screen.findByRole('alertdialog')
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Q4 external')
+    await userEvent.click(within(dialog).getByRole('button', { name: /close/i }))
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/v1/ctem-cycles/c1/close'))
+    // Refused: the override dialog asks for a reason; nothing closed yet.
+    dialog = await screen.findByRole('alertdialog')
+    expect(onDone).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+    const confirm = within(dialog).getByRole('button', { name: 'Close with this reason' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'coverage store is down')
+    await userEvent.click(confirm)
+    await waitFor(() =>
+      expect(api.post).toHaveBeenLastCalledWith('/api/v1/ctem-cycles/c1/close', {
+        override_coverage_check: true,
+        override_reason: 'coverage store is down',
+      })
+    )
+    expect(onDone).toHaveBeenCalled()
+  })
+
+  it('shows any other close error instead of offering an override', async () => {
+    api.post.mockRejectedValueOnce(new ApiClientError('below the SLO', 'BAD_REQUEST', 400))
+    wrap(<CycleLifecycleAction cycle={{ ...CYCLE, status: 'review' }} onDone={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: /close/i }))
+    const dialog = await screen.findByRole('alertdialog')
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Q4 external')
+    await userEvent.click(within(dialog).getByRole('button', { name: /close/i }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('below the SLO'))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 
   it('starts the review without a typed name', async () => {

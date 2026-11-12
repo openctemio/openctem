@@ -26,12 +26,14 @@ import {
   parsePastedTargets,
   withoutTargets,
   replaceEntryInLines,
+  targetReasonText,
   TARGET_KIND_LABELS,
   targetFileLines,
   targetKey,
   type ClassifiedTarget,
   type TargetKind,
 } from '../../lib/target-format'
+import { SplitRangeButton } from '../new-scan/invalid-targets-note'
 
 const EXAMPLES = ['example.com', '*.example.com', '203.0.113.0/24', 'https://app.example.com']
 
@@ -73,7 +75,7 @@ function InvalidRow({
   const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(entry.input)
-  const reason = entry.reasonKey ? t(entry.reasonKey, entry.reason) : entry.reason
+  const reason = targetReasonText(t, entry)
   if (editing) {
     return (
       <form
@@ -116,6 +118,7 @@ function InvalidRow({
           {reason}
         </span>
       </span>
+      <SplitRangeButton entry={entry} onSplit={(_, pieces) => onReplace(pieces.join(', '))} />
       <Button
         type="button"
         variant="ghost"

@@ -14,11 +14,14 @@ import (
 func builtinEngine(t *testing.T) *contentrule.Engine {
 	t.Helper()
 	packs, err := builtin.Packs()
-	if err != nil || len(packs) != 2 {
+	if err != nil || len(packs) != 3 {
 		t.Fatalf("packs: %v (%d)", err, len(packs))
 	}
 	var sets []contentrule.RuleSet
 	for _, p := range packs {
+		if p.Kind == dom.KindTemplateFacts {
+			continue // not detection rules (TestBuiltinTemplateFacts)
+		}
 		var files []dom.File
 		set := contentrule.RuleSet{Kind: contentrule.Kind(p.Kind), Origin: contentrule.Origin{Scope: contentrule.ScopePlatform, Pack: p.Name, Version: p.Release}}
 		for name, data := range p.Files {
@@ -117,5 +120,27 @@ func TestBuiltinSecretsAreFoundAndMasked(t *testing.T) {
 	}
 	if got["credentials-in-url"].Preview != "s3…ss" {
 		t.Errorf("credentials preview = %q", got["credentials-in-url"].Preview)
+	}
+}
+
+// The embedded template facts pack passes the platform linter and compiles.
+func TestBuiltinTemplateFacts(t *testing.T) {
+	m, err := BuiltinTemplateFacts()
+	if err != nil || m.Len() == 0 {
+		t.Fatalf("builtin template facts: %v (%d entries)", err, m.Len())
+	}
+	packs, _ := builtin.Packs()
+	for _, p := range packs {
+		if p.Kind != dom.KindTemplateFacts {
+			continue
+		}
+		var files []dom.File
+		for name, data := range p.Files {
+			files = append(files, dom.File{Path: name, Data: data})
+		}
+		rep := contentpack.Lint(context.Background(), p.Kind, files)
+		if len(rep.Errors) > 0 || len(rep.Secrets) > 0 || rep.Tier != dom.TierT0 || rep.Items != m.Len() {
+			t.Fatalf("lint: errors=%v secrets=%v tier=%s items=%d/%d", rep.Errors, rep.Secrets, rep.Tier, rep.Items, m.Len())
+		}
 	}
 }

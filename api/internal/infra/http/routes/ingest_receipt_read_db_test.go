@@ -269,3 +269,31 @@ func TestIngestReceipts_ListContract_DB(t *testing.T) {
 		t.Fatalf("source_kind filter: %d %v", code, body)
 	}
 }
+
+// Who reported a finding: in the caller's data scope only (404 outside it,
+// and for another tenant's finding), one entry per source.
+func TestFindingSightings_Read_DB(t *testing.T) {
+	h := newReceiptReadHarness(t)
+	if code, _ := h.get(h.scoped, "/api/v1/findings/"+h.fOut+"/sightings"); code != http.StatusNotFound {
+		t.Fatalf("scoped read an out-of-scope finding's sightings: %d", code)
+	}
+	var foreign string
+	if err := h.db.QueryRowContext(context.Background(), `SELECT finding_id::text FROM finding_ingest_actions WHERE receipt_id = $1`, h.foreign).Scan(&foreign); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := h.get(h.admin, "/api/v1/findings/"+foreign+"/sightings"); code != http.StatusNotFound {
+		t.Fatalf("admin read another tenant's finding's sightings: %d", code)
+	}
+	code, body := h.get(h.scoped, "/api/v1/findings/"+h.fIn+"/sightings")
+	if code != http.StatusOK {
+		t.Fatalf("sightings: %d %v", code, body)
+	}
+	data, _ := body["data"].([]any)
+	channels := map[string]bool{}
+	for _, d := range data {
+		channels[d.(map[string]any)["channel"].(string)] = true
+	}
+	if len(data) != 2 || !channels["connector"] || !channels["upload"] {
+		t.Fatalf("sightings = %v", data)
+	}
+}

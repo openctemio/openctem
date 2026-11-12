@@ -7,10 +7,13 @@ import "time"
 // take only the assets that are new, changed or due since the previous run
 // of the same scan (docs/architecture/scan-stages.md §1.5).
 var heavyMaxAge = map[Key]time.Duration{
-	VulnTemplates:             7 * 24 * time.Hour,
-	CrawlWeb:                  7 * 24 * time.Hour,
-	Key("capture.screenshot"): 7 * 24 * time.Hour,
-	Key("detect.services"):    7 * 24 * time.Hour,
+	VulnTemplates: 7 * 24 * time.Hour,
+	CrawlWeb:      7 * 24 * time.Hour,
+	// Path discovery: at most one run per origin per 30 days unless the
+	// origin's inventory changed (the per-origin budget).
+	EnumerateWebPaths:      30 * 24 * time.Hour,
+	CaptureScreenshot:      30 * 24 * time.Hour,
+	Key("detect.services"): 7 * 24 * time.Hour,
 }
 
 // Heavy reports whether the stage is gated by delta gating.

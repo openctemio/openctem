@@ -7,6 +7,7 @@
  * empty states; designating crown jewels is the place to act.
  */
 
+import { PossiblePathLabel } from '@/components/ui/possible-path-label'
 import { Crown } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
@@ -39,7 +40,7 @@ export function PathsViz({
         <p className="text-muted-foreground">
           {t(
             'dashboardKit.paths.noneDesignatedHint',
-            'Mark your high-value assets as crown jewels to see which ones an attacker can reach.'
+            'Mark your high-value assets as crown jewels to see which ones an attacker could reach.'
           )}
         </p>
         <Button asChild variant="outline" size="sm">
@@ -74,6 +75,7 @@ export function PathsViz({
           )}
         </span>
       </p>
+      {result.reachable > 0 && <PossiblePathLabel className="self-start" />}
       {result.reachable === 0 ? (
         <p className="text-sm text-muted-foreground">
           {t(

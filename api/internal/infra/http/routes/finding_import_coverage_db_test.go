@@ -24,6 +24,16 @@ import (
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
 
+// A declared full coverage decides the files that say nothing about what
+// they covered: a CTIS report of one host (a Nessus file carries its own
+// coverage and is decided by it, finding_import_nessus_close_db_test.go).
+const (
+	receiptDeclaredFull   = `{"version":"2.0","metadata":{"id":"019a2b3c-4d5e-7ede-9f59-abaa8f947701","generated_at":"2026-10-02T12:00:00Z"},"tool":{"name":"nessus"},"assets":[{"id":"h","type":"ip_address","value":"192.0.2.78"}],"findings":[` + declaredFinding1 + `,` + declaredFinding2 + `]}`
+	receiptDeclaredSubset = `{"version":"2.0","metadata":{"id":"019a2b3c-4d5e-7ede-9f59-abaa8f947702","generated_at":"2026-10-02T12:00:00Z"},"tool":{"name":"nessus"},"assets":[{"id":"h","type":"ip_address","value":"192.0.2.78"}],"findings":[` + declaredFinding1 + `]}`
+	declaredFinding1      = `{"type":"vulnerability","title":"OpenSSH issue","severity":"high","rule_id":"1001","asset_ref":"h","network":{"port":22,"transport":"tcp"}}`
+	declaredFinding2      = `{"type":"vulnerability","title":"TLS issue","severity":"medium","rule_id":"1002","asset_ref":"h","network":{"port":443,"transport":"tcp"}}`
+)
+
 // onlyScope is an uploader restricted to a fixed asset set.
 type onlyScope map[shared.ID]bool
 
@@ -70,7 +80,7 @@ func TestFindingImport_FullCoverageCloses_DB(t *testing.T) {
 	statusOnly := append(append([]string{}, write...), permission.FindingsStatus.String())
 	withStatus := append(append([]string{}, statusOnly...), permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String())
 
-	if rec, _ := ih.uploadAs(t, "", write, receiptNessusFull); rec.Code != http.StatusAccepted {
+	if rec, _ := ih.uploadAs(t, "", write, receiptDeclaredFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
 	}
 	var assetID string
@@ -83,33 +93,33 @@ func TestFindingImport_FullCoverageCloses_DB(t *testing.T) {
 	}
 
 	// Refusals change nothing.
-	if rec, _ := ih.uploadAs(t, full, write, receiptNessusSubset); rec.Code != http.StatusForbidden {
+	if rec, _ := ih.uploadAs(t, full, write, receiptDeclaredSubset); rec.Code != http.StatusForbidden {
 		t.Fatalf("coverage=full without findings:status: %d", rec.Code)
 	}
-	if rec, _ := ih.uploadAs(t, full, statusOnly, receiptNessusSubset); rec.Code != http.StatusForbidden {
+	if rec, _ := ih.uploadAs(t, full, statusOnly, receiptDeclaredSubset); rec.Code != http.StatusForbidden {
 		t.Fatalf("coverage=full without findings:bulk_update: %d", rec.Code)
 	}
-	if rec, _ := ih.uploadAs(t, full+"&min_severity=high", withStatus, receiptNessusSubset); rec.Code != http.StatusBadRequest {
+	if rec, _ := ih.uploadAs(t, full+"&min_severity=high", withStatus, receiptDeclaredSubset); rec.Code != http.StatusBadRequest {
 		t.Fatalf("coverage=full with min_severity (dropped findings would close): %d", rec.Code)
 	}
 	tooMany := full
 	for range findingimport.MaxCoverageAssets {
 		tooMany += "&asset_id=" + assetID
 	}
-	if rec, _ := ih.uploadAs(t, tooMany, withStatus, receiptNessusSubset); rec.Code != http.StatusBadRequest {
+	if rec, _ := ih.uploadAs(t, tooMany, withStatus, receiptDeclaredSubset); rec.Code != http.StatusBadRequest {
 		t.Fatalf("more than %d asset_id values (duplicates count): %d", findingimport.MaxCoverageAssets, rec.Code)
 	}
-	if rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+shared.NewID().String(), withStatus, receiptNessusSubset); rec.Code != http.StatusBadRequest {
+	if rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+shared.NewID().String(), withStatus, receiptDeclaredSubset); rec.Code != http.StatusBadRequest {
 		t.Fatalf("an asset of no one: %d", rec.Code)
 	}
-	if rec, _ := ih.uploadAs(t, "?coverage=full", withStatus, receiptNessusSubset); rec.Code != http.StatusBadRequest {
+	if rec, _ := ih.uploadAs(t, "?coverage=full", withStatus, receiptDeclaredSubset); rec.Code != http.StatusBadRequest {
 		t.Fatalf("full coverage without a scope: %d", rec.Code)
 	}
-	if rec, _ := ih.uploadAs(t, "?asset_id="+assetID, withStatus, receiptNessusSubset); rec.Code != http.StatusBadRequest {
+	if rec, _ := ih.uploadAs(t, "?asset_id="+assetID, withStatus, receiptDeclaredSubset); rec.Code != http.StatusBadRequest {
 		t.Fatalf("a scope without full coverage: %d", rec.Code)
 	}
 	ih.h.SetActorResolver(func(context.Context, shared.ID) (ingest.ActorScope, error) { return onlyScope{}, nil })
-	if rec, _ := ih.uploadAs(t, full, withStatus, receiptNessusSubset); rec.Code != http.StatusBadRequest {
+	if rec, _ := ih.uploadAs(t, full, withStatus, receiptDeclaredSubset); rec.Code != http.StatusBadRequest {
 		t.Fatalf("an asset outside the uploader's scope: %d", rec.Code)
 	}
 	ih.h.SetActorResolver(func(context.Context, shared.ID) (ingest.ActorScope, error) { return nil, nil })
@@ -118,7 +128,7 @@ func TestFindingImport_FullCoverageCloses_DB(t *testing.T) {
 	}
 
 	// The same asset named twice is one asset.
-	rec, resp := ih.uploadAs(t, full+"&asset_id="+assetID, withStatus, receiptNessusSubset)
+	rec, resp := ih.uploadAs(t, full+"&asset_id="+assetID, withStatus, receiptDeclaredSubset)
 	if rec.Code != http.StatusAccepted || resp.Receipt == nil {
 		t.Fatalf("full-coverage upload %d %s", rec.Code, rec.Body.String())
 	}
@@ -177,11 +187,11 @@ func TestFindingImport_FullCoverageHiddenAsset_DB(t *testing.T) {
 	perms := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String(),
 		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String()}
 
-	rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+hidden, perms, receiptNessusSubset)
+	rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+hidden, perms, receiptDeclaredSubset)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("a private program asset hidden from the uploader was accepted: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+open, perms, receiptNessusSubset); rec.Code != http.StatusAccepted {
+	if rec, _ := ih.uploadAs(t, "?coverage=full&asset_id="+open, perms, receiptDeclaredSubset); rec.Code != http.StatusAccepted {
 		t.Fatalf("a visible asset: %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -198,7 +208,7 @@ func TestFindingImport_FullCoverageConcurrentUploads_DB(t *testing.T) {
 	perms := []string{permission.FindingsWrite.String(), permission.AssetsWrite.String(), permission.AssetsImport.String(),
 		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String()}
 
-	if rec, _ := ih.uploadAs(t, "", perms, receiptNessusFull); rec.Code != http.StatusAccepted {
+	if rec, _ := ih.uploadAs(t, "", perms, receiptDeclaredFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
 	}
 	var assetID string
@@ -216,7 +226,7 @@ func TestFindingImport_FullCoverageConcurrentUploads_DB(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			rec, _ := ih.uploadAs(t, full, perms, receiptNessusSubset)
+			rec, _ := ih.uploadAs(t, full, perms, receiptDeclaredSubset)
 			codes[i] = rec.Code
 		}(i)
 	}
@@ -279,7 +289,7 @@ func TestFindingImport_FullCoverageClosureGuards_DB(t *testing.T) {
 		permission.FindingsStatus.String(), permission.FindingsBulkUpdate.String()}
 	withVerify := append(append([]string{}, write...), permission.FindingsVerify.String())
 
-	if rec, _ := ih.uploadAs(t, "", write, receiptNessusFull); rec.Code != http.StatusAccepted {
+	if rec, _ := ih.uploadAs(t, "", write, receiptDeclaredFull); rec.Code != http.StatusAccepted {
 		t.Fatalf("baseline %d %s", rec.Code, rec.Body.String())
 	}
 	var assetID string
@@ -290,7 +300,7 @@ func TestFindingImport_FullCoverageClosureGuards_DB(t *testing.T) {
 	// The subset reports plugin 1001; 1002 is the one an upload may close.
 	attempt := func(perms []string) handler.FindingImportResponse {
 		t.Helper()
-		rec, resp := ih.uploadAs(t, full, perms, receiptNessusSubset)
+		rec, resp := ih.uploadAs(t, full, perms, receiptDeclaredSubset)
 		if rec.Code != http.StatusAccepted || resp.Receipt == nil {
 			t.Fatalf("upload %d %s", rec.Code, rec.Body.String())
 		}
