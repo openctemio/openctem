@@ -41,7 +41,7 @@ const (
 )
 
 // sharedJobTypes are the command types a shared sensor may be signed.
-var sharedJobTypes = map[string]bool{"scan": true, "validate": true, "retest": true}
+var sharedJobTypes = map[string]bool{"scan": true, "validate": true, "retest": true, jobsign.CommandTypeLookup: true}
 
 // checkShared applies the shared-job rules to a statement whose
 // sensor_scope is set; nil for an organization's statement.
@@ -57,7 +57,7 @@ func checkShared(st *jobsign.Statement) *refusal {
 		return refuse(http.StatusBadRequest, ReasonBadSensorScope, "sensor_scope must be %q or absent", jobsign.SensorScopeInstance)
 	}
 	if !sharedJobTypes[st.CommandType] {
-		return refuse(http.StatusForbidden, ReasonSharedJobType, "a shared sensor runs scan, validate and retest jobs only")
+		return refuse(http.StatusForbidden, ReasonSharedJobType, "a shared sensor runs scan, validate, retest and lookup jobs only")
 	}
 	if len(st.Templates) > 0 {
 		return refuse(http.StatusForbidden, ReasonSharedTemplates, "a shared sensor runs no custom templates")

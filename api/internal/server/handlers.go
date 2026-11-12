@@ -6,6 +6,7 @@ import (
 
 	compliancecheckapp "github.com/openctemio/openctem/api/internal/app/compliancecheck"
 
+	inboxapp "github.com/openctemio/openctem/api/internal/app/inbox"
 	navpinapp "github.com/openctemio/openctem/api/internal/app/navpin"
 	queryapp "github.com/openctemio/openctem/api/internal/app/query"
 
@@ -701,6 +702,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		NavPin: handler.NewNavPinHandler(
 			navpinapp.NewService(repos.NavPin, svc.SavedView, svc.Vulnerability, log),
 			svc.Vulnerability, log),
+		Inbox: newInboxHandler(svc, log),
 
 		// Vulnerabilities & Exposures
 		Vulnerability:    vulnHandler,
@@ -795,6 +797,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 		AdminContentCatalog: handler.NewAdminContentCatalogHandler(svc.ContentCatalog, adminConsoleSvc, repos.AdminAuditLog, log),
 		SensorContentV2:     handler.NewSensorContentV2Handler(svc.ContentDelivery, log),
 		FeedRelay:           newFeedRelayHandler(svc, log),
+		LookupJobs:          newLookupJobHandler(svc, log),
 		AdminVersionCheck:   handler.NewAdminVersionCheckHandler(svc.VersionCheck, repos.AdminAuditLog, log),
 		AdminConfiguration: handler.NewAdminConfigurationHandler(
 			configoverview.NewBuilder(cfg, platformSettings(repos), repos.Admin, os.LookupEnv), log),
@@ -1831,14 +1834,19 @@ func easmDecisionEffects(repos *Repositories, svc *Services, log *logger.Logger)
 	return effects
 }
 
-// ctUnavailableReason is why the CT monitor cannot run: "disabled" when the
-// operator turned it off, the monitor's own reason (needs_platform_sensor)
-// otherwise, "" when it runs.
-func ctUnavailableReason(cfg *config.Config, svc *Services) string {
-	if !cfg.Worker.CertMonitorEnabled {
-		return "disabled"
+// ctAvailability reports whether the CT monitor can run now and why not:
+// "disabled" when the operator turned it off, the monitor's own reason
+// (needs_platform_sensor: no platform sensor serves CT lookups) otherwise.
+func ctAvailability(cfg *config.Config, svc *Services) func(ctx context.Context) (bool, string) {
+	return func(ctx context.Context) (bool, string) {
+		if !cfg.Worker.CertMonitorEnabled {
+			return false, "disabled"
+		}
+		if r := svc.CertMonitor.UnavailableReason(ctx); r != "" {
+			return false, r
+		}
+		return true, ""
 	}
-	return svc.CertMonitor.UnavailableReason()
 }
 
 // newEASMSettingsHandler builds the EASM settings and run-now handler
@@ -1853,8 +1861,7 @@ func newEASMSettingsHandler(cfg *config.Config, svc *Services, deps *HandlerDeps
 		sweeper = svc.EASMSweep
 	}
 	platform := handler.EASMPlatform{
-		CTAvailable:         cfg.Worker.CertMonitorEnabled && svc.CertMonitor.Available(),
-		CTUnavailableReason: ctUnavailableReason(cfg, svc),
+		CTAvailability:      ctAvailability(cfg, svc),
 		DNSAvailable:        svc.EASMDNS != nil,
 		EnrichmentAvailable: cfg.Worker.AssetEnrichmentEnabled,
 		CTDefaultHrs:        int(cfg.Worker.CertMonitorInterval.Hours()),
@@ -2458,4 +2465,22 @@ func newThreatIntelHandler(deps *HandlerDeps, v *validator.Validator, log *logge
 		h.SetFeedRunner(runner, configured)
 	}
 	return h
+}
+
+// newInboxHandler wires the Inbox summary: the finding, approval and closure
+// counts from the vulnerability service, the task count when remediation
+// tasks run, and the module gate for the remediation module.
+func newInboxHandler(svc *Services, log *logger.Logger) *handler.InboxHandler {
+	if svc.Vulnerability == nil {
+		return nil
+	}
+	var tasks inboxapp.TaskCounter
+	if svc.RemediationTask != nil {
+		tasks = svc.RemediationTask
+	}
+	var modules inboxapp.ModuleReader
+	if svc.ModuleGate != nil {
+		modules = svc.ModuleGate
+	}
+	return handler.NewInboxHandler(inboxapp.NewService(svc.Vulnerability, tasks, modules), log)
 }

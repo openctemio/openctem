@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
+import { ErrorState } from '@/features/shared/components/error-state'
 import { SensorOptInBanner } from '@/features/sensors/components/sensor-opt-in-banner'
 import { ScanWindowsBanner } from '@/features/scan-windows'
 import { ScanApprovalBadge } from '@/features/scans/components/approval/scan-approval-badge'
@@ -420,7 +421,12 @@ function ConfigurationsTab() {
     error: configsError,
     mutate: retryConfigs,
   } = useScanConfigs(filters, swrConfig)
-  const { data: stats, isLoading: isLoadingStats } = useScanConfigStats(swrConfig)
+  const {
+    data: stats,
+    isLoading: isLoadingStats,
+    error: statsError,
+    mutate: retryStats,
+  } = useScanConfigStats(swrConfig)
 
   // Bulk operation hooks
   const { trigger: bulkActivate, isMutating: isActivating } = useBulkActivateScanConfigs()
@@ -886,7 +892,15 @@ function ConfigurationsTab() {
 
   return (
     <>
-      <MetricStrip loading={isLoadingStats} items={metrics} />
+      {statsError && !stats ? (
+        <ErrorState
+          title={t('scans.configs.statsErrorTitle', 'scan counts')}
+          error={statsError}
+          onRetry={() => void retryStats()}
+        />
+      ) : (
+        <MetricStrip loading={isLoadingStats} items={metrics} />
+      )}
 
       <div className="flex items-start gap-5">
         {filtersOpen && (

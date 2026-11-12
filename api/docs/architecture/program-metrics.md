@@ -146,6 +146,17 @@ criteria and the maturity breakdown read them.
   are excluded (weight 0). Values stored before this rule are kept as they
   were.
 
+#### Planned: frozen cycle figures and new cycle metrics (RFC-156)
+
+Designed, not built ([RFC-156](../rfcs/RFC-156-cycle-close-comparison-and-report.md)).
+Today a closed cycle's rows can still be rewritten by the lazy compute on
+read, and `ctem_cycle_metrics` has no `tenant_id`. RFC-156 freezes the rows
+at close (`ctem_cycles.metrics_frozen_at`), refreshes open cycles hourly,
+adds `validated_count`, `validation_downgrade_pct`,
+`validation_not_reproducible_pct`, `validation_to_ticket_median_hours`,
+`new_p1_in_prior_scope` and `owner_coverage_pct`, a comparison read of 2 to 4
+closed cycles and a cycle report.
+
 ### 7. Critical assets lacking a control (`control_coverage`)
 
 A snapshot of the inventory now, not windowed. One row per control:

@@ -2,7 +2,9 @@
 
 import * as React from 'react'
 import Link from '@/components/link'
+import { Delta, type DeltaTone } from '@/components/ui/delta'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Sparkline } from '@/components/ui/sparkline'
 import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 
@@ -34,6 +36,23 @@ export interface MetricStripItem {
   detail?: React.ReactNode
   /** What the number counts, shown as the cell's tooltip. */
   description?: string
+  /**
+   * The change against the previous period, drawn with the shared `Delta`.
+   * The caller formats `text` and the words (unit and language) and says
+   * whether the change is good (`tone`: better, worse, flat, neutral).
+   */
+  delta?: {
+    value: number
+    text: string
+    tone: DeltaTone
+    against?: string
+    verdict?: string | null
+  }
+  /**
+   * A small trend under the value (shared `Sparkline`: one image with a text
+   * `summary`, at least two points). Not shown while loading or on error.
+   */
+  spark?: { values: Array<number | null>; summary: string }
   /** The list this number counts. The tile becomes a link to it. */
   href?: string
   /** Filter the list below by this metric. The tile becomes a toggle button. */
@@ -124,7 +143,9 @@ export function MetricStrip({
       `MetricStrip: ${items.length} tiles; the page anatomy allows ${METRIC_STRIP_MAX}. Use quick views or filters for the rest.`
     )
   }
-  const detailed = items.some((item) => item.detail != null && item.detail !== false)
+  const detailed = items.some(
+    (item) => (item.detail != null && item.detail !== false) || item.delta != null
+  )
   return (
     <div
       data-slot="metric-strip"
@@ -207,6 +228,24 @@ export function MetricStrip({
                 </span>
               ) : null}
             </span>
+            {item.delta && !loading && !error ? (
+              <Delta
+                className="mt-1"
+                delta={item.delta.value}
+                text={item.delta.text}
+                tone={item.delta.tone}
+                against={item.delta.against}
+                verdict={item.delta.verdict}
+              />
+            ) : null}
+            {item.spark && !loading && !error ? (
+              <Sparkline
+                values={item.spark.values}
+                summary={item.spark.summary}
+                height={24}
+                className="mt-1 h-6 w-full"
+              />
+            ) : null}
             {item.detail && !error ? (
               loading ? (
                 // Holds the detail line's place (12px text, 16px line).

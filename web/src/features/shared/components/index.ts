@@ -36,6 +36,7 @@ export * from './section-tabs'
 export * from './gated-section-tabs'
 export * from './empty-state'
 export * from './error-state'
+export * from './awaiting-approval-band'
 export * from './access-notice'
 export * from './no-access-state'
 export * from './capped-notice'
@@ -50,7 +51,9 @@ export * from './detail-sheet-layout'
 export * from './detail-checklist'
 export * from './context-filter-chips'
 export * from './untrusted-text-block'
-export * from './scanner-text'
+// ScannerText is not re-exported here: it pulls the markdown parser into every
+// page that imports this barrel. Import it from its own module directly
+// (__tests__/scanner-text-not-in-barrel.test.ts).
 export * from './segmented-lens'
 export * from './tone-pill'
 export * from './drill-down-breadcrumb'

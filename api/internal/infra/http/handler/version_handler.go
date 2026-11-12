@@ -14,7 +14,7 @@ import (
 // reads the same document at /admin/version with its console session.
 //
 // @Summary      API version
-// @Description  The running API build: release tag (or "<tag>-dev+<commit>" on a development build), short commit, build time and channel (release, rc or dev).
+// @Description  The running API build: release tag (or "<tag>-dev+<commit>" on a development build), short commit, build time, channel (release, rc or dev), the extensions compiled in (a list of name and version, empty for the Community build) and the extension API version.
 // @Tags         System
 // @Produce      json
 // @Security     BearerAuth

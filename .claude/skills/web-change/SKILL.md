@@ -26,5 +26,7 @@ Read `web/CLAUDE.md` first; it points to the detailed guides in `web/.claude/`.
    path; no redirects or aliases for renamed pages.
 7. **Verify:** `npm run validate`, vitest for touched areas, then load the real page at about 390px and at
    desktop width, light and dark, and check the console. When the contract changed, run `make generate` first.
+   A page in `web/e2e/design/manifest.ts` (or redesigned to its board, which adds it there) must pass the
+   design gate: `npx playwright test -c playwright.design.config.ts` (`web/docs/ui/design-gate.md`).
 8. **Design quality:** follow `web/.claude/style-guide.md`; keep pages space-efficient and consistent with
    their siblings.

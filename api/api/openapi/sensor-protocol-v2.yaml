@@ -517,6 +517,67 @@ paths:
         "403": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/lookups/next:
+    get:
+      summary: Claim the next lookup job (platform sensor reporting a lookup capability only)
+      description: >-
+        Served only to an active platform (instance-scope) sensor that reports a lookup capability
+        (lookup.ct@1); an organization's sensor gets 403. The job is signed for one organization,
+        the instance scope and this sensor (command type lookup).
+      operationId: sensorV2LookupNext
+      responses:
+        "200":
+          description: The claimed job with its exact payload bytes and the signed statement.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, payload, signed_job]
+                properties:
+                  id: { type: string, format: uuid }
+                  payload:
+                    type: object
+                    description: "{scanner, targets (one), capability, input}: the statement's tool and targets."
+                  signed_job: { type: object, description: The DSSE envelope of the job statement. }
+        "204":
+          description: No job. Retry-After gives the seconds to wait before asking again.
+          headers:
+            Retry-After: { schema: { type: integer } }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /api/v2/sensor/lookups/{job_id}/done:
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Report the answer of a lookup job this sensor claimed
+      description: >-
+        Once per job, only by the sensor that claimed it. The answer is bound to the job's organization by
+        the platform; it is validated against the capability's contract (for lookup.ct@1, contract package
+        ctlookup) before anything is used.
+      operationId: sensorV2LookupDone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                output: { type: object, description: "The capability's answer (lookup.ct@1: {records, source_status})." }
+                refused: { type: string, description: The sensor did not run the job (a short code). }
+                error: { type: string, description: The sensor could not answer (a short code). }
+      responses:
+        "204": { description: Recorded. }
+        "401": { $ref: "#/components/responses/Problem" }
+        "403": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "413": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
   /api/v2/sensor/fingerprints/check:
     post:
       summary: Which fingerprints already exist (read-only)

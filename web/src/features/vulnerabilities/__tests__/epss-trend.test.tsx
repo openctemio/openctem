@@ -39,7 +39,7 @@ describe('EpssSparkline', () => {
     render(<EpssSparkline points={POINTS} />)
     const fig = screen.getByTestId('sparkline')
     expect(fig.querySelector('path')).not.toBeNull()
-    expect(fig.querySelector('.sr-only')?.textContent).toMatch(/10%.*40%/)
+    expect(fig.querySelector('svg')?.getAttribute('aria-label')).toMatch(/10%.*40%/)
     expect(fig.querySelectorAll('[aria-hidden] .font-medium')).toHaveLength(0)
   })
 

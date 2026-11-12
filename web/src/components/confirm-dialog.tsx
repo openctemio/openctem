@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import {
   AlertDialog,
@@ -17,6 +18,30 @@ import {
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 
+/**
+ * What the action will change, shown before the user confirms it: a sentence
+ * that carries the count (the caller words and translates it, for example
+ * "12 findings become Accepted risk"), and the first few names behind it.
+ */
+export type ConfirmPreview = {
+  summary: React.ReactNode
+  /** Names of the items touched; the first CONFIRM_SAMPLE_SIZE are listed. */
+  names?: readonly string[]
+  /** How many items in all, when `names` holds only the first page of them. */
+  total?: number
+}
+
+/** A free-text reason the action records (shown in the audit trail). */
+export type ConfirmReason = {
+  /** The confirm button stays disabled until the reason has text. */
+  required?: boolean
+  /** Fewer characters than this (after trimming) counts as empty. Default 1. */
+  minLength?: number
+  maxLength?: number
+  label?: string
+  placeholder?: string
+}
+
 type ConfirmDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -30,7 +55,7 @@ type ConfirmDialogProps = {
    * Runs the action. When it returns a promise, both buttons stay disabled
    * until it settles, so a second click cannot fire the action twice.
    */
-  handleConfirm: () => unknown
+  handleConfirm: (reason?: string) => unknown
   isLoading?: boolean
   className?: string
   children?: React.ReactNode
@@ -41,6 +66,19 @@ type ConfirmDialogProps = {
    * may type "ế" as e + two combining marks) are ignored. Pasting is allowed.
    */
   typeToConfirm?: string
+  /** What will change, with a count: see ConfirmPreview. */
+  preview?: ConfirmPreview
+  /**
+   * Asks for a reason. It is passed to handleConfirm, trimmed. With
+   * `required`, the confirm button stays disabled until it has text.
+   */
+  reason?: ConfirmReason
+}
+
+/** True when `reason` satisfies what the dialog asks for. */
+export function reasonIsValid(text: string, reason?: ConfirmReason): boolean {
+  if (!reason?.required) return true
+  return text.trim().length >= (reason.minLength ?? 1)
 }
 
 /** True when what the user typed confirms `expected` (see typeToConfirm). */
@@ -109,26 +147,34 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     disabled = false,
     handleConfirm,
     typeToConfirm,
+    preview,
+    reason,
     ...actions
   } = props
   const { t } = useTranslation()
   const inputId = useId()
+  const reasonId = useId()
   const [typed, setTyped] = useState('')
+  const [reasonText, setReasonText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const [running, setRunning] = useState(false)
   // Closed by the caller after the action (not by Cancel): forget what was
   // typed, so the next open of this dialog starts empty.
   useEffect(() => {
-    if (!actions.open) setTyped('')
+    if (!actions.open) {
+      setTyped('')
+      setReasonText('')
+    }
   }, [actions.open])
   const typedOk = !typeToConfirm || typedTextMatches(typed, typeToConfirm)
+  const reasonOk = reasonIsValid(reasonText, reason)
   const busy = !!isLoading || running
   const [typeBefore, typeAfter = ''] = t('confirm.typeToConfirm', 'Type {text} to confirm').split(
     '{text}'
   )
   const onConfirm = () => {
-    if (busy || disabled || !typedOk) return
-    const result = handleConfirm()
+    if (busy || disabled || !typedOk || !reasonOk) return
+    const result = reason ? handleConfirm(reasonText.trim()) : handleConfirm()
     if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
       setRunning(true)
       const done = () => setRunning(false)
@@ -141,7 +187,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       onOpenChange={(open) => {
         // Esc and outside clicks do not close it while the action runs.
         if (!open && busy) return
-        if (!open) setTyped('')
+        if (!open) {
+          setTyped('')
+          setReasonText('')
+        }
         actions.onOpenChange(open)
       }}
     >
@@ -162,9 +211,39 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             <div>{desc}</div>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        {children || typeToConfirm ? (
+        {children || typeToConfirm || preview || reason ? (
           <AlertDialogBody className="space-y-4">
+            {preview && (
+              <div className="space-y-2" data-testid="confirm-preview">
+                <p className="text-sm font-medium">{preview.summary}</p>
+                {preview.names && preview.names.length > 0 && (
+                  <ConfirmSample names={preview.names} total={preview.total} />
+                )}
+              </div>
+            )}
             {children}
+            {reason && (
+              <div className="space-y-2">
+                <Label htmlFor={reasonId} className="block font-normal">
+                  {reason.label ?? t('confirm.reasonLabel', 'Reason')}
+                  {!reason.required && (
+                    <span className="text-muted-foreground">
+                      {' '}
+                      {t('confirm.reasonOptional', '(optional)')}
+                    </span>
+                  )}
+                </Label>
+                <Textarea
+                  id={reasonId}
+                  value={reasonText}
+                  onChange={(e) => setReasonText(e.target.value)}
+                  placeholder={reason.placeholder}
+                  maxLength={reason.maxLength}
+                  aria-required={reason.required || undefined}
+                  rows={3}
+                />
+              </div>
+            )}
             {typeToConfirm && (
               <div className="space-y-2">
                 <Label htmlFor={inputId} className="block font-normal">
@@ -198,7 +277,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           <Button
             variant={destructive ? 'destructive' : 'default'}
             onClick={onConfirm}
-            disabled={disabled || busy || !typedOk}
+            disabled={disabled || busy || !typedOk || !reasonOk}
           >
             {confirmText ?? t('confirm.continue', 'Continue')}
           </Button>

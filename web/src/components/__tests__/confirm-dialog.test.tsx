@@ -7,6 +7,7 @@ import {
   ConfirmDialog,
   ConfirmSample,
   irreversibleTypeToConfirm,
+  reasonIsValid,
   typedTextMatches,
 } from '../confirm-dialog'
 
@@ -109,6 +110,126 @@ describe('ConfirmDialog', () => {
   it('isLoading disables the action', () => {
     renderDialog({ isLoading: true })
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+  })
+})
+
+describe('ConfirmDialog preview', () => {
+  it('states what will change, with the count, before the action can run', () => {
+    renderDialog({ preview: { summary: '12 findings become Accepted risk' } })
+    expect(screen.getByTestId('confirm-preview')).toHaveTextContent(
+      '12 findings become Accepted risk'
+    )
+  })
+
+  it('lists five names and "and N more" for the rest', () => {
+    const names = Array.from({ length: 12 }, (_, i) => `finding-${i + 1}`)
+    renderDialog({ preview: { summary: '12 findings', names } })
+    for (const n of names.slice(0, 5)) expect(screen.getByText(n)).toBeInTheDocument()
+    expect(screen.queryByText('finding-6')).not.toBeInTheDocument()
+    expect(screen.getByText('and 7 more')).toBeInTheDocument()
+  })
+
+  it('counts from total when the names are only the first page', () => {
+    renderDialog({ preview: { summary: 'Many', names: ['a', 'b'], total: 40 } })
+    expect(screen.getByText('and 38 more')).toBeInTheDocument()
+  })
+
+  it('draws nothing extra without a preview', () => {
+    renderDialog()
+    expect(screen.queryByTestId('confirm-preview')).not.toBeInTheDocument()
+  })
+})
+
+describe('ConfirmDialog reason', () => {
+  it('keeps the action disabled until a required reason has text, then passes it trimmed', async () => {
+    const { handleConfirm } = renderDialog({ reason: { required: true } })
+    const confirm = screen.getByRole('button', { name: 'Delete' })
+    const field = screen.getByLabelText('Reason')
+    expect(field).toHaveAttribute('aria-required', 'true')
+    expect(confirm).toBeDisabled()
+    await userEvent.type(field, '   ')
+    expect(confirm).toBeDisabled()
+    await userEvent.type(field, ' decommissioned host ')
+    expect(confirm).toBeEnabled()
+    await userEvent.click(confirm)
+    expect(handleConfirm).toHaveBeenCalledWith('decommissioned host')
+  })
+
+  it('honours a minimum length', async () => {
+    renderDialog({ reason: { required: true, minLength: 10 } })
+    const confirm = screen.getByRole('button', { name: 'Delete' })
+    await userEvent.type(screen.getByLabelText('Reason'), 'too short')
+    expect(confirm).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Reason'), ' now long enough')
+    expect(confirm).toBeEnabled()
+  })
+
+  it('an optional reason never blocks the action and says so', async () => {
+    const { handleConfirm } = renderDialog({ reason: {} })
+    expect(screen.getByText('(optional)')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(handleConfirm).toHaveBeenCalledWith('')
+  })
+
+  it('passes no argument when no reason is asked for, as before', async () => {
+    const { handleConfirm } = renderDialog()
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(handleConfirm).toHaveBeenCalledWith()
+  })
+
+  it('forgets the reason when the dialog closes', async () => {
+    const onOpenChange = vi.fn()
+    const view = render(
+      <ConfirmDialog
+        open
+        onOpenChange={onOpenChange}
+        title="t"
+        desc="d"
+        handleConfirm={vi.fn()}
+        reason={{ required: true }}
+      />
+    )
+    await userEvent.type(screen.getByLabelText('Reason'), 'because')
+    view.rerender(
+      <ConfirmDialog
+        open={false}
+        onOpenChange={onOpenChange}
+        title="t"
+        desc="d"
+        handleConfirm={vi.fn()}
+        reason={{ required: true }}
+      />
+    )
+    view.rerender(
+      <ConfirmDialog
+        open
+        onOpenChange={onOpenChange}
+        title="t"
+        desc="d"
+        handleConfirm={vi.fn()}
+        reason={{ required: true }}
+      />
+    )
+    expect(screen.getByLabelText('Reason')).toHaveValue('')
+  })
+
+  it('works together with typed confirmation: both must be satisfied', async () => {
+    renderDialog({ reason: { required: true }, typeToConfirm: 'prod' })
+    const confirm = screen.getByRole('button', { name: 'Delete' })
+    await userEvent.type(screen.getByLabelText('Reason'), 'why')
+    expect(confirm).toBeDisabled()
+    await userEvent.type(screen.getByLabelText(/Type\s*prod\s*to confirm/), 'prod')
+    expect(confirm).toBeEnabled()
+  })
+})
+
+describe('reasonIsValid', () => {
+  it('only constrains a required reason', () => {
+    expect(reasonIsValid('', undefined)).toBe(true)
+    expect(reasonIsValid('', {})).toBe(true)
+    expect(reasonIsValid(' ', { required: true })).toBe(false)
+    expect(reasonIsValid('x', { required: true })).toBe(true)
+    expect(reasonIsValid('abc', { required: true, minLength: 4 })).toBe(false)
   })
 })
 

@@ -91,6 +91,7 @@ type Handlers struct {
 	DashboardFacts *handler.DashboardFactsHandler
 	SavedView      *handler.SavedViewHandler   // nil if not initialized - saved list views (D15, RFC-048)
 	NavPin         *handler.NavPinHandler      // nil if not initialized - the caller's sidebar pins
+	Inbox          *handler.InboxHandler       // nil if not initialized - the caller's Inbox counts
 	Audit          *handler.AuditHandler       // nil if not initialized (no database)
 	Branch         *handler.BranchHandler      // nil if not initialized (no database)
 	SLA            *handler.SLAHandler         // nil if not initialized (no database)
@@ -187,6 +188,7 @@ type Handlers struct {
 	AdminContentCatalog *handler.AdminContentCatalogHandler // nil if not initialized (no database)
 	SensorContentV2     *handler.SensorContentV2Handler     // content delivery to sensors; nil if not initialized
 	FeedRelay           *handler.FeedRelayHandler           // feed relay (RFC-142): sensor and admin routes; nil if not initialized
+	LookupJobs          *handler.LookupJobHandler           // lookup jobs (lookup.ct@1) of platform sensors; nil if not initialized
 	AdminVersionCheck   *handler.AdminVersionCheckHandler   // release feed status and offline import (RFC-105)
 	AdminConfiguration  *handler.AdminConfigurationHandler  // Configuration page: setting sources (RFC-022 rev. 22)
 	// AdminPlatformSettings serves the settings moved from the environment
@@ -1107,6 +1109,9 @@ func Register(
 		if ctl != nil && h.FeedRelay != nil {
 			ctl.SetFeedRelay(h.FeedRelay)
 		}
+		if ctl != nil && h.LookupJobs != nil {
+			ctl.SetLookupJobs(h.LookupJobs)
+		}
 		budgets := newSensorV2Budgets(ingestRateLimiter, log)
 		mountSensorV2(router, h.SensorResultsV2, ctl, budgets, h.SensorResultsV2.Authenticate)
 		if h.SensorV3 != nil && ctl != nil {
@@ -1256,6 +1261,9 @@ func Register(
 	}
 	if h.NavPin != nil {
 		registerNavPinRoutes(router, h.NavPin, authMiddleware, userSync)
+	}
+	if h.Inbox != nil {
+		registerInboxRoutes(router, h.Inbox, authMiddleware, userSync)
 	}
 
 	// Permission Sync routes (real-time permission sync with ETag support)

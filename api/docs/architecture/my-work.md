@@ -43,6 +43,64 @@ scope and pentest visibility, and adds:
 
 A queue needs a signed-in person: an API key or a platform caller gets 400.
 
+## Inbox summary
+
+`GET /api/v1/me/inbox/summary` counts every queue of the signed-in person in
+one call, for the sidebar's Inbox count and the tab counts:
+
+```json
+{
+  "queues": {
+    "assigned": 5, "team": 9, "due_soon": 2, "review": 3,
+    "requested": 2, "expiring": 1, "tasks": 1, "ready_to_close": 1
+  },
+  "total": 13
+}
+```
+
+- **Same predicates as the lists.** The endpoint compiles no filter of its
+  own. The finding queues are counted by the quick-view code
+  (`CountQuickViewsOf`, the four views `my_queue`, `my_team`, `my_due_soon`,
+  `my_accepted_expiring`, one statement); review and requested by the
+  approval queue counter (`CountApprovalQueues`, the `queue_counts` of
+  `GET /approvals?queue=`, one statement); tasks by the remediation task
+  list's own count (`CountTasks`, `assignee=me` over the open states `open`,
+  `in_progress`, `verifying`, `on_hold`); ready to close by the closure
+  proposal count (`GET /findings/closure/proposals`). Each runs as the caller,
+  so a count equals the total of the list it opens; `inbox_summary_db_test.go`
+  checks that per queue for an owner and a scoped member.
+- **Total** = assigned + review + requested + expiring + tasks +
+  ready_to_close, over the queues present. My team is other people's work and
+  Due soon is part of Assigned to me, so neither is in it.
+- **Queues follow permissions.** A queue the caller cannot use is absent from
+  `queues` (its tab is left out), never 0:
+
+  | Queue | Needs |
+  | --- | --- |
+  | assigned, team, due_soon, expiring, requested | `findings:read` |
+  | review | `findings:read` and `findings:approve` |
+  | ready_to_close | `findings:read` and `findings:verify` |
+  | tasks | `findings:remediation:read` and the remediation module |
+
+  Without `findings:approve` the review condition is the list's empty one
+  (it matches nothing) and the key is absent. Ready to close needs the permission that
+  decides a proposal, as the sidebar badge does.
+- **Caller.** Tenant, user and permissions come from the session; the route
+  takes no parameter. An organization API key or a platform caller (no
+  person) gets 400. A delegated credential of a person reads on that
+  person's own scope rows, as every list does.
+- **Cost.** At most four count statements plus the scope lookup, the same
+  number whatever the data size (`TestReadQueryBudget` holds the route to its
+  entry in `testdata/read_budget.json`). The route runs under the heavy-read
+  limiter like the quick views; a finding count past its 5 s limit answers
+  503. The response is `Cache-Control: no-store`: the count changes after
+  each decision and a shared browser must never show one person's counts to
+  the next.
+
+Key files: `internal/app/inbox/service.go`,
+`internal/infra/http/handler/inbox_handler.go`,
+`internal/infra/http/routes/inbox.go`.
+
 ## Security
 
 - The queue filters only narrow the caller's existing approval list; they
