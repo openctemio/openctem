@@ -1,0 +1,16 @@
+{
+  "requires": [
+    {
+      "component": "sensor",
+      "from": "v0.38.0",
+      "platform": "v0.21.0",
+      "reason": "fetches task credentials from the sealed task-secrets route, first served by platform v0.21.0"
+    },
+    {
+      "component": "sensor",
+      "from": "v0.40.0",
+      "platform": "v0.21.0",
+      "reason": "new pairings need signed pairing answers, first sent by platform v0.21.0"
+    }
+  ]
+}

@@ -47,11 +47,15 @@ func main() {
 
 func run(args []string, out io.Writer, now time.Time) error {
 	if len(args) == 0 {
-		return errors.New("usage: release-feed components|build|assemble|verify [flags]")
+		return errors.New("usage: release-feed components|build|assemble|verify|platform|manifest [flags]")
 	}
 	switch args[0] {
 	case "components":
 		return components(out)
+	case "platform":
+		return platformCmd(args[1:], out)
+	case "manifest":
+		return manifestCmd(args[1:], out, now)
 	case "build":
 		return build(args[1:], out, now)
 	case "assemble":
