@@ -95,6 +95,10 @@ func (s *Service) keepAccepted(ctx context.Context, tenantID, sensorID shared.ID
 		}
 		refused[c.ID] = gateReason(r)
 	}
+	// A port scan this sensor allows no port of, and no other sensor may
+	// run, is not left pending: it fails and its step is skipped
+	// (port_scan_ports.go).
+	s.refuseNoAllowedPorts(ctx, sensorID, gate, cmds, refused)
 	s.noteWithheld(ctx, tenantID, sensorID, refused)
 	return out
 }

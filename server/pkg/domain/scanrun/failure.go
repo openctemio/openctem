@@ -248,6 +248,11 @@ const (
 	// organization may run it; refused at claim, never sent. The step is
 	// skipped, never failed: the rest of the run goes on.
 	FailureSourceRetired = "SOURCE_RETIRED"
+	// FailurePortsNotAllowed: the step is a port scan that names no ports,
+	// and the local policy (ports.allow) of every sensor that may run it
+	// allows none of the ports it would probe; refused at claim, never sent.
+	// The step is skipped, never failed: the rest of the run goes on.
+	FailurePortsNotAllowed = "PORTS_NOT_ALLOWED"
 )
 
 // unsupportedSkipCodes are the codes of a step skipped because no tool or
@@ -258,6 +263,7 @@ var unsupportedSkipCodes = map[string]bool{
 	FailureToolDisabled:     true,
 	FailureNoSensorForTool:  true,
 	FailureSourceRetired:    true,
+	FailurePortsNotAllowed:  true,
 }
 
 // IsUnsupportedSkipCode reports whether code is the reason of a step skipped
@@ -268,7 +274,9 @@ func IsUnsupportedSkipCode(code string) bool { return unsupportedSkipCodes[code]
 // its step instead of failing it: the work was never sent, by a decision of
 // the organization, so the rest of the run goes on (it ends partial, or
 // failed when no step produced results).
-func IsClaimSkipCode(code string) bool { return code == FailureSourceRetired }
+func IsClaimSkipCode(code string) bool {
+	return code == FailureSourceRetired || code == FailurePortsNotAllowed
+}
 
 // FailureCodeForInfra is the step failure code of a command that ended on
 // the infrastructure class class (command.FailureClass spelling). An
@@ -338,6 +346,7 @@ var failureClasses = map[string]FailureClass{
 	FailureDependencyFailed:          FailureClassTransient,
 	FailureScannerConfigSecret:       FailureClassConfig,
 	FailureSourceRetired:             FailureClassPolicy,
+	FailurePortsNotAllowed:           FailureClassPolicy,
 }
 
 // ClassOf returns the class of a step failure code. An unknown code is a
