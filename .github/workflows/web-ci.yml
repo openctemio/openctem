@@ -82,7 +82,8 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: bash .github/scripts/changed.sh
-      # `next build` runs on push only; it is skipped when the push changed
+      # `next build` runs on push and in the merge queue, never on a plain pull
+      # request (runner cost); on a push it is skipped when the push changed
       # nothing that ships (tests, specs, documentation).
       - id: b
         working-directory: .
@@ -686,12 +687,15 @@ jobs:
       actions: write
     needs: [changes, contract, quality]
     # Runs after a passing or skipped Web checks: a queue-verified push skips
-    # Web checks but still builds (the tenant-bundle check below).
+    # Web checks but still builds (the tenant-bundle check below). It runs in
+    # the merge queue too, so the tenant-bundle check and the route JavaScript
+    # budget fail the queued change before it lands, not develop after it.
     if: >-
       !cancelled() && needs.contract.result == 'success' &&
       (needs.quality.result == 'success' || needs.quality.result == 'skipped') &&
       (needs.changes.outputs.web == 'true' || needs.contract.outputs.changed == 'true') &&
-      github.event_name == 'push' && needs.changes.outputs.build == 'true'
+      (github.event_name == 'push' || github.event_name == 'merge_group') &&
+      needs.changes.outputs.build == 'true'
     runs-on: ${{ (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
@@ -776,7 +780,7 @@ jobs:
             if [ "$LINT" = true ] || [ "$CHANGED" = true ]; then required="$required quality"; fi
             if [ "$WEB" = true ] || [ "$CHANGED" = true ]; then
               required="$required tests"
-              if [ "$EVENT" = push ]; then required="$required build"; fi
+              if [ "$EVENT" = push ] || [ "$EVENT" = merge_group ]; then required="$required build"; fi
             fi
             if [ "$I18N" = true ]; then required="$required i18n-tests"; fi
           fi
