@@ -383,23 +383,55 @@ func (r *ScanRunRepository) UpdateStats(ctx context.Context, tenantID, id shared
 // only that caller records the outcome (on the scan, in metrics, in the audit
 // log). Two parallel final steps, or a completion racing a cancel or the
 // timeout reaper, otherwise each recorded the run once.
+//
+// A move to a terminal status cancels the run's commands that no sensor has
+// claimed yet, in the same statement: a run that ended (fail fast, a failed
+// start, any settle) never leaves work behind for a sensor to pick
+// up later, next to the work of the scan's next run. Claimed commands are
+// left to their own path (a result that arrives after the run ended is
+// recorded on the command). A cancel closes every command of the run itself
+// and tells the sensors holding them (CloseCanceledRun).
 func (r *ScanRunRepository) UpdateStatus(ctx context.Context, tenantID, id shared.ID, status scanrun.RunStatus, errorMessage string) error {
 	query := `
-		UPDATE scan_runs
-		SET status = $2, error_message = $3,
-		    completed_at = CASE WHEN $2::varchar IN ` + terminalRunStatusesSQL + ` THEN NOW() ELSE completed_at END
-		WHERE id = $1 AND tenant_id = $4
-		  AND status NOT IN ` + terminalRunStatusesSQL + `
+		WITH moved AS (
+			UPDATE scan_runs
+			SET status = $2, error_message = $3,
+			    completed_at = CASE WHEN $2::varchar IN ` + terminalRunStatusesSQL + ` THEN NOW() ELSE completed_at END
+			WHERE id = $1 AND tenant_id = $4
+			  AND status NOT IN ` + terminalRunStatusesSQL + `
+			RETURNING id, tenant_id, status
+		), unclaimed AS (
+			UPDATE commands c
+			SET status = 'canceled',
+			    error_message = ` + runEndedCommandMessageSQL + ` || m.status,
+			    completed_at = NOW(),
+			    lease_expires_at = NULL
+			FROM moved m
+			WHERE m.status IN ` + terminalRunStatusesSQL + `
+			  -- a cancel closes all its commands itself, held ones too, and
+			  -- tells their sensors (CloseCanceledRun)
+			  AND m.status <> 'canceled'
+			  AND c.tenant_id = m.tenant_id
+			  AND c.payload->>'scan_run_id' = m.id::text
+			  AND c.status = 'pending'
+			RETURNING c.id
+		)
+		SELECT (SELECT COUNT(*) FROM moved), (SELECT COUNT(*) FROM unclaimed)
 	`
-	result, err := r.db.ExecContext(ctx, query, id.String(), string(status), errorMessage, tenantID.String())
-	if err != nil {
+	var moved, canceled int64
+	if err := r.db.QueryRowContext(ctx, query, id.String(), string(status), errorMessage, tenantID.String()).Scan(&moved, &canceled); err != nil {
 		return fmt.Errorf("failed to update pipeline run status: %w", err)
 	}
-	if n, _ := result.RowsAffected(); n == 0 {
+	if moved == 0 {
 		return r.notUpdatedErrorFor(ctx, tenantID, id)
 	}
 	return nil
 }
+
+// runEndedCommandMessageSQL (an SQL string literal) begins the message of
+// a command canceled because its run ended before a sensor claimed it; the
+// run's final status follows.
+const runEndedCommandMessageSQL = `'the scan run ended before a sensor picked up this command: '`
 
 // CreateRunIfUnderLimit atomically checks concurrent run limits and creates run if under limit.
 // Uses a transaction with row-level locking to prevent race conditions.
@@ -454,11 +486,15 @@ func (r *ScanRunRepository) CreateRunIfUnderLimit(ctx context.Context, run *scan
 	if err := tx.QueryRowContext(ctx, countQuery, lockID).Scan(&ownerActiveCount); err != nil {
 		return fmt.Errorf("failed to count active runs: %w", err)
 	}
-	// Overlap policy skip (RFC-046 D4, §6.2): a scheduled run never starts
-	// while the scan has an active run. Checked here, under the scan row
-	// lock every trigger of the scan takes, so a manual trigger committed
-	// between the scheduler's own check and this insert is seen.
-	if run.ScanID != nil && run.ScheduledFor != nil && ownerActiveCount > 0 {
+	// Overlap policy skip (RFC-046 D4, §6.2): a scheduled run, or an
+	// automatic retry, never starts while the scan has an active run: the
+	// active run already does the same work, and a second one would hand the
+	// sensors that work twice. Checked here, under the scan row lock every
+	// trigger of the scan takes, so a trigger committed between the caller's
+	// own check and this insert is seen.
+	// A zone child (parent_run_id) is admitted with its parent and never
+	// skipped here: its active parent is counted.
+	if run.ScanID != nil && run.ParentRunID == nil && (run.ScheduledFor != nil || run.RetryAttempt > 0) && ownerActiveCount > 0 {
 		return scanrun.ErrScanRunActive
 	}
 	// A zone child of a split run (parent_run_id) was admitted with its
@@ -1154,6 +1190,16 @@ func (r *ScanRunRepository) ListPendingRetries(ctx context.Context, limit int) (
 			          AND sr.error_code = ANY($2::text[])
 			      )
 			  AND s.status = 'active'
+			  -- A run a newer run of the scan superseded is not retried: the
+			  -- newer run (shown on the scan) did or does that work.
+			  AND NOT EXISTS (
+			        SELECT 1 FROM scan_runs nr
+			        WHERE nr.tenant_id = pr.tenant_id
+			          AND nr.scan_id = pr.scan_id
+			          AND nr.parent_run_id IS NULL
+			          AND nr.status <> 'blocked'
+			          AND nr.created_at > pr.created_at
+			      )
 			  AND NOW() >= pr.completed_at + (s.retry_backoff_seconds * POWER(2, pr.retry_attempt) || ' seconds')::interval
 			ORDER BY pr.completed_at ASC
 			LIMIT $1

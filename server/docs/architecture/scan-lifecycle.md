@@ -114,14 +114,32 @@ sequenceDiagram
   API-->>SE: cancel_command_ids (held no longer)
   C->>DB: scan-timeout: runs past deadline_at end partial<br/>(work kept) or timeout, open commands failed,<br/>unfinished_targets recorded for the next run
   C->>DB: scan-timeout: runs no sensor took in 4 h<br/>(scheduled) or 1 h (other) fail
-  C->>DB: scan-retry: failed or timeout runs, no permanent step code,<br/>scan active, backoff due, retry_dispatched_at claimed
-  C->>C: RetryScanRun: the full trigger path again
+  C->>DB: scan-retry: failed or timeout runs, no permanent step code,<br/>scan active, no newer run of the scan, backoff due,<br/>retry_dispatched_at claimed
+  C->>C: RetryScanRun: the full trigger path again,<br/>skipped while the scan has an active run
 ```
 
 - Queue wait does not count against the deadline (`runWaitsInQueueSQL`), and
   a claim extends it (`ExtendRunDeadlinesAtClaim`).
 - `partial`, `canceled` and `blocked` runs are never retried; a timed-out run
   at most twice. There is no manual retry endpoint and no step retry.
+- One live run per scan, for the platform's own triggers: a scheduled
+  occurrence and an automatic retry are both refused while the scan has an
+  active run, under the scan row lock (`CreateRunIfUnderLimit`,
+  `ErrScanRunActive`). A skipped retry is final (code `SCAN_RUN_IN_PROGRESS`)
+  and is written to the audit log ("Automatic retry skipped: the scan already
+  has an active run"). A failed run that a newer run of the scan superseded
+  (any run started after it, except a blocked one) is not retried: the newer
+  run did or does that work. A member's own Run now is limited by the per-scan
+  limit (3) only.
+- A run that ends never leaves work for a sensor: moving a run to a terminal
+  status (`UpdateStatus`: settle, fail fast, a failed start) cancels its
+  commands no sensor claimed yet in the same statement ("the scan run ended
+  before a sensor picked up this command: <status>"); a cancel closes all its
+  commands itself (`CloseCanceledRun`), the reapers fail theirs. Every claim
+  path (poll, claim by id, batch claim, shared sensors) also refuses a command
+  whose run has ended (`runOpenPredicate`), so a sensor that comes back after
+  an outage gets only the work of runs still open, never the old run's next to
+  the new one's.
 
 ## 1. The model
 
@@ -193,7 +211,7 @@ cannot reopen one, recount its findings or record its outcome twice.
 | `partial` | done: settle matrix (P1.2) and deadline → `partial` (P1.3) | `server/internal/app/scanrun/run.go`, `scan_run_repository.go` (`MarkTimedOutRuns`) |
 | Deadline + rollover | done: `deadline_at` set when the run starts (scan timeout, else the workflow timeout, 24 h cap); when a sensor claims a task the run gets at least the time the task's targets need at that sensor's measured speed (its load report's targets per minute for the tool, twice over plus 5 min, at least 10 min, at most twice the configured timeout), or the configured timeout from the claim when the sensor reports no speed; the deadline only moves forward, never past started + 24 h and never for a scan's own max duration (`deadline_reason` `work_estimate`), and every claimed task's payload `deadline` is set to the run's current deadline (whether or not this claim moved it) so the sensor budgets the job to it, never to a deadline an earlier claim already moved past; a run whose open tasks all wait for a busy sensor (one that could take them is online with no free slot) or for their hosts is not timed out; every scan command carries the run's deadline (`deadline`) and the sensor ends the job's time budget a margin before it (a tenth of the time left, 1 to 10 min), so a run cut there still reports what it settled; at the deadline open commands fail and lose their lease (the sensor is told to stop on its next heartbeat) with a message that says what is known (not picked up by a sensor; the tool finished every target but its result did not arrive; no result), unfinished targets (≤ 10,000, dispatch order) are recorded; the next **scheduled** run plans them first, reordering only targets the gate resolved again | `scan_run_repository.go` (`runDeadlineSQL`, `MarkTimedOutRuns`, `LatestRollover`), `scan_run_deadline_work.go` (`ExtendRunDeadlinesAtClaim`, `runWaitsInQueueSQL`), `server/internal/app/scan/rollover.go` |
 | Occurrence claim | compare-and-set on `next_run_at`; occurrence key planned (P1.5) | `server/internal/app/scan/scheduler.go`, `scan_repository.go` (`ClaimScheduledRun`) |
-| Overlap skip | done; checked in the run-insert transaction under the scan row lock (P1.6), so a manual trigger cannot slip in between | `scheduler.go` (`SkipIfRunning`), `scan_run_repository.go` (`CreateRunIfUnderLimit`, `ErrScanRunActive`) |
+| Overlap skip | done for scheduled runs and automatic retries; checked in the run-insert transaction under the scan row lock (P1.6), so a manual trigger cannot slip in between | `scheduler.go` (`SkipIfRunning`), `server/internal/app/scan/run.go` (`RetryScanRun`), `scan_run_repository.go` (`CreateRunIfUnderLimit`, `ErrScanRunActive`) |
 | rrule | `schedule_type` `rrule`: an RFC 5545 rule (RRULE parts only, e.g. `FREQ=WEEKLY;BYDAY=MO;BYHOUR=2`) in `scans.schedule_rrule`, evaluated in `schedule_timezone` from a fixed anchor (2024-01-01 00:00 local, so INTERVAL counts the same everywhere; no BYHOUR means midnight); refused on save if it does not parse, has no future occurrence, uses SECONDLY/BYSECOND/COUNT/DTSTART, or fires more often than every 15 minutes over the next year. Legacy daily/weekly/monthly/crontab still work; their backfill to rules is pending. Crontabs and rules more frequent than 15 minutes are refused; legacy ones are spaced when claimed; missed occurrences are skipped (`skipped_misfire`) | `server/pkg/domain/scan/rrule.go`, `entity.go` |
 | One-off run | `schedule_type` `once` with `run_at` (RFC 3339; stored in `scans.schedule_run_at`, migration 001694): the scan runs once at that instant, then has no next run (it is not reported as an inert schedule). `run_at` must be between a minute and a year ahead on save; `schedule_timezone` only says how to show it. An edit that sends the stored run back unchanged keeps it, even once it has run. A one-off run missed by more than an hour (the platform was down) is skipped and recorded (`skipped_misfire`), never started at a time nobody chose; a freeze window defers it like any run. Import turns a one-off run that is no longer ahead into a manual scan. The wizard sends the viewer's timezone (or the one chosen) with every schedule; before, every time was read as UTC and "Schedule for later > Once" saved a manual scan that never ran | `server/pkg/domain/scan/once.go`, `web/src/features/scans/lib/zoned-time.ts` |
 | Missed occurrence (misfire) | An occurrence more than one interval late (the platform was down) is claimed, not run, and counted `skipped_misfire` (RFC-046 §6.1). It is also kept on the scan: `scans.last_missed_at` (the occurrence time) and `last_missed_reason` (a code: `platform_unavailable`, `once_grace_exceeded`; migration 20261107031732), written tenant-scoped by `ScanRepository.RecordScheduleMisfire` and returned as `last_missed_at` / `last_missed_reason` on the scan API. One `scan.schedule_missed` notification event (scan id, name, missed time, next run time; category Scan Events, on by default, no severity filter) is enqueued per missed occurrence, after the claim that makes the skip happen once. The console shows "Missed <time>: <reason>" next to Next run (scan page, drawer, list) with the scan's own Run now. The note clears when a later scheduled run starts; a manual Run now does not clear it | `server/internal/app/scan/schedule_misfire.go`, `scheduler.go`, `web/src/features/scans/components/schedule-missed-note.tsx` |

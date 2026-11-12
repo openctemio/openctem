@@ -267,12 +267,30 @@ func (r *AssetCoverageRepository) MarkBlocked(ctx context.Context, tenantID shar
 	return nil
 }
 
+// runNothingClaimedSQL is true for a run (alias r) that ended with work
+// and none of it ever held by a sensor: every command was refused by the
+// sensors that took it (their local policy, their egress) and handed back,
+// or never picked up, until the run's deadline closed it. For the coverage
+// hold it counts as a run no sensor took, like one the unclaimed reaper
+// ended (NO_SENSOR): the capability backs off instead of queueing the same
+// work again the moment the run ends, while the cause is unchanged.
+func runNothingClaimedSQL(r string) string {
+	return `(` + r + `.status IN ` + terminalRunStatusesSQL + `
+		        AND EXISTS (SELECT 1 FROM commands rc
+		                    WHERE rc.tenant_id = ` + r + `.tenant_id AND rc.payload->>'scan_run_id' = ` + r + `.id::text)
+		        AND NOT EXISTS (SELECT 1 FROM commands rc
+		                    WHERE rc.tenant_id = ` + r + `.tenant_id AND rc.payload->>'scan_run_id' = ` + r + `.id::text
+		                      AND (rc.acknowledged_at IS NOT NULL OR rc.started_at IS NOT NULL
+		                           OR rc.status IN ('acknowledged', 'running', 'completed'))))`
+}
+
 // QueuedRuns returns the runs that hold queued pairs of the tenant.
 func (r *AssetCoverageRepository) QueuedRuns(ctx context.Context, tenantID shared.ID) ([]coverage.RunState, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT r.id, c.capability, r.status, COALESCE(r.error_message, ''), max(c.last_tool),
 		       COALESCE(r.unfinished_targets, '[]'::jsonb), min(c.queued_at),
-		       EXISTS (SELECT 1 FROM scan_run_steps st WHERE st.scan_run_id = r.id AND st.error_code = 'NO_SENSOR'),
+		       (EXISTS (SELECT 1 FROM scan_run_steps st WHERE st.scan_run_id = r.id AND st.error_code = 'NO_SENSOR')
+		        OR `+runNothingClaimedSQL("r")+`),
 		       EXISTS (SELECT 1 FROM scan_run_steps st WHERE st.scan_run_id = r.id AND st.error_code = 'TARGET_UNREACHABLE')
 		FROM asset_coverage c
 		JOIN scan_runs r ON r.tenant_id = c.tenant_id AND r.id = c.last_run_id

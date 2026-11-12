@@ -289,13 +289,29 @@ func fairPendingQuery(selectSQL, where string, withSensor bool, limit int) strin
 }
 
 // pendingReadyPredicate keeps a command that is waiting and due: pending, not
-// expired, not scheduled for later, and queued for the organization's own
-// sensors (tenantJobPredicate).
+// expired, not scheduled for later, queued for the organization's own
+// sensors (tenantJobPredicate), and part of no scan run that already ended
+// (runOpenPredicate).
 const pendingReadyPredicate = `commands.status = 'pending'
 		AND (commands.expires_at IS NULL OR commands.expires_at > NOW())
 		AND ` + tenantJobPredicate + `
 		AND ` + scheduledDuePredicate + `
+		AND ` + runOpenPredicate + `
 		AND ` + hostFreePredicate
+
+// runOpenPredicate keeps a command that belongs to no scan run, or to a run
+// of its own tenant that has not ended. Work of a run that ended (completed,
+// failed, timed out, canceled, ...) is never handed to a sensor, by poll, by
+// id, in a batch or to a shared sensor: otherwise a sensor coming back after
+// an outage would run the old run's work next to the scan's next run. The
+// run id is read from the payload the platform wrote; a value that is not a
+// UUID matches no run (and is not cast, so it never fails the claim).
+const runOpenPredicate = `(commands.payload->>'scan_run_id' IS NULL OR NOT EXISTS (
+			SELECT 1 FROM scan_runs ended_run
+			WHERE ended_run.tenant_id = commands.tenant_id
+			  AND ended_run.id = CASE WHEN commands.payload->>'scan_run_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+			                          THEN (commands.payload->>'scan_run_id')::uuid END
+			  AND ended_run.status IN ` + terminalRunStatusesSQL + `))`
 
 // tenantJobPredicate keeps a command that an organization's own sensor may
 // take: never one queued for shared sensors (is_platform_job). The routing
@@ -595,6 +611,7 @@ func (r *CommandRepository) ClaimForSensor(ctx context.Context, tenantID, comman
 		  AND ` + featureClaimPredicate("$3") + `
 		  AND ` + identityNotClonedPredicate("$3") + `
 		  AND ` + scheduledDuePredicate + `
+		  AND ` + runOpenPredicate + `
 		  AND ` + hostFreePredicate + `
 	`
 	result, err := tx.ExecContext(ctx, query, commandID.String(), tenantID.String(), sensorID, r.leaseSeconds())
