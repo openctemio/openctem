@@ -170,9 +170,6 @@ type Service struct {
 	tenantSettings TenantSettingsReader
 	// relinker moves stored CT exposures onto their host's asset.
 	relinker ExposureRelinker
-
-	// maxBody bounds one CT response (maxBodyBytes; tests lower it).
-	maxBody int64
 }
 
 // NewService constructs the CT discovery service. An empty feedBaseURL defaults
