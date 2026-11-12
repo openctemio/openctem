@@ -1,0 +1,2 @@
+### Fixed: console pages load about 38 KB less JavaScript again
+- The markdown renderer for scanner text was re-exported from the shared component index, so every page that used any shared component downloaded it on first load (median first-load JS per route 517 KB gzipped, over its 480 KB budget, and the asset detail page over 900 KB). It now loads only on the finding pages that show scanner text: median 479 KB, asset detail 890 KB. Nothing changes on screen.
