@@ -81,7 +81,7 @@ behaviour, and is covered by the example extension and a contract test.
 |---|---|---|
 | Grants | `Grants func(ctx, Deps) (GrantProvider, error)` | things that are off unless granted; at most one provider per build; a failing provider leaves every grant off ([RFC-145](../rfcs/RFC-145-enterprise-licence-and-entitlements.md) lists the guarantees every provider keeps) |
 | Controllers | `Controllers func(ctx, Deps) ([]Controller, error)` | run by the core controller manager; `Exclusive` ones on one replica; an error stops the start |
-| Routes | `Routes func(ctx, Router, Deps) error`, `Route{Method, Path, Permission, Grant, Handler}` | mounted at `/api/v1<Path>` behind authentication, the organization from the credential, membership, CSRF, the core permission and the grant; core routes and planes (`/admin`, `/auth`, `/internal`, `/sensor`, `/scim`, ...) cannot be used; the caller is in `CallerFrom(ctx)` |
+| Routes | `Routes func(ctx, Router, Deps) error`, `Route{Method, Path, Permission, Grant, Handler}` | mounted at `/api/v1<Path>` behind authentication, the organization from the credential, membership, CSRF, the core permission and the grant; core routes and planes (`/admin`, `/auth`, `/internal`, `/sensor`, `/scim`, `/tenants`, `/ci`, `/mcp`, `/oauth`, `/platform`, the credential roots, ...) cannot be used; the caller is in `CallerFrom(ctx)` |
 | Migrations | `Schema` + `Migrations fs.FS` | in the extension's own schema; reference core tables only by primary key and `tenant_id` (`ON DELETE CASCADE`) |
 | Config keys | `ConfigKeys []string` | read through `Deps.Settings`; core keys refused; any other key reads as empty |
 
