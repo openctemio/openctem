@@ -58,7 +58,6 @@ func testConfig() *config.Config {
 	c.Auth.CaptchaTurnstileSecret = "0x-very-secret"
 	c.Auth.CaptchaTurnstileSiteKey = "0x-site"
 	c.AITriage.AnthropicAPIKey = "sk-secret-value"
-	c.AdminAuditSink.URL = "https://sink.example.test/hook?token=abc"
 	c.Storage.TenantQuotaMB = 20480
 	c.Worker.VersionCheckEnabled = true
 	return c
@@ -72,7 +71,7 @@ func TestSecretsAreNeverReturned(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(items)
-	for _, secret := range []string{"0x-very-secret", "sk-secret-value", "token=abc", "sink.example.test"} {
+	for _, secret := range []string{"0x-very-secret", "sk-secret-value"} {
 		if strings.Contains(string(raw), secret) {
 			t.Fatalf("the overview leaks %q", secret)
 		}

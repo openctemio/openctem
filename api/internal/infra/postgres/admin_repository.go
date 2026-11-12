@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openctemio/openctem/api/internal/infra/auditsink"
 	"github.com/openctemio/openctem/api/pkg/domain/admin"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/pagination"
@@ -1007,7 +1006,7 @@ func auditSeverity(v string) string {
 // reads and sends. AdminAuditWithheldColumns are the ones it deliberately
 // does not (the hash covers them, so the database row can still be checked).
 // Every column of the table is in exactly one list:
-// TestAdminAuditSinkColumns_DB fails when a column is added without a
+// TestAdminAuditTrail (internal/extensionhost) fails when a column is added without a
 // decision, so nothing leaves the box by accident.
 var (
 	AdminAuditShippedColumns = []string{
@@ -1062,33 +1061,4 @@ func (r *AuditLogRepository) ReadForwardRows(ctx context.Context, after int64, l
 		out = append(out, e)
 	}
 	return out, rows.Err()
-}
-
-const adminAuditForwardCursorName = "default"
-
-// LoadForwardCursor returns the last acknowledged position (zero value when
-// nothing was sent yet).
-func (r *AuditLogRepository) LoadForwardCursor(ctx context.Context) (auditsink.Cursor, error) {
-	var c auditsink.Cursor
-	err := r.db.QueryRowContext(ctx,
-		`SELECT position, hash FROM admin_audit_forward_cursor WHERE name = $1`, adminAuditForwardCursorName).
-		Scan(&c.Position, &c.Hash)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return c, fmt.Errorf("read admin audit forward cursor: %w", err)
-	}
-	return c, nil
-}
-
-// SaveForwardCursor stores the cursor; it never moves backwards.
-func (r *AuditLogRepository) SaveForwardCursor(ctx context.Context, c auditsink.Cursor) error {
-	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO admin_audit_forward_cursor (name, position, hash) VALUES ($1, $2, $3)
-		ON CONFLICT (name) DO UPDATE
-		   SET position = EXCLUDED.position, hash = EXCLUDED.hash, updated_at = now()
-		 WHERE admin_audit_forward_cursor.position < EXCLUDED.position`,
-		adminAuditForwardCursorName, c.Position, c.Hash)
-	if err != nil {
-		return fmt.Errorf("save admin audit forward cursor: %w", err)
-	}
-	return nil
 }
