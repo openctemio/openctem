@@ -906,7 +906,7 @@ catalog but has no emitter: nothing in the platform sets a sensor's health to
 ## Wiring in Main
 
 ```go
-// cmd/server/services.go
+// internal/server/services.go
 s.Outbox = outbox.NewService(
     repos.Outbox,
     repos.OutboxEvent,
@@ -921,7 +921,7 @@ s.Outbox.SetRelayRefusedHandler(s.Integration)  // stop-and-notify for e-mail re
 s.Vulnerability.SetOutboxService(deps.DB, s.Outbox)
 s.Exposure.SetOutboxService(deps.DB, s.Outbox)
 
-// cmd/server/workers.go
+// internal/server/workers.go
 w.OutboxScheduler = outbox.NewScheduler(svc.Outbox, outbox.DefaultSchedulerConfig(), log)
 ```
 

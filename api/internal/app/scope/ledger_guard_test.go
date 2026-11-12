@@ -297,31 +297,31 @@ func TestLedgerGuard_RepositoriesHandedOutOnlyAtKnownSites(t *testing.T) {
 	ctors := map[string]bool{"NewScopeTargetRepository": true, "NewScopeExclusionRepository": true, "NewBountyProgramRepository": true}
 	fields := map[string]bool{"ScopeTarget": true, "ScopeExcl": true}
 	known := map[string]bool{
-		"cmd/server/repositories.go NewScopeTargetRepository":    true,
-		"cmd/server/repositories.go NewScopeExclusionRepository": true,
+		"internal/server/repositories.go NewScopeTargetRepository":    true,
+		"internal/server/repositories.go NewScopeExclusionRepository": true,
 		// Read-only export of the scope in effect (ledger bootstrap).
-		"cmd/server/signer_ledger_export.go NewScopeTargetRepository":    true,
-		"cmd/server/signer_ledger_export.go NewScopeExclusionRepository": true,
+		"internal/server/signer_ledger_export.go NewScopeTargetRepository":    true,
+		"internal/server/signer_ledger_export.go NewScopeExclusionRepository": true,
 		// Read-only dry run of CI trusts' repositories against scope; the
 		// repositories go straight into scope.NewService and nothing is written.
 		"internal/tools/citrustscopeplan/main.go NewScopeTargetRepository":    true,
 		"internal/tools/citrustscopeplan/main.go NewScopeExclusionRepository": true,
-		"cmd/server/services.go NewBountyProgramRepository":                   true,
+		"internal/server/services.go NewBountyProgramRepository":              true,
 		// check_scope: handed to the read-only mcpProgramMembers lister
 		// (MemberProgramIDs only), so nothing it holds can write scope.
-		"cmd/server/handlers.go NewBountyProgramRepository":                             true,
+		"internal/server/handlers.go NewBountyProgramRepository":                        true,
 		"internal/infra/postgres/bounty_program_repository.go NewScopeTargetRepository": true,
 		// scope.NewService, CertMonitor.SetDomainSources (reads verified
 		// domains' entries), the data-expiration controller (time-based
 		// ExpireOld, see part 2).
-		"cmd/server/services.go ScopeTarget": true,
-		"cmd/server/services.go ScopeExcl":   true,
-		"cmd/server/workers.go ScopeTarget":  true,
-		"cmd/server/workers.go ScopeExcl":    true,
+		"internal/server/services.go ScopeTarget": true,
+		"internal/server/services.go ScopeExcl":   true,
+		"internal/server/workers.go ScopeTarget":  true,
+		"internal/server/workers.go ScopeExcl":    true,
 		// The sensor policy prefill: read-only lister interfaces (ListActive only),
 		// so nothing it holds can write scope around the ledger hook.
-		"cmd/server/handlers.go ScopeTarget": true,
-		"cmd/server/handlers.go ScopeExcl":   true,
+		"internal/server/handlers.go ScopeTarget": true,
+		"internal/server/handlers.go ScopeExcl":   true,
 	}
 	root := moduleRoot(t)
 	seen := map[string]int{}
@@ -349,7 +349,7 @@ func TestLedgerGuard_RepositoriesHandedOutOnlyAtKnownSites(t *testing.T) {
 				return true
 			}
 			key := gf.rel + " " + name
-			if strings.HasPrefix(gf.rel, "cmd/server/repositories.go") && fields[name] {
+			if strings.HasPrefix(gf.rel, "internal/server/repositories.go") && fields[name] {
 				return true // the struct literal that defines them
 			}
 			seen[key]++

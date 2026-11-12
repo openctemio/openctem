@@ -41,6 +41,7 @@ on:
       - api/internal/migrate/**
       - api/deploy/gateway/**
       - api/cmd/server/main.go
+      - api/internal/server/main.go
       - api/cmd/signer/main.go
       - web/package.json
       - web/package-lock.json

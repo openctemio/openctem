@@ -38,7 +38,7 @@ authn-authz:
   - api/internal/infra/http/routes/auth.go
   - api/internal/infra/http/routes/admin.go
   - api/internal/infra/http/internalapi/**
-  - api/cmd/server/internal_api.go
+  - api/internal/server/internal_api.go
   - api/internal/app/entitlement/**
   - api/internal/infra/http/routes/misc.go
   - api/internal/infra/http/routes/scim.go

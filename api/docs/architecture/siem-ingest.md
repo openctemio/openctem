@@ -33,7 +33,7 @@ flowchart LR
   N -->|"Authorization: Splunk token, SSRF-guarded dial"| H
 ```
 
-- `cmd/server/services.go` keeps only `s.IOCRepo = repos.IOC`; the
+- `internal/server/services.go` keeps only `s.IOCRepo = repos.IOC`; the
   correlator and its `FindingReopener` adapter (`ioc.NewFindingReopener`) are
   built in tests only, so `ReopenForIOCMatch` never runs.
 - The web console still shows **Threat intel > Detections**, whose empty

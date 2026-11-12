@@ -419,7 +419,7 @@ decided by name, and excluded when an address of the member is.
 
 `validation.CommandDispatcher` is the only producer of validate commands. It
 runs `validation.CheckTarget` on every job; with a nil gate it refuses every
-job. `cmd/server` wires one dispatcher for every validation path through
+job. `internal/server` wires one dispatcher for every validation path through
 `lateTargetGate`, which refuses until the scan service exists.
 
 The retest service also calls `Preflight` (the same check) before it records a

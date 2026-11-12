@@ -31,7 +31,7 @@ import (
 //
 // NOT YET WIRED INTO ROUTES. This file ships the type so a future
 // PR can wire it without signature churn. Bootstrap path:
-//   1. cmd/server/handlers.go — construct TelemetryRateLimiter
+//   1. internal/server/handlers.go — construct TelemetryRateLimiter
 //   2. routes/scanning.go registerSensorRoutes — thread it in and
 //      apply .Middleware() on the /telemetry-events route.
 // Left unwired here to keep the sensor-route signature stable for
