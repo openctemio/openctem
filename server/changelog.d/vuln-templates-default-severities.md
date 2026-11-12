@@ -1,4 +1,0 @@
-### Behaviour change: template scans run low-severity templates at standard depth and info templates at deep
-
-- `vuln.templates` steps that set no severity now run low to critical at standard depth and info to critical at deep (owner decision OD-1). Before, a step without a severity ran whatever the sensor defaulted to, and the built-in recon workflows ran only critical to medium at standard and critical to low at deep, so scans of well-kept hosts reported nothing. Info matches are filed as info exposures, not findings.
-- Migration 20261104164815 updates the template steps of the built-in recon workflows, and tenant copies that still hold the earlier built-in values; a severity an organization set itself is kept. A step's own severity, its depth params and (once available) the scan's per-step settings still replace the default.

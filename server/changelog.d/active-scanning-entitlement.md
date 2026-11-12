@@ -1,5 +1,0 @@
-### Security: an organization without active scanning never has a probe sent to any sensor
-
-- New named feature `active_scanning` (allowed unless denied, like the other named features; the hosted control plane denies it per organization through the internal entitlements API, and the catalog endpoint lists it). An organization that is denied runs passive work only (tier 0: certificate logs, passive DNS, registration data, intel matching, imports).
-- Enforced on the server at every claim path (poll, claim by id, claim-N and the shared sensors' claim): the claim-time re-check fails a job above tier 0 with `ACTIVE_SCANNING_NOT_ENTITLED`, and the sensor-side gate withholds a job whose tool contract lifts it above passive. The tier is computed on the server, never read from a request, and the lookup is by the command's own organization. A lookup error refuses tier above 0 and leaves passive work alone.
-- Scan create, update and run refuse a scan above passive for such an organization with the validation code `ACTIVE_SCANNING_NOT_ENTITLED`, in addition to the dispatch check.

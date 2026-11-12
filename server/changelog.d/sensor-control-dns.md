@@ -1,6 +1,0 @@
-### Added: the platform explains a sensor's DNS failures and warns before scanning its core infrastructure
-
-- The setup checklist explains the sensor checks `runtime.control_dns` (the platform host name resolves, does not resolve and the sensor dials its last-known-good address with TLS still verifying the name, does not resolve and the sensor lost the platform, or failed for a while and recovered) and `network.core_addresses`, with the fix: pin the platform host (compose `extra_hosts`, a Kubernetes `hostAliases` entry, `/etc/hosts`), check the resolver, and keep DNS servers, gateways, firewalls, the platform and the sensor host out of intrusive scans.
-- The sensor detail names "DNS failure" as the reason a sensor went offline when its last report said its lookups of the platform host failed, and shows the window of a DNS outage it recovered from.
-- New `GET /api/v1/sensors/core-addresses` (`sensors:read`): the resolvers, gateways, own address and platform addresses the organization's active sensors reported, re-parsed as IP addresses. The new-scan form warns (never blocks) when address or range targets cover one of them, and "Exclude these" adds them to the scope exclusions as do-not-scan (`scope:write`).
-- Needs sensors on an SDK that sends these checks; older sensors show nothing new.

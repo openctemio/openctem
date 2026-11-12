@@ -1,5 +1,0 @@
-### Added: the compliance-checks command moves stored compliance findings to check state
-
-- A new operator command in the API image, `compliance-checks` (dry run by default, aggregates only), records the control state of every open compliance finding, re-classifies failures and warnings from their benchmark level and asset, and resolves stored passed, not-applicable and errored checks with the new closure reason `reclassified_check_state` (never counted as fixed; migration `20261108123051_finding_closure_reclassified_check_state`). Every close gets a timeline entry and an audit log entry; each run one audit entry per tenant.
-- `-apply` needs `-undo <file>`: the previous status, severity, class and level of every changed row are written there first. A rerun changes nothing; closed findings are never touched.
-- **Upgrade note:** on an existing installation run, each as a dry run first: `finding-practice -apply`, `compliance-checks -apply -undo <file>`, then `finding-practice -sla -apply -undo <file>`. The production apply is the owner's decision.

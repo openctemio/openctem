@@ -1,5 +1,0 @@
-### Added: the Inbox counts in one call
-
-- `GET /api/v1/me/inbox/summary` returns the signed-in person's count of each Inbox queue (assigned, team, due soon, awaiting my review, requested by me, acceptances expiring, my tasks, ready to close) and the Inbox total (assigned + review + requested + expiring + tasks + ready to close). The console can read the sidebar and tab counts with one request instead of four.
-- Each count is computed by the service behind the list the queue opens, with that list's filter, as the caller: the tenant comes from the session, the caller's data scope and pentest membership apply, and a count always equals the total of its list. A queue the caller has no permission or module for is left out of the response (never reported as 0): awaiting my review needs `findings:approve`, ready to close `findings:verify`, my tasks `findings:remediation:read` and the remediation module, every finding queue `findings:read`.
-- An organization API key or a platform caller gets 400. The response is never cached (`Cache-Control: no-store`) and runs under the heavy-read limiter. No migration.

@@ -1,5 +1,0 @@
-### Behaviour change: scans of a retired sensor tool are no longer dispatched
-
-- When an organization stops using a tool of one of its sensors as a source of findings, the claim no longer hands that sensor the tool's scan tasks (scheduled, manual and coverage runs, including runs queued before the retirement). Another sensor of the organization with the tool takes the task (the task shows the placement reason `source_retired`); a task pinned to that sensor, or one no other sensor may run, is refused with `SOURCE_RETIRED`.
-- Its step is skipped with `SOURCE_RETIRED` and the reason, never failed: the rest of the run goes on and ends partial, or failed when nothing produced results. The run page explains the code and links to the retired sources. "Use this source again" makes the tool run again at the next claim.
-- A retirement only stops the organization's own sensors; another organization's work is never affected. Retirements that cannot be read withhold the task (fail closed). No migration.
