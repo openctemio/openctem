@@ -284,7 +284,10 @@ func (r *FindingRepository) queryFindingBatch(ctx context.Context, tx *sql.Tx, q
 }
 
 // maxFindingFacets bounds the COUNT FILTER columns of one CountFacetsWhere.
-const maxFindingFacets = 16
+// The quick views use the most: 12 views plus the informational_hidden
+// count of each work view (6), 18 today. Every column is a filter over the
+// same single scan, so a column costs little next to the scan itself.
+const maxFindingFacets = 24
 
 // CountFacetsWhere counts, in one statement, the findings matching each
 // facet predicate among the rows a compiled filter selects (the quick-view

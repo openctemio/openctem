@@ -11,6 +11,7 @@
     "memberA /api/v1/findings?per_page=20": 5,
     "memberA /api/v1/findings?per_page=20&q=host": 5,
     "memberA /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 5,
+    "memberA /api/v1/me/inbox/summary": 5,
     "memberA /api/v1/notifications/unread-count": 2,
     "owner /api/v1/asset-groups": 3,
     "owner /api/v1/assets/stats": 2,
@@ -22,6 +23,7 @@
     "owner /api/v1/findings?per_page=20": 5,
     "owner /api/v1/findings?per_page=20&q=host": 5,
     "owner /api/v1/findings?per_page=20&severity=critical,high&sort=-severity": 5,
+    "owner /api/v1/me/inbox/summary": 6,
     "owner /api/v1/notifications/unread-count": 2
   }
 }

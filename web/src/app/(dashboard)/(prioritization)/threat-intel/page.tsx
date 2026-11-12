@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Main } from '@/components/layout'
 import { PageHeader, PageStack, EmptyState } from '@/features/shared'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { ErrorState } from '@/features/shared/components/error-state'
+import { Alert, AlertTitle } from '@/components/ui/alert'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { formatEpssPercentile, formatEpssScore, formatEpssTopPercent } from '@/lib/epss'
 import {
@@ -49,6 +50,7 @@ export default function ThreatIntelPage() {
     kevStats,
     syncStatuses,
     isLoading,
+    error: statsError,
     mutate: refresh,
   } = useThreatIntelStats(tenantId)
 
@@ -87,12 +89,20 @@ export default function ThreatIntelPage() {
 
           <TabsContent value="overview">
             <PageStack>
-              <ThreatIntelOverview
-                epssStats={epssStats}
-                kevStats={kevStats}
-                lastSyncAt={lastSync}
-                isLoading={isLoading}
-              />
+              {statsError && !isLoading ? (
+                <ErrorState
+                  title={t('threatIntel.errorTitle', 'threat intelligence')}
+                  error={statsError}
+                  onRetry={handleRefreshAll}
+                />
+              ) : (
+                <ThreatIntelOverview
+                  epssStats={epssStats}
+                  kevStats={kevStats}
+                  lastSyncAt={lastSync}
+                  isLoading={isLoading}
+                />
+              )}
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <InfoCard
@@ -127,7 +137,15 @@ export default function ThreatIntelPage() {
           </TabsContent>
 
           <TabsContent value="sync">
-            <SyncStatusManager statuses={syncStatuses} onRefresh={refresh} />
+            {statsError && !isLoading ? (
+              <ErrorState
+                title={t('threatIntel.errorTitle', 'threat intelligence')}
+                error={statsError}
+                onRetry={handleRefreshAll}
+              />
+            ) : (
+              <SyncStatusManager statuses={syncStatuses} onRefresh={refresh} />
+            )}
           </TabsContent>
         </Tabs>
       </PageStack>
@@ -177,7 +195,7 @@ function CVELookup() {
   const [cveId, setCveId] = useState('')
   const [isLookingUp, setIsLookingUp] = useState(false)
   const [result, setResult] = useState<CVEEnrichment | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [lookupError, setLookupError] = useState<unknown>(null)
 
   const handleLookup = async () => {
     if (!cveId.trim()) {
@@ -193,14 +211,14 @@ function CVELookup() {
     }
 
     setIsLookingUp(true)
-    setError(null)
+    setLookupError(null)
     setResult(null)
 
     try {
       const enrichment = await enrichCVE(cveId.trim().toUpperCase())
       setResult(enrichment)
     } catch (err) {
-      setError(t('threatIntel.lookup.notFound'))
+      setLookupError(err ?? new Error(t('threatIntel.lookup.failed')))
       console.error(err)
     } finally {
       setIsLookingUp(false)
@@ -240,20 +258,21 @@ function CVELookup() {
         </CardContent>
       </Card>
 
-      {/* Error State */}
-      {error && (
-        <Alert variant="destructive">
-          <Info />
-          <AlertTitle>{t('threatIntel.lookup.failed')}</AlertTitle>
-          <AlertDescription>
-            <p>{error}</p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={handleLookup}>
-              <RefreshCw className="me-2 h-4 w-4" />
-              {t('threatIntel.lookup.retry')}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* A 404 is the answer ("no data for this CVE"); any other failure is a failed
+          read and says so with Retry, never "not found". */}
+      {lookupError !== null &&
+        ((lookupError as { statusCode?: number }).statusCode === 404 ? (
+          <Alert>
+            <Info />
+            <AlertTitle>{t('threatIntel.lookup.notFound')}</AlertTitle>
+          </Alert>
+        ) : (
+          <ErrorState
+            title={t('threatIntel.lookup.errorTitle', 'the CVE lookup')}
+            error={lookupError}
+            onRetry={handleLookup}
+          />
+        ))}
 
       {/* Results */}
       {result && (

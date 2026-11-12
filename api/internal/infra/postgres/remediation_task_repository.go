@@ -301,13 +301,23 @@ func taskOrderBy(s remediation.TaskSort) string {
 	}
 }
 
-// ListTasks lists the tenant's tasks.
-func (r *RemediationTaskRepository) ListTasks(ctx context.Context, tenantID shared.ID, f remediation.TaskFilter, page pagination.Pagination) (pagination.Result[*remediation.Task], error) {
+// CountTasks counts what ListTasks lists for the same filter (its total).
+func (r *RemediationTaskRepository) CountTasks(ctx context.Context, tenantID shared.ID, f remediation.TaskFilter) (int64, error) {
 	where, args := taskListWhere(tenantID, f, pentestVisibilityCond(ctx, "sf", "t.tenant_id"))
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*)`+taskFrom+` WHERE `+where, args...).Scan(&total); err != nil {
-		return pagination.Result[*remediation.Task]{}, fmt.Errorf("count remediation tasks: %w", err)
+		return 0, fmt.Errorf("count remediation tasks: %w", err)
 	}
+	return total, nil
+}
+
+// ListTasks lists the tenant's tasks.
+func (r *RemediationTaskRepository) ListTasks(ctx context.Context, tenantID shared.ID, f remediation.TaskFilter, page pagination.Pagination) (pagination.Result[*remediation.Task], error) {
+	total, err := r.CountTasks(ctx, tenantID, f)
+	if err != nil {
+		return pagination.Result[*remediation.Task]{}, err
+	}
+	where, args := taskListWhere(tenantID, f, pentestVisibilityCond(ctx, "sf", "t.tenant_id"))
 	q := `SELECT ` + taskSelectCols + taskFrom + ` WHERE ` + where + ` ORDER BY ` + taskOrderBy(f.Sort) +
 		fmt.Sprintf(` LIMIT %d OFFSET %d`, page.Limit(), page.Offset())
 	rows, err := r.db.QueryContext(ctx, q, args...)
