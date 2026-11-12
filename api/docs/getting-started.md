@@ -97,7 +97,7 @@ Operator-facing configuration (TLS, SSO, SMTP, scaling) is documented at
 
 ```
 api/
-├── cmd/server/          # API entry point (also bootstrap-admin, rekey, seed, ... in cmd/)
+├── cmd/server/          # API entry point, calls pkg/server.Main (also bootstrap-admin, rekey, seed, ... in cmd/)
 ├── internal/
 │   ├── app/             # Application services, one package per bounded context
 │   ├── config/          # Environment configuration

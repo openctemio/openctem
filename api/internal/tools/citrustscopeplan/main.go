@@ -44,7 +44,7 @@ import (
 )
 
 // Main runs the command with os.Args. It parses its flags on a fresh flag
-// set: the server binary that dispatches to it (see cmd/server/tools.go)
+// set: the server binary that dispatches to it (see internal/server/tools.go)
 // registers its own flags on flag.CommandLine at init.
 func Main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)

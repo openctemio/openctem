@@ -198,7 +198,7 @@ func countMissing(ctx context.Context, db *sql.DB, tenant any, rep *Report) erro
 	return nil
 }
 
-// Main runs the command with os.Args (see cmd/server/tools.go for why it
+// Main runs the command with os.Args (see internal/server/tools.go for why it
 // parses its flags on a fresh flag set).
 func Main() {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)

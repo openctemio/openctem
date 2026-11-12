@@ -24,7 +24,7 @@ migration-ordering outage. Read this before any production upgrade.
 
 The prod entrypoint is just `./server` (`Dockerfile` `production` target,
 `ENTRYPOINT ["./server"]`). It does **not** apply migrations. Instead,
-`cmd/server/main.go` calls `verifySchemaUpToDate` (`cmd/server/schema_check.go`):
+`internal/server/main.go` calls `verifySchemaUpToDate` (`internal/server/schema_check.go`):
 
 - If any `migrations/*.up.sql` shipped in the binary is **not applied** (missing
   from `schema_migrations_applied`, whatever its version) → the server logs an
@@ -368,7 +368,7 @@ the asset tenant foreign keys of 000920-000922 and the assignee scrub of
 - [Docker Deployment](docker.md) — the one-shot `migrate` compose service
 - [Migrations (development)](../development/migrations.md) — authoring migrations
 - `scripts/migrate.sh`, `scripts/check-migrations.sh`, `scripts/squash-migrations.sh`
-- `cmd/server/schema_check.go` — the fail-fast schema check + `SKIP_SCHEMA_CHECK`
+- `internal/server/schema_check.go` — the fail-fast schema check + `SKIP_SCHEMA_CHECK`
 
 ## How CI checks an upgrade
 

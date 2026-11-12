@@ -148,7 +148,7 @@ tester retests). Strings are in `findings.retestPanel.*`,
 `ObservedSince`), `finding_template_sightings.go`,
 `finding_retest_repository.go`; `internal/app/validation/run.go`
 (`signatureInstalled`), `retest_command.go` (`SensorID`);
-`cmd/server/services.go` (`retestFingerprinter`, sensor candidates);
+`internal/server/services.go` (`retestFingerprinter`, sensor candidates);
 migration `003529_retest_version_recheck`. Tests: `internal/app/retest/strategy_test.go`,
 `provenance_test.go`, `internal/infra/postgres/retest_version_evidence_db_test.go`,
 `internal/infra/http/handler/finding_retest_errors_test.go`,

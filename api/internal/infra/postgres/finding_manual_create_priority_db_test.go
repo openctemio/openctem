@@ -113,7 +113,7 @@ func TestCreateFinding_ManualPersistsPriorityClass(t *testing.T) {
 	tenantID := seedTestTenant(ctx, t, db)
 	assetID := seedPublicAsset(ctx, t, db, tenantID)
 
-	// Real classifier (same type wired in cmd/server), fed real finding+asset
+	// Real classifier (same type wired in internal/server), fed real finding+asset
 	// repos and fake enrichment repos. vulnRepo is nil — CreateFinding never
 	// touches it.
 	classifier := finding.NewPriorityClassificationService(
