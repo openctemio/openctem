@@ -165,6 +165,7 @@ RFC-003 (asset source priority) was withdrawn on 2026-10-05; see
 | [RFC-154](RFC-154-blocked-target-names.md) | Blocked target names and exceptions | Implemented (2026-11-11) |
 | [RFC-155](RFC-155-validation-recorded-by-a-person.md) | Validation recorded by a person | Accepted (2026-11-12): design only, nothing built. |
 | [RFC-156](RFC-156-cycle-close-comparison-and-report.md) | Cycle close, comparison and report | Accepted (2026-11-12): design only, nothing built. |
+| [RFC-157](RFC-157-console-api-design.md) | API design for the console | Proposed (2026-11-12). |
 <!-- END RFC INDEX -->
 
 > Status legend: **Proposed** = under review · **Phase N done** = that phase shipped to `develop` · **Implemented** = fully landed.
