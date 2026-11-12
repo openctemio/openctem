@@ -35,7 +35,7 @@ expect() { # <want> <name> <spec> [recipe]
   echo "ok: $name"
 }
 expect pass "spec in server/"          "/src/server/api/openapi/swagger.yaml"
-expect fail "spec under the old api/"  "/src/api/api/openapi/swagger.yaml"
+expect fail "spec under the old api/"  "/src/api/api/openapi/swagger.yaml" # rename-guard: allow
 expect fail "swagger recipe uses perl"   "/src/server/api/openapi/swagger.yaml" "perl -pi -e s/a/b/ f"
 expect pass "swagger recipe uses sed"    "/src/server/api/openapi/swagger.yaml" "sh scripts/x.sh f"
 echo "all check-generate-in-docker-paths tests passed"
