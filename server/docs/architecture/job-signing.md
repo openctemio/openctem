@@ -537,6 +537,30 @@ byte changes.
   value (Go `json.RawMessage`) gives the sensor the same bytes; hash them,
   never a re-encoding.
 
+### Every job a sensor runs is signed
+
+A sensor that pinned the signer refuses an unsigned job, so every kind of
+work goes through a signing path. Signing happens when a job is handed out,
+not when it is created, so a producer cannot skip it:
+
+| Work | Created by | Handed out by | Signed |
+|---|---|---|---|
+| `scan` | scan trigger, scan zones, workflow runs, follow-ups of unfinished targets, `POST /api/v1/commands` | claim-N, claim by id (and its replay), shared claim, v3 `ClaimCommands` | yes |
+| `validate`, `retest` | validation dispatcher, retest jobs | same | yes |
+| `refresh_content`, `proxy_test`, `connector_sync`, `connector_scan` | content refresh, proxy pool test, Tenable.sc connector | same | yes |
+| `collect`, `health_check`, `config_update`, `cancel` | `POST /api/v1/commands` | same | yes |
+| feed relay round | feed relay scheduler | `GET /feed-relay-rounds/next` | yes; no rounds without a signer |
+| lookup | lookup jobs | `GET /lookups/next` | yes; no lookups without a signer |
+
+Not jobs, so not signed: a listing poll (it claims nothing; the sensor runs
+only what a claim gives it), the heartbeat's `cancel_command_ids` and
+`stop_command_ids` (they can only stop work), and the manifest policy (it
+only narrows the tools a sensor may run). Content packs carry their own pack
+signatures, and the packs a job pins join its signed payload.
+`TestSignedJobs_EveryCommandTypeIsSigned` claims one command of each type
+from `command.CommandTypes()` both ways and verifies its envelope; a guard
+test fails when a command type is added without joining that list.
+
 ## What a sensor must check (sdk-go `pkg/jobsig`)
 
 Before it parses anything else of the command:
