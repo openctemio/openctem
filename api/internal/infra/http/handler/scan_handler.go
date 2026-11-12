@@ -2114,7 +2114,7 @@ func (h *ScanHandler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sc, err := h.service.ImportConfigConfirmed(h.auditCtx(r), tid, data, middleware.GetUserID(r.Context()),
-		r.URL.Query().Get("confirm_large_range") == "true")
+		r.URL.Query().Get("confirm_large_range") == queryParamTrue)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
