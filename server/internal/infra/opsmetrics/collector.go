@@ -59,7 +59,7 @@ var (
 	descSensorConfig = prometheus.NewDesc("openctem_sensors_config_health",
 		"Active sensors by kind and reported configuration health (ok, attention, impaired, blocked)", []string{"kind", "config_health"}, nil)
 	descSensorUnhardened = prometheus.NewDesc("openctem_sensors_unhardened",
-		"Active tenant sensors by unhardened reason: no local policy (policy_none), platform CA not pinned (pin_none), tools run without the sandbox (tools_unconfined), tools without network confinement (network_unenforced), bearer key instead of a key-bound identity (bearer_key)", []string{"kind"}, nil)
+		"Active tenant sensors by unhardened reason: no local policy (policy_none), platform CA not pinned (pin_none), signed jobs off (jobs_unsigned), tools run without the sandbox (tools_unconfined), tools without network confinement (network_unenforced), bearer key instead of a key-bound identity (bearer_key)", []string{"kind"}, nil)
 	descSensorSDK = prometheus.NewDesc("openctem_sensors_sdk",
 		"Active sensors by kind and SDK status against the SDK policy (current, outdated, unsupported, unknown)", []string{"kind", "status"}, nil)
 	descCommands = prometheus.NewDesc("openctem_commands",
