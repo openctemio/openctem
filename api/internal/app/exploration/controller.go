@@ -106,6 +106,7 @@ type Controller struct {
 	logger  *logger.Logger
 	cfg     ControllerConfig
 	now     func() time.Time
+	rollups exploration.RollupStore
 }
 
 // NewController wires the controller.
@@ -115,6 +116,9 @@ func NewController(repo exploration.Repository, store exploration.ControllerStor
 	return &Controller{repo: repo, store: store, rules: rules, starter: starter, ledger: ledger, sw: sw, audit: audit,
 		logger: log.With("component", "exploration"), cfg: cfg, now: time.Now}
 }
+
+// SetRollups precomputes the exploration's figures after every pass.
+func (c *Controller) SetRollups(r exploration.RollupStore) { c.rollups = r }
 
 // Run runs one pass for every tenant with assets. One tenant's failure does
 // not stop the others. It returns how many leads changed.
@@ -162,7 +166,16 @@ func (c *Controller) RunTenant(ctx context.Context, tenantID shared.ID) (int, er
 		return n, err
 	}
 	k, err = c.dispatch(ctx, tenantID, explorationID)
-	return n + k, err
+	n += k
+	if err != nil {
+		return n, err
+	}
+	if c.rollups != nil {
+		if err := c.rollups.RefreshRollup(ctx, tenantID, explorationID); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 func (c *Controller) systemCtx(tenantID shared.ID) auditapp.AuditContext {
