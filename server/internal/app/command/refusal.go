@@ -227,6 +227,11 @@ func RefusalFailureReason(payload json.RawMessage, all []commanddom.RefusalRecor
 	case sensordom.RefusalLayerScope:
 		fmt.Fprintf(&b, ". The sensor did not accept the scope the platform signed for %s; the job was not sent to another sensor. Check the organization's scope and the sensor's logs", target)
 	case sensordom.RefusalLayerBuiltin:
+		if last.Rule == sensordom.RuleSecretsUnverified {
+			fmt.Fprintf(&b, ". The sensor checks no job signature (signed jobs off), so it refuses jobs that need platform secrets, "+
+				"and the job was not run without its credentials. To fix it, %s", sensordom.SignedJobsOffFix)
+			return b.String()
+		}
 		fmt.Fprintf(&b, ". %s is on every sensor's built-in deny list (loopback, link-local, metadata or reserved addresses) and is not scanned", target)
 	default:
 		fmt.Fprintf(&b, ". No sensor's policy allows %s: refused by %s", target, strings.Join(sensors, ", "))

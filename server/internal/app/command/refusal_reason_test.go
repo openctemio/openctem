@@ -58,3 +58,21 @@ func TestRefusalFailureReason(t *testing.T) {
 		t.Error("empty reason")
 	}
 }
+
+// A job refused because the sensor verified no signature on it (signed jobs
+// off, rule secrets_unverified) says so and names the fix, instead of the
+// built-in deny list text.
+func TestRefusalFailureReason_SecretsUnverified(t *testing.T) {
+	got := RefusalFailureReason(json.RawMessage(`{"targets":["app.example.com"]}`), []commanddom.RefusalRecord{{
+		SensorID: "0123456789abcdef", SensorName: "edge-1", Layer: sensordom.RefusalLayerBuiltin,
+		Rule: sensordom.RuleSecretsUnverified, Detail: "the job requires proxy credentials",
+	}}, false)
+	for _, want := range []string{"secrets_unverified", "signed jobs off", "SENSOR_JOB_SIGNING_ROOT", "pair the sensor again"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("reason %q lacks %q", got, want)
+		}
+	}
+	if strings.Contains(got, "deny list") {
+		t.Errorf("reason %q explains the built-in deny list", got)
+	}
+}

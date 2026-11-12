@@ -28,6 +28,13 @@ describe('postureIssues', () => {
     expect(issue.fix).toContain('Run the sensor on Linux')
   })
 
+  it('maps jobs_unsigned (signed jobs off) to its fix', () => {
+    const [issue] = postureIssues(posture({ unhardened: ['jobs_unsigned'], signed_jobs: 'off' }))
+    expect(issue.reason).toBe('jobs_unsigned')
+    expect(issue.label).toBe('Signed jobs off')
+    expect(issue.fix).toContain('SENSOR_JOB_SIGNING_ROOT')
+  })
+
   it('maps every reason to its fix, in the API order', () => {
     const issues = postureIssues(
       posture({ unhardened: ['pin_none', 'policy_none', 'network_unenforced', 'bearer_key'] })

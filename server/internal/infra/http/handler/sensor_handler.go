@@ -428,15 +428,22 @@ type SensorPostureResponse struct {
 	// acknowledged (its operator turned the sandbox off); absent when
 	// sandboxed or not reported.
 	ToolsUnconfined string `json:"tools_unconfined,omitempty" enums:"refused,acknowledged"`
+	// SignedJobs is how the sensor checks the platform's job signatures:
+	// required (it pinned the platform's signer), verified_when_present, off
+	// (it pins no signer: it verifies no job and refuses jobs that need
+	// platform secrets with the rule secrets_unverified), unknown (not
+	// reported).
+	SignedJobs string `json:"signed_jobs" enums:"required,verified_when_present,off,unknown"`
 	// Unhardened lists why the sensor is flagged (never null): policy_none,
-	// pin_none, tools_unconfined, network_unenforced, bearer_key.
-	Unhardened []string `json:"unhardened" enums:"policy_none,pin_none,tools_unconfined,network_unenforced,bearer_key"`
+	// pin_none, jobs_unsigned, tools_unconfined, network_unenforced,
+	// bearer_key.
+	Unhardened []string `json:"unhardened" enums:"policy_none,pin_none,jobs_unsigned,tools_unconfined,network_unenforced,bearer_key"`
 }
 
 func postureResponse(a *sensor.Sensor) SensorPostureResponse {
 	p := a.PostureOf()
 	return SensorPostureResponse{LocalPolicy: p.LocalPolicy, PlatformPin: p.PlatformPin, NetworkEnforced: p.NetworkEnforced,
-		ToolsUnconfined: p.ToolsUnconfined, Unhardened: p.Unhardened}
+		ToolsUnconfined: p.ToolsUnconfined, SignedJobs: p.SignedJobs, Unhardened: p.Unhardened}
 }
 
 // SensorLocalStoreResponse is a sensor's local store report as the console

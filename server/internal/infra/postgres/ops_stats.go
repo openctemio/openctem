@@ -32,7 +32,7 @@ type OpsSnapshot struct {
 	Sensors []OpsSensorCount
 
 	// SensorsUnhardened counts active tenant sensors by unhardened reason
-	// (sensor.UnhardenedKinds: policy_none, pin_none, tools_unconfined, network_unenforced,
+	// (sensor.UnhardenedKinds: policy_none, pin_none, jobs_unsigned, tools_unconfined, network_unenforced,
 	// bearer_key). A sensor with several reasons counts under each.
 	SensorsUnhardened map[string]int64
 
@@ -247,12 +247,12 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 	rows, err := db.QueryContext(ctx, `
 		SELECT s.reported_local_policy->>'state', COALESCE(s.reported_local_policy->>'required', 'false') = 'true',
 		       p.posture->'platform_tls'->>'pin', p.posture->'sandbox'->>'network_enforced',
-		       p.posture->'sandbox'->>'unconfined',
+		       p.posture->'sandbox'->>'unconfined', p.posture->'jobs'->>'signed',
 		       COALESCE(s.auth_kind, '') = '`+string(sensor.AuthKindKeyBound)+`', s.last_seen_at IS NOT NULL, count(*)
 		FROM sensors s
 		LEFT JOIN LATERAL (SELECT `+sensorManifestPostureSQL("s")+` AS posture) p ON TRUE
 		WHERE s.status = 'active' AND s.scope = 'organization'
-		GROUP BY 1, 2, 3, 4, 5, 6, 7`)
+		GROUP BY 1, 2, 3, 4, 5, 6, 7, 8`)
 	if err != nil {
 		return nil, err
 	}
@@ -264,24 +264,27 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 	for rows.Next() {
 		var (
 			state, pin, netEnforced  sql.NullString
-			unconfined               sql.NullString
+			unconfined, signedJobs   sql.NullString
 			required, keyBound, seen bool
 			n                        int64
 		)
-		if err := rows.Scan(&state, &required, &pin, &netEnforced, &unconfined, &keyBound, &seen, &n); err != nil {
+		if err := rows.Scan(&state, &required, &pin, &netEnforced, &unconfined, &signedJobs, &keyBound, &seen, &n); err != nil {
 			return nil, err
 		}
 		in := sensor.PostureInput{KeyBound: keyBound, Seen: seen}
 		if state.Valid {
 			in.LocalPolicy = &sensor.LocalPolicyReport{State: state.String, Required: required}
 		}
-		if pin.Valid || netEnforced.Valid {
+		if pin.Valid || netEnforced.Valid || signedJobs.Valid {
 			in.Posture = &sensor.ManifestPosture{}
 			if pin.Valid {
 				in.Posture.PlatformTLS = &sensor.PlatformTLSPosture{Pin: pin.String}
 			}
 			if netEnforced.Valid {
 				in.Posture.Sandbox = &sensor.SandboxPosture{NetworkEnforced: netEnforced.String == "true", Unconfined: unconfined.String}
+			}
+			if signedJobs.Valid {
+				in.Posture.Jobs = &sensor.JobsPosture{Signed: signedJobs.String}
 			}
 		}
 		for _, reason := range sensor.DerivePosture(in).Unhardened {
