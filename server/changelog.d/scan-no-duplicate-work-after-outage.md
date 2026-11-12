@@ -18,4 +18,5 @@
   probe after 2 h doubling to 48 h, lifted at once when the sensors change)
   instead of queueing the same work again the moment the run timed out.
 - No migration.
+- **Upgrade note:** no action. After the upgrade, queued work of runs that already ended is no longer handed to sensors (it is cancelled when its run ends or by the reapers), and an automatic retry is skipped while its scan has an active run; each skip is in the audit log.
 - Docs: server/docs/architecture/scan-lifecycle.md ("Cancel, deadline, retry"), server/docs/architecture/asset-coverage.md ("Runs no sensor takes"), https://docs.openctem.io/scanning/scans-and-runs/
