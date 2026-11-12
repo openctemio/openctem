@@ -28,9 +28,9 @@ func TestScanRun_TasksOfATriggeredRun(t *testing.T) {
 		t.Fatalf("TriggerScan: %v", err)
 	}
 
-	got, err := pipeSvc.GetRunWithStepsForTenant(ctx, tenantID.String(), run.ID.String())
+	got, err := pipeSvc.GetRunWithSteps(ctx, tenantID.String(), run.ID.String())
 	if err != nil {
-		t.Fatalf("GetRunWithStepsForTenant: %v", err)
+		t.Fatalf("GetRunWithSteps: %v", err)
 	}
 	tasks, err := pipeSvc.GetRunTasks(ctx, got)
 	if err != nil || tasks == nil {
@@ -51,7 +51,7 @@ func TestScanRun_TasksOfATriggeredRun(t *testing.T) {
 		t.Fatalf("stranger summaries = %+v, %v; want none", sums, err)
 	}
 
-	if _, err := pipeSvc.GetRunWithStepsForTenant(ctx, stranger.String(), run.ID.String()); !errors.Is(err, shared.ErrNotFound) {
+	if _, err := pipeSvc.GetRunWithSteps(ctx, stranger.String(), run.ID.String()); !errors.Is(err, shared.ErrNotFound) {
 		t.Fatalf("cross-tenant read err = %v, want not found", err)
 	}
 }
