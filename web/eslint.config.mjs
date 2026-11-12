@@ -96,6 +96,24 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // The one module that binds SWR's default cache (src/lib/swr-mutate.ts):
+  // the same rule without the swr entry.
+  {
+    files: ['src/lib/swr-mutate.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@console/*', '**/console/src/**'],
+              message: 'The tenant app must not import platform console code (web/console).',
+            },
+          ],
+        },
+      ],
+    },
+  },
   // One shared component per pattern (owner 2026-11-02): console pages and
   // components use the kit the tenant app uses (web/src/features/shared),
   // never a hand-rolled variant of a list table, a confirmation or a filter.

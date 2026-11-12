@@ -15,7 +15,7 @@
  * A field the API left out (an older API, a count the caller may not read, a
  * source that failed) is not seeded, and its hook fetches as before.
  */
-import { mutate } from '@/lib/swr-mutate'
+import { accountMutate, mutate } from '@/lib/swr-mutate'
 
 import { notificationEndpoints, tenantEndpoints, userEndpoints } from '@/lib/api/endpoints'
 import type { TenantMembership } from '@/lib/api/user-tenant-types'
@@ -128,9 +128,16 @@ export async function seedSessionCache(data: BootstrapSessionData): Promise<void
   const writes: Promise<unknown>[] = []
   const seed = (key: string, value: unknown) =>
     writes.push(mutate(key, value, { revalidate: false }))
+  // The account's profile and organizations are not one organization's data:
+  // TenantProvider and the shell above the organization epoch read them from
+  // the default cache, the pages from the epoch cache (src/lib/swr-mutate.ts).
+  const seedAccount = (key: string, value: unknown) => {
+    seed(key, value)
+    writes.push(accountMutate(key, value, { revalidate: false }))
+  }
 
-  if (data.user) seed(userEndpoints.me(), data.user)
-  if (data.tenants) seed(userEndpoints.myTenants(), data.tenants)
+  if (data.user) seedAccount(userEndpoints.me(), data.user)
+  if (data.tenants) seedAccount(userEndpoints.myTenants(), data.tenants)
   if (typeof data.badges?.unread_notifications === 'number')
     seed(notificationEndpoints.unreadCount(), { count: data.badges.unread_notifications })
   if (typeof data.badges?.easm_review === 'number')

@@ -12,7 +12,7 @@
  * Rule: web/docs/organization-switch.md.
  */
 
-// eslint-disable-next-line no-restricted-imports -- the one place that binds the default cache
+// The one place that binds the default cache (exempt in eslint.config.mjs).
 import { mutate as defaultMutate, type ScopedMutator } from 'swr'
 
 // Read SWR's default mutate on use, not at import (test files mock 'swr').
