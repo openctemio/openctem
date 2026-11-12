@@ -1006,7 +1006,7 @@ func auditSeverity(v string) string {
 // reads and sends. AdminAuditWithheldColumns are the ones it deliberately
 // does not (the hash covers them, so the database row can still be checked).
 // Every column of the table is in exactly one list:
-// TestAdminAuditSinkColumns_DB fails when a column is added without a
+// TestAdminAuditTrail (internal/extensionhost) fails when a column is added without a
 // decision, so nothing leaves the box by accident.
 var (
 	AdminAuditShippedColumns = []string{
