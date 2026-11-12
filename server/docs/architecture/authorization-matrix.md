@@ -2990,6 +2990,8 @@ These tests fail the build if the model erodes. Treat them as executable spec:
 | **Every permission gates something** | `tests/unit/permission_checked_test.go` | The inverse: a permission in the catalog that no code under `internal/` or `cmd/` references fails the build (the role editor would offer a capability that does not exist), unless it is listed in `reservedPermissions` with its decision (today `assets:export`, kept for server-side asset export). Each permission string has exactly one Go constant. |
 | **Go permission registry ≡ DB seed** | `tests/unit/permission_catalog_sync_test.go` (AUTHZ-17) | Parses the seed migrations and asserts set-equality with `permission.AllPermissions()`. A permission added to code but not seeded (or vice-versa) → red. |
 | **No tenantless by-id statement on a tenant-scoped table** | `tools/lint/tenantsql` (D-11) | Folds the SQL each `internal/infra/postgres` function sends and fails on `WHERE id = $n` against a table with a `tenant_id` column when the statement has no tenant predicate, unless the method is named `...ForPlatform`/`...Unscoped` (never callable from an HTTP handler) or the shrink-only `allowlist.txt` records why. See `tools/lint/tenantsql/README.md`. |
+| **Every route with a path id declares its tenant isolation** | `tests/unit/route_tenant_isolation_test.go` | Per path prefix: `tested` (named cross-organization tests that must exist), `sql` (declared: the tenant comes from the token and the store's by-id statements carry a tenant predicate, `tenantsql`) or `none` (not organization data, with the reason). A route added after the guard (not in `testdata/tenant_isolation_baseline.txt`, which only shrinks) needs its own entry naming a cross-organization test or stating why an id alone is safe. See "Cross-organization isolation tests". |
+| **An id of organization A answers as an unknown id to organization B, and changes nothing** | `internal/server/xorg_*_db_test.go` | The real router, services and a migrated database, with a token of B: bulk and by-id routes, the exploration leads, evidence items, scan windows and the connector "scan now", and the live WebSocket channels. |
 | **Every referenced permission exists** | `tests/unit/permission_references_exist_test.go` | Every value in `module.ModulePermissionMapping` (sidebar/bootstrap), every `permission.X` constant used in api Go code, and every value of the web `Permission` object (`web/src/lib/permissions/constants.ts`) is in `permission.AllPermissions()`. A reference to a permission no role can hold (which silently hides a module from every non-admin) → red. |
 | **Routes answer as their gates say, per principal and organization** | `tests/authzmatrix` (nightly `api-authz-matrix.yml`, `make -C server authz-matrix`) | Dynamic: seeds two organizations through the public API (owner, admin, member, viewer, custom roles, a data-scoped member, a group-derived role, a suspended member, API keys, a sensor, no credential) and sends every route as every principal, with its own and with the other organization's ids. A refusal where the gate admits, a pass where it refuses, a 2xx write with another organization's ids, or another organization's (or out-of-scope) ids in a response body fails the run, unless `testdata/allowlist.tsv` records why. Scenario tests cover the role-management API (ceilings, owner rules, invitations, API keys, four-eyes, step-up, how fast a grant or revocation applies). See [Authorization matrix suite](#authorization-matrix-suite). |
 
@@ -3079,3 +3081,62 @@ cannot go stale, and CI and image builds generate it before the web build). Comp
 hand, which is how about 15 settings controls drifted from the API (shown and
 then 403, or hidden although allowed). This is UX only; the API gate stays the
 authority.
+
+## Cross-organization isolation tests
+
+The gates above ask who may call a route. These tests ask the other question:
+what does an owner of organization B get when they send the ids of organization
+A. `server/internal/server/xorg_*_db_test.go` boots the real composition (the
+repositories, services, handlers, `routes.Register`, authentication and the
+tenant middleware chain) against a migrated test database and Redis, seeds two
+organizations, signs real access tokens and sends requests.
+
+For every case:
+
+1. B sends the request with A's ids and, as the reference, the same request with
+   fresh random ids. The status and the body (ids and timestamps normalised)
+   must be identical: a foreign id is not told apart from an unknown one (no
+   403 that confirms existence, no per-item error that does), and nothing of A
+   (every row A owns carries a marker in its name) appears.
+2. A digest of every tenant-owned table's rows for A is compared before and
+   after: a request of B changed nothing of A's, in any table it could reach.
+3. After all of B's attempts, A sends the same request: it must succeed and not
+   answer "not found", so a 404 for B proves isolation and not a malformed
+   request. A case whose control fails is a test failure.
+4. Mixed cases pair B's own row with A's id (a run of A through B's scan, an
+   evidence item of A on B's finding, A's asset into B's team, A's asset to B's
+   connector) to cover the joins that carry two ids.
+
+Covered today: scans (bulk activate, pause, disable, delete; detail), asset
+groups (bulk update and delete), scope targets and exclusions (bulk delete),
+findings (bulk status, assign, by filter, AI triage; detail, status, assign,
+severity, delete), assets (bulk status and sync; detail, update, archive,
+delete), remediation tasks and suggestions (approve, bulk approve), approvals
+and group exceptions, scan runs, saved views, dashboards, API keys, integration
+webhooks and signing secrets, roles (bulk members), teams (bulk assets),
+branches, exploration leads (approve, dismiss), evidence items, scan windows
+(policies, overrides, evaluation of asset ids) and the connector "scan now".
+
+Live channels (`/api/v1/ws`): a socket bound to A cannot subscribe to B's
+tenant, user, finding, triage or run channels, and receives nothing published
+for B, including after the same person has switched to B (their B session is
+another socket). An owner has no data-scope rows, so a finding channel is
+refused unless the finding exists in the caller's organization
+(`FindingInTenant`).
+
+Getters take the tenant: `scanrun.Service.GetRunWithSteps`,
+`GetTemplateWithSteps` and `integration.IntegrationService.GetIntegration`
+and `GetIntegrationWithSCM` answer "not found" for another organization by
+signature, so a new caller cannot forget the check.
+
+To run them: `DATABASE_URL` (a `*_test` database, migrated) and `REDIS_HOST` /
+`REDIS_PORT` (or `XT_REDIS_PORT` for a local Redis on 127.0.0.1), then
+`go test -race -p 2 ./internal/server/ -run TestCrossOrg`.
+
+Not yet covered by a cross-organization test (declared `sql` in the registry):
+the prefixes listed in the log of `TestEveryIDRouteDeclaresItsTenantIsolation`.
+Services that take bare ids and rely on the handler having checked the parent
+first: the branch service (`GetBranch`, `DeleteBranch`, `GetDefaultBranch`,
+`SetDefaultBranch`: `ensureRepoOwnedByTenant` in the handler, tested through the
+routes), `scanrun.Service.GetSteps`, `asset.AssetService.GetRepositoryExtensionsByAssetIDs`
+and `tool.Service.GetTool`.

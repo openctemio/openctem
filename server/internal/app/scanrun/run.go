@@ -49,22 +49,12 @@ func (s *Service) TriggerPipeline(ctx context.Context, input TriggerRunInput) (*
 	s.logger.Info("triggering scan run", "template_id", input.TemplateID)
 
 	// Get template with steps
-	template, err := s.GetTemplateWithSteps(ctx, input.TemplateID)
+	// A template is usable iff it is a system template (shared, auto-cloned
+	// below) or it belongs to the caller's tenant: GetTemplateWithSteps answers
+	// not found for another tenant's private workflow.
+	template, err := s.GetTemplateWithSteps(ctx, input.TenantID, input.TemplateID)
 	if err != nil {
 		return nil, err
-	}
-
-	// SECURITY: GetTemplateWithSteps loads by ID without tenant scoping, so we
-	// must verify the caller may use this template before triggering it.
-	// A template is usable iff it is a system template (shared, auto-cloned
-	// below) or it belongs to the caller's tenant. Without this check a user
-	// could trigger another tenant's private scan workflow by guessing its ID.
-	if !template.IsSystemTemplate && template.TenantID.String() != input.TenantID {
-		s.logger.Warn("SECURITY: cross-tenant scan run trigger attempt",
-			"template_id", template.ID.String(),
-			"template_tenant_id", template.TenantID.String(),
-			"caller_tenant_id", input.TenantID)
-		return nil, shared.ErrNotFound
 	}
 
 	// Handle system templates: auto-clone for the tenant
@@ -2046,23 +2036,15 @@ func (s *Service) GetRun(ctx context.Context, tenantID, runID string) (*scanrun.
 	return s.runRepo.GetByTenantAndID(ctx, tid, rid)
 }
 
-// GetRunWithSteps retrieves a scan run with its step runs.
-func (s *Service) GetRunWithSteps(ctx context.Context, runID string) (*scanrun.Run, error) {
-	rid, err := shared.IDFromString(runID)
+// GetRunWithSteps returns a run of tenantID with its step runs. A run of
+// another tenant is not found: the tenant is part of the signature, so a
+// caller cannot read a run by its id alone.
+func (s *Service) GetRunWithSteps(ctx context.Context, tenantID, runID string) (*scanrun.Run, error) {
+	run, err := s.GetRun(ctx, tenantID, runID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid run id", shared.ErrValidation)
-	}
-
-	return s.runRepo.GetWithStepRuns(ctx, rid)
-}
-
-// GetRunWithStepsForTenant returns a run of tenantID with its step runs. A
-// run of another tenant is not found.
-func (s *Service) GetRunWithStepsForTenant(ctx context.Context, tenantID, runID string) (*scanrun.Run, error) {
-	if _, err := s.GetRun(ctx, tenantID, runID); err != nil {
 		return nil, err
 	}
-	return s.GetRunWithSteps(ctx, runID)
+	return s.runRepo.GetWithStepRuns(ctx, run.ID)
 }
 
 // RunTasks is a run's tasks as the runs page shows them.

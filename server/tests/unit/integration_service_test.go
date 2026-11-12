@@ -779,7 +779,7 @@ func TestGetIntegration_Success(t *testing.T) {
 		t.Fatalf("setup failed: %v", err)
 	}
 
-	got, err := svc.GetIntegration(context.Background(), created.ID().String())
+	got, err := svc.GetIntegration(context.Background(), tenantID, created.ID().String())
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -797,7 +797,7 @@ func TestGetIntegration_NotFound(t *testing.T) {
 	svc := newTestIntegrationService(repo, scmRepo, nil)
 
 	nonExistentID := shared.NewID().String()
-	_, err := svc.GetIntegration(context.Background(), nonExistentID)
+	_, err := svc.GetIntegration(context.Background(), shared.NewID().String(), nonExistentID)
 	if err == nil {
 		t.Fatal("expected error for non-existent integration")
 	}
@@ -811,7 +811,7 @@ func TestGetIntegration_InvalidID(t *testing.T) {
 	scmRepo := newMockSCMExtRepo()
 	svc := newTestIntegrationService(repo, scmRepo, nil)
 
-	_, err := svc.GetIntegration(context.Background(), "not-a-uuid")
+	_, err := svc.GetIntegration(context.Background(), shared.NewID().String(), "not-a-uuid")
 	if err == nil {
 		t.Fatal("expected error for invalid ID")
 	}
@@ -893,7 +893,7 @@ func TestDeleteIntegration_WrongTenant_NotFound(t *testing.T) {
 		t.Fatalf("cross-tenant delete must be NotFound, got %v", err)
 	}
 	// The integration must still exist for its real owner.
-	if _, err := svc.GetIntegration(context.Background(), created.ID().String()); err != nil {
+	if _, err := svc.GetIntegration(context.Background(), ownerTenant, created.ID().String()); err != nil {
 		t.Fatalf("integration should survive a cross-tenant delete attempt: %v", err)
 	}
 }
@@ -1072,7 +1072,7 @@ func TestDeleteIntegration_Success(t *testing.T) {
 	}
 
 	// Verify it was deleted
-	_, err = svc.GetIntegration(context.Background(), created.ID().String())
+	_, err = svc.GetIntegration(context.Background(), tenantID, created.ID().String())
 	if err == nil {
 		t.Fatal("expected not found after delete")
 	}
@@ -1117,7 +1117,7 @@ func TestDeleteIntegration_WrongTenant(t *testing.T) {
 	}
 
 	// Integration should still exist
-	got, err := svc.GetIntegration(context.Background(), created.ID().String())
+	got, err := svc.GetIntegration(context.Background(), tenantID, created.ID().String())
 	if err != nil {
 		t.Fatalf("integration should still exist: %v", err)
 	}
@@ -3107,5 +3107,31 @@ func TestNotificationIntegration_TemplateAndLevelValidatedOnSave(t *testing.T) {
 	if _, err := svc.UpdateNotificationIntegration(context.Background(), got.Integration.ID().String(), base.TenantID,
 		integrationapp.UpdateNotificationIntegrationInput{MessageTemplate: &tpl}); !errors.Is(err, shared.ErrValidation) {
 		t.Fatalf("update with unknown variable not refused: %v", err)
+	}
+}
+
+// An integration is read inside one organization: the tenant is part of the
+// getters' signatures, so another tenant's integration is not found whichever
+// way it is asked for.
+func TestGetIntegration_OtherTenantIsNotFound(t *testing.T) {
+	repo := newMockIntegrationRepo()
+	scmRepo := newMockSCMExtRepo()
+	svc := newTestIntegrationService(repo, scmRepo, nil)
+
+	owner := shared.NewID().String()
+	created, err := svc.CreateIntegration(context.Background(), validCreateInput(owner))
+	if err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	other := shared.NewID().String()
+
+	if _, err := svc.GetIntegration(context.Background(), owner, created.ID().String()); err != nil {
+		t.Fatalf("the owner reads its integration: %v", err)
+	}
+	if _, err := svc.GetIntegration(context.Background(), other, created.ID().String()); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("another tenant read an integration by id: err = %v, want not found", err)
+	}
+	if _, err := svc.GetIntegrationWithSCM(context.Background(), other, created.ID().String()); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("another tenant read an SCM integration by id: err = %v, want not found", err)
 	}
 }
