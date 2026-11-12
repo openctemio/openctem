@@ -25,7 +25,10 @@
 # ------------
 #   1. start a throwaway PostgreSQL
 #   2. apply every migrations/*.up.sql in order — so the schema is exactly what
-#      a fresh production deploy gets, not whatever a dev database has drifted to
+#      a fresh production deploy gets, not whatever a dev database has drifted to;
+#      then each in-repo extension's own migrations (pkg/extension/*/migrations)
+#      into a schema of its own, which joins the search path after public, as the
+#      extension host does for that extension's queries
 #   3. extract SQL string literals from the Go sources
 #   4. PREPARE each one. Postgres itself is the oracle: it resolves every table,
 #      column, type and parameter without any data or fixtures.
@@ -105,6 +108,31 @@ for f in "$REPO_ROOT"/migrations/*.up.sql; do
   applied=$((applied + 1))
 done
 echo "check-sql-schema: $applied migrations applied cleanly from empty."
+
+# An extension's tables live in its own schema; its migrations and queries are
+# unqualified and run with that schema on the search path.
+ext_path=""
+for d in "$REPO_ROOT"/pkg/extension/*/migrations; do
+  [ -d "$d" ] || continue
+  schema="ext_check_$(basename "$(dirname "$d")")"
+  docker exec "$CONTAINER" psql -U postgres -d gate -v ON_ERROR_STOP=1 -q -c "CREATE SCHEMA \"$schema\"" >/dev/null
+  for f in "$d"/*.up.sql; do
+    [ -f "$f" ] || continue
+    if ! { echo "SET search_path = \"$schema\", public;"; cat "$f"; } |
+      docker exec -i "$CONTAINER" psql -U postgres -d gate -v ON_ERROR_STOP=1 -q >/dev/null 2>/tmp/sqlgate_mig.err; then
+      echo "✗ extension migration failed to apply on a fresh database: ${f#"$REPO_ROOT"/}" >&2
+      sed 's/^/    /' /tmp/sqlgate_mig.err >&2
+      exit 1
+    fi
+    applied=$((applied + 1))
+  done
+  ext_path="$ext_path, \"$schema\""
+done
+if [ -n "$ext_path" ]; then
+  docker exec "$CONTAINER" psql -U postgres -d gate -v ON_ERROR_STOP=1 -q \
+    -c "ALTER DATABASE gate SET search_path = public$ext_path" >/dev/null
+  echo "check-sql-schema: extension migrations applied (search path: public$ext_path)."
+fi
 
 # --- 3. extract candidate statements from the Go sources ---------------------
 echo "check-sql-schema: extracting SQL from Go sources…"
