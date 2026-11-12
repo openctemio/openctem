@@ -91,6 +91,17 @@ const (
 	CommandTypeProxyTest CommandType = "proxy_test"
 )
 
+// CommandTypes lists every command type. Tests that must hold for each type
+// (every claimed command carries a signed job) range over it; a guard test
+// fails when a CommandType constant is missing here.
+func CommandTypes() []CommandType {
+	return []CommandType{
+		CommandTypeScan, CommandTypeCollect, CommandTypeHealthCheck, CommandTypeConfigUpdate,
+		CommandTypeCancel, CommandTypeValidate, CommandTypeRefreshContent, CommandTypeConnectorSync,
+		CommandTypeConnectorScan, CommandTypeRetest, CommandTypeProxyTest,
+	}
+}
+
 // CommandStatus represents the status of a command.
 type CommandStatus string
 
