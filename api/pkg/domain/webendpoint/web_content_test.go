@@ -148,3 +148,16 @@ func TestAlertCandidates(t *testing.T) {
 		t.Fatal("fingerprint not tenant-bound/stable")
 	}
 }
+
+// "none" means the header was not sent: only a template check that reports
+// the missing header writes it, never a header value.
+func TestPostureNoneMeansNotSent(t *testing.T) {
+	got := SanitizePosture(map[string]any{"frame_options": "none", "referrer_policy": "none"})
+	if got["frame_options"] != "none" || got["referrer_policy"] != "none" {
+		t.Fatalf("none not kept: %v", got)
+	}
+	p := PostureFromSecurityHeaders(&ctis.SecurityHeaders{ReferrerPolicy: "none", XFrameOptions: "none"})
+	if p["referrer_policy"] != "other" || p["frame_options"] != "other" {
+		t.Fatalf("a sent header read as not sent: %v", p)
+	}
+}

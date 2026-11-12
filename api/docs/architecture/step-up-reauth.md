@@ -6,8 +6,58 @@ unlocked laptop): minting a long-lived credential, changing who can sign in,
 deleting the organization, removing a person and their data. For those the API
 asks the user to prove their identity again, recently, in the same session.
 
-Decision B7 (window 10 minutes,
-password or TOTP; SSO users re-authenticate at their identity provider).
+Decision B7 (password or TOTP; SSO users re-authenticate at their identity
+provider). How often each kind of action asks is the organization's
+**re-verification policy** (below); without one saved, every action behind
+step-up asks once per 10 minutes, as before the policy existed.
+
+## Re-verification policy
+
+Every action behind step-up belongs to one **tier**. Each organization sets,
+per tier, how often its people must confirm their identity again
+(Settings > Security > Authentication, card "Re-verification"; stored as
+`settings.security.step_up`, package `pkg/domain/stepup`).
+
+| Tier | Actions | Allowed rules | New organization | Organization without a saved policy |
+|---|---|---|---|---|
+| Critical | Roles and owners, SSO and sign-in, MFA reset, offboard and erase, organization delete, trust and ownership transfer, API, SCIM, sensor, integration, MCP, CI-trust, SCM and storage credentials, secrets and reveals, approving active or intrusive scanning and widening scope or exclusions, audit export, security settings (this policy included), security- and dual-tier finding sign-offs | `every_time`, or `once_per_window` 10m. **Never off** (platform floor). | once per 10 minutes | once per 10 minutes |
+| Sensitive | Governance settings (risk scoring, modules, priority rules, lifecycles, retest, scope, finding-approval, CI baselines and overrides, emerging-threat, content, programs, AI agents and AI auto-triage), loosening lifecycle, cycle, EASM, closure, pentest, reconciliation and shared-sensor settings, approving false-positive, accepted-risk, severity and suppression requests, finding delete, closing two or more findings (bulk status, by-filter, Ready to close, full-coverage import) | `every_time`, `once_per_window` (10m, 1h, 4h, 8h, session), `off` | once per hour | once per 10 minutes |
+| Routine | One finding's close: `PATCH /findings/{id}/status` to a closing status, bulk status with one id, one Ready-to-close confirm | the same | off | off |
+
+- **`once_per_window`**: one proof (sign-in or step-up) unlocks the tier's
+  actions in that session for the window, counted from the proof. `session`
+  accepts any proof of the session. One proof counts for every tier, each
+  with its own window: a critical confirmation also opens the sensitive one.
+- **`every_time`**: the action spends the session's latest proof, which must
+  be at most 5 minutes old (`stepup.EveryTimeFreshness`). The spend is atomic
+  (`SessionRepository.SpendRecentAuth`, column `sessions.step_up_spent_at`,
+  migration `20261106030244`, which stores the spent proof's own timestamp);
+  a second action needs a new proof. Gates that run in the same request (a
+  route gate and a service gate) share one spend.
+- **`off`**: a person in a session is not asked.
+- **Interactive only**: critical and sensitive actions refuse credentials
+  that cannot re-authenticate (API keys, MCP tokens: `STEP_UP_UNAVAILABLE`)
+  whatever the rule, off included. Routine actions never refuse them.
+- **Floor**: a critical rule other than every time or 10 minutes is refused
+  (422 `STEP_UP_POLICY_BELOW_FLOOR`); a stored value below the floor is
+  clamped on read (`stepup.Effective`).
+- **Which organization**: the one the request acts in, from the authenticated
+  context (the `/tenants/{tenant}` URL organization after its membership
+  check, else the credential's), never the request body.
+- **Changing it**: `PATCH /api/v1/tenants/{tenant}/settings/security` with
+  `step_up` (owner only, critical step-up). Audited as
+  `tenant.step_up_policy_changed` with the rules before and after (high when
+  any tier asks less often); a looser policy also notifies the owners and
+  administrators.
+- **Audit of actions**: every audit row written in a request that passed a
+  gate carries metadata `step_up` = `{tier, mode, window}` of the strictest
+  rule applied, so "closed with routine off" is visible.
+- The `403 STEP_UP_REQUIRED` details carry `tier`, `mode`, `window` and
+  `window_seconds` (0 for every time and session); the web dialog tells the
+  user how long the confirmation lasts.
+- A new route mounted with `requireStepUp()` is **critical**; a sensitive
+  route uses `requireStepUpSensitive()`; a service gate checks another tier
+  with `stepup.Require(ctx, gate, actorID, tier)`.
 
 ## Model
 
@@ -21,12 +71,47 @@ password or TOTP; SSO users re-authenticate at their identity provider).
   when it is within the window. A provider that signs the user in silently
   from a session it remembers therefore opens no window. A global social
   sign-in (no `idp_tenant_id`) counts its creation, like a password.
-- A sensitive route accepts the request while recent authentication is less
-  than **10 minutes** old (`authapp.StepUpWindow`). The window is fixed from
-  the moment of proof; using it does not extend it.
+- A gated route accepts the request while recent authentication is within
+  the window of its tier's rule (above; 10 minutes without a saved policy).
+  The window is fixed from the moment of proof; using it does not extend it.
 - The state lives on the server, on one session row. It is not a token claim
   or a client flag, so it cannot be replayed from another browser, another
   session of the same user, or by another user naming the session id.
+
+## Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Web (shared dialog "Confirm it is you")
+    box API
+    participant G as middleware.RequireRecentAuth (requireStepUp, after the permission check)
+    participant S as auth step-up service
+    end
+    participant DB as Postgres sessions
+    participant I as Organization IdP
+    W->>G: protected request (session from JWT)
+    G->>DB: GREATEST(created_at, step_up_at), or step_up_at only for an idp_tenant session
+    alt within 600 s
+        G-->>W: handler runs
+    else API key, no session
+        G-->>W: 403 STEP_UP_UNAVAILABLE
+    else stale
+        G-->>W: 403 STEP_UP_REQUIRED, details.window_seconds 600
+        W->>S: GET /api/v1/auth/step-up - method totp, password or fresh_sign_in
+        alt totp or password
+            W->>S: POST /api/v1/auth/step-up {totp or password} (stepUpRL 5/min, CSRF for cookie sessions)
+            S->>S: TOTP only when enrolled (no password, no recovery code, replay refused)
+            S-->>W: 403 STEP_UP_FAILED (lockout counter, audit auth.step_up_failed) or STEP_UP_CODE_USED
+            S->>DB: step_up_at = now, audit auth.step_up
+        else fresh_sign_in (SSO without TOTP)
+            W->>I: authorize with prompt=login and max_age=0, or SAML ForceAuthn (reauth)
+            I-->>S: auth_time or AuthnInstant at most 5 min old
+            S->>DB: step_up_at = IdP time
+        end
+        W->>G: retry within the window
+    end
+```
 
 ## API
 
@@ -188,9 +273,11 @@ the web dialog appears and the request is retried.
 
 The gate judges only the user making the request: a grant authorized
 earlier and applied for someone else (an invitation accepted by the invitee,
-SCIM, SSO just-in-time provisioning) is not asked again. There is no separate
-ownership-transfer action: making someone an owner is the owner-role grant
-above.
+SCIM, SSO just-in-time provisioning) is not asked again. Ownership transfer
+(`POST /api/v1/organization/ownership-transfer` and `/approve`) is a separate
+action behind `requireStepUp()` on its routes; so are
+`POST /api/v1/organization/leave`, `DELETE /api/v1/me/account` and
+`POST /api/v1/me/ownership-invitations/{id}/accept`.
 
 Sensor pairing approval (`POST /api/v1/sensor-pairings/{id}/approve`, RFC-052)
 checks a step-up proof inside the request body with the same
@@ -243,6 +330,13 @@ calls `POST /auth/step-up`, and retries the original request once.
   password, but that session opens no window: only a recent, signed provider
   authentication (`auth_time`, `AuthnInstant`) does, and the re-sign-in asks
   the provider for one (`prompt=login`, `max_age=0`, `ForceAuthn`).
+- **Organization choices:** an organization that turns sensitive off lets a
+  stolen session change governance, approve peer-tier decisions and bulk
+  close findings without a proof (audited with `step_up.mode = off`, owners
+  told when the policy was loosened); routine off (the default) lets it
+  close findings one at a time, as the per-finding status route always
+  did. Critical actions keep the floor: they turn a stolen session into
+  persistence or takeover.
 - **Residual:** a stolen session used inside the victim's own window; a
   provider that ignores `prompt=login` yet reports a fresh `auth_time` is
   trusted (its signature is what we verify); a global social sign-in (Google,
@@ -251,7 +345,8 @@ calls `POST /auth/step-up`, and retries the original request once.
 ## Key files
 
 - `internal/app/auth/stepup.go` (proof), `internal/app/auth/stepup_session.go` (window)
-- `internal/infra/http/middleware/step_up.go` (`RequireRecentAuth`)
+- `pkg/domain/stepup` (tiers, rules, floor, defaults, request state)
+- `internal/infra/http/middleware/step_up.go` (`CheckStepUp`, `RequireStepUp`, `RecentAuthGate`)
 - `internal/infra/http/handler/local_auth_stepup_handler.go`
 - `internal/infra/postgres/session_repository.go` (`MarkStepUp`, `RecentAuthAt`)
 - `internal/infra/http/routes/step_up_routes_test.go`, `step_up_db_test.go`

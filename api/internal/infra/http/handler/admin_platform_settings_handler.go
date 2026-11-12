@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/adminapproval"
 	"github.com/openctemio/openctem/api/internal/app/consolesetting"
 	"github.com/openctemio/openctem/api/internal/app/deploymentregion"
+	"github.com/openctemio/openctem/api/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/api/internal/app/orgrelay"
 	"github.com/openctemio/openctem/api/internal/app/platformai"
 	"github.com/openctemio/openctem/api/internal/app/platformalert"
@@ -28,6 +29,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/app/platformmfa"
 	"github.com/openctemio/openctem/api/internal/app/platformsociallogin"
 	"github.com/openctemio/openctem/api/internal/app/scanidentity"
+	"github.com/openctemio/openctem/api/internal/app/scopenames"
 	"github.com/openctemio/openctem/api/internal/app/storagequota"
 	"github.com/openctemio/openctem/api/internal/app/threatsource"
 	"github.com/openctemio/openctem/api/internal/infra/http/middleware"
@@ -77,6 +79,11 @@ type AdminPlatformSettingsHandler struct {
 	approvals  approvalGate
 	logger     *logger.Logger
 	EmailRelay *orgrelay.Service
+	// LeakedSecretStorage is the platform default of whether imported
+	// leaked secret values are kept.
+	LeakedSecretStorage *leakedsecretpolicy.Service
+	// ScopeNames is the blocked target names policy and its exceptions.
+	ScopeNames *scopenames.Service
 }
 
 // WithApprovals wires the four-eyes gate of the platform AI destination.
@@ -575,6 +582,80 @@ func (h *AdminPlatformSettingsHandler) UpdateEmailRelay(w http.ResponseWriter, r
 		return
 	}
 	writeJSON(w, http.StatusOK, h.emailRelayResponse(r.Context(), s))
+}
+
+// ---- Leaked secret value storage --------------------------------------------
+
+// LeakedSecretStorageResponse is the platform default of whether imported
+// leaked secret values are kept.
+type LeakedSecretStorageResponse struct {
+	// StoreByDefault is the default in force for organizations that never chose.
+	StoreByDefault bool `json:"store_by_default"`
+	// Source: console or default.
+	Source string `json:"source"`
+	// Default is the value while nothing is stored (on for a self-managed
+	// install, off for a managed service).
+	Default bool `json:"default"`
+	Version int  `json:"version"`
+	SettingChange
+}
+
+// UpdateLeakedSecretStorageRequest changes the platform default.
+type UpdateLeakedSecretStorageRequest struct {
+	StoreByDefault bool   `json:"store_by_default"`
+	Reason         string `json:"reason"`
+	Version        int    `json:"version"`
+}
+
+func (h *AdminPlatformSettingsHandler) leakedSecretStorageResponse(ctx context.Context, s leakedsecretpolicy.Settings) LeakedSecretStorageResponse {
+	return LeakedSecretStorageResponse{StoreByDefault: s.StoreByDefault, Source: s.Source, Default: s.Default,
+		Version: s.Version, SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
+}
+
+// GetLeakedSecretStorage returns the platform default of leaked secret value storage.
+// @Summary      Get the leaked secret value storage default
+// @Description  Whether an imported leaked secret value (password, token, key) is kept, encrypted, for organizations that never chose; and where the value comes from. When not kept, only the mask, the credential type and the organization's keyed fingerprint are stored. Any administrator.
+// @Tags         Admin System
+// @Produce      json
+// @Success      200  {object}  LeakedSecretStorageResponse
+// @Security     AdminAuth
+// @Router       /admin/settings/leaked-secret-storage [get]
+func (h *AdminPlatformSettingsHandler) GetLeakedSecretStorage(w http.ResponseWriter, r *http.Request) {
+	s, err := h.LeakedSecretStorage.Get(r.Context())
+	if err != nil {
+		h.writeSettingError(w, "leaked secret value storage", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.leakedSecretStorageResponse(r.Context(), s))
+}
+
+// UpdateLeakedSecretStorage changes the platform default of leaked secret value storage.
+// @Summary      Change the leaked secret value storage default
+// @Description  Super admin with a fresh step-up and a reason. Applies to the next import of every organization that never chose; values already stored are kept. Audited critical, every administrator is told.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateLeakedSecretStorageRequest  true  "Default"
+// @Success      200  {object}  LeakedSecretStorageResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     AdminAuth
+// @Router       /admin/settings/leaked-secret-storage [put]
+func (h *AdminPlatformSettingsHandler) UpdateLeakedSecretStorage(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
+	var req UpdateLeakedSecretStorageRequest
+	if !decodeSetting(w, r, &req) {
+		return
+	}
+	s, err := h.LeakedSecretStorage.Update(r.Context(), actor, req.StoreByDefault, req.Reason, req.Version, middleware.ClientIP(r), r.UserAgent())
+	if err != nil {
+		h.writeSettingError(w, "leaked secret value storage", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.leakedSecretStorageResponse(r.Context(), s))
 }
 
 // ---- Alert webhook ---------------------------------------------------------

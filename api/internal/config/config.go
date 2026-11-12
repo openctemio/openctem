@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/internal/versions"
 	"github.com/openctemio/openctem/api/pkg/brand"
 	"github.com/openctemio/openctem/api/pkg/crypto"
+	"github.com/openctemio/openctem/api/pkg/domain/attachment"
 	sensordom "github.com/openctemio/openctem/api/pkg/domain/sensor"
 	"github.com/openctemio/openctem/api/pkg/httpsec"
 )
@@ -613,8 +614,14 @@ type SensorConfigConfig struct {
 	// the openctem-ci action and image; CI_RUNNER_LATEST_VERSION, default
 	// versions.yaml ci.latest). CI runners have their own release line,
 	// so a pipeline's runner is compared with this, never with the sensor's.
-	// Empty turns the "update available" comparison off.
+	// Empty turns the "update available" comparison off. Unless
+	// CIRunnerLatestPinned, it is only the start-up value: the server
+	// resolves the effective release (raised by the verified release feed)
+	// per use.
 	CIRunnerLatestVersion string
+	// CIRunnerLatestPinned is true when CI_RUNNER_LATEST_VERSION is set: the
+	// operator's value then wins over the release feed.
+	CIRunnerLatestPinned bool
 	// CIRunnerMinVersion is the oldest CI runner release still accepted
 	// (CI_RUNNER_MIN_VERSION, default versions.yaml ci.min; empty = no
 	// minimum). An older runner is refused at the token exchange and its
@@ -1271,6 +1278,14 @@ type SensorConfig struct {
 	// AssetCoverageDailyBudget caps the pairs one tenant's automatic
 	// coverage attempts per 24 h. ASSET_COVERAGE_DAILY_BUDGET, default 5000.
 	AssetCoverageDailyBudget int
+	// PathDiscoveryRequestsPerOrigin is the request cap of one origin's path
+	// discovery job (signed into its web scope), one run per origin per 30
+	// days. PATH_DISCOVERY_REQUESTS_PER_ORIGIN, default 300 (50..100000).
+	PathDiscoveryRequestsPerOrigin int
+	// PathDiscoveryDailyRequests is one organization's path discovery
+	// request budget per 24 h; what does not fit is deferred.
+	// PATH_DISCOVERY_DAILY_REQUESTS, default 50000.
+	PathDiscoveryDailyRequests int
 
 	// CertMonitorCertSpotterURL is the Cert Spotter API used, unauthenticated
 	// (free tier), when crt.sh still fails after its retries. Set
@@ -1607,6 +1622,7 @@ func Load() (*Config, error) {
 			CollectorImage:        getEnv("SENSOR_COLLECTOR_IMAGE", DefaultCollectorImage),
 			CACertFile:            platformCACertFile(),
 			CIRunnerLatestVersion: sensorVersionSetting(getEnv("CI_RUNNER_LATEST_VERSION", versions.CIRunnerLatest())),
+			CIRunnerLatestPinned:  strings.TrimSpace(os.Getenv("CI_RUNNER_LATEST_VERSION")) != "",
 			CIRunnerMinVersion:    sensorVersionSetting(getEnv("CI_RUNNER_MIN_VERSION", versions.CIRunnerMin())),
 		},
 		Storage: StorageConfig{
@@ -1802,6 +1818,8 @@ func Load() (*Config, error) {
 			AssetCoverageEnabled:              getEnvBool("ASSET_COVERAGE_ENABLED", true),
 			AssetCoverageInterval:             getEnvDuration("ASSET_COVERAGE_INTERVAL", time.Minute),
 			AssetCoverageDailyBudget:          getEnvInt("ASSET_COVERAGE_DAILY_BUDGET", 5000),
+			PathDiscoveryRequestsPerOrigin:    min(max(getEnvInt("PATH_DISCOVERY_REQUESTS_PER_ORIGIN", 300), 50), 100000),
+			PathDiscoveryDailyRequests:        max(getEnvInt("PATH_DISCOVERY_DAILY_REQUESTS", 50000), 0),
 			EASMDNSChecksEnabled:              getEnvBool("EASM_DNS_CHECKS_ENABLED", true),
 			EASMDNSResolver:                   getEnv("EASM_DNS_RESOLVER", ""),
 			EASMDNSQPS:                        getEnvFloat("EASM_DNS_QPS", 20),
@@ -2052,6 +2070,9 @@ func (c *Config) validateStorage() error {
 	}
 	if c.Storage.SSEKMSKeyID != "" && c.Storage.SSE != "aws:kms" {
 		return fmt.Errorf("STORAGE_SSE_KMS_KEY_ID needs STORAGE_SSE=aws:kms")
+	}
+	if (c.Storage.SSE != "" || c.Storage.SSEKMSKeyID != "") && attachment.IsR2Endpoint(c.Storage.Endpoint) {
+		return errors.New(attachment.ErrR2SSE)
 	}
 	switch c.Storage.Provider {
 	case "", "local":

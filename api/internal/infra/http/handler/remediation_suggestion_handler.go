@@ -116,7 +116,7 @@ func pathSuggestionID(w http.ResponseWriter, r *http.Request) (shared.ID, bool) 
 // @Produce      json
 // @Param        state     query  string  false  "Comma list: proposed (default), snoozed, dismissed, accepted, expired, superseded"
 // @Param        kind      query  string  false  "Comma list: new_group, join, task_route"
-// @Param        key_kind  query  string  false  "upgrade, rotate or sol"
+// @Param        key_kind  query  string  false  "upgrade, rotate, sol or control"
 // @Param        min_risk  query  int     false  "Minimum risk points"
 // @Param        search    query  string  false  "Title search"
 // @Param        queued    query  bool    false  "Include proposals held back by the daily cap"
@@ -154,10 +154,10 @@ func (h *RemediationSuggestionHandler) List(w http.ResponseWriter, r *http.Reque
 		f.Kinds = append(f.Kinds, k)
 	}
 	switch kk := q.Get("key_kind"); kk {
-	case "", remediation.KindUpgrade, remediation.KindRotate, remediation.KindSol:
+	case "", remediation.KindUpgrade, remediation.KindRotate, remediation.KindSol, remediation.KindControl:
 		f.KeyKind = kk
 	default:
-		apierror.BadRequest("key_kind must be upgrade, rotate or sol").WriteJSON(w)
+		apierror.BadRequest("key_kind must be upgrade, rotate, sol or control").WriteJSON(w)
 		return
 	}
 	if v := q.Get("min_risk"); v != "" {

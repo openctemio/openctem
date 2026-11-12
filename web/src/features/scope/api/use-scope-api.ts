@@ -28,6 +28,8 @@ import type {
   ScopeExclusionFilters,
   CreateScopeTargetInput,
   UpdateScopeTargetInput,
+  ApiScopeReplace,
+  ReplaceScopeTargetInput,
   CreateScopeExclusionInput,
   UpdateScopeExclusionInput,
   BulkDeleteTargetsInput,
@@ -539,6 +541,23 @@ export function setScopeTargetActive(id: string, active: boolean) {
 /** PUT /scope/targets/{id} */
 export function updateScopeTarget(id: string, input: UpdateScopeTargetInput) {
   return put<ApiScopeTarget>(`${BASE_URL}/targets/${encodeURIComponent(id)}`, input)
+}
+
+/** POST /scope/targets/{id}/replace/preview: what a replacement would do; saves nothing. */
+export function previewReplaceScopeTarget(id: string, input: ReplaceScopeTargetInput) {
+  return post<ApiScopeReplace>(
+    `${BASE_URL}/targets/${encodeURIComponent(id)}/replace/preview`,
+    input
+  )
+}
+
+/**
+ * POST /scope/targets/{id}/replace: a new entry with the new pattern takes the
+ * old one's place (approvals and step-up of a new entry; the shared client
+ * handles step-up).
+ */
+export function replaceScopeTarget(id: string, input: ReplaceScopeTargetInput) {
+  return post<ApiScopeReplace>(`${BASE_URL}/targets/${encodeURIComponent(id)}/replace`, input)
 }
 
 // ============================================

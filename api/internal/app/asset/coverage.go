@@ -15,6 +15,11 @@ import (
 // shows as not planned.
 func (s *AssetService) SetCoverage(repo covdom.Repository) { s.coverage = repo }
 
+// SetCoverageInfoPolicy wires the organization's info pass setting, so an
+// asset's coverage shows the info pass with the organization's interval (or
+// not at all when it is off). Unwired, the default applies.
+func (s *AssetService) SetCoverageInfoPolicy(r covdom.InfoPolicyReader) { s.coverageInfo = r }
+
 // GetCoverage returns the coverage of an asset the caller may see (an asset
 // outside the caller's data scope or of another tenant is not found).
 func (s *AssetService) GetCoverage(ctx context.Context, tenantID, assetID string) (*covdom.AssetView, error) {
@@ -28,6 +33,12 @@ func (s *AssetService) GetCoverage(ctx context.Context, tenantID, assetID string
 			return nil, fmt.Errorf("list asset coverage: %w", err)
 		}
 	}
-	v := covdom.View(a.ID(), covdom.RulesFor(a.Type(), a.SubType()), rows, time.Now())
+	pol := covdom.DefaultInfoPolicy()
+	if s.coverageInfo != nil {
+		if p, perr := s.coverageInfo.InfoPolicy(ctx, a.TenantID()); perr == nil {
+			pol = p
+		}
+	}
+	v := covdom.View(a.ID(), covdom.ApplyInfoPolicy(covdom.RulesFor(a.Type(), a.SubType()), pol), rows, time.Now())
 	return &v, nil
 }

@@ -377,8 +377,8 @@ func TestResultBinding_CollectorUploadsWorkWorkerQuarantined(t *testing.T) {
 
 // Results bound to a command assigned to the submitting sensor behave as
 // before, also on a quarantine-mode tenant: they change the existing assets
-// the command covers. An existing asset outside its targets is left alone
-// (dropped from the report: it lies outside the job's targets), and a report
+// the command covers. An existing asset outside its targets is only marked
+// seen (recorded outside the job's targets, never changed), and a report
 // from another tool than the command's is refused.
 func TestResultBinding_BoundResultsStillApply(t *testing.T) {
 	r := newBindingRig(t, "")

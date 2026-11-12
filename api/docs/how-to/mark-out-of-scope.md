@@ -20,10 +20,31 @@
 Every exclusion has a **kind**: *Do not scan* (the default: yours, but must
 not be scanned; its findings stay open), *Not ours* or *Retired*. A
 permanent Not ours or Retired exclusion closes the open findings of what it
-matches as **Asset out of scope** (never counted as fixed), and their tasks,
-tickets and SLA clocks follow; removing it, giving it an end date or changing
-it to Do not scan reopens them. "Not ours" on an asset does the same for
-that asset. An exclusion with an end date only pauses scanning.
+matches as **Asset out of scope**; removing it, giving it an end date or
+changing it to Do not scan reopens them. "Not ours" on an asset does the same
+for that asset. An exclusion with an end date only pauses scanning.
+
+A finding closed as out of scope was not fixed, and nothing presents it as
+fixed:
+
+- it is not counted as remediated (MTTR, fix rate, CTEM cycle figures);
+- it leaves the SLA (`not_applicable`, neither met nor missed); re-including
+  the asset reopens it with the deadline it had, so excluding and
+  re-including never resets a clock;
+- a linked Jira issue gets a comment saying so and is not moved (when the
+  integration's outbound sync is on); a linked GitHub issue is left open;
+- its remediation task ends *closed without a verified fix* once all of its
+  findings are closed;
+- every close and reopen writes a `finding.status_changed` audit entry naming
+  the exclusion and its kind (or the "Not ours" decision); closing a
+  critical, P0 or KEV finding is high severity.
+
+When a Not ours or Retired exclusion would close **critical, P0 or KEV**
+findings, the dialog shows how many and asks you to confirm; the API refuses
+the request with `EXCLUSION_CLOSES_CRITICAL_FINDINGS` (409, details
+`critical_findings`) until it carries `confirm_critical`. If the asset is
+still yours, choose Do not scan instead: its findings stay open and keep
+counting.
 
 Only decisions made after the feature went live close findings: an asset
 already marked "Not ours" before then stays unscanned and keeps its findings
@@ -165,3 +186,6 @@ does not refuse them by itself.
 | A port scan of a name found only web ports | An address behind the name is not in scope (section 4) | Add the address or its prefix to scope |
 | A name behind a CDN is no longer scanned | Its edge address was added to out of scope (section 5) | Re-include the address, or keep it excluded and accept that the names behind it are not scanned |
 | A scan refuses a target as `guardrailed` | A platform guardrail holds it (section 4) | Add its exact scope entry, if it is yours (the refusal offers it) |
+| Adding to scope is refused with "The platform does not allow this target as a scope entry" (`DENY_LIST`) | The platform deny list holds the target: loopback and cloud-metadata ranges, and anything the operator added in `SCOPE_DENY_EXTRA` | Only the operator can lift it; ask the platform administrator. The refusal appears above the buttons of the Add to scope dialog, with a Reference line (the request id) to quote |
+| Adding to scope is refused with "Government and military domains are blocked on this installation" (`GOVERNMENT_NAME`) | The name is a government or military domain, blocked for every organization on this installation | Your platform administrator can grant an exception for your organization; see [Blocked target names and exceptions](blocked-target-names.md) |
+| Adding to scope is refused as `PUBLIC_SUFFIX`, `CIDR_TOO_LARGE` or `SHARED_CODE_HOST` | A public suffix, a public address range above the platform limit, or a code host shared by many organizations | Enter a domain your organization registered, split the range, or name your own namespace such as `github.com/your-org/*` |

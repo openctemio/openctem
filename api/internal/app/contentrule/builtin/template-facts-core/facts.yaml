@@ -1,0 +1,155 @@
+# Template facts: where each info match of a template scanner goes
+# (docs/architecture/template-facts.md). A match no entry names stays a
+# generic info exposure and is counted, so new templates get reviewed.
+# Confidence stays below 80: a template detection alone never establishes
+# a version (the technology history needs more readings).
+schema: 1
+entries:
+  # Technology detection by matcher name.
+  - id: tech-detect
+    match: {templates: [tech-detect, fingerprinthub-web-fingerprints]}
+    class: technology
+    reason: the matcher names the product the page shows
+    technology: {name_from: matcher, confidence: 60}
+    names:
+      nginx: {name: nginx, category: web_server}
+      apache: {name: Apache HTTP Server, category: web_server}
+      iis: {name: Microsoft IIS, category: web_server}
+      awselb: {name: Amazon ELB, category: hosting}
+      cloudflare: {name: Cloudflare, category: cdn}
+      akamai: {name: Akamai, category: cdn}
+      fastly: {name: Fastly, category: cdn}
+      jsdelivr: {name: jsDelivr, category: cdn}
+      google-tag-manager: {name: Google Tag Manager, category: analytics}
+      google-analytics: {name: Google Analytics, category: analytics}
+      google-font-api: {name: Google Font API, category: other}
+      next.js: {name: Next.js, category: framework}
+      react: {name: React, category: js_library}
+      jquery: {name: jQuery, category: js_library}
+      wordpress: {name: WordPress, category: framework}
+      php: {name: PHP, category: language}
+      microsoft-exchange: {name: Microsoft Exchange, category: other}
+  - id: waf-detect
+    match: {templates: [waf-detect]}
+    class: technology
+    reason: a WAF or bot protection answered in front of the origin
+    technology: {category: waf, confidence: 60}
+    names:
+      cloudflare: {name: Cloudflare, category: waf}
+      securesphere: {name: Imperva SecureSphere, category: waf}
+      incapsula: {name: Imperva Incapsula, category: waf}
+      bigip: {name: F5 BIG-IP ASM, category: waf}
+      cloudfront: {name: Amazon CloudFront, category: cdn}
+      akamai: {name: Akamai, category: waf}
+      awswaf: {name: AWS WAF, category: waf}
+      modsecurity: {name: ModSecurity, category: waf}
+      sucuri: {name: Sucuri, category: waf}
+      fortiweb: {name: FortiWeb, category: waf}
+      # Generic block pages name no product.
+      nginxgeneric: {skip: true}
+      apachegeneric: {skip: true}
+  - id: aws-detect
+    match: {templates: [aws-detect]}
+    class: technology
+    reason: the response shows an AWS service in front of or hosting the origin
+    technology: {name: Amazon Web Services, category: hosting, confidence: 60}
+    names:
+      aws-alb: {name: Amazon ELB, category: hosting}
+      aws-cloudfront: {name: Amazon CloudFront, category: cdn}
+      aws-service: {name: Amazon Web Services, category: hosting}
+      aws-s3: {name: Amazon S3, category: hosting}
+  - id: aws-services
+    match: {templates: [aws-bucket-service, s3-detect]}
+    class: technology
+    technology: {name: Amazon S3, category: hosting, confidence: 60}
+  - id: aws-cloudfront-service
+    match: {templates: [aws-cloudfront-service]}
+    class: technology
+    technology: {name: Amazon CloudFront, category: cdn, confidence: 60}
+  - id: google-frontend
+    match: {templates: [google-frontend-httpserver]}
+    class: technology
+    technology: {name: Google Frontend, category: hosting, confidence: 60}
+  # Product detection templates with a version extractor.
+  - id: nginx-version
+    match: {templates: [nginx-version]}
+    class: technology
+    technology: {name: nginx, category: web_server, version_from: extracted, confidence: 70}
+  - id: php-detect
+    match: {templates: [php-detect]}
+    class: technology
+    technology: {name: PHP, category: language, version_from: extracted, confidence: 65}
+  - id: openresty-detect
+    match: {templates: [openresty-detect]}
+    class: technology
+    technology: {name: OpenResty, category: web_server, version_from: extracted, confidence: 65}
+  - id: cowboy-detect
+    match: {templates: [cowboy-detect]}
+    class: technology
+    technology: {name: Cowboy, category: web_server, version_from: extracted, confidence: 60}
+  - id: spring-detect
+    match: {templates: [spring-detect]}
+    class: technology
+    technology: {name: Spring, category: framework, confidence: 60}
+  - id: springboot-whitelabel
+    match: {templates: [springboot-whitelabel]}
+    class: technology
+    reason: the default error page of Spring Boot
+    technology: {name: Spring Boot, category: framework, confidence: 60}
+  # WordPress plugin detection templates name the plugin slug in their
+  # metadata (plugin_namespace) and extract the installed version.
+  - id: wordpress-plugins
+    match: {template_prefix: wordpress-, metadata: plugin_namespace}
+    class: technology
+    technology: {name_from: "metadata:plugin_namespace", category: other, version_from: extracted, confidence: 60}
+  # Other detect templates that name their product in the metadata.
+  - id: tech-product
+    match: {tags: [tech], metadata: product}
+    class: technology
+    technology: {name_from: "metadata:product", confidence: 55}
+  # Header posture is an origin attribute, never one finding per header.
+  - id: missing-security-headers
+    match: {templates: [http-missing-security-headers]}
+    class: posture
+    reason: each matcher is one header the response did not send
+    posture:
+      strict-transport-security: {hsts: false, hsts_include_subdomains: false, hsts_preload: false, hsts_max_age: 0}
+      content-security-policy: {csp: false, csp_unsafe_inline: false, csp_unsafe_eval: false}
+      x-content-type-options: {nosniff: false}
+      permissions-policy: {permissions_policy: false}
+      x-frame-options: {frame_options: none}
+      referrer-policy: {referrer_policy: none}
+  - id: header-and-cookie-checks
+    match: {templates: [xss-deprecated-header, weak-csp-detect, missing-cookie-samesite-strict, cookies-without-secure, cookies-without-httponly, missing-sri, options-method]}
+    class: posture
+    reason: response posture checks; the probe's header and cookie posture records them per origin
+    posture: {}
+  # Web surface: files every site may publish.
+  - id: well-known-files
+    match: {templates: [robots-txt, security-txt, assetlinks-detect, apple-app-site-association, wp-license-file]}
+    class: surface
+    surface: {path_from: matched, source: probe}
+  - id: robots-endpoints
+    match: {templates: [robots-txt-endpoint]}
+    class: surface
+    reason: the paths robots.txt lists
+    surface: {path_from: extracted, source: robots}
+  # Exposed interfaces stay exposures.
+  - id: panels
+    match: {tags: [panel]}
+    class: exposure
+    exposure: {event_type: web_interface_exposed}
+  - id: spring-actuator
+    match: {templates: [springboot-actuator, springboot-health]}
+    class: exposure
+    exposure: {event_type: misconfiguration}
+  # Kept as info exposures. The e-mail extractor's addresses are masked
+  # before anything is stored (safetext.MaskEmails); nothing is discarded.
+  - id: personal-data
+    match: {templates: [email-extractor]}
+    class: exposure
+    reason: extracted addresses are stored masked
+  - id: dom-heuristics
+    match: {templates: [addeventlistener-detect]}
+    class: exposure
+    reason: a page uses message listeners

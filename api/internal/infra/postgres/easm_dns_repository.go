@@ -371,7 +371,8 @@ func (r *EASMDNSRepository) OpenDanglingCNAMEs(ctx context.Context, tenantID sha
 		ids = append(ids, id.String())
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, asset_id, COALESCE(details->>'domain', ''), COALESCE(details->>'target', ''), COALESCE(details->>'provider', '')
+		SELECT id, asset_id, COALESCE(details->>'domain', ''), COALESCE(details->>'target', ''), COALESCE(details->>'provider', ''),
+		       COALESCE(details->>'response_class', '')
 		FROM exposure_events
 		WHERE tenant_id = $1 AND source = $2 AND event_type = 'dangling_cname' AND state IN `+exposure.OpenStatesSQL+`
 		  AND asset_id = ANY($3::uuid[])`,
@@ -386,7 +387,7 @@ func (r *EASMDNSRepository) OpenDanglingCNAMEs(ctx context.Context, tenantID sha
 			d       easmdns.OpenDangling
 			assetID string
 		)
-		if err := rows.Scan(&d.ExposureID, &assetID, &d.Name, &d.Target, &d.Provider); err != nil {
+		if err := rows.Scan(&d.ExposureID, &assetID, &d.Name, &d.Target, &d.Provider, &d.ResponseClass); err != nil {
 			return nil, err
 		}
 		id, err := shared.IDFromString(assetID)
@@ -420,4 +421,128 @@ func (r *EASMDNSRepository) MarkConfirmed(ctx context.Context, tenantID shared.I
 		return fmt.Errorf("mark exposures confirmed: %w", err)
 	}
 	return nil
+}
+
+// HostCertificateTrouble returns the tenant's open host-certificate
+// exposures (exposurebridge) whose host is name: expired, another site's
+// certificate, or a certificate that does not cover the name.
+func (r *EASMDNSRepository) HostCertificateTrouble(ctx context.Context, tenantID shared.ID, name string) ([]easmdns.CertTrouble, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT CASE WHEN event_type = 'certificate_expired' THEN 'expired' ELSE details->>'issue' END,
+		       COALESCE(details->>'not_after', ''), COALESCE(details->>'issuer_cn', details->>'issuer_org', '')
+		FROM exposure_events
+		WHERE tenant_id = $1 AND state IN `+exposure.OpenStatesSQL+`
+		  AND lower(details->>'domain') = $2
+		  AND (event_type = 'certificate_expired'
+		       OR (event_type = 'ssl_issue' AND details->>'issue' IN ('foreign_certificate', 'name_mismatch')))
+		ORDER BY event_type, id
+		LIMIT 10`,
+		tenantID.String(), strings.ToLower(strings.TrimSuffix(name, ".")))
+	if err != nil {
+		return nil, fmt.Errorf("list certificate trouble: %w", err)
+	}
+	defer rows.Close()
+	var out []easmdns.CertTrouble
+	for rows.Next() {
+		var c easmdns.CertTrouble
+		if err := rows.Scan(&c.Kind, &c.NotAfter, &c.Issuer); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// Ownership returns the tenant's own facts about where a name points: whether
+// targetRoot is a root domain of the tenant whose attribution is confirmed,
+// and, per address, whether it is a confirmed address asset of the tenant
+// (with the network holder and CDN its record names, for the provider-space
+// classification).
+func (r *EASMDNSRepository) Ownership(ctx context.Context, tenantID shared.ID, targetRoot string, addresses []string) (easmdns.Ownership, error) {
+	out := easmdns.Ownership{Addresses: map[string]easmdns.AddressFact{}}
+	if targetRoot != "" {
+		err := r.db.QueryRowContext(ctx, `
+			SELECT EXISTS (SELECT 1 FROM assets a
+			  LEFT JOIN asset_attributions aa ON aa.asset_id = a.id AND aa.tenant_id = a.tenant_id
+			  WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.asset_type = 'domain'
+			    AND lower(a.name) = $2 AND COALESCE(aa.state, 'confirmed') = 'confirmed')`,
+			tenantID.String(), strings.ToLower(targetRoot)).Scan(&out.RootOwned)
+		if err != nil {
+			return out, fmt.Errorf("read root ownership: %w", err)
+		}
+	}
+	if len(addresses) == 0 {
+		return out, nil
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT a.name, COALESCE(aa.state, 'confirmed') = 'confirmed',
+		       COALESCE(a.properties->>'asn_org', a.properties->'ip_address'->>'asn_org', ''),
+		       COALESCE(a.properties->>'cdn', '')
+		FROM assets a
+		LEFT JOIN asset_attributions aa ON aa.asset_id = a.id AND aa.tenant_id = a.tenant_id
+		WHERE a.tenant_id = $1 AND a.deleted_at IS NULL AND a.asset_type = 'ip_address' AND a.name = ANY($2)`,
+		tenantID.String(), pq.Array(addresses))
+	if err != nil {
+		return out, fmt.Errorf("read address ownership: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			addr string
+			f    easmdns.AddressFact
+		)
+		if err := rows.Scan(&addr, &f.Confirmed, &f.ASNOrg, &f.CDN); err != nil {
+			return out, err
+		}
+		out.Addresses[addr] = f
+	}
+	return out, rows.Err()
+}
+
+// SetDanglingTag adds or removes the dangling tag on the tenant's asset.
+func (r *EASMDNSRepository) SetDanglingTag(ctx context.Context, tenantID, assetID shared.ID, on bool) error {
+	q := `UPDATE assets SET tags = array_append(COALESCE(tags, '{}'), $3)
+		WHERE tenant_id = $1 AND id = $2 AND NOT ($3 = ANY(COALESCE(tags, '{}')))`
+	if !on {
+		q = `UPDATE assets SET tags = array_remove(tags, $3)
+		WHERE tenant_id = $1 AND id = $2 AND $3 = ANY(tags)`
+	}
+	if _, err := r.db.ExecContext(ctx, q, tenantID.String(), assetID.String(), easmdns.TagDanglingCNAME); err != nil {
+		return fmt.Errorf("update dangling tag: %w", err)
+	}
+	return nil
+}
+
+// AssetNames returns the names of the tenant's assets among ids, lower case
+// without a trailing dot.
+func (r *EASMDNSRepository) AssetNames(ctx context.Context, tenantID shared.ID, ids []shared.ID) (map[shared.ID]string, error) {
+	out := make(map[shared.ID]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	strs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		strs = append(strs, id.String())
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, name FROM assets
+		WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL
+		  AND asset_type IN ('domain', 'subdomain')`,
+		tenantID.String(), pq.Array(strs))
+	if err != nil {
+		return nil, fmt.Errorf("read asset names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		aid, err := shared.IDFromString(id)
+		if err != nil {
+			continue
+		}
+		out[aid] = strings.ToLower(strings.TrimSuffix(name, "."))
+	}
+	return out, rows.Err()
 }

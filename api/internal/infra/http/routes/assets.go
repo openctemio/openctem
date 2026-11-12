@@ -50,6 +50,8 @@ func registerAssetRoutes(
 
 		// Read operations
 		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
+		r.POST("/search", h.Search, middleware.Require(permission.AssetsRead))
+		r.GET("/networks", h.Networks, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}/view", assetView.View, middleware.Require(permission.AssetsRead))
 		r.GET("/{id}/full", h.GetWithRepository, middleware.Require(permission.AssetsRead))
@@ -269,7 +271,7 @@ func registerScopeRoutes(
 		// Scope settings (RFC-054 §6.3). Changing them widens or narrows the
 		// friction on widening: approvers only, with step-up.
 		r.GET("/settings", h.GetSettings, middleware.Require(permission.ScopeRead))
-		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUp())
+		r.PUT("/settings", h.UpdateSettings, middleware.Require(permission.ScopeApprove), requireStepUpSensitive())
 		// The owner-only part: how long an intrusive (t2) entry may last
 		// (RFC-054 §12.4). Owner, step-up, reason; audited, admins told.
 		r.PUT("/settings/intrusive", h.UpdateIntrusiveSettings, middleware.Require(permission.ScopeApprove), middleware.RequireOwner(), requireStepUp())
@@ -288,6 +290,11 @@ func registerScopeRoutes(
 		r.PUT("/{id}", h.UpdateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/activate", h.ActivateTarget, middleware.Require(permission.ScopeWrite))
 		r.POST("/{id}/deactivate", h.DeactivateTarget, middleware.Require(permission.ScopeWrite))
+		// Replace an entry's pattern: a new entry linked to the old one, with
+		// the checks, step-up and approvals of a new entry (in the service).
+		// The preview writes nothing.
+		r.POST("/{id}/replace", h.ReplaceTarget, middleware.Require(permission.ScopeWrite))
+		r.POST("/{id}/replace/preview", h.PreviewReplaceTarget, middleware.Require(permission.ScopeWrite))
 		// Approving puts a pending entry (a request or a widening) into
 		// effect: approvers only, with step-up (RFC-054 §6.1). Create,
 		// update and activate ask for step-up in the service when they widen.
@@ -441,6 +448,19 @@ func registerEASMRoutes(
 		// /scope/targets/bulk with its own gates.
 		if h.HasSuggestions() {
 			r.GET("/suggestions", h.SuggestionCards, middleware.Require(permission.AssetsRead))
+		}
+		// Bulk decisions on the addresses card (research/425): each item is
+		// checked against the caller's own card. Adding is a scope write
+		// (step-up and approvals in the scope service); "not ours" is an
+		// attribution decision; "this network is ours" declares a network
+		// seed, with step-up.
+		if h.HasAddressDecisions() {
+			r.POST("/suggestions/addresses/add", h.AddAddresses, middleware.Require(permission.ScopeWrite))
+			r.POST("/suggestions/addresses/reject", h.RejectAddresses, middleware.Require(permission.AssetsWrite))
+			r.POST("/suggestions/addresses/lookup", h.RetryAddressLookup, middleware.Require(permission.AssetsWrite))
+			r.POST("/suggestions/networks/ours", h.NetworkIsOurs, middleware.Require(permission.ScopeWrite), requireStepUp())
+			r.POST("/suggestions/networks/not-ours", h.NetworkNotOurs, middleware.Require(permission.AssetsWrite))
+			r.DELETE("/suggestions/declined-networks/{id}", h.UndeclineNetwork, middleware.Require(permission.AssetsWrite))
 		}
 		if h.HasRules() {
 			r.GET("/candidates/suggestions", h.Suggestions, middleware.Require(permission.AssetsRead))
@@ -673,6 +693,16 @@ func registerAssetRelationshipRoutes(
 		// in a single round trip. Source asset validation runs ONCE
 		// for the whole batch instead of per-item.
 		r.POST("/batch", h.BatchCreate, middleware.Require(permission.AssetsWrite))
+	}, tenantMiddlewares...)
+
+	// The neighborhood walks up to three hops and several hundred assets
+	// per call: a per-user rate limit on top of its node cap and statement
+	// timeout (docs/architecture/asset-relationships.md, "Neighborhood").
+	neighborhoodRL := middleware.NewRateLimiter(&config.RateLimitConfig{
+		Enabled: true, RequestsPerSec: 2, Burst: 30, CleanupInterval: 5 * time.Minute,
+	}, nil)
+	router.Group("/api/v1/assets/{id}/neighborhood", func(r Router) {
+		r.GET("/", h.Neighborhood, middleware.Require(permission.AssetsRead), neighborhoodRL.UserMiddleware())
 	}, tenantMiddlewares...)
 
 	// Standalone relationship routes (direct CRUD by relationship ID).

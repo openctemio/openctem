@@ -208,9 +208,10 @@ func TestRunMap_StepOutcomeFromOutput(t *testing.T) {
 		"coverage_gaps":           []any{map[string]any{"host": "a.example.com", "reason": "rate_floor"}, map[string]any{"reason": "blocked"}},
 		"unfinished_target_count": float64(2),
 		"skipped_target_count":    float64(1),
+		"no_longer_resolve_count": float64(5), // never more than the skipped
 	})
 	if out == nil || out.CoverageGapCount != 3 || len(out.CoverageGaps) != 1 || out.CoverageGaps[0].Host != "a.example.com" ||
-		out.Unfinished != 2 || out.Skipped != 1 {
+		out.Unfinished != 2 || out.Skipped != 1 || out.NoLongerResolve != 1 {
 		t.Fatalf("outcome %+v", out)
 	}
 	out = stepOutcome(map[string]any{"coverage_gaps": []any{
@@ -254,5 +255,38 @@ func TestRunMap_InconclusiveRetestIsSucceededWithResult(t *testing.T) {
 	}
 	if toRunResponse(&scanrundom.Run{ID: shared.NewID()}).Result != nil {
 		t.Fatal("a run without a result must not report one")
+	}
+}
+
+// A waiting step says which gate holds its queued chunks (live 2026-11-04:
+// the map said "waiting for a sensor" while an idle sensor sat next to
+// chunks that waited for hosts another run scanned, or that this sensor's
+// local policy had refused).
+func TestRunMap_WaitingReasonNamesTheGate(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		share  command.StepSensorShare
+		reason string
+	}{
+		{"all wait for hosts", command.StepSensorShare{Total: 5, Queued: 5, QueuedHostsBusy: 5}, "waiting_for_hosts"},
+		{"all refused", command.StepSensorShare{Total: 4, Queued: 4, QueuedRefused: 4}, "waiting_after_refusal"},
+		{"mixed", command.StepSensorShare{Total: 9, Queued: 9, QueuedHostsBusy: 5, QueuedRefused: 4}, "waiting_for_sensor"},
+		{"no gate", command.StepSensorShare{Total: 2, Queued: 2}, "waiting_for_sensor"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			step := mapStepRun("ports", 1, scanrundom.StepRunStatusQueued)
+			tc.share.StepKey = "ports"
+			m := &scanrunapp.RunMap{
+				Run:    &scanrundom.Run{ID: shared.NewID(), Status: scanrundom.RunStatusRunning, StepRuns: []*scanrundom.StepRun{step}},
+				Shares: []command.StepSensorShare{tc.share},
+			}
+			n := toRunMapResponse(m).Nodes[0]
+			if n.State != mapStateWaiting || n.Reason != tc.reason {
+				t.Fatalf("node %s %q, want waiting %q", n.State, n.Reason, tc.reason)
+			}
+			if n.Chunks.HostsBusy != tc.share.QueuedHostsBusy || n.Chunks.Refused != tc.share.QueuedRefused {
+				t.Fatalf("chunks %+v", n.Chunks)
+			}
+		})
 	}
 }

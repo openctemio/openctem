@@ -73,6 +73,16 @@ const (
 	// filter, recompiled in the caller's scope, no longer selects the count
 	// the caller confirmed. Details carry the new count.
 	CodeSelectionChanged Code = "SELECTION_CHANGED"
+	// CodeConfirmCriticalRequired is a 409 for retiring an import source
+	// whose archive would include critical or known-exploited findings
+	// without their separate confirmation (details.params.count).
+	CodeConfirmCriticalRequired Code = "CONFIRM_CRITICAL_REQUIRED"
+	// CodeFullDataAccessRequired is a 403 for an action on the whole
+	// organization's findings by a caller whose data scope is narrowed.
+	CodeFullDataAccessRequired Code = "FULL_DATA_ACCESS_REQUIRED"
+	// CodeSourceNotRestorable is a 409 for using again a source that is not
+	// retired any more.
+	CodeSourceNotRestorable Code = "SOURCE_NOT_RESTORABLE"
 	// CodeBulkTooLarge is a 400 for a bulk change by filter over its cap.
 	CodeBulkTooLarge Code = "BULK_TOO_LARGE"
 	// CodeBulkNotAllowed is a 400 for a change that is never made in bulk

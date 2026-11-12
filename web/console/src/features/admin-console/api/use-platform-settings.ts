@@ -7,6 +7,7 @@ import type {
   CaptchaSettings,
   EmailRelayMode,
   EmailRelaySettings,
+  LeakedSecretStorageSettings,
   MFAFloor,
   MFAFloorSettings,
   PlatformAISettings,
@@ -34,6 +35,7 @@ const THREAT_SOURCE = '/settings/threat-intel-source'
 const SOCIAL = '/settings/social-login-providers'
 const MFA_FLOOR = '/settings/auth-mfa'
 const EMAIL_RELAY = '/settings/email-relay'
+const LEAKED_SECRETS = '/settings/leaked-secret-storage'
 const SCAN_IDENT = '/settings/scan-identification'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
@@ -45,14 +47,20 @@ export const useSocialLoginSettings = () => useSWR<SocialLoginSettings>(SOCIAL, 
 export const usePlatformAI = () => useSWR<PlatformAISettings>(AI, adminFetcher)
 export const useMFAFloor = () => useSWR<MFAFloorSettings>(MFA_FLOOR, adminFetcher)
 export const useEmailRelay = () => useSWR<EmailRelaySettings>(EMAIL_RELAY, adminFetcher)
+export const useLeakedSecretStorage = () =>
+  useSWR<LeakedSecretStorageSettings>(LEAKED_SECRETS, adminFetcher)
 export const useScanIdentification = () =>
   useSWR<ScanIdentificationSettings>(SCAN_IDENT, adminFetcher)
 
 /** Step-up and a reason; every administrator is notified. */
 export function saveScanIdentification(input: {
   user_agent: string
+  user_agents: string[]
   user_agent_enforced: boolean
   headers: { name: string; value: string; enforced: boolean }[]
+  query: { name: string; value: string } | null
+  query_enforced: boolean
+  identification_required: boolean
   reason: string
   version: number
 }) {
@@ -71,6 +79,15 @@ export function saveMFAFloor(input: {
 }
 
 /** Super admin, fresh step-up and a reason. */
+/** Fresh step-up and a reason; every administrator is notified. */
+export function saveLeakedSecretStorage(input: {
+  store_by_default: boolean
+  reason: string
+  version: number
+}) {
+  return adminFetch<LeakedSecretStorageSettings>(LEAKED_SECRETS, { method: 'PUT', body: input })
+}
+
 export function saveEmailRelay(input: { mode: EmailRelayMode; reason: string; version: number }) {
   return adminFetch<EmailRelaySettings>(EMAIL_RELAY, { method: 'PUT', body: input })
 }

@@ -96,6 +96,10 @@ func (p Product) ImageRef() string {
 // release feed.
 const SDKKey = "sdk"
 
+// CIKey is the CI runner's section in the manifest, and its component name in
+// the release feed.
+const CIKey = "ci"
+
 // Learned is a component release the instance learned from the verified
 // release feed.
 type Learned struct {
@@ -109,7 +113,8 @@ var (
 )
 
 // SetLearned replaces the releases learned from the release feed, keyed by
-// component (the manifest section: "sensor", "connector-tenable", "sdk"). A
+// component (the manifest section: "sensor", "connector-tenable", "sdk",
+// "ci"). A
 // value that is not vX.Y.Z, or a digest that is not sha256:<hex>, is dropped
 // (the feed was verified, this is defense in depth). nil forgets them.
 func SetLearned(m map[string]Learned) {
@@ -349,8 +354,16 @@ func SDKMin() string { return embedded.SDKMin }
 // The slice is a copy.
 func SDKAdvisories() []string { return append([]string(nil), embedded.SDKAdvisories...) }
 
-// CIRunnerLatest is ci.latest.
-func CIRunnerLatest() string { return embedded.CIRunnerLatest }
+// CIRunnerLatest is the effective latest CI runner release: the release the
+// verified feed names when it is not older than ci.latest, else ci.latest.
+// Resolve it per use (the feed is refreshed while the process runs).
+func CIRunnerLatest() string {
+	v, _, _ := effective(CIKey, embedded.CIRunnerLatest)
+	return v
+}
+
+// CIRunnerBaseline is ci.latest as built in: the floor of CIRunnerLatest.
+func CIRunnerBaseline() string { return embedded.CIRunnerLatest }
 
 // CIRunnerMin is ci.min ("" = none).
 func CIRunnerMin() string { return embedded.CIRunnerMin }

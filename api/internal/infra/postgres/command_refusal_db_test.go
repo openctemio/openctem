@@ -162,17 +162,17 @@ func TestRefusal_PolicyChangeOffersTheJobAgain(t *testing.T) {
 		t.Fatal("the refuser claimed the job before its policy changed")
 	}
 	other := seedTestTenant(f.ctx, t, openSensorDB(t))
-	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, other, a); err != nil || n != 0 {
+	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, other, a, "sha256:p1"); err != nil || n != 0 {
 		t.Fatalf("another tenant lifted %d exclusions (err %v)", n, err)
 	}
-	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a); err != nil || n != 1 {
+	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a, "sha256:p1"); err != nil || n != 1 {
 		t.Fatalf("ForgetRefusalsOf = %d, %v; want 1", n, err)
 	}
 	if !f.claim(a)[job] {
 		t.Fatal("the sensor was not offered the job after its policy changed")
 	}
 	f.refuse(a, job, &sensor.DispatchRefusal{Layer: "local", Rule: "targets.allow"}, "")
-	if _, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a); err != nil {
+	if _, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a, "sha256:p1"); err != nil {
 		t.Fatal(err)
 	}
 	if !f.claim(a)[job] {
@@ -360,5 +360,67 @@ func TestRefusal_SharedJobGoesToAnotherSharedSensor(t *testing.T) {
 	}
 	if c, err := f.cmds.RequeueCandidates(f.ctx, other, job, nil); err != nil || len(c) != 0 {
 		t.Fatalf("another organization got re-queue candidates for the job: %d %v", len(c), err)
+	}
+}
+
+// A sensor reports its local policy; a policy report that flips between two
+// values must not hand the same job back to the sensor at every flip: the
+// sensor refused it under each of those policies already and would refuse it
+// again (the loop of "picked up, started, refused" cycles of one sensor).
+// A policy it has not refused under yet still offers the job again.
+func TestRefusal_PolicyFlipDoesNotHandTheJobBack(t *testing.T) {
+	f, ids := newRefusalFixture(t, 1)
+	a := ids[0]
+	report := func(digest string) {
+		t.Helper()
+		if _, err := f.sensors.UpdateLocalPolicy(f.ctx, &f.tenant, a, &sensor.LocalPolicyReport{State: sensor.LocalPolicyEnforced, Digest: digest}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job := f.routedJob(true)
+	ref := &sensor.DispatchRefusal{Layer: "local", Rule: "targets.allow", Detail: "outside"}
+
+	report("sha256:p1")
+	if !f.claim(a)[job] {
+		t.Fatal("not claimed")
+	}
+	f.refuse(a, job, ref, "")
+	recs, err := f.cmds.CommandRefusals(f.ctx, f.tenant, job)
+	if err != nil || len(recs) != 1 || recs[0].PolicyDigest != "sha256:p1" {
+		t.Fatalf("the refusal does not record the policy it was made under: %+v %v", recs, err)
+	}
+
+	// Policy p1 reported again (a flip back, a restart, a kill switch
+	// released): nothing is offered.
+	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a, "sha256:p1"); err != nil || n != 0 {
+		t.Fatalf("same policy lifted %d exclusions (err %v)", n, err)
+	}
+	if f.claim(a)[job] {
+		t.Fatal("the sensor claimed the job again under the policy it refused it under")
+	}
+
+	// A new policy offers it once; the sensor refuses under p2; a flip back
+	// to p1 and again to p2 offers nothing.
+	report("sha256:p2")
+	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a, "sha256:p2"); err != nil || n != 1 {
+		t.Fatalf("new policy lifted %d exclusions (err %v), want 1", n, err)
+	}
+	if !f.claim(a)[job] {
+		t.Fatal("the sensor was not offered the job under a new policy")
+	}
+	f.refuse(a, job, ref, "")
+	for _, key := range []string{"sha256:p1", "sha256:p2", "sha256:p1", "sha256:p2"} {
+		if n, err := f.cmds.ForgetRefusalsOf(f.ctx, f.tenant, a, key); err != nil || n != 0 {
+			t.Fatalf("flip to %s lifted %d exclusions (err %v)", key, n, err)
+		}
+		if f.claim(a)[job] {
+			t.Fatalf("the sensor claimed the job again after a flip to %s", key)
+		}
+	}
+
+	// Another tenant's forget lifts nothing, even for a policy not seen.
+	other := seedTestTenant(f.ctx, t, openSensorDB(t))
+	if n, err := f.cmds.ForgetRefusalsOf(f.ctx, other, a, "sha256:p3"); err != nil || n != 0 {
+		t.Fatalf("another tenant lifted %d exclusions (err %v)", n, err)
 	}
 }

@@ -68,6 +68,16 @@ type ScanZoneResponse struct {
 	CreatedBy   string    `json:"created_by,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	// SameRangeZones, on create and update only: the organization's other
+	// zones that hold one of this zone's ranges exactly. While their sensors
+	// differ, scans of those addresses must pick their zone (ambiguous_zone).
+	SameRangeZones []ScanZoneRef `json:"same_range_zones,omitempty"`
+}
+
+// ScanZoneRef names a scan zone.
+type ScanZoneRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // ScanZoneListResponse is the list of a tenant's scan zones.
@@ -220,7 +230,7 @@ func (h *ScanZoneHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
-	writeScanZoneJSON(w, http.StatusCreated, toScanZoneResponse(z))
+	writeScanZoneJSON(w, http.StatusCreated, h.withSameRangeZones(r, z))
 }
 
 // Update handles PATCH /api/v1/scan-zones/{id}
@@ -258,7 +268,23 @@ func (h *ScanZoneHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
-	writeScanZoneJSON(w, http.StatusOK, toScanZoneResponse(z))
+	writeScanZoneJSON(w, http.StatusOK, h.withSameRangeZones(r, z))
+}
+
+// withSameRangeZones is the response of a saved zone with the warning list
+// (SameRangeZones). The zone was just saved: a failed lookup only drops the
+// warning, it does not fail the request.
+func (h *ScanZoneHandler) withSameRangeZones(r *http.Request, z *scanzone.Zone) ScanZoneResponse {
+	out := toScanZoneResponse(z)
+	same, err := h.service.SameRangeZones(r.Context(), z)
+	if err != nil {
+		h.logger.Warn("scan zone: same-range lookup failed", "error", logger.SanitizeError(err))
+		return out
+	}
+	for _, o := range same {
+		out.SameRangeZones = append(out.SameRangeZones, ScanZoneRef{ID: o.ID.String(), Name: o.Name})
+	}
+	return out
 }
 
 // Delete handles DELETE /api/v1/scan-zones/{id}
@@ -477,10 +503,16 @@ var scanZoneErrorCodes = map[string]bool{
 	"NO_RESOLVING_TARGETS":          true,
 	"INTENSITY_EXCEEDED":            true,
 	"LIVENESS_NEEDS_HOST_DISCOVERY": true,
+	// Large range targets (docs/rfcs/RFC-151-large-range-targets.md): the
+	// console and API callers need the code to confirm or switch mode.
+	"LARGE_RANGE_NEEDS_LIVENESS": true,
+	"LARGE_RANGE_UNCONFIRMED":    true,
 	// Scan approval (docs/architecture/scan-approval.md): a
 	// governed scan's run is refused until it is approved.
 	"SCAN_APPROVAL_REQUIRED": true,
 	"SCAN_APPROVAL_PENDING":  true,
+	// A trigger context that sets a platform-owned key.
+	"TRIGGER_CONTEXT_REFUSED": true,
 }
 
 // scanZoneErrorCode returns the contract code carried by err, or fallback.

@@ -19,6 +19,15 @@ import {
   lensLabelKey,
   parseFindingLens,
 } from '@/features/findings/lib/state-lens'
+import {
+  DEFAULT_PRACTICE_VIEW,
+  PRACTICE_PARAM,
+  parsePracticeView,
+  practiceViewParams,
+} from '@/features/findings/lib/practice'
+import { PracticeSwitch } from '@/features/findings/components/practice-switch'
+import { ComplianceBenchmarksPanel } from '@/features/findings/components/compliance-benchmarks-panel'
+import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
 import { mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   readFindingHash,
@@ -56,6 +65,8 @@ import {
   DataTable,
   DataTableColumnHeader,
   FacetPanel,
+  FilterPanelSlot,
+  useFilterPanelOpen,
   FacetSection,
   FacetOption,
   FacetToggle,
@@ -509,6 +520,8 @@ function FindingsContent() {
   // The page URL uses the API's own filter params (RFC-048), so a page link and
   // the API query are the same words. Old page links are rewritten once below.
   const assetIdFilter = searchParams.get('asset_id')
+  // A filter chips cannot show (query text mode); only the list resolves it.
+  const fqParam = searchParams.get('fq')
   const scanIdFilter = searchParams.get('scan_id')
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
@@ -578,6 +591,13 @@ function FindingsContent() {
   const rawLens = useUrlParam('state')
   const [, setLensParam] = useUrlFilter('state', DEFAULT_FINDING_LENS)
   const lens = parseFindingLens(rawLens)
+  // The practice switch (Vulnerabilities, the default: every practice but
+  // compliance · Compliance · one practice · All). Like the lens, a saved view
+  // carries its own scope, so the default is not laid on top of one; a
+  // practice picked explicitly still is.
+  const rawPractice = useUrlParam(PRACTICE_PARAM)
+  const [, setPracticeParam] = useUrlFilter(PRACTICE_PARAM, DEFAULT_PRACTICE_VIEW)
+  const practiceView = parsePracticeView(rawPractice)
   // "Assigned to me" / My Work: findings the current user is the assignee of,
   // owns the asset of, or is a member of an assigned group. Independent, stackable
   // with the CTEM signals; the backend resolves the user from the token.
@@ -692,25 +712,7 @@ function FindingsContent() {
   )
   // Filter panel: closed by default so the table gets the width; the viewer's
   // choice is remembered (a per-browser convenience, safe to lose).
-  const [filtersOpen, setFiltersOpenState] = useState(false)
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(FILTERS_OPEN_KEY) === '1') setFiltersOpenState(true)
-    } catch {
-      // storage unavailable — stay closed
-    }
-  }, [])
-  const setFiltersOpen = useCallback((next: boolean | ((open: boolean) => boolean)) => {
-    setFiltersOpenState((prev) => {
-      const value = typeof next === 'function' ? next(prev) : next
-      try {
-        window.localStorage.setItem(FILTERS_OPEN_KEY, value ? '1' : '0')
-      } catch {
-        // best-effort
-      }
-      return value
-    })
-  }, [])
+  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(FILTERS_OPEN_KEY)
   const { t, locale } = useTranslation()
   const severityLabel = useSeverityLabel()
   // The sidebar's quick views with their counts; they also say whether this
@@ -919,6 +921,7 @@ function FindingsContent() {
     groupParam,
     viewParam,
     lens,
+    practiceView,
     severities.join(),
     hideInfo,
     statuses.join(),
@@ -1007,10 +1010,13 @@ function FindingsContent() {
     if (teamActive) filters.related_to = 'my_team'
     if (slaFilter.length > 0) filters.sla_statuses = slaFilter
     if (pendingApprovalFilter !== undefined) filters.pending_approval = pendingApprovalFilter
+    if (!savedId || rawPractice) Object.assign(filters, practiceViewParams(practiceView))
     if (Object.keys(extraParams).length > 0) filters.extra = extraParams
     if (acceptanceExpiresParam) filters.acceptance_expires_at_lte = acceptanceExpiresParam
+    if (fqParam) filters.fq = fqParam
     return filters
   }, [
+    fqParam,
     assetIdFilter,
     scanIdFilter,
     cveParam,
@@ -1044,7 +1050,17 @@ function FindingsContent() {
     savedId,
     lens,
     rawLens,
+    practiceView,
+    rawPractice,
   ])
+
+  // The practice switch's counts come with the list (include=practice_counts):
+  // the list's filters with the practice condition left out, in the caller's
+  // scope, at no extra request.
+  const practiceCountsList = usePracticeCountsList(apiFilters, {
+    enabled: urlSettled && !verifyView,
+    grouped: !!groupBy,
+  })
 
   // The stats describe the page's scope: every finding the caller may see
   // (their data scope applies server-side), narrowed only by the context
@@ -1082,7 +1098,12 @@ function FindingsContent() {
     data: findingStats,
     isLoading: statsLoading,
     mutate: mutateOverviewStats,
-  } = useFindingStatsApi(overviewStatsFilters, { enabled: urlSettled, keepPreviousData: true })
+  } = useFindingStatsApi(overviewStatsFilters, {
+    // The overview numbers cannot carry an fq filter: they would count a
+    // wider set, so they are not shown for it.
+    enabled: urlSettled && !fqParam,
+    keepPreviousData: true,
+  })
   const statsFailed = !findingStats && !statsLoading
   // A change moves findings between views: the sidebar counts reload with the stats.
   const mutateStats = useCallback(
@@ -1098,7 +1119,7 @@ function FindingsContent() {
     isLoading: findingsLoading,
     isValidating: findingsValidating,
     mutate: mutateFindingsList,
-  } = useFindingsApi(apiFilters, {
+  } = useFindingsApi(practiceCountsList.listFilters, {
     keepPreviousData: true,
     enabled: urlSettled && !groupBy && !verifyView,
     // The failure shows inline in the table area (with Retry); the default
@@ -1110,6 +1131,8 @@ function FindingsContent() {
     setGroupsReloadKey((k) => k + 1)
     return mutateFindingsList()
   }, [mutateFindingsList])
+
+  const practiceCounts = practiceCountsList.countsFor(findingsResponse)
 
   // Transform API data to UI format
   const findings = useMemo(() => {
@@ -1889,8 +1912,6 @@ function FindingsContent() {
     </FacetPanel>
   )
 
-  const facetPanelScrollable = <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
-
   // The grouped views do not load the flat page; the tab count is the same number.
   const total = findingsResponse?.total ?? 0
   // The view this list is: a built-in quick view when the URL is exactly one,
@@ -2184,6 +2205,7 @@ function FindingsContent() {
       onSearchChange={replaceUrlSearch}
       viewChanged={!!openView && (changeList?.length ?? 0) > 0}
       onResetToView={() => openSavedView(openView ?? null)}
+      resultCount={findingsLoading ? null : total}
       resultLabel={
         findingsLoading
           ? undefined
@@ -2492,31 +2514,27 @@ function FindingsContent() {
 
           <>
             <div className="flex items-start">
-              {/* Always mounted so opening and closing can animate: the slot's
-                width (and the gap after it) eases between 0 and the card's
-                width while the card fades, and the table beside it resizes in
-                step. The card keeps its own width, so its contents never
-                reflow mid-animation. */}
-              <div
-                inert={!filtersOpen}
-                className={cn(
-                  'sticky top-4 hidden shrink-0 overflow-hidden transition-[width,margin-inline-end,opacity] duration-300 ease-in-out motion-reduce:transition-none lg:block',
-                  filtersOpen ? 'me-5 w-64 opacity-100' : 'me-0 w-0 opacity-0'
-                )}
+              <FilterPanelSlot
+                open={filtersOpen}
+                id="finding-filters"
+                label={t('findings.filters.title', 'Finding filters')}
               >
-                <aside
-                  id="finding-filters"
-                  aria-label={t('findings.filters.title', 'Finding filters')}
-                  // A self-contained floating card, as tall as the viewport and
-                  // pinned while the page scrolls: its length no longer depends
-                  // on the table's, and long filter lists scroll inside it.
-                  className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-lg border bg-card p-4"
-                >
-                  {facetPanelScrollable}
-                </aside>
-              </div>
+                {facetPanel}
+              </FilterPanelSlot>
 
               <div className="min-w-0 flex-1 space-y-3">
+                {urlSettled && !verifyView && (
+                  <PracticeSwitch
+                    value={practiceView}
+                    counts={practiceCounts}
+                    onChange={setPracticeParam}
+                  />
+                )}
+                {/* Under Compliance: the pass rate per benchmark, its controls
+                    failed first and the assets of each control. */}
+                {urlSettled && !verifyView && practiceView === 'compliance' && (
+                  <ComplianceBenchmarksPanel />
+                )}
                 {!urlSettled ? (
                   <Skeleton className="h-9 w-80 max-w-full" />
                 ) : !verifyView ? (
@@ -2601,85 +2619,72 @@ function FindingsContent() {
                 ) : !findingsResponse && findingsLoading ? (
                   <FindingsTableSkeleton contextChips={filterBar} />
                 ) : (
-                  <>
-                    <div
-                      role={findingsValidating ? 'progressbar' : undefined}
-                      aria-label={
-                        findingsValidating
-                          ? t('findings.list.refreshing', 'Refreshing findings')
-                          : undefined
-                      }
-                      className="-mb-1 h-0.5 overflow-hidden rounded-full"
-                    >
-                      {findingsValidating && (
-                        <div className="h-full w-1/3 animate-pulse rounded-full bg-primary motion-reduce:animate-none" />
-                      )}
-                    </div>
-                    <DataTable
-                      columns={columns}
-                      data={findings}
-                      showSearch={false}
-                      search={search}
-                      filterToggle={filterToggle}
-                      toolbarEnd={toolbarEnd}
-                      toolbarBelow={filterBar}
-                      getRowId={(f) => f.id}
-                      manualPagination
-                      rowCount={total}
-                      pagination={pagination}
-                      onPaginationChange={setPagination}
-                      pageSizeOptions={PAGE_SIZES}
-                      sorting={sorting}
-                      onSortingChange={handleSortingChange}
-                      onSelectionChange={setSelectedFindings}
-                      resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
-                      onRowClick={handleRowClick}
-                      rowTone={findingRowTone}
-                      mobileRow={mobileRow}
-                      columnVisibility={columnVisibility}
-                      onColumnVisibilityChange={onColumnVisibilityChange}
-                      density={savedId ? (urlDensity ?? viewDensity) : undefined}
-                      onDensityChange={savedId ? onDensityChange : undefined}
-                      showSelectionCount={false}
-                      emptyState={
-                        <FindingsEmptyState
-                          kind={emptyKind}
-                          hiddenCount={
-                            typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined
-                          }
-                          stateLabel={t(lensLabelKey(lens), lens)}
-                          filterCount={activeCount}
-                          hasSearch={searchQuery.trim() !== ''}
-                          canImport={canImport}
-                          canSetUpScan={hasPermission(Permission.ScansRead)}
-                          canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
-                          onImport={() => setImportDialogOpen(true)}
-                          onClearFilters={clearAllFilters}
-                          onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
-                          denial={denialText}
+                  <DataTable
+                    columns={columns}
+                    data={findings}
+                    isRefreshing={findingsValidating}
+                    refreshingLabel={t('findings.list.refreshing', 'Refreshing findings')}
+                    showSearch={false}
+                    search={search}
+                    filterToggle={filterToggle}
+                    toolbarEnd={toolbarEnd}
+                    toolbarBelow={filterBar}
+                    getRowId={(f) => f.id}
+                    manualPagination
+                    rowCount={total}
+                    pagination={pagination}
+                    onPaginationChange={setPagination}
+                    pageSizeOptions={PAGE_SIZES}
+                    sorting={sorting}
+                    onSortingChange={handleSortingChange}
+                    onSelectionChange={setSelectedFindings}
+                    resetSelectionKey={`${selectionEpoch}|${selectionScope}`}
+                    onRowClick={handleRowClick}
+                    rowTone={findingRowTone}
+                    mobileRow={mobileRow}
+                    columnVisibility={columnVisibility}
+                    onColumnVisibilityChange={onColumnVisibilityChange}
+                    density={savedId ? (urlDensity ?? viewDensity) : undefined}
+                    onDensityChange={savedId ? onDensityChange : undefined}
+                    showSelectionCount={false}
+                    emptyState={
+                      <FindingsEmptyState
+                        kind={emptyKind}
+                        hiddenCount={
+                          typeof hiddenByFilters === 'number' ? hiddenByFilters : undefined
+                        }
+                        stateLabel={t(lensLabelKey(lens), lens)}
+                        filterCount={activeCount}
+                        hasSearch={searchQuery.trim() !== ''}
+                        canImport={canImport}
+                        canSetUpScan={hasPermission(Permission.ScansRead)}
+                        canOpenIntegrations={hasPermission(Permission.IntegrationsRead)}
+                        onImport={() => setImportDialogOpen(true)}
+                        onClearFilters={clearAllFilters}
+                        onSearchAllStates={lens !== 'all' ? () => setLensParam('all') : undefined}
+                        denial={denialText}
+                      />
+                    }
+                    errorState={
+                      error && invalidFilterParams(error) ? (
+                        <InvalidFilterNotice
+                          params={invalidFilterParams(error) ?? []}
+                          onRemove={(names) => {
+                            const next = new URLSearchParams(window.location.search)
+                            for (const n of names) next.delete(n)
+                            next.delete('page')
+                            replaceUrlSearch(next)
+                          }}
                         />
-                      }
-                      errorState={
-                        error && invalidFilterParams(error) ? (
-                          <InvalidFilterNotice
-                            params={invalidFilterParams(error) ?? []}
-                            onRemove={(names) => {
-                              const next = new URLSearchParams(window.location.search)
-                              for (const n of names) next.delete(n)
-                              next.delete('page')
-                              replaceUrlSearch(next)
-                            }}
-                          />
-                        ) : error && accessStateOf(error) !== 'no_access' ? (
-                          <ErrorState
-                            title={t('findings.list.errorTitle', 'findings')}
-                            error={error}
-                            onRetry={() => void mutateFindings()}
-                          />
-                        ) : undefined
-                      }
-                    />
-                  </>
+                      ) : error && accessStateOf(error) !== 'no_access' ? (
+                        <ErrorState
+                          title={t('findings.list.errorTitle', 'findings')}
+                          error={error}
+                          onRetry={() => void mutateFindings()}
+                        />
+                      ) : undefined
+                    }
+                  />
                 )}
               </div>
             </div>

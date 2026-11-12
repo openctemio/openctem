@@ -232,11 +232,13 @@ func TestSuggestionCards_UnclassifiedChecksAndTotal(t *testing.T) {
 	for _, tc := range []struct {
 		mode               string
 		count, checked, sh int
+		// total: the name rules plus one per address group that waits.
+		total int
 	}{
-		{"low_impact", 1, 1, 1},
-		{"full", 1, 1, 1},
-		{"off", 2, 0, 1},
-		{"garbage", 2, 0, 1},
+		{"low_impact", 1, 1, 1, 3},
+		{"full", 1, 1, 1, 3},
+		{"off", 2, 0, 1, 4},
+		{"garbage", 2, 0, 1, 4},
 	} {
 		svc := NewSuggestionService(store, cover, nil, org, nil)
 		mode := tc.mode
@@ -253,7 +255,7 @@ func TestSuggestionCards_UnclassifiedChecksAndTotal(t *testing.T) {
 			t.Errorf("%s: checked %v", tc.mode, c.CheckedAddresses)
 		}
 		out.Finish(2)
-		if out.Total != 3 || out.NameRules != 2 {
+		if out.Total != tc.total || out.NameRules != 2 {
 			t.Errorf("%s: total %d name rules %d", tc.mode, out.Total, out.NameRules)
 		}
 	}
@@ -370,5 +372,38 @@ func TestSuggestionCards_OwnershipOrderAndBands(t *testing.T) {
 		if a.Ownership != nil {
 			t.Fatalf("shared address assessed: %+v", a)
 		}
+	}
+}
+
+// An address of a published CDN edge range is never offered, even when
+// nothing else is known about its network: the names resolving to it are
+// served by the provider's shared edge, and adding the address would scan
+// every customer of that edge.
+func TestSuggestionCards_CDNEdgeWithoutNetworkData(t *testing.T) {
+	edge := "2600:9000:26b8:1a00:12:3a5:40:93a1" // an Amazon CloudFront edge address
+	store := &fakeSuggestionStore{addrs: []AddressBehindNames{
+		addr(edge, nil, "www.acme.example"),
+		addr("13.32.1.1", nil, "img.acme.example"), // CloudFront v4
+		addr("198.51.100.1", nil, "api.acme.example"),
+	}}
+	cover := coverSet{"www.acme.example": true, "img.acme.example": true, "api.acme.example": true}
+	out, err := NewSuggestionService(store, cover, nil, nil, nil).Cards(context.Background(), shared.NewID(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := out.Cards[0]
+	if c.Count != 1 || c.Addresses[0].Address != "198.51.100.1" {
+		t.Fatalf("offered %+v, want only the address no provider publishes", c.Addresses)
+	}
+	if c.SharedCount != 2 || c.ProviderCount != 2 {
+		t.Fatalf("shared %d provider %d, want 2 and 2", c.SharedCount, c.ProviderCount)
+	}
+	for _, a := range c.SharedAddresses {
+		if a.Shared != SharedEdgeRange || a.Network.Provider != "Amazon CloudFront" || len(a.Ports) != 0 {
+			t.Fatalf("shared address %+v", a)
+		}
+	}
+	if len(c.Providers) != 1 || c.Providers[0].Provider != "Amazon CloudFront" || c.Providers[0].Addresses != 2 {
+		t.Fatalf("providers %+v", c.Providers)
 	}
 }

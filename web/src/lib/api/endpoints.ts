@@ -791,6 +791,13 @@ export const assetEndpoints = {
     `${API_BASE.ASSETS}/${assetId}/relationships/groups${query ? `?${query}` : ''}`,
 
   /**
+   * The assets around an asset up to three hops, with its lineage (GET).
+   * Out-of-scope neighbors are only counted (`hidden_neighbors`).
+   */
+  neighborhood: (assetId: string, query?: string) =>
+    `${API_BASE.ASSETS}/${assetId}/neighborhood${query ? `?${query}` : ''}`,
+
+  /**
    * Get one relationship by its own ID (GET)
    */
   getRelationship: (relationshipId: string) => `/api/v1/relationships/${relationshipId}`,
@@ -1192,6 +1199,7 @@ export const sensorEndpoints = {
 
   /** The sensor's setup report and its checks (research/26, sensors:read). */
   configReport: (sensorId: string) => `${API_BASE.SENSORS}/${sensorId}/config-report`,
+  coreAddresses: () => `${API_BASE.SENSORS}/core-addresses`,
 
   /** The tenant's scanner content policy (RFC-031): GET, PUT with sensors:write. */
   contentPolicy: () => `${API_BASE.SENSORS}/content-policy`,

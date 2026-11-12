@@ -85,58 +85,6 @@ func TestEvaluateVersion(t *testing.T) {
 	}
 }
 
-func TestCapPotentialPriority(t *testing.T) {
-	mk := func(conf int, class vulnerability.PriorityClass, kev bool) *vulnerability.Finding {
-		f, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
-		c := conf
-		_ = f.SetConfidence(&c)
-		f.SetPriorityClassification(class, "x")
-		if kev {
-			f.SetIsInKEV(true)
-		}
-		return f
-	}
-	cases := []struct {
-		conf  int
-		class vulnerability.PriorityClass
-		kev   bool
-		want  vulnerability.PriorityClass
-	}{
-		{65, vulnerability.PriorityP0, false, vulnerability.PriorityP2},
-		{65, vulnerability.PriorityP1, false, vulnerability.PriorityP2},
-		{65, vulnerability.PriorityP3, false, vulnerability.PriorityP3},
-		{65, vulnerability.PriorityP0, true, vulnerability.PriorityP0},
-		{80, vulnerability.PriorityP0, false, vulnerability.PriorityP0},
-	}
-	for i, c := range cases {
-		f := mk(c.conf, c.class, c.kev)
-		CapPotentialPriority(f)
-		if got := *f.PriorityClass(); got != c.want {
-			t.Errorf("case %d: %s, want %s", i, got, c.want)
-		}
-	}
-}
-
-func TestCapPotentialPriority_ConfirmedMatchIsNotCapped(t *testing.T) {
-	f, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
-	c := 65
-	_ = f.SetConfidence(&c)
-	f.SetPriorityClassification(vulnerability.PriorityP0, "x")
-	f.SetMetadata("version_match", map[string]any{"confirmed_by": map[string]any{"tool": "nuclei"}})
-	if !Confirmed(f) {
-		t.Fatal("a version match with confirmed_by is confirmed")
-	}
-	CapPotentialPriority(f)
-	if got := *f.PriorityClass(); got != vulnerability.PriorityP0 {
-		t.Errorf("a confirmed match was capped to %s", got)
-	}
-	g, _ := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceVA, softwarematch.ToolName, vulnerability.SeverityHigh, "m")
-	g.SetMetadata("version_match", map[string]any{"label": "potential"})
-	if Confirmed(g) {
-		t.Error("an unconfirmed match reads as confirmed")
-	}
-}
-
 // fakeStore is an in-memory softwarematch.Store for the reconcile logic.
 type fakeStore struct {
 	matches    []softwarematch.Match
@@ -146,6 +94,7 @@ type fakeStore struct {
 	links      map[softwarematch.LinkKey]softwarematch.LinkInfo
 	closed     map[softwarematch.CloseKind][]shared.ID
 	reopened   []shared.ID
+	refreshed  []softwarematch.ObservedVersionRef
 	queued     []shared.ID
 	defs       int
 	pending    []softwarematch.Version
@@ -230,6 +179,10 @@ func (f *fakeStore) RekeyMatcherFinding(_ context.Context, _ shared.ID, r softwa
 func (f *fakeStore) CancelVersionProposals(_ context.Context, _ shared.ID, ids []shared.ID) (int, error) {
 	f.canceled = append(f.canceled, ids...)
 	return len(ids), nil
+}
+func (f *fakeStore) UpdateObservedVersion(_ context.Context, _ shared.ID, refs []softwarematch.ObservedVersionRef) (int, error) {
+	f.refreshed = append(f.refreshed, refs...)
+	return len(refs), nil
 }
 func (f *fakeStore) ReopenFindings(_ context.Context, _ shared.ID, ids []shared.ID) ([]shared.ID, error) {
 	f.reopened = append(f.reopened, ids...)
@@ -361,7 +314,7 @@ func TestReconcile_ClosesByReason(t *testing.T) {
 		store.existing = []softwarematch.MatcherFinding{{ID: id, AssetID: asset, CVEID: "CVE-1", Fingerprint: "gone",
 			Status: "new", ProductID: &product, VersionID: &v, Location: "tcp/443", CVERejected: rejected}}
 		store.links[softwarematch.LinkKey{AssetID: asset, ProductID: product, VersionID: v, Location: "tcp/443"}] =
-			softwarematch.LinkInfo{State: state, VersionEvaluated: evaluated}
+			softwarematch.LinkInfo{State: state, VersionEvaluated: evaluated, Now: &softwarematch.VersionSighting{Evaluated: true}}
 		return store, id
 	}
 	cases := []struct {
@@ -612,5 +565,168 @@ func TestReconcile_Version2KeyedFindingIsNotClosed(t *testing.T) {
 	}
 	if len(store.closed) != 0 || len(w.created) != 0 {
 		t.Fatalf("closed %v, created %d: the version-2 finding was treated as gone", store.closed, len(w.created))
+	}
+}
+
+// upgradeEnv is a finding matched on version v1 of a product, with the
+// inventory now reporting another version.
+func upgradeEnv(t *testing.T, now *softwarematch.VersionSighting) (*fakeStore, *Service, softwarematch.Match, shared.ID, softwarematch.LinkKey) {
+	t.Helper()
+	m := match(shared.NewID(), "CVE-2021-23017", 80)
+	store := newFakeStore()
+	id := shared.NewID()
+	v1 := shared.NewID()
+	store.existing = []softwarematch.MatcherFinding{{ID: id, AssetID: m.AssetID, CVEID: m.Result.CVEID, Fingerprint: fp(m),
+		Status: "new", ProductID: &m.ProductID, VersionID: &v1, Location: m.Location}}
+	key := softwarematch.LinkKey{AssetID: m.AssetID, ProductID: m.ProductID, VersionID: v1, Location: m.Location}
+	store.links[key] = softwarematch.LinkInfo{State: softwarematch.LinkUpgraded, Now: now}
+	svc, _ := newSvc(store, true)
+	return store, svc, m, id, key
+}
+
+func closedTotal(s *fakeStore) int {
+	n := 0
+	for _, ids := range s.closed {
+		n += len(ids)
+	}
+	return n
+}
+
+// The new version has no evaluated matches yet: its missing match is not a
+// fix. The finding stays open (no close, no proposal) until it is evaluated.
+func TestReconcile_UpgradeToUnevaluatedVersionStaysOpen(t *testing.T) {
+	store, svc, _, _, _ := upgradeEnv(t, &softwarematch.VersionSighting{Version: "2.0.0", Evaluated: false})
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if closedTotal(store) != 0 || st.Closed != 0 {
+		t.Fatalf("closed %v on a version nobody evaluated", store.closed)
+	}
+}
+
+// The new version was evaluated and the CVE still matches it: same identity,
+// so nothing closes (no close-then-reopen); the finding records the version.
+func TestReconcile_UpgradeToStillVulnerableVersionStaysOpenAndUpdates(t *testing.T) {
+	store, svc, m, id, _ := upgradeEnv(t, &softwarematch.VersionSighting{Version: "1.19.0", Evaluated: true})
+	m.Version = "1.19.0" // the match is on the new version (m.VersionID differs from the finding's)
+	store.matches = []softwarematch.Match{m}
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if closedTotal(store) != 0 || len(store.reopened) != 0 {
+		t.Fatalf("closed %v reopened %v", store.closed, store.reopened)
+	}
+	if len(store.refreshed) != 1 || store.refreshed[0].FindingID != id || store.refreshed[0].VersionID != m.VersionID ||
+		store.refreshed[0].Version != "1.19.0" {
+		t.Fatalf("refreshed %+v", store.refreshed)
+	}
+}
+
+// The new version was evaluated and no longer matches: the closing mode
+// applies (auto closes it as version_changed).
+func TestReconcile_UpgradeToFixedVersionClosesPerMode(t *testing.T) {
+	store, svc, _, id, _ := upgradeEnv(t, &softwarematch.VersionSighting{Version: "1.21.0", Evaluated: true})
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.closed[softwarematch.CloseVersionChanged]; len(got) != 1 || got[0] != id || len(store.refreshed) != 0 {
+		t.Fatalf("closed %v refreshed %v", store.closed, store.refreshed)
+	}
+}
+
+// Flapping: v1 -> v2 (not evaluated yet) -> v2 evaluated, still vulnerable
+// -> v3 fixed. It closes once, only at the last step, and never reopens.
+func TestReconcile_VersionFlappingClosesOnlyOnEvaluatedFix(t *testing.T) {
+	store, svc, m, id, key := upgradeEnv(t, &softwarematch.VersionSighting{Version: "1.19.0", Evaluated: false})
+	run := func() {
+		t.Helper()
+		var st Stats
+		if err := svc.ReconcileTenant(context.Background(), shared.NewID(), &st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run() // v2 not evaluated
+	if closedTotal(store) != 0 {
+		t.Fatalf("closed before v2 was evaluated: %v", store.closed)
+	}
+	m.Version = "1.19.0"
+	store.matches = []softwarematch.Match{m}
+	store.links[key] = softwarematch.LinkInfo{State: softwarematch.LinkUpgraded, Now: &softwarematch.VersionSighting{Version: "1.19.0", Evaluated: true}}
+	run() // v2 evaluated and vulnerable
+	if closedTotal(store) != 0 || len(store.refreshed) != 1 {
+		t.Fatalf("closed %v refreshed %v", store.closed, store.refreshed)
+	}
+	store.existing[0].VersionID = &m.VersionID // the refresh landed
+	store.matches = nil
+	v3 := &softwarematch.VersionSighting{Version: "1.21.0", Evaluated: true}
+	store.links[softwarematch.LinkKey{AssetID: m.AssetID, ProductID: m.ProductID, VersionID: m.VersionID, Location: m.Location}] =
+		softwarematch.LinkInfo{State: softwarematch.LinkUpgraded, Now: v3}
+	run() // v3 evaluated, fixed
+	if got := store.closed[softwarematch.CloseVersionChanged]; len(got) != 1 || got[0] != id || len(store.reopened) != 0 {
+		t.Fatalf("closed %v reopened %v", store.closed, store.reopened)
+	}
+}
+
+// failingWriter refuses every finding while fail is set, the way the store
+// reports a row it could not insert (an error per index, no Go error).
+type failingWriter struct {
+	fail    bool
+	created []*vulnerability.Finding
+}
+
+func (w *failingWriter) CreateBatchWithResult(_ context.Context, fs []*vulnerability.Finding) (*vulnerability.BatchCreateResult, error) {
+	if w.fail {
+		errs := make(map[int]string, len(fs))
+		for i := range fs {
+			errs[i] = "failed to insert finding: value too long"
+		}
+		return &vulnerability.BatchCreateResult{Skipped: len(fs), Errors: errs}, nil
+	}
+	w.created = append(w.created, fs...)
+	return &vulnerability.BatchCreateResult{Created: len(fs)}, nil
+}
+
+// A finding the store refuses is booked on the receipt as failed with the
+// fixed store_failed code (never the database's text), and is held for
+// retry: the next reconcile builds it again from the same match and stores
+// it once the cause is gone.
+func TestReconcile_StoreFailureIsBookedAndRetried(t *testing.T) {
+	store := newFakeStore()
+	m := match(shared.NewID(), "CVE-2021-23017", 80)
+	store.matches = []softwarematch.Match{m}
+	w := &failingWriter{fail: true}
+	svc := NewService(store, fakePolicy{tenant.VulnMatchingSettings{Enabled: true}}, w, logger.NewNop())
+	svc.SetClosureSettings(fixedClosing{Mode: tenant.ClosingModeAuto})
+	rec := &fakeReceipts{}
+	svc.SetReceiptRecorder(rec)
+	tenantID := shared.NewID()
+
+	var st Stats
+	if err := svc.ReconcileTenant(context.Background(), tenantID, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Created != 0 || st.Failed != 1 || len(rec.deltas) != 1 {
+		t.Fatalf("first pass: created %d failed %d deltas %d", st.Created, st.Failed, len(rec.deltas))
+	}
+	d := rec.deltas[0]
+	if d.Received != 1 || d.Failed != 1 || len(d.Created) != 0 || len(d.StillDetected) != 0 ||
+		len(d.Errors) != 1 || d.Errors[0] != (ingestreceipt.ErrorEntry{Index: 0, Code: ingestreceipt.ErrorStoreFailed}) {
+		t.Fatalf("failed delta %+v", d)
+	}
+
+	// The cause is fixed: the next reconcile stores the same finding.
+	w.fail = false
+	var st2 Stats
+	if err := svc.ReconcileTenant(context.Background(), tenantID, &st2); err != nil {
+		t.Fatal(err)
+	}
+	if st2.Created != 1 || st2.Failed != 0 || len(w.created) != 1 || w.created[0].Fingerprint() != fp(m) {
+		t.Fatalf("retry: created %d failed %d stored %d", st2.Created, st2.Failed, len(w.created))
+	}
+	if d := rec.deltas[1]; d.Failed != 0 || len(d.Errors) != 0 || len(d.Created) != 1 {
+		t.Fatalf("retry delta %+v", d)
 	}
 }

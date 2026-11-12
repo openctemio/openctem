@@ -14,7 +14,7 @@ import { useTenant } from '@/context/tenant-provider'
 import { del, get, post, put } from '@/lib/api/client'
 import { SWR_REFERENCE } from '@/lib/swr-config'
 
-export type SavedViewPage = 'findings' | 'vulnerabilities'
+export type SavedViewPage = 'findings' | 'vulnerabilities' | 'assets'
 
 export interface SavedView {
   id: string
@@ -43,7 +43,9 @@ export interface SaveViewInput {
   name: string
   description?: string
   /** The page's flat query (the API's own params), e.g. "severity=critical&q=log4j". */
-  query: string
+  query?: string
+  /** A checked filter document instead of a flat query (a filter chips cannot show). */
+  filter?: Record<string, unknown>
   group_id?: string
   /** Share with the whole organization (needs findings:views:share). */
   share_with_org?: boolean
@@ -107,6 +109,8 @@ export function viewQueryFromSearch(search: string): string {
   params.forEach((value, key) => {
     if (PAGE_ONLY.has(key)) return
     if (key === 'view' && !savedViewId(value)) return
+    // The findings practice switch's "All" is no practice condition.
+    if (key === 'practice' && value.trim().toLowerCase() === 'all') return
     out.append(key, value)
   })
   return out.toString()

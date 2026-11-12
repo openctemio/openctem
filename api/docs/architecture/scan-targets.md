@@ -226,6 +226,24 @@ an ownership or scope decision.
   unresolvable and the counts add up, the platform completes the command
   with the same skips (only for the command's own, running sensor). A mixed
   refusal stays a failure.
+- **Refusals under a local policy.** A name the sensor's `targets.allow`
+  list cannot match because it does not resolve is refused as `unresolvable`
+  (rule `targets.allow`), not `denied_by_policy`; `denied_by_policy` is for
+  a name or address that resolves outside the allowed ranges or matches
+  `targets.deny`. A task refused as a whole whose refusal detail
+  (`N target(s) refused: "a" (unresolvable), ...`) lists only unresolvable
+  names completes with per-target skips like the case above, and is not
+  re-queued to this sensor or another (`scanrun.ParseRefusedSummary`,
+  `scanrun.UnresolvableRefusal`). A sensor that predates the reason reports
+  such a name `denied_by_policy`: the platform counts it unresolvable only
+  when its own resolution state of the same tenant says the name is
+  `not_resolving`.
+- **Run map.** A step that leaves not-resolving names out records the count
+  (`not_resolving_skipped_count` in its outcome) and the console shows "N
+  names no longer resolve, skipped by active steps". Passive steps and the
+  DNS resolution step still take the names, so dangling-DNS checks keep
+  working. The scan's include-unresolved option lets a name without evidence
+  through; it never hands an active step a name known to be dead.
 - **Console.** Run: the skip group "No longer resolve" (info tone) and the
   run note. Assets: filter `resolution=not_resolving` (`GET /assets`), the
   bulk bar's archive acts on the selection; the asset detail shows the last
@@ -318,6 +336,107 @@ scope: `GET /assets?under=<root>` for a wildcard and
 `GET /assets?in_cidr=<range>` for an inventory-mode CIDR (count, freshest
 name, sample). The run resolves under the scan actor's act scope, so the
 numbers are what the caller can see now, not a promise.
+
+### Typing and pasting targets in the wizard
+
+The New and Edit Scan wizards (`web/src/features/scans/components/new-scan`)
+take a list typed, pasted or read from a `.txt` / `.csv` file in the browser
+(at most 1 MB and 10,000 entries; a CSV keeps the columns that hold targets
+and drops a header row). Entries are separated by new lines, commas,
+semicolons or spaces, and `#` starts a comment. Each entry is classified and
+normalised before it is added (`web/src/features/scans/lib/target-format.ts`)
+with the rules of the API target validator, so nothing the wizard accepts is
+refused at create:
+
+- domain, wildcard, IPv4, IPv6, CIDR, URL and `host:port` (also `[v6]:port`
+  and `host:port/tcp`); a Unicode domain is sent in its ASCII form;
+- refused with the reason: a range wider than the organization's widest
+  range (a /16 by default, at most 16,777,216 addresses: an IPv4 /8, an IPv6
+  /104, read from the scope settings; the reason names the range's address count and the
+  widest accepted size, with a one-click split when it fits in at most 256
+  ranges of that size), a
+  top-level domain in punycode, a path or repository reference (scanned from
+  repository assets instead), anything else that is not a target;
+- repeats are folded after normalisation (`Example.COM.` is `example.com`).
+
+Format is the only thing decided in the browser. Whether each target may be
+scanned is `POST /scope/check` (the caller's scope, batches of 200, up to the
+1,000 direct targets a scan takes), shown per target with its reason. The
+paste panel says how many targets still fit before anything is added.
+
+### Large ranges (RFC-151)
+
+A range wider than a /16 (IPv6 /112) is a large range. One target may name
+up to the organization's widest range (scope policy `max_range_prefix`:
+a /16 by default for every organization, a /8 at most once an approver opts
+in; raising it needs step-up, is audited at high severity and every
+administrator is told; IPv6 gets the same address count).
+
+- **Create and scope check** take the range as one target: one scope entry
+  must hold it, and an internal range needs one zone that holds it. The scan
+  must run live hosts first (`LARGE_RANGE_NEEDS_LIVENESS` for sweep or
+  inventory, `LIVENESS_NEEDS_HOST_DISCOVERY` for a workflow without Host
+  discovery or a single port or vulnerability scanner). An edit of the
+  targets, target options, workflow or scanner settles this again.
+- **Confirmation (API)**: create, a target edit and import need
+  `confirm_large_range: true` (`?confirm_large_range=true` on import);
+  without it the request is refused with `LARGE_RANGE_UNCONFIRMED`, naming the
+  ranges, their address count and chunk count (also in `details`).
+- **New scan** shows the address count, the /16 chunks and a rough host
+  discovery duration (one sensor at 1,000 addresses a second) and asks for a
+  confirmation before create, then sends `confirm_large_range`; a change of
+  ranges asks again.
+- **Run start** cuts each large range into prefixes no wider than a /16,
+  after removing the addresses no scope entry of an address kind covers
+  (`out_of_scope_addresses`), the exclusions and the deny list. The scan
+  stores the range as typed; nothing is listed per address. Each prefix is an
+  ordinary run target: host discovery sweeps it, later steps get the live
+  hosts. Job, piece and sensor rate limits apply unchanged. Asset group
+  members are cut the same way (a network asset wider than a /16 is never
+  sent whole), and a run holds the scan to a /16 unless it is in liveness
+  mode and its workflow still has a Host discovery step.
+- **Internal ranges**: a range is internal when it overlaps a private,
+  link-local or loopback block anywhere (`172.0.0.0/8` holds
+  `172.16.0.0/12`), not only at its first address.
+- Every other path (a direct command, context targets of a run, claim-time
+  re-check) keeps the /16 bound.
+- The bound and its refusal text are one contract with the web format check:
+  `api/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
+
+### Targets step layout and the scope source
+
+The Targets step has two columns at desktop width (one on a phone, same
+order). Left: what is scanned, as chips (a searchable list past 20 typed
+entries), "Paste or upload a list", and the picker sheet with three sources:
+assets, asset groups, and the organization's scope. Right: what the scan
+probes, grouped by kind (domains, wildcards, address ranges, IP addresses,
+URLs, assets, asset groups), each row with its `POST /scope/check` answer,
+then the refused targets with their remedies. A setting sits next to the
+group it applies to and only when that group exists: the coverage level by
+the domains (by the picked assets when no domain was typed; new scans
+only), how ranges are scanned by the ranges, and the freshness options of
+what a run resolves again (wildcards, inventory ranges) under the groups,
+collapsed with a one-line summary.
+
+The ranges choice shown is the mode the scan runs (`effectiveCidrMode`,
+`web/src/features/scans/lib/liveness.ts`, the rule of "CIDR mode and live
+hosts first" above): a chosen mode; a saved scan without one sweeps; a new
+scan finds live hosts first unless its workflow has no Host discovery step,
+then it sweeps and live hosts first is disabled with the reason. Without a
+choice no mode is sent and the API applies the same rule on save.
+
+"From scope" lists the active in-scope entries a scan can take
+(`GET /scope/targets?statuses=active&types=domain,subdomain,ip_address,ip_range`,
+searched on the server) and is shown only to callers with
+`attack_surface:scope:read`, the permission the endpoint enforces; the
+tenant is the session's. Out of scope entries (`/scope/exclusions`) are never
+read. A wildcard entry (or a domain entry that covers its subdomains)
+becomes a `*.domain` target, an address or CIDR itself; a name pattern or an
+address span is listed but not pickable. Entries expiring within 7 days are
+flagged, since later runs of a saved scan will be refused once they lapse.
+"Add all in-scope entries" reads every page up to the 1,000 direct targets a
+scan takes. A picked entry is an ordinary typed target: it goes through the
+scope check like anything typed, so the picker grants nothing.
 
 ### Quick Scan
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/api/pkg/domain/limits"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
+	"github.com/openctemio/openctem/api/pkg/domain/stepup"
 )
 
 var slugRegex = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -55,6 +56,11 @@ func NewTenant(name, slug, createdBy string) (*Tenant, error) {
 	initial.Security.PersonalAccounts = PersonalAccountsAllowedWithMFA
 	// Owners and admins of a new organization use a second factor.
 	initial.Security.MFARequiredForAdmins = true
+	// A new organization gets the default re-verification policy (sensitive
+	// actions once per hour); organizations created before keep the fixed
+	// 10-minute window they had (an absent policy).
+	def := stepup.DefaultPolicy()
+	initial.Security.StepUp = &def
 	// A new organization lets the platform close findings per the tier rule;
 	// organizations created before stay in review (an absent mode).
 	initial.Closure.Mode = ClosingModeAuto

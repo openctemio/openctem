@@ -4,12 +4,13 @@
  * Asset Relationships Tab
  *
  * Self-contained tab for an asset detail sheet: the grouped related-assets
- * list (RelatedAssetsList), an optional graph for small neighbourhoods, and
+ * list (RelatedAssetsList), the neighborhood graph (NeighborhoodGraphView), and
  * the add / edit / remove flows. The parent passes the asset and a navigate
  * callback; fetching, dialogs, mutations and toasts live here.
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { List, Network, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -33,6 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { useTenant } from '@/context/tenant-provider'
@@ -61,11 +63,13 @@ import {
   RelatedAssetsList,
   revalidateRelatedAssets,
 } from './relationships/related-assets-list'
-import {
-  RelationshipGraphView,
-  buildGraphFromRelationships,
-} from './relationships/relationship-graph'
 import { AddRelationshipDialog, type AssetOption } from './relationships/add-relationship-dialog'
+
+// The graph pulls in the flow-chart library; load it only when the graph view is opened.
+const NeighborhoodGraphView = dynamic(
+  () => import('./relationships/neighborhood-graph').then((m) => m.NeighborhoodGraphView),
+  { ssr: false, loading: () => <Skeleton className="h-96 w-full" /> }
+)
 
 interface AssetRelationshipsTabProps {
   assetId: string
@@ -88,11 +92,6 @@ interface BackendAssetsListResponse {
 }
 
 const PICKER_PAGE_SIZE = 50
-/**
- * The graph is offered only for a neighbourhood it can draw legibly; a larger
- * one is read through the grouped list (counts, search, paging).
- */
-const GRAPH_MAX_EDGES = 30
 
 export function AssetRelationshipsTab({
   assetId,
@@ -100,7 +99,7 @@ export function AssetRelationshipsTab({
   onNavigateToAsset,
 }: AssetRelationshipsTabProps) {
   const { t } = useTranslation()
-  // The flat list feeds the add dialog's duplicate check and the small graph.
+  // The flat list feeds the add dialog's duplicate check.
   const { relationships, mutate } = useAssetRelationships(assetId)
   const { total } = useRelatedAssets(assetId, { limit: RELATED_PREVIEW_ROWS })
   const { can } = usePermissions()
@@ -109,14 +108,9 @@ export function AssetRelationshipsTab({
   const canDelete = can(Permission.AssetsDelete)
 
   const [view, setView] = useState<'list' | 'graph'>('list')
-  const graphAvailable = total > 0 && total <= GRAPH_MAX_EDGES
-  const graphData = useMemo(
-    () =>
-      buildGraphFromRelationships(relationships, (type) =>
-        t(relationVerbKey(type, 'outgoing'), relationVerbFallback(type, 'outgoing'))
-      ),
-    [relationships, t]
-  )
+  // The graph reads the neighborhood endpoint (node cap and clusters), so it
+  // draws any number of relationships.
+  const graphAvailable = total > 0
 
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [editTarget, setEditTarget] = useState<AssetRelationship | null>(null)
@@ -142,7 +136,7 @@ export function AssetRelationshipsTab({
     async (query: string): Promise<AssetOption[]> => {
       if (!currentTenant) return []
       const params = new URLSearchParams({ per_page: String(PICKER_PAGE_SIZE) })
-      if (query.trim()) params.set('search', query.trim())
+      if (query.trim()) params.set('q', query.trim())
       try {
         const response = await get<BackendAssetsListResponse>(`/api/v1/assets?${params.toString()}`)
         return (response.data ?? []).map((a) => ({
@@ -370,25 +364,7 @@ export function AssetRelationshipsTab({
       </div>
 
       {view === 'graph' && graphAvailable ? (
-        <div className="space-y-2">
-          <div className="h-[360px]">
-            <RelationshipGraphView
-              className="h-full"
-              graph={graphData}
-              centralNodeId={assetId}
-              onNodeClick={(nodeId) => {
-                const node = graphData.nodes.find((n) => n.id === nodeId)
-                if (node && nodeId !== assetId) onNavigateToAsset?.(nodeId, node.name)
-              }}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'assets.related.graphHint',
-              'The list is the complete, accessible view; the graph draws the same relationships around this asset.'
-            )}
-          </p>
-        </div>
+        <NeighborhoodGraphView assetId={assetId} onNavigateToAsset={onNavigateToAsset} />
       ) : (
         <RelatedAssetsList
           assetId={assetId}

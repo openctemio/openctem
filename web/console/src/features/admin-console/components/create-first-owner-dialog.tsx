@@ -3,7 +3,6 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { useState, type FormEvent } from 'react'
 import { Loader2, UserPlus } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,6 +15,7 @@ import {
   DialogBody,
   DialogForm,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SetupLinkResult } from '@/features/shared/components/one-time-setup-link'
@@ -40,12 +40,16 @@ export function CreateFirstOwnerDialog({
   tenantId,
   onCreated,
   changeInvitee = false,
+  emailDelivery,
 }: {
   tenantId: string
   onCreated: () => void
   /** The organization has an ownership invitation: label the dialog "Change invitee". */
   changeInvitee?: boolean
+  /** False: the installation cannot send email (nothing is sent; links are handed over). */
+  emailDelivery?: boolean
 }) {
+  const noEmail = emailDelivery === false
   const { t } = useTranslation()
 
   const [open, setOpen] = useState(false)
@@ -100,13 +104,18 @@ export function CreateFirstOwnerDialog({
         {invited ? (
           <>
             <DialogHeader>
-              <DialogTitle>{t('admin.ownerInvitation.sentTitle', 'Invitation sent')}</DialogTitle>
+              <DialogTitle>
+                {noEmail
+                  ? t('admin.ownerInvitation.createdTitle', 'Invitation created')
+                  : t('admin.ownerInvitation.sentTitle', 'Invitation sent')}
+              </DialogTitle>
             </DialogHeader>
             <DialogBody>
               <div className="py-2">
                 <OwnerInvitationSentNotice
                   email={invited.invitee_email ?? email.trim()}
                   invitation={invited}
+                  emailDelivery={emailDelivery}
                 />
               </div>
             </DialogBody>
@@ -146,15 +155,20 @@ export function CreateFirstOwnerDialog({
                   : t('admin.createFirstOwnerDialog.createFirstOwner', 'Create first owner')}
               </DialogTitle>
               <DialogDescription>
-                {changeInvitee
+                {changeInvitee && noEmail
                   ? t(
-                      'admin.ownerInvitation.changeInviteeHelp',
-                      'The current invitation is canceled. Someone who already has an account gets a new invitation to become the owner; for a new person an account is created and they get a link to set their password.'
+                      'admin.ownerInvitation.changeInviteeHelpNoEmail',
+                      'The current invitation is canceled. This server cannot send email, so nobody is told: someone who already has an account gets a new invitation that they accept in the app after signing in (you give them the address); for a new person an account is created and you get a one-time link to give them.'
                     )
-                  : t(
-                      'admin.createFirstOwnerDialog.thisOrganizationHasNoOwner',
-                      "This organization has no owner. Create the owner's account; they get a link to set their password, and then invite or create the organization's other users themselves."
-                    )}
+                  : changeInvitee
+                    ? t(
+                        'admin.ownerInvitation.changeInviteeHelp',
+                        'The current invitation is canceled. Someone who already has an account gets a new invitation to become the owner; for a new person an account is created and they get a link to set their password.'
+                      )
+                    : t(
+                        'admin.createFirstOwnerDialog.thisOrganizationHasNoOwner',
+                        "This organization has no owner. Create the owner's account; they get a link to set their password, and then invite or create the organization's other users themselves."
+                      )}
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
@@ -183,13 +197,10 @@ export function CreateFirstOwnerDialog({
                     onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
               </div>
             </DialogBody>
+            <DialogSubmitError message={error} />
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={close}>
                 {t('common.cancel', 'Cancel')}

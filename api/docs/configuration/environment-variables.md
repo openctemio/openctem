@@ -164,7 +164,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `SCOPE_DENY_EXTRA` | list | empty |  |  | Comma-separated domains and CIDRs that no organization may target, in addition to the built-in deny list (for example the platform's own names and ranges). |
+| `SCOPE_DENY_EXTRA` | list | empty |  |  | Comma-separated domains and CIDRs that no organization may target, in addition to the built-in deny list (for example the platform's own names and ranges). Always in force; platform owners add more names, and switch the government and military rule or grant exceptions, in the console (Scanning > Platform scanning > Blocked names). |
 | `SCOPE_PUBLIC_CODE_HOSTS_EXTRA` | list | empty |  |  | Comma-separated code hosts shared by many organizations, in addition to the built-in list (github.com, gitlab.com, bitbucket.org and others). A repository scope entry on such a host must name a namespace (host/namespace/*), never the whole host. |
 | `SCOPE_MAX_PUBLIC_CIDR_V4` | int | `16` |  |  | Largest public IPv4 range (prefix length) one scope entry may cover. Private ranges are not capped. |
 | `SCOPE_MAX_PUBLIC_CIDR_V6` | int | `32` |  |  | Largest public IPv6 range one scope entry may cover. |
@@ -267,7 +267,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 |---|---|---|---|---|---|
 | `PLATFORM_CA_CERT_FILE` | path | empty |  |  | PEM bundle of the CA certificate(s) that sign the platform's TLS certificate when it is not publicly trusted (the gateway in TLS mode `internal`, where the Compose stack points it at the exported root CA, or your own private CA). Public certificates only: a file that holds a private key is refused. The install commands install it and pin its root (`SENSOR_CA_SHA256`), and `GET /api/v1/sensors/platform-ca` serves it to sensors that hold the pin. Re-read when the file changes. Empty: the certificate is publicly trusted. Guide: `docs/how-to/sensors-behind-a-private-ca.md`. |
 | `SENSOR_CA_CERT_FILE` | path | empty |  |  | Deprecated name of `PLATFORM_CA_CERT_FILE` on the API, read only when that is unset (startup warns). Rename it. On a sensor host `SENSOR_CA_CERT_FILE` keeps its own meaning: the CA file the sensor trusts. |
-| `CI_RUNNER_LATEST_VERSION` | string | `versions.yaml` ci.latest, built into the API |  |  | Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off. |
+| `CI_RUNNER_LATEST_VERSION` | string | `versions.yaml` ci.latest, built into the API |  |  | Newest CI runner release (openctemio/ci: the openctem-ci action and image). The console's pipeline snippets pin it, and a pipeline on an older runner shows an update. Unset: the built-in ci.latest raised by the verified release feed, resolved per use; set, it wins over the feed. CI runners have their own release line; the sensor settings never apply to them. `none` or `off` turns the comparison off. |
 | `CI_RUNNER_MIN_VERSION` | string | `versions.yaml` ci.min, built into the API |  |  | Oldest accepted CI runner release. The token exchange refuses an older runner (`RUNNER_OUTDATED`) and its pipeline is shown as degraded. Empty, `none` or `off`: no minimum. |
 | `SENSOR_COMMAND_LEASE` | duration | `3m` |  |  | How long a sensor holds a claimed task without renewing it; an expired lease puts the task back in the queue. |
 | `SENSOR_CONFIG_TEMPLATES_DIR` | string | `configs/sensor-products` |  |  | Directory of the sensor install snippet templates shown in the console: one directory per snippet set (<set>/<format>.tmpl). A sensor product of your own adds a directory here. |
@@ -354,6 +354,8 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `ASSET_ENRICHMENT_ENABLED` | bool | `true` |  |  | Automatic passive enrichment of new assets, platform-wide. Each organization can still turn it off. |
 | `ASSET_COVERAGE_ENABLED` | bool | `true` |  |  | The asset coverage loop, platform-wide: every asset gets the capabilities its type needs. |
 | `ASSET_COVERAGE_DAILY_BUDGET` | int | `5000` |  |  | Most asset and capability pairs one organization's automatic coverage attempts per 24 hours. |
+| `PATH_DISCOVERY_REQUESTS_PER_ORIGIN` | int | `300` |  |  | Request cap of one origin's path discovery job (50 to 100000), signed into the job and enforced by the sensor; at most one run per origin per 30 days. |
+| `PATH_DISCOVERY_DAILY_REQUESTS` | int | `50000` |  |  | Path discovery requests one organization may plan per 24 hours; origins that do not fit are deferred, never marked covered. |
 | `ASSET_COVERAGE_INTERVAL` | duration | `1m` |  |  | How often the asset coverage loop runs. |
 | `FEED_CACHE_DIR` | path | `<system temp dir>/openctem-feeds` |  |  | Directory holding verified feed chunks between imports, and the feed relay's local working copy of its spool (`relay/`; pod-local, rebuilt from the database). |
 | `PROGRAMFEED_DIR` | path | empty |  |  | Directory holding the newest signed public program feed bundle (a mirror or an upload). Needs `PROGRAMFEED_ROOT_KEY_ID`. |

@@ -43,6 +43,22 @@ type Dangling struct {
 	Unregistered bool
 	Severity     exposuredom.Severity
 	Reason       string
+	// Chain is the CNAME chain of the answer, in order (each record's
+	// target); empty when the name has no CNAME.
+	Chain []string
+	// Addresses are the A records the name resolves to (outcome ok).
+	Addresses []string
+	// ResponseClass is the dangling_cname's response class (lifecycle.go).
+	ResponseClass string
+	check         string           // details.check; "dns_only" when empty
+	tlsState      []map[string]any // details.tls_state (provider_refuses)
+}
+
+// PointsNowhere reports whether an ok answer leaves the name pointing at
+// nothing a third party could answer for: no CNAME and no address (the
+// record was removed, or the name has no address records).
+func (d Dangling) PointsNowhere() bool {
+	return d.Outcome == OutcomeOK && len(d.Chain) == 0 && len(d.Addresses) == 0
 }
 
 // checkDangling resolves name and its delegation, DNS only. It never contacts
@@ -63,9 +79,12 @@ func checkDangling(ctx context.Context, q Querier, name string) (Dangling, error
 		return Dangling{Outcome: OutcomeUnknown}, err
 	}
 	target := lastCNAME(a)
+	chain := cnameChain(a)
 	switch {
 	case a.RCode == dnsprobe.RCodeNXDomain && target != "":
-		return danglingCNAME(ctx, q, target), nil
+		d := danglingCNAME(ctx, q, target)
+		d.Chain = chain
+		return d, nil
 	case a.RCode == dnsprobe.RCodeServFail && target == "":
 		// The resolver could not resolve the name: a lame delegation looks
 		// exactly like this. Ask the authoritative servers, if we can.
@@ -78,10 +97,44 @@ func checkDangling(ctx context.Context, q Querier, name string) (Dangling, error
 	case a.RCode != dnsprobe.RCodeSuccess && a.RCode != dnsprobe.RCodeNXDomain:
 		return Dangling{Outcome: OutcomeUnknown, Reason: "resolver answered " + a.RCode.String()}, nil
 	case target != "":
-		// A CNAME that resolves; no NS can live at the same name.
-		return Dangling{Outcome: OutcomeOK}, nil
+		// A CNAME that resolves; no NS can live at the same name. The target
+		// and the provider it belongs to are kept: a provider that serves
+		// names from shared front ends answers for a name it no longer
+		// serves, and the lifecycle needs to know where the name points now.
+		d := Dangling{Outcome: OutcomeOK, Target: target, Chain: chain, Addresses: addresses(a)}
+		if p, ok := providerFor(target); ok {
+			d.Provider = &p
+		}
+		return d, nil
 	}
-	return danglingNS(ctx, q, name)
+	d, err := danglingNS(ctx, q, name)
+	if err == nil && d.Outcome == OutcomeOK {
+		d.Addresses = addresses(a)
+	}
+	return d, err
+}
+
+// cnameChain returns the targets of the CNAME records of an answer, in order.
+func cnameChain(a dnsprobe.Answer) []string {
+	var out []string
+	for _, r := range a.Records {
+		if r.Type == dnsprobe.TypeCNAME {
+			out = append(out, r.Value)
+		}
+	}
+	return out
+}
+
+// addresses returns the A records of an answer, sorted.
+func addresses(a dnsprobe.Answer) []string {
+	var out []string
+	for _, r := range a.Records {
+		if r.Type == dnsprobe.TypeA {
+			out = append(out, r.Value)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // lastCNAME returns the end of the CNAME chain in an answer.

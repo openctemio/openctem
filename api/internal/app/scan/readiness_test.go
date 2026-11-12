@@ -163,13 +163,13 @@ func TestWorkflowReadiness_OptionalStepSkipped(t *testing.T) {
 		"httpx": sensordom.ToolReady, "naabu": sensordom.ToolDisabled, "nuclei": sensordom.ToolNoSensor,
 	}, false, false, nil)
 
-	r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), optStep("shots", "", "capture.screenshot")))
+	r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), optStep("shots", "", "fingerprint.tech")))
 	if r.State != ReadinessReady || !r.Runnable() {
 		t.Fatalf("optional planned step must not block: %+v", r)
 	}
 	shot := r.Steps[1]
-	if shot.State != ReadinessSkipped || !shot.Optional || shot.Capability != "capture.screenshot" ||
-		shot.Code != ReasonNoTool || !strings.HasPrefix(shot.Reason, "Skipped: ") || !strings.Contains(shot.Reason, "capture.screenshot") {
+	if shot.State != ReadinessSkipped || !shot.Optional || shot.Capability != "fingerprint.tech" ||
+		shot.Code != ReasonNoTool || !strings.HasPrefix(shot.Reason, "Skipped: ") || !strings.Contains(shot.Reason, "fingerprint.tech") {
 		t.Fatalf("skipped step: %+v", shot)
 	}
 
@@ -180,7 +180,7 @@ func TestWorkflowReadiness_OptionalStepSkipped(t *testing.T) {
 	}
 
 	// The same step, required, blocks as before.
-	if r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), rstep("shots", "", "capture.screenshot"))); r.State != ReadinessBlocked || r.Steps[1].Code != ReasonNoTool {
+	if r := readinessOf(t, s, rwf("", rstep("http", "", "probe.http"), rstep("shots", "", "fingerprint.tech"))); r.State != ReadinessBlocked || r.Steps[1].Code != ReasonNoTool {
 		t.Fatalf("required planned step: %+v", r)
 	}
 
@@ -191,7 +191,7 @@ func TestWorkflowReadiness_OptionalStepSkipped(t *testing.T) {
 	}
 
 	// Only skipped steps: nothing would run.
-	only := rwf("", optStep("shots", "", "capture.screenshot"))
+	only := rwf("", optStep("shots", "", "fingerprint.tech"))
 	if r := readinessOf(t, s, only); r.State != ReadinessBlocked {
 		t.Fatalf("only optional steps: %s", r.State)
 	}
@@ -208,12 +208,27 @@ func TestWorkflowReadiness_ReasonCodes(t *testing.T) {
 		rstep("http", "", "probe.http"):          ReasonToolDisabled,
 		rstep("sast", "", "sast.code"):           ReasonCIOnly,
 		rstep("x", "gowitness", "scan"):          ReasonToolNotInstalled,
-		rstep("shots", "", "capture.screenshot"): ReasonNoTool,
+		rstep("shots", "", "fingerprint.tech"):   ReasonNoTool,
 	}
 	for step, want := range cases {
 		r := readinessOf(t, s, rwf("", step))
 		if got := r.Steps[0]; got.Code != want {
 			t.Errorf("%s: code %q, want %q (%+v)", step.StepKey, got.Code, want, got)
 		}
+	}
+}
+
+// A ready step names the tool it runs with (for "runs with <tool>"); a step
+// that is not ready names none in that field.
+func TestWorkflowReadiness_ReadyStepNamesItsTool(t *testing.T) {
+	s := readinessService(map[string]sensordom.ToolStatus{
+		"dnsx": sensordom.ToolReady, "naabu": sensordom.ToolOfflineOnly,
+	}, false, false, nil)
+	r := readinessOf(t, s, rwf("", rstep("dns", "", "resolve.dns"), rstep("ports", "", "scan.ports")))
+	if r.Steps[0].State != ReadinessReady || r.Steps[0].Tool != "dnsx" {
+		t.Fatalf("ready step: %+v", r.Steps[0])
+	}
+	if r.Steps[1].Tool != "" {
+		t.Fatalf("waiting step names a tool: %+v", r.Steps[1])
 	}
 }

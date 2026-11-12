@@ -27,6 +27,13 @@ export interface EmergingThreatSummary {
   confirmed_assets: number
   possible_assets: number
   internet_facing_assets: number
+  /** Affected assets of criticality "critical" (the crown jewels), in the caller's scope. */
+  critical_assets: number
+  /** The product of the best in-scope match ('' when none is known). */
+  product: string
+  /** How many distinct products match, in the caller's scope. */
+  product_count: number
+  ets_breakdown: EtsBreakdown
   last_event_kind: string
   event_at: string | null
   source_at: string | null
@@ -67,7 +74,6 @@ export interface TimelineEvent {
 }
 
 export interface EmergingThreatDetail extends EmergingThreatSummary {
-  ets_breakdown: EtsBreakdown
   recommended_action: RecommendedAction
   description: string
   cvss_score: number | null
@@ -84,6 +90,8 @@ export interface EmergingThreatDetail extends EmergingThreatSummary {
 
 export interface EmergingThreatsSummaryCounts {
   open: number
+  /** Open alerts nobody triaged yet. */
+  new: number
   immediate: number
   digest: number
   listed: number
@@ -106,6 +114,7 @@ export interface ListFilters {
   state?: StateFilter
   tier?: AlertTier
   internetOnly?: boolean
+  kevOnly?: boolean
   search?: string
   page?: number
   perPage?: number

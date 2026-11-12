@@ -145,3 +145,52 @@ func TestEASMSuggestionReads(t *testing.T) {
 		t.Fatalf("restricted confirmed %+v %v", cs, err)
 	}
 }
+
+// The network lookup ledger behind the card: read per address, and a retry
+// makes only the tenant's own address pairs due (never another tenant's,
+// never a pair a sensor is running). Requires DATABASE_URL.
+func TestEASMNetworkLookupLedger(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewAttributionRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	asset := func(tid shared.ID, name, typ string) string {
+		t.Helper()
+		id := shared.NewID().String()
+		if _, err := db.ExecContext(ctx, `INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, $3, $4, 'active')`,
+			id, tid.String(), name, typ); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	failed := asset(tenant, "198.51.100.40", "ip_address")
+	fresh := asset(tenant, "198.51.100.41", "ip_address")
+	running := asset(tenant, "198.51.100.42", "ip_address")
+	name := asset(tenant, "www.lookup.example", "subdomain")
+	foreign := asset(other, "198.51.100.40", "ip_address")
+	for id, st := range map[string]string{failed: "failed", running: "queued"} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO asset_coverage (tenant_id, asset_id, capability, state, reason, fail_streak)
+			VALUES ($1, $2, 'lookup.asn', $3, 'tool_error', 2)`, tenant.String(), id, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := repo.RequeueNetworkLookup(ctx, tenant, []string{failed, fresh, running, name, foreign})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 { // failed + fresh; the queued pair, the name and the other tenant's address are left alone
+		t.Fatalf("requeued %d, want 2", n)
+	}
+	var due, foreignRows, queued int
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM asset_coverage WHERE tenant_id = $1 AND capability = 'lookup.asn' AND state = 'due' AND fail_streak = 0`, tenant.String()).Scan(&due)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM asset_coverage WHERE tenant_id = $1`, other.String()).Scan(&foreignRows)
+	_ = db.QueryRowContext(ctx, `SELECT COUNT(*) FROM asset_coverage WHERE asset_id = $1 AND state = 'queued'`, running).Scan(&queued)
+	if due != 2 || foreignRows != 0 || queued != 1 {
+		t.Fatalf("due %d, other tenant rows %d, queued kept %d", due, foreignRows, queued)
+	}
+	// Another tenant asking for this tenant's assets touches nothing.
+	if n, err := repo.RequeueNetworkLookup(ctx, other, []string{failed, fresh}); err != nil || n != 0 {
+		t.Fatalf("cross-tenant requeue %d %v", n, err)
+	}
+}

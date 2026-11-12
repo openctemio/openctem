@@ -20,6 +20,7 @@ import (
 	"github.com/openctemio/openctem/api/pkg/apierror"
 	"github.com/openctemio/openctem/api/pkg/domain/audit"
 	bp "github.com/openctemio/openctem/api/pkg/domain/bountyprogram"
+	"github.com/openctemio/openctem/api/pkg/domain/scanident"
 	"github.com/openctemio/openctem/api/pkg/domain/shared"
 	"github.com/openctemio/openctem/api/pkg/logger"
 )
@@ -230,6 +231,24 @@ func planCounts(pv *bpapp.Preview) map[string]any {
 		"program_exclusions": len(pv.Exclusions)}
 }
 
+// programChangeMeta is the audit metadata of an import or re-import: the
+// plan counts and the identification rules in force after it (a policy
+// change is always audited). Header names only: the values stay in the
+// program's terms.
+func programChangeMeta(p *bp.Program, pv *bpapp.Preview) map[string]any {
+	meta := planCounts(pv)
+	names := make([]string, 0, len(p.Rules.RequiredHeaders))
+	for _, h := range p.Rules.RequiredHeaders {
+		names = append(names, h.Name)
+	}
+	meta["identification"] = map[string]any{
+		"identification_required": p.Rules.IdentificationRequired,
+		"user_agents":             len(scanident.UserAgentConfig(p.Rules.UserAgent, p.Rules.UserAgents)),
+		"required_headers":        names,
+	}
+	return meta
+}
+
 // List handles GET /api/v1/programs
 // @Summary      List programs
 // @Description  The bug-bounty programs the caller may see: every program for owners, admins and full-data roles; only the programs whose group has the caller otherwise.
@@ -315,7 +334,7 @@ func (h *BountyProgramHandler) Import(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, err)
 		return
 	}
-	h.auditProgram(r, audit.ActionBountyProgramImported, p, "Program imported", planCounts(pv))
+	h.auditProgram(r, audit.ActionBountyProgramImported, p, "Program imported", programChangeMeta(p, pv))
 	h.auditProgram(r, audit.ActionBountyProgramTermsAccepted, p, "Program terms accepted", nil)
 	writeJSON(w, http.StatusCreated, ProgramChangeResponse{Program: toProgramResponse(p), Preview: pv})
 }
@@ -443,7 +462,7 @@ func (h *BountyProgramHandler) Reimport(w http.ResponseWriter, r *http.Request) 
 		h.writeError(w, err)
 		return
 	}
-	h.auditProgram(r, audit.ActionBountyProgramScopeReplaced, p, "Program scope re-imported", planCounts(pv))
+	h.auditProgram(r, audit.ActionBountyProgramScopeReplaced, p, "Program scope re-imported", programChangeMeta(p, pv))
 	h.auditProgram(r, audit.ActionBountyProgramTermsAccepted, p, "Program terms accepted", nil)
 	writeJSON(w, http.StatusOK, ProgramChangeResponse{Program: toProgramResponse(p), Preview: pv})
 }

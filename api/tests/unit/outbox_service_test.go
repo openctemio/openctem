@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/api/pkg/notifymsg"
+
 	"github.com/google/uuid"
 
 	outboxapp "github.com/openctemio/openctem/api/internal/app/outbox"
@@ -801,7 +803,7 @@ func TestShouldSendToIntegration_SeverityFiltering(t *testing.T) {
 				"", "",
 				tt.enabledSeverities,
 				tt.enabledEventTypes, // nil = the defaults
-				"", true, 5,
+				"", "full", 5,
 			)
 
 			connected := makeConnectedIntegration(tenantID, integration.ProviderSlack, ext)
@@ -916,7 +918,7 @@ func TestShouldSendToIntegration_EventTypeFiltering(t *testing.T) {
 				"", "",
 				[]integration.Severity{integration.SeverityCritical, integration.SeverityHigh, integration.SeverityMedium, integration.SeverityLow, integration.SeverityInfo},
 				tt.enabledEventTypes,
-				"", true, 5,
+				"", "full", 5,
 			)
 
 			connected := makeConnectedIntegration(tenantID, integration.ProviderSlack, ext)
@@ -1519,7 +1521,7 @@ func TestNotificationExtension_ShouldNotify(t *testing.T) {
 			ext := integration.ReconstructNotificationExtension(
 				shared.NewID(), "", "",
 				tt.enabled, nil,
-				"", true, 5,
+				"", "full", 5,
 			)
 			if ext.ShouldNotify(tt.severity) != tt.expected {
 				t.Errorf("expected ShouldNotify(%s) = %v", tt.severity, tt.expected)
@@ -1578,7 +1580,7 @@ func TestNotificationExtension_ShouldNotifyEventType(t *testing.T) {
 			ext := integration.ReconstructNotificationExtension(
 				shared.NewID(), "", "",
 				nil, tt.enabled,
-				"", true, 5,
+				"", "full", 5,
 			)
 			if ext.ShouldNotifyEventType(tt.eventType) != tt.expected {
 				t.Errorf("expected ShouldNotifyEventType(%s) = %v", tt.eventType, tt.expected)
@@ -1590,39 +1592,6 @@ func TestNotificationExtension_ShouldNotifyEventType(t *testing.T) {
 // =============================================================================
 // NotificationExtension Backward Compatibility Tests
 // =============================================================================
-
-func TestNotificationExtension_BooleanCompat(t *testing.T) {
-	ext := integration.ReconstructNotificationExtensionFromBooleans(
-		shared.NewID(),
-		"", "",
-		true,  // notifyOnCritical
-		true,  // notifyOnHigh
-		false, // notifyOnMedium
-		false, // notifyOnLow
-		nil,
-		"", true, 5,
-	)
-
-	if !ext.NotifyOnCritical() {
-		t.Error("expected NotifyOnCritical to be true")
-	}
-	if !ext.NotifyOnHigh() {
-		t.Error("expected NotifyOnHigh to be true")
-	}
-	if ext.NotifyOnMedium() {
-		t.Error("expected NotifyOnMedium to be false")
-	}
-	if ext.NotifyOnLow() {
-		t.Error("expected NotifyOnLow to be false")
-	}
-
-	if !ext.ShouldNotify("critical") {
-		t.Error("expected ShouldNotify(critical) to be true")
-	}
-	if ext.ShouldNotify("medium") {
-		t.Error("expected ShouldNotify(medium) to be false")
-	}
-}
 
 // =============================================================================
 // Notification Scheduler Tests
@@ -2256,16 +2225,20 @@ func TestNotificationExtension_Setters(t *testing.T) {
 		t.Errorf("expected 1 event type, got %d", len(ext.EnabledEventTypes()))
 	}
 
-	// SetMessageTemplate
-	ext.SetMessageTemplate("custom template")
-	if ext.MessageTemplate() != "custom template" {
-		t.Errorf("expected 'custom template', got %s", ext.MessageTemplate())
+	// SetMessageTemplate validates against the closed variable set.
+	if err := ext.SetMessageTemplate("{title} on {asset}"); err != nil || ext.MessageTemplate() != "{title} on {asset}" {
+		t.Errorf("valid template refused: %v", err)
+	}
+	if err := ext.SetMessageTemplate("{severity_emoji} {title}"); err == nil || ext.MessageTemplate() != "{title} on {asset}" {
+		t.Errorf("unknown variable accepted or template overwritten: %v", err)
 	}
 
-	// SetIncludeDetails
-	ext.SetIncludeDetails(false)
-	if ext.IncludeDetails() {
-		t.Error("expected IncludeDetails to be false")
+	// SetDetailLevel
+	if err := ext.SetDetailLevel(notifymsg.LevelMinimal); err != nil || ext.DetailLevel() != notifymsg.LevelMinimal {
+		t.Errorf("detail level %q: %v", ext.DetailLevel(), err)
+	}
+	if err := ext.SetDetailLevel("everything"); err == nil {
+		t.Error("unknown detail level accepted")
 	}
 
 	// SetMinIntervalMinutes

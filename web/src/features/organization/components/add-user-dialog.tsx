@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, type FormEvent } from 'react'
-import { AlertCircle, Loader2, UserPlus } from 'lucide-react'
+import { Loader2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,6 +16,7 @@ import {
   DialogBody,
   DialogForm,
 } from '@/components/ui/dialog'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useRoles } from '@/features/access-control/api/use-roles'
@@ -199,15 +199,10 @@ export function AddUserDialog({
                     max={MAX_ROLES_PER_USER}
                   />
                 </div>
-
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
               </div>
             </DialogBody>
+
+            <DialogSubmitError message={error} />
 
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={close}>

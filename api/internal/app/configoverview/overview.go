@@ -117,6 +117,7 @@ var consoleSettings = []consoleSetting{
 	{key: "self_service_default_limits", group: GroupSignIn, page: "/system/limits"},
 	{key: "email.smtp", group: GroupEmail, page: "/system/email"},
 	{key: "email.tenant_relay", group: GroupEmail, page: "/system/email", defaultEnv: "ORG_EMAIL_RELAY_MODE"},
+	{key: "credentials.leaked_secret_storage", group: GroupInstance, page: "/system/leaked-credentials"},
 	{key: "auth.mfa", group: GroupSignIn, page: "/system/two-factor", defaultEnv: "AUTH_MFA_FLOOR"},
 	{key: "legal", group: GroupInstance, page: "/system/legal"},
 	{key: "scan_approval_policy", group: GroupScanning, page: "/system/scan-approval"},

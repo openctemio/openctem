@@ -31,12 +31,13 @@ rules:
       - web-security.yml:111
   github-env:
     ignore:
-      # .github/actions/setup-gh: puts its own download directory
-      # ($RUNNER_TEMP/gh-cli, a constant) on PATH after the release tarball
-      # passed its SHA-256 check. Nothing from the event, a pull request or
-      # the checkout reaches the value written to GITHUB_PATH.
-      - action.yml:21
+      # .github/actions/setup-gh: puts the directory that
+      # .github/actions/fetch-tool extracted gh into ($RUNNER_TEMP/fetch-tool/
+      # gh-<pinned version>, built from constants) on PATH, after the release
+      # tarball passed its SHA-256 check. Nothing from the event, a pull
+      # request or the checkout reaches the value written to GITHUB_PATH.
+      - action.yml:49
       # .github/actions/setup-trivy: the same pattern for trivy
-      # ($RUNNER_TEMP/trivy-bin, a constant), after the release asset passed
-      # its SHA-256 check for the runner architecture.
-      - action.yml:14
+      # ($RUNNER_TEMP/fetch-tool/trivy-<pinned version>), after the release
+      # asset passed its SHA-256 check for the runner architecture.
+      - action.yml:42

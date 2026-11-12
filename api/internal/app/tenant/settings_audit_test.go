@@ -22,6 +22,7 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		EmailVerificationMode: tenantdom.EmailVerificationAuto,
 		RequireSensorLocalPolicyForPrivateTargets: true,
 		ForbidToolInsecureTLS:                     true,
+		ToolHTTPIdentificationRequired:            true,
 		PersonalAccounts:                          tenantdom.PersonalAccountsAllowedWithMFA,
 		JITRequiresApproval:                       true,
 		SSORequireMFAEvidence:                     true,
@@ -48,6 +49,7 @@ func TestSecurityChangeSeverity(t *testing.T) {
 		{"local policy off", with(func(s *tenantdom.SecuritySettings) { s.RequireSensorLocalPolicyForPrivateTargets = false }), audit.SeverityHigh},
 		{"tool insecure tls allowed again", with(func(s *tenantdom.SecuritySettings) { s.ForbidToolInsecureTLS = false }), audit.SeverityHigh},
 		{"personal accounts relaxed", with(func(s *tenantdom.SecuritySettings) { s.PersonalAccounts = tenantdom.PersonalAccountsAllowed }), audit.SeverityHigh},
+		{"required identification off", with(func(s *tenantdom.SecuritySettings) { s.ToolHTTPIdentificationRequired = false }), audit.SeverityHigh},
 		{"jit approval off", with(func(s *tenantdom.SecuritySettings) { s.JITRequiresApproval = false }), audit.SeverityHigh},
 		{"sso mfa proof off", with(func(s *tenantdom.SecuritySettings) { s.SSORequireMFAEvidence = false }), audit.SeverityHigh},
 		{"sso exception added", with(func(s *tenantdom.SecuritySettings) {

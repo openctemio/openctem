@@ -35,6 +35,8 @@ platform data: a tenant, a sensor or a report cannot widen it.
 | `container.image` | container → findings | T0 | trivy, grype |
 | `network_va.connector` | ip_address, host, network → findings | T1 | tenable_sc |
 
+A registration lookup answers for the domain registered at the registry, not for each name below it: the planner hands `lookup.rdap` the registrable domain of every name (public suffix list, ICANN section), each once, for the scan's own targets and for the names an earlier step found. The sensor does the same for a name that reaches it, and refuses no name as unresolvable for this capability: it asks the registry, never the target. A domain whose top-level domain has no https RDAP service in the IANA bootstrap (many country-code domains) is reported with `whois.rdap_status = registry_has_no_rdap`; a domain the registry does not know with `not_registered`.
+
 - **Tiers.** T0 sends no traffic to the target beyond DNS (or none at all). T1
   is non-intrusive active checking. T2 is intrusive and needs an approver and
   a verified seed (RFC-036 O3); the P0 router never plans a T2 stage.
@@ -124,9 +126,9 @@ tool runs it:
   template match in a command-bound nuclei report on an asset the command
   covered confirms an open `dangling_cname` as `subdomain_takeover`.
 - **Taxonomy v1** lists 22 capabilities. The routed stages above have
-  implementations. Eight are **planned**: they have a contract but no routed
+  implementations. Seven are **planned**: they have a contract but no routed
   implementation (`intel.passive`, `detect.services`,
-  `fingerprint.tech`, `check.tls`, `capture.screenshot`, `host.credentialed`,
+  `fingerprint.tech`, `check.tls`, `host.credentialed`,
   `cloud.posture`, `verify.finding`). They are served with `available: false`
   and are invisible to `Lookup`, `ForTool` and `ForCapabilities`, so no step
   can run one and no tool's routing changes. `verify.finding` is
@@ -328,6 +330,20 @@ workflow preview). Every step reacts to it:
   every save against the contract: standard params only, never tool extras
   (`x`) or executor keys, each with its type and bounds, and the config at
   each depth valid as a whole. A step outside the catalog may not set them.
+- **Capability depth defaults** (`stage.DepthDefaults`): the lowest layer,
+  under the step's config and its depth's params, filled once the tool is
+  resolved and only for params that tool takes (a default never makes a tool
+  ineligible). `vuln.templates`: severity low to critical at `standard`,
+  info to critical at `deep` (research 426 decision OD-1). Info matches are
+  filed as info exposures, not findings (exposure-taxonomy.md, "Template
+  scanner info matches"). Continuous coverage runs the two severity sets as
+  two passes with their own ledger keys, so no template runs twice: the
+  regular `vuln.templates` pass at severity low to critical, and the info pass
+  (`vuln.templates_info`, the same stage at severity info only) on a slower,
+  configurable cadence (asset-coverage.md, "Info pass"). The built-in recon workflows' template steps carry
+  the same values in their depth params (migration 20261104164815, which also
+  updated tenant copies still holding the earlier built-in values). The
+  workflow preview shows the defaults with the depth's params.
 - `depths.<depth>.max_targets` caps what the hop router hands the step
   (lower-only: it never raises the stage or run cap); the rest are recorded
   `over_cap`.
@@ -359,7 +375,9 @@ step carries a stable reason `code` (`sensor_offline`, `no_sensor_yet`,
 `ci_only`, `no_tool`, `tool_disabled`, `tool_not_installed`,
 `no_sensor`) and the `tools` it names, which the web app renders in the
 reader's language; the workflow list badge opens the steps, their reasons
-and the fix link.
+and the fix link. A `ready` step also names the `tool` it runs with (the
+first candidate that can run now), so the scan wizard summary says "runs
+with <tool>" per step.
 
 **Run rules** (workflow settings, both off for existing workflows; omitted on
 an update means unchanged):
@@ -375,7 +393,7 @@ an update means unchanged):
   run of the same scan (`PreviousRun`). A target is done when its asset was
   first seen before that run started, has no `asset_change_events` row
   since, and either that run planned it for the same step key and the step
-  completed within the stage's max age (7 days), or the coverage ledger has
+  completed within the stage's max age (7 days; 30 days for `capture.screenshot`), or the coverage ledger has
   it `covered` for the capability and not due. A partial, failed or skipped
   baseline step is never done, so truncated work is redone. Done targets are
   recorded `unchanged` in `scan_run_targets`; a heavy stage left with none
@@ -383,6 +401,28 @@ an update means unchanged):
   command. No previous run, or a baseline the store cannot read, gates
   nothing (gating only saves work). Seeds are never gated. Every read is
   scoped to the run's tenant, and run targets carry composite tenant keys.
+
+**Scan step params.** A scan may override the standard params of single
+steps without copying its workflow, so a system (read-only) workflow can be
+tuned per scan. `scans.step_params` is `{"<step_key>" | "*:<capability>":
+{"<param>": value}}`: a step-key entry applies to that step, a
+`*:<capability>` entry (for example `*:vuln.templates`) to every step of the
+capability, and the step-key entry wins. The map is sent with the scan API
+(`step_params` on create, update, read, export and import; omitted on update
+= unchanged, `{}` clears) and copied into each run's context
+(`step_params`). The layers of one step's params, lowest first: the step's
+`config`, its depth overlay, the scan's step params; the dispatch merges them
+before the tool is resolved (`stepAtDepth`), so the override also decides which
+tools are eligible. Checked on every save against the capability contract
+(`stage.ValidateStandardParams`): each key names a step of the scan's
+workflow or a capability that workflow runs, standard params only (no tool
+extras, no executor keys), each with its type and bounds, and for template
+steps the same severity and tag checks a workflow step gets, including the
+tags the sensor tier refuses (`intrusive`, `default-login`, `dos`, `fuzz`,
+`fuzzing`, `bruteforce`, `brute-force`). At most 50 entries of 20 params.
+Only a workflow scan takes them. The update audit entry names the entries
+that changed. Writing them needs the scan's own permission (`scans:write`);
+the workflow and the scan are read inside the caller's tenant.
 
 **Versions.** A run pins its workflow's version: the run policy is part of
 the version's spec (left out when empty, so the digest of a workflow without
@@ -433,10 +473,20 @@ start is skipped the trigger is refused as a blocked run with
 comes (a tool was turned off meanwhile) is skipped with `NO_MATCHING_TOOL`
 instead of failed, and its dependents are skipped with `DEPENDENCY_SKIPPED`.
 
+**At claim time** a scan task whose tool the organization retired as a
+source on the claiming sensor ([source retirement](source-retirement.md)) is
+never sent to it. Another sensor of the organization that runs the tool
+takes it; when the task is pinned to that sensor, or no other sensor may
+run it, the task fails at claim and its step is skipped with
+`SOURCE_RETIRED` (never failed, so `fail_fast` does not stop the run), its
+dependents with `DEPENDENCY_SKIPPED`.
+
 **Outcome.** A run in which a step was skipped for a missing tool or sensor
-ends `partial` ("N of M steps were skipped because no tool or sensor here
-runs them"), never `completed`; it is `failed` only when steps failed and
-none produced results. A step skipped for its condition, depth or intensity
+(or `SOURCE_RETIRED`) ends `partial` ("N of M steps were skipped because no
+tool or sensor here runs them"), never `completed`; it is `failed` when
+steps failed and none produced results, or when no step produced results
+and one was refused with `SOURCE_RETIRED` (the run's message names that
+step, its reason and the code). A step skipped for its condition, depth or intensity
 is a choice, not a gap, and does not make a run partial.
 
 **Safety gates are not bypassed.** Scope (exclusions, ownership, act scope),
@@ -735,8 +785,11 @@ Live data showed one 72-target httpx task holding the template stage for about
 task costs well under a second: the cost was the barrier, not the hops.
 
 - **When a step streams.** A pending step whose dependencies all finished
-  except one, that one queued or running with at least one completed task,
-  and whose stage feeds the step's. Never: an intrusive (T2) stage, a web
+  except one, that one queued or running with at least one completed task
+  that can feed it, and whose stage feeds the step's. A completed task whose
+  reach summary says it reached none of its targets (a host discovery chunk
+  whose probes never left the sensor) does not count: streaming from it would
+  start the step on its seeds alone, the whole range of a swept scan. Never: an intrusive (T2) stage, a web
   stage that selects endpoints since the run started (`endpoint_selector`
   other than `all`), a step with two or more unfinished dependencies, a step
   its condition, the scan's intensity or the run's depth skips.
@@ -760,6 +813,15 @@ task costs well under a second: the cost was the barrier, not the hops.
   is retried on the next event or by the stall repair; a wave whose dispatch
   fails, or comes too close to the run's deadline, records its targets as
   the run's unfinished targets.
+- **Source fails after the step started.** A streamed step whose source then
+  ends without results (failed, skipped, timed out, canceled) stops, unless the
+  workflow continues on a failed dependency: its stream closes, its open
+  commands are canceled (`CancelOpenByStepRun`, tenant-scoped; the holding
+  sensor is told to stop), and it settles `DEPENDENCY_FAILED`, skipped when
+  none of its tasks finished and `partial` when some did (they keep their
+  results). It is the barrier rule (a step whose dependency did not succeed
+  is skipped) applied to a step that started early. Metric outcome
+  `stop/dependency_failed`.
 - **Smaller source tasks.** A step a successor streams from is cut into about
   four tasks (at least 10 targets each, never above the capability's chunk
   size), so the successor starts on the first quarter of the hosts.
@@ -772,3 +834,35 @@ task costs well under a second: the cost was the barrier, not the hops.
   `scan_stage_stream_waves_total{kind,outcome}`,
   `scan_stage_time_to_first_successor_seconds{mode}`,
   `scan_stage_barrier_wait_saved_seconds`.
+
+## 5. Effective config of a step run
+
+A run with no findings has to say what it looked for. Every step run records what it ran with, in two columns of
+`scan_run_steps` (both nullable jsonb; old rows stay empty):
+
+- `effective_config`: written when the step's first command is created (`scanrun.recordEffectiveConfig`, used by the
+  first dispatch and by every streamed wave through `dispatchStep`). It lists the standard params of the step's
+  capability that the command carries, each as `{value, source}`, plus the tool, capability and depth:
+  `{"params": {"severity": {"value": ["low","high"], "source": "depth_overlay"}}, "tool": "nuclei", "depth": "standard"}`.
+  The source is the highest layer that sets that value, in this order: `stage_fixed` (a setting the tool always runs the
+  capability with, such as the nuclei takeover tags), `scan_override` (the run context's `step_params`, keyed by step key),
+  `depth_overlay` (`run_policy.depths[depth].params`), `template_step` (the step's config) and `default_port_set` (the
+  platform's top ports for a port scan that names none). A value no layer explains is left out, never guessed. The
+  capability default layer is not recorded yet. Only standard params are read, so a header or credential set on a
+  pinned tool never reaches the record; at most 32 params, 2 KiB per value.
+- `sensor_settings`: written when the sensor's result arrives (`OnStepCompletedPartial`). It holds what the sensor says it
+  ran with (`effective_settings` in the result metadata) and the config keys it ignored (`ignored_config_keys`). The
+  sensor is not trusted: the document is parsed defensively, bounded (32 settings, 32 ignored keys, 256 characters per
+  string, 16 KiB in), cleaned of control characters, limited to strings, numbers, booleans and short string lists, and a
+  setting whose name looks like a credential (header, token, key, secret, auth, cookie) is dropped. It is shown only; no
+  platform code reads it to widen anything.
+
+Both writes go through `scanrun.StepRunConfigRecorder` and are scoped to the tenant through the step run's scan run, so a
+step run of another tenant is never written. The API returns both on a step run (`effective_config`, `sensor_settings`)
+and a compact `ran_with` (severity, tags, excluded tags with their source, and the sensor's ignored keys) on each node of
+the run map. The console shows it on the run map card and the step panel.
+
+In the workflow editor the inspector shows the depth overlay values of the step (standard and deep) under the step's own
+settings and lets the author edit them per depth; a step setting that a depth replaces is marked. System templates show
+the values read-only. The save request carries `run_policy`, so editing a workflow no longer resets its depth overlays.
+

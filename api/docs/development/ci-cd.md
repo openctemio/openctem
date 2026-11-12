@@ -893,7 +893,7 @@ quarantine it while the fix is made:
 ### Toolchain versions
 
 - **Go:** every `actions/setup-go` step uses `go-version-file: api/go.mod`, which
-  reads the `toolchain` directive (currently `go1.27.3`). setup-go sets
+  reads the `toolchain` directive (currently `go1.27.4`). setup-go sets
   `GOTOOLCHAIN=local`, so this is exactly the Go that tests, CodeQL, govulncheck
   and the release binaries use. `api/Dockerfile`
   pins its `golang:` base image separately: bump them with `go.mod`.
@@ -916,6 +916,47 @@ day, with the commit range in the run history. A migration that needs a newer ma
 column) fails the 16 job: write it so 16 can run it, or raise the supported floor in the same pull request, in this section
 and in the install documentation. The images are pinned by digest in `.github/ci-images.txt` and mirrored; bump the
 digest in `api-ci.yml` (18) and `api-pg-compat.yml` (16 and 18) together with it.
+### Pinned tool downloads
+
+Tools that CI installs from a GitHub release asset (betterleaks, actionlint and
+zizmor in `repo-security.yml`, trivy through `./.github/actions/setup-trivy`, gh
+through `./.github/actions/setup-gh` on runners without it, buf in `API static checks`,
+crane in `ci-image-mirror.yml`) all go through one composite action,
+`./.github/actions/fetch-tool`. Inputs: `name`, `version`, `url` (https), `sha256` and
+`extract` (the binary's path inside a `.tar.gz` archive; empty when the asset is the
+binary itself); outputs: `path` (the binary) and `dir` (the directory holding it, for
+`PATH`). The version and SHA-256 stay next to each other in the calling file, where
+`.github/tool-pins.tsv` finds them; buf's pin stays in `api/scripts/check-proto.sh`
+(also used by `make proto-check`), which API CI reads, and the script skips its own
+download when the pinned buf is already in `PROTO_TOOLS_DIR`.
+
+What it does on every run:
+
+1. Restores the archive from the GitHub Actions cache. The key is
+   `fetch-tool-<name>-<version>-<OS>-<arch>-<sha256>`; every part comes from the
+   workflow file, none from event data.
+2. Checks the archive against the pinned SHA-256. A cached archive that does not
+   match is discarded with a warning and downloaded again.
+3. On a miss, downloads it with retries (`curl -fsSL --retry 6 --retry-all-errors
+   --retry-delay 10 --connect-timeout 20`) and checks it. A mismatch fails the step and
+   nothing is kept.
+4. Saves a fresh download to the cache, but only on a push, a schedule or a manual run:
+   a pull request or merge group restores and never saves, so it cannot place an entry
+   that another branch reads. A pull request into `develop` restores the entries the
+   develop pushes saved. A failed save never fails the job.
+5. Checks the SHA-256 once more right before installing the one binary into
+   `$RUNNER_TEMP/fetch-tool/<name>-<version>/`. Nothing unverified is executed.
+
+The cache only saves the network round trip: the same tool, version and checks run
+either way. When GitHub release downloads fail, jobs keep passing as long as develop
+has a cache entry for the pin (an entry not read for 7 days is evicted). A pin bump
+has no entry until its pull request merges and develop's push saves one, so a bump
+pull request still downloads. The archives are small next to the Go and layer caches.
+
+To add a tool, call the action with its pinned version, URL and published SHA-256
+(from the release's checksums file), and add a row with the `checksum` flag to
+`.github/tool-pins.tsv`.
+
 ### Tool pin freshness
 
 Linters, scanners, signing tools and the like are pinned inline (a version in a
@@ -1202,7 +1243,9 @@ shards stay on GitHub-hosted runners (see above).
   `GITHUB_TOKEN` is read-only as well.
 - **No `pull_request_target`.** PR workflows run with the PR's read-only token
   and no secrets for fork PRs; nothing checks out a PR head with a write token.
-- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint, zizmor).
+- Downloaded tools are pinned by version and SHA-256 (betterleaks, actionlint, zizmor,
+  trivy, crane, gh, buf) and fetched through `.github/actions/fetch-tool`, which checks the
+  SHA-256 on a cache hit as well as after a download (see [Pinned tool downloads](#pinned-tool-downloads)).
 
 ### Generated contract files
 

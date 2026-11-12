@@ -48,6 +48,7 @@ elevation is required, the default).
 | `platform.settings.limits.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.mfa` |  | yes |  |  |  |  |  |  |
 | `platform.settings.read` | yes | yes | yes | yes | yes | yes | yes | yes |
+| `platform.settings.scope_guardrails` |  | yes |  |  |  |  |  |  |
 | `platform.settings.signup.write` |  | yes |  |  |  |  |  |  |
 | `platform.support.access` |  | yes | yes |  |  | yes |  |  |
 | `platform.tenants.audit_chain.write` |  | yes |  |  |  |  |  |  |
@@ -92,6 +93,7 @@ elevation is required, the default).
 | `platform.settings.limits.write` | Default limits of self-service organizations |
 | `platform.settings.mfa` | The platform two-factor floor every organization is held to |
 | `platform.settings.read` | Read every platform setting, announcements, content packs, catalog, target mappings, feeds and AI clients |
+| `platform.settings.scope_guardrails` | The blocked target names policy and the organizations' exceptions to the government and military rule |
 | `platform.settings.signup.write` | Sign-up policy, sign-up alert thresholds and the social-login providers |
 | `platform.support.access` | Open support sessions inside a grant an organization gave you, and read through them |
 | `platform.tenants.audit_chain.write` | Re-sign an organization's audit chain (also needs a second owner's approval) |
@@ -199,6 +201,7 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/platform-users/{user_id}/password-reset` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/reset-link` | `platform.users.credentials` |
 | `POST /api/v1/admin/platform-users/{user_id}/revoke-sessions` | `platform.users.support` |
+| `POST /api/v1/admin/platform-users/{user_id}/setup-link` | `platform.tenants.owner_bootstrap` |
 | `POST /api/v1/admin/platform-users/{user_id}/unblock` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/unlock` | `platform.users.support` |
 | `POST /api/v1/admin/platform-users/{user_id}/verification-emails` | `platform.users.support` |
@@ -223,6 +226,8 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/settings/email/test` | `platform.settings.email.write` |
 | `GET /api/v1/admin/settings/feed-relay/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/feed-relay/` | `platform.settings.general.write` |
+| `GET /api/v1/admin/settings/leaked-secret-storage/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/leaked-secret-storage/` | `platform.settings.general.write` |
 | `GET /api/v1/admin/settings/legal/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/legal/` | `platform.settings.legal.write` |
 | `GET /api/v1/admin/settings/limits/` | `platform.settings.read` |
@@ -235,6 +240,12 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `PUT /api/v1/admin/settings/scan-approval-policy/` | `platform.sensors.manage` |
 | `GET /api/v1/admin/settings/scan-identification/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/scan-identification/` | `platform.settings.general.write` |
+| `GET /api/v1/admin/settings/scope-blocked-names/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/scope-blocked-names/` | `platform.settings.scope_guardrails` |
+| `GET /api/v1/admin/settings/scope-blocked-names/exceptions` | `platform.settings.read` |
+| `POST /api/v1/admin/settings/scope-blocked-names/exceptions` | `platform.settings.scope_guardrails` |
+| `POST /api/v1/admin/settings/scope-blocked-names/exceptions/{id}/extend` | `platform.settings.scope_guardrails` |
+| `POST /api/v1/admin/settings/scope-blocked-names/exceptions/{id}/revoke` | `platform.settings.scope_guardrails` |
 | `GET /api/v1/admin/settings/shared-sensor-anomaly/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/shared-sensor-anomaly/` | `platform.sensors.manage` |
 | `GET /api/v1/admin/settings/shared-sensor-internal-zones/` | `platform.settings.read` |
