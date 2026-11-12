@@ -11,6 +11,12 @@
       "from": "v0.40.0",
       "platform": "v0.21.0",
       "reason": "new pairings need signed pairing answers, first sent by platform v0.21.0"
+    },
+    {
+      "component": "sensor",
+      "from": "v0.41.1",
+      "platform": "v0.22.0",
+      "reason": "a sensor with ports.allow refuses port scans that name no ports, and platform v0.22.0 is the first to fill them from that list; it also refuses late results of a run it took back"
     }
   ]
 }
