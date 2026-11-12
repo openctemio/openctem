@@ -144,7 +144,15 @@ jobs:
       # pull requests never conflict on CHANGELOG.md. This also refuses
       # merge-conflict markers committed anywhere in the repository.
       - name: Changelog fragments
-        run: python3 scripts/changelog.py check
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: |
+          if [ -n "$BASE" ]; then
+            # A fragment this pull request adds names its user documentation.
+            python3 scripts/changelog.py check --docs-base "$BASE"
+          else
+            python3 scripts/changelog.py check
+          fi
 
   # Every short gate in ONE job (one runner, one checkout, one setup-go) instead
   # of six. Steps run in order and the first failure fails the job; the step

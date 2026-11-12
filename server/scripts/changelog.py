@@ -12,9 +12,13 @@ pull requests touch the same file. The release folds them into CHANGELOG.md
 once, in a single commit.
 
 Usage:
-  changelog.py check                validate fragments; refuse an entry written
+  changelog.py check [--docs-base REF]
+                                    validate fragments; refuse an entry written
                                     into CHANGELOG.md's Unreleased section and
-                                    conflict markers in any tracked text file
+                                    conflict markers in any tracked text file.
+                                    With --docs-base, every fragment added since
+                                    REF must say where its user documentation is
+                                    ("Docs:" line, see DOCS_LINE)
   changelog.py preview              print the Unreleased section assembled from
                                     the fragments
   changelog.py archive HEADING LIST fold only the fragments named in LIST (one
@@ -135,6 +139,44 @@ def validate() -> list[str]:
     return errors
 
 
+# A fragment added by a pull request names the user documentation of its change,
+# so a release never ships an undocumented feature: a page of the public docs
+# site, a path in one of the project's repositories, or "none" with a reason.
+#   Docs: https://docs.openctem.io/sensors/proxies/
+#   Docs: server/docs/architecture/task-secrets.md
+#   Docs: none (internal refactor, no behaviour change)
+DOCS_LINE = re.compile(
+    r"^\s*(?:-\s*)?\**Docs:?\**:?\s*(?P<target>"
+    r"https://docs\.openctem\.io/\S*"
+    r"|https://github\.com/openctemio/\S+"
+    r"|(?:server|web|deploy|docs)/\S+\.md\S*"
+    r"|none\s*[(:-]\s*\S.{4,})",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def added_fragments(base: str) -> list[pathlib.Path]:
+    """Fragments this branch adds relative to base (merge base, so other merges do not count)."""
+    out = subprocess.run(
+        ["git", "-C", str(ROOT), "diff", "--diff-filter=A", "--name-only", f"{base}...HEAD", "--",
+         str(FRAGMENTS.relative_to(ROOT))],
+        capture_output=True, text=True, check=True,
+    ).stdout.split()
+    return [ROOT / n for n in out if n.endswith(".md") and not n.endswith("README.md")]
+
+
+def docs_links(paths: list[pathlib.Path]) -> list[str]:
+    errors = []
+    for p in paths:
+        if p.is_file() and not DOCS_LINE.search(p.read_text(encoding="utf-8")):
+            errors.append(
+                f"{p.relative_to(ROOT)}: name the user documentation of this change in a line "
+                "'Docs: <https://docs.openctem.io/... or a repository path>' or "
+                "'Docs: none (<why no user documentation is needed>)' (server/changelog.d/README.md)"
+            )
+    return errors
+
+
 def conflict_markers() -> list[str]:
     files = subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "-z"],
@@ -214,6 +256,8 @@ def operator_block(labels: dict[str, list[str]] | None, paths: list[pathlib.Path
 
 def cmd_check(argv: list[str]) -> int:
     errors = validate() + conflict_markers()
+    if "--docs-base" in argv:
+        errors += docs_links(added_fragments(argv[argv.index("--docs-base") + 1]))
     if entries_in_unreleased():
         errors.append(
             "server/CHANGELOG.md: an entry was written under Unreleased. Put it in "
