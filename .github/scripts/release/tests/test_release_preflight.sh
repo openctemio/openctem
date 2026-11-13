@@ -59,7 +59,7 @@ out="$(pre)"; rc=$?
 assert_eq "an alert main already has does not block" 0 "$rc"
 
 echo '[]' >"$DEV_FILE"; echo '[]' >"$MAIN_FILE"
-echo '{"component":"openctem-api","target":"alpine","pkg":"libssl3","installed":"3.0.1","fixed":"3.0.2","id":"CVE-1","severity":"HIGH","kind":"os"}' >"$tmp/img.ndjson"
+echo '{"component":"openctem-server","target":"alpine","pkg":"libssl3","installed":"3.0.1","fixed":"3.0.2","id":"CVE-1","severity":"HIGH","kind":"os"}' >"$tmp/img.ndjson"
 out="$(pre --images "$tmp/img.ndjson")"; rc=$?
 assert_eq "a fixable OS advisory blocks" 1 "$rc"
 assert_contains "the advisory is listed" "CVE-1" "$out"

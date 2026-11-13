@@ -76,13 +76,14 @@ make allinone
 ```
 
 Release images are built by `.github/workflows/docker-publish.yml` from a
-`vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`,
+`vX.Y.Z` tag: `ghcr.io/openctemio/openctem-server` (published as `openctem-api`
+up to v0.22.x), `openctem-web`,
 `openctem-console` (the platform console), `openctem` (all-in-one),
 `openctem-gateway`, `migrations` and `seed`.
 
 There is no separate admin image: `bootstrap-admin` (first administrator, `storage migrate`,
 `verify-audit`, ...) ships in the API image. With Compose run
-`docker compose run --rm bootstrap-admin ...`; on Kubernetes use a Job with the `openctem-api`
+`docker compose run --rm bootstrap-admin ...`; on Kubernetes use a Job with the `openctem-server`
 image and command `/app/bootstrap-admin`.
 
 ## Production
@@ -118,7 +119,7 @@ The API image runs in production mode unless `APP_ENV` says otherwise: an unset
 `APP_ENV` means `production`. Check a configuration without starting anything:
 
 ```bash
-docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:vX.Y.Z -check-config
+docker run --rm --env-file api.env ghcr.io/openctemio/openctem-server:vX.Y.Z -check-config
 # or, in server/deploy:
 docker compose run --rm --no-deps api -check-config
 ```

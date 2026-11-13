@@ -377,6 +377,12 @@ jobs:
       - name: Backend directory name (no tracked file names the old backend directory or module path)
         run: bash .github/scripts/check-backend-dir-name.sh
 
+      - name: Server image name (self-test)
+        run: bash .github/scripts/check-server-image-name.test.sh
+
+      - name: Server image name (openctem-server from v0.23.0; openctem-api only for older releases)
+        run: bash .github/scripts/check-server-image-name.sh
+
       - name: generate-in-docker paths (self-test)
         run: bash .github/scripts/check-generate-in-docker-paths.test.sh
 
