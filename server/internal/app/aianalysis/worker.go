@@ -220,7 +220,7 @@ func newJob(run *aidom.Run, finding *vulnerability.Finding, kind analyze.Kind, t
 	for _, f := range bd.FieldsSent {
 		sent = append(sent, string(f))
 	}
-	var withheld []string
+	withheld := make([]string, 0, len(bd.FieldsWithheld))
 	for _, f := range bd.FieldsWithheld {
 		withheld = append(withheld, string(f))
 	}

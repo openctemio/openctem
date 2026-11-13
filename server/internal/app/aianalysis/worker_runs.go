@@ -52,9 +52,15 @@ func (s *Service) ChangeExecutor(ctx context.Context, id shared.ID, executor str
 		return nil, err
 	}
 	s.log(ctx, actx, audit.ActionAIAgentExecutorChanged, out, fmt.Sprintf("AI agent %q now runs %s", out.Name, runsOn(e)),
-		map[string]any{"from": string(a.Executor), "to": string(e)})
+		map[string]any{auditFrom: string(a.Executor), auditTo: string(e)})
 	return out, nil
 }
+
+// Metadata keys of a change audited with its value before and after.
+const (
+	auditFrom = "from"
+	auditTo   = "to"
+)
 
 func runsOn(e aidom.Executor) string {
 	if e == aidom.ExecutorTenantWorker {
