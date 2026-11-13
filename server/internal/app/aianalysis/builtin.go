@@ -126,9 +126,12 @@ type BuiltinExecutor struct {
 	// ownProviderAllowed is the platform policy on organizations' own
 	// providers (nil: allowed).
 	ownProviderAllowed func(context.Context) bool
-	cfg                ExecutorConfig
-	logger             *logger.Logger
-	now                func() time.Time
+	// worker sends the runs of AI agents that run on the organization's
+	// AI workers (nil: such runs are refused).
+	worker *WorkerExecutor
+	cfg    ExecutorConfig
+	logger *logger.Logger
+	now    func() time.Time
 }
 
 // NewBuiltinExecutor builds the executor; SetAgents wires the AI agent
@@ -244,9 +247,6 @@ func (e *BuiltinExecutor) Analyze(ctx context.Context, req AnalyzeRequest) (*Run
 	if err != nil {
 		return nil, err
 	}
-	if p.AIAgent.Executor != aidom.ExecutorBuiltin {
-		return nil, ErrKindNotBuiltin
-	}
 	if err := p.Require("findings:read"); err != nil {
 		return nil, err
 	}
@@ -255,6 +255,18 @@ func (e *BuiltinExecutor) Analyze(ctx context.Context, req AnalyzeRequest) (*Run
 	}
 	if req.Trigger == "" {
 		req.Trigger = aidom.TriggerOnDemand
+	}
+	switch p.AIAgent.Executor {
+	case aidom.ExecutorBuiltin:
+	case aidom.ExecutorTenantWorker:
+		// Runs on the organization's AI workers: the same checks, then an
+		// analysis job (worker.go).
+		if e.worker == nil {
+			return nil, ErrNoWorkerExecutor
+		}
+		return e.worker.dispatch(ctx, p, req, finding, kind, tpl, useCase)
+	default:
+		return nil, ErrKindNotBuiltin
 	}
 	run, err := e.svc.StartRun(ctx, StartRunInput{
 		Principal: p, UseCase: useCase, Kind: kind.Name, SubjectType: aidom.SubjectFinding, SubjectID: req.FindingID,
@@ -320,7 +332,7 @@ type prepared struct {
 // execute runs a prepared single-shot kind: prepare, the model call in the
 // API process, then apply.
 func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding, kind analyze.Kind, tpl PromptTemplate) ([]Action, error) {
-	prep, err := e.prepare(ctx, p, run, finding, tpl, aidom.ExecutorBuiltin)
+	prep, err := e.prepare(ctx, p, run, finding, tpl, aidom.ExecutorBuiltin, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -359,8 +371,12 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 // for the executor the run is on: the organization's AI settings (AI off
 // refuses), the use case (off refuses) and the data class ceiling, the
 // masked bundle with its mapping saved on the platform, what the run sends
-// recorded on the run, and the token budget pre-check.
-func (e *BuiltinExecutor) prepare(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding, tpl PromptTemplate, executor aidom.Executor) (*prepared, error) {
+// recorded on the run, and the token budget pre-check. fit, when set,
+// shapes the bundle before anything about it is recorded (a worker's job
+// size limit).
+func (e *BuiltinExecutor) prepare(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding, tpl PromptTemplate,
+	executor aidom.Executor, fit func(*aibundle.Bundle) error,
+) (*prepared, error) {
 	settings, err := e.settings.Get(ctx, run.TenantID, tenant.AISettings{})
 	if err != nil {
 		return nil, err
@@ -412,8 +428,14 @@ func (e *BuiltinExecutor) prepare(ctx context.Context, p *Principal, run *aidom.
 	case err != nil:
 		return nil, err
 	}
+	if fit != nil {
+		if err := fit(bundle); err != nil {
+			return nil, err
+		}
+	}
 	run.DataClass = aidom.DataClass(bundle.DataClass)
 	run.BundleDigest = bundle.Digest
+	run.InjectionSuspected = bundle.InjectionSuspected
 	for _, f := range bundle.FieldsSent {
 		run.FieldsSent = append(run.FieldsSent, string(f))
 	}

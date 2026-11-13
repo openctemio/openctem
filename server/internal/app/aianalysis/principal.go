@@ -176,11 +176,14 @@ type StartRunInput struct {
 	DataClass   aidom.DataClass
 	Trigger     aidom.Trigger
 	TriggeredBy *shared.ID
+	// Deadline bounds the run (0: aidom.RunDeadline).
+	Deadline time.Duration
 }
 
-// StartRun records a running run for the principal after its budgets: runs
-// this hour and tokens this month. The accountable owners are snapshotted on
-// the run.
+// StartRun records a run for the principal after its budgets: runs this
+// hour and tokens this month. A run in the API process starts running; a run
+// on a worker is queued until a worker takes its job (it gets its sensor
+// then). The accountable owners are snapshotted on the run.
 func (s *Service) StartRun(ctx context.Context, in StartRunInput) (*aidom.Run, error) {
 	if err := aidom.RefuseAssist(ctx); err != nil {
 		return nil, err
@@ -204,17 +207,38 @@ func (s *Service) StartRun(ctx context.Context, in StartRunInput) (*aidom.Run, e
 			return nil, ErrBudget
 		}
 	}
-	deadline := now.Add(aidom.RunDeadline)
+	limit := in.Deadline
+	if limit <= 0 {
+		limit = aidom.RunDeadline
+	}
+	deadline := now.Add(limit)
 	run := &aidom.Run{
 		ID: shared.NewID(), TenantID: a.TenantID, AIAgentID: &a.ID, UseCase: in.UseCase, Kind: in.Kind,
 		SubjectType: in.SubjectType, SubjectID: in.SubjectID, Executor: in.Executor, Status: aidom.RunRunning,
 		DataClass: in.DataClass, Trigger: in.Trigger, TriggeredBy: in.TriggeredBy, Accountable: a.Owners,
 		DeadlineAt: &deadline, StartedAt: &now,
 	}
+	if in.Executor == aidom.ExecutorTenantWorker || in.Executor == aidom.ExecutorPlatformWorker {
+		run.Status, run.StartedAt = aidom.RunQueued, nil
+	}
 	if err := s.runs.CreateRun(ctx, run); err != nil {
 		return nil, err
 	}
 	return run, nil
+}
+
+// jobTokens is the token budget of one job: limit, or less when the AI
+// agent's monthly tokens are limited and fewer are left.
+func (s *Service) jobTokens(ctx context.Context, a *aidom.AIAgent, limit int) (int, error) {
+	if a.TokensMonth <= 0 {
+		return limit, nil
+	}
+	now := s.now().UTC()
+	_, used, err := s.runs.Usage(ctx, a.TenantID, a.ID, time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		return 0, err
+	}
+	return min(limit, a.TokensMonth-used), nil
 }
 
 // FinishRun stores a run's outcome.

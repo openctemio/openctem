@@ -163,6 +163,15 @@ type Grant struct {
 // existed before RFC-052 got.
 func (g *Grant) LegacyBroad() bool { return g != nil && g.Profile == ProfileLegacyBroad }
 
+// ServesAnalysis reports whether the grant takes analysis jobs: an explicit
+// grant whose job types are exactly [analyze], which is the ai-worker profile
+// or that profile narrowed by an administrator (Normalize refuses a grant
+// that mixes analyze with other work). A grant without a job type list
+// (legacy-broad) never does.
+func (g Grant) ServesAnalysis() bool {
+	return g.Profile != ProfileLegacyBroad && len(g.JobTypes) == 1 && g.JobTypes[0] == jobTypeAnalyze
+}
+
 // SelectableProfiles are the profiles an administrator may pick for a sensor
 // (legacy-broad is never selectable).
 func SelectableProfiles() []string {
@@ -426,6 +435,12 @@ func (g Grant) AdmitContract(cmdType string, payload json.RawMessage, zoneID *sh
 	t := strings.ToLower(strings.TrimSpace(cmdType))
 	if slices.Contains(controlJobTyp, t) {
 		return nil
+	}
+	if t == jobTypeAnalyze && !g.ServesAnalysis() {
+		// An analysis job carries masked finding data for a model: only an
+		// explicit AI worker grant takes it, never a grant without a job type
+		// list (legacy-broad), whatever capability the sensor advertises.
+		return &GrantRefusal{DimJobTypes, "job type analyze needs the ai-worker profile"}
 	}
 	if e.JobTypes != nil && !slices.Contains(e.JobTypes, t) {
 		return &GrantRefusal{DimJobTypes, "job type " + t}

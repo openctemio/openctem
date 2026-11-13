@@ -11,6 +11,7 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"slices"
 	"testing"
 
@@ -98,5 +99,80 @@ func TestAnalyzeClaim_OnlyAIWorkerWithTheCapability(t *testing.T) {
 	}
 	if status, _, _ := h.commandState(job2); status != "pending" {
 		t.Fatalf("analysis job is %s after the scanner's poll, want pending", status)
+	}
+}
+
+// legacyBroadGrant puts the sensor on the legacy-broad grant: no job type
+// list, every tier, any network (a sensor that predates grants).
+func (h *ctlHarness) legacyBroadGrant(s ctlSensor) {
+	h.t.Helper()
+	if _, err := h.db.ExecContext(context.Background(), `UPDATE sensor_grants SET profile = 'legacy-broad',
+	        job_types = NULL, tools = NULL, capabilities = NULL, zone_ids = NULL, tier_ceiling = 2,
+	        target_network = 'any', target_cidrs = NULL, target_domains = NULL, allow_credentials = TRUE,
+	        allow_push_ingest = TRUE, version = version + 1 WHERE sensor_id = $1`, s.id); err != nil {
+		h.t.Fatalf("legacy-broad grant: %v", err)
+	}
+	if _, err := h.db.ExecContext(context.Background(), `UPDATE sensors SET trust_level = 'trusted' WHERE id = $1`, s.id); err != nil {
+		h.t.Fatalf("trust sensor: %v", err)
+	}
+}
+
+// claimByID asks for one command by id and reports whether the sensor got it.
+func (h *ctlHarness) claimByID(s ctlSensor, id string) bool {
+	h.t.Helper()
+	resp, _ := h.call(s.key, http.MethodPost, "/api/v2/sensor/commands/"+id+"/claim", nil)
+	return resp.StatusCode == http.StatusOK
+}
+
+// A sensor on the legacy-broad grant that advertises the kind never gets an
+// analysis job, by poll or by id; an AI worker of the same organization then
+// does.
+func TestAnalyzeClaim_LegacyBroadNeverTakesIt(t *testing.T) {
+	h := newCtlHarness(t, command.WithGrants(postgres.NewSensorGrantRepository(openSharedTestDB(t)), nil))
+	const poll = "/api/v2/sensor/commands?limit=10"
+
+	legacy := h.newLimitedSensor(h.tenantID, "legacy", nil, []string{analyzeTriageCap}, 5)
+	h.reportCaps(legacy, analyzeTriageCap)
+	h.legacyBroadGrant(legacy)
+
+	job := h.analyzeCommand(h.tenantID)
+	if got := h.pollIDs(legacy, poll); slices.Contains(got, job) {
+		t.Fatal("a legacy-broad sensor was handed an analysis job")
+	}
+	if h.claimByID(legacy, job) {
+		t.Fatal("a legacy-broad sensor claimed an analysis job by id")
+	}
+	if status, _, _ := h.commandState(job); status != "pending" {
+		t.Fatalf("analysis job is %s after the legacy sensor, want pending", status)
+	}
+
+	worker := h.newLimitedSensor(h.tenantID, "example-worker", nil, []string{analyzeTriageCap}, 5)
+	h.reportCaps(worker, analyzeTriageCap)
+	h.aiWorkerGrant(worker)
+	if got := h.pollIDs(worker, poll); !slices.Contains(got, job) {
+		t.Fatalf("the AI worker was not handed the analysis job: %v", got)
+	}
+}
+
+// Where the claim reads no grant (grant enforcement not wired), an
+// analysis job is withheld from every sensor (fail closed), while other work
+// still flows.
+func TestAnalyzeClaim_NoGrantReadWithholdsIt(t *testing.T) {
+	h := newCtlHarness(t)
+	const poll = "/api/v2/sensor/commands?limit=10"
+	worker := h.newLimitedSensor(h.tenantID, "example-worker", []string{"semgrep"}, []string{analyzeTriageCap}, 5)
+	h.reportCaps(worker, analyzeTriageCap)
+	h.aiWorkerGrant(worker)
+
+	job := h.analyzeCommand(h.tenantID)
+	got := h.pollIDs(worker, poll)
+	if slices.Contains(got, job) {
+		t.Fatal("an analysis job left without a grant read")
+	}
+	if h.claimByID(worker, job) {
+		t.Fatal("an analysis job was claimed by id without a grant read")
+	}
+	if status, _, _ := h.commandState(job); status != "pending" {
+		t.Fatalf("analysis job is %s, want pending", status)
 	}
 }
