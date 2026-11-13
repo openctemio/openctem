@@ -177,8 +177,10 @@ var tenantIsolationRegistry = map[string]isolationDecl{ //nolint:gochecknoglobal
 // tenantIsolationRoutes holds the routes that are not in the baseline: one
 // entry per new route with a path id, as "METHOD /full/path" -> "test:
 // TestName" (a cross-organization test that exists) or "scope: <why an id
-// alone is safe>". Empty today: the baseline covers what existed.
-var tenantIsolationRoutes = map[string]string{} //nolint:gochecknoglobals // registry
+// alone is safe>".
+var tenantIsolationRoutes = map[string]string{ //nolint:gochecknoglobals // registry
+	"PUT /api/v1/ai/agents/{id}/executor": "test: TestAIWorker_ChangeExecutor_DB",
+}
 
 // baselineCap is the number of id routes the baseline held when the guard was
 // added. It only goes down: raise it and the guard has stopped guarding.
