@@ -71,8 +71,8 @@ api-%: ## Run any server/Makefile target, e.g. make api-swagger
 web-%: ## Run any web npm script, e.g. make web-format
 	cd web && npm run $*
 
-allinone: generate ## Build openctem-api, openctem-web and the all-in-one image locally (:local)
-	docker build -t openctem-api:local --target production server
+allinone: generate ## Build openctem-server, openctem-web and the all-in-one image locally (:local)
+	docker build -t openctem-server:local --target production server
 	docker build -t openctem-web:local web
 	docker buildx build --load -t openctem:local --build-context gateway=server/deploy/gateway \
-	  --build-arg API_IMAGE=openctem-api:local --build-arg WEB_IMAGE=openctem-web:local deploy/allinone
+	  --build-arg API_IMAGE=openctem-server:local --build-arg WEB_IMAGE=openctem-web:local deploy/allinone

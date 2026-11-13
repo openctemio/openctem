@@ -39,7 +39,7 @@ build imgdiff/api:after server --target production
 build imgdiff/migrations:before "$work/before/api" -f "$work/before/api/Dockerfile.migrations"
 build imgdiff/migrations:after server -f server/Dockerfile.migrations
 fail=0
-echo "== API image (openctem-api)"
+echo "== server image (openctem-server)"
 WANT_VERSION="$want" ALLOW_CONTENT="/app/api/openapi/swagger.yaml /app/third-party-notices.json" \
   bash "$here/image-diff.sh" imgdiff/api:before imgdiff/api:after /app/server /app/openctem-signer /app/openctem-migrate || fail=1
 echo "== migrations image"

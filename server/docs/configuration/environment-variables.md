@@ -592,7 +592,7 @@ Read by `server/deploy/docker-compose.yml` from its `.env` file.
 | `OPENCTEM_CA_EXPORT_DIR` | string | `./ca` |  |  | Host directory the internal root CA is exported to. |
 | `OPENCTEM_VERSION` | string | `none` | yes |  | Release tag of the API, web and migrations images, for example `v0.9.0`. |
 | `OPENCTEM_PUBLIC_URL` | string | `https://<OPENCTEM_HOSTNAME>` | yes |  | Exact origin browsers use, when it is not `https://<OPENCTEM_HOSTNAME>` (a port other than 443). Passed to the API as `APP_URL`. |
-| `API_IMAGE` | string | `ghcr.io/openctemio/openctem-api` |  |  | Image repository of the API. |
+| `API_IMAGE` | string | `ghcr.io/openctemio/openctem-server` |  |  | Image repository of the server (API). Releases up to v0.22.x are published as `ghcr.io/openctemio/openctem-api`. |
 | `UI_IMAGE` | string | `ghcr.io/openctemio/openctem-web` |  |  | Image repository of the web console. |
 | `CONSOLE_IMAGE` | string | `ghcr.io/openctemio/openctem-console` |  |  | Image repository of the platform console. |
 | `MIGRATIONS_IMAGE` | string | `ghcr.io/openctemio/migrations` |  |  | Image repository of the migrations job. |

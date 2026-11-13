@@ -11,7 +11,7 @@
 
 global:
   # Replaces ghcr.io/openctemio/ of every OpenCTEM image; the image names
-  # (openctem-api, openctem-web, ...) stay. Third-party images below need
+  # (openctem-server, openctem-web, ...) stay. Third-party images below need
   # their own repositories.
   imageRegistry: registry.example.internal/openctem-trusted
 

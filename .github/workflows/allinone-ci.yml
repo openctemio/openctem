@@ -1,7 +1,7 @@
 name: All-in-one CI
 
 # Builds the three images exactly as docker-publish.yml does on a release
-# (openctem-api, openctem-web, then the all-in-one `openctem` assembled FROM
+# (openctem-server, openctem-web, then the all-in-one `openctem` assembled FROM
 # them with server/deploy/gateway as the gateway), loads them locally, and runs
 # the same smoke tests: native arch + ELF + executes, and the all-in-one in
 # both gateway modes against a real Postgres + Redis. Nothing is pushed.
@@ -197,7 +197,7 @@ jobs:
           ALLINONE_REF: ${{ needs.shared.outputs.allinone || needs.shared-pr.outputs.allinone }}
         run: |
           set -euo pipefail
-          for pair in "$API_REF local/openctem-api:ci" "$WEB_REF local/openctem-web:ci" "$CONSOLE_REF local/openctem-console:ci" "$ALLINONE_REF local/openctem:ci"; do
+          for pair in "$API_REF local/openctem-server:ci" "$WEB_REF local/openctem-web:ci" "$CONSOLE_REF local/openctem-console:ci" "$ALLINONE_REF local/openctem:ci"; do
             read -r ref tag <<<"$pair"
             [ -n "$ref" ] || { echo "::error::a shared image is missing"; exit 1; }
             bash .github/scripts/retry.sh docker pull -q "$ref"
@@ -206,9 +206,9 @@ jobs:
       # No shared images (a fork pull request): build here, with the default
       # docker driver, so images built here are visible to the next build's FROM
       # without a registry.
-      - name: Build openctem-api
+      - name: Build openctem-server
         if: env.SHARED != 'true'
-        run: bash .github/scripts/retry.sh docker build -t local/openctem-api:ci --target production server
+        run: bash .github/scripts/retry.sh docker build -t local/openctem-server:ci --target production server
       # The web image compiles against the generated contract files, which are
       # not committed (server/docs/development/ci-cd.md).
       - name: Generate the contract files
@@ -226,13 +226,13 @@ jobs:
           bash .github/scripts/retry.sh
           docker buildx build --load -t local/openctem:ci
           --build-context gateway=server/deploy/gateway
-          --build-arg API_IMAGE=local/openctem-api:ci
+          --build-arg API_IMAGE=local/openctem-server:ci
           --build-arg WEB_IMAGE=local/openctem-web:ci
           --build-arg CONSOLE_IMAGE=local/openctem-console:ci
           deploy/allinone
       - name: Smoke test (arch, ELF, executes)
         run: |
-          bash .github/scripts/smoke-image.sh openctem-api local/openctem-api:ci amd64
+          bash .github/scripts/smoke-image.sh openctem-server local/openctem-server:ci amd64
           bash .github/scripts/smoke-image.sh openctem-web local/openctem-web:ci amd64
           bash .github/scripts/smoke-image.sh openctem-console local/openctem-console:ci amd64
           bash .github/scripts/smoke-image.sh openctem local/openctem:ci amd64
@@ -257,7 +257,7 @@ jobs:
           # report for the early warning and the release preflight.
           IMAGE_GUARD_REPORT: ${{ github.event_name != 'pull_request' && format('{0}/image-guard-report.ndjson', runner.temp) || '' }}
         run: |
-          bash .github/scripts/image-guard.sh openctem-api local/openctem-api:ci
+          bash .github/scripts/image-guard.sh openctem-server local/openctem-server:ci
           bash .github/scripts/image-guard.sh openctem-web local/openctem-web:ci
           bash .github/scripts/image-guard.sh openctem-console local/openctem-console:ci
           bash .github/scripts/image-guard.sh openctem local/openctem:ci

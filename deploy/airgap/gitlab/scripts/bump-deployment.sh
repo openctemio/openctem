@@ -24,6 +24,11 @@ branch="openctem-${version}"
 repo_of() { awk -v n="$1" '$1 == n { r = $2; sub(/:[^:\/]*$/, "", r); print r }' "$list"; }
 digest_of() { awk -v n="$1" '$1 == n { print $3 }' "$list"; }
 
+# The server image's name in the list: openctem-server, or openctem-api for a
+# release before v0.23.0 (mirror-images.sh copies each release under its own names).
+server="$(awk '$1 == "openctem-server" || $1 == "openctem-api" { print $1; exit }' "$list")"
+[ -n "$server" ] || die "no server image (openctem-server or openctem-api) in $2"
+
 work="$(mktemp -d)"
 trap 'find "$work" -mindepth 1 -delete 2>/dev/null; rmdir "$work" 2>/dev/null || true' EXIT
 # The token goes in a header, never into the URL or the git config on disk.
@@ -41,7 +46,7 @@ image_block() { # image_block <name>
 	echo "# Written by bump-deployment.sh from the verified mirror list."
 	echo "api:"
 	echo "  image:"
-	image_block openctem-api | sed 's/^  //'
+	image_block "$server" | sed 's/^  //'
 	echo "  migrations:"
 	echo "    image:"
 	image_block migrations
@@ -58,7 +63,7 @@ image_block() { # image_block <name>
 } >"$dir/openctem-images.yaml"
 {
 	echo "OPENCTEM_VERSION=${version}"
-	echo "API_IMAGE=$(repo_of openctem-api)"
+	echo "API_IMAGE=$(repo_of "$server")"
 	echo "UI_IMAGE=$(repo_of openctem-web)"
 	echo "CONSOLE_IMAGE=$(repo_of openctem-console)"
 	echo "GATEWAY_IMAGE=$(repo_of openctem-gateway)"
