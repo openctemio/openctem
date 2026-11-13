@@ -17,8 +17,8 @@ import { submitSignIn } from '../helpers/auth'
  * without them. Each invitation can be accepted once: run against a fresh seed.
  */
 
-const ORG = process.env.E2E_TENANT_NAME
-const SLUG = process.env.E2E_TENANT_SLUG
+const ORG = process.env.E2E_INVITE_ORG
+const SLUG = process.env.E2E_INVITE_ORG_SLUG
 const HOME_ORG = process.env.E2E_INVITEE_HOME_ORG
 const WITH_ORG = {
   email: process.env.E2E_INVITEE_EMAIL,
@@ -61,7 +61,7 @@ async function expectLandedInOrg(page: Page) {
 test.describe('invitation accept', { tag: ['@auth'] }, () => {
   test.skip(
     !ORG || !SLUG || !HOME_ORG || !WITH_ORG.token || !WITHOUT_ORG.token,
-    'Set E2E_INVITEE_* and E2E_TENANT_NAME (web/e2e/ci/seed.sh)'
+    'Set E2E_INVITEE_* and E2E_INVITE_ORG* (web/e2e/ci/seed.sh)'
   )
   test.describe.configure({ mode: 'serial' })
 

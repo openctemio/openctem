@@ -248,17 +248,6 @@ ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_down
 [[ -n "$ROLE_ID" && "$ROLE_ID" != null ]] || { log "no member role"; exit 1; }
 call POST "/api/v1/tenants/$SLUG/invitations" "{\"email\":\"$MEMBER_EMAIL\",\"role_ids\":[\"$ROLE_ID\"]}"
 INVITE_TOKEN=$(jq -r .token <<<"$BODY")
-# 57-invitation-accept: two pending invitations into this organization, one
-# for an account that has an organization of its own (E2E_INVITEE_*), one for
-# an account that has none yet (E2E_INVITEE_NEW_*).
-INVITEE_EMAIL="e2e-invitee-$RUN@openctem-test.local"
-INVITEE_PASSWORD="$(openssl rand -hex 10)I$(openssl rand -hex 3)"
-call POST "/api/v1/tenants/$SLUG/invitations" "{\"email\":\"$INVITEE_EMAIL\",\"role_ids\":[\"$ROLE_ID\"]}"
-INVITEE_TOKEN=$(jq -r .token <<<"$BODY")
-INVITEE_NEW_EMAIL="e2e-invitee-new-$RUN@openctem-test.local"
-INVITEE_NEW_PASSWORD="$(openssl rand -hex 10)N$(openssl rand -hex 3)"
-call POST "/api/v1/tenants/$SLUG/invitations" "{\"email\":\"$INVITEE_NEW_EMAIL\",\"role_ids\":[\"$ROLE_ID\"]}"
-INVITEE_NEW_TOKEN=$(jq -r .token <<<"$BODY")
 
 # The specs sign in through the form; end this API session.
 call POST /api/v1/auth/logout '{}'
@@ -326,6 +315,23 @@ for which in A B; do
       "$asset" "$which" "$i" "$which" "$i")"
   done
 done
+
+# 57-invitation-accept: two pending invitations into organization B, one for
+# an account with an organization of its own (E2E_INVITEE_*), one for an
+# account with none yet (E2E_INVITEE_NEW_*). Not into the main organization:
+# its members page would then read the roles of pending invitations, past
+# that page's request budget (16-request-budget).
+call GET /api/v1/roles
+INVITE_ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_downcase) == "member")][0].id' <<<"$BODY")
+[[ -n "$INVITE_ROLE_ID" && "$INVITE_ROLE_ID" != null ]] || { log "no member role in $SLUG-switch-b"; exit 1; }
+INVITEE_EMAIL="e2e-invitee-$RUN@openctem-test.local"
+INVITEE_PASSWORD="$(openssl rand -hex 10)I$(openssl rand -hex 3)"
+call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$INVITEE_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
+INVITEE_TOKEN=$(jq -r .token <<<"$BODY")
+INVITEE_NEW_EMAIL="e2e-invitee-new-$RUN@openctem-test.local"
+INVITEE_NEW_PASSWORD="$(openssl rand -hex 10)N$(openssl rand -hex 3)"
+call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$INVITEE_NEW_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
+INVITEE_NEW_TOKEN=$(jq -r .token <<<"$BODY")
 call POST /api/v1/auth/logout '{}'
 
 log "invitees (E2E_INVITEE_*)"
@@ -366,7 +372,8 @@ echo "E2E_SWITCH_EMAIL=$SWITCH_EMAIL"
 echo "E2E_SWITCH_PASSWORD=$SWITCH_PASSWORD"
 echo "E2E_SWITCH_ORG_A=E2E Switch A $RUN"
 echo "E2E_SWITCH_ORG_B=E2E Switch B $RUN"
-echo "E2E_TENANT_NAME=E2E Org $RUN"
+echo "E2E_INVITE_ORG=E2E Switch B $RUN"
+echo "E2E_INVITE_ORG_SLUG=$SLUG-switch-b"
 echo "E2E_INVITEE_EMAIL=$INVITEE_EMAIL"
 echo "E2E_INVITEE_PASSWORD=$INVITEE_PASSWORD"
 echo "E2E_INVITEE_TOKEN=$INVITEE_TOKEN"
