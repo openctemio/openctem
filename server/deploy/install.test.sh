@@ -66,11 +66,18 @@ compose)
 		case "$*" in
 		*gateway*) echo "gateway healthy" ;;
 		*sensor*) echo running ;;
-		esac ;;
+		*\ api) [ -n "${STUB_API_RUNNING:-}" ] && echo running ;;
+		esac
+		exit 0 ;;
 	logs) echo "Enrolled: shared sensor bundled-sensor" ;;
 	run)
 		case "$*" in
-		*check-config*) echo "configuration valid: APP_ENV=production AUTH_PROVIDER=local SIGNUP_MODE=disabled" ;;
+		*check-config*)
+			case "${STUB_CHECK:-}" in
+			invalid) echo "configuration INVALID: REDIS_PASSWORD too short" >&2; exit 1 ;;
+			docker) echo "Error response from daemon: failed to set up container networking: Address already in use" >&2; exit 1 ;;
+			esac
+			echo "configuration valid: APP_ENV=production AUTH_PROVIDER=local SIGNUP_MODE=disabled" ;;
 		*bootstrap-admin*) echo "Temporary password: TEMPSECRET-0123456789" ;;
 		esac ;;
 	esac ;;
@@ -243,6 +250,68 @@ check "old Compose: fails" bash -c "[ '$rc' != 0 ] && grep -q 'older than 2.24.0
 d="$(fixture)"
 rc="$(run_install "$d" --yes --host 192.0.2.10 --version v9.9.9)"
 check "IP host: no sensor overlay by default" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
+
+# 17. A rerun with the same console options passes; a different one names the line.
+d="$(fixture)"
+rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9 --no-sensor --admin-port 28444)"
+check "console option: first run exit 0" [ "$rc" = 0 ]
+rc="$(run_install "$d" --yes --no-sensor --admin-port 28444)"
+check "console option equal to .env: exit 0, no warning" bash -c "[ '$rc' = 0 ] && ! grep -q 'ignored' '$d/out'"
+rc="$(run_install "$d" --yes --no-sensor --admin-port 28445)"
+check "console option different from .env: fails naming the line" bash -c "[ '$rc' != 0 ] && grep -q 'OPENCTEM_ADMIN_PORT=28444' '$d/out'"
+
+# 18. The configuration check: skipped while the API runs (its throwaway
+# container cannot take the API's fixed address), and its failures told apart.
+rm -f "$d/log"
+rc="$(STUB_API_RUNNING=1 run_install "$d" --yes --no-sensor)"
+check "API running: no throwaway check-config container, exit 0" bash -c "[ '$rc' = 0 ] && ! grep -q check-config '$d/log' && grep -q 'the API is running' '$d/out'"
+d="$(fixture)"
+rc="$(STUB_CHECK=invalid run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
+check "invalid configuration: fails before up, says so" bash -c "[ '$rc' != 0 ] && grep -q 'refuses this configuration' '$d/out' && ! grep -q '^compose up' '$d/log'"
+d="$(fixture)"
+rc="$(STUB_CHECK=docker run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
+check "check that could not run: not blamed on the configuration" bash -c "[ '$rc' != 0 ] && grep -q 'could not run' '$d/out' && ! grep -q 'refuses this configuration' '$d/out'"
+
+# 19. A git checkout not at a release tag never installs its stale VERSION.
+d="$(fixture)"
+printf 'v0.20.1\n' >"$d/deploy/VERSION"
+g() { GIT_CONFIG_GLOBAL=/dev/null git -C "$d" -c user.name=t -c user.email=t@example.com "$@" >/dev/null 2>&1; }
+g init -q && g add deploy && g commit -q -m init
+rc="$(run_install "$d" --yes --host ctem.example.com --no-sensor)"
+check "checkout off a tag, no --version: fails, writes nothing" bash -c "[ '$rc' != 0 ] && grep -q 'not at a release tag' '$d/out' && grep -q -- '--version' '$d/out' && [ ! -e '$d/deploy/.env' ]"
+rc="$(run_install "$d" --yes --host ctem.example.com --no-sensor --version v9.9.9)"
+check "checkout off a tag, --version given: installs it" bash -c "[ '$rc' = 0 ] && grep -qx 'OPENCTEM_VERSION=v9.9.9' '$d/deploy/.env'"
+mv "$d/deploy/.env" "$d/env.first"
+g tag v9.9.8
+rc="$(run_install "$d" --yes --host ctem.example.com --no-sensor)"
+check "checkout at a release tag: installs the tag, not VERSION" bash -c "[ '$rc' = 0 ] && grep -qx 'OPENCTEM_VERSION=v9.9.8' '$d/deploy/.env'"
+d="$(fixture)"
+printf 'v9.9.7\n' >"$d/deploy/VERSION"
+rc="$(run_install "$d" --yes --host ctem.example.com --no-sensor)"
+check "bundle (no git): installs its VERSION" bash -c "[ '$rc' = 0 ] && grep -qx 'OPENCTEM_VERSION=v9.9.7' '$d/deploy/.env'"
+
+# 20. A rerun without --sensor/--no-sensor keeps what the install has.
+d="$(fixture)"
+rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9 --no-sensor)"
+rc="$(run_install "$d" --yes)"
+check "rerun without a sensor flag keeps a no-sensor install (DNS name)" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
+
+# 21. The running-stack guard refuses before .env is touched.
+d="$(fixture)"
+rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
+sum="$(sha256sum "$d/deploy/.env")"
+running="$d/deploy/docker-compose.yml,$d/deploy/docker-compose.sensor.yml,$d/deploy/docker-compose.http-redirect.yml"
+rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes --no-sensor)"
+check "guard refusal: fails naming the overlay" bash -c "[ '$rc' != 0 ] && grep -q 'COMPOSE_FILE=docker-compose.yml:docker-compose.http-redirect.yml' '$d/out'"
+check "guard refusal: .env untouched, no backup" bash -c "[ \"\$(sha256sum '$d/deploy/.env')\" = '$sum' ] && ! ls '$d'/deploy/.env.bak-* >/dev/null 2>&1"
+
+# 22. Dropping the running sensor: only on an explicit --no-sensor.
+running="$d/deploy/docker-compose.yml,$d/deploy/docker-compose.sensor.yml"
+sed -i 's/^COMPOSE_FILE=.*/COMPOSE_FILE=docker-compose.yml/' "$d/deploy/.env"
+rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes)"
+check "sensor running, .env edited without it, no flag: kept (rerun keeps the running set)" bash -c "[ '$rc' != 0 ] && grep -q 'COMPOSE_FILE=docker-compose.yml:docker-compose.sensor.yml' '$d/out'"
+rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes --no-sensor)"
+check "sensor running, explicit --no-sensor: allowed" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
 
 echo "${pass} passed, ${failed} failed"
 [ "$failed" -eq 0 ]

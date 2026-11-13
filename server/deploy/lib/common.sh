@@ -205,23 +205,26 @@ running_stack_dirs() {
 		--format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sed '/^$/d' | sort -u
 }
 
-# guard_running_stack <project> <wanted COMPOSE_FILE>: stop, naming the exact
-# line to add to .env, when a stack of this project name already exists in
-# another directory, or was started with a compose file the wanted set lacks
-# (an `up` would silently drop that overlay).
+# guard_running_stack <project> <wanted COMPOSE_FILE> [droppable file]: stop,
+# naming the exact line to add to .env, when a stack of this project name
+# already exists in another directory, or was started with a compose file the
+# wanted set lacks (an `up` would silently drop that overlay), unless that
+# file is the one the operator asked to drop.
 guard_running_stack() {
-	local project="$1" wanted="$2" d f missing="" union
+	local project="$1" wanted="$2" droppable="${3:-}" d f missing="" union
 	while IFS= read -r d; do
 		[[ -z "$d" || "$d" == "$here" ]] && continue
 		die "a Compose project named '$project' already exists, started from $d.
-  This directory would take over its containers. Give this install its own name: add
+  This directory would take over its containers. Give this install its own name:
     COMPOSE_PROJECT_NAME=openctem-2
-  to $here/.env (or install from $d instead)."
+  in $here/.env, or --set COMPOSE_PROJECT_NAME=openctem-2 when it has no .env yet
+  (or run ./install.sh in $d instead)."
 	done < <(running_stack_dirs "$project")
 	union="$wanted"
 	while IFS= read -r f; do
 		[[ -z "$f" ]] && continue
 		case ":$wanted:" in *":$f:"*) continue ;; esac
+		[[ -n "$droppable" && "$f" == "$droppable" ]] && continue
 		missing="$missing $f"
 		union="$union:$f"
 	done < <(running_stack_files "$project")

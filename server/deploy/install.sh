@@ -197,6 +197,24 @@ default_host() {
 reuse=""
 [[ -e "$env_file" ]] && reuse=1
 
+# The release to install: --version, else the release this directory is. A
+# release bundle carries VERSION. A git checkout installs its release tag; a
+# checkout that is not at one (develop, a branch) still has the VERSION of the
+# last release merged back, so it is never guessed from: --version is needed.
+in_checkout() {
+	if command -v git >/dev/null 2>&1; then
+		git -C "$here" ls-files --error-unmatch install.sh >/dev/null 2>&1
+	else
+		[[ -e "$here/../../.git" ]]
+	fi
+}
+if [[ -z "$version" && -z "$reuse" ]] && in_checkout; then
+	version="$(git -C "$here" describe --tags --exact-match HEAD 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+	[[ -n "$version" ]] || die "this git checkout is not at a release tag, so the release to install is unknown
+  (its VERSION file names the last release merged back, not this code). Pass --version vX.Y.Z,
+  or check out a release tag first (git checkout vX.Y.Z)."
+fi
+
 if [[ -n "$reuse" ]]; then
 	# The existing .env decides the host, the TLS mode and the release.
 	env_host="$(env_get "$env_file" OPENCTEM_HOSTNAME)"
@@ -207,13 +225,40 @@ if [[ -n "$reuse" ]]; then
 		bundle="$(tr -d '[:space:]' <"$here/VERSION")"
 		[[ "$bundle" == "$env_version" ]] || warn "this directory is release $bundle, its .env installs $env_version"
 	fi
-	[[ -z "$acme" ]] || warn "--acme ignored: the existing .env keeps its TLS settings"
-	((${#setup_args[@]} == 0)) || warn "console options ignored: the existing .env keeps them"
+	# An answer equal to the .env is fine (a rerun with the same command); a
+	# different one is an error naming the line, never a silent "ignored".
+	differs() { # differs <option> <NAME> <wanted>
+		[[ "$(env_get "$env_file" "$2")" == "$3" ]] ||
+			die "$1: the existing $env_file has $2=$(env_get "$env_file" "$2"); change that line in the file (it is never overwritten)"
+	}
+	[[ -z "$acme" ]] || differs --acme ACME_EMAIL "$acme"
+	for ((i = 0; i < ${#setup_args[@]}; i++)); do
+		case "${setup_args[i]}" in
+		--admin-site) differs --admin-site OPENCTEM_ADMIN_SITE "${setup_args[i + 1]}" ;;
+		--admin-host) differs --admin-host OPENCTEM_ADMIN_HOST "${setup_args[i + 1]}" ;;
+		--admin-port) differs --admin-port OPENCTEM_ADMIN_PORT "${setup_args[i + 1]}" ;;
+		--admin-cidrs) differs --admin-cidrs OPENCTEM_ADMIN_ALLOWED_CIDRS "${setup_args[i + 1]}" ;;
+		--admin-public) differs --admin-public OPENCTEM_ADMIN_ALLOWED_CIDRS "0.0.0.0/0 ::/0" ;;
+		esac
+	done
 	host="$env_host" version="$env_version"
 	for kv in ${sets[@]+"${sets[@]}"}; do
 		[[ "$(env_get "$env_file" "${kv%%=*}")" == "${kv#*=}" ]] ||
 			die "--set ${kv%%=*}: the existing $env_file has another value; change that line in the file (it is never overwritten)"
 	done
+fi
+
+# An explicit --sensor/--no-sensor (or OPENCTEM_INSTALL_SENSOR) may change
+# a running install; without one, a rerun keeps what the install has.
+sensor_explicit="$sensor"
+if [[ -n "$reuse" && -z "$sensor" ]]; then
+	sensor=no
+	existing="$(env_get "$env_file" COMPOSE_FILE)"
+	if [[ -n "$existing" ]]; then
+		[[ ":$existing:" == *":docker-compose.sensor.yml:"* ]] && sensor=yes
+	elif running_stack_files "$(compose_project)" | grep -qx docker-compose.sensor.yml; then
+		sensor=yes
+	fi
 fi
 
 state_done() { [[ -f "$state_file" ]] && grep -qx "$1=done" "$state_file"; }
@@ -425,6 +470,13 @@ host_checks() {
 }
 host_checks
 
+# Before anything is written: a stack of this name elsewhere, or an overlay
+# the file set would drop, stops here with the line to add. The sensor overlay
+# may be dropped only on an explicit --no-sensor.
+droppable=""
+[[ "$sensor_explicit" == no ]] && droppable=docker-compose.sensor.yml
+guard_running_stack "$project" "$compose_file" "$droppable"
+
 # ---------------------------------------------------------------------------
 # 4. .env: written once by setup.sh, then reused
 # ---------------------------------------------------------------------------
@@ -446,7 +498,6 @@ else
 		install -m 0644 "$here/sensor/sensor-policy.example.yaml" "$here/sensor/sensor-policy.yaml"
 	fi
 fi
-guard_running_stack "$project" "$compose_file"
 
 # Every docker compose call below reads this directory's .env (COMPOSE_FILE
 # included), whatever the caller's working directory is.
@@ -490,13 +541,28 @@ for ref in "${!verified[@]}"; do
 		die "$ref changed between the signature check and the pull (expected ${verified[$ref]}). Run ./install.sh again"
 done
 
-info "checking the configuration"
-if ! out="$(dc run --rm --no-deps -T api -check-config 2>&1)"; then
-	printf '%s\n' "$out" >&2
-	die "the API refuses this configuration (above): fix $env_file and run ./install.sh again"
+# The configuration check runs in a throwaway api container. While the API
+# runs, that container cannot get the API's fixed address; the running API
+# checked the same configuration when it started, and `up` below recreates
+# it only when the configuration changed (it then fails its health check).
+if [[ "$(dc ps --format '{{.State}}' api 2>/dev/null)" == running ]]; then
+	info "the API is running: its configuration was checked when it started"
+else
+	info "checking the configuration"
+	if ! out="$(dc run --rm --no-deps -T api -check-config 2>&1)"; then
+		printf '%s\n' "$out" >&2
+		case "$out" in
+		*"configuration INVALID"*) die "the API refuses this configuration (above): fix $env_file and run ./install.sh again" ;;
+		*) die "the configuration check could not run (above): cd $here && docker compose run --rm --no-deps api -check-config" ;;
+		esac
+	fi
 fi
 
-info "starting the stack (the first start creates the database: a few minutes)"
+if [[ "$(dc ps --format '{{.State}}' api 2>/dev/null)" == running ]]; then
+	info "bringing the stack up to date (running services are recreated only if their configuration or image changed)"
+else
+	info "starting the stack (the first start creates the database: a few minutes)"
+fi
 up_log="$(mktemp)"
 trap 'rm -f "$up_log"' EXIT
 # shellcheck disable=SC2016 # $1 is expanded by the inner shell
@@ -590,8 +656,12 @@ if [[ -z "$acme" && "$(env_get "$env_file" OPENCTEM_TLS_MODE)" != acme ]]; then
 fi
 case "$bootstrap_mode" in
 terminal | file)
-	say "First sign-in: open the console, sign in as $admin_email with the one-time"
-	say "  credentials shown above$([[ "$bootstrap_mode" == file ]] && printf ' (in %s)' "$cred_file"), then change the password and enroll an authenticator app."
+	say "First sign-in: open the console and sign in as $admin_email with the one-time"
+	if [[ "$bootstrap_mode" == file ]]; then
+		say "  credentials in $cred_file, then change the password and enroll an authenticator app."
+	else
+		say "  credentials shown above, then change the password and enroll an authenticator app."
+	fi
 	[[ -n "$org_name" ]] || say "  Then create the first organization there (Organizations) and invite its owner."
 	;;
 *)

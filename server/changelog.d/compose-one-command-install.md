@@ -11,7 +11,9 @@
 - Unattended: every answer is an option or an `OPENCTEM_INSTALL_*` variable, `--yes` never asks, and a
   missing required answer is an error. Without a terminal the one-time credentials go only to a new
   `--credentials-file` (mode 0600).
-- Idempotent: an existing `.env` is reused and never overwritten; the compose file set is recorded in
+- The release comes from `--version`, the bundle's `VERSION` or the release tag checked out; a git checkout that is
+  not at a release tag must name it with `--version` (its `VERSION` file is the last release merged back).
+- Idempotent: an existing `.env` is reused and never overwritten, and a rerun against a healthy stack recreates nothing; the compose file set is recorded in
   `.env` (`COMPOSE_FILE`), and a change to it is backed up first and printed. It stops with the exact
   `.env` line to add when a stack of the same project name runs elsewhere or with an overlay the file set
   lacks.
