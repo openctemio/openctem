@@ -89,7 +89,7 @@ export function Tag({
     title ?? (typeof label === 'string' ? (scope ? `${scope}: ${label}` : label) : undefined)
   const text = (
     <span
-      className={cn('min-w-0 truncate', level === 4 && 'font-bold')}
+      className={cn('min-w-0 truncate', level === 4 && 'font-semibold')}
       data-slot="tag-label"
       title={tooltip}
     >

@@ -5,8 +5,9 @@ import { expect } from '@playwright/test'
  * Page anatomy checks, shared by every Playwright suite that walks pages: the
  * tenant app's (specs/31-page-rhythm) and the platform console's
  * (console/specs). One probe and one set of rules, so the two apps cannot
- * drift: the page's blocks sit in a PageStack, block gaps are 20px (16px from
- * the header to its tabs), one tab row, metric strips, chips, no sideways
+ * drift: the page's blocks sit in a PageStack, block gaps follow the spacing
+ * tokens read from the page (--sp-page, 24px; --sp-section, 16px from the
+ * header to its tabs), one tab row, metric strips, chips, no sideways
  * scroll, no render error. The rules are described at the top of
  * specs/31-page-rhythm.spec.ts.
  */
@@ -31,11 +32,12 @@ const SAVE_EXCEPTIONS = new Set<string>([
   '/settings/trusted-organizations',
 ])
 
-const PAGE_GAP = 20
-const TIGHT_GAP = 16
 const NAME_MIN_1440 = 160
 
 type Probe = {
+  /** The spacing tokens as the page resolves them (src/styles/theme.css). */
+  pageGap: number
+  tightGap: number
   stack: boolean
   pairs: { from: string; to: string; gap: number }[]
   tabRows: number
@@ -60,6 +62,13 @@ type Probe = {
 export async function probe(page: Page): Promise<Probe> {
   return page.evaluate(() => {
     const main = document.querySelector('main') ?? document.body
+    const tokenPx = (name: string) => {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+      if (v.endsWith('rem')) return parseFloat(v) * rem
+      if (v.endsWith('px')) return parseFloat(v)
+      return Number.NaN
+    }
     const overlay = (el: Element) =>
       !!el.closest('[role=dialog],[data-slot=sheet-content],[data-radix-popper-content-wrapper]')
     const shown = (el: Element) => {
@@ -179,6 +188,8 @@ export async function probe(page: Page): Promise<Probe> {
       }))
 
     return {
+      pageGap: tokenPx('--sp-page'),
+      tightGap: tokenPx('--sp-section'),
       stack: !!stack,
       pairs,
       tabRows: pageRows.length,
@@ -213,10 +224,12 @@ export async function checkAt(
 
   const ownLayout = ownLayoutRoutes.some((re) => re.test(route.split('?')[0]))
   if (!ownLayout) expect(r.stack, `${at}: the page's blocks sit in a PageStack`).toBe(true)
+  expect(r.pageGap, `${at}: --sp-page resolves to a length`).toBeGreaterThan(0)
+  expect(r.tightGap, `${at}: --sp-section resolves to a length`).toBeGreaterThan(0)
   for (const p of ownLayout ? [] : r.pairs) {
     // Route tabs (page-tabs) and in-page tabs (tabs) both sit 16px under the header.
     const want =
-      p.from === 'page-header' && (p.to === 'page-tabs' || p.to === 'tabs') ? TIGHT_GAP : PAGE_GAP
+      p.from === 'page-header' && (p.to === 'page-tabs' || p.to === 'tabs') ? r.tightGap : r.pageGap
     expect
       .soft(Math.abs(p.gap - want), `${at}: ${p.from} -> ${p.to} is ${p.gap}px, want ${want}px`)
       .toBeLessThanOrEqual(1)

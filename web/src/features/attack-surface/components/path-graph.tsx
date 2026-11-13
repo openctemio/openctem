@@ -283,7 +283,7 @@ function PathRow({ path }: { path: PathGraphPath }) {
       {/* Header: rank + path-level badges + reachable counter */}
       <div className="flex items-center gap-3">
         {path.rank != null && (
-          <div className="bg-muted text-muted-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold">
+          <div className="bg-muted text-muted-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
             {path.rank}
           </div>
         )}
@@ -317,7 +317,7 @@ function PathRow({ path }: { path: PathGraphPath }) {
 
         {path.reachableFrom != null && (
           <div className="flex shrink-0 flex-col items-center text-center">
-            <span className="text-xl leading-none font-bold tabular-nums">
+            <span className="text-xl leading-none font-semibold tabular-nums">
               {path.reachableFrom}
             </span>
             <span className="text-muted-foreground mt-0.5 text-[10px]">

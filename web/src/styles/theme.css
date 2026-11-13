@@ -187,6 +187,56 @@
   --dur: 200ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
+  /* State washes and edges, mixed from the palette (beside --hov above, and
+     repeated under .dark so a .dark subtree mixes its own colours): the
+     selected wash, the hover of a strong (input) edge, the hover of a signal
+     fill. Classes: bg-sel, border-strong-hover, bg-signal-hover. */
+  --sel: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --border-strong-hover: color-mix(in srgb, var(--border-strong) 70%, var(--foreground));
+  --signal-hover: color-mix(in srgb, var(--signal) 82%, var(--foreground));
+
+  /* Control scale (one height for every control in a row): 32 default,
+     28 dense (table rows, cards, property panels, drawers, bulk bar),
+     26 a segment inside a 32 track, 24 the info icon, 36 entry pages (no app
+     sidebar), 44 below 768px. Classes: h-control, h-control-sm, ... */
+  --control-h: 2rem;
+  --control-h-sm: 1.75rem;
+  --control-h-seg: 1.625rem;
+  --control-h-xs: 1.5rem;
+  --control-h-entry: 2.25rem;
+  --control-h-touch: 2.75rem;
+  /* OPEN (design freeze item 1: field kit 36 vs control scale 32). Text
+     fields keep today's 36 until the field family is settled; change only
+     this line when it is. */
+  --control-h-field: var(--control-h-entry);
+
+  /* Row density: 40 default, 32 compact, 52 comfortable, chosen by
+     data-density on any ancestor. Class: h-row. */
+  --row-h: 2.5rem;
+
+  /* Spacing names (Tailwind's 4px steps give gap-1..8): a section's own gap
+     and the gap between the blocks of a page. */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-6: 1.5rem;
+  --sp-8: 2rem;
+  --sp-section: 1rem;
+  --sp-page: 1.5rem;
+
+  /* Type sizes that change below 768px (the text-page, text-figure and
+     text-figure-lead roles read these). */
+  --fs-page: 1.5rem;
+  --lh-page: 2rem;
+  --fs-figure: 1.5rem;
+  --lh-figure: 2rem;
+  --fs-figure-lead: 2rem;
+  --lh-figure-lead: 2.5rem;
+
+  /* OPEN (design freeze item 7: dialog radius 10 vs 8). Today's value. */
+  --dialog-radius: var(--radius);
+
   /* Older chart names follow the validated palette. */
   --chart-1: var(--viz-cat-1);
   --chart-2: var(--viz-cat-2);
@@ -254,6 +304,9 @@
   --card: #0f1d33; /* ink, lighter, same hue */
   --popover: #15253f;
   --hov: color-mix(in srgb, var(--foreground) 4%, transparent);
+  --sel: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --border-strong-hover: color-mix(in srgb, var(--border-strong) 70%, var(--foreground));
+  --signal-hover: color-mix(in srgb, var(--signal) 82%, var(--foreground));
   --primary: #fafaf9;
   --primary-foreground: #0a1628;
   --muted-foreground: #a9b4c4;
@@ -406,6 +459,27 @@
   --viz-ink-weak: #3a4a63;
 }
 
+/* Row density per person or per list: data-density on any ancestor. */
+[data-density='compact'] {
+  --row-h: 2rem;
+}
+[data-density='comfortable'] {
+  --row-h: 3.25rem;
+}
+
+/* Below 768px (the app's phone breakpoint): page titles 20/28, figures one
+   step down. */
+@media (max-width: 767px) {
+  :root {
+    --fs-page: 1.25rem;
+    --lh-page: 1.75rem;
+    --fs-figure: 1.25rem;
+    --lh-figure: 1.75rem;
+    --fs-figure-lead: 1.5rem;
+    --lh-figure-lead: 2rem;
+  }
+}
+
 @theme inline {
   /* Sidebar open/collapse motion (class: ease-sidebar). One curve for the
      sidebar, its gap, the nav rows and the section disclosures so they move as
@@ -439,8 +513,49 @@
      text-sm = body); arbitrary sizes (text-[10px]) are refused by
      scripts/check-page-anatomy.sh. A label is muted, never smaller than its
      value, and a line of metadata uses one size. */
-  --text-title: 1.5rem; /* page title, 24px */
-  --text-title--line-height: 2rem;
+  /* Role names (UI v2): text-cap 12/16, text-cap-m 12/16 500 (chips, table
+     headers, counts), text-code 12/20 (with font-mono: the one mono role),
+     text-dense 13/20 (cells, rows, sidebar, breadcrumbs, property values),
+     text-body 14/20, text-card 14/20 600, text-section 16/24 600,
+     text-dialog 20/28 600, text-page 24/32 600 (20/28 below 768px),
+     text-figure 24/32 (20/28), text-figure-lead 32/40 (24/32), text-hero
+     48/56, text-wall 56/64. Weights 400/500/600 only. */
+  --text-cap: 0.75rem;
+  --text-cap--line-height: 1rem;
+  --text-cap-m: 0.75rem;
+  --text-cap-m--line-height: 1rem;
+  --text-cap-m--font-weight: 500;
+  --text-code: 0.75rem;
+  --text-code--line-height: 1.25rem;
+  --text-dense: 0.8125rem;
+  --text-dense--line-height: 1.25rem;
+  --text-card: 0.875rem;
+  --text-card--line-height: 1.25rem;
+  --text-card--font-weight: 600;
+  --text-dialog: 1.25rem;
+  --text-dialog--line-height: 1.75rem;
+  --text-dialog--font-weight: 600;
+  --text-page: var(--fs-page);
+  --text-page--line-height: var(--lh-page);
+  --text-page--font-weight: 600;
+  --text-figure: var(--fs-figure);
+  --text-figure--line-height: var(--lh-figure);
+  --text-figure--font-weight: 600;
+  --text-figure-lead: var(--fs-figure-lead);
+  --text-figure-lead--line-height: var(--lh-figure-lead);
+  --text-figure-lead--font-weight: 600;
+  --text-hero: 3rem;
+  --text-hero--line-height: 3.5rem;
+  --text-hero--font-weight: 600;
+  --text-wall: 3.5rem;
+  --text-wall--line-height: 4rem;
+  --text-wall--font-weight: 600;
+
+  /* research/244 names, kept as aliases of the roles above until every page
+     has moved: title = page, meta = cap, data = code (12/20 now), kpi =
+     figure. */
+  --text-title: var(--fs-page); /* page title */
+  --text-title--line-height: var(--lh-page);
   --text-title--font-weight: 600;
   --text-section: 1rem; /* section and drawer title, 16px */
   --text-section--line-height: 1.5rem;
@@ -449,19 +564,37 @@
   --text-body--line-height: 1.25rem;
   --text-meta: 0.75rem; /* labels, metadata, chips, 12px */
   --text-meta--line-height: 1rem;
-  --text-data: 0.8125rem; /* ids, hashes, versions in mono, 13px */
+  --text-data: 0.75rem; /* ids, hashes, versions in mono, 12px */
   --text-data--line-height: 1.25rem;
-  --text-kpi: 1.5rem; /* a metric strip value, 24px, tabular */
-  --text-kpi--line-height: 2rem;
+  --text-kpi: var(--fs-figure); /* a metric strip value, tabular */
+  --text-kpi--line-height: var(--lh-figure);
   --text-kpi--font-weight: 600;
 
   /* Page rhythm (research/244). The gap between the blocks of a page
      (header, tabs, banner, metric strip, list) is owned by <PageStack>, never
-     by a block's own margin: page = 20px between blocks, page-tight = 16px
+     by a block's own margin: page = 24px between blocks, page-tight = 16px
      from a header to its tabs and from a toolbar to its table. Classes:
-     gap-page, gap-page-tight. */
-  --spacing-page: 1.25rem;
-  --spacing-page-tight: 1rem;
+     gap-page, gap-page-tight, gap-section. */
+  --spacing-page: var(--sp-page);
+  --spacing-page-tight: var(--sp-section);
+  --spacing-section: var(--sp-section);
+
+  /* Control and row heights: h-control, h-control-sm, h-control-seg,
+     h-control-xs, h-control-entry, h-control-touch, h-control-field, h-row
+     (also size-*, min-h-*). */
+  --spacing-control: var(--control-h);
+  --spacing-control-sm: var(--control-h-sm);
+  --spacing-control-seg: var(--control-h-seg);
+  --spacing-control-xs: var(--control-h-xs);
+  --spacing-control-entry: var(--control-h-entry);
+  --spacing-control-touch: var(--control-h-touch);
+  --spacing-control-field: var(--control-h-field);
+  --spacing-row: var(--row-h);
+
+  --color-sel: var(--sel);
+  --color-border-strong-hover: var(--border-strong-hover);
+  --color-signal-hover: var(--signal-hover);
+  --radius-dialog: var(--dialog-radius);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

@@ -15,7 +15,7 @@ Every page, top to bottom:
 
 1. **`<Main>`** — never a hand-rolled wrapper, never `overflow-*` overrides.
 2. **`<PageStack>`** holds every block of the page and owns every gap
-   between them: 16px from the page header to its tabs, 20px between any two
+   between them: 16px from the page header to its tabs, 24px between any two
    other blocks (header, tabs, banner, metric strip, list, card). Blocks carry
    no vertical margin (`mt-*`, `mb-*`, `space-y-*` between blocks); the stack
    zeroes any that remain. A block that renders `null` takes no gap; never wrap
@@ -280,6 +280,22 @@ load.
   IPs, ports, file paths, URLs, API keys, code snippets. Never for numbers,
   labels, statuses or prose.
 - Numbers that line up use `tabular-nums`.
+- Sizes come from the type roles in `src/styles/theme.css` (each sets size,
+  line height and weight): `text-cap` 12/16 and `text-cap-m` 12/16 500
+  (captions, chips, table headers, counts), `text-code` 12/20 with
+  `font-mono`, `text-dense` 13/20 (cells, rows, sidebar, breadcrumbs, property
+  values), `text-body` 14/20, `text-card` 14/20 600, `text-section` 16/24 600,
+  `text-dialog` 20/28 600, `text-page` 24/32 600 (20/28 below 768px),
+  `text-figure` 24/32 and `text-figure-lead` 32/40 (one step down on a phone),
+  `text-hero` 48/56, `text-wall` 56/64. `text-title`, `text-meta`,
+  `text-data` and `text-kpi` remain as aliases. Weights are 400, 500 and 600
+  only (no `font-bold`). Nothing under 12px.
+- Control heights come from the control scale: `h-control` 32,
+  `h-control-sm` 28 (dense places), `h-control-seg` 26, `h-control-xs` 24,
+  `h-control-entry` 36 (entry pages), `h-control-touch` 44 (below 768px);
+  rows `h-row` (40, or 32 / 52 under `data-density="compact|comfortable"`).
+  `h-control-field` is the text-field height and stays 36 until the field
+  kit is settled.
 - One text face and one mono, self-hosted: Inter (`font-sans`, with the
   single-storey a and open digits) and JetBrains Mono (`font-mono`). The
   files and their OFL licences are in `web/public/fonts`, declared in

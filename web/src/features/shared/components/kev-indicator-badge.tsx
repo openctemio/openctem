@@ -71,7 +71,7 @@ export function KEVIndicatorBadge({
             <AlertOctagon className={iconSizes[size]} />
             KEV
             {hasRansomware && <Skull className={cn(iconSizes[size], 'ms-0.5')} />}
-            {isPastDue && showDueDate && <span className="ms-1 font-bold">OVERDUE</span>}
+            {isPastDue && showDueDate && <span className="ms-1 font-semibold">OVERDUE</span>}
           </Badge>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-sm">
