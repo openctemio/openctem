@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { useTheme } from 'next-themes'
 import { Toaster } from 'sonner'
+import { statusToneVars } from '@/lib/status-colors'
 
 /** Under Tailwind's `sm`: where dialogs are bottom sheets with a pinned footer. */
 const PHONE_QUERY = '(max-width: 639px)'
@@ -18,6 +19,10 @@ const isPhoneNow = () =>
   typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches
 const isPhoneOnServer = () => false
 
+const resolved = statusToneVars('resolved')
+const progress = statusToneVars('progress')
+const accepted = statusToneVars('accepted')
+
 /**
  * Sonner's colours come from its own palette (white in both themes, its own
  * greens and reds for rich colours). These variables put every toast on the
@@ -29,15 +34,15 @@ export const TOAST_TOKENS = {
   '--normal-bg': 'var(--popover)',
   '--normal-text': 'var(--popover-foreground)',
   '--normal-border': 'var(--border)',
-  '--success-bg': 'var(--st-resolved-bg)',
-  '--success-text': 'var(--st-resolved-fg)',
-  '--success-border': 'var(--st-resolved-border)',
-  '--info-bg': 'var(--st-progress-bg)',
-  '--info-text': 'var(--st-progress-fg)',
-  '--info-border': 'var(--st-progress-border)',
-  '--warning-bg': 'var(--st-accepted-bg)',
-  '--warning-text': 'var(--st-accepted-fg)',
-  '--warning-border': 'var(--st-accepted-border)',
+  '--success-bg': resolved.bg,
+  '--success-text': resolved.fg,
+  '--success-border': resolved.border,
+  '--info-bg': progress.bg,
+  '--info-text': progress.fg,
+  '--info-border': progress.border,
+  '--warning-bg': accepted.bg,
+  '--warning-text': accepted.fg,
+  '--warning-border': accepted.border,
   '--error-bg': 'var(--tone-danger-bg)',
   '--error-text': 'var(--tone-danger-fg)',
   '--error-border': 'var(--tone-danger-border)',
