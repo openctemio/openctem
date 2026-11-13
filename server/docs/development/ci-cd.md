@@ -7,6 +7,11 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 
 ## Workflows
 
+Every trigger below that names `develop` names `next` too (pull request, push and
+merge queue; see [The `next` integration branch](#the-next-integration-branch)),
+except the CI image mirror, the S3/R2 integration test and the scheduled runs,
+which stay on `develop`.
+
 | Workflow (file) | Triggers | What it does | Gate check |
 |-----------------|----------|--------------|------------|
 | API CI (`api-ci.yml`) | PR / push to `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis as the least-privilege app role, PostgreSQL 18 migrations, release binaries; see [Tiers](#tiers) | **API CI OK** |
@@ -1712,6 +1717,48 @@ develop  integration branch; every PR targets develop
 Dependabot ([`.github/dependabot.yml`](../../../.github/dependabot.yml)) opens PRs
 against `develop`: gomod for `/api` (and monthly for the compat harness), npm for
 `/web`, and one github-actions entry for the root workflows.
+
+### The `next` integration branch
+
+`next` is a long-lived branch for the redesigned web console and the server code
+that exists only for it. It was cut from `develop`; it merges back into `develop`
+once, as a whole, when the redesign is complete.
+
+- **Pull requests into `next`** run exactly the checks a pull request into
+  `develop` runs: every workflow's `pull_request.branches` and `push.branches`
+  list names `next`, and the merge-queue workflows have no branch filter. Change
+  detection, the route JavaScript budget (`Build`, merge queue), the request
+  budget (E2E), the design gate and the release tooling checks work from the
+  pull request's base or the queue's base, so they need no branch name. The
+  required checks and the merge queue for `next` are repository settings the
+  maintainer sets (the same eight checks as `develop`, plus `Design gate OK`).
+- **A push to `next`** runs the same full tier as a push to `develop`. A commit
+  the `next` merge queue already passed skips the heavy jobs
+  (`.github/scripts/queue-verified.sh`), as on `develop`. CodeQL analyses both
+  languages on every push to `next`, which keeps `next`'s code-scanning baseline;
+  until `next` has an analysis of its own, `CodeQL OK` of a pull request into
+  `next` compares with `develop`, which `next` was cut from
+  (`.github/scripts/codeql-new-alerts.sh`). A red full E2E run on `next` opens or
+  updates the issue labelled `e2e-regression-next`.
+- **Nothing is published or deployed from `next`.** Image builds push to the
+  registry only for `develop` and `main` (a push to `next` builds locally); the
+  CI image cache and the Go, lint and Next.js caches are written by `develop`
+  only; releases start from `develop` (Release Train refuses any other ref) and
+  publish from `main` and `v*` tags; the UAT deploy train follows `develop`.
+- **No migrations on `next`.** Schema changes land on `develop`, additive only,
+  so the old console keeps working on them and the final merge changes no
+  schema (rollback is a revert of that merge). `API CI` step `No migrations on
+  next` (`.github/scripts/check-next-no-migrations.sh`) fails a pull request
+  into `next`, or a merge group for it, when a path under `server/migrations/`
+  differs from `develop`'s version of it. Migrations that arrive with the sync
+  pull request equal `develop`'s and pass.
+- **Sync.** `develop` is merged into `next` by a pull request from a branch
+  `sync/develop-into-next-YYYYMMDD` (cut from `next`, `origin/develop` merged in,
+  conflicts resolved), daily while the redesign is active and within a day of
+  every release. It goes through `next`'s merge queue like any pull request.
+  Nobody pushes to `next` directly.
+- **Final merge.** A pull request from `next` into `develop` with a merge commit,
+  through `develop`'s merge queue, after a last sync.
 
 ## Secrets and settings
 

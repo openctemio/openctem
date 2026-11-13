@@ -30,9 +30,9 @@ name: API CI
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, next]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
   merge_group:
     types: [checks_requested]
 
@@ -138,6 +138,21 @@ jobs:
           TREE_CHECKS: API CI OK
           TREE_FULL: ${{ steps.f.outputs.full }}
         run: bash .github/scripts/tree-verified.sh
+
+      # next (the integration branch of the redesigned web console) takes no
+      # migrations of its own: schema changes land on develop, additive only,
+      # and reach next through the develop -> next sync pull request
+      # (.github/scripts/check-next-no-migrations.sh). Any other base passes
+      # without looking. A failure here fails `API CI OK`.
+      - name: No migrations on next
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MG_BASE_REF: ${{ github.event.merge_group.base_ref }}
+          MG_BASE: ${{ github.event.merge_group.base_sha }}
+          MG_HEAD: ${{ github.event.merge_group.head_sha }}
+        run: bash .github/scripts/check-next-no-migrations.sh
 
       # Runs on every PR, also a docs-only one that skips the jobs below.
       # Changelog entries live one file per change in server/changelog.d/, so
