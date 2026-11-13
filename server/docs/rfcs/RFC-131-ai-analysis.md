@@ -35,7 +35,7 @@ RFC-094):
 
 | Schema | `$id` | What |
 |---|---|---|
-| job | `https://openctem.io/schemas/analyze/job/v1.json` | kind (`triage.v1`), use case, subject, bundle (digest, data class, fields sent and withheld, masked), output schema, prompt template id and digest, model policy, investigation grant (multi-step kinds), budgets, deadline |
+| job | `https://openctem.io/schemas/analyze/job/v1.json` | kind (`triage.v1`), use case, subject, bundle (digest, data class, fields sent and withheld, masked, and optionally the masked bundle itself as `text`), output schema, prompt template id and digest, model policy, investigation grant (multi-step kinds), budgets, deadline |
 | result | `https://openctem.io/schemas/analyze/result/v1.json` | status, fixed error code, suggestions, usage, template, run record digest |
 | suggestion | `https://openctem.io/schemas/analyze/suggestion/v1.json` | one typed suggestion: `verdict`, `severity`, `remediation_steps` or `summary`, each with a closed payload, confidence 0..1 and evidence references (`bundle:<field>` or `tool:<n>`) |
 | output per kind | `.../output/triage/v1.json`, `.../output/remediation/v1.json`, `.../output/summary/v1.json` | what a single-shot model call must return for the kind |

@@ -30,6 +30,26 @@ In `server/pkg/sensorproto/analyze/schemas/`, embedded in the API and readable w
 | `remediation.v1` | remediation | `openctem.ai.remediation/v1` | remediation steps | built-in or worker |
 | `summary.v1` | summary | `openctem.ai.summary/v1` | summary | built-in or worker |
 
+## The bundle in a job
+
+The job's `bundle` describes the context the executor may read: its digest,
+data class, the fields sent and the fields withheld, and whether it is
+masked. A worker also needs the context itself, so a job for a worker may
+carry it inline:
+
+- `bundle.text` (optional, a string of at most 196608 characters) is the
+  bundle as the executor reads it. When `bundle.masked` is true it is the
+  masked bundle: sensitive values are placeholders such as `HOST_1` or
+  `URL_3`.
+- The placeholder mapping stays on the platform, which un-masks the result
+  after it returns. A worker never receives a secret value or the mapping.
+- The whole job document stays within `analyze.MaxDocumentBytes`
+  (262144 bytes) once encoded, so the platform trims the text by its encoded
+  size, not by its character count.
+- The field is additive: the contract stays `openctem.analyze/v1`, and a job
+  without it is still valid (the built-in executor reads the bundle in the
+  platform).
+
 ## Rules every output meets
 
 - closed objects: no field outside the schema, so a model cannot add a
@@ -46,8 +66,9 @@ In `server/pkg/sensorproto/analyze/schemas/`, embedded in the API and readable w
 
 `analyze.ParseOutput(kind, raw)`, `analyze.ParseResult(raw)`,
 `analyze.MarshalJob(job)` (refuses to emit a job a conforming executor would
-refuse), `analyze.Validate(schemaID, doc)`, `analyze.LookupKind(name)`.
+refuse; `Bundle.Text` carries `bundle.text`), `analyze.Validate(schemaID, doc)`, `analyze.LookupKind(name)`.
 
 ## Key files
 
-- `server/pkg/sensorproto/analyze/` (schemas, types, validator, test vectors)
+- `server/pkg/sensorproto/analyze/` (schemas, types, validator, test vectors;
+  `testdata/job.text.valid.json` is a job with `bundle.text`)
