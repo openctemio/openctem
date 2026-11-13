@@ -97,7 +97,7 @@ jobs:
 
           \`\`\`bash
           docker pull ghcr.io/openctemio/openctem:${TAG}      # all-in-one (API + web + console + gateway)
-          docker pull ghcr.io/openctemio/openctem-api:${TAG}
+          docker pull ghcr.io/openctemio/openctem-server:${TAG}   # the server (API); named openctem-api up to v0.22.x
           docker pull ghcr.io/openctemio/openctem-web:${TAG}
           docker pull ghcr.io/openctemio/openctem-console:${TAG}   # platform console
           docker pull ghcr.io/openctemio/migrations:${TAG}
@@ -110,13 +110,13 @@ jobs:
           Verify an image before deploying it:
 
           \`\`\`bash
-          cosign verify ghcr.io/openctemio/openctem-api:${TAG} \\
+          cosign verify ghcr.io/openctemio/openctem-server:${TAG} \\
             --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \\
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          cosign verify-attestation --type spdxjson ghcr.io/openctemio/openctem-api:${TAG} \\
+          cosign verify-attestation --type spdxjson ghcr.io/openctemio/openctem-server:${TAG} \\
             --certificate-identity-regexp '^https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v' \\
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          gh attestation verify oci://ghcr.io/openctemio/openctem-api:${TAG} --owner openctemio
+          gh attestation verify oci://ghcr.io/openctemio/openctem-server:${TAG} --owner openctemio
           \`\`\`
 
           ## Installing without containers, or from a private registry

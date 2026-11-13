@@ -6542,7 +6542,7 @@ task) and runs `npm run e2e` with `CI=true`. On failure it uploads
 The same stack runs locally (move the ports if 3000/8080 are taken):
 
 ```bash
-docker build -t local/openctem-api:e2e --target production server
+docker build -t local/openctem-server:e2e --target production server
 docker build -t local/openctem-web:e2e web
 bash web/e2e/ci/make-env.sh        # web/e2e/ci/.env: random secrets (git-ignored)
 docker compose -f web/e2e/ci/compose.yml up -d --wait
