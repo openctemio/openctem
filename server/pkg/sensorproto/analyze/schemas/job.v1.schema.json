@@ -32,7 +32,8 @@
         "sealed_ref": {"type": "string", "maxLength": 256, "pattern": "^/api/"},
         "fields": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/field"}},
         "fields_withheld": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/field"}},
-        "masked": {"type": "boolean", "description": "Sensitive values in the bundle are placeholders; the mapping stays on the platform."}
+        "masked": {"type": "boolean", "description": "Sensitive values in the bundle are placeholders; the mapping stays on the platform."},
+        "text": {"type": "string", "maxLength": 196608, "description": "The bundle itself, as sent to the executor: masked when masked is true (placeholders such as HOST_1 in place of sensitive values). Never holds a secret value or the placeholder mapping. Absent when the executor reads the bundle another way (sealed_ref) or reads it in the platform. The whole job document stays within 262144 bytes, so the platform trims the text by its encoded size."}
       }
     },
     "output_schema": {"enum": ["openctem.ai.triage/v1", "openctem.ai.remediation/v1", "openctem.ai.summary/v1"]},
