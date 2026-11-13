@@ -138,7 +138,7 @@ func (h *aiWorkerHarness) ask(a *aidom.AIAgent, org, findingID string) (*aianaly
 func (h *aiWorkerHarness) count(q string, args ...any) int {
 	h.t.Helper()
 	var n int
-	if err := h.db.QueryRow(q, args...).Scan(&n); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), q, args...).Scan(&n); err != nil {
 		h.t.Fatal(err)
 	}
 	return n
@@ -152,7 +152,7 @@ func (h *aiWorkerHarness) jobOf(commandID string) (aianalysis.JobPayload, string
 		typ, priority string
 		expires       time.Time
 	)
-	if err := h.db.QueryRow(`SELECT payload, type, priority, expires_at FROM commands WHERE tenant_id = $1 AND id = $2`,
+	if err := h.db.QueryRowContext(context.Background(), `SELECT payload, type, priority, expires_at FROM commands WHERE tenant_id = $1 AND id = $2`,
 		h.org, commandID).Scan(&raw, &typ, &priority, &expires); err != nil {
 		h.t.Fatalf("read the analysis job: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestAIWorker_DispatchQueuesOneMaskedSchemaValidJob_DB(t *testing.T) {
 	// The run on record: queued, bound to its job, what it sends.
 	var status, cmd string
 	var sent int
-	if err := h.db.QueryRow(`SELECT status, command_id::text, cardinality(fields_sent) FROM ai_runs WHERE tenant_id = $1 AND id = $2`,
+	if err := h.db.QueryRowContext(context.Background(), `SELECT status, command_id::text, cardinality(fields_sent) FROM ai_runs WHERE tenant_id = $1 AND id = $2`,
 		h.org, run.ID.String()).Scan(&status, &cmd, &sent); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestAIWorker_DispatchQueuesOneMaskedSchemaValidJob_DB(t *testing.T) {
 	}
 	// Audited, without the bundle.
 	var meta string
-	if err := h.db.QueryRow(`SELECT metadata::text FROM audit_logs WHERE tenant_id = $1 AND action = 'ai_agent.analysis_job_queued'`,
+	if err := h.db.QueryRowContext(context.Background(), `SELECT metadata::text FROM audit_logs WHERE tenant_id = $1 AND action = 'ai_agent.analysis_job_queued'`,
 		h.org).Scan(&meta); err != nil {
 		t.Fatalf("audit row: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestAIWorker_OversizeBundleIsFittedNotSentOversize_DB(t *testing.T) {
 		t.Fatalf("the fitted job does not satisfy its schema: %v", err)
 	}
 	var meta string
-	if err := h.db.QueryRow(`SELECT metadata::text FROM audit_logs WHERE tenant_id = $1 AND action = 'ai_agent.analysis_job_queued'`,
+	if err := h.db.QueryRowContext(context.Background(), `SELECT metadata::text FROM audit_logs WHERE tenant_id = $1 AND action = 'ai_agent.analysis_job_queued'`,
 		h.org).Scan(&meta); err != nil || !strings.Contains(meta, `"fields_shortened": ["finding.`) {
 		t.Fatalf("audit does not record the shortened field: %s (%v)", meta, err)
 	}
@@ -349,7 +349,7 @@ func TestAIWorker_RunsEndWithoutAWorker_DB(t *testing.T) {
 	runState := func(r *aidom.Run) (string, string) {
 		t.Helper()
 		var st, code string
-		if err := h.db.QueryRow(`SELECT status, COALESCE(error_code, '') FROM ai_runs WHERE tenant_id = $1 AND id = $2`,
+		if err := h.db.QueryRowContext(context.Background(), `SELECT status, COALESCE(error_code, '') FROM ai_runs WHERE tenant_id = $1 AND id = $2`,
 			h.org, r.ID.String()).Scan(&st, &code); err != nil {
 			t.Fatal(err)
 		}
@@ -358,7 +358,7 @@ func TestAIWorker_RunsEndWithoutAWorker_DB(t *testing.T) {
 	cmdState := func(r *aidom.Run) string {
 		t.Helper()
 		var st string
-		if err := h.db.QueryRow(`SELECT status FROM commands WHERE tenant_id = $1 AND id = $2`, h.org, r.CommandID.String()).Scan(&st); err != nil {
+		if err := h.db.QueryRowContext(context.Background(), `SELECT status FROM commands WHERE tenant_id = $1 AND id = $2`, h.org, r.CommandID.String()).Scan(&st); err != nil {
 			t.Fatal(err)
 		}
 		return st

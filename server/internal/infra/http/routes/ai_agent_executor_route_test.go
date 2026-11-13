@@ -62,10 +62,10 @@ func TestAIAgentExecutorRoute_ManageStepUpAndKnownExecutors(t *testing.T) {
 
 	call := func(tok, executor string) (int, string) {
 		body := strings.NewReader(`{"executor":"` + executor + `"}`)
-		req := httptest.NewRequest(http.MethodPut, "/api/v1/ai/agents/"+shared.NewID().String()+"/executor", body)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/api/v1/ai/agents/"+shared.NewID().String()+"/executor", body)
 		req.Header.Set("Authorization", "Bearer "+tok)
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, req.WithContext(context.Background()))
+		mux.ServeHTTP(rec, req)
 		var e struct {
 			Code string `json:"code"`
 		}
