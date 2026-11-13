@@ -12,6 +12,7 @@ import { del } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { useTranslation } from '@/context/i18n-provider'
 
 /**
@@ -69,18 +70,18 @@ export function DeleteOrganizationItem() {
     // The request succeeded. Anything that fails from here on is only the
     // move to another organization, so it must never be reported as a failed
     // request (the organization is already closed).
-    toast.success(
-      t('org.danger.scheduled', 'Organization "{name}" will be deleted on {date}.', {
+    // Said on the page that loads next (a toast here would go with this page).
+    const scheduled = {
+      kind: 'success' as const,
+      title: t('org.danger.scheduled', 'Organization "{name}" will be deleted on {date}.', {
         name: name ?? '',
         date: due ? new Date(due).toLocaleDateString() : '',
       }),
-      {
-        description: t(
-          'org.danger.scheduledHint',
-          'It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then.'
-        ),
-      }
-    )
+      description: t(
+        'org.danger.scheduledHint',
+        'It is closed to everyone now. An owner can cancel the deletion from the sign-in page until then.'
+      ),
+    }
     // A full reload (not router.push) so no cached data of the deleted
     // organization survives; replace() so Back does not return here.
     const next = tenants.find((t) => t.id !== currentTenant.id)
@@ -96,7 +97,7 @@ export function DeleteOrganizationItem() {
       removeCookie(env.cookies.tenant)
       target = '/welcome'
     }
-    window.location.replace(target)
+    navigateAfterSessionChange(target, { replace: true, flash: scheduled })
   }
 
   return (
