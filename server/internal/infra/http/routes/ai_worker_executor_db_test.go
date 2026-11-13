@@ -114,8 +114,8 @@ func newAIWorkerHarness(t *testing.T) *aiWorkerHarness {
 	return h
 }
 
-// workerAgent is an AI agent of the organization moved to its AI workers.
-func (h *aiWorkerHarness) workerAgent(preset string) *aidom.AIAgent {
+// aiAgentOnWorkers is an AI agent of the organization moved to its AI workers.
+func (h *aiWorkerHarness) aiAgentOnWorkers(preset string) *aidom.AIAgent {
 	h.t.Helper()
 	a := h.aiAgent(preset)
 	moved, err := h.svc.ChangeExecutor(context.Background(), a.ID, string(aidom.ExecutorTenantWorker),
@@ -167,7 +167,7 @@ const aiWorkerSecret = "Sup3rSecret!"
 
 func TestAIWorker_DispatchQueuesOneMaskedSchemaValidJob_DB(t *testing.T) {
 	h := newAIWorkerHarness(t)
-	a := h.workerAgent("triage")
+	a := h.aiAgentOnWorkers("triage")
 	f := h.findingFor(a, "high")
 	h.exec(`UPDATE findings SET description = $2 WHERE id = $1`, f,
 		"GET https://"+aiExecHost+"/admin returned password="+aiWorkerSecret+" from 10.20.30.40.")
@@ -245,7 +245,7 @@ func TestAIWorker_DispatchQueuesOneMaskedSchemaValidJob_DB(t *testing.T) {
 
 func TestAIWorker_RefusesBeforeAnyJob_DB(t *testing.T) {
 	h := newAIWorkerHarness(t)
-	a := h.workerAgent("triage")
+	a := h.aiAgentOnWorkers("triage")
 	jobs := func() int {
 		return h.count(`SELECT count(*) FROM commands WHERE type = 'analyze' AND tenant_id = $1`, h.org)
 	}
@@ -297,7 +297,7 @@ func TestAIWorker_RefusesBeforeAnyJob_DB(t *testing.T) {
 // job stays within the document limit and says what was shortened.
 func TestAIWorker_OversizeBundleIsFittedNotSentOversize_DB(t *testing.T) {
 	h := newAIWorkerHarness(t)
-	a := h.workerAgent("triage")
+	a := h.aiAgentOnWorkers("triage")
 	f := h.findingFor(a, "high")
 	// Free-text fields are capped at 10 KB in the bundle, but '<' takes six
 	// bytes once encoded; with a long priority reason the bundle passes the
@@ -337,7 +337,7 @@ func TestAIWorker_OversizeBundleIsFittedNotSentOversize_DB(t *testing.T) {
 func TestAIWorker_RunsEndWithoutAWorker_DB(t *testing.T) {
 	h := newAIWorkerHarness(t)
 	ctx := context.Background()
-	a := h.workerAgent("triage")
+	a := h.aiAgentOnWorkers("triage")
 	dispatch := func() *aidom.Run {
 		t.Helper()
 		d, err := h.ask(a, h.org, h.findingFor(a, "high"))
