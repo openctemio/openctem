@@ -339,7 +339,7 @@ export default function RelationshipSuggestionsPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  className="text-muted-foreground hover:text-destructive"
                   onClick={() => handleDismiss(row.original.id)}
                   disabled={isMutating}
                   aria-label="Dismiss suggestion"

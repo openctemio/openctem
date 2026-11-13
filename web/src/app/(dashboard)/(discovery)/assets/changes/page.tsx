@@ -407,7 +407,13 @@ export default function AssetChangesPage() {
 
   const refreshLabel = t('assetTimeline.activity.refresh', 'Refresh')
   const toolbarEnd = (
-    <Button variant="outline" size="sm" className="h-9" onClick={refresh} aria-label={refreshLabel}>
+    <Button
+      variant="outline"
+      size="icon-sm"
+
+      onClick={refresh}
+      aria-label={refreshLabel}
+    >
       <RefreshCw className="h-4 w-4" />
     </Button>
   )

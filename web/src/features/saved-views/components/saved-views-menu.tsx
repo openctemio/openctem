@@ -359,9 +359,10 @@ export function SavedViewsMenu({
       >
         <DropdownMenuTrigger asChild>
           <Button
+            iconOnlyBelow="@2xl/toolbar"
             variant="outline"
             size="sm"
-            className="h-9 max-w-[14rem]"
+            className="max-w-[14rem]"
             // The name stays readable when only the icon shows (narrow toolbar).
             aria-label={
               active

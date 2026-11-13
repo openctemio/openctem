@@ -119,8 +119,8 @@ function RelatedFindingsTable({
         cell: ({ row }) => (
           <Button
             variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
+            size="icon-sm"
+            className="p-0"
             aria-label={t('findings.relatedTab.open', 'Open {title}', {
               title: row.original.title,
             })}

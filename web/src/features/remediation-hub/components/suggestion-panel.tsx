@@ -189,7 +189,7 @@ export function SuggestionPanel({
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8"
+
                 onClick={onPrev}
                 disabled={!position || position.index <= 0}
                 aria-label={t('remediationHub.panel.previous')}
@@ -202,7 +202,7 @@ export function SuggestionPanel({
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8"
+
                 onClick={onNext}
                 disabled={!position || position.index >= position.total - 1}
                 aria-label={t('remediationHub.panel.next')}

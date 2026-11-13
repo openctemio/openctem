@@ -177,7 +177,7 @@ function SourceRow({
             type="button"
             size="icon"
             variant="ghost"
-            className="h-7 w-7"
+
             disabled={index === 0}
             aria-label={t('assetSources.moveUp', 'Move {name} up', { name: label })}
             onClick={() => onMove(index, index - 1)}
@@ -188,7 +188,7 @@ function SourceRow({
             type="button"
             size="icon"
             variant="ghost"
-            className="h-7 w-7"
+
             disabled={index === total - 1}
             aria-label={t('assetSources.moveDown', 'Move {name} down', { name: label })}
             onClick={() => onMove(index, index + 1)}
@@ -202,7 +202,7 @@ function SourceRow({
           type="button"
           size="icon"
           variant="ghost"
-          className="h-7 w-7"
+
           aria-label={t('assetSources.remove', 'Stop ranking {name} separately', { name: label })}
           onClick={onRemove}
         >

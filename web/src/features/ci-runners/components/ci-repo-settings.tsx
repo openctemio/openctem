@@ -235,6 +235,7 @@ export function GateFieldRow({
           </Button>
           {own && (
             <Button
+              iconOnlyBelow="sm"
               size="sm"
               variant="ghost"
               onClick={onReset}

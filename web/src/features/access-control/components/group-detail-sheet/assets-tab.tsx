@@ -172,7 +172,7 @@ export function AssetsTab({
           </span>
           <div className="flex items-center gap-1">
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset === 0}
               onClick={() => onPageChange(Math.max(0, offset - limit))}
@@ -180,7 +180,7 @@ export function AssetsTab({
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset + limit >= totalCount}
               onClick={() => onPageChange(offset + limit)}

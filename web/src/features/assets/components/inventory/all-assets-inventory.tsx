@@ -624,7 +624,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         <Button
           variant="outline"
           size="icon"
-          className="h-9 w-9"
+
           onClick={refresh}
           disabled={isLoading || statsLoading}
           aria-label={t('assets.inventoryPage.refresh', 'Refresh')}

@@ -365,8 +365,8 @@ export function AddAssetsStep({
                 type="button"
                 onClick={addNewAsset}
                 disabled={!newAssetName.trim() || !validationResult.isValid || isLoadingTypes}
-                size="sm"
-                className="h-9 px-3"
+                size="icon-sm"
+                className="px-3"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -429,7 +429,7 @@ export function AddAssetsStep({
                         variant="ghost"
                         size="icon"
                         onClick={() => deleteNewAsset(asset.id)}
-                        className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

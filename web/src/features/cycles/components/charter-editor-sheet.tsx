@@ -363,7 +363,7 @@ export function CharterEditorSheet({
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 shrink-0"
+                            className="shrink-0"
                             onClick={() => successCriteria.remove(index)}
                             aria-label={t(
                               'scoping.charter.removeCriterion',
@@ -600,7 +600,7 @@ function LegacyThreatScenarios({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6"
+
                       aria-label={t('scoping.charter.removeItem', 'Remove {item}', { item })}
                       onClick={() => field.onChange(field.value.filter((v) => v !== item))}
                     >

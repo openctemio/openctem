@@ -1,9 +1,10 @@
 import { test, expect } from '../fixtures/authenticated-page'
+import { touchTargetHeight } from '../helpers/touch'
 
 /**
  * Dashboard header on a phone (390px). Before content there are two rows:
  *   1. the dashboard switcher filling the width, an icon-only Refresh and an
- *      icon-only More menu, all on one line and at least 44px tall;
+ *      icon-only More menu, all on one line, each with a 44px touch target;
  *   2. one muted meta line (scope · updated · next) that never wraps.
  * Customize and the refresh schedule live in More. A screenshot of the header
  * in light and dark is attached for review. From 640px the same controls sit
@@ -35,7 +36,8 @@ for (const scheme of ['light', 'dark'] as const) {
       for (const b of [r, m]) expect(Math.abs(b.y - s.y)).toBeLessThan(2)
       expect(s.x).toBeLessThan(r.x)
       expect(r.x).toBeLessThan(m.x)
-      for (const b of [s, r, m]) expect(b.height).toBeGreaterThanOrEqual(TOUCH)
+      for (const l of [switcher, refresh, more])
+        expect(await touchTargetHeight(l), 'touch target').toBeGreaterThanOrEqual(TOUCH)
       expect(s.width).toBeGreaterThan(390 / 2)
       // Customize and the schedule are not in the row on a phone.
       await expect(toolbar.getByRole('button', { name: 'Customize' })).toBeHidden()

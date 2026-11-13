@@ -332,7 +332,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+
                 aria-label={t('scans.assets.prevPage')}
                 disabled={page <= 1 || isLoading}
                 onClick={() => {
@@ -349,7 +349,7 @@ export function AssetSource({ selected, onChange }: AssetSourceProps) {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
+
                 aria-label={t('scans.assets.nextPage')}
                 disabled={page >= totalPages || isLoading}
                 onClick={() => {

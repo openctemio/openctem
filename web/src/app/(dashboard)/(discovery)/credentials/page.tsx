@@ -572,6 +572,7 @@ export default function CredentialsPage() {
             )}
           >
             <Button
+              iconOnlyBelow="sm"
               variant="outline"
               size="sm"
               onClick={() => setConfirmExport(true)}

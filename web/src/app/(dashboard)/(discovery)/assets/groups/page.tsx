@@ -645,7 +645,7 @@ export default function AssetGroupsPage() {
           <Button
             variant="outline"
             size="icon"
-            className="h-9 w-9"
+
             onClick={handleRefresh}
             disabled={isLoading}
             aria-label={t('assetGroups.refresh', 'Refresh')}
@@ -657,7 +657,7 @@ export default function AssetGroupsPage() {
       </Tooltip>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9">
+          <Button iconOnlyBelow="md" variant="outline" size="sm">
             <Download className="h-4 w-4 md:me-2" />
             <span className="sr-only md:not-sr-only">{t('assetGroups.export', 'Export')}</span>
           </Button>

@@ -35,7 +35,7 @@ export function FixStepsBlock({ steps }: { steps: FixSteps }) {
             <Button
               size="icon"
               variant="ghost"
-              className="size-7 shrink-0"
+              className="shrink-0"
               onClick={() => copy(c.code)}
               aria-label={t('remediationHub.fix.copy', undefined, { label: c.label })}
             >

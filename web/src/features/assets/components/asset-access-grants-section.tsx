@@ -226,7 +226,7 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  className="text-destructive hover:text-destructive"
                   aria-label={t('assets.grants.revokeAria', 'Revoke access for {name}', {
                     name: g.userName || g.userEmail || t('assets.grants.userFallback', 'user'),
                   })}

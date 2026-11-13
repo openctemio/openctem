@@ -58,8 +58,8 @@ export function OneTimeSecretField({ label, value, noun = label }: OneTimeSecret
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            className="absolute end-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+            size="icon-sm"
+            className="absolute end-0 top-1/2 -translate-y-1/2 px-3 py-2 hover:bg-transparent"
             aria-label={shown ? `Hide ${noun}` : `Show ${noun}`}
             onClick={() => setShown((s) => !s)}
           >

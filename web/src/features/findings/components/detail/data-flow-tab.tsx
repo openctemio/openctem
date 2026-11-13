@@ -214,7 +214,7 @@ function DataFlowStepCard({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                 aria-label={t('findings.dataFlow.copyCode', 'Copy code')}
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -240,7 +240,7 @@ function DataFlowStepCard({
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                  className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                   aria-label={t('findings.dataFlow.copyPath', 'Copy file and line')}
                                   onClick={(e) => {
                                     e.stopPropagation()
