@@ -417,7 +417,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           {/* The organization */}
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-primary text-primary-foreground font-bold text-lg">
+              <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-primary text-primary-foreground font-semibold text-lg">
                 {orgName.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">

@@ -432,7 +432,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
           </Link>
         </Button>
         <div className="min-w-0 flex-1 basis-64">
-          <h1 className="text-2xl font-bold tracking-tight break-words">{task.title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight break-words">{task.title}</h1>
           {/* A task named after its fix action would repeat the title. */}
           {task.action_title && task.action_title.trim() !== task.title.trim() && (
             <p className="text-muted-foreground text-sm break-words">{task.action_title}</p>

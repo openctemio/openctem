@@ -29,7 +29,7 @@ export const SIDEBAR_CONTEXT_ROW_CLASS =
  * it. The hairline keeps it visible on the row's own hover fill.
  */
 export const SIDEBAR_CHIP_CLASS =
-  'flex aspect-square size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-[11px] font-semibold text-sidebar-accent-foreground ring-1 ring-sidebar-border'
+  'flex aspect-square size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-cap font-semibold text-sidebar-accent-foreground ring-1 ring-sidebar-border'
 
 interface SidebarBrandProps {
   /** Where the logo links to when the sidebar is expanded. */

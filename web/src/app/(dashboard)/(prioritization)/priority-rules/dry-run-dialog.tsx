@@ -260,7 +260,7 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
           {t('prioritization.dryRun.impact', 'Impact')}
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold tabular-nums">{matched}</span>
+          <span className="text-2xl font-semibold tabular-nums">{matched}</span>
           <span className="text-muted-foreground text-sm">
             {t(
               'prioritization.dryRun.matchedOf',

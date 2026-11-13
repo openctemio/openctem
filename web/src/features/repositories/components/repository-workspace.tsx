@@ -2296,7 +2296,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               </div>
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h1 className="min-w-0 text-2xl font-bold break-words">{repository.name}</h1>
+                  <h1 className="min-w-0 text-2xl font-semibold break-words">{repository.name}</h1>
                   <Tag variant="plain" label={SCM_PROVIDER_LABELS[repository.scm_provider]} />
                   <Badge variant={repository.status === 'active' ? 'default' : 'secondary'}>
                     {STATUS_LABELS[repository.status]}

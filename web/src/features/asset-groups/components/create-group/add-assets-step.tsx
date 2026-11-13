@@ -309,7 +309,7 @@ export function AddAssetsStep({
                           colors.bg
                         )}
                       >
-                        <span className={cn('text-xs font-bold', colors.text)}>
+                        <span className={cn('text-xs font-semibold', colors.text)}>
                           {asset.type.charAt(0).toUpperCase()}
                         </span>
                       </div>
@@ -411,7 +411,7 @@ export function AddAssetsStep({
                           colors.bg
                         )}
                       >
-                        <span className={cn('text-xs font-bold', colors.text)}>
+                        <span className={cn('text-xs font-semibold', colors.text)}>
                           {asset.type.charAt(0).toUpperCase()}
                         </span>
                       </div>

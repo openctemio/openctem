@@ -19,7 +19,7 @@ export default function GlobalError({ error, reset }: ErrorProps) {
   return (
     <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Something went wrong</h2>
+        <h2 className="text-2xl font-semibold">Something went wrong</h2>
         <p className="text-muted-foreground mt-2">
           An unexpected error occurred. Please try again.
         </p>

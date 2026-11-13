@@ -273,7 +273,7 @@ export function RiskScoreGauge({
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={cn('font-bold tabular-nums', fontSize)}>{score}</span>
+        <span className={cn('font-semibold tabular-nums', fontSize)}>{score}</span>
         {showLabel && size !== 'sm' && (
           <span className="text-[8px] text-muted-foreground uppercase">{label}</span>
         )}

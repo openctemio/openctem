@@ -95,7 +95,7 @@ export function StatsCard({
         {Icon && <Icon className={cn('h-4 w-4', iconClassName ?? 'text-muted-foreground')} />}
       </CardHeader>
       <CardContent>
-        <div className={cn('text-2xl font-bold', valueClassName)}>{value}</div>
+        <div className={cn('text-2xl font-semibold', valueClassName)}>{value}</div>
         {(change || description) && (
           <div className="flex items-center gap-1">
             {change && (
