@@ -84,7 +84,7 @@ export function PlatformAnnouncementBanner() {
             <Button
               variant="ghost"
               size="icon"
-              className="size-6 shrink-0"
+              className="shrink-0"
               aria-label={t('announcements.dismiss', 'Dismiss')}
               onClick={() => {
                 const next = [...dismissed, a.id]

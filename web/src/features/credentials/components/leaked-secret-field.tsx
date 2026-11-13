@@ -170,7 +170,7 @@ export function LeakedSecretField({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 onClick={handleCopy}
                 aria-label={
                   isCopied

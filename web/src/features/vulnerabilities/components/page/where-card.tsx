@@ -145,7 +145,7 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
             <Button
               variant="outline"
               size="icon"
-              className="h-7 w-7"
+
               aria-label={t('vulnPage.where.prev', 'Previous page')}
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -155,7 +155,7 @@ export function WhereCard({ cve, impacted }: { cve: string; impacted: number }) 
             <Button
               variant="outline"
               size="icon"
-              className="h-7 w-7"
+
               aria-label={t('vulnPage.where.next', 'Next page')}
               disabled={page >= pages}
               onClick={() => setPage((p) => Math.min(pages, p + 1))}

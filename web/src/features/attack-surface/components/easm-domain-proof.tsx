@@ -78,7 +78,7 @@ export function EASMDomainProofPanel() {
               )}
               {canDelete && (
                 <Button
-                  size="sm"
+                  size="icon-sm"
                   variant="ghost"
                   aria-label={`Remove ${d.domain ?? 'domain'}`}
                   onClick={() => setRemoving(d)}

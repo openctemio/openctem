@@ -320,7 +320,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
                             type="button"
                             size="icon"
                             variant="ghost"
-                            className="h-8 w-8"
+
                             aria-label={t('dashboards.manage.moreFor', 'More actions for {name}', {
                               name: d.name,
                             })}

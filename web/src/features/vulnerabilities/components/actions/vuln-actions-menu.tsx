@@ -41,7 +41,7 @@ export function VulnActionsMenu({
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          size="sm"
+          size="icon-sm"
           aria-label={t('vulnPage.actions.more', 'More actions')}
           title={t('vulnPage.actions.more', 'More actions')}
         >

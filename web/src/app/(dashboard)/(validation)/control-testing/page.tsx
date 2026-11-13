@@ -242,6 +242,7 @@ function RecordResultAction({ ct }: { ct: ControlTest }) {
   return (
     <Can permission={Permission.PentestWrite}>
       <Button
+        iconOnlyBelow="sm"
         variant="ghost"
         size="sm"
         onClick={() => setRecordOpen(true)}
@@ -909,7 +910,7 @@ export default function ControlTestingPage() {
             'Track whether your security controls pass their tests, framework by framework.'
           )}
         >
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
+          <Button iconOnlyBelow="sm" size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4 sm:me-2" />
             <span className="sr-only sm:not-sr-only">
               {t('validation.controlTesting.add', 'Add control test')}

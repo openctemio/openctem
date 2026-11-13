@@ -427,7 +427,7 @@ export default function SCMConnectionsPage() {
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-9 w-9"
+
                         aria-label={t('scmIntegration.page.refresh', 'Refresh')}
                         title={t('scmIntegration.page.refresh', 'Refresh')}
                         onClick={handleRefresh}

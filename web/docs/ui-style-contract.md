@@ -9,6 +9,93 @@ Decisions D14–D16 cover density, default sort, saved views, "Scroll all", the
 batch-bar rule, server facets, honest dashboard tiles and the three empty-state
 kinds.
 
+## Sizes
+
+The one place for the console's sizes. Values come from `src/styles/theme.css`;
+`src/styles/__tests__/sizes-doc.test.ts` fails when a table here and the theme
+disagree. Change both together.
+
+### Control heights
+
+| Context                                                               | Token                  | px  |
+| --------------------------------------------------------------------- | ---------------------- | --- |
+| App page: every control in a row (buttons, fields, selects)           | `--control-h`          | 32  |
+| Small sizes (`sm`, `icon-sm`) inside a dense place (table, bulk bar)  | `--control-h-sm`       | 28  |
+| Segment inside a 32 px track                                          | `--control-h-seg`      | 26  |
+| Info icon (`xs`)                                                      | `--control-h-xs`       | 24  |
+| Entry page without the app sidebar (sign-in, onboarding, invitations) | `--control-h-entry`    | 36  |
+| Text field, select (= the row height)                                 | `--control-h-field`    | 32  |
+| Below 768 px: buttons, fields, selects, search (as the live UI)       | `--control-h-touch`    | 36  |
+| Below 768 px: small sizes (`sm`, `icon-sm`)                           | `--control-h-touch-sm` | 32  |
+| Below 768 px: large (`lg`)                                            | `--control-h-touch-lg` | 40  |
+| Below 768 px: invisible touch target height of every button           | `--touch-target`       | 44  |
+
+- Below 768 px buttons have compact content: text 13 px (`text-dense`), padding
+  10 px (8 beside an icon), icon 16, gap 6. Fields keep 16 px text (`text-base`),
+  so phones never zoom into a focused field; the viewport is never locked. The
+  touch target is as wide as the button, so neighbours never share one.
+- Icon-only buttons are squares at every size (`icon`, `icon-sm`, `xs`, or
+  `iconOnlyBelow` when the label shows only from a width up);
+  `src/components/ui/__tests__/icon-button-guard.test.ts` and the page-rhythm
+  probe enforce it.
+
+### Type roles
+
+| Role                              | Class              | Size/line | Weight | Below 768 px |
+| --------------------------------- | ------------------ | --------- | ------ | ------------ |
+| Caption                           | `text-cap`         | 12/16     | 400    | 12/16        |
+| Chip, table header, count         | `text-cap-m`       | 12/16     | 500    | 12/16        |
+| Mono (ids, code)                  | `text-code`        | 12/20     | 400    | 12/20        |
+| Cells, rows, sidebar, breadcrumbs | `text-dense`       | 13/20     | 400    | 13/20        |
+| Body, forms, buttons              | `text-body`        | 14/20     | 400    | 14/20        |
+| Card title                        | `text-card`        | 14/20     | 600    | 14/20        |
+| Section title                     | `text-section`     | 16/24     | 600    | 16/24        |
+| Dialog title                      | `text-dialog`      | 20/28     | 600    | 20/28        |
+| Page title                        | `text-page`        | 24/32     | 600    | 20/28        |
+| Figure                            | `text-figure`      | 24/32     | 600    | 20/28        |
+| Lead figure                       | `text-figure-lead` | 32/40     | 600    | 24/32        |
+| Hero figure                       | `text-hero`        | 48/56     | 600    | 48/56        |
+| Wallboard                         | `text-wall`        | 56/64     | 600    | 56/64        |
+
+### Spacing
+
+| Gap                                       | Token          | px  |
+| ----------------------------------------- | -------------- | --- |
+| Between page blocks                       | `--sp-page`    | 24  |
+| Page header to its tabs; around a section | `--sp-section` | 16  |
+| Scale step 1                              | `--sp-1`       | 4   |
+| Scale step 2                              | `--sp-2`       | 8   |
+| Scale step 3                              | `--sp-3`       | 12  |
+| Scale step 4                              | `--sp-4`       | 16  |
+| Scale step 6                              | `--sp-6`       | 24  |
+| Scale step 8                              | `--sp-8`       | 32  |
+
+### Row density
+
+| Density                                    | Token                                       | px  |
+| ------------------------------------------ | ------------------------------------------- | --- |
+| Default                                    | `--row-h`                                   | 40  |
+| Compact (`data-density="compact"`)         | `--row-h` in `[data-density='compact']`     | 32  |
+| Comfortable (`data-density="comfortable"`) | `--row-h` in `[data-density='comfortable']` | 52  |
+
+### Radii
+
+| Role                      | Token             | px  |
+| ------------------------- | ----------------- | --- |
+| Small (chips inside text) | `--radius-sm`     | 4   |
+| Controls, chips           | `--radius-md`     | 6   |
+| Cards, menus              | `--radius-lg`     | 8   |
+| Dialogs (open: 10 or 8)   | `--dialog-radius` | 8   |
+
+### Decisions
+
+| Date       | Decision                                                                                                                                                              | By                                                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 2026-11-12 | Control scale 32 / 28, 36 on entry pages                                                                                                                              | Owner                                                         |
+| 2026-11-13 | Text fields and selects share the row height (32), not 36                                                                                                             | Coordinator, under the owner's "do the best"                  |
+| 2026-11-13 | Organization chip initials 12 px 600 (the 12 px floor holds)                                                                                                          | Design                                                        |
+| 2026-11-13 | Phone heights = the live UI (36, small 32, large 40; fields 36 with 16 px text), compact button content, 44 px as an invisible touch target, icon-only buttons square | Owner, after viewing the preview and the live UI on his phone |
+
 ## 1. Page anatomy
 
 Every page, top to bottom:
@@ -290,16 +377,7 @@ load.
   `text-hero` 48/56, `text-wall` 56/64. `text-title`, `text-meta`,
   `text-data` and `text-kpi` remain as aliases. Weights are 400, 500 and 600
   only (no `font-bold`). Nothing under 12px.
-- Control heights come from the control scale, set by the kit, never at the
-  call site: every control in a row is 32 (`h-control`; buttons, text fields,
-  selects, toggles); the small sizes (Button `sm` / `icon-sm`, SelectTrigger
-  `sm`, `h-control-dense`) are 28 only inside a dense place
-  (`data-control-density="dense"`: DataTable, the bulk bar; `DensityScope` in
-  `components/ui/density.tsx`) and 32 anywhere else; 26 a segment inside a
-  32 track, 24 the info icon (`xs`); entry pages without the app sidebar
-  (`data-control-scale="entry"` / `EntryScope`) are 36; below 768px every
-  control is 44. Rows: `h-row` (40, or 32 / 52 under
-  `data-density="compact|comfortable"`).
+- Control heights and type sizes: see "Sizes" at the top.
 - `scripts/check-design-tokens.sh` (run by `check-page-anatomy.sh`) refuses
   added lines with a raw colour, an arbitrary radius, shadow, line height,
   weight or tracking, `font-bold`, a height on a kit control, and raw

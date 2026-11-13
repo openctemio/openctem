@@ -223,7 +223,7 @@ export function CapabilitiesSection() {
       <Button
         variant={viewMode === 'table' ? 'secondary' : 'ghost'}
         size="icon"
-        className="h-7 w-7"
+
         onClick={() => setViewMode('table')}
         aria-label="Table view"
         aria-pressed={viewMode === 'table'}
@@ -233,7 +233,7 @@ export function CapabilitiesSection() {
       <Button
         variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
         size="icon"
-        className="h-7 w-7"
+
         onClick={() => setViewMode('grid')}
         aria-label="Card view"
         aria-pressed={viewMode === 'grid'}

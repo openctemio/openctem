@@ -352,7 +352,7 @@ export default function CompensatingControlsPage() {
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon-sm"
                       aria-label={t('validation.controls.moreAria', 'More actions for {name}', {
                         name: control.name,
                       })}

@@ -67,8 +67,9 @@ export function FindingRowMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
         <Button
+          size="icon"
           variant="ghost"
-          className="h-8 w-8 p-0"
+          className="p-0"
           aria-label={t('findings.row.actionsFor', 'Actions for {title}', {
             title: toDisplayText(title, 80),
           })}

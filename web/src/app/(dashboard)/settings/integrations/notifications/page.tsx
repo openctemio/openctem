@@ -664,7 +664,7 @@ export default function NotificationIntegrationsPage() {
                       <Button
                         variant="outline"
                         size="icon"
-                        className="h-9 w-9"
+
                         aria-label={t('notificationChannels.page.refresh', 'Refresh')}
                         title={t('notificationChannels.page.refresh', 'Refresh')}
                         onClick={handleRefresh}

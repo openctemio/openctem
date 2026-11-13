@@ -508,7 +508,7 @@ export default function CompliancePage() {
             title="Compliance"
             description="How far each compliance framework's controls are implemented."
           >
-            <Button variant="outline" size="sm" onClick={handleExport}>
+            <Button iconOnlyBelow="sm" variant="outline" size="sm" onClick={handleExport}>
               <Download className="h-4 w-4 sm:me-2" />
               <span className="sr-only sm:not-sr-only">Export</span>
             </Button>

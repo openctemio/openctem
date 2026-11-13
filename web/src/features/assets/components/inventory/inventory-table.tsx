@@ -614,7 +614,7 @@ export function InventoryTable({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+
                   aria-label={t('assets.inv.actionsFor', 'Actions for {name}', {
                     name: asset.name,
                   })}

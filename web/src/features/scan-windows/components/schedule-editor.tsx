@@ -107,7 +107,7 @@ export function SlotsEditor({ slots, onChange, errors, disabled }: SlotsEditorPr
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="ms-auto"
                 aria-label={t('scanWindows.form.removeSlot', 'Remove weekly window {n}', { n })}
                 onClick={() => onChange(slots.filter((_, j) => j !== i))}
@@ -208,7 +208,7 @@ export function OneOffsEditor({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="ms-auto"
                 aria-label={t('scanWindows.form.removeOneOff', 'Remove dated window {n}', { n })}
                 onClick={() => onChange(oneOffs.filter((_, j) => j !== i))}

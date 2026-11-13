@@ -42,7 +42,7 @@ function CopyValue({ label, value }: { label: string; value: string }) {
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="shrink-0"
           aria-label={`Copy ${label.toLowerCase()}`}
           onClick={async () => {
             try {

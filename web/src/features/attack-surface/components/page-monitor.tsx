@@ -397,7 +397,7 @@ function WatchRow({
           )}
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('pageMonitor.edit', 'Settings of {url}', { url: watch.url })}
               aria-expanded={editing}
@@ -408,7 +408,7 @@ function WatchRow({
           )}
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('pageMonitor.remove', 'Stop watching {url}', { url: watch.url })}
               onClick={() => onRemove(watch)}

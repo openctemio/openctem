@@ -497,7 +497,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                   {t('findings.remediationTab.add', 'Add')}
                 </Button>
                 <Button
-                  size="sm"
+                  size="icon-sm"
                   variant="ghost"
                   onClick={() => {
                     setNewStep('')

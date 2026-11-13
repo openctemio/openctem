@@ -753,7 +753,7 @@ function VulnerabilitiesListBody() {
       <Button
         variant="outline"
         size="icon"
-        className="h-9 w-9"
+
         onClick={() => void mutate()}
         disabled={isValidating}
         aria-label={t('vulnPage.list.refresh', 'Refresh')}

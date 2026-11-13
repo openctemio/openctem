@@ -68,7 +68,13 @@ export default function ThreatIntelPage() {
       <PageStack>
         <PageHeader title={t('threatIntel.title')} description={t('threatIntel.description')}>
           <CompactSyncStatus statuses={syncStatuses} />
-          <Button variant="outline" size="sm" onClick={handleRefreshAll} disabled={isLoading}>
+          <Button
+            iconOnlyBelow="sm"
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshAll}
+            disabled={isLoading}
+          >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin sm:me-2" />
             ) : (

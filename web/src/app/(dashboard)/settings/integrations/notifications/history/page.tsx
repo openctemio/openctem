@@ -122,7 +122,7 @@ function buildColumns(t: Translate): ColumnDef<NotificationEventEntry>[] {
       enableHiding: false,
       cell: ({ row }) =>
         safeHref(row.original.url) ? (
-          <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
+          <Button variant="ghost" size="icon-sm" asChild>
             <SafeExternalLink
               href={row.original.url}
               aria-label={t(

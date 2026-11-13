@@ -210,7 +210,7 @@ export function EndpointTable({ poolId, endpoints, canWrite }: EndpointTableProp
             {canWrite && (
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 disabled={busy === e.id}
                 onClick={() => void patch(e, { reset_health: true })}
                 aria-label={t('proxyPools.resetHealthNamed', 'Reset health of {name}', {

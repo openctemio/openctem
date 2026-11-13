@@ -694,8 +694,8 @@ export default function WorkflowsPage() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
+                size="icon-sm"
+                className="p-0"
                 aria-label={t('automations.menu.actionsFor', 'Actions for {name}', {
                   name: workflow.name,
                 })}

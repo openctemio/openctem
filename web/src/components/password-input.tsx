@@ -19,7 +19,7 @@ export function PasswordInput({ className, disabled, ref, ...props }: PasswordIn
           padding keeps the toggle's box clear of the text at every size. */}
       <Input
         type={showPassword ? 'text' : 'password'}
-        className="pe-9 max-md:pe-12"
+        className="pe-9"
         ref={ref}
         disabled={disabled}
         {...props}
@@ -33,9 +33,9 @@ export function PasswordInput({ className, disabled, ref, ...props }: PasswordIn
             ? t('auth.password.hide', 'Hide password')
             : t('auth.password.show', 'Show password')
         }
-        // A compact 24px toggle inside the field; a 44px hit area below 768px.
+        // A compact 24px toggle inside the field; a 44px touch target below 768px.
         size="xs"
-        className="text-muted-foreground absolute end-1 top-1/2 -translate-y-1/2 rounded-md max-md:end-0"
+        className="text-muted-foreground absolute end-1 top-1/2 -translate-y-1/2 rounded-md"
         onClick={() => setShowPassword((prev) => !prev)}
       >
         {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}

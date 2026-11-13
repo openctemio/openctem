@@ -859,9 +859,10 @@ export default function BusinessUnitsPage() {
               }
               toolbarEnd={
                 <Button
+                  iconOnlyBelow="md"
                   variant="outline"
                   size="sm"
-                  className="h-9"
+
                   onClick={handleExport}
                   disabled={businessUnits.length === 0}
                 >

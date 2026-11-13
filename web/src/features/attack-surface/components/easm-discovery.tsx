@@ -406,7 +406,7 @@ export function EASMDiscovery() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+
             onClick={() => mutate()}
             disabled={isValidating}
             aria-label={t('attackSurface.discovery.refresh', 'Refresh')}

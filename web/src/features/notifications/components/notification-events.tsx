@@ -127,7 +127,7 @@ export function NotificationEvents({ integrationId, limit = 10 }: NotificationEv
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6"
+
           onClick={(e) => {
             e.stopPropagation()
             handleRefresh()
