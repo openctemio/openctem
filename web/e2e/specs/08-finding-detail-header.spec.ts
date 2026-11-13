@@ -107,7 +107,7 @@ test.describe('Findings list', { tag: ['@findings', '@smoke'] }, () => {
   })
 })
 
-test.describe('Finding detail section headings', { tag: ['@findings', '@layout'] }, () => {
+test.describe('Finding detail section headings', { tag: ['@findings'] }, () => {
   // The shared DetailSection heading row wraps: the title never collapses and
   // its actions (Verification: "Import newer results", "Checklist") never run
   // past the section, at a phone width and at a desktop width.
