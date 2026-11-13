@@ -58,12 +58,15 @@ func assetChangedFields(before, after *asset.Asset) []string {
 	return append(changed, changedPropertyKeys(before.Properties(), after.Properties())...)
 }
 
+// auditKeyChangedFields is the metadata key naming the changed fields.
+const auditKeyChangedFields = "changed_fields"
+
 // assetUpdateAuditMetadata is the metadata of an asset.updated entry: the
 // changed field names, and for tags the tags added and removed. Tags are
 // labels every reader of the asset sees, never secrets; naming them keeps
 // who set or removed which tag, which the asset row does not record.
 func assetUpdateAuditMetadata(before, after *asset.Asset) map[string]any {
-	md := map[string]any{"changed_fields": assetChangedFields(before, after)}
+	md := map[string]any{auditKeyChangedFields: assetChangedFields(before, after)}
 	if before == nil || after == nil {
 		return md
 	}
