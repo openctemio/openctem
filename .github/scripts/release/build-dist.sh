@@ -23,6 +23,8 @@
 #   image-kit        openctem-image-kit-<v>.tar.gz: deploy/airgap (Dockerfiles
 #                    that build the images from these archives, the mirror
 #                    script, CI and configuration templates)
+#   compose          openctem-compose-<v>.tar.gz: server/deploy with VERSION,
+#                    the Compose install without a git checkout (install.sh)
 #
 # Environment:
 #   VERSION      release version, e.g. v0.13.0 (default: dev)
@@ -253,7 +255,24 @@ build_image_kit() {
 	pack "$WORK" "$name" "$name.tar.gz"
 }
 
-[ $# -gt 0 ] || die "usage: build-dist.sh server|bootstrap-admin|gateway|web|console|image-kit ..."
+# The Compose deployment files (server/deploy) with this release's VERSION, so
+# install.sh runs without a git checkout. Tracked files only (never a local
+# .env or key), without tests and the Kubernetes example. Covered by
+# checksums-sha256.txt and its signature like every archive.
+build_compose() {
+	local name="openctem-compose-${VERSION}" d f
+	d="$WORK/$name"
+	mkdir -p "$d"
+	while IFS= read -r -d '' f; do
+		case "$f" in *_test.go | *.test.sh | kubernetes/*) continue ;; esac
+		install -D -m "$([ -x "$ROOT/server/deploy/$f" ] && echo 0755 || echo 0644)" "$ROOT/server/deploy/$f" "$d/$f"
+	done < <(git -C "$ROOT/server/deploy" ls-files -z -- .)
+	[ "$VERSION" = dev ] || printf '%s\n' "$VERSION" >"$d/VERSION"
+	cp "$ROOT/LICENSE" "$d/LICENSE"
+	pack "$WORK" "$name" "$name.tar.gz"
+}
+
+[ $# -gt 0 ] || die "usage: build-dist.sh server|bootstrap-admin|gateway|web|console|image-kit|compose ..."
 for c in "$@"; do
 	case "$c" in
 	server) build_server ;;
@@ -262,6 +281,7 @@ for c in "$@"; do
 	web) build_web ;;
 	console) build_console ;;
 	image-kit) build_image_kit ;;
+	compose) build_compose ;;
 	*) die "unknown component $c" ;;
 	esac
 done

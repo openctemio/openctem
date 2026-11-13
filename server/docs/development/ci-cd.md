@@ -1654,7 +1654,10 @@ dry-runs) for:
   archives for linux/amd64 and linux/arm64 (web and console on a native runner
   per arch: their bundles hold native modules);
 - `bootstrap-admin` for linux, darwin (amd64, arm64) and windows/amd64;
-- `openctem-image-kit` (`deploy/airgap`).
+- `openctem-image-kit` (`deploy/airgap`);
+- `openctem-compose` (`server/deploy`, tracked files only, without tests, with
+  the release's `VERSION`): the one-command Compose install (`install.sh`)
+  without a git checkout.
 
 Go builds are static (CGO off), `-trimpath`, with the commit time as build
 time and as every archive entry's time: the same tag gives byte-identical

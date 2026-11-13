@@ -161,18 +161,20 @@ jobs:
           retention-days: 3
 
   kit:
-    name: Image kit
+    name: Image kit and Compose bundle
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build the image kit
+      # The image kit, and the Compose bundle (server/deploy with VERSION):
+      # install.sh without a git checkout.
+      - name: Build the image kit and the Compose bundle
         env:
           COMMIT: ${{ github.sha }}
           OUT_DIR: ${{ github.workspace }}/dist
-        run: bash .github/scripts/release/build-dist.sh image-kit
+        run: bash .github/scripts/release/build-dist.sh image-kit compose
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-kit
