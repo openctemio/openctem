@@ -147,14 +147,24 @@ func retiredOrRemoved(name string) bool {
 //   - A set api variable whose value does not parse as its type: refused. The
 //     getters would otherwise replace it with the default without a word.
 //
+// extensionKeys are the config keys the build's extensions declared: they are
+// read (by the extension that declared them), so they are neither warned
+// about nor taken for a typo of a core name. Every other unknown name is
+// handled as above. An extension can never declare a registered (core) name;
+// the extension host refuses that build.
+//
 // Messages name variables, never values.
-func checkEnvironment(r *EnvRegistry, environ []string) (warnings []string, err error) {
+func checkEnvironment(r *EnvRegistry, environ, extensionKeys []string) (warnings []string, err error) {
+	declared := make(map[string]bool, len(extensionKeys))
+	for _, k := range extensionKeys {
+		declared[k] = true
+	}
 	var typos, invalid []string
 	for _, kv := range environ {
 		name, value, _ := strings.Cut(kv, "=")
 		v, known := r.Lookup(name)
 		if !known {
-			if retiredOrRemoved(name) || kubernetesServiceLinkRE.MatchString(name) || !hasOwnedPrefix(r, name) {
+			if declared[name] || retiredOrRemoved(name) || kubernetesServiceLinkRE.MatchString(name) || !hasOwnedPrefix(r, name) {
 				continue
 			}
 			if s := r.suggest(name); s != "" {
