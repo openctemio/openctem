@@ -164,6 +164,25 @@ describe('brand tokens', () => {
       ).toBeGreaterThanOrEqual(1.08)
     })
 
+    it(`${mode}: a selected row reads above a hovered one on every surface`, () => {
+      const wash = (name: string) => {
+        const m = /^color-mix\(in srgb, var\((--[a-z-]+)\) (\d+)%, transparent\)$/.exec(
+          t[name] ?? ''
+        )
+        expect(m, `${mode}: ${name} is ${t[name]}`).not.toBeNull()
+        return m as RegExpExecArray
+      }
+      const [, hovFg, hovPct] = wash('--hov')
+      const [, selFg, selPct] = wash('--sel')
+      for (const bg of SURFACES) {
+        const ground = hex(t, bg)
+        const hov = contrast(blend(hex(t, hovFg), ground, Number(hovPct) / 100), ground)
+        const sel = contrast(blend(hex(t, selFg), ground, Number(selPct) / 100), ground)
+        expect(sel, `${mode}: selected on ${bg} ${sel.toFixed(3)}:1`).toBeGreaterThan(hov)
+        expect(sel, `${mode}: selected on ${bg} ${sel.toFixed(3)}:1`).toBeGreaterThanOrEqual(1.12)
+      }
+    })
+
     it(`${mode}: the signal button fill carries its text at AA, and delta text reads on every surface`, () => {
       // Button variant "signal": bg-signal text-signal-ink (the one main action of a page).
       pair('--signal-ink', '--signal', 4.5)

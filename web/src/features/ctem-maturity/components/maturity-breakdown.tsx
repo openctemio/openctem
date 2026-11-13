@@ -114,7 +114,7 @@ export function MaturityBreakdownCard({
           <span className="text-muted-foreground text-sm">
             {t('insights.maturity.breakdown.overall', 'Overall')}
           </span>
-          <span className={cn('text-4xl font-bold tabular-nums', scoreTone(score))}>
+          <span className={cn('text-figure-lead tabular-nums', scoreTone(score))}>
             {score}
             <span className="text-muted-foreground ms-1 text-base font-normal">/ 100</span>
           </span>

@@ -155,7 +155,9 @@ export function TriageResultCard({ result, className }: TriageResultCardProps) {
               {t('findings.aiTriage.card.riskScore', 'Risk score')}
             </div>
             <div className="flex items-center gap-2">
-              <span className={cn('text-xl font-bold', getRiskScoreColor(result.riskScore || 0))}>
+              <span
+                className={cn('text-xl font-semibold', getRiskScoreColor(result.riskScore || 0))}
+              >
                 {result.riskScore ?? '-'}
               </span>
               <span className="text-xs text-muted-foreground">/100</span>

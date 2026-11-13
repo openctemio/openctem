@@ -21,7 +21,7 @@ describe('criticality is a Tag level, not a severity hue', () => {
 
   it('makes only critical bold and gives low one bar (not green)', () => {
     const { container, rerender } = render(<CriticalityBadge criticality="critical" />)
-    expect(container.querySelector('[data-slot="tag-label"]')?.className).toContain('font-bold')
+    expect(container.querySelector('[data-slot="tag-label"]')?.className).toContain('font-semibold')
     rerender(<CriticalityBadge criticality="low" />)
     expect(container.querySelector('[data-slot="tag"]')).toHaveAttribute('data-level', '1')
     expect(container.innerHTML).not.toMatch(/green/)

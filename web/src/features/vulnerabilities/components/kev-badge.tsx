@@ -35,7 +35,7 @@ export function KEVBadge({ kev, className }: KEVBadgeProps) {
               date: new Date(kev.due_date).toLocaleDateString(),
             })}
             {kev.is_past_due && (
-              <span className="ms-1 font-bold">{t('findings.kev.pastDue', '(past due)')}</span>
+              <span className="ms-1 font-semibold">{t('findings.kev.pastDue', '(past due)')}</span>
             )}
           </p>
           {ransomware && (

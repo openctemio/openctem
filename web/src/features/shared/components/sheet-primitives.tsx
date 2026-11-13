@@ -40,7 +40,7 @@ export function SheetStatCard({
         <Icon className={cn('h-4 w-4', color)} />
         <span className="text-xs font-medium">{label}</span>
       </div>
-      <p className={cn('text-lg font-bold', color)}>{value}</p>
+      <p className={cn('text-lg font-semibold', color)}>{value}</p>
       {description && <p className="text-xs text-muted-foreground">{description}</p>}
     </div>
   )
