@@ -155,12 +155,13 @@ sequenceDiagram
 
 | Artifact | Signature | Verified automatically by |
 |---|---|---|
-| The seven images above | cosign keyless, provenance, SBOM attestation | Ansible `roles/openctem/tasks/signatures.yml` before pull (api, web, gateway, migrations, console); `deploy/airgap/mirror-images.sh` before and after the copy |
+| The seven images above | cosign keyless, provenance, SBOM attestation | Ansible `roles/openctem/tasks/signatures.yml` before pull (api, web, gateway, migrations, console); `server/deploy/install.sh` before pull (every release image of the compose file set, the bundled sensor against the sensor release's identity), then the pulled digest is compared with the verified one; `deploy/airgap/mirror-images.sh` before and after the copy |
 | Binary archives | via the signed `checksums-sha256.txt` | `image-kit/unpack.sh` |
+| Compose bundle `openctem-compose-vX.Y.Z.tar.gz` | via the signed `checksums-sha256.txt` | the documented download step (`cosign verify-blob`, then `sha256sum -c`) before `install.sh` runs |
 | `openctem-images-vX.Y.Z.txt` | sign-blob bundle | `mirror-images.sh bundle` |
 | Release feed `openctem-releases.json` | sign-blob, re-signed every 6 h, valid 30 d | the API's update check ([signing keys](signing-keys.md)) |
 | develop and PR images (`build-images.yml`) | provenance only, no cosign signature | none |
-| Helm chart package, Ansible kit, compose files | not signed | none |
+| Helm chart package, Ansible kit, compose files from a git checkout | not signed | none (the compose files in the bundle above are covered by the signed checksums) |
 
 The Docker Hub copies are made with `crane copy` per tag; whether the
 signature and attestation referrers travel with them is not verified, so
