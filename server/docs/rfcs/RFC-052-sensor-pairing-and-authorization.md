@@ -518,6 +518,7 @@ T0 and turns credentials and push ingest off.
 | `collector:<integration>` | collect, connector_sync | T0 | none | no | yes (still off while New) | pause, drain |
 | `ci-runner` | scan, validate, retest | T0 | none (code only) | no | yes (still off while New) | pause, drain |
 | `endpoint-agent` | scan, collect, validate, retest | T0 | none | no | yes (still off while New) | pause, drain |
+| `ai-worker` | analyze (only; never combined with other job types) | T0 | none | no | no | pause, drain |
 | `legacy-broad` | any | T2 | any | yes | yes | all |
 
 A profile that may scan may also validate and retest: a validate or retest
