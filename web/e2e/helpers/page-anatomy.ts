@@ -38,6 +38,8 @@ type Probe = {
   /** The spacing tokens as the page resolves them (src/styles/theme.css). */
   pageGap: number
   tightGap: number
+  /** Icon-only buttons (an icon, no visible text) that are not square. */
+  oblongIconButtons: { name: string; width: number; height: number }[]
   stack: boolean
   pairs: { from: string; to: string; gap: number }[]
   tabRows: number
@@ -188,6 +190,26 @@ export async function probe(page: Page): Promise<Probe> {
       }))
 
     return {
+      oblongIconButtons: Array.from(
+        document.querySelectorAll<HTMLElement>(
+          'header button, main button, header a[data-slot=button], main a[data-slot=button]'
+        )
+      )
+        .filter((b) => {
+          const r = b.getBoundingClientRect()
+          return (
+            r.width > 0 && r.height > 0 && b.querySelector('svg') && !(b.innerText ?? '').trim()
+          )
+        })
+        .map((b) => {
+          const r = b.getBoundingClientRect()
+          return {
+            name: b.getAttribute('aria-label') ?? b.title ?? '',
+            width: Math.round(r.width),
+            height: Math.round(r.height),
+          }
+        })
+        .filter((b) => Math.abs(b.width - b.height) > 1),
       pageGap: tokenPx('--sp-page'),
       tightGap: tokenPx('--sp-section'),
       stack: !!stack,
@@ -234,6 +256,7 @@ export async function checkAt(
       .soft(Math.abs(p.gap - want), `${at}: ${p.from} -> ${p.to} is ${p.gap}px, want ${want}px`)
       .toBeLessThanOrEqual(1)
   }
+  expect.soft(r.oblongIconButtons, `${at}: icon-only buttons are squares`).toEqual([])
   expect.soft(r.tabRows, `${at}: one tab row per page`).toBeLessThanOrEqual(1)
   expect
     .soft(r.rowFilterSegmented, `${at}: a row filter is a filter token, not a segmented control`)

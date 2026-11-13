@@ -136,7 +136,7 @@ function DetailRow({ label, value }: { label: string; value: unknown }) {
         {!masked && stringValue !== '-' && (
           <Button
             variant="ghost"
-            size="sm"
+            size="icon-sm"
             className="h-6 w-6 p-0"
             aria-label={t('exposures.details.copy')}
             onClick={handleCopy}

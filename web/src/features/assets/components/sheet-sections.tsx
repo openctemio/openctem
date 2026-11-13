@@ -355,7 +355,7 @@ export function TagsSection({
           {onSave && !editing && (
             <Button
               variant="ghost"
-              size="sm"
+              size="icon-sm"
               className="h-7 w-7 p-0"
               aria-label={t('assets.sheetSections.editTags', 'Edit tags')}
               onClick={startEditing}
@@ -367,7 +367,7 @@ export function TagsSection({
             <>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="h-7 w-7 p-0"
                 aria-label={t('assets.sheetSections.saveTags', 'Save tags')}
                 onClick={handleSave}
@@ -377,7 +377,7 @@ export function TagsSection({
               </Button>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="h-7 w-7 p-0"
                 aria-label={t('common.cancel', 'Cancel')}
                 onClick={cancelEditing}

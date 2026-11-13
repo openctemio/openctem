@@ -301,7 +301,7 @@ export function AIMaskingSection({ canEdit }: { canEdit: boolean }) {
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="icon-sm"
                       className="h-6 w-6 p-0"
                       disabled={saving}
                       aria-label={t('settings.ai.masking.removeTerm', 'Remove {term}', { term: x })}

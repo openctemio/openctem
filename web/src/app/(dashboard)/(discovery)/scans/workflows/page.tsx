@@ -410,7 +410,7 @@ export default function ScanWorkflowsPage() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="h-8 w-8 p-0"
                 aria-label={t('scans.workflows.actionsFor', undefined, { name: workflow.name })}
                 onClick={(e) => e.stopPropagation()}

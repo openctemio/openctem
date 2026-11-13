@@ -613,7 +613,7 @@ export function AddAssetsDialog({
                     disabled={
                       !newAssetName.trim() || !validationResult.isValid || isLoadingTypes || isBusy
                     }
-                    size="sm"
+                    size="icon-sm"
                     className="h-9 px-3"
                   >
                     <Plus className="h-4 w-4" />

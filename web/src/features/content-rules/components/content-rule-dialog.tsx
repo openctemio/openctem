@@ -414,7 +414,7 @@ export function ContentRuleDialog({ open, onOpenChange, rule }: ContentRuleDialo
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
+                      size="icon-sm"
                       className="text-destructive hover:text-destructive"
                       disabled={busy || form.matchers.length <= 1}
                       aria-label={t('contentRules.matchers.remove', 'Remove matcher {n}', {

@@ -146,7 +146,7 @@ export function TenableConnectorCard({
                 {t('tenableSc.card.syncNow', 'Sync now')}
               </Button>
               <Button
-                size="sm"
+                size="icon-sm"
                 variant="outline"
                 onClick={onEdit}
                 aria-label={t('tenableSc.card.edit', 'Edit connector')}
@@ -160,7 +160,7 @@ export function TenableConnectorCard({
                 onRetired={onChanged}
               />
               <Button
-                size="sm"
+                size="icon-sm"
                 variant="outline"
                 className="ms-3 text-destructive hover:text-destructive"
                 onClick={() => setConfirmRemove(true)}

@@ -72,6 +72,7 @@ export function QueryModeToggle({ active, onToggle }: { active: boolean; onToggl
   }, [onToggle])
   return (
     <Button
+      iconOnlyBelow="sm"
       type="button"
       variant={active ? 'secondary' : 'ghost'}
       size="sm"

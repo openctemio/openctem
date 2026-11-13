@@ -421,7 +421,7 @@ export default function AuditLogPage() {
       )}
       <Button
         variant="outline"
-        size="sm"
+        size="icon-sm"
         className="h-9"
         onClick={() => mutate()}
         aria-label={t('auditLog.refresh', 'Refresh')}

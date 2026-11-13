@@ -517,6 +517,7 @@ function ScanRunsTable() {
 
   const toolbarEnd = (
     <Button
+      iconOnlyBelow="sm"
       variant="outline"
       size="sm"
       className="h-9"

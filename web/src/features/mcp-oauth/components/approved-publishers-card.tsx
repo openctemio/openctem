@@ -141,6 +141,7 @@ export function ApprovedPublishersCard({ policy, canEdit }: ApprovedPublishersCa
                 </div>
                 {canEdit && (
                   <Button
+                    iconOnlyBelow="sm"
                     variant="ghost"
                     size="sm"
                     className="shrink-0"

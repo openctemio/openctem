@@ -424,7 +424,7 @@ export function SyncRepositoriesDialog({
             </div>
             <Button
               variant="outline"
-              size="sm"
+              size="icon-sm"
               onClick={() => refetch()}
               disabled={isLoading || isImporting}
             >

@@ -950,7 +950,7 @@ export default function UsersPage() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="h-8 w-8 p-0"
                 aria-label={`Actions for ${member.name || member.email}`}
               >

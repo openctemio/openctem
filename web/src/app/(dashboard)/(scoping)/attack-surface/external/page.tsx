@@ -647,7 +647,7 @@ export default function ExternalSurfacePage() {
   const toolbarEnd = (
     <Button
       variant="outline"
-      size="sm"
+      size="icon-sm"
       className="h-9"
       onClick={() => void refetchAssets()}
       aria-label={t('attackSurface.external.refresh', 'Refresh')}

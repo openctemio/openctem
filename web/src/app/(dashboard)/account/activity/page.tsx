@@ -163,7 +163,7 @@ export default function ActivityPage() {
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon-sm"
                   onClick={() => setPage(page - 1)}
                   disabled={page === 1}
                   aria-label={t('account.activity.prev', 'Previous page')}
@@ -178,7 +178,7 @@ export default function ActivityPage() {
                 </span>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon-sm"
                   onClick={() => setPage(page + 1)}
                   disabled={page === totalPages}
                   aria-label={t('account.activity.next', 'Next page')}

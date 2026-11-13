@@ -365,7 +365,7 @@ export function AddAssetsStep({
                 type="button"
                 onClick={addNewAsset}
                 disabled={!newAssetName.trim() || !validationResult.isValid || isLoadingTypes}
-                size="sm"
+                size="icon-sm"
                 className="h-9 px-3"
               >
                 <Plus className="h-4 w-4" />

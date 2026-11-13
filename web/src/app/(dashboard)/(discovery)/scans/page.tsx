@@ -223,7 +223,7 @@ function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActio
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          size="sm"
+          size="icon-sm"
           className="h-8 w-8 p-0"
           aria-label={t('scans.row.actions')}
         >

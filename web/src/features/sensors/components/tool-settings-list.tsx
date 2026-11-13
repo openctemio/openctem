@@ -652,7 +652,7 @@ function ToolSettingsItem({
                             {canEdit && changed && !locked && (
                               <Button
                                 type="button"
-                                size="sm"
+                                size="icon-sm"
                                 variant="ghost"
                                 className="h-7 shrink-0 px-2 text-xs"
                                 disabled={busy}
@@ -666,7 +666,7 @@ function ToolSettingsItem({
                             {canEdit && mode === 'sensor' && !changed && !locked && (
                               <Button
                                 type="button"
-                                size="sm"
+                                size="icon-sm"
                                 variant="ghost"
                                 className="h-7 shrink-0 px-2 text-xs"
                                 disabled={busy}

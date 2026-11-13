@@ -171,7 +171,7 @@ export function RoutingRulesDialog({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
                     onClick={() => removeRule(i)}
                     aria-label={`Remove rule ${i + 1}`}
                   >

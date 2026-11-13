@@ -366,7 +366,7 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
       <Button
         type="button"
         variant="ghost"
-        size="sm"
+        size="icon-sm"
         className="h-7 w-7 p-0"
         onClick={download}
         aria-label={t('findings.evidenceItems.downloadAria', 'Download the evidence (masked)')}

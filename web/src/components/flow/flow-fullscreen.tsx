@@ -109,6 +109,7 @@ export function FlowFullscreenButton({ className }: { className?: string }) {
   const Icon = ctx.full ? Minimize : Maximize
   return (
     <Button
+      iconOnlyBelow="sm"
       type="button"
       size="sm"
       variant="outline"

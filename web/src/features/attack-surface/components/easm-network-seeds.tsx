@@ -101,7 +101,7 @@ function SeedCard({
         <span className="ms-auto flex items-center gap-1">
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               disabled={busy || expanding}
               onClick={() => void refresh()}
@@ -112,7 +112,7 @@ function SeedCard({
           )}
           {canDelete && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               onClick={() => onRemove(seed)}
               aria-label={t('networkSeeds.remove', 'Remove {value}', { value: seed.value ?? '' })}

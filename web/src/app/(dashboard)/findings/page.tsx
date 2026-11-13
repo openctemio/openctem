@@ -2433,7 +2433,7 @@ function FindingsContent() {
       <Main>
         <PageStack>
           <PageHeader title={t('findings.page.title', 'Findings')} description={drillBreadcrumb}>
-            <Button variant="outline" size="sm" asChild>
+            <Button iconOnlyBelow="sm" variant="outline" size="sm" asChild>
               <Link href="/findings/approvals">
                 <ClipboardList className="h-4 w-4 sm:me-2" aria-hidden />
                 <span className="sr-only sm:not-sr-only">
@@ -2444,7 +2444,7 @@ function FindingsContent() {
             {(canImport || hasPermission('findings:write')) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button iconOnlyBelow="sm" variant="outline" size="sm">
                     <Plus className="h-4 w-4 sm:me-2" aria-hidden />
                     <span className="sr-only sm:not-sr-only">
                       {t('findings.header.add', 'Add')}

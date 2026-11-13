@@ -38,7 +38,7 @@ export function DataTablePagination<TData>({
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
-          size="sm"
+          size="icon-sm"
           onClick={() => table.setPageIndex(0)}
           disabled={!table.getCanPreviousPage()}
         >
@@ -46,7 +46,7 @@ export function DataTablePagination<TData>({
         </Button>
         <Button
           variant="outline"
-          size="sm"
+          size="icon-sm"
           onClick={() => table.previousPage()}
           disabled={!table.getCanPreviousPage()}
         >
@@ -57,7 +57,7 @@ export function DataTablePagination<TData>({
         </span>
         <Button
           variant="outline"
-          size="sm"
+          size="icon-sm"
           onClick={() => table.nextPage()}
           disabled={!table.getCanNextPage()}
         >
@@ -65,7 +65,7 @@ export function DataTablePagination<TData>({
         </Button>
         <Button
           variant="outline"
-          size="sm"
+          size="icon-sm"
           onClick={() => table.setPageIndex(table.getPageCount() - 1)}
           disabled={!table.getCanNextPage()}
         >

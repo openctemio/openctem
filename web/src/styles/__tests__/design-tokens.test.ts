@@ -107,20 +107,35 @@ describe('type roles', () => {
 })
 
 describe('control scale and rows', () => {
-  it('32 default, 28 dense, 26 segment, 24 info, 36 entry, 44 phone', () => {
+  it('32 default, 28 dense, 26 segment, 24 info, 36 entry; phone 36 / 32 / 40, touch target 44', () => {
     expect(px(root['--control-h'])).toBe(32)
     expect(px(root['--control-h-sm'])).toBe(28)
     expect(px(root['--control-h-seg'])).toBe(26)
     expect(px(root['--control-h-xs'])).toBe(24)
     expect(px(root['--control-h-entry'])).toBe(36)
-    expect(px(root['--control-h-touch'])).toBe(44)
+    expect(px(root['--control-h-touch'])).toBe(36)
+    expect(px(root['--control-h-touch-sm'])).toBe(32)
+    expect(px(root['--control-h-touch-lg'])).toBe(40)
+    expect(px(root['--touch-target'])).toBe(44)
   })
 
   it('every control height is a Tailwind spacing key (h-control, h-control-sm, ...)', () => {
-    for (const k of ['', '-sm', '-seg', '-xs', '-entry', '-touch', '-field', '-dense']) {
+    for (const k of [
+      '',
+      '-sm',
+      '-seg',
+      '-xs',
+      '-entry',
+      '-touch',
+      '-touch-sm',
+      '-touch-lg',
+      '-field',
+      '-dense',
+    ]) {
       expect(theme[`--spacing-control${k}`]).toBe(`var(--control-h${k})`)
     }
     expect(theme['--spacing-row']).toBe('var(--row-h)')
+    expect(theme['--spacing-touch-target']).toBe('var(--touch-target)')
   })
 
   it('rows are 40 by default, 32 compact, 52 comfortable', () => {

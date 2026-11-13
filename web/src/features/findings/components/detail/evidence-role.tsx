@@ -119,7 +119,7 @@ export function EvidenceOrderButtons({
       <Button
         type="button"
         variant="ghost"
-        size="sm"
+        size="icon-sm"
         className="h-7 w-7 p-0"
         disabled={disabled || index <= 0}
         onClick={() => onMove('up')}
@@ -130,7 +130,7 @@ export function EvidenceOrderButtons({
       <Button
         type="button"
         variant="ghost"
-        size="sm"
+        size="icon-sm"
         className="h-7 w-7 p-0"
         disabled={disabled || index >= count - 1}
         onClick={() => onMove('down')}

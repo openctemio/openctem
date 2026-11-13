@@ -198,15 +198,23 @@
   /* Control scale (one height for every control in a row): 32 default,
      28 dense (table rows, cards, property panels, drawers, bulk bar),
      26 a segment inside a 32 track, 24 the info icon, 36 entry pages (no app
-     sidebar), 44 below 768px. Classes: h-control, h-control-sm, ... */
+     sidebar). Below 768px the heights of the live UI (owner, 2026-11-13):
+     buttons, fields, selects 36, small sizes 32, large 40, with compact
+     button content and an invisible 44px-tall touch target. The single
+     table of these values is "Sizes" in web/docs/ui-style-contract.md
+     (sizes-doc.test.ts keeps the two equal). Classes: h-control, h-control-sm, ... */
   --control-h: 2rem;
   --control-h-sm: 1.75rem;
   --control-h-seg: 1.625rem;
   --control-h-xs: 1.5rem;
   --control-h-entry: 2.25rem;
-  --control-h-touch: 2.75rem;
+  /* Below 768px: default, small and large heights, and the touch target. */
+  --control-h-touch: 2.25rem;
+  --control-h-touch-sm: 2rem;
+  --control-h-touch-lg: 2.5rem;
+  --touch-target: 2.75rem;
   /* Text fields and selects share the row's height (freeze item 1, decided
-     2026-11-13): 32 in the app, 36 on entry pages, 44 below 768px. */
+     2026-11-13): 32 in the app, 36 on entry pages and below 768px. */
   --control-h-field: var(--control-h);
   /* The small sizes (Button sm and icon-sm, SelectTrigger sm): 28 only in a
      dense place (data-control-density="dense"), 32 anywhere else. */
@@ -605,6 +613,9 @@
   --spacing-control-xs: var(--control-h-xs);
   --spacing-control-entry: var(--control-h-entry);
   --spacing-control-touch: var(--control-h-touch);
+  --spacing-control-touch-sm: var(--control-h-touch-sm);
+  --spacing-control-touch-lg: var(--control-h-touch-lg);
+  --spacing-touch-target: var(--touch-target);
   --spacing-control-field: var(--control-h-field);
   --spacing-control-dense: var(--control-h-dense);
   --spacing-row: var(--row-h);

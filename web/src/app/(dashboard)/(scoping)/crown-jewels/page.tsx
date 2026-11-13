@@ -669,6 +669,7 @@ export default function CrownJewelsPage() {
               }
               toolbarEnd={
                 <Button
+                  iconOnlyBelow="md"
                   variant="outline"
                   size="sm"
                   className="h-9"
