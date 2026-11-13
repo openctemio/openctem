@@ -152,7 +152,9 @@ func run() int {
 	// ==========================================================================
 	// Configuration & Logger
 	// ==========================================================================
-	cfg, err := config.Load()
+	// The keys the build's extensions declared are read (by them): the
+	// environment check must not report them as set but unread.
+	cfg, err := config.LoadWithExtensionKeys(buildExtensions.ConfigKeys())
 	if *checkConfig {
 		return reportConfigCheck(os.Stdout, os.Stderr, cfg, err, os.Environ())
 	}

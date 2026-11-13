@@ -210,9 +210,17 @@ WHERE n.oid IN (SELECT oid FROM app_schemas)
 SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM %I', nspname, :'app_user') FROM app_schemas \gexec
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO %I', nspname, :'app_user') FROM app_schemas \gexec
 -- The migration tracking tables are read (the startup schema check, the
--- console), never written.
-SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations FROM %I', :'app_user') \gexec
-SELECT format('REVOKE INSERT, UPDATE, DELETE ON public.schema_migrations_applied FROM %I', :'app_user') \gexec
+-- console), never written: the core's in public, and those an extension's
+-- migrations keep in the extension's own schema (same runner, same two
+-- names; server/internal/migrate). Every application schema is covered, so
+-- a schema added later is covered the next time this script runs. A role
+-- that could write them could make the next migration run skip a migration,
+-- or run one again.
+SELECT format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON %I.%I FROM %I, PUBLIC', s.nspname, c.relname, :'app_user')
+FROM pg_class c
+JOIN app_schemas s ON s.oid = c.relnamespace
+WHERE c.relkind IN ('r', 'p')
+  AND c.relname IN ('schema_migrations', 'schema_migrations_applied') \gexec
 -- The administrators' audit log is append-only: insert and read only. Its
 -- retention anchors are written by admin_audit_prune (the owner) alone.
 SELECT format('REVOKE UPDATE, DELETE, TRUNCATE ON public.admin_audit_logs FROM %I', :'app_user')
@@ -248,6 +256,11 @@ SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT SELECT, INSERT, UPDATE
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO %I', :'migrator_user', :'app_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT EXECUTE ON FUNCTIONS TO %I', :'migrator_user', :'app_user') \gexec
 SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I GRANT USAGE ON TYPES TO %I', :'migrator_user', :'app_user') \gexec
+-- Default privileges cannot leave out a table by name, so tracking tables a
+-- later run creates (an extension's first migration, in its schema) get the
+-- app's DML here; the migration runner takes every write on them back from
+-- every role but their owner on each run (ensureTables), and section 5 does
+-- the same the next time this script runs.
 
 -- -----------------------------------------------------------------------------
 -- 7. Verify. Any failure here aborts with a non-zero exit.
@@ -287,6 +300,16 @@ BEGIN
       AND c.relname NOT IN ('schema_migrations', 'schema_migrations_applied');
     IF bad IS NOT NULL THEN
         RAISE EXCEPTION 'role % is missing DML on: %', app, bad;
+    END IF;
+
+    SELECT string_agg(format('%I.%I', n.nspname, c.relname), ', ') INTO bad
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.oid IN (SELECT oid FROM app_schemas) AND c.relkind IN ('r', 'p')
+      AND c.relname IN ('schema_migrations', 'schema_migrations_applied')
+      -- A privilege list is true when ANY of them is held.
+      AND has_table_privilege(app, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE');
+    IF bad IS NOT NULL THEN
+        RAISE EXCEPTION 'role % may write a migration tracking table: %', app, bad;
     END IF;
 
     SELECT string_agg(c.relname, ', ') INTO bad
