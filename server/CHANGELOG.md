@@ -8,6 +8,169 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.22.0 (2026-11-13)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Removed: off-box administrators' audit stream leaves the Community build**: unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
+- **Added: sensors that check no job signature are flagged, with the fix**: after the upgrade a sensor that reports signed jobs `off` is listed as unhardened (`jobs_unsigned`) until you pair it again or set `SENSOR_JOB_SIGNING_ROOT`; sensors that do not report it show `unknown` and are not flagged.
+- **Changed: the Go backend directory is server/ (source layout only)**: installs from the published images or release archives need no change. If you build from source or vendor files from this repository, use the new paths: `server/` for Go commands, `make -C server ...`, the Dockerfiles under `server/`, the deployment files under `server/deploy/` (compose, gateway, least-privilege SQL) and the module `github.com/openctemio/openctem/server` for Go imports. Release tags up to v0.21.x keep `api/`.
+- **Changed: sensor v0.41.1 and later need platform v0.22.0**: upgrade the platform to v0.22.0 first, then sensors to v0.41.1 (sdk-go v0.51.0). Sensors from v0.36.0 (the oldest v0.22.0 accepts) to v0.41.0 keep working with v0.22.0.
+- **Fixed: a command payload over 4 MiB is refused at creation**: a script or integration that creates commands with a payload over 4 MiB now gets `COMMAND_PAYLOAD_TOO_LARGE` instead of a stored command that stalled its sensor; split the work into smaller jobs.
+- **Fixed: port scans without ports reach sensors that list ports.allow**: upgrade the platform before sensors to v0.41.1: from that release a sensor with `ports.allow` refuses a port scan that names no ports, and only this platform fills them in. A port scan whose probed ports the sensor allows none of now ends that step as skipped with `PORTS_NOT_ALLOWED` instead of failing on the sensor.
+- **Security: late results of a superseded run are refused**: no action. Sensors before v0.41.1 send no late-result fields and are handled as before; upgrade the platform first, then sensors to v0.41.1 (sdk-go v0.51.0).
+- **Security: switching organization leaves nothing of the previous one in the console**: no action. After switching organization, users land on the section's list (or the dashboard) instead of the same address, and their other tabs of the console follow the switch.
+- **Fixed: a sensor back from an outage no longer gets the same scan's work twice**: no action. After the upgrade, queued work of runs that already ended is no longer handed to sensors (it is cancelled when its run ends or by the reapers), and an automatic retry is skipped while its scan has an active run; each skip is in the audit log.
+
+#### Behaviour changes, removals and deprecations
+
+- Removed: off-box administrators' audit stream leaves the Community build (`audit-stream-extension.md`)
+
+### Security: cross-organization negative tests for bulk and by-id routes, tenant-scoped run, workflow and integration getters
+
+- New tests boot the real server composition against a migrated database and send the ids of one organization with a token of another: bulk and by-id routes (scans, asset groups, scope, findings, assets, remediation, approvals, scan runs, saved views, dashboards, API keys, integration webhooks, roles, teams, branches), exploration leads, evidence items, scan windows, the connector "scan now" and the live WebSocket channels. Each case proves the answer equals the answer for an unknown id, that nothing of the first organization changed, and that the same request works for its owner. No cross-organization exposure was found in the traced paths.
+- A live channel subscription to a finding or triage topic now requires the finding to exist in the caller's organization. Before, an owner or administrator (who has no data-scope rows to check) could subscribe to any finding id, including another organization's; nothing was ever delivered on it (delivery is per organization), so this closes a subscription that should not have been accepted, not a data leak.
+- `GetRunWithSteps`, `GetTemplateWithSteps`, `GetIntegration` and `GetIntegrationWithSCM` take the tenant in their signature and answer not found for another organization, so a new caller cannot forget the check. `GetRunWithStepsForTenant` is folded into `GetRunWithSteps`.
+- A new guard (`route_tenant_isolation_test.go`) makes every route with a path id declare how it is tenant-scoped, and fails for a new route without a cross-organization test or a stated scope.
+- Docs: server/docs/architecture/authorization-matrix.md
+
+### Security: every command type is proven to carry a signed job
+
+- An audit of every place a command is created or handed to a sensor found that all of them are signed when the platform advertises signed jobs: commands are signed when a claim hands them out (claim-N, claim by id and its replay, shared claim, protocol v3), and feed relay rounds and lookups are always signed. Sensors that pinned the job signer therefore refuse none of them.
+- A new test claims one command of each command type both ways and verifies its envelope, and a guard test fails when a command type is added without joining the list the test ranges over.
+- Docs: server/docs/architecture/job-signing.md ("Every job a sensor runs is signed")
+
+### Security: late results of a superseded run are refused
+
+- A sensor whose command-bound report was refused because the platform took the run back sends it again without the command (sdk-go: late results name the command and lease epoch they were made for). Until now the platform took such a report as an ordinary unsolicited push, so a superseded run's results could create and refresh findings after the run that replaced it.
+- The v2 receiver now reads `X-OpenCTEM-Late-Command` and `X-OpenCTEM-Late-Lease-Epoch` on an unbound PUT or commit. When the named command, looked up in the sensor's own tenant only, was claimed again after the stated epoch or is no longer held by the sensor, the report is refused with the new final problem `409 lease-superseded` and nothing is stored. Any other late report is taken as an unsolicited report, as before. Another tenant's command, an unknown id and a malformed header are treated exactly like an absent header.
+- Protocol v3: additive optional fields `late_command_id` and `late_lease_epoch` on `PutResultRequest` and `CommitResultRequest`.
+- New metric `ingest_late_reports_total{outcome}`.
+- **Upgrade note:** no action. Sensors before v0.41.1 send no late-result fields and are handled as before; upgrade the platform first, then sensors to v0.41.1 (sdk-go v0.51.0).
+- Docs: server/docs/architecture/sensor-result-binding.md ("Late reports")
+
+### Security: switching organization leaves nothing of the previous one in the console
+
+- After a switch of organization (the organization card, a link that names another organization, the MCP consent page, or another tab of the same browser), the console no longer keeps the previous organization's address, rows or state. Before, the address kept its page number, filters and record ids (for example page 5 of Findings, or a finding's page), every component kept its state, and the new session was asked for the previous organization's pages and records.
+- The address now goes to the section's list root without a query (the dashboard when the new organization does not grant that section). The whole dashboard mounts again with a fresh data cache, reads still in flight are aborted, and organization data kept in the browser (triage queue, the list a finding was opened from, the last dashboard, drafts) is dropped.
+- Other tabs of the same browser follow the switch and say so. A tab sends no request while the session belongs to another organization than the one it shows, so a bulk action on the previous organization's selection is never sent.
+- The back button no longer reopens the previous organization's page.
+- The server already refused all of these requests: it reads the organization from the access token, and a record of another organization answers like an unknown one. This change makes the console match.
+- **Upgrade note:** no action. After switching organization, users land on the section's list (or the dashboard) instead of the same address, and their other tabs of the console follow the switch.
+- Docs: none (the console now matches what the server already enforced; no setting or workflow changes)
+
+### Removed: off-box administrators' audit stream leaves the Community build
+
+- Streaming the administrators' audit log to an external destination (`ADMIN_AUDIT_SINK`, `ADMIN_AUDIT_SINK_SECRET`, `ADMIN_AUDIT_SINK_SYSLOG_*`, `ADMIN_AUDIT_SINK_HEAD_INTERVAL`) is now provided by an extension, no longer by the Community build. The audit hash chain, its verification, the hourly chain check and every audit view and export stay. The table `admin_audit_forward_cursor` stays in the schema; no migration.
+- Moved now rather than after a notice period: no outside installation uses the stream yet.
+- **Upgrade note:** unset every `ADMIN_AUDIT_SINK*` setting BEFORE you start the new version: a server refuses to start while one is set and no extension of its build declares it (the log names the setting, never its value). Compose: remove them from `server/deploy/.env` or your override file; Helm: from the API's extra environment; the Ansible kit: unset `openctem_admin_audit_sink` in the same run that upgrades (its checks stop the run, before anything changes, while it or a compose override or extra env file on the server still sets one). Existing copies the stream wrote (a file sink's `admin-audit.jsonl`, a receiver's records) are not touched. With `MANAGED_SERVICE=true` the Community build no longer requires a stream. If you need the off-box stream, run a build of the server that includes the audit stream extension and keep the settings; the hash chain, its hourly verification and the audit exports stay in every build.
+- Docs: server/docs/architecture/audit-hash-chain.md, server/docs/development/editions.md
+
+### Added: RFC-157 console API design and per-screen data map
+
+- Documentation only: RFC-157 fixes how the console reads (one request per screen view, lean list rows, facets, reference catalog, operations, live events, request budgets), with the data every console screen needs and example response bodies. Implementation follows in later changes.
+- Docs: server/docs/rfcs/RFC-157-console-api-design.md
+
+### Added: sensors that check no job signature are flagged, with the fix
+
+- A sensor reports how it checks the platform's job signatures (manifest posture `jobs.signed`). The sensor API now returns it as `posture.signed_jobs` (`required`, `verified_when_present`, `off`, `unknown`), and a sensor with signed jobs `off` is flagged unhardened with the new reason `jobs_unsigned`: such a sensor trusts every job and refuses jobs that need platform secrets. The console shows the reason with its fix (pair the sensor again, or set `SENSOR_JOB_SIGNING_ROOT`), in English and Vietnamese, and the `openctem_sensors_unhardened` gauge counts it.
+- A job a sensor refused with the rule `secrets_unverified` now fails with a reason that says so and names the same fix, instead of the built-in deny list explanation.
+- **Upgrade note:** after the upgrade a sensor that reports signed jobs `off` is listed as unhardened (`jobs_unsigned`) until you pair it again or set `SENSOR_JOB_SIGNING_ROOT`; sensors that do not report it show `unknown` and are not flagged.
+- Docs: server/docs/architecture/sensors.md ("Security posture")
+
+### Added: signed versions manifest for the documentation, the website and install scripts
+
+- Every Release Feed run (after each release and every six hours) also publishes `openctem-versions.json` next to the release feed, signed by the same workflow identity: the newest stable platform release with its image digests, the oldest component releases it accepts, the newest sensor, SDK, CI runner and Helm chart, and the oldest platform each component release needs (`.github/release-feed/compat.json`). The documentation site and the website read it at build time, so a release needs no commit in either (`server/docs/architecture/versions-manifest.md`).
+- A release is withdrawn from the manifest and the release feed by marking it a pre-release on GitHub and running the Release Feed workflow.
+- Docs: server/docs/architecture/versions-manifest.md
+
+### Changed: the Go backend directory is server/ (source layout only)
+
+- The Go backend directory is now `server/` (it was `api`), and its Go module path is `github.com/openctemio/openctem/server`. URL paths (`/api/v1`, `/api/v2/sensor`, `/api/v3/sensor`), image names, environment variables, configuration, the database and the public API contract are unchanged: operators, sensors and API clients need no action.
+- Contributors: on a branch from before the move, run `bash scripts/rename/catch-up.sh`.
+- **Upgrade note:** installs from the published images or release archives need no change. If you build from source or vendor files from this repository, use the new paths: `server/` for Go commands, `make -C server ...`, the Dockerfiles under `server/`, the deployment files under `server/deploy/` (compose, gateway, least-privilege SQL) and the module `github.com/openctemio/openctem/server` for Go imports. Release tags up to v0.21.x keep `api/`.
+- Docs: server/docs/development/repositories.md
+
+### Changed: a changelog fragment names the user documentation of its change
+
+- API CI refuses a fragment a pull request adds without a `Docs:` line: a page of the public docs site (`https://docs.openctem.io/...`), a path in one of the project's repositories, or `none` with the reason. Fragments already merged are not checked. The documentation site lists every change of a release from these fragments, so a shipped feature without documentation shows up at review time instead of after the release.
+- Docs: server/changelog.d/README.md
+
+### Changed: release notes open with the upgrade notes, and the changelog has a section per release
+
+- The GitHub Release of each version now carries its changes ("Changes in vX.Y.Z"), led by an **Upgrade notes** block: what to do before upgrading, then the behaviour changes, removals and deprecations. A release's changes are the entries its tag added since the previous release, so a hotfix lists only its own.
+- `server/CHANGELOG.md` has a section for every release again (v0.15.6 to v0.21.0 were missing), and the develop follow-up of each release adds the next one.
+- Docs: server/changelog.d/README.md
+
+### Changed: sensor v0.41.1 and later need platform v0.22.0
+
+- The versions manifest (`openctem-versions.json`) and the documentation's compatibility table now say that sensor releases from v0.41.1 on need platform v0.22.0 or later: such a sensor with a local `ports.allow` refuses a port scan that names no ports, and v0.22.0 is the first platform that fills those ports from the sensor's list. v0.22.0 is also proven to sign every command type (a v0.41.1 sensor that pinned the job signer refuses unsigned jobs), and it refuses late results of a run it took back.
+- **Upgrade note:** upgrade the platform to v0.22.0 first, then sensors to v0.41.1 (sdk-go v0.51.0). Sensors from v0.36.0 (the oldest v0.22.0 accepts) to v0.41.0 keep working with v0.22.0.
+- Docs: server/docs/architecture/versions-manifest.md
+
+### Changed: the web bundle checks run in the merge queue
+
+- The `Build` job of Web CI (production build, tenant-bundle check, route
+  JavaScript budget) now also runs in the merge queue for a web change, not
+  only after the merge on develop. A change that pushes a route or the median
+  over `web/scripts/route-js-budget.json` is ejected from the queue instead of
+  turning develop red. Plain pull requests still do not run it. `Web CI OK`
+  requires `Build` in the queue.
+- Docs: server/docs/development/ci-cd.md
+
+### Fixed: a command payload over 4 MiB is refused at creation
+
+- A sensor reads at most 10 MiB from one commands poll answer, and a claim adds delivery fields and the signed job to a command. One oversized command stopped a sensor's intake until the sensor failed it (sdk-go: an oversized commands-poll answer no longer stops all intake). Every command is now built through one check that refuses a payload over 4 MiB with `COMMAND_PAYLOAD_TOO_LARGE` (a validation error) instead of storing it. Nothing is truncated or split silently; the scan planner already splits targets into jobs far under the cap.
+- New metric `command_payload_refused_total`.
+- **Upgrade note:** a script or integration that creates commands with a payload over 4 MiB now gets `COMMAND_PAYLOAD_TOO_LARGE` instead of a stored command that stalled its sensor; split the work into smaller jobs.
+- Docs: server/docs/architecture/job-dispatch.md ("Payload size")
+
+### Fixed: generate-in-docker reads the contract from server/
+
+- `make generate-docker` (`scripts/generate-in-docker.sh`) still read the OpenAPI spec from the old `api/` layout after the backend directory rename, so building the web or console image from a source checkout failed. It now reads `server/api/openapi/swagger.yaml`.
+- CI now refuses a checkout mount path that names the old directory (the old directory under the checkout mount) and checks that every path `generate-in-docker.sh` reads exists in the tree.
+- Source-checkout installs that bind-mount the gateway configuration: the directory is now `server/deploy/gateway`; change the mount and recreate the gateway container (see `server/docs/deployment/docker.md`).
+- `make swagger` post-processed the spec with `perl`, which the golang alpine image `generate-in-docker.sh` uses does not have, so contract generation failed there. The step is now `server/scripts/stable-swagger-names.sh` (plain `sed`), shared by the Makefile and `server/Dockerfile`. CI generates the spec in that image with the same packages.
+- Docs: server/docs/deployment/docker.md
+
+### Fixed: port scans without ports reach sensors that list ports.allow
+
+- A sensor whose local policy lists `ports.allow` refuses a port scan (`scan.ports`) that names no ports, because the tool would run its own default list (sdk-go: local policy ports checked in every settings layer). The platform now fills the ports of such a job, for that sensor only, with the ports the scan would probe that the policy allows (the 100 most common TCP ports, or every port for a top-N above 100). The job is signed with those ports.
+- When the policy allows none of them, the job is not sent to that sensor. It waits for another sensor that allows some; when it is pinned to the sensor or no other sensor may run it, it fails with `PORTS_NOT_ALLOWED` and its step is skipped with the reason "the sensor's local policy allows none of the ports the port scan would probe", so the rest of the run goes on.
+- The sensor stays the enforcer of its policy. New metric `sensor_port_scan_ports_total{outcome}`.
+- **Upgrade note:** upgrade the platform before sensors to v0.41.1: from that release a sensor with `ports.allow` refuses a port scan that names no ports, and only this platform fills them in. A port scan whose probed ports the sensor allows none of now ends that step as skipped with `PORTS_NOT_ALLOWED` instead of failing on the sensor.
+- Docs: server/docs/architecture/sensors.md ("Port scans without ports")
+
+### Fixed: a sensor back from an outage no longer gets the same scan's work twice
+
+- An automatic retry no longer starts next to an active run of the same scan
+  (a scheduled run or a coverage pass started after the failure): it is skipped,
+  checked under the scan row lock like a scheduled occurrence, and written to the
+  audit log ("Automatic retry skipped: the scan already has an active run"). A
+  failed run is no longer retried once a newer run of the scan has started.
+- A run that ends (settled, failed fast, failed to start) cancels the work no
+  sensor has picked up yet in the same statement, with the reason on each
+  command; a cancel and the deadline reapers already closed theirs.
+- No claim path (poll, claim by id, batch claim, shared sensors) hands out a
+  command whose run has ended, so leftovers of an earlier run (kept up to 48 h
+  before) are never run next to the scan's next run. Another organization's
+  commands are judged by their own organization's runs only.
+- Coverage: a run that reached its deadline with every command refused by
+  the sensor (its local policy, its egress) or never picked up now counts as
+  a run no sensor took (a run that failed on its own stays a failure), so the capability backs off (paused `not_claimed` after 3 such runs,
+  probe after 2 h doubling to 48 h, lifted at once when the sensors change)
+  instead of queueing the same work again the moment the run timed out.
+- No migration.
+- **Upgrade note:** no action. After the upgrade, queued work of runs that already ended is no longer handed to sensors (it is cancelled when its run ends or by the reapers), and an automatic retry is skipped while its scan has an active run; each skip is in the audit log.
+- Docs: server/docs/architecture/scan-lifecycle.md ("Cancel, deadline, retry"), server/docs/architecture/asset-coverage.md ("Runs no sensor takes"), https://docs.openctem.io/scanning/scans-and-runs/
+
+### Fixed: dashboard pages load lighter again
+
+- The Help dialogs (keyboard shortcuts, About), the organization card in the organization switcher, the account-only shell and the confirm-a-social-link prompt now load the first time they are shown instead of with every dashboard page. The median first-load JavaScript of a page drops by 6 KB (gzip), back under the route budget. No behaviour change.
+- Docs: none (no behaviour change; performance only)
+
 ## v0.21.0 (2026-11-12)
 
 ### Upgrade notes
