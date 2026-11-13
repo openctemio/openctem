@@ -77,6 +77,64 @@ describe('DetailSection', () => {
   })
 })
 
+describe('DetailSection heading row at a narrow width', () => {
+  // jsdom cannot measure layout, so this pins the class contract; the
+  // bounding boxes at 360 and 1280 px are measured in
+  // e2e/specs/08-finding-detail-header.spec.ts.
+  function renderLong() {
+    const { container } = render(
+      <div style={{ width: 320 }}>
+        <DetailSection
+          title="Verification"
+          icon={Server}
+          actions={
+            <>
+              <button>Import newer results</button>
+              <button>Checklist</button>
+            </>
+          }
+        >
+          x
+        </DetailSection>
+      </div>
+    )
+    return {
+      row: container.querySelector('[data-slot="detail-section-head"]') as HTMLElement,
+      actions: container.querySelector('[data-slot="detail-section-actions"]') as HTMLElement,
+      heading: screen.getByRole('heading', { level: 3 }),
+    }
+  }
+
+  it('wraps the row so the actions move below the title instead of squeezing it', () => {
+    const { row, heading } = renderLong()
+    expect(row.className).toMatch(/\bflex-wrap\b/)
+    // The title is never a shrinking flex item that can collapse to zero width.
+    expect(heading.className).not.toMatch(/\bshrink\b/)
+    expect(heading.className).toMatch(/\bmax-w-full\b/)
+  })
+
+  it('keeps the actions inside the section and wraps their buttons', () => {
+    const { actions } = renderLong()
+    expect(actions.className).toMatch(/\bflex-wrap\b/)
+    expect(actions.className).toMatch(/\bmin-w-0\b/)
+    expect(actions.className).toMatch(/\bmax-w-full\b/)
+    // Never a non-shrinking block that can overflow the column.
+    expect(actions.className).not.toMatch(/\bshrink-0\b/)
+  })
+
+  it('end-aligns the actions with logical utilities (right in LTR, left in RTL)', () => {
+    const { actions } = renderLong()
+    expect(actions.className).toMatch(/\bms-auto\b/)
+    expect(actions.className).not.toMatch(/\b(ml|mr)-/)
+  })
+
+  it('keeps every action label in the DOM (no icon-only collapse)', () => {
+    renderLong()
+    expect(screen.getByRole('button', { name: 'Import newer results' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Checklist' })).toBeInTheDocument()
+  })
+})
+
 describe('DetailSection landmark', () => {
   it('is a region named by its heading', () => {
     render(<DetailSection title="Scanner content">x</DetailSection>)
