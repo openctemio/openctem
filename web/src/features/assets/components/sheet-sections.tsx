@@ -51,7 +51,7 @@ export function StatCard({
           <Icon className={cn('h-5 w-5', iconColor)} />
         </div>
         <div>
-          <p className="text-2xl font-bold">{value}</p>
+          <p className="text-figure tabular-nums">{value}</p>
           <p className="text-xs text-muted-foreground">{label}</p>
         </div>
       </div>
@@ -74,7 +74,7 @@ export function StatCardCentered({
         <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center mb-2', iconBg)}>
           <Icon className={cn('h-5 w-5', iconColor)} />
         </div>
-        <p className="text-xl font-bold">{value}</p>
+        <p className="text-xl font-semibold">{value}</p>
         <p className="text-xs text-muted-foreground">{label}</p>
       </div>
     </div>
