@@ -153,6 +153,10 @@ type Bundle struct {
 	Fields         []string `json:"fields"`
 	FieldsWithheld []string `json:"fields_withheld,omitempty"`
 	Masked         bool     `json:"masked,omitempty"`
+	// Text is the bundle itself (the masked bundle when Masked), inline for
+	// a worker. It never holds a secret value or the placeholder mapping,
+	// which stays on the platform.
+	Text string `json:"text,omitempty"`
 }
 
 // PromptTemplate names the template the executor must use.

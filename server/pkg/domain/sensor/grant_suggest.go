@@ -10,6 +10,7 @@ package sensor
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -77,9 +78,9 @@ type GrantSuggestion struct {
 }
 
 // suggestOrder is the order profiles are tried in, narrowest first: the
-// passive, network-less ones, then public-only, then zone-bound internal,
+// AI worker (analysis jobs only), the passive, network-less ones, then public-only, then zone-bound internal,
 // then the one that carries credentials.
-var suggestOrder = []string{ProfileCollector, ProfileCIRunner, ProfileEndpoint, ProfileScanConnector, ProfileEASMExternal,
+var suggestOrder = []string{ProfileAIWorker, ProfileCollector, ProfileCIRunner, ProfileEndpoint, ProfileScanConnector, ProfileEASMExternal,
 	ProfileInternalScanner, ProfileAuthenticatedScanner}
 
 // ContractLookup returns the sensor's reported contract for a tool (nil:
@@ -108,6 +109,12 @@ func SuggestGrant(cur Grant, kind SensorType, u GrantUsage, contracts ContractLo
 		}
 	}
 	for _, p := range suggestOrder {
+		if p == ProfileAIWorker && !ranAnalysis(u) {
+			// Only a sensor that ran analysis jobs is suggested the AI
+			// worker profile: a scanner seen only doing health checks
+			// stays a scanner.
+			continue
+		}
 		g := candidate(cur, p, zones)
 		if g == nil || !covers(*g, u, contracts) {
 			continue
@@ -145,6 +152,16 @@ func candidate(cur Grant, p string, zones []shared.ID) *Grant {
 		return nil
 	}
 	return g
+}
+
+// ranAnalysis reports whether u holds an analysis job.
+func ranAnalysis(u GrantUsage) bool {
+	for _, j := range u.Jobs {
+		if strings.EqualFold(strings.TrimSpace(j.Type), jobTypeAnalyze) {
+			return true
+		}
+	}
+	return false
 }
 
 // covers reports whether g admits every job of u (at the tier the sensor's

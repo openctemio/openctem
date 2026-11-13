@@ -70,7 +70,7 @@ check "a clean scan with no issue does nothing" "$([[ "$(logged close)" == 1 && 
 
 # Images.
 rm -f "$tmp/issue.json"; : >"$tmp/log"
-echo '{"component":"openctem-api","target":"alpine","pkg":"libssl3","installed":"3.0.1","fixed":"3.0.2","id":"CVE-1","severity":"HIGH","kind":"os"}' >"$tmp/rep1.ndjson"
+echo '{"component":"openctem-server","target":"alpine","pkg":"libssl3","installed":"3.0.1","fixed":"3.0.2","id":"CVE-1","severity":"HIGH","kind":"os"}' >"$tmp/rep1.ndjson"
 echo '{"component":"openctem-web","target":"node","pkg":"x","installed":"1","fixed":"","id":"CVE-2","severity":"CRITICAL","kind":"library"}' >>"$tmp/rep1.ndjson"
 echo '{"component":"openctem-web","target":"node","pkg":"y","installed":"1","fixed":"2","id":"CVE-3","severity":"LOW","kind":"library"}' >>"$tmp/rep1.ndjson"
 bash "$script" images "$tmp/rep1.ndjson" >/dev/null

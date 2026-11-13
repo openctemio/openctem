@@ -19,9 +19,9 @@ name: Web CI
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, next]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
   merge_group:
     types: [checks_requested]
 

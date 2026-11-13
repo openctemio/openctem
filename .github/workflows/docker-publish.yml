@@ -2,7 +2,7 @@ name: Docker Publish
 
 # One `v*` tag releases the whole product: every image is built from the same
 # commit and gets the same version tag:
-#   ghcr.io/openctemio/openctem-api   API only (8080)
+#   ghcr.io/openctemio/openctem-server  the server (API, 8080)
 #   ghcr.io/openctemio/openctem-web   web only (3000)
 #   ghcr.io/openctemio/openctem-console  the platform console (3000), served by
 #                                      the gateway's console site
@@ -17,16 +17,19 @@ name: Docker Publish
 # (config arch + ELF e_machine + it executes) BEFORE it is pushed. (`ui/v*` tags imported from the old ui
 # repository do not match `v*`: the glob's `*` does not cross `/`.)
 #
-# Image names. Primary names follow the repository; the legacy names
-# (ghcr.io/openctemio/api, ghcr.io/openctemio/ui) keep receiving the SAME
-# manifests during the transition window so existing compose files, Helm values
-# and `docker pull` lines keep working. To end the window, blank the `legacy`
+# Image names. The server image is openctem-server from v0.23.0. Its earlier
+# names (openctem-api for v0.9.0 to v0.22.x, and api, which also received
+# copies of those) keep the tags already published and receive no new ones:
+# nothing is copied to an old name. The web image's legacy name (ghcr.io/openctemio/ui) still receives the
+# SAME manifests during its transition window; to end it, blank the `legacy`
 # field of the matrix entry. migrations/seed keep their names.
 #
-# GHCR permissions: packages created by openctemio/api's workflows stay linked
-# to this repository after the rename (same repository). The `ui` package was
-# linked to openctemio/ui: grant this repository Write in that package's
-# "Manage Actions access" BEFORE the first release, or the legacy ui copy fails.
+# GHCR permissions: a package the first push of this workflow creates (such
+# as openctem-server) is linked to this repository but may start private:
+# make it public in the package settings right after its first release. The
+# `ui` package was linked to openctemio/ui: grant this repository Write in that
+# package's "Manage Actions access" BEFORE the first release, or the legacy ui
+# copy fails.
 
 on:
   push:
@@ -105,7 +108,7 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { name: openctem-api, legacy: api, context: server, file: server/Dockerfile, target: production }
+          - { name: openctem-server, legacy: '', context: server, file: server/Dockerfile, target: production }
           - { name: migrations, legacy: '', context: server, file: server/Dockerfile.migrations, target: '' }
           - { name: seed, legacy: '', context: server, file: server/Dockerfile.seed, target: '' }
           - { name: openctem-web, legacy: ui, context: web, file: web/Dockerfile, target: '' }
@@ -130,14 +133,14 @@ jobs:
           cache: 'false'
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Login to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Login to Docker Hub (authenticated base-image pulls)
         continue-on-error: true
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -225,7 +228,7 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { name: openctem-api, legacy: api }
+          - { name: openctem-server, legacy: '' }
           - { name: migrations, legacy: '' }
           - { name: seed, legacy: '' }
           - { name: openctem-web, legacy: ui }
@@ -240,7 +243,7 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
       - name: Login to GHCR
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -325,7 +328,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -338,7 +341,7 @@ jobs:
           build-contexts: gateway=server/deploy/gateway
           platforms: ${{ matrix.platform }}
           build-args: |
-            API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
+            API_IMAGE=${{ env.REGISTRY }}/openctem-server:${{ needs.prepare.outputs.version }}
             WEB_IMAGE=${{ env.REGISTRY }}/openctem-web:${{ needs.prepare.outputs.version }}
             CONSOLE_IMAGE=${{ env.REGISTRY }}/openctem-console:${{ needs.prepare.outputs.version }}
           load: true
@@ -368,7 +371,7 @@ jobs:
           build-contexts: gateway=server/deploy/gateway
           platforms: ${{ matrix.platform }}
           build-args: |
-            API_IMAGE=${{ env.REGISTRY }}/openctem-api:${{ needs.prepare.outputs.version }}
+            API_IMAGE=${{ env.REGISTRY }}/openctem-server:${{ needs.prepare.outputs.version }}
             WEB_IMAGE=${{ env.REGISTRY }}/openctem-web:${{ needs.prepare.outputs.version }}
             CONSOLE_IMAGE=${{ env.REGISTRY }}/openctem-console:${{ needs.prepare.outputs.version }}
           labels: |
@@ -387,7 +390,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Not digests-openctem-*: that prefix also matches the
-          # openctem-api/-web/-gateway digests, and the all-in-one manifest
+          # openctem-server/-web/-gateway digests, and the all-in-one manifest
           # then lists another image's digests (v0.9.1 failed that way).
           name: allinone-digests-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -409,7 +412,7 @@ jobs:
           pattern: allinone-digests-*
           merge-multiple: true
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -445,12 +448,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [openctem-api, openctem-web, openctem-console, openctem, openctem-gateway, migrations, seed]
+        name: [openctem-server, openctem-web, openctem-console, openctem, openctem-gateway, migrations, seed]
     steps:
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -515,7 +518,7 @@ jobs:
       fail-fast: false
       matrix:
         image:
-          - { name: openctem-api, legacy: api }
+          - { name: openctem-server, legacy: '' }
           - { name: migrations, legacy: '' }
           - { name: seed, legacy: '' }
           - { name: openctem-web, legacy: ui }
@@ -523,12 +526,12 @@ jobs:
           - { name: openctem, legacy: '' }
     steps:
       - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -560,10 +563,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [openctem-api, openctem-web, openctem-console, openctem, openctem-gateway, migrations, seed]
+        name: [openctem-server, openctem-web, openctem-console, openctem, openctem-gateway, migrations, seed]
     steps:
       - uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
-      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -618,7 +621,7 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: lines

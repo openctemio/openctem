@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). In review: governance core (AI suggestions with provenance, per-use-case mode, apply rules, undo, automatic downgrade), reversible masking of AI context, the `openctem.analyze/v1` contract. In review: the built-in executor writing runs through the contract. Designed: the AI analyst worker, third-party analysts |
+| Status | Accepted (2026-10-28). In review: governance core (AI suggestions with provenance, per-use-case mode, apply rules, undo, automatic downgrade), reversible masking of AI context, the `openctem.analyze/v1` contract. In review: the built-in executor writing runs through the contract. Implemented (in review): the `analyze` command type and the `ai-worker` grant profile. Designed: the worker executor and the completion of analysis jobs, third-party analysts |
 | Scope | api (governance, masking, contract, built-in executor), web (Settings > AI use cases and masking, shared AI badge, suggestion card), sdk-go (analyst harness, conformance cases), sensor (analyst image), docs |
 | Architecture | [ai-analyze-contract.md](../architecture/ai-analyze-contract.md), [ai-triage.md](../architecture/ai-triage.md), `ai-analysis.md` (governance) |
 | Related | RFC-040 (mutual distrust, signed jobs), RFC-016 and RFC-062 (MCP, AI egress policy), RFC-094 (the platform depends on contracts only), RFC-030 (scan distribution) |
@@ -35,7 +35,7 @@ RFC-094):
 
 | Schema | `$id` | What |
 |---|---|---|
-| job | `https://openctem.io/schemas/analyze/job/v1.json` | kind (`triage.v1`), use case, subject, bundle (digest, data class, fields sent and withheld, masked), output schema, prompt template id and digest, model policy, investigation grant (multi-step kinds), budgets, deadline |
+| job | `https://openctem.io/schemas/analyze/job/v1.json` | kind (`triage.v1`), use case, subject, bundle (digest, data class, fields sent and withheld, masked, and optionally the masked bundle itself as `text`), output schema, prompt template id and digest, model policy, investigation grant (multi-step kinds), budgets, deadline |
 | result | `https://openctem.io/schemas/analyze/result/v1.json` | status, fixed error code, suggestions, usage, template, run record digest |
 | suggestion | `https://openctem.io/schemas/analyze/suggestion/v1.json` | one typed suggestion: `verdict`, `severity`, `remediation_steps` or `summary`, each with a closed payload, confidence 0..1 and evidence references (`bundle:<field>` or `tool:<n>`) |
 | output per kind | `.../output/triage/v1.json`, `.../output/remediation/v1.json`, `.../output/summary/v1.json` | what a single-shot model call must return for the kind |
@@ -70,17 +70,30 @@ mapping stays on the platform, encrypted, with a TTL. Output is de-tokenised by
 the platform; unknown placeholders force review. A worker's tools receive real
 targets only for the bindings the signed grant carries for the subject.
 
-## 5. The AI analyst (designed)
+## 5. The AI worker (command type and profile implemented)
 
-A sensor role `analyst` on the existing worker type with a grant profile
-`ai-analyst` (command type `analyze` only, never `scan` or `collect`; a sensor is
-an analyst or a scanner, never both). Jobs are signed (RFC-040); the bundle is
+A sensor on the existing worker type with the grant profile `ai-worker` (the
+role name of RFC-133; command type `analyze` only, never `scan` or `collect`; a
+sensor is an AI worker or a scanner, never both). Jobs are signed (RFC-040); the bundle is
 sealed to the claiming worker's key at claim time; the harness checks policy
 before every tool call; tools run in the per-task sandbox and egress forwarder
 with the subject asset as the only target; budgets bound steps, tokens, time and
 cost. Data classes route jobs: `tenant_only` data goes only to a worker the
 organization runs. Third-party analysts use the same contract and a conformance
 suite.
+
+Implemented: the command type `analyze` (signed at claim like every type,
+rated T0) and the `ai-worker` profile (job type `analyze` only, target network
+`none`, no credentials, no push ingest; a grant that lists `analyze` lists
+nothing else, and every scanning profile refuses it). An `analyze` command
+carries `required_capabilities: ["analyze.<kind>"]`, so only a worker that
+advertises the kind claims it. In the run ledger a run on a worker gets its
+`sensor_id` when a worker claims the job (a worker run may lack one while
+queued, or when it ended canceled, refused or failed before a worker claimed
+it), and `ai_runs.result_digest` records the sha256 of the result the worker
+returned (migration 20261113024824). Architecture:
+[sensor-pairing.md](../architecture/sensor-pairing.md), "The AI worker
+profile".
 
 ## 6. Decisions
 
@@ -120,4 +133,5 @@ suite.
 | `openctem.analyze/v1` schemas and validator (`pkg/sensorproto/analyze`) | in review |
 | Built-in executor for `triage.v1`, `remediation.v1`, `summary.v1` through the contract, with bundle builder, masking and provenance | in review |
 | Web: Settings > AI use cases and masking, shared AI badge, suggestion card and "why" drawer | in review |
-| AI analyst worker, harness, conformance cases | designed |
+| `analyze` command type, `ai-worker` grant profile, run ledger rule for worker runs and `result_digest` | in review |
+| Worker executor, completion of analysis jobs, harness, conformance cases | designed |

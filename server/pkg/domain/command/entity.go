@@ -89,6 +89,13 @@ const (
 	// carries the pool's endpoints and the platform's echo, and the result
 	// carries one entry per endpoint (exit address, latency, families).
 	CommandTypeProxyTest CommandType = "proxy_test"
+	// CommandTypeAnalyze is an analysis job for an AI worker
+	// (docs/rfcs/RFC-131-ai-analysis.md): the payload is an
+	// openctem.analyze/v1 job with the masked bundle, and the result carries
+	// the analysis output. It names no tool and no target; only a sensor on
+	// the ai-worker grant profile that advertises the job's
+	// required_capabilities ("analyze.<kind>") is handed one.
+	CommandTypeAnalyze CommandType = "analyze"
 )
 
 // CommandTypes lists every command type. Tests that must hold for each type
@@ -98,7 +105,7 @@ func CommandTypes() []CommandType {
 	return []CommandType{
 		CommandTypeScan, CommandTypeCollect, CommandTypeHealthCheck, CommandTypeConfigUpdate,
 		CommandTypeCancel, CommandTypeValidate, CommandTypeRefreshContent, CommandTypeConnectorSync,
-		CommandTypeConnectorScan, CommandTypeRetest, CommandTypeProxyTest,
+		CommandTypeConnectorScan, CommandTypeRetest, CommandTypeProxyTest, CommandTypeAnalyze,
 	}
 }
 

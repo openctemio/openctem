@@ -23,7 +23,7 @@ name: Web design gate
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
