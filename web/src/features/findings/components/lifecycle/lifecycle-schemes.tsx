@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { GitBranch, Plus } from 'lucide-react'
-import { mutate as globalMutate } from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'

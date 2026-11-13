@@ -843,7 +843,7 @@ export function getSCMConnectionsKey() {
  * Invalidate repositories cache
  */
 export async function invalidateRepositoriesCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   // Match any assets endpoint with type=repository
   await mutate(
     (key) =>
@@ -857,7 +857,7 @@ export async function invalidateRepositoriesCache() {
  * Invalidate SCM connections cache
  */
 export async function invalidateSCMConnectionsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/integrations'),
     undefined,

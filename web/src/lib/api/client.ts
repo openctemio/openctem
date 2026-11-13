@@ -24,6 +24,7 @@ import { sessionEndReason } from '@/features/auth/lib/session-ended'
 import { coalesceGet } from './request-dedupe'
 import { noteRateLimited } from './rate-limit-backoff'
 import { readCsrfCookie } from '@/lib/csrf-client'
+import { isTenantChangedError, tenantRequestSignal } from '@/lib/tenant-epoch'
 
 // ============================================
 // CONFIGURATION
@@ -56,7 +57,7 @@ const readCSRFToken = readCsrfCookie
  * attaches it as `X-CSRF-Token`, and always sends credentials so the proxy
  * receives the auth + csrf cookies. Without the header the backend rejects
  * the mutation with `403 csrf_token_missing_header`. GET/HEAD are passed
- * through untouched. See api/internal/infra/http/middleware/csrf.go.
+ * through untouched. See server/internal/infra/http/middleware/csrf.go.
  */
 export function csrfFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const opts: RequestInit = { credentials: 'include', ...init }
@@ -291,9 +292,28 @@ export async function apiClient<T = unknown>(
     }
   }
 
+  // The organization epoch (src/lib/tenant-epoch.ts): a tab whose session
+  // moved to another organization (a switch in another tab) sends nothing
+  // built from the old organization's state; reads end with their epoch.
+  let epochSignal: AbortSignal | undefined
+  if (!isServer()) {
+    try {
+      epochSignal = tenantRequestSignal(fetchOptions.method || 'GET')
+    } catch (err) {
+      if (isTenantChangedError(err)) {
+        throw new ApiClientError('The organization changed', 'TENANT_CHANGED', 409, { url })
+      }
+      throw err
+    }
+  }
+
   // Create abort controller for timeout
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
+  if (epochSignal) {
+    if (epochSignal.aborted) controller.abort()
+    else epochSignal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
   // A caller's signal (a newer search superseding this one) aborts too.
   const callerSignal = fetchOptions.signal
   if (callerSignal) {
@@ -493,6 +513,11 @@ export async function apiClient<T = unknown>(
 
     // Log only unexpected errors (network, timeout, parse) in development
     devLog.error('[API Client] Unexpected error:', error)
+
+    // A read of an organization this tab has left: not a timeout.
+    if (epochSignal?.aborted) {
+      throw new ApiClientError('The organization changed', 'TENANT_CHANGED', 409, { url })
+    }
 
     // Handle timeout
     if (error instanceof Error && error.name === 'AbortError') {

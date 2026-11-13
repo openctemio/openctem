@@ -176,6 +176,7 @@ tests that cover the console's most user-visible flows.
 | `50-asset-detail-no-shift.spec.ts`          | Asset page: no layout shift while its panels load (390px, 1440px)                                          |
 | `52-team-outside-members.spec.ts`           | A team with outside members turns full-data roles off up front and names them (390px too)                  |
 | `72-attack-surface-page-changes.spec.ts`    | Page changes: change list, diff sheet with hostile text, watches; desktop and phone                        |
+| `56-organization-switch.spec.ts`            | Organization switch: list root without query, no row or id of the old org, second tab, back button         |
 | `45-sensor-repair-dialog.spec.ts`           | Re-pair a sensor: reason, revoke-now offer, code in the command, 1440/390px, axe                           |
 | Spec file (`specs/`)                        | What it covers                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------                   |
@@ -6366,10 +6367,10 @@ Each spec is designed to:
    - `E2E_API_BASE_URL` — for tests that hit the API directly
    - `E2E_LOCALE` — override the browser locale (defaults to `en-US`)
 
-3. Make sure the web app and API are running (monorepo: `api/` and `web/`):
+3. Make sure the web app and API are running (monorepo: `server/` and `web/`):
 
    ```bash
-   # in api/
+   # in server/
    make dev
 
    # in web/
@@ -6529,7 +6530,7 @@ merge queue when `web/` (or a shared file) changed — the routing is
 `.github/scripts/changed.sh`, so an API-only change does not start it. A pull
 request or queue group runs the specs its changed files map to (plus the
 `@smoke` set), split into 1 to 4 shards; a push to `develop` and the nightly run
-run all of them. See [E2E impact selection](../../api/docs/development/ci-cd.md#e2e-impact-selection).
+run all of them. See [E2E impact selection](../../server/docs/development/ci-cd.md#e2e-impact-selection).
 
 The job builds the production images (API, web) with the Actions
 layer cache, generates the stack's secrets (`e2e/ci/make-env.sh`), starts `e2e/ci/compose.yml` (Postgres, Redis, migrations, API
@@ -6541,7 +6542,7 @@ task) and runs `npm run e2e` with `CI=true`. On failure it uploads
 The same stack runs locally (move the ports if 3000/8080 are taken):
 
 ```bash
-docker build -t local/openctem-api:e2e --target production api
+docker build -t local/openctem-api:e2e --target production server
 docker build -t local/openctem-web:e2e web
 bash web/e2e/ci/make-env.sh        # web/e2e/ci/.env: random secrets (git-ignored)
 docker compose -f web/e2e/ci/compose.yml up -d --wait

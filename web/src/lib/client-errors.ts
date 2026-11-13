@@ -6,7 +6,7 @@
  * rejection) it tells the API the error KIND, nothing else: no message,
  * stack, URL or user detail leaves the browser, so a report cannot carry
  * personal or organization data. The API counts the kinds and the operator
- * is alerted when they spike (api/docs/operations/monitoring.md,
+ * is alerted when they spike (server/docs/operations/monitoring.md,
  * WebClientErrors).
  *
  * Reports are throttled per page load (one per kind a minute, ten in all) and

@@ -1,5 +1,0 @@
-### Security: path exclusions with a percent-escape or a `*` segment hold on every sensor
-
-- A path exclusion written with a percent-escape (`/files/My%20Docs`) was stored as written. The sensor compares the decoded request path, so the exclusion never matched and `/files/My%20Docs/a.bak` was requested. This affected every web-scoped job, nuclei included. Prefixes are now stored decoded (`/files/My Docs`). A prefix that decodes to a dot segment, a control character or a `%` (an escaped `%25`), or that has an invalid escape, is refused. Prefixes already stored escaped are sent to the sensor in both forms until the data migration (separate change) rewrites them.
-- An exclusion with a `*` segment (`/tenants/*/admin`) was sent as is, and released sensors compare `*` literally. It is now sent cut before its first `*` (`/tenants/`). This over-blocks on purpose until every sensor reads `*` as a segment (sensor v0.38.2 and v0.37.2).
-- Dispatch and ingest checks read an endpoint path as written and decoded, ignoring ASCII case, as the sensor does.

@@ -1,0 +1,297 @@
+package validation
+
+import (
+	"context"
+	"testing"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// atStatus builds a finding walked to the requested open status via the FSM.
+func atStatus(t *testing.T, target vulnerability.FindingStatus) *vulnerability.Finding {
+	t.Helper()
+	f, err := vulnerability.NewFinding(
+		shared.NewID(), shared.NewID(),
+		vulnerability.FindingSourceManual, "T-1",
+		vulnerability.SeverityHigh, "test",
+	)
+	if err != nil {
+		t.Fatalf("new finding: %v", err)
+	}
+	path := map[vulnerability.FindingStatus][]vulnerability.FindingStatus{
+		vulnerability.FindingStatusNew:        {},
+		vulnerability.FindingStatusConfirmed:  {vulnerability.FindingStatusConfirmed},
+		vulnerability.FindingStatusInProgress: {vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInProgress},
+		vulnerability.FindingStatusFixApplied: {vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusInProgress, vulnerability.FindingStatusFixApplied},
+	}
+	steps, ok := path[target]
+	if !ok {
+		t.Fatalf("atStatus: unsupported target %s", target)
+	}
+	for _, st := range steps {
+		if err := f.TransitionStatus(st, "", nil); err != nil {
+			t.Fatalf("transition %s: %v", st, err)
+		}
+	}
+	return f
+}
+
+// ingestFor wires an ingest service with a capture recorder we can assert on.
+func ingestFor(f *vulnerability.Finding) (*EvidenceIngestService, *fakeFindingRepo, *captureRecorder) {
+	repo := &fakeFindingRepo{current: f}
+	rec := &captureRecorder{}
+	store := NewEvidenceStore(&memEvidenceRepo{})
+	svc := NewEvidenceIngestService(store, repo, nil, rec, logger.NewNop())
+	return svc, repo, rec
+}
+
+// --- verdict table (RFC-011.2 §3) -------------------------------------------
+
+// not_reproducible on an OPEN finding (new/confirmed/in_progress) → downgrade to
+// status held + stamp not_reproducible + set downgraded_at (feeds metric).
+func TestVerdict_NotReproducible_OpenDowngrades(t *testing.T) {
+	for _, start := range []vulnerability.FindingStatus{
+		vulnerability.FindingStatusNew,
+		vulnerability.FindingStatusConfirmed,
+		vulnerability.FindingStatusInProgress,
+	} {
+		t.Run(string(start), func(t *testing.T) {
+			svc, repo, rec := ingestFor(atStatus(t, start))
+			res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+				ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
+			})
+			if err != nil {
+				t.Fatalf("ingest: %v", err)
+			}
+			if !res.Downgraded {
+				t.Fatal("expected Downgraded=true")
+			}
+			if res.StatusChanged {
+				t.Fatal("a downgrade is not a proof-of-fix resolve; StatusChanged must be false")
+			}
+			if repo.current.Status() != start {
+				t.Fatalf("status = %s, want %s (a downgrade keeps the status)", repo.current.Status(), start)
+			}
+			if rec.lastVerdict != VerdictNotReproducible {
+				t.Fatalf("verdict = %s, want not_reproducible", rec.lastVerdict)
+			}
+			if rec.downgradedAt == nil {
+				t.Fatal("downgraded_at must be stamped on a downgrade")
+			}
+		})
+	}
+}
+
+// not_reproducible on a fix_applied finding: the verdict is stamped but the
+// finding is NOT resolved (research 18 F6: raw_meta.reachable is the sensor's
+// own claim), and it is not a downgrade either.
+func TestVerdict_NotReproducible_FixAppliedHolds(t *testing.T) {
+	svc, repo, rec := ingestFor(atStatus(t, vulnerability.FindingStatusFixApplied))
+	res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
+	})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if res.StatusChanged {
+		t.Fatal("fix_applied + sensor-asserted not_reproducible must not resolve")
+	}
+	if res.Downgraded {
+		t.Fatal("a held fix_applied finding is not a downgrade")
+	}
+	if repo.current.Status() != vulnerability.FindingStatusFixApplied {
+		t.Fatalf("status = %s, want fix_applied (unchanged)", repo.current.Status())
+	}
+	if rec.downgradedAt != nil {
+		t.Fatal("downgraded_at must NOT be set")
+	}
+	if rec.lastVerdict != VerdictNotReproducible {
+		t.Fatalf("verdict = %s, want not_reproducible", rec.lastVerdict)
+	}
+}
+
+// reproducible on an OPEN finding → hold state; stamp "reproducible" (still
+// exploitable). No transition, no downgrade.
+func TestVerdict_Reproducible_OpenHolds(t *testing.T) {
+	svc, repo, rec := ingestFor(atStatus(t, vulnerability.FindingStatusConfirmed))
+	res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+		ExecutorKind: "nuclei", Outcome: OutcomeDetected, Summary: "still exploitable",
+	})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if res.StatusChanged || res.Downgraded {
+		t.Fatal("reproducible on an open finding must hold state")
+	}
+	if repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("status = %s, want confirmed (held)", repo.current.Status())
+	}
+	if rec.lastVerdict != VerdictReproducible {
+		t.Fatalf("verdict = %s, want reproducible", rec.lastVerdict)
+	}
+	if rec.downgradedAt != nil {
+		t.Fatal("reproducible must not stamp downgraded_at")
+	}
+}
+
+// reproducible on a fix_applied finding → re-open (fix did not hold).
+func TestVerdict_Reproducible_FixAppliedReopens(t *testing.T) {
+	svc, repo, rec := ingestFor(atStatus(t, vulnerability.FindingStatusFixApplied))
+	if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+		ExecutorKind: "nuclei", Outcome: OutcomeDetected, Summary: "regression",
+	}); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if repo.current.Status() != vulnerability.FindingStatusInProgress {
+		t.Fatalf("status = %s, want in_progress (re-opened)", repo.current.Status())
+	}
+	if rec.lastVerdict != VerdictReproducible {
+		t.Fatalf("verdict = %s, want reproducible", rec.lastVerdict)
+	}
+}
+
+// reproducible after a prior downgrade: the newer verdict replaces it; the
+// status never moved.
+func TestVerdict_Reproducible_AfterDowngradeRefutes(t *testing.T) {
+	f := atStatus(t, vulnerability.FindingStatusConfirmed)
+	svc, repo, rec := ingestFor(f)
+	// First: downgrade it.
+	if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
+	}); err != nil {
+		t.Fatalf("ingest downgrade: %v", err)
+	}
+	if rec.lastVerdict != VerdictNotReproducible || repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("precondition: verdict %s, status %s", rec.lastVerdict, repo.current.Status())
+	}
+	// Then: it reproduces again.
+	if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+		ExecutorKind: "nuclei", Outcome: OutcomeDetected, Summary: "came back",
+	}); err != nil {
+		t.Fatalf("ingest reproduce: %v", err)
+	}
+	if rec.lastVerdict != VerdictReproducible || repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("verdict %s, status %s; want reproducible, confirmed", rec.lastVerdict, repo.current.Status())
+	}
+}
+
+// inconclusive / error / skipped carry no verdict: no transition, no stamp.
+func TestVerdict_NoSignal_NoOp(t *testing.T) {
+	for _, oc := range []Outcome{OutcomeInconclusive, OutcomeError, OutcomeSkipped} {
+		t.Run(string(oc), func(t *testing.T) {
+			svc, repo, rec := ingestFor(atStatus(t, vulnerability.FindingStatusConfirmed))
+			if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+				ExecutorKind: "safe-check", Outcome: oc,
+			}); err != nil {
+				t.Fatalf("ingest: %v", err)
+			}
+			if repo.current.Status() != vulnerability.FindingStatusConfirmed {
+				t.Fatalf("status changed on %s: %s", oc, repo.current.Status())
+			}
+			if rec.calls != 0 {
+				t.Fatalf("%s must not stamp a verdict", oc)
+			}
+		})
+	}
+}
+
+// back-compat: a finding never validated has no verdict recorded; the recorder
+// is never called for a no-signal outcome and the finding is untouched.
+func TestVerdict_BackCompat_NilRecorderTolerated(t *testing.T) {
+	repo := &fakeFindingRepo{current: atStatus(t, vulnerability.FindingStatusConfirmed)}
+	store := NewEvidenceStore(&memEvidenceRepo{})
+	// nil recorder must not panic; the downgrade transition still happens.
+	svc := NewEvidenceIngestService(store, repo, nil, nil, logger.NewNop())
+	res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+		ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, RawMeta: reachableMeta(),
+	})
+	if err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+	if !res.Downgraded {
+		t.Fatal("downgrade transition must still happen without a recorder")
+	}
+	if repo.current.Status() != vulnerability.FindingStatusConfirmed {
+		t.Fatalf("status = %s, want confirmed (a downgrade keeps the status)", repo.current.Status())
+	}
+}
+
+// reachableMeta is evidence that the target answered during the re-run.
+func reachableMeta() map[string]any { return map[string]any{"reachable": true} }
+
+// --- RFC-039 D3: only exploitability-grade results move a finding ------------
+
+// A safe-check is a reachability probe: neither outcome says anything about the
+// vulnerability. Before D3, "connection refused" resolved a fix_applied finding
+// and "port open" re-opened it as "fix did not hold".
+func TestVerdict_SafeCheckNeverMovesAFinding(t *testing.T) {
+	for _, oc := range []Outcome{OutcomeNotDetected, OutcomeDetected} {
+		for _, start := range []vulnerability.FindingStatus{vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusFixApplied} {
+			t.Run(string(oc)+"/"+string(start), func(t *testing.T) {
+				svc, repo, rec := ingestFor(atStatus(t, start))
+				res, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+					ExecutorKind: "safe-check", Outcome: oc, RawMeta: reachableMeta(),
+				})
+				if err != nil {
+					t.Fatalf("ingest: %v", err)
+				}
+				if repo.current.Status() != start || res.StatusChanged || res.Downgraded {
+					t.Fatalf("a reachability probe moved the finding: %s → %s (%+v)", start, repo.current.Status(), res)
+				}
+				if rec.calls != 0 {
+					t.Fatal("a reachability probe must not stamp a validation verdict")
+				}
+			})
+		}
+	}
+}
+
+// nuclei prints nothing for a host that does not answer, which the sensor
+// reports as not_detected. Without proof the target answered, that is unknown:
+// the finding is neither downgraded nor resolved.
+func TestVerdict_NucleiMissWithoutReachabilityIsUnknown(t *testing.T) {
+	for _, start := range []vulnerability.FindingStatus{vulnerability.FindingStatusConfirmed, vulnerability.FindingStatusFixApplied} {
+		t.Run(string(start), func(t *testing.T) {
+			svc, repo, rec := ingestFor(atStatus(t, start))
+			if _, err := svc.Ingest(context.Background(), shared.NewID(), shared.NewID(), nil, Evidence{
+				ExecutorKind: "nuclei", Outcome: OutcomeNotDetected, Summary: "template did not match",
+			}); err != nil {
+				t.Fatalf("ingest: %v", err)
+			}
+			if repo.current.Status() != start {
+				t.Fatalf("a bare nuclei miss moved the finding to %s", repo.current.Status())
+			}
+			if rec.calls != 0 {
+				t.Fatal("a bare nuclei miss must not stamp not_reproducible")
+			}
+		})
+	}
+}
+
+// --- downgrade % metric ------------------------------------------------------
+
+func TestDowngradePct(t *testing.T) {
+	cases := []struct {
+		name                  string
+		downgraded, validated int
+		want                  float64
+	}{
+		{"nothing validated", 0, 0, 0},
+		{"none downgraded", 0, 10, 0},
+		{"a third", 3, 9, float64(3) / float64(9) * 100},
+		{"benchmark band", 35, 100, 35},
+		{"all downgraded", 5, 5, 100},
+		{"clamp on bad input", 12, 10, 100},
+		{"negative guarded", -1, 10, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := DowngradePct(c.downgraded, c.validated)
+			if diff := got - c.want; diff > 1e-9 || diff < -1e-9 {
+				t.Fatalf("DowngradePct(%d,%d) = %v, want %v", c.downgraded, c.validated, got, c.want)
+			}
+		})
+	}
+}

@@ -1,5 +1,0 @@
-### Added: web extension API
-
-- The web app and the console have a public, versioned extension API (`web/src/lib/extension`): an extension build can add sidebar rows, settings pages, console rows, catalog entries (never replacing a core string), content in named slots of core pages (`reports.sections`, `settings.scim.sections`) and replace a short allowlist of components (`auth.footer`). Every row carries `module`, `permission` and `grant`; a row is shown only when its grant is on. The default build resolves the `@extension/*` modules to an empty default and renders nothing extra.
-- The build switch is `EXTENSIONS=on` (unset means off, any other value fails the build); the extension is mounted at `web/src/extensions`. A production build without the switch refuses to run while that directory exists.
-- Web gates only hide. The API checks permission and grant on every extension route and is the security boundary; nothing secret may live in an extension bundle, which reaches browsers like any web code.

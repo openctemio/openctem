@@ -1,6 +1,0 @@
-### Fixed: short scan jobs no longer wait hours behind a batch of long ones on a sensor
-
-- A sensor's claim used to order its organization's pending jobs by priority class and age only. A batch of long jobs (vulnerability scans of half an hour each) queued first held every slot until the whole batch had run, and a discovery run queued an hour later waited behind it: on 2026-11-04 its first DNS lookup started 4 h 41 min after the run.
-- Each claim now splits the jobs into short (expected to take at most 5 minutes at the claiming sensor's measured speed for the tool, from its fresh load report) and long. While short jobs used no more than half of the sensor's time in the last hour they go first, so they start at the next free slot; once they used more, long jobs go first, so long work keeps at least half of the sensor. Without a fresh load report the order is unchanged.
-- The round-robin across runs now counts the jobs a run already has running, so a run with nothing running goes before one that has, also when a sensor claims one job at a time (it used to fall back to first-come-first-served).
-- The order only changes which of the jobs a sensor may claim comes first: routing, zones, tools, capabilities, scope, refusals, host politeness, proxy pools and the slot cap are unchanged, and every read is limited to the claiming sensor's organization. No migration.

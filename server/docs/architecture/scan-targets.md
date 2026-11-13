@@ -1,0 +1,472 @@
+# Scan targets: literal, groups and dynamic selectors
+
+> Design: [RFC-068](../rfcs/RFC-068-dynamic-scan-targets.md). Run model:
+> [scan-lifecycle.md](scan-lifecycle.md). Stages and in-run chaining:
+> [scan-stages.md](scan-stages.md). The gate:
+> [active-probe-gate.md](active-probe-gate.md).
+
+A scan says **what** to scan in three ways, all resolved again at every run:
+
+| Source | Stored as | Resolved at run start to |
+|---|---|---|
+| Literal targets | `scans.targets` (a host, an address, a URL, `host:port`, a swept CIDR) | themselves |
+| Asset groups | `scans.asset_group_ids` | the group's current members (not archived), by asset id |
+| Wildcard domain | `*.example.com` in `scans.targets` | the apex + every domain-class asset at or under it, by asset id |
+| Inventory-mode CIDR | a CIDR in `scans.targets` with `target_options.cidr_mode = inventory` | every address asset inside it, by asset id |
+| Live-hosts-first CIDR | a CIDR with `cidr_mode = liveness` (the default of a new scan) | the range itself (for host discovery and passive lookups only) + every address asset inside it, by asset id |
+
+`asset_ids` on `POST /scans` are names resolved once at create (they become
+literal targets).
+
+## Changing a saved scan's targets
+
+`PUT /scans/{id}` takes `targets`, `asset_ids` and `asset_group_ids`;
+omitted means unchanged. `targets` or `asset_ids` replace the literal
+targets (the assets are named for the editor, as on create);
+`asset_group_ids` replaces the groups (`[]` = none). The new targets pass the
+checks a new scan's pass, as the editor: target validation (no internal or
+loopback address outside a scan zone), the editor's act scope, ownership for
+active scanning and the scope tier ceiling; a group must be
+the organization's (another organization's group is not found). A scan must
+keep a target or a group. Editing also needs the editor's act scope to cover
+the scan's current targets. The CIDR mode is kept (an edit never switches a
+scan to live hosts first unless it names it), and the targets skipped at
+create are cleared. A governed scan's approval covers its targets, so a
+changed scan needs approving again (`internal/app/scan/edit_targets.go`).
+The Edit wizard sends them only when the user changed them.
+
+## Run start
+
+`internal/app/scan/targets.go` `resolveScanTargets`:
+
+```
+targets + groups + selectors
+  └─ expandSelectors (target_selectors.go)
+       wildcard → apex (literal) + ListSelectorAssets(UnderDomain)
+       cidr (inventory mode) → ListSelectorAssets(InCIDR)
+       cidr (liveness mode) → the range (literal) + ListSelectorAssets(InCIDR)
+       options: seen_within_days, include_stale; cap 5 000 per selector
+       new_since_last_run: only assets confirmed (or first seen without a
+         record) since the previous completed/partial run; no apex literal (RFC-071)
+  └─ scanner type gate (single-scanner runs)
+  └─ ResolveDispatchTargets: validator, exclusions, ownership, act scope,
+     private ranges, tier ceiling
+  └─ run context: targets (workflow), target_types, target_expansion,
+     selector_roots, counts and warnings
+```
+
+- `ScanSelectorRepository.ListSelectorAssets`
+  (`internal/infra/postgres/scan_selector_repository.go`) is one query per
+  selector: `tenant_id = $1`, `deleted_at IS NULL`, status `active` (plus
+  `stale`, `inactive` with `include_stale`), optional `last_seen >= $n`,
+  ordered by `last_seen` descending, `LIMIT cap + 1`. A wildcard matches
+  `asset_class = 'domain'` and `lower(name) = root OR name ILIKE '%.' ||
+  escaped(root)`. A range matches `ip_address`/`host` assets whose name is a
+  single address inside it (`pg_input_is_valid(name, 'inet') AND
+  name::inet <<= range`).
+- A subdomain discovery tool (`discover.subdomains`) takes the apex: a
+  single-scanner run rewrites the pattern to its apex
+  (`applyWildcardTargets`) and reads no inventory; a workflow step of that
+  stage drops the seeds under a wildcard apex (`DiscoverySeeds`, called in
+  `scanrun.queueStepForExecutionWithSettings`).
+- A missing or failing reader refuses the run with
+  `TARGET_SELECTOR_UNAVAILABLE`.
+
+## During the run
+
+Chained stages add what earlier stages produced, through the inventory and
+the per-hop gate (scan-stages.md §3). Over-cap and hop-limit skips are
+counted in `scan_stage_targets_skipped_total{reason}` and listed per stage
+in `GET /scan-runs/{id}/stages`.
+
+## What a run records
+
+- `dispatch.target_expansion` on `GET /scan-runs/{id}`: per selector the
+  pattern, kind, matched count, `capped`, a sample of up to 10 names.
+- `dispatch.warnings`: a capped selector.
+- `scan_target_selector_expansions_total{kind,outcome}`: `expanded`,
+  `empty`, `capped`.
+- The scope snapshot (RFC-065 §9) and the in-run provenance
+  (`scan_run_targets`) as for every run.
+
+`target_expansion` and `selector_roots` never reach a sensor
+(`StepRunContext`).
+
+## Options
+
+`scans.target_options` (migration 001640), `pkg/domain/scan/target_options.go`:
+`cidr_mode` (`sweep` default, `inventory`), `seen_within_days` (0–365),
+`include_stale`, `new_since_last_run`, `include_unresolved` (see "Resolve
+before active"). Set on create and update (`target_options` in the body;
+omitted on update = unchanged), exported and imported, copied by clone.
+
+### CIDR mode and live hosts first (RFC-088)
+
+| `cidr_mode` | What the steps get |
+|---|---|
+| `liveness` | Host discovery (`discover.hosts`) and passive lookups get the range pieces. Every other active step gets the addresses host discovery found live (through the hop router) and the addresses the inventory holds in the range, never the range. |
+| `sweep` | Every step that takes ranges gets the pieces; an address host discovery found inside a range the same step sweeps is not added again (`covered_by_range`). |
+| `inventory` | The inventory's addresses inside the range only. |
+| none stored | Sweep: a scan saved before liveness existed keeps sweeping, also when it is edited (an edit that names no mode keeps the stored one). The edit form and the scan detail page suggest live hosts first, with a one-click switch, when its scan can run it (a single scanner, or a workflow with Host discovery). |
+
+- **Default.** A scan saved with a range and no mode gets `liveness` when it
+  can run it: a single-scanner scan, or a workflow with a Host discovery
+  step. Otherwise it sweeps. An explicit `liveness` on a workflow without
+  Host discovery is refused (`LIVENESS_NEEDS_HOST_DISCOVERY`). An explicit
+  `sweep` is stored as chosen.
+- **Single-scanner scans** have no separate discovery step: a port scan
+  takes the range (it probes each address itself), and a scanner that does
+  not take ranges gets the inventory's addresses inside it.
+- **At run time** the run context carries `cidr_mode: liveness`. An active
+  step that would be left with nothing because only ranges were dropped,
+  and has no predecessor to feed it, fails with
+  `LIVENESS_NEEDS_HOST_DISCOVERY`. A Host discovery step with no address
+  or range to probe (a run of names) is settled without a command, and the
+  steps after it run on their own targets.
+- **Probe ports.** The platform names them in every host discovery job
+  (`stage.HostProbePorts`: 80, 443, 22, 3389, 8080, 8443, unless the step
+  sets `ports`); the sensor never picks its own.
+- The **Network** starter workflow starts with Host discovery
+  (migration `network_workflow_host_discovery`); copies a tenant made before
+  keep their steps.
+
+## Resolve before active
+
+An active stage (T1 and above, or a tool the catalogue does not know as
+passive) takes a host name only while the platform holds recent evidence
+that it resolves (RFC-088 A5; `scan.Service.DropStaleNames`):
+
+- **Evidence** is the freshest observation of the name's inventory assets
+  in the asset freshness classes `dns`, `http`, `tls` and `ports`
+  (`asset_attribute_freshness`, tenant-scoped). A resolver answering for
+  it, or a tool reaching it by name, counts.
+- **Older than 7 days** (`assetfreshness.ResolveTTL`): the name is left out
+  (`not_resolving`) and its enrichment is requested (reason `stale`), so the
+  next run knows whether it resolves again.
+- **No evidence at all**, a name a selector (`*.example.com`) or an asset
+  group added: it is left out (`not_resolving`) too. Passive discovery
+  keeps historical names (certificate logs, subdomain sources) that no
+  longer have a DNS answer; the asset's `resolve.dns` coverage checks them,
+  and the name is taken again once a DNS answer or a tool reached it. The
+  scan's `target_options.include_unresolved` hands these names on anyway
+  (for sensors that resolve names the platform cannot).
+- **No evidence at all**, a name typed in: it is handed on. The sensor
+  resolves it and reports it back as `unresolvable` when it does not
+  resolve.
+- Passive stages (DNS resolution, discovery) still take stale names: that
+  is how they get fresh evidence. Names a stage of the same run found are
+  fresh by construction.
+- Workflow steps apply it to their seeds (an active step left with nothing
+  settles without a command); a single-scanner run applies it at run start
+  (`not_resolving_target_count`, a warning; a run left with nothing is
+  refused `NO_RESOLVING_TARGETS`). A failed evidence read dispatches
+  nothing.
+- **Wildcard DNS.** The platform sends `wildcard_filter: true` with every
+  dnsx job that does not set it (`withWildcardFilter`). A name that resolves
+  only through a wildcard record is then never reported and gains no DNS
+  evidence. A name the filtered resolver does not report is either wildcard
+  only or does not resolve at all, and the resolver's output cannot tell
+  the two apart. When the job is over (command completed with exit code 0,
+  every report filed under it completed with nothing rejected), ingest asks
+  DNS itself for each unreported input name (`ingest.NameProber`, through
+  the scan-zone resolver, at most 2000 names, bounded concurrency):
+  - **No DNS answer:** the name does not resolve. It is recorded as a failed
+    check (see "Names that do not resolve" below) and is NOT marked
+    wildcard-only.
+  - **An answer, and a random label under a parent zone resolves to an
+    address the name shares:** the name resolves only through that wildcard
+    record. It is marked (`asset_wildcard_dns`, `ingest.evaluateWildcardDNS`).
+  - **An answer and no wildcard:** it resolves by itself; any mark is cleared.
+  - **Anything unsure** (a resolver error, a timeout), or no prober wired:
+    nothing is marked (a mark needs proof).
+
+  The mark of a name the job did report is cleared. A marked name is passive
+  only: the active-probe gate refuses it, and a service or URL on it, as
+  `wildcard_only` until a person confirms it or a filtered resolution reports
+  it, and the scope join never confirms it. A run with the filter off proves
+  nothing and changes no mark.
+  A registrable domain (`example.com`) is never marked, and a mark it has
+  is cleared and ignored by the gate: a wildcard record never answers for
+  the name it sits under (RFC 4592), so it is not probed either.
+- **Passive runs.** A run whose every probe is passive (the scan's
+  intensity is passive, its single scanner is passive, or every workflow
+  step is passive) puts its targets through the passive gate at run start
+  (`runsPassiveOnly`, `stepsPassiveOnly`, `PassiveOnly`): names nobody
+  confirmed yet and wildcard-only names are looked up; rejected names,
+  scope exclusions, the deny list and names outside the organization's
+  scope are still refused. The targets are the seeds of every step and a
+  step does not gate its seeds again, so an active gate here dropped names
+  a passive workflow was allowed to resolve.
+
+### Names that do not resolve
+
+Certificate transparency and old DNS leave many names with no DNS answer.
+The platform keeps a resolution state per host-name asset
+(`asset_resolution`: `resolving` or `not_resolving`, the last time it
+resolved, and the failed checks in a row). It is a fact about the name, not
+an ownership or scope decision.
+
+- **Fed by** a resolve stage (a name it reported is `resolving`; one it left
+  out and DNS has no answer for counts a failure), a tool that reached the
+  name (http, tls, ports evidence), and a sensor that refused the name as
+  `unresolvable`. `assetresolution.NotResolvingAfter` (2) failures in a row
+  make the name `not_resolving`: one failed lookup can be a resolver hiccup.
+- **Used by** active stages: a `not_resolving` name is left out
+  (`not_resolving` skip, `DropStaleNames`), whatever older evidence says.
+  Passive stages are not filtered, so the name comes back by itself the
+  next time a resolution reports it (the state flips to `resolving` and the
+  failures reset).
+- **Sensor refusals.** A task whose every target the sensor refused as
+  `unresolvable` is not a failure: the command completes with per-target
+  skips (reason `target_unresolvable`; the sensor says `unresolvable`) and
+  the run shows "N names no longer resolve", informational. A sensor that
+  reports the same task as a failed command ("invalid scan target: N of N
+  targets refused: ... cannot resolve ...") is read by
+  `scanrun.ParseUnresolvableRefusal`: when every listed refusal is
+  unresolvable and the counts add up, the platform completes the command
+  with the same skips (only for the command's own, running sensor). A mixed
+  refusal stays a failure.
+- **Refusals under a local policy.** A name the sensor's `targets.allow`
+  list cannot match because it does not resolve is refused as `unresolvable`
+  (rule `targets.allow`), not `denied_by_policy`; `denied_by_policy` is for
+  a name or address that resolves outside the allowed ranges or matches
+  `targets.deny`. A task refused as a whole whose refusal detail
+  (`N target(s) refused: "a" (unresolvable), ...`) lists only unresolvable
+  names completes with per-target skips like the case above, and is not
+  re-queued to this sensor or another (`scanrun.ParseRefusedSummary`,
+  `scanrun.UnresolvableRefusal`). A sensor that predates the reason reports
+  such a name `denied_by_policy`: the platform counts it unresolvable only
+  when its own resolution state of the same tenant says the name is
+  `not_resolving`.
+- **Run map.** A step that leaves not-resolving names out records the count
+  (`not_resolving_skipped_count` in its outcome) and the console shows "N
+  names no longer resolve, skipped by active steps". Passive steps and the
+  DNS resolution step still take the names, so dangling-DNS checks keep
+  working. The scan's include-unresolved option lets a name without evidence
+  through; it never hands an active step a name known to be dead.
+- **Console.** Run: the skip group "No longer resolve" (info tone) and the
+  run note. Assets: filter `resolution=not_resolving` (`GET /assets`), the
+  bulk bar's archive acts on the selection; the asset detail shows the last
+  resolved time (`GET /assets/{id}/freshness`, `resolution`).
+## Where ownership confirmation applies
+
+Ownership confirmation of discovered assets and the wildcard-only
+restriction apply **only when `MANAGED_SERVICE` is true and the job runs
+on platform (shared) sensors**: platform sensors send packets from the
+platform's own addresses, so what they probe must be the tenant's. On the
+tenant's own sensors (any install) and on a self-hosted install (any
+sensor) the tenant's scope entries are the authority: a discovered or
+unclassified asset is fully authorized (like `unclassified_scans: full`,
+never `low_impact`) and a wildcard-only name an active scope entry covers
+is scanned. A wildcard-only name no entry covers stays passive everywhere.
+The organization's own choice still holds there: `unclassified_scans: off`,
+or the Strict scan approval mode, keeps every unclassified asset passive on
+every placement. Everywhere: a rejected asset ("not ours"), a scope exclusion, the platform
+deny list and the guardrails (RFC-054 §16.2) still refuse.
+
+The decision is per job, made where the job is checked, as an
+`attribution.Placement` carried in the context to the ownership gate
+(`easm.ActiveGate`, which knows `MANAGED_SERVICE`). A check that does not
+know the placement is judged as a platform job on the hosted service (fail
+closed):
+
+| Path | Placement |
+|---|---|
+| scan create, update, clone, import, quick scan, scope-wait start | predicted from the scan (`placementFor`): tenant preference, run on tenant runner and asset groups are tenant; `platform` is platform; `auto` is tenant while a tenant sensor of the tool is available or busy, or the tenant may not use shared sensors, else platform |
+| run start (`resolveScanTargets`), workflow scans | the same prediction (a workflow: platform when any step's tool has no tenant sensor) |
+| `POST /scan-workflows/runs` | any step that would go to platform sensors |
+| hop router (derived targets of a follow-on stage) | the run's recorded routing, else the step's routing |
+| dry run, `POST /scope/check`, quick preview | the request's sensor preference, as above |
+| coverage orchestrator and web-verify scans | `auto`, as above |
+| `POST /commands`, validate and retest commands, Tenable connector scans and coverage | tenant (they run on the organization's own sensors) |
+| claim-time re-check | the sensor: a job queued for platform sensors, or claimed by a shared sensor, is a platform job |
+
+A prediction that sends a job to a tenant sensor which later runs on a
+platform sensor is corrected at the claim, where the platform sensor's
+re-check applies confirmation and narrows the job.
+
+On the hosted service a person confirms the names of a skipped group in one
+step: **Confirm ownership** in the group sends
+`POST /easm/candidates/decisions` with `state: confirmed` and
+`asset_names` (the listed names; assets of the caller's own organization
+only, inside the caller's data scope, at most 200 with `asset_ids`). It is
+the same decision as confirming one asset: same permission (`assets:write`),
+same scope-entry rule, one audit event per asset
+(`asset.attribution_decided`), and a name that is not the organization's or
+is outside the data scope is reported in `not_found`.
+
+A derived name the hop router keeps passive because it resolves only
+through a wildcard record is skipped with its own lane reason,
+`wildcard_only` (the run's stage lanes), not `unconfirmed`.
+
+## Skipped targets
+
+A run, and the routing preview of the New Scan review, group every target
+they do not dispatch by reason (`internal/app/scan/target_outcomes.go`):
+`skipped` in `POST /scan-zones/preview` (with `will_scan` and
+`skipped_total`), `skipped_targets` in the run context and `dispatch.skipped` (with
+`dispatch.will_scan`) on `GET /scan-runs/{id}`. One group per
+reason, largest first, with the full count and at most 200 names (25 in a
+run record):
+
+| Reason | Tone | Source |
+|---|---|---|
+| `unresolved` | info | zone routing: no DNS answer from the platform |
+| `not_resolving` | info | resolve before active (above) |
+| `target_unresolvable` | info | a sensor refused the names as no longer resolving (run groups, run tasks) |
+| `excluded` | info | a scope exclusion rule |
+| `archived`, `incompatible_type` | info | asset-group members (count only) |
+| `out_of_scope` | warning | the caller's act scope, or no scope entry |
+| `wildcard_only` | info | the target gate: the name resolves only through a wildcard record (active runs only) |
+| `ownership_unconfirmed`, `tier_exceeded`, `internal_outside_zones` | warning | the target gate |
+| `outside_zones`, `partly_covered`, `outside_selected_zone`, `deny_list`, `zone_no_sensor`, `sensor_policy` | warning | zone routing and planning |
+| `invalid` | warning | scan creation's target validation |
+
+`info` is an expected outcome of the inventory; `warning` asks for a fix.
+Neither is a failure: the console shows neither in red. The preview runs
+as the caller (their act scope), drops the inventory names outside the
+caller's data scope before counting (`hideOutOfDataScopeKey`), applies the
+scan's `target_options` and the resolve-before-active rule exactly as the
+trigger does, and creates nothing.
+
+## Preview
+
+The New Scan wizard asks the inventory directly, under the caller's data
+scope: `GET /assets?under=<root>` for a wildcard and
+`GET /assets?in_cidr=<range>` for an inventory-mode CIDR (count, freshest
+name, sample). The run resolves under the scan actor's act scope, so the
+numbers are what the caller can see now, not a promise.
+
+### Typing and pasting targets in the wizard
+
+The New and Edit Scan wizards (`web/src/features/scans/components/new-scan`)
+take a list typed, pasted or read from a `.txt` / `.csv` file in the browser
+(at most 1 MB and 10,000 entries; a CSV keeps the columns that hold targets
+and drops a header row). Entries are separated by new lines, commas,
+semicolons or spaces, and `#` starts a comment. Each entry is classified and
+normalised before it is added (`web/src/features/scans/lib/target-format.ts`)
+with the rules of the API target validator, so nothing the wizard accepts is
+refused at create:
+
+- domain, wildcard, IPv4, IPv6, CIDR, URL and `host:port` (also `[v6]:port`
+  and `host:port/tcp`); a Unicode domain is sent in its ASCII form;
+- refused with the reason: a range wider than the organization's widest
+  range (a /16 by default, at most 16,777,216 addresses: an IPv4 /8, an IPv6
+  /104, read from the scope settings; the reason names the range's address count and the
+  widest accepted size, with a one-click split when it fits in at most 256
+  ranges of that size), a
+  top-level domain in punycode, a path or repository reference (scanned from
+  repository assets instead), anything else that is not a target;
+- repeats are folded after normalisation (`Example.COM.` is `example.com`).
+
+Format is the only thing decided in the browser. Whether each target may be
+scanned is `POST /scope/check` (the caller's scope, batches of 200, up to the
+1,000 direct targets a scan takes), shown per target with its reason. The
+paste panel says how many targets still fit before anything is added.
+
+### Large ranges (RFC-151)
+
+A range wider than a /16 (IPv6 /112) is a large range. One target may name
+up to the organization's widest range (scope policy `max_range_prefix`:
+a /16 by default for every organization, a /8 at most once an approver opts
+in; raising it needs step-up, is audited at high severity and every
+administrator is told; IPv6 gets the same address count).
+
+- **Create and scope check** take the range as one target: one scope entry
+  must hold it, and an internal range needs one zone that holds it. The scan
+  must run live hosts first (`LARGE_RANGE_NEEDS_LIVENESS` for sweep or
+  inventory, `LIVENESS_NEEDS_HOST_DISCOVERY` for a workflow without Host
+  discovery or a single port or vulnerability scanner). An edit of the
+  targets, target options, workflow or scanner settles this again.
+- **Confirmation (API)**: create, a target edit and import need
+  `confirm_large_range: true` (`?confirm_large_range=true` on import);
+  without it the request is refused with `LARGE_RANGE_UNCONFIRMED`, naming the
+  ranges, their address count and chunk count (also in `details`).
+- **New scan** shows the address count, the /16 chunks and a rough host
+  discovery duration (one sensor at 1,000 addresses a second) and asks for a
+  confirmation before create, then sends `confirm_large_range`; a change of
+  ranges asks again.
+- **Run start** cuts each large range into prefixes no wider than a /16,
+  after removing the addresses no scope entry of an address kind covers
+  (`out_of_scope_addresses`), the exclusions and the deny list. The scan
+  stores the range as typed; nothing is listed per address. Each prefix is an
+  ordinary run target: host discovery sweeps it, later steps get the live
+  hosts. Job, piece and sensor rate limits apply unchanged. Asset group
+  members are cut the same way (a network asset wider than a /16 is never
+  sent whole), and a run holds the scan to a /16 unless it is in liveness
+  mode and its workflow still has a Host discovery step.
+- **Internal ranges**: a range is internal when it overlaps a private,
+  link-local or loopback block anywhere (`172.0.0.0/8` holds
+  `172.16.0.0/12`), not only at its first address.
+- Every other path (a direct command, context targets of a run, claim-time
+  re-check) keeps the /16 bound.
+- The bound and its refusal text are one contract with the web format check:
+  `server/pkg/validator/testdata/cidr_targets.json`, read by both test suites.
+
+### Targets step layout and the scope source
+
+The Targets step has two columns at desktop width (one on a phone, same
+order). Left: what is scanned, as chips (a searchable list past 20 typed
+entries), "Paste or upload a list", and the picker sheet with three sources:
+assets, asset groups, and the organization's scope. Right: what the scan
+probes, grouped by kind (domains, wildcards, address ranges, IP addresses,
+URLs, assets, asset groups), each row with its `POST /scope/check` answer,
+then the refused targets with their remedies. A setting sits next to the
+group it applies to and only when that group exists: the coverage level by
+the domains (by the picked assets when no domain was typed; new scans
+only), how ranges are scanned by the ranges, and the freshness options of
+what a run resolves again (wildcards, inventory ranges) under the groups,
+collapsed with a one-line summary.
+
+The ranges choice shown is the mode the scan runs (`effectiveCidrMode`,
+`web/src/features/scans/lib/liveness.ts`, the rule of "CIDR mode and live
+hosts first" above): a chosen mode; a saved scan without one sweeps; a new
+scan finds live hosts first unless its workflow has no Host discovery step,
+then it sweeps and live hosts first is disabled with the reason. Without a
+choice no mode is sent and the API applies the same rule on save.
+
+"From scope" lists the active in-scope entries a scan can take
+(`GET /scope/targets?statuses=active&types=domain,subdomain,ip_address,ip_range`,
+searched on the server) and is shown only to callers with
+`attack_surface:scope:read`, the permission the endpoint enforces; the
+tenant is the session's. Out of scope entries (`/scope/exclusions`) are never
+read. A wildcard entry (or a domain entry that covers its subdomains)
+becomes a `*.domain` target, an address or CIDR itself; a name pattern or an
+address span is listed but not pickable. Entries expiring within 7 days are
+flagged, since later runs of a saved scan will be refused once they lapse.
+"Add all in-scope entries" reads every page up to the 1,000 direct targets a
+scan takes. A picked entry is an ordinary typed target: it goes through the
+scope check like anything typed, so the picker grants nothing.
+
+### Quick Scan
+
+A Quick Scan stores the typed targets on the ad-hoc scan's target list and
+nowhere else (a client-supplied `targets` or `target` key in its scanner
+settings is dropped), so wildcards and ranges are expanded by the run like
+those of a saved scan. `POST /scans/quick/preview` (`scans:write` and
+`scans:execute`) shows, before the start, what each typed target becomes:
+
+- the number of known assets a wildcard or inventory-mode range covers;
+- how many names the run would scan, and how many it leaves out by reason
+  (exclusions and deny list, data scope, unconfirmed ownership, tier ceiling,
+  internal addresses outside the zones, scanner type, archived), the matching
+  exclusion rules, and up to five sample names;
+- for a wildcard with no known name, an offer to run subdomain discovery on
+  its apex when an active discovery tool exists.
+
+It calls the run's own resolution (`resolveScanTargets`) as the caller, so the
+tenant pin, the caller's data scope, the deny list and the selector cap apply
+unchanged. Free text no scope entry covers is rejected before it is resolved.
+Output is bounded to 20 targets and 5 sample names each. It creates nothing.
+
+## Tests
+
+- `tests/unit/scan_wildcard_targets_test.go`: expansion, re-resolution,
+  caps, gate by asset id, cross-tenant reader, CIDR modes, workflow seeds,
+  fail closed, export/import.
+- `internal/infra/postgres/scan_selector_db_test.go`: the query (tenant,
+  status, window, label boundary, LIKE escaping, ranges), options round trip.
+- `internal/infra/http/routes/data_scope_asset_in_cidr_db_test.go`:
+  `in_cidr` under data scope.
+- `tests/integration/scan_dynamic_targets_test.go`: a run on a migrated
+  database with the production ownership gate and exclusions.

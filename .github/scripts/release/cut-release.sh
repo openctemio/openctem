@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck source-path=SCRIPTDIR
 # cut-release.sh: build release/vX.Y.Z, the branch a release PR merges into
-# main (api/docs/rfcs/RFC-037 §4.2, §4.3).
+# main (server/docs/rfcs/RFC-037 §4.2, §4.3).
 #
 #   cut-release.sh --version vX.Y.Z --sha SHA [--push]                 (train)
 #   cut-release.sh --version vX.Y.Z --mode hotfix --picks "SHA ..." [--push]
@@ -18,7 +18,7 @@
 # keeps its value with a warning. A hotfix keeps its tag's values (it changes
 # only what it fixes; running instances learn newer releases from the feed).
 #
-# Both modes add one version commit: it writes api/deploy/VERSION = VERSION,
+# Both modes add one version commit: it writes server/deploy/VERSION = VERSION,
 # the file setup.sh reads, so the tag's checkout installs its own version. It
 # is the only version in the tree and exists on the release branch and main
 # only: develop never receives it (post-release.sh merges main back with
@@ -30,14 +30,14 @@
 # plus the version commit, and it merges into main cleanly whatever merge
 # button is used: main's squashed release commits are no longer conflicts.
 # The head stays the two-parent merge (Release Publish reads "train" from it).
-# (api/scripts/release-branch.sh is the older, interactive form without the
+# (server/scripts/release-branch.sh is the older, interactive form without the
 # version commit.)
 #
 # `-s ours` discards main's side, so it is only honest when develop already has
 # everything main has. Checked per file: a file on main that is missing at SHA
 # is fine when develop deleted it (a deliberate removal ships with the
 # release); a file develop never had is a fix made on main alone, and the cut
-# is refused rather than silently dropping it. api/deploy/VERSION is the one
+# is refused rather than silently dropping it. server/deploy/VERSION is the one
 # file main has and develop never does, by design; the version commit replaces it.
 #
 # Hotfix: the branch is the last release tag plus the picked commits,
@@ -116,7 +116,7 @@ refuse_cut() {
 # scripts may not know: use the tag's own copy (a train uses these scripts).
 checker="$HERE/sync-versions.sh"
 
-# version_commit: commit api/deploy/VERSION = VERSION on the worktree's branch,
+# version_commit: commit server/deploy/VERSION = VERSION on the worktree's branch,
 # for a train with each component's built-in "latest" refreshed from its published
 # releases (refresh-latest.sh; --no-refresh-latest skips it) and copied to its
 # consumers by the version checker.

@@ -1,0 +1,400 @@
+package routes
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+)
+
+// registerTenantRoutes registers tenant management endpoints.
+// API uses "tenant", UI displays "Team".
+//
+// `tenantRepo` is used for the URL-path tenant lookup (TenantContext
+// resolves slug → id) and for invitation handlers. `membershipReader`
+// is the (possibly cached) reader the RequireMembership middleware
+// uses for the per-request status check — pass the same value as
+// tenantRepo if no cache is available.
+func registerTenantRoutes(
+	router Router,
+	h *handler.TenantHandler,
+	authMiddleware, userSyncMiddleware Middleware,
+	tenantRepo tenant.Repository,
+	membershipReader middleware.MembershipReader,
+	localAuth *handler.LocalAuthHandler,
+	ssoChanges *handler.SSOChangeHandler,
+) {
+	if membershipReader == nil {
+		membershipReader = tenantRepo
+	}
+
+	// Build base middleware chain
+	baseMiddlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		baseMiddlewares = append(baseMiddlewares, userSyncMiddleware)
+	}
+
+	// Tenant routes (authenticated user context)
+	router.Group("/api/v1/tenants", func(r Router) {
+		// List user's tenants
+		r.GET("/", h.List)
+
+		// Create a new tenant
+		r.POST("/", h.Create)
+
+		// GET /api/v1/tenants/{tenant} is registered in the
+		// /api/v1/tenants/{tenant} group below: that group mounts a
+		// sub-router on the exact path, so a route for it here is never
+		// reached (it answered 405).
+	}, baseMiddlewares...)
+
+	// Tenantless module-preset catalog — used by the team-creation
+	// form so the admin can pick a preset BEFORE the tenant exists.
+	// No tenant-specific data is returned; the payload is the same
+	// product-spec catalog served by the tenant-scoped variant.
+	router.Group("/api/v1/module-presets", func(r Router) {
+		r.GET("/", h.ListModulePresets)
+	}, baseMiddlewares...)
+
+	// Tenant-scoped routes - consolidated into single group to avoid chi mount conflicts
+	// Base middleware applies to all: auth + userSync + tenantContext + membership
+	tenantMiddlewares := make([]Middleware, 0, len(baseMiddlewares)+2)
+	tenantMiddlewares = append(tenantMiddlewares, baseMiddlewares...)
+	tenantMiddlewares = append(tenantMiddlewares,
+		middleware.TenantContext(tenantRepo),
+		middleware.RequireMembership(membershipReader))
+	// The one entry check of every route that names its organization in the
+	// URL: a tenantless token is refused, and the URL organization's SSO,
+	// two-factor and personal-account requirements apply to the token's
+	// session on every request, whichever organization the token was minted
+	// for (research/310 X-02).
+	if entryGateMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, entryGateMiddleware)
+	}
+	// A suspended organization in the URL is refused to its members (the
+	// membership check above runs first, so only members learn the status).
+	if organizationGate != nil {
+		tenantMiddlewares = append(tenantMiddlewares, middleware.RequireActiveOrganizationParam(organizationGate,
+			func(r *http.Request) (shared.ID, bool) {
+				id := middleware.GetTeamID(r.Context())
+				return id, !id.IsZero()
+			}, nil))
+	}
+	// The organization's IP allowlist, for the organization in the URL.
+	if ipAllowlistMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, ipAllowlistMiddleware)
+	}
+	// Per-request SSO enforcement for the organization in the URL, with the
+	// caller's role there (RequireMembership above puts it in the context).
+	// The token-tenant chains run the same gate through buildBaseMiddlewares;
+	// this chain does not use that builder, so it adds the gate here.
+	if ssoEnforcementMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, ssoEnforcementMiddleware)
+	}
+	// The per-user read budget of the token-tenant chains.
+	if readRateLimitMiddleware != nil {
+		tenantMiddlewares = append(tenantMiddlewares, readRateLimitMiddleware)
+	}
+
+	router.Group("/api/v1/tenants/{tenant}", func(r Router) {
+		// Read operations - any member (viewer+). The group chain scopes
+		// the tenant to the caller's membership (and IP allowlist), so a
+		// non-member cannot read another tenant's record.
+		r.GET("/", h.Get, tenantPerm(permission.TeamRead))
+		r.GET("/members", h.ListMembers, tenantPerm(permission.MembersRead))
+		r.GET("/members/stats", h.GetMemberStats, tenantPerm(permission.MembersRead))
+		r.GET("/invitations", h.ListInvitations, tenantPerm(permission.MembersRead))
+		r.GET("/settings", h.GetSettings, tenantPerm(permission.SettingsRead))
+
+		// Admin operations (admin+)
+		r.PATCH("/", h.Update, middleware.RequireTeamAdmin(), tenantPerm(permission.TeamUpdate))
+		// No direct add of an existing account: invitations are the consent
+		// path (POST /members was removed, see removed_routes_test.go).
+		r.PATCH("/members/{userId}", h.UpdateMemberRole, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		// Administrator-created accounts: create a user with roles and a
+		// one-time set-password link; reissue the link while the account is unused.
+		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.POST("/users/{userId}/setup-link", h.ReissueSetupLink, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.POST("/invitations/{invitationId}/resend", h.ResendInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		// A new link without email (servers that cannot send mail, lost links)
+		// and renewal of an expired invitation: rotate the token, return it once.
+		r.POST("/invitations/{invitationId}/link", h.RegenerateInvitationLink, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		r.POST("/invitations/{invitationId}/renew", h.RenewInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		r.DELETE("/invitations/{invitationId}", h.DeleteInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+
+		// Settings management (admin+)
+		r.PATCH("/settings/general", h.UpdateGeneralSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		r.PATCH("/settings/branding", h.UpdateBrandingSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+
+		// Pentest settings (admin+)
+		r.GET("/settings/pentest", h.GetPentestSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.PATCH("/settings/pentest", h.UpdatePentestSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+
+		// Asset identity settings (admin+) — RFC-001
+		r.GET("/settings/asset-identity", h.GetAssetIdentitySettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.PATCH("/settings/asset-identity", h.UpdateAssetIdentitySettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+
+		// Asset lifecycle settings (admin+) — stale detection + snooze.
+		r.GET("/settings/asset-lifecycle", h.GetAssetLifecycleSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.PUT("/settings/asset-lifecycle", h.UpdateAssetLifecycleSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		r.POST("/settings/asset-lifecycle/dry-run", h.DryRunAssetLifecycle, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+
+		// Risk scoring settings (admin+)
+		r.GET("/settings/risk-scoring", h.GetRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.PATCH("/settings/risk-scoring", h.UpdateRiskScoringSettings, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
+		r.POST("/settings/risk-scoring/preview", h.PreviewRiskScoringChanges, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		r.POST("/settings/risk-scoring/recalculate", h.RecalculateRiskScores, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		r.GET("/settings/risk-scoring/presets", h.GetRiskScoringPresets, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+
+		// Module management (admin+). Turning modules on or off changes
+		// what the organization runs and exposes (scanning, integrations,
+		// AI), so every write needs a fresh step-up; the validate and
+		// preview dry-runs change nothing and do not.
+		r.GET("/settings/modules", h.GetTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.PATCH("/settings/modules", h.UpdateTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
+		r.POST("/settings/modules/reset", h.ResetTenantModules, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
+		// Platform-wide module dependency graph (static spec from
+		// pkg/domain/module/dependency.go). UI uses this to render
+		// dependency badges + "disabling X will also affect Y" dialogs.
+		r.GET("/settings/modules/graph", h.GetModuleDependencyGraph, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		// Dry-run validation of a toggle — UI calls this BEFORE the
+		// PATCH commit so the admin can confirm cascading impact.
+		r.POST("/settings/modules/validate", h.ValidateTenantModuleToggle, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		// Module presets — curated bundles for common use cases
+		// (VM, ASM, Pentest, SBOM, Compliance, CTEM Full, …).
+		// List endpoint serves the static catalog; preview is a
+		// dry-run diff; apply writes the diff through the normal
+		// UpdateTenantModules scan workflow (validation + audit reuse).
+		r.GET("/settings/modules/presets", h.ListModulePresets, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsRead))
+		r.POST("/settings/modules/presets/{presetId}/preview", h.PreviewModulePreset, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite))
+		r.POST("/settings/modules/presets/{presetId}/apply", h.ApplyModulePreset, middleware.RequireTeamAdmin(), tenantPerm(permission.SettingsWrite), requireStepUpSensitive())
+
+		// Security settings (owner only - sensitive)
+		r.PATCH("/settings/security", h.UpdateSecuritySettings, middleware.RequireTeamOwner(), tenantPerm(permission.SettingsWrite), requireStepUp())
+
+		// SSO changes a platform administrator proposed for this organization
+		// (RFC-022). Owner only: approving one installs who can sign in.
+		// The service re-checks ownership in the database.
+		if ssoChanges != nil {
+			r.GET("/settings/sso/changes", ssoChanges.OwnerList, middleware.RequireTeamOwner())
+			r.POST("/settings/sso/changes/{changeId}/approve", ssoChanges.Approve, middleware.RequireTeamOwner(), requireStepUp())
+			r.POST("/settings/sso/changes/{changeId}/reject", ssoChanges.Reject, middleware.RequireTeamOwner())
+		}
+
+		// Owner-only operations
+		r.DELETE("/", h.Delete, middleware.RequireTeamOwner(), tenantPerm(permission.TeamDelete), requireStepUp())
+	}, tenantMiddlewares...)
+
+	// Invitation routes - mixed public and authenticated. The token is the
+	// credential, so every route is rate limited per IP, in the shared auth
+	// store (its own "invitation" budget, 20/min: the UI makes a lookup +
+	// accept per invitation, and users behind one NAT share an IP).
+	//
+	// The token travels in the request body (RFC-041). The /{token}/...
+	// routes are deprecated aliases with the same handlers and chains;
+	// Deprecated() runs first so that even their errors say so.
+	invitationRL := newAuthRateLimiter("invitation").TokenExchangeMiddleware()
+	authed := func(mw ...Middleware) []Middleware {
+		return append(append(append([]Middleware{}, mw...), baseMiddlewares...), invitationRL)
+	}
+	router.Group("/api/v1/invitations", func(r Router) {
+		// Public: what the token grants, before sign-in.
+		r.POST("/lookup", h.LookupInvitation, invitationRL)
+		// Public: decline (holding the token is the authorization).
+		r.POST("/decline", h.DeclineInvitationToken, invitationRL)
+		// Public: accept with a refresh token, for an invited user who has
+		// no organization yet (so only a refresh token).
+		if localAuth != nil {
+			r.POST("/accept-with-refresh", localAuth.AcceptInvitationWithRefreshBody, invitationRL)
+		}
+		// Authenticated: accept as the signed-in, invited email.
+		r.POST("/accept", ChainFunc(h.AcceptInvitationToken, authed()...).ServeHTTP)
+
+		// Deprecated aliases: the token in the path.
+		r.GET("/{token}/preview", h.GetInvitationPreview, invitationDeprecated("preview", "/api/v1/invitations/lookup"), invitationRL)
+		r.POST("/{token}/decline", h.DeclineInvitation, invitationDeprecated("decline", "/api/v1/invitations/decline"), invitationRL)
+		if localAuth != nil {
+			r.POST("/{token}/accept-with-refresh", localAuth.AcceptInvitationWithRefresh,
+				invitationDeprecated("accept_with_refresh", "/api/v1/invitations/accept-with-refresh"), invitationRL)
+		}
+		r.GET("/{token}", ChainFunc(h.GetInvitation, authed(invitationDeprecated("get", "/api/v1/invitations/lookup"))...).ServeHTTP)
+		r.POST("/{token}/accept", ChainFunc(h.AcceptInvitation, authed(invitationDeprecated("accept", "/api/v1/invitations/accept"))...).ServeHTTP)
+	})
+}
+
+// The /api/v1/invitations/{token}/... aliases are deprecated now and removed
+// on the RFC-041 D10 date for web-only aliases (emailed links point at the
+// web app, never at these).
+var (
+	invitationPathDeprecatedAt = time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	invitationPathSunsetAt     = time.Date(2027, 1, 15, 0, 0, 0, 0, time.UTC)
+)
+
+// invitationDeprecated marks one /api/v1/invitations/{token}/... alias. The
+// metric label is a fixed name, never the request path (which holds the token).
+func invitationDeprecated(name, successor string) Middleware {
+	return middleware.Deprecated(middleware.Deprecation{
+		Plane:        "auth",
+		Route:        "invitations_token_path_" + name,
+		Successor:    successor,
+		DeprecatedAt: invitationPathDeprecatedAt,
+		SunsetAt:     invitationPathSunsetAt,
+	})
+}
+
+// tenantPerm gates a /api/v1/tenants/{tenant}/... route on a permission held
+// in the path tenant (RequireTenantPermission). It runs after the group's
+// TenantContext and RequireMembership.
+//
+// The checker is read per request, not at registration, because Register sets
+// it after the route table may already be built.
+func tenantPerm(p permission.Permission) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			middleware.RequireTenantPermission(tenantPermissionChecker, p.String())(next).ServeHTTP(w, r)
+		})
+	}
+}
+
+// registerOrganizationLimitsRoutes serves the limits and unavailable
+// features that apply to the organization (Settings > Usage & limits) under
+// the token singleton /api/v1/organization: owners and administrators with
+// settings:read (docs/architecture/limits.md).
+func registerOrganizationLimitsRoutes(router Router, h *handler.LimitsHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/limits", func(r Router) {
+		r.GET("/", h.GetOwnLimits, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerOrganizationSecurityOverviewRoutes serves the organization's
+// security overview under the token singleton /api/v1/organization: owners
+// and administrators with settings:read. The tenant comes from the
+// credential.
+func registerOrganizationSecurityOverviewRoutes(router Router, h *handler.SecurityOverviewHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/security-overview", func(r Router) {
+		r.GET("/", h.Get, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerOrganizationMemberRoutes wires member administration under the
+// token singleton /api/v1/organization: the tenant comes from the credential,
+// never from the path (docs/architecture/api-conventions.md §2).
+//
+// DELETE .../members/{member_id}/mfa resets a member's second factor. The
+// route admits owners and administrators; the service re-checks the caller's
+// live membership and adds the peer-administrator, self and
+// other-organization rules.
+//
+// The member lifecycle (RFC-050): GET .../access-report lists what the member
+// holds and owns, POST .../offboard strips access with mandatory reassignment
+// and keeps a tombstone, POST .../erase (owner only) anonymises an offboarded
+// person. The service loads the membership within the caller's tenant (404
+// otherwise) and applies the peer-administrator rule.
+// registerOrganizationTrustRoutes registers trusted organizations (RFC-058)
+// under the token singleton /api/v1/organization/trusts. Reading needs an
+// owner or administrator; every change needs an owner with a recent
+// re-authentication. The service checks which side of a trust the caller's
+// organization is on (host updates, home accepts, either ends it).
+func registerOrganizationTrustRoutes(router Router, h *handler.OrgTrustHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/trusts", func(r Router) {
+		r.GET("/", h.List, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+		r.POST("/", h.Create, middleware.RequireOwner(), requireStepUp())
+		r.PATCH("/{trust_id}", h.Update, middleware.RequireOwner(), requireStepUp())
+		r.POST("/{trust_id}/approve", h.Accept, middleware.RequireOwner(), requireStepUp())
+		r.DELETE("/{trust_id}", h.Delete, middleware.RequireOwner(), requireStepUp())
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+func registerOrganizationMemberRoutes(router Router, localAuth *handler.LocalAuthHandler, tenantH *handler.TenantHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if localAuth == nil && tenantH == nil {
+		return
+	}
+	if tenantH != nil {
+		// What inviting an address would do, before sending (RFC-095): the
+		// same gate as creating an invitation.
+		router.Group("/api/v1/organization/invitations", func(r Router) {
+			r.POST("/preview", tenantH.PreviewInvitation, middleware.RequireAdmin(), middleware.Require(permission.MembersInvite))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Ownership transfer (RFC-095): the owner asks with step-up; the
+		// member asked accepts with their own step-up, or declines. Reading,
+		// accepting and declining are member routes; the service answers 404
+		// unless the caller is the owner or the member asked.
+		router.Group("/api/v1/organization/ownership-transfer", func(r Router) {
+			r.GET("/", tenantH.GetOwnershipTransfer, middleware.Require(permission.TeamRead))
+			r.POST("/", tenantH.StartOwnershipTransfer, middleware.RequireOwner(), requireStepUp())
+			r.DELETE("/", tenantH.CancelOwnershipTransfer, middleware.RequireOwner())
+			r.POST("/approve", tenantH.AcceptOwnershipTransfer, middleware.Require(permission.TeamRead), requireStepUp())
+			r.POST("/reject", tenantH.DeclineOwnershipTransfer, middleware.Require(permission.TeamRead))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Domains: what the organization's verified SSO domains do to
+		// accounts on them (RFC-104). Changing it decides who may join and
+		// who must use SSO: owner only, with step-up.
+		router.Group("/api/v1/organization/settings/domains", func(r Router) {
+			r.GET("/", tenantH.ListDomainSignupPolicies, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+			r.PUT("/{domain_id}/signup-policy", tenantH.UpdateDomainSignupPolicy, middleware.RequireOwner(), middleware.Require(permission.SettingsWrite), requireStepUp())
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+		// Leaving the organization of the credential (RFC-104): any member,
+		// for themselves only.
+		router.Group("/api/v1/organization/leave", func(r Router) {
+			r.POST("/", tenantH.LeaveOrganization, middleware.Require(permission.TeamRead), requireStepUp())
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	if tenantH != nil {
+		// Requests to join by a verified email domain (RFC-104): the
+		// organization's own inbox.
+		router.Group("/api/v1/organization/join-requests", func(r Router) {
+			r.GET("/", tenantH.ListJoinRequests, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+			r.POST("/{request_id}/approve", tenantH.ApproveJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+			r.POST("/{request_id}/reject", tenantH.RejectJoinRequest, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+		}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+	}
+	router.Group("/api/v1/organization/members/{member_id}", func(r Router) {
+		if localAuth != nil {
+			r.DELETE("/mfa", localAuth.ResetMemberMFA, middleware.RequireAdmin(), requireStepUp())
+		}
+		if tenantH != nil {
+			r.GET("/access-report", tenantH.GetMemberAccessReport, middleware.RequireAdmin(), middleware.Require(permission.MembersRead))
+			r.POST("/offboard", tenantH.OffboardMember, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite), requireStepUp())
+			r.POST("/erase", tenantH.EraseMemberPersonalData, middleware.RequireOwner(), requireStepUp())
+			// External members (RFC-058): when the access ends; widening it needs step-up (service).
+			r.PATCH("/access", tenantH.UpdateMemberAccess, middleware.RequireAdmin(), middleware.Require(permission.MembersWrite))
+		}
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}
+
+// registerOrganizationSupportAccessRoutes serves support access (RFC-063)
+// under the token singleton /api/v1/organization/support-access: an owner
+// grants a named platform support administrator time-boxed, read-only access
+// (recent re-authentication); owners and administrators list and revoke;
+// every member sees the active grants (the banner).
+func registerOrganizationSupportAccessRoutes(router Router, h *handler.SupportAccessHandler, authMiddleware, userSyncMiddleware Middleware) {
+	if h == nil {
+		return
+	}
+	router.Group("/api/v1/organization/support-access", func(r Router) {
+		r.GET("/active", h.Active, middleware.Require(permission.TeamRead))
+		r.GET("/grants", h.List, middleware.RequireAdmin(), middleware.Require(permission.SettingsRead))
+		r.POST("/grants", h.Create, middleware.RequireOwner(), requireStepUp())
+		r.DELETE("/grants/{grant_id}", h.Revoke, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+	}, buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)...)
+}

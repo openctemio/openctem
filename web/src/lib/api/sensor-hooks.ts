@@ -646,6 +646,6 @@ export function useRevokeSensor() {
  * flash a skeleton.
  */
 export async function invalidateSensorsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/api/v1/sensors'))
 }

@@ -1,0 +1,274 @@
+package scanrun
+
+// Hosts a sensor could not fully cover in a completed task (RFC-074,
+// docs/rfcs/RFC-074-adaptive-sensor-control.md): the sensor's per-host rate
+// controller gave a host up after its breaker tripped, the host kept
+// pushing back at the lowest rate, or it blocked the scan. The task still
+// completes; its result metadata lists the hosts (coverage_gaps) and how
+// many (coverage_gaps_total), and the step and the run end partial, so a
+// host with a gap is never read as "no findings".
+//
+// The list is sensor-supplied: it is parsed defensively, bounded, cleaned
+// and only ever shown as text.
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/openctemio/openctem/server/pkg/safetext"
+)
+
+// Coverage-gap reasons a sensor reports. An entry with any other reason is
+// dropped.
+const (
+	GapReasonBreakerOpen = "breaker_open"
+	GapReasonRateFloor   = "rate_floor"
+	GapReasonBlocked     = "blocked"
+	// GapReasonProxyUnavailable: the proxy the scan used failed, so the
+	// host was not judged.
+	GapReasonProxyUnavailable = "proxy_unavailable"
+)
+
+// Coverage-gap reasons of path discovery (enumerate.web_paths,
+// docs/architecture/web-discovery.md): why an origin was not, or not fully,
+// checked. Edge protection, throttling and a spent budget leave the origin
+// not covered; the others say what the result means and the origin counts
+// as covered (coverage.ResultGapCovers).
+const (
+	// GapReasonCatchAll: every path answered like the origin's not-found
+	// page (an application shell); only file shapes were judged.
+	GapReasonCatchAll = "catch_all"
+	// GapReasonAuthWall: every path redirected to a login.
+	GapReasonAuthWall = "auth_wall"
+	// GapReasonEdgeProtected: an edge protection challenged or blocked the
+	// requests.
+	GapReasonEdgeProtected = "edge_protected"
+	// GapReasonThrottled: the origin kept slowing the requests down.
+	GapReasonThrottled = "throttled"
+	// GapReasonUnstableBaseline: the not-found answer changed between
+	// samples, so no candidate could be judged against it.
+	GapReasonUnstableBaseline = "unstable_baseline"
+	// GapReasonBudget: the job's request cap ran out before the list did.
+	GapReasonBudget = "budget"
+	// GapReasonHostileResponse: a response broke a safety bound (size,
+	// ratio, time); the origin was left.
+	GapReasonHostileResponse = "hostile_response"
+	// GapReasonProtocol: the origin did not speak HTTP/1.1.
+	GapReasonProtocol = "protocol"
+	// GapReasonScopeFiltered: candidates the web scope refused; the count is
+	// the detail (a sensor may send "scope_filtered:<n>").
+	GapReasonScopeFiltered = "scope_filtered"
+	// GapReasonNoCandidates: the origin was probed with no candidate left
+	// to request (an empty list, or every candidate refused by the scope),
+	// so no request was sent. The platform gives the origin's ledger claim
+	// back; the origin counts as not checked.
+	GapReasonNoCandidates = "no_candidates"
+)
+
+// Bounds of a task's coverage gaps.
+const (
+	// MaxTaskCoverageGaps is how many gaps a task lists.
+	MaxTaskCoverageGaps = 20
+	// MaxCoverageGapsTotal caps the count a sensor reports.
+	MaxCoverageGapsTotal = 1_000_000
+	maxGapHostRunes      = 256
+	maxGapDetailRunes    = 256
+	maxGapsInSummary     = 5
+)
+
+// ErrCodeCoverageGaps is the code of a step that completed with hosts its
+// sensor could not fully cover (FailureCoverageGaps, class partial).
+const ErrCodeCoverageGaps = FailureCoverageGaps
+
+// GapReasons lists the coverage-gap reasons the platform accepts, in a
+// stable order (the console has words for each; a test checks it).
+var GapReasons = []string{GapReasonBreakerOpen, GapReasonRateFloor, GapReasonBlocked, GapReasonProxyUnavailable,
+	GapReasonCatchAll, GapReasonAuthWall, GapReasonEdgeProtected, GapReasonThrottled, GapReasonUnstableBaseline,
+	GapReasonBudget, GapReasonHostileResponse, GapReasonProtocol, GapReasonScopeFiltered, GapReasonNoCandidates}
+
+// NormalizeGapReason returns a known reason and the detail it carries: the
+// path discovery form "scope_filtered:<n>" is the reason scope_filtered with
+// the count as its detail. An unknown reason returns ok false.
+func NormalizeGapReason(reason, detail string) (string, string, bool) {
+	if r, n, found := strings.Cut(reason, ":"); found {
+		if r != GapReasonScopeFiltered || n == "" || strings.Trim(n, "0123456789") != "" || len(n) > 9 {
+			return "", "", false
+		}
+		if detail == "" {
+			detail = n
+		}
+		reason = r
+	}
+	if !slices.Contains(GapReasons, reason) {
+		return "", "", false
+	}
+	return reason, detail, true
+}
+
+// Gap causes: what a recheck of a breaker_open host found (sdk-go
+// adapt.GapCause values). An unknown value is dropped, the gap kept.
+const (
+	// GapCauseHTTPReset: the host completed the TLS handshake (or opened
+	// the plain connection) and reset or closed every HTTP request. It is
+	// up; it refuses the scanner (it may block the scanner's address, or
+	// its backend is down).
+	GapCauseHTTPReset = "http_reset"
+	// GapCauseTLSFailed: the connection opened, the TLS handshake failed.
+	GapCauseTLSFailed = "tls_failed"
+	// GapCauseReset: the host accepts connections, then resets them.
+	GapCauseReset = "reset"
+	// GapCauseRefused: the connection was refused (the port is closed).
+	GapCauseRefused = "refused"
+	// GapCauseNoAnswer: nothing answered.
+	GapCauseNoAnswer = "no_answer"
+	// GapCauseAnswered: the host answered the recheck; it failed the
+	// scanner's requests for a while.
+	GapCauseAnswered = "answered"
+)
+
+// GapCauses lists the causes the platform accepts, in a stable order (the
+// console has words for each; a test checks it).
+var GapCauses = []string{GapCauseHTTPReset, GapCauseTLSFailed, GapCauseReset, GapCauseRefused, GapCauseNoAnswer, GapCauseAnswered}
+
+// Certificate problems a recheck saw on the host (sdk-go adapt.GapCert).
+const (
+	GapCertExpired      = "expired"
+	GapCertNotYetValid  = "not_yet_valid"
+	GapCertNameMismatch = "name_mismatch"
+	GapCertSelfSigned   = "self_signed"
+)
+
+// GapCerts lists the certificate problems the platform accepts.
+var GapCerts = []string{GapCertExpired, GapCertNotYetValid, GapCertNameMismatch, GapCertSelfSigned}
+
+// CoverageGap is one host a sensor could not fully cover, and why. Cause
+// and Cert, when the sensor rechecked the host, say what it did and what
+// its certificate showed; they never make the host covered.
+type CoverageGap struct {
+	Host   string `json:"host"`
+	Reason string `json:"reason"`
+	Detail string `json:"detail,omitempty"`
+	// Edge is how an edge protection answered in the host's place
+	// (EdgeChallenged or EdgeBlocked); Vendor names it (a token, shown as
+	// text only). Both are kept only on a blocked gap.
+	Edge   string `json:"edge,omitempty"`
+	Vendor string `json:"vendor,omitempty"`
+	Cause  string `json:"cause,omitempty"`
+	Cert   string `json:"cert,omitempty"`
+}
+
+// KnownGapCause returns c when it is one of GapCauses, else "".
+func KnownGapCause(c string) string {
+	if slices.Contains(GapCauses, c) {
+		return c
+	}
+	return ""
+}
+
+// KnownGapCert returns c when it is one of GapCerts, else "".
+func KnownGapCert(c string) string {
+	if slices.Contains(GapCerts, c) {
+		return c
+	}
+	return ""
+}
+
+// Edge states a sensor reports on a blocked gap (ctis edgeprotect). Any
+// other value is dropped.
+const (
+	EdgeChallenged = "challenged"
+	EdgeBlocked    = "blocked"
+)
+
+// ParseCoverageGaps reads a task result's coverage_gaps list and
+// coverage_gaps_total. It keeps at most MaxTaskCoverageGaps entries, cleans
+// every string to one bounded line and drops entries without a host or with
+// an unknown reason. The total is at least the number listed and at most
+// MaxCoverageGapsTotal. Malformed input yields what could be read.
+func ParseCoverageGaps(list json.RawMessage, total int) ([]CoverageGap, int) {
+	var raw []map[string]any
+	if len(list) > 0 {
+		_ = json.Unmarshal(list, &raw)
+	}
+	out := make([]CoverageGap, 0, min(len(raw), MaxTaskCoverageGaps))
+	seen := 0
+	for _, e := range raw {
+		host, _ := e["host"].(string)
+		host = safetext.SingleLine(host, maxGapHostRunes)
+		reason, _ := e["reason"].(string)
+		detail, _ := e["detail"].(string)
+		reason, detail, known := NormalizeGapReason(reason, detail)
+		if host == "" || !known {
+			continue
+		}
+		seen++
+		if len(out) >= MaxTaskCoverageGaps {
+			continue
+		}
+		cause, _ := e["cause"].(string)
+		cert, _ := e["cert"].(string)
+		g := CoverageGap{Host: host, Reason: reason, Detail: safetext.SingleLine(detail, maxGapDetailRunes),
+			Cause: KnownGapCause(cause), Cert: KnownGapCert(cert)}
+		if reason == GapReasonBlocked {
+			if edge, _ := e["edge"].(string); edge == EdgeChallenged || edge == EdgeBlocked {
+				g.Edge = edge
+			}
+			vendor, _ := e["vendor"].(string)
+			g.Vendor = safetext.VendorToken(vendor)
+		}
+		out = append(out, g)
+	}
+	if len(out) == 0 {
+		out = nil
+	}
+	total = max(total, seen)
+	total = min(total, MaxCoverageGapsTotal)
+	return out, total
+}
+
+// CoverageGapSummary is the step message of a task that completed with
+// coverage gaps: "Completed with 2 host(s) not fully covered:
+// api.example.com (breaker_open), www.example.com (blocked)".
+func CoverageGapSummary(list []CoverageGap, total int) string {
+	if total <= 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Completed with %d host(s) not fully covered", total)
+	for i, g := range list {
+		if i == maxGapsInSummary {
+			break
+		}
+		if i == 0 {
+			b.WriteString(": ")
+		} else {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%s (%s)", g.Host, gapLabel(g))
+	}
+	if n := total - min(len(list), maxGapsInSummary); n > 0 && len(list) > 0 {
+		fmt.Fprintf(&b, ", and %d more", n)
+	}
+	return b.String()
+}
+
+// gapLabel is a gap's reason with what the recheck saw: "breaker_open",
+// "breaker_open: http_reset", "breaker_open: http_reset, certificate
+// expired".
+func gapLabel(g CoverageGap) string {
+	l := g.Reason
+	if g.Cause != "" {
+		l += ": " + g.Cause
+	}
+	if g.Cert != "" {
+		if g.Cause == "" {
+			l += ":"
+		} else {
+			l += ","
+		}
+		l += " certificate " + strings.ReplaceAll(g.Cert, "_", " ")
+	}
+	return l
+}

@@ -135,7 +135,7 @@ export function safeImageSrc(url: unknown): string | undefined {
 /**
  * Hosts a profile picture may load from. A person's picture is shown to
  * teammates, so an arbitrary host could log their IP addresses and browsers
- * (a tracking pixel). Same list as the API (api/pkg/domain/user/avatar.go),
+ * (a tracking pixel). Same list as the API (server/pkg/domain/user/avatar.go),
  * which refuses other hosts on input; this guard covers stored values.
  */
 const AVATAR_HOSTS = new Set([

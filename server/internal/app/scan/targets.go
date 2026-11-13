@@ -1,0 +1,580 @@
+package scan
+
+import (
+	"context"
+	"fmt"
+	"net/netip"
+	"net/url"
+	"strings"
+
+	"github.com/openctemio/contract/addrscope"
+
+	"github.com/openctemio/openctem/server/internal/app/actscope"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/jobsign"
+	"github.com/openctemio/openctem/server/pkg/validator"
+)
+
+// maxResolvedTargets bounds how many targets one scan run may dispatch. Larger
+// sets must be split (zone routing with TargetsPerJob batching, RFC-023).
+const maxResolvedTargets = 10000
+
+// legacyListScanners are scanner names outside the stage catalog whose
+// sensor executors read the full `targets` list (the Tenable bridge). The
+// catalog's tools say it themselves (stage.AcceptsTargetList); every other
+// scanner reads only the single `target` field, so a run of such a scanner
+// gets one command per target, zoned or not (RFC-030 B4).
+var legacyListScanners = map[string]bool{
+	"tenable": true,
+	"nessus":  true,
+}
+
+func scannerAcceptsTargetList(scanner string) bool {
+	return stage.AcceptsTargetList(scanner) || legacyListScanners[strings.ToLower(strings.TrimSpace(scanner))]
+}
+
+// singleTargetWarningPrefix starts the warning for a single-target scanner in
+// a run without zones; a zoned run creates one job per target instead.
+const singleTargetWarningPrefix = "scanner "
+
+// resolvedTargets is what a scan run actually dispatches.
+type resolvedTargets struct {
+	Targets       []string
+	Excluded      int
+	ExcludedNames []string // the targets scope exclusions removed, in order
+	// ExcludedDetail: the targets exclusions removed, whole or cut, with
+	// the matching rules (at most MaxListedExcluded).
+	ExcludedDetail []ExcludedTarget
+	// Unconfirmed counts group members skipped because their attribution is
+	// not confirmed (needs review, candidate, dependency, monitor only,
+	// rejected).
+	Unconfirmed int
+	// WildcardOnly counts targets left out because their name resolves
+	// only through a wildcard DNS record (passive only until a person
+	// confirms the asset; RFC-088 A4). Not an ownership question: the
+	// name may not exist at all.
+	WildcardOnly int
+	// Archived counts group members left out because the asset is archived.
+	Archived int
+	// Incompatible counts group members left out because the run's scanner
+	// cannot scan their type (RFC-042 §6.3.8 O6); IncompatibleReason names
+	// them.
+	Incompatible       int
+	IncompatibleReason string
+	// TargetTypes is the stored pair of every dispatched group member
+	// (target name -> "type" or "type/sub_type"), for the workflow step gate.
+	TargetTypes map[string]string
+	// OutOfScope counts targets left out because the actor may not scan them
+	// (research/15 L-06, D9).
+	OutOfScope int
+	// TierExceeded counts targets left out because the scope entries
+	// covering them allow a lower tier than the scanner probes at
+	// (RFC-054 §4.2 step 6, tier_ceiling.go).
+	TierExceeded int
+	// InternalOutsideZones counts internal-address targets left out because
+	// no scan zone of the tenant covers them (refuseInternalOutsideZones).
+	InternalOutsideZones int
+	// SkippedNames lists, per skip reason (Skip* constants), the targets
+	// the gate left out, for the skip groups (target_outcomes.go).
+	SkippedNames map[string][]string
+	// Inventory maps the names a selector or an asset group added (lower
+	// case) to their asset, as opposed to typed targets: an active scanner
+	// takes them only with proof that they resolve (resolve_evidence.go).
+	Inventory map[string]shared.ID
+	// NotResolving: the names an active scanner left out for lack of
+	// proof that they resolve (dropStaleRunNames).
+	NotResolving []string
+	Warnings     []string
+	// Expansion is what each dynamic selector added (RFC-068), and
+	// SelectorRoots the apexes of the wildcard selectors.
+	Expansion     []TargetExpansion
+	SelectorRoots []string
+}
+
+// resolveScanTargets builds the target list server-side: the scan's direct
+// targets plus the members of every one of its asset groups (sensors do not
+// resolve asset groups themselves, so a group-only scan used to dispatch
+// nothing), deduplicated, then puts it through the one target gate
+// (ResolveDispatchTargets): scope exclusions, ownership, the act scope of
+// whoever runs the scan, the private-range policy and the tier ceiling. A
+// check that cannot run (a failed or unwired lookup) stops the dispatch
+// (fail closed) instead of scanning everything. The per-run cap counts all
+// groups together.
+//
+// A group member is one asset, identified by its id. It is dispatched by name,
+// but exclusions are tested against every value that names it (its addresses
+// and repository URLs too), so a host whose address is excluded is skipped.
+// Archived members are not scanned. Zone routing is planned by the trigger
+// itself (planZoneDispatch).
+func (s *Service) resolveScanTargets(ctx context.Context, sc *scan.Scan) (*resolvedTargets, error) {
+	// A run whose every probe is passive gets the passive gate
+	// (DispatchTargetsInput.PassiveOnly): a name nobody confirmed yet, or
+	// one that resolves only through a wildcard record, may be looked up; a
+	// rejected name, a scope exclusion, the deny list and a name outside the
+	// organization's scope are still refused.
+	passive := runsPassiveOnly(sc) || passiveRun(ctx)
+	// Where the run's jobs go decides whether ownership confirmation applies
+	// (placement.go); a caller that knows better (a workflow's steps) set it.
+	ctx = s.withScanPlacement(ctx, sc)
+
+	seen := make(map[string]int) // lower-cased target -> index in names
+	var names []string
+	assets := make(map[string]DispatchAsset)
+	var warnings []string
+	archived := 0
+	types := make(map[string]asset.TypeRef) // member name -> stored type
+	inventory := make(map[string]shared.ID) // lower-cased names a selector or group added
+	// A single-scanner run hands every target to one tool: members whose
+	// type it cannot scan are left out here. A workflow gates each step at
+	// its own dispatch (FilterStepTargets).
+	gate, err := s.newScannerTypeGate(ctx, sc.TenantID, sc.ScannerName)
+	if err != nil {
+		return nil, err
+	}
+
+	add := func(value string) bool {
+		v := strings.TrimSpace(value)
+		if v == "" {
+			return false
+		}
+		if _, dup := seen[strings.ToLower(v)]; dup {
+			return false
+		}
+		seen[strings.ToLower(v)] = len(names)
+		names = append(names, v)
+		return true
+	}
+	// alsoMatch adds an asset's other values to the target dispatched under
+	// its name, whichever came first (a direct target with the same name
+	// included), so an exclusion of any of them removes the target. A direct
+	// target stays a typed target: its ownership and act scope are decided
+	// by name.
+	alsoMatch := func(name string, values []string) {
+		i, ok := seen[strings.ToLower(strings.TrimSpace(name))]
+		if !ok {
+			return
+		}
+		a := assets[names[i]]
+		for _, v := range values {
+			if v = strings.TrimSpace(v); v != "" && !strings.EqualFold(v, strings.TrimSpace(name)) {
+				a.AlsoMatch = append(a.AlsoMatch, v)
+			}
+		}
+		if len(a.IDs) > 0 || len(a.AlsoMatch) > 0 {
+			assets[names[i]] = a
+		}
+	}
+
+	// Dynamic selectors (wildcard domains, inventory-mode CIDRs) are
+	// expanded from the inventory as it is now; what they add is dispatched
+	// by asset id, like a group member, and gated like one.
+	exp, err := s.expandForResolve(ctx, sc)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range exp.Literal {
+		add(t)
+	}
+	for _, m := range exp.Members {
+		if !gate.admits(m.Type) {
+			continue
+		}
+		if add(m.Name) {
+			name := names[len(names)-1]
+			assets[name] = DispatchAsset{IDs: []string{m.ID.String()}}
+			types[name] = m.Type
+			inventory[strings.ToLower(name)] = m.ID
+		}
+		alsoMatch(m.Name, m.MatchValues)
+	}
+	warnings = append(warnings, expansionWarnings(exp.Report)...)
+	if len(names) > 2*maxResolvedTargets {
+		return nil, fmt.Errorf("%w: scan resolves to more than %d targets, more than the %d allowed per run",
+			shared.ErrValidation, len(names), maxResolvedTargets)
+	}
+	// Group members, by asset id, for the ownership and act-scope checks. A
+	// member whose name is also a direct target was added as the direct
+	// target first.
+	if s.assetGroupRepo != nil {
+		listed := make(map[shared.ID]bool)
+		for _, groupID := range sc.GetAllAssetGroupIDs() {
+			if groupID.IsZero() || listed[groupID] {
+				continue
+			}
+			listed[groupID] = true
+			members, archivedInGroup, err := s.listGroupScanMembers(ctx, sc.TenantID, groupID)
+			if err != nil {
+				return nil, fmt.Errorf("list asset group %s members: %w", groupID, err)
+			}
+			archived += archivedInGroup
+			if len(members) == 0 {
+				warnings = append(warnings, fmt.Sprintf("asset group %s has no assets that can be scanned; nothing from it is scanned", groupID))
+			}
+			for _, m := range members {
+				if !gate.admits(m.Type) {
+					continue
+				}
+				if add(m.Name) {
+					name := names[len(names)-1]
+					assets[name] = DispatchAsset{IDs: []string{m.ID.String()}}
+					types[name] = m.Type
+					inventory[strings.ToLower(name)] = m.ID
+				}
+				alsoMatch(m.Name, m.MatchValues)
+			}
+			// Bound the work before the checks: they only remove targets,
+			// so far more candidates than the cap cannot fit.
+			if len(names) > 2*maxResolvedTargets {
+				return nil, fmt.Errorf("%w: scan resolves to more than %d targets, more than the %d allowed per run",
+					shared.ErrValidation, len(names), maxResolvedTargets)
+			}
+		}
+	}
+
+	// A workflow (no scanner) is tier-checked per step, at its dispatch.
+	tier := scopedom.TierPassive
+	if sc.ScannerName != "" {
+		tier = ProbeTier(sc.ScannerName)
+	}
+	// A range wider than a /16 runs only live hosts first (RFC-151): cut into
+	// /16 chunks for host discovery, up to the organization's widest range.
+	// Group members are included: a network asset wider than the bound is
+	// refused or cut like a typed range (splitRangeTargets).
+	rangeBits, err := s.tenantRangeHostBits(ctx, sc.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	// Only a scan that finds hosts first (a workflow with a host discovery
+	// step, checked again now: its steps may have changed since the save)
+	// in liveness mode gets a large range; any other is held to a /16.
+	if rangeBits > validator.DefaultCIDRHostBits {
+		finds := false
+		if sc.TargetOptions.CIDRMode == scan.CIDRModeLiveness {
+			if finds, err = s.scanFindsHostsFirst(ctx, sc); err != nil {
+				return nil, err
+			}
+		}
+		if !finds {
+			rangeBits = validator.DefaultCIDRHostBits
+		}
+	}
+	gated, err := s.ResolveDispatchTargets(ctx, DispatchTargetsInput{
+		TenantID:               sc.TenantID,
+		Targets:                names,
+		MaxRangeHostBits:       rangeBits,
+		Assets:                 assets,
+		ActScope:               true,
+		FallbackUser:           actorOf(sc),
+		SystemPolicy:           systemPolicyOf(sc),
+		Tier:                   &tier,
+		PassiveOnly:            passive,
+		AllowNonNetworkTargets: true,
+		SkipZoneRouting:        true,
+		TakeoverOnly:           IsTakeoverOnlyProbe(sc.ScannerName, sc.ScannerConfig),
+		ActScopeAssetsByID:     true,
+		MaxTargets:             2 * maxResolvedTargets,
+		Path:                   "scan_run",
+		SplitRanges:            true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan not dispatched: %w", err)
+	}
+
+	if archived > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d archived asset(s) in the group(s) were skipped", archived))
+	}
+	out := &resolvedTargets{
+		Targets:        append(make([]string, 0, len(gated.Allowed)), gated.Allowed...),
+		Excluded:       len(gated.Excluded),
+		ExcludedNames:  gated.Excluded,
+		ExcludedDetail: s.ExplainExcluded(ctx, sc.TenantID, gated),
+		Archived:       archived,
+		Warnings:       warnings,
+		Expansion:      exp.Report,
+		SelectorRoots:  exp.Roots,
+		Inventory:      inventory,
+	}
+	out.Warnings = append(out.Warnings, splitWarnings(gated.Split)...)
+	if n := gate.total(); n > 0 {
+		out.Incompatible = n
+		out.IncompatibleReason = gate.describe()
+		out.Warnings = append(out.Warnings, fmt.Sprintf("%d asset(s) in the group(s) were skipped: %s", n, out.IncompatibleReason))
+	}
+	if err := countRefusals(out, gated.Refused); err != nil {
+		return nil, err
+	}
+	typeOf := func(t string) (asset.TypeRef, bool) { ref, ok := types[t]; return ref, ok }
+	gateScannerKinds(sc.ScannerName, out, typeOf)
+	if err := s.gateScannerPaths(ctx, sc.TenantID, sc.ScannerName, out, typeOf); err != nil {
+		return nil, err
+	}
+	for _, t := range out.Targets {
+		if ref, typed := types[t]; typed && ref.Type != "" {
+			if out.TargetTypes == nil {
+				out.TargetTypes = make(map[string]string)
+			}
+			out.TargetTypes[t] = typeLabel(ref)
+		}
+	}
+	if out.OutOfScope > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: they are outside the data scope of whoever runs this scan, or not scope targets", out.OutOfScope))
+	}
+	if out.Unconfirmed > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: %s", out.Unconfirmed, ReasonOwnershipNotConfirmed))
+	}
+	if out.WildcardOnly > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: %s", out.WildcardOnly, ReasonWildcardOnly))
+	}
+	if out.InternalOutsideZones > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d internal address target(s) were skipped: %s", out.InternalOutsideZones, ReasonInternalOutsideZones))
+	}
+	if out.TierExceeded > 0 {
+		out.Warnings = append(out.Warnings, fmt.Sprintf(
+			"%d target(s) were skipped: %s runs %s probes and the scope entries covering them allow less (raise the entry's tier in Scoping > Scope)",
+			out.TierExceeded, sc.ScannerName, tier))
+	}
+	if len(out.Targets) > maxResolvedTargets {
+		return nil, fmt.Errorf("%w: scan resolves to %d targets, more than the %d allowed per run",
+			shared.ErrValidation, len(out.Targets), maxResolvedTargets)
+	}
+	// A single-scanner run of a one-target scanner dispatches one command
+	// per target (unzonedJobPlan, or the zone batches); refuse up front what
+	// would exceed the per-run job cap. A workflow (no scanner name) plans
+	// its targets per step and never had the one-target caveat: it used to
+	// be warned that only the first target would be scanned.
+	if sc.ScannerName != "" && !scannerAcceptsTargetList(sc.ScannerName) && len(out.Targets) > maxZoneJobsPerRun {
+		return nil, tooManyJobsError(sc, len(out.Targets))
+	}
+	return out, nil
+}
+
+// countRefusals counts the gate's refusals of a run by check. The gate runs
+// with the validator off and zone routing left to the trigger, so a refusal
+// is ownership, act scope, the private-range rule or the tier ceiling; any
+// other stops the run (a check this count does not know of).
+func countRefusals(out *resolvedTargets, refused []RefusedTarget) error {
+	for _, r := range refused {
+		switch {
+		case r.Reason == ReasonOwnershipNotConfirmed && r.Code == scopedom.RefusalWildcardOnly:
+			out.WildcardOnly++
+			out.skipped(SkipWildcardOnly, r.Target)
+		case r.Reason == ReasonOwnershipNotConfirmed:
+			out.Unconfirmed++
+			out.skipped(SkipNotConfirmed, r.Target)
+		case r.Reason == ReasonInternalOutsideZones && r.Code == scopedom.RefusalZoneNone:
+			out.InternalOutsideZones++
+			out.skipped(SkipInternalNoZone, r.Target)
+		case r.Code == scopedom.RefusalTierExceeds:
+			out.TierExceeded++
+			out.skipped(SkipTierExceeded, r.Target)
+		case r.Code == scopedom.RefusalOutOfDataScope, r.Code == scopedom.RefusalNotAnAsset, r.Code == scopedom.RefusalNoEntry:
+			out.OutOfScope++
+			out.skipped(SkipOutOfScope, r.Target)
+		case r.Reason == ReasonRangeDenied, r.Reason == ReasonRangeTooLarge:
+			out.Warnings = append(out.Warnings, fmt.Sprintf("range %s was skipped: %s", r.Target, r.Reason))
+		default:
+			return fmt.Errorf("scan not dispatched: target refused with an unexpected code %q", r.Code)
+		}
+	}
+	return nil
+}
+
+// skipped notes a target the gate left out, under its skip reason (at
+// most maxSkipSamples per reason are kept).
+func (r *resolvedTargets) skipped(reason, target string) {
+	if r.SkippedNames == nil {
+		r.SkippedNames = map[string][]string{}
+	}
+	if len(r.SkippedNames[reason]) < maxSkipSamples {
+		r.SkippedNames[reason] = append(r.SkippedNames[reason], target)
+	}
+}
+
+// applyTargetsToPayload writes the dispatch targets in the protocol-v1 shape
+// every deployed sensor and SDK understands: `targets` always carries the full
+// list; `target` is set only when it is the whole job (one target, or a
+// scanner that reads nothing else). Sending `target` alongside a list would
+// make nuclei scan just that one, because it prefers `target`.
+func applyTargetsToPayload(payload map[string]any, scanner string, targets []string) {
+	if len(targets) == 0 {
+		return
+	}
+	payload["targets"] = targets
+	if len(targets) == 1 || !scannerAcceptsTargetList(scanner) {
+		payload["target"] = targets[0]
+	}
+}
+
+// hasInternalTarget reports whether any target is (or names) an internal
+// address or range (ctis addrscope: private, loopback, link-local, CGNAT,
+// reserved, multicast, and IPv6 forms carrying such an IPv4 address) or an
+// internal suffix. Such targets must never be routed to shared platform
+// sensors.
+func hasInternalTarget(targets []string) bool {
+	for _, t := range targets {
+		if isInternalTarget(t) {
+			return true
+		}
+	}
+	return false
+}
+
+func isInternalTarget(target string) bool {
+	host := strings.TrimSpace(target)
+	if strings.Contains(host, "://") {
+		if u, err := url.Parse(host); err == nil {
+			host = u.Hostname()
+		}
+	}
+	// A range is internal when any of its addresses is, not only its
+	// first one ("8.0.0.0/6" holds 10.0.0.0/8).
+	if p, err := netip.ParsePrefix(host); err == nil {
+		return addrscope.IsInternalPrefix(p)
+	}
+	host = asset.HostOf(host)
+	if a, err := netip.ParseAddr(host); err == nil {
+		return isInternalAddr(a)
+	}
+	lower := strings.ToLower(host)
+	// "2130706433", "0x7f.1": tools that accept inet_aton forms read these
+	// as addresses (127.0.0.1); no real name ends in a numeric label.
+	if jobsign.NumericHost(lower) {
+		return true
+	}
+	return lower == "localhost" || strings.HasSuffix(lower, ".localhost") ||
+		strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal")
+}
+
+// isInternalAddr is the one definition shared with sensors (ctis addrscope).
+func isInternalAddr(a netip.Addr) bool { return addrscope.IsInternal(a) }
+
+// gateScannerKinds leaves out of a single-scanner run every typed-in target
+// whose kind the scanner's stage does not take (stage.AcceptsKind), and
+// every range and repository, typed in or from the inventory: a network
+// range never reaches an HTTP prober or a template scanner, a repository
+// never reaches a network tool. Inventory targets are otherwise decided by
+// their stored type (scannerTypeGate). They are counted as incompatible,
+// with the reason.
+func gateScannerKinds(scanner string, out *resolvedTargets, typed func(string) (asset.TypeRef, bool)) {
+	if scanner == "" {
+		return
+	}
+	st, ok := stage.ForStep(scanner, nil)
+	if !ok {
+		return
+	}
+	kept, refused := st.FilterKinds(out.Targets, typed)
+	if len(refused) == 0 {
+		return
+	}
+	reason := st.DescribeRefusedKinds(refused)
+	n := len(out.Targets) - len(kept)
+	out.Incompatible += n
+	out.Targets = kept
+	if out.IncompatibleReason != "" {
+		out.IncompatibleReason += "; "
+	}
+	out.IncompatibleReason += reason
+	out.Warnings = append(out.Warnings, fmt.Sprintf("%d target(s) were skipped: %s", n, reason))
+}
+
+// splitWarnings tells the run which range targets were cut around
+// exclusions and the deny list, and how much was left out.
+func splitWarnings(split []SplitTarget) []string {
+	out := make([]string, 0, len(split))
+	for _, sp := range split {
+		if sp.Removed == 0 {
+			continue // only cut into pieces
+		}
+		out = append(out, fmt.Sprintf("range %s: %d excluded or denied address(es) left out; the rest is scanned as %d piece(s)",
+			sp.Target, sp.Removed, len(sp.Pieces)))
+	}
+	return out
+}
+
+// dropOutOfDataScopeMembers removes from the expansion the members the
+// actor may not act on, and from each selector's matched count.
+func (s *Service) dropOutOfDataScopeMembers(ctx context.Context, sc *scan.Scan, exp *selectorExpansion) error {
+	if len(exp.Members) == 0 {
+		return nil
+	}
+	if s.actScope == nil {
+		return ErrActScopeUnavailable
+	}
+	ids := make([]shared.ID, 0, len(exp.Members))
+	for _, m := range exp.Members {
+		ids = append(ids, m.ID)
+	}
+	d, err := s.actScope.Check(ctx, actscope.Input{TenantID: sc.TenantID, FallbackUser: sc.CreatedBy, AssetIDs: ids})
+	if err != nil {
+		return fmt.Errorf("act-scope check failed: %w", err)
+	}
+	kept := exp.Members[:0]
+	for _, m := range exp.Members {
+		if !d.RefusedAssets[m.ID] {
+			kept = append(kept, m)
+			continue
+		}
+		for i := range exp.Report {
+			if exp.Report[i].Selector == m.Selector && exp.Report[i].Matched > 0 {
+				exp.Report[i].Matched--
+				break
+			}
+		}
+	}
+	exp.Members = kept
+	return nil
+}
+
+// runsPassiveOnly reports whether every probe a run of the scan sends is
+// passive (RFC-071): its intensity is passive, or its single scanner
+// probes at the passive tier. A step or tool above the intensity is never
+// dispatched (scanrun skips it, the claim refuses it), so such a run only
+// looks names up and its targets get the passive gate.
+func runsPassiveOnly(sc *scan.Scan) bool {
+	if sc.EffectiveIntensity().MaxTier() == int(stage.TierPassive) {
+		return true
+	}
+	return sc.ScanType != scan.ScanTypeWorkflow && sc.ScannerName != "" &&
+		stage.IntensityTier(sc.ScannerName, nil, sc.ScannerConfig) == stage.TierPassive
+}
+
+// passiveRunKey marks a context whose scan run probes passively only, as
+// the caller decided (a workflow whose every step is passive).
+type passiveRunKey struct{}
+
+// withPassiveRun marks ctx when passive is true.
+func withPassiveRun(ctx context.Context, passive bool) context.Context {
+	if !passive {
+		return ctx
+	}
+	return context.WithValue(ctx, passiveRunKey{}, true)
+}
+
+func passiveRun(ctx context.Context) bool {
+	v, _ := ctx.Value(passiveRunKey{}).(bool)
+	return v
+}
+
+// hideOutOfDataScopeKey marks a context whose resolution must drop the
+// inventory names the actor may not act on before anything is counted: a
+// preview never reveals how many names exist beyond the actor's data scope.
+type hideOutOfDataScopeKey struct{}
+
+// expandForResolve expands the selectors, then (hide marked) drops the
+// members the actor may not act on.
+func (s *Service) expandForResolve(ctx context.Context, sc *scan.Scan) (*selectorExpansion, error) {
+	exp, err := s.expandSelectors(ctx, sc)
+	if hide, _ := ctx.Value(hideOutOfDataScopeKey{}).(bool); err != nil || !hide {
+		return exp, err
+	}
+	return exp, s.dropOutOfDataScopeMembers(ctx, sc, exp)
+}

@@ -1,7 +1,7 @@
 /**
  * Build identity: what Help > About shows for the web app and the API.
  *
- * The rule (api/docs/rfcs/RFC-037 §3.2): every component reports version,
+ * The rule (server/docs/rfcs/RFC-037 §3.2): every component reports version,
  * commit and channel. channel is "release" for a vX.Y.Z tag, "rc" for any
  * other pre-release tag, "dev" otherwise; a dev version is
  * "<highest vX.Y.Z tag>-dev+<short sha>".
@@ -22,7 +22,7 @@ export interface AppVersion {
   commit?: string
 }
 
-/** Same length the API reports (api/pkg/version). */
+/** Same length the API reports (server/pkg/version). */
 export const SHORT_COMMIT_LENGTH = 8
 
 export function getAppVersion(): AppVersion {
@@ -49,7 +49,7 @@ export const UNKNOWN_COMMIT = 'unknown'
 /** A tag-shaped version: v1.2.3[-prerelease][+build]; group 1 is the pre-release. */
 const TAG_VERSION = /^v?\d+\.\d+\.\d+(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
 
-/** Same classification as the API (api/pkg/version channelOf). */
+/** Same classification as the API (server/pkg/version channelOf). */
 export function channelOf(version: string): BuildChannel {
   const m = TAG_VERSION.exec(version)
   if (!m) return 'dev'

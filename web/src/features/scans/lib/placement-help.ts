@@ -75,6 +75,9 @@ export const FAILURE_FIX: Record<string, FixTarget | null> = {
   // The tool is retired as a source on the sensor (refused at claim; the
   // step is skipped and the run goes on).
   SOURCE_RETIRED: 'sources',
+  // A port scan whose ports no sensor's local policy (ports.allow) allows
+  // (refused at claim; the step is skipped and the run goes on).
+  PORTS_NOT_ALLOWED: 'sensors',
   // Retest reason codes (api pkg/domain/retest).
   UNREACHABLE: null,
   BLOCKED: 'sensors',

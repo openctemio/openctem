@@ -112,10 +112,10 @@ describe('audit action labels', () => {
     expect(getActionLabel('api_key.created')).toBe('API key created')
   })
 
-  // Every action the API can write (api/pkg/domain/audit/value_objects.go)
+  // Every action the API can write (server/pkg/domain/audit/value_objects.go)
   // gets a sentence-case label, never the raw id.
   const source = fs.readFileSync(
-    path.resolve(__dirname, '../../../../../api/pkg/domain/audit/value_objects.go'),
+    path.resolve(__dirname, '../../../../../server/pkg/domain/audit/value_objects.go'),
     'utf8'
   )
   const apiActions = [...source.matchAll(/^\s+Action\w+\s+Action\s*=\s*"([a-z0-9_.]+)"/gm)].map(

@@ -1,0 +1,417 @@
+// Package notification provides public types and helpers reusable across the codebase.
+package notification
+
+import (
+	"slices"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+// ID is the unique identifier for a notification.
+type ID = shared.ID
+
+// ParseID parses a string into a notification ID.
+func ParseID(s string) (ID, error) {
+	return shared.IDFromString(s)
+}
+
+// Audience constants
+const (
+	AudienceAll   = "all"
+	AudienceGroup = "group"
+	AudienceUser  = "user"
+)
+
+// Severity constants
+const (
+	SeverityCritical = "critical"
+	SeverityHigh     = "high"
+	SeverityMedium   = "medium"
+	SeverityLow      = "low"
+	SeverityInfo     = "info"
+)
+
+// Notification types
+const (
+	TypeFindingNew               = "finding_new"
+	TypeFindingAssigned          = "finding_assigned"
+	TypeFindingStatusChange      = "finding_status_change"
+	TypeFindingComment           = "finding_comment"
+	TypeFindingMention           = "finding_mention"
+	TypeScanStarted              = "scan_started"
+	TypeScanCompleted            = "scan_completed"
+	TypeScanFailed               = "scan_failed"
+	TypeAssetDiscovered          = "asset_discovered"
+	TypeMemberInvited            = "member_invited"
+	TypeMemberJoined             = "member_joined"
+	TypeRoleChanged              = "role_changed"
+	TypeCampaignMemberAdded      = "campaign_member_added"
+	TypeCampaignMemberRemoved    = "campaign_member_removed"
+	TypeCampaignMemberRoleChange = "campaign_member_role_change"
+	// TypeCampaignStatusChange tells campaign members that the campaign
+	// moved to another phase (testing, reporting, remediation, ...).
+	TypeCampaignStatusChange = "campaign_status_change"
+	TypeSLABreach            = "sla_breach"
+	TypeSystemAlert          = "system_alert"
+	// TypeSSOChangePending tells an organization owner that a platform
+	// administrator proposed an SSO change that waits for their approval.
+	TypeSSOChangePending = "sso_change_pending"
+	// TypeMemberLifecycle tells administrators that a member lifecycle action
+	// needs them: a disable paused schedules, or a deprovisioned member still
+	// owns work to reassign.
+	TypeMemberLifecycle = "member_lifecycle"
+	// TypeCISecurity tells administrators about a CI gate security event
+	// (break-glass created or used).
+	TypeCISecurity = "ci_security"
+	// TypeSensorSecurity tells administrators about a change to which
+	// sensors may act for the organization: a sensor paired or re-paired, a
+	// grant widened, a sensor promoted (RFC-052).
+	TypeSensorSecurity = "sensor_security"
+	// TypeScopeChange tells administrators that the organization's scope
+	// grew, or that a scope entry waits for their approval (RFC-054).
+	TypeScopeChange = "scope_change"
+	// TypeScanWindowOverride tells administrators that scan windows were
+	// overridden (RFC-067).
+	TypeScanWindowOverride = "scan_window_override"
+	// TypeScanApproval tells approvers that a scan waits for their approval,
+	// and requesters that it was approved or rejected (RFC-073).
+	TypeScanApproval = "scan_approval"
+	// TypeAttackSurfaceDigest is the weekly "what changed" digest of the
+	// attack surface, sent to administrators (RFC-080).
+	TypeAttackSurfaceDigest = "attack_surface_digest"
+	// TypeCoverageGap tells administrators that assets went without a
+	// capability their type needs (RFC-093).
+	TypeCoverageGap = "coverage_gap"
+	// TypeFindingApproval tells the members who may approve it that a
+	// finding false-positive or accepted-risk request waits for a decision.
+	TypeFindingApproval = "finding_approval"
+	// TypeMCPAccessRequest tells administrators that a member asks to
+	// connect an AI application the organization has not approved, and
+	// the requester how it was decided.
+	TypeMCPAccessRequest = "mcp_access_request"
+	// TypeFindingApprovalDigest is the daily digest of finding requests
+	// waiting for an approver (muting it opts out of the digest, in-app and
+	// email).
+	TypeFindingApprovalDigest = "finding_approval_digest"
+	// TypeEmergingThreat tells administrators that an urgent emerging-threat
+	// alert affects the organization (RFC-117).
+	TypeEmergingThreat = "emerging_threat"
+	// TypeEmergingThreatDigest is the daily emerging-threat digest (muting
+	// it opts out of the digest, in-app and email).
+	TypeEmergingThreatDigest = "emerging_threat_digest"
+)
+
+// Notification represents an in-app notification.
+type Notification struct {
+	id               ID
+	tenantID         shared.ID
+	audience         string
+	audienceID       *shared.ID
+	notificationType string
+	title            string
+	body             string
+	severity         string
+	resourceType     string
+	resourceID       *shared.ID
+	url              string
+	actorID          *shared.ID
+	createdAt        time.Time
+	isRead           bool // computed field, not stored directly
+	reason           string
+	count            int // events this notice stands for (1 unless coalesced)
+	coalesce         bool
+}
+
+// NotificationParams contains parameters for creating a new notification.
+type NotificationParams struct {
+	TenantID         shared.ID
+	Audience         string
+	AudienceID       *shared.ID
+	NotificationType string
+	Title            string
+	Body             string
+	Severity         string
+	ResourceType     string
+	ResourceID       *shared.ID
+	URL              string
+	ActorID          *shared.ID
+	// Reason says why the person got it (ReasonAssigned, ReasonWatching, ...);
+	// empty for notices that are not about a person's role.
+	Reason string
+	// Coalesce folds the notice into the person's unread notice of the same
+	// type and resource sent within CoalesceWindow, instead of adding a row.
+	// Only for an audience of one user.
+	Coalesce bool
+}
+
+// Reasons a person gets a notification about a work item (RFC-120).
+const (
+	ReasonAssigned = "assigned" // they are the assignee
+	ReasonWatching = "watching" // they watch the item
+	ReasonApproval = "approval" // they asked for or decided an approval
+)
+
+// CoalesceWindow is how long a new event on one item is folded into the
+// unread notice the person already has.
+const CoalesceWindow = 10 * time.Minute
+
+// defaultSeverity is used when a caller does not set one. The severity column
+// has a CHECK constraint and the INSERT writes the value verbatim, so an empty
+// severity was rejected and the notification silently dropped.
+const defaultSeverity = "info"
+
+// NewNotification creates a new notification.
+func NewNotification(params NotificationParams) *Notification {
+	if params.Severity == "" {
+		params.Severity = defaultSeverity
+	}
+	return &Notification{
+		id:               shared.NewID(),
+		tenantID:         params.TenantID,
+		audience:         params.Audience,
+		audienceID:       params.AudienceID,
+		notificationType: params.NotificationType,
+		title:            params.Title,
+		body:             params.Body,
+		severity:         params.Severity,
+		resourceType:     params.ResourceType,
+		resourceID:       params.ResourceID,
+		url:              params.URL,
+		actorID:          params.ActorID,
+		createdAt:        time.Now(),
+		reason:           params.Reason,
+		count:            1,
+		coalesce:         params.Coalesce && params.Audience == AudienceUser,
+	}
+}
+
+// Reconstitute recreates a notification from persistence.
+func Reconstitute(
+	id ID,
+	tenantID shared.ID,
+	audience string,
+	audienceID *shared.ID,
+	notificationType string,
+	title string,
+	body string,
+	severity string,
+	resourceType string,
+	resourceID *shared.ID,
+	url string,
+	actorID *shared.ID,
+	createdAt time.Time,
+	isRead bool,
+) *Notification {
+	return &Notification{
+		id:               id,
+		tenantID:         tenantID,
+		audience:         audience,
+		audienceID:       audienceID,
+		notificationType: notificationType,
+		title:            title,
+		body:             body,
+		severity:         severity,
+		resourceType:     resourceType,
+		resourceID:       resourceID,
+		url:              url,
+		actorID:          actorID,
+		createdAt:        createdAt,
+		isRead:           isRead,
+	}
+}
+
+// Getters
+func (n *Notification) ID() ID                   { return n.id }
+func (n *Notification) TenantID() shared.ID      { return n.tenantID }
+func (n *Notification) Audience() string         { return n.audience }
+func (n *Notification) AudienceID() *shared.ID   { return n.audienceID }
+func (n *Notification) NotificationType() string { return n.notificationType }
+func (n *Notification) Title() string            { return n.title }
+func (n *Notification) Body() string             { return n.body }
+func (n *Notification) Severity() string         { return n.severity }
+func (n *Notification) ResourceType() string     { return n.resourceType }
+func (n *Notification) ResourceID() *shared.ID   { return n.resourceID }
+func (n *Notification) URL() string              { return n.url }
+func (n *Notification) ActorID() *shared.ID      { return n.actorID }
+func (n *Notification) CreatedAt() time.Time     { return n.createdAt }
+func (n *Notification) IsRead() bool             { return n.isRead }
+
+// Reason is why the person got the notice (empty when it is not about a role).
+func (n *Notification) Reason() string { return n.reason }
+
+// Count is how many events the notice stands for (1 unless coalesced).
+func (n *Notification) Count() int {
+	if n.count < 1 {
+		return 1
+	}
+	return n.count
+}
+
+// Coalesce reports whether the notice is folded into an unread one.
+func (n *Notification) Coalesce() bool { return n.coalesce }
+
+// MergedInto points the notice at the stored row it was folded into, so the
+// live push names a notification that exists.
+func (n *Notification) MergedInto(id ID) { n.id = id }
+
+// SetDelivery sets the reason and event count read from persistence.
+func (n *Notification) SetDelivery(reason string, count int) {
+	n.reason, n.count = reason, count
+}
+
+// Preferences represents user notification preferences.
+type Preferences struct {
+	tenantID     shared.ID
+	userID       shared.ID
+	inAppEnabled bool
+	emailDigest  string
+	mutedTypes   []string
+	minSeverity  string
+	updatedAt    time.Time
+	autoWatch    bool
+}
+
+// PreferencesParams contains parameters for creating/updating preferences.
+type PreferencesParams struct {
+	InAppEnabled bool
+	EmailDigest  string
+	MutedTypes   []string
+	MinSeverity  string
+	// AutoWatch switches "watch what I take part in" (nil keeps the value).
+	AutoWatch *bool
+}
+
+// DefaultPreferences returns default preferences.
+func DefaultPreferences(tenantID, userID shared.ID) *Preferences {
+	return &Preferences{
+		tenantID:     tenantID,
+		userID:       userID,
+		inAppEnabled: true,
+		emailDigest:  "none",
+		updatedAt:    time.Now(),
+		autoWatch:    true,
+	}
+}
+
+// ReconstitutePref recreates preferences from persistence.
+func ReconstitutePref(
+	tenantID shared.ID,
+	userID shared.ID,
+	inAppEnabled bool,
+	emailDigest string,
+	mutedTypes []string,
+	minSeverity string,
+	updatedAt time.Time,
+) *Preferences {
+	return &Preferences{
+		tenantID:     tenantID,
+		userID:       userID,
+		inAppEnabled: inAppEnabled,
+		emailDigest:  emailDigest,
+		mutedTypes:   mutedTypes,
+		minSeverity:  minSeverity,
+		updatedAt:    updatedAt,
+		autoWatch:    true,
+	}
+}
+
+// WithAutoWatch sets the "watch what I take part in" switch read from
+// persistence; a preferences row that predates it means on.
+func (p *Preferences) WithAutoWatch(v bool) *Preferences {
+	p.autoWatch = v
+	return p
+}
+
+// AutoWatch reports whether the person is watched automatically on the items
+// they take part in (default on).
+func (p *Preferences) AutoWatch() bool { return p.autoWatch }
+
+// Getters
+func (p *Preferences) TenantID() shared.ID  { return p.tenantID }
+func (p *Preferences) UserID() shared.ID    { return p.userID }
+func (p *Preferences) InAppEnabled() bool   { return p.inAppEnabled }
+func (p *Preferences) EmailDigest() string  { return p.emailDigest }
+func (p *Preferences) MutedTypes() []string { return p.mutedTypes }
+func (p *Preferences) MinSeverity() string  { return p.minSeverity }
+func (p *Preferences) UpdatedAt() time.Time { return p.updatedAt }
+
+// IsTypeMuted checks if a notification type is muted.
+func (p *Preferences) IsTypeMuted(notifType string) bool {
+	return slices.Contains(p.mutedTypes, notifType)
+}
+
+// IsSeverityAllowed checks if a severity meets the minimum threshold.
+func (p *Preferences) IsSeverityAllowed(severity string) bool {
+	if p.minSeverity == "" {
+		return true
+	}
+	return severityRank(severity) >= severityRank(p.minSeverity)
+}
+
+// IsValidSeverity checks if a string is a valid severity value.
+func IsValidSeverity(s string) bool {
+	switch s {
+	case SeverityCritical, SeverityHigh, SeverityMedium, SeverityLow, SeverityInfo:
+		return true
+	}
+	return false
+}
+
+// IsValidType checks if a string is a valid notification type.
+func IsValidType(t string) bool {
+	switch t {
+	case TypeFindingNew, TypeFindingAssigned, TypeFindingStatusChange,
+		TypeFindingComment, TypeFindingMention,
+		TypeScanStarted, TypeScanCompleted, TypeScanFailed,
+		TypeAssetDiscovered,
+		TypeMemberInvited, TypeMemberJoined, TypeRoleChanged,
+		TypeCampaignMemberAdded, TypeCampaignMemberRemoved, TypeCampaignMemberRoleChange,
+		TypeCampaignStatusChange,
+		TypeSLABreach, TypeSystemAlert, TypeSSOChangePending,
+		TypeMemberLifecycle, TypeCISecurity, TypeSensorSecurity, TypeScopeChange,
+		TypeScanWindowOverride, TypeScanApproval, TypeAttackSurfaceDigest, TypeCoverageGap,
+		TypeFindingApproval, TypeFindingApprovalDigest, TypeMCPAccessRequest,
+		TypeEmergingThreat, TypeEmergingThreatDigest:
+		return true
+	}
+	return false
+}
+
+func severityRank(s string) int {
+	switch s {
+	case SeverityCritical:
+		return 5
+	case SeverityHigh:
+		return 4
+	case SeverityMedium:
+		return 3
+	case SeverityLow:
+		return 2
+	case SeverityInfo:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// Allows reports whether a notification of this type and severity should
+// reach the user in-app: the inbox list, the unread badge and the real-time
+// push. It is the single definition of what the stored preferences mean; the
+// repository's SQL filter mirrors it and is tested against it.
+func (p *Preferences) Allows(notifType, severity string) bool {
+	if p == nil {
+		return true
+	}
+	return p.inAppEnabled && !p.IsTypeMuted(notifType) && p.IsSeverityAllowed(severity)
+}
+
+// UserChannel is the WebSocket channel that carries one user's in-app
+// notifications within one tenant: "user:{tenant_id}:{user_id}". Only a
+// connection authenticated as that user in that tenant may subscribe to it.
+func UserChannel(tenantID, userID string) string {
+	return UserChannelPrefix + tenantID + ":" + userID
+}
+
+// UserChannelPrefix is the channel-type prefix of UserChannel.
+const UserChannelPrefix = "user:"

@@ -1,0 +1,93 @@
+package unit
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+)
+
+// An `oct_` API key reaches the tenant REST routes, bounded by its scopes. A
+// route WITHOUT a permission gate is not bounded by anything, so every
+// ungated route (routeAuthzAllowlist / allowlistPrefixes in
+// route_authz_coverage_test.go) must either refuse keys
+// (middleware.APIKeyRouteDenied) or not accept keys at all. Allowlisting a new
+// ungated route therefore forces a decision here.
+
+// keyChainExempt lists allowlisted prefixes that are not mounted on a
+// key-capable chain (buildTokenTenantMiddlewares), with the reason.
+var keyChainExempt = map[string]string{
+	"/api/v2/sensor":                          "sensor protocol v2: sensor authenticator only",
+	"/scim/v2":                                "SCIM bearer token auth only",
+	"/api/v1/scim":                            "SCIM bearer token auth only (token management is /api/v1/scim-tokens, denied)",
+	"/api/v1/mcp":                             "key-only endpoint (the MCP server)",
+	"/api/v1/module-presets":                  "JWT-only base chain",
+	"/api/v1/licenses":                        "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/version":                         "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/announcements":                   "JWT-only base chain (authMiddleware, no oct_ keys)",
+	"/api/v1/proxy-test-echoes":               "public, no chain: the proxy test's echo, gated by the token of one live test command; answers only the caller's own address",
+	"/api/v1/client-errors":                   "public, no chain: counts a web error kind",
+	"/api/v1/legal":                           "public, no chain: the operator's legal information, no tenant data",
+	"/api/v1/brand":                           "public, no chain: the instance brand, no tenant data",
+	"/api/v1/brand/images/{kind}":             "public, no chain: the instance brand images, no tenant data",
+	"/api/v1/sensors/install/seccomp-profile": "public, no chain: the sensor release's seccomp profile, no tenant data",
+	"/api/v1/sensors/platform-ca":             "public, no chain: the platform's CA certificates (public), no tenant data",
+	"/api/v1/validation/evidence":             "sensor-key auth only",
+	// CI runner routes (RFC-051): mounted outside every key chain, with
+	// their own authentication (the CI OIDC token, the CI run token).
+	"/api/v1/ci/oidc/exchange":                    "own authenticator (CI OIDC token), outside the key chains",
+	"/api/v1/ci/runs/{id}/results":                "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/results/{report_id}":    "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/baseline-diff":          "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/ci/runs/{id}/evaluate":               "CI run token only (AuthenticateRun), outside the key chains",
+	"/api/v1/hooks/github-app":                    "GitHub App webhook (HMAC), mounted outside every key chain",
+	"/hooks/jira-integrations/{integration_id}":   "inbound Jira webhook (HMAC per integration), mounted outside every key chain",
+	"/hooks/github-integrations/{integration_id}": "inbound GitHub webhook (HMAC per integration), mounted outside every key chain",
+	"/hooks/content-sources/{id}":                 "inbound rule source webhook (secret per source), mounted outside every key chain",
+	"/health":                                     "public",
+	"/ready":                                      "public",
+	"/metrics":                                    "MetricsAuth bearer",
+	"/openapi.yaml":                               "public outside production; user session (no oct_ keys) in production",
+	"/docs":                                       "public, outside production only",
+	"/.well-known/oauth-protected-resource":       "public metadata, no chain",
+	"/.well-known/oauth-authorization-server":     "public metadata, no chain",
+	"/oauth/": "MCP OAuth endpoints, own authentication (PKCE, hashed tokens)",
+}
+
+func TestAPIKeyPolicy_EveryUngatedRouteRefusesKeys(t *testing.T) {
+	for _, p := range allowlistPrefixes {
+		if middleware.APIKeyRouteDenied(strings.TrimSuffix(p.prefix, "/")) {
+			continue
+		}
+		if _, ok := keyChainExempt[p.prefix]; ok {
+			continue
+		}
+		t.Errorf("ungated prefix %q (%s) is reachable by an API key: add it to the key denylist in "+
+			"middleware/apikey_auth.go, or to keyChainExempt with the reason keys cannot reach it", p.prefix, p.reason)
+	}
+	for route, reason := range routeAuthzAllowlist {
+		path := route[strings.IndexByte(route, ' ')+1:]
+		if middleware.APIKeyRouteDenied(path) {
+			continue
+		}
+		if _, ok := keyChainExempt[path]; ok {
+			continue
+		}
+		t.Errorf("ungated route %q (%s) is reachable by an API key", route, reason)
+	}
+}
+
+// Credential, account and admin areas never accept a key, whatever its scopes.
+func TestAPIKeyPolicy_SensitiveAreasDenied(t *testing.T) {
+	for _, p := range []string{
+		"/api/v1/api-keys", "/api/v1/api-keys/{id}/revoke", "/api/v1/scim-tokens",
+		"/api/v1/users/me/password", "/api/v1/users/me/mfa", "/api/v1/users/me/sessions",
+		"/api/v1/users/{userId}/roles", "/api/v1/me/permissions", "/api/v1/admin/tenants",
+		"/api/v1/auth/token", "/api/v1/tenants/{tenant}/members", "/api/v1/invitations/{token}",
+		"/api/v1/invitations/accept", "/api/v1/invitations/lookup",
+	} {
+		if !middleware.APIKeyRouteDenied(p) {
+			t.Errorf("%s must refuse API keys", p)
+		}
+	}
+}

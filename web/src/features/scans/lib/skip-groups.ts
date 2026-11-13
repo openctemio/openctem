@@ -1,7 +1,7 @@
 /**
  * Skipped targets, grouped by reason: the routing preview (`skipped`) and a
  * run's dispatch report (`dispatch.skipped`) send the same groups.
- * Contract: api/docs/architecture/scan-targets.md ("Skipped targets").
+ * Contract: server/docs/architecture/scan-targets.md ("Skipped targets").
  */
 
 import type { SkipGroup } from '@/lib/api/scan-types'

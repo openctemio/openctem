@@ -52,9 +52,9 @@ all:
   - web/next.config.*
   - web/Dockerfile*
   - web/tsconfig*.json
-  - api/go.mod
-  - api/go.sum
-  - api/Dockerfile*
+  - server/go.mod
+  - server/go.sum
+  - server/Dockerfile*
   # Shared web code: every page uses it.
   - web/src/components/**
   - web/src/lib/**
@@ -85,18 +85,18 @@ all:
   - web/src/app/api/**
   - web/public/**
   # API behaviour every page depends on.
-  - api/migrations/**
-  - api/internal/infra/http/middleware/**
-  - api/internal/infra/http/routes/**
-  - api/internal/infra/http/*.go
-  - api/internal/infra/http/handler/auth*
-  - api/internal/infra/http/handler/tenant*
-  - api/internal/infra/http/handler/role*
-  - api/internal/infra/postgres/migrat*
-  - api/internal/config/**
-  - api/cmd/**
-  - api/pkg/**
-  - api/configs/**
+  - server/migrations/**
+  - server/internal/infra/http/middleware/**
+  - server/internal/infra/http/routes/**
+  - server/internal/infra/http/*.go
+  - server/internal/infra/http/handler/auth*
+  - server/internal/infra/http/handler/tenant*
+  - server/internal/infra/http/handler/role*
+  - server/internal/infra/postgres/migrat*
+  - server/internal/config/**
+  - server/cmd/**
+  - server/pkg/**
+  - server/configs/**
   - docker-compose*.yml
   - Makefile
   # Carved out: unit tests and catalogs are judged by `areas` and `ignore`.
@@ -109,8 +109,8 @@ all:
 ignore:
   - '**/*.md'
   - docs/**
-  - api/docs/**
-  - api/changelog.d/**
+  - server/docs/**
+  - server/changelog.d/**
   - research/**
   - '**/*_test.go'
   - '**/*.test.ts'
@@ -133,11 +133,11 @@ areas:
     - web/src/lib/i18n/dictionaries/en/findings.json
     - web/src/lib/i18n/dictionaries/en/findingApprovals.json
     - web/src/lib/i18n/dictionaries/en/findingLifecycle.json
-    - api/internal/app/finding/**
-    - api/internal/app/findinglifecycle/**
-    - api/internal/domain/finding/**
-    - api/internal/infra/http/handler/finding_*
-    - api/internal/infra/postgres/finding_*
+    - server/internal/app/finding/**
+    - server/internal/app/findinglifecycle/**
+    - server/internal/domain/finding/**
+    - server/internal/infra/http/handler/finding_*
+    - server/internal/infra/postgres/finding_*
   '@assets':
     - web/src/features/assets/**
     - web/src/features/asset-*/**
@@ -146,10 +146,10 @@ areas:
     - web/src/app/(dashboard)/(discovery)/assets/**
     - web/src/lib/i18n/dictionaries/en/asset*.json
     - web/src/lib/i18n/dictionaries/en/assets.json
-    - api/internal/app/asset/**
-    - api/internal/domain/asset/**
-    - api/internal/infra/http/handler/asset_*
-    - api/internal/infra/postgres/asset_*
+    - server/internal/app/asset/**
+    - server/internal/domain/asset/**
+    - server/internal/infra/http/handler/asset_*
+    - server/internal/infra/postgres/asset_*
   '@scans':
     - web/src/features/scans/**
     - web/src/features/scan-*/**
@@ -158,12 +158,12 @@ areas:
     - web/src/features/workflows/**
     - web/src/app/(dashboard)/(discovery)/scans/**
     - web/src/lib/i18n/dictionaries/en/scan*.json
-    - api/internal/app/scan/**
-    - api/internal/app/scanrun/**
-    - api/internal/app/scangov/**
-    - api/internal/domain/scan/**
-    - api/internal/infra/http/handler/scan*
-    - api/internal/infra/postgres/scan*
+    - server/internal/app/scan/**
+    - server/internal/app/scanrun/**
+    - server/internal/app/scangov/**
+    - server/internal/domain/scan/**
+    - server/internal/infra/http/handler/scan*
+    - server/internal/infra/postgres/scan*
   '@sensors':
     - web/src/features/sensors/**
     - web/src/features/proxy-pools/**
@@ -172,11 +172,11 @@ areas:
     - web/src/app/(dashboard)/(scoping)/sensors/**
     - web/src/lib/i18n/dictionaries/en/sensors.json
     - web/src/lib/i18n/dictionaries/en/proxyPools.json
-    - api/internal/app/sensor/**
-    - api/internal/app/sensorpairing/**
-    - api/internal/domain/sensor/**
-    - api/internal/infra/http/handler/sensor_*
-    - api/internal/infra/postgres/sensor_*
+    - server/internal/app/sensor/**
+    - server/internal/app/sensorpairing/**
+    - server/internal/domain/sensor/**
+    - server/internal/infra/http/handler/sensor_*
+    - server/internal/infra/postgres/sensor_*
   '@settings':
     - web/src/app/(dashboard)/settings/**
     - web/src/features/api-keys/**
@@ -198,18 +198,18 @@ areas:
     - web/src/app/(dashboard)/page.tsx
     - web/src/lib/i18n/dictionaries/en/dashboard*.json
     - web/src/lib/i18n/dictionaries/en/dashboards.json
-    - api/internal/app/dashboard/**
-    - api/internal/infra/http/handler/dashboard_*
+    - server/internal/app/dashboard/**
+    - server/internal/infra/http/handler/dashboard_*
   '@remediation':
     - web/src/features/remediation/**
     - web/src/features/remediation-hub/**
     - web/src/features/exceptions/**
     - web/src/app/(dashboard)/(mobilization)/remediation/**
     - web/src/lib/i18n/dictionaries/en/remediation*.json
-    - api/internal/app/remediation/**
-    - api/internal/domain/remediation/**
-    - api/internal/infra/http/handler/remediation_*
-    - api/internal/infra/postgres/remediation_*
+    - server/internal/app/remediation/**
+    - server/internal/domain/remediation/**
+    - server/internal/infra/http/handler/remediation_*
+    - server/internal/infra/postgres/remediation_*
   '@attack-surface':
     - web/src/features/attack-surface/**
     - web/src/features/web-surface/**
@@ -217,35 +217,35 @@ areas:
     - web/src/app/(dashboard)/(prioritization)/attack-paths/**
     - web/src/lib/i18n/dictionaries/en/attackSurface.json
     - web/src/lib/i18n/dictionaries/en/easmReview.json
-    - api/internal/app/easm*/**
-    - api/internal/infra/http/handler/easm_*
-    - api/internal/infra/http/handler/attack_surface_*
+    - server/internal/app/easm*/**
+    - server/internal/infra/http/handler/easm_*
+    - server/internal/infra/http/handler/attack_surface_*
   '@pentest':
     - web/src/features/pentest/**
     - web/src/app/(dashboard)/(validation)/pentest/**
     - web/src/lib/i18n/dictionaries/en/pentest*.json
-    - api/internal/infra/http/handler/pentest_*
-    - api/internal/infra/postgres/pentest_*
+    - server/internal/infra/http/handler/pentest_*
+    - server/internal/infra/postgres/pentest_*
   '@validation':
     - web/src/features/validation/**
     - web/src/app/(dashboard)/(validation)/validation/**
     - web/src/lib/i18n/dictionaries/en/validation.json
-    - api/internal/app/validation/**
-    - api/internal/infra/http/handler/validation_*
+    - server/internal/app/validation/**
+    - server/internal/infra/http/handler/validation_*
   '@vulnerabilities':
     - web/src/features/vulnerabilities/**
     - web/src/features/vuln-matching/**
     - web/src/app/(dashboard)/(prioritization)/vulnerabilities/**
     - web/src/lib/i18n/dictionaries/en/vulnPage.json
-    - api/internal/infra/http/handler/vulnerability_*
+    - server/internal/infra/http/handler/vulnerability_*
   '@ticketing':
     - web/src/features/integrations/**
     - web/src/features/ticket-mapping/**
     - web/src/lib/i18n/dictionaries/en/ticket*.json
     - web/src/lib/i18n/dictionaries/en/ticketingIntegration.json
-    - api/internal/app/ticketing/**
-    - api/internal/app/ticketbridge/**
-    - api/internal/infra/http/handler/ticket_*
+    - server/internal/app/ticketing/**
+    - server/internal/app/ticketbridge/**
+    - server/internal/infra/http/handler/ticket_*
   '@my-work':
     - web/src/features/my-work/**
     - web/src/app/(dashboard)/my-work/**

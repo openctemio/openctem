@@ -9,11 +9,11 @@ repo() {
   local d; d="$(mktemp -d)"
   git -C "$d" init -q -b main
   git -C "$d" config user.name t; git -C "$d" config user.email t@example.invalid
-  mkdir -p "$d/api/migrations/seed"
+  mkdir -p "$d/server/migrations/seed"
   echo "$d"
 }
 mig() { # mig <repo> <version> <name>
-  touch "$1/api/migrations/$2_$3.up.sql" "$1/api/migrations/$2_$3.down.sql"
+  touch "$1/server/migrations/$2_$3.up.sql" "$1/server/migrations/$2_$3.down.sql"
 }
 commit() { git -C "$1" add -A; git -C "$1" commit -qm "$2"; }
 
@@ -29,7 +29,7 @@ expect() {
 }
 
 # 1. Clean tree, no base.
-d="$(repo)"; mig "$d" 000001 a; mig "$d" 000002 b; touch "$d/api/migrations/seed/x.sql"; commit "$d" base
+d="$(repo)"; mig "$d" 000001 a; mig "$d" 000002 b; touch "$d/server/migrations/seed/x.sql"; commit "$d" base
 expect "distinct versions pass" 0 "$d"
 
 # 2. Two migrations share a version (the #767/#773 case after both merged).
@@ -56,10 +56,10 @@ expect "added version below the base max passes" 0 "$d" base
 d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; commit "$d" base
 git -C "$d" branch base
 mig "$d" 000006 up; commit "$d" pr
-expect "added legacy number above the base's only warns" 0 "$d" base "::warning::api/migrations/000006_up has a sequential version"
+expect "added legacy number above the base's only warns" 0 "$d" base "::warning::server/migrations/000006_up has a sequential version"
 mig "$d" 000003 c; commit "$d" pr2
 expect "added legacy number below the base's fails" 1 "$d" base "has the sequential version 3, at or below the base's highest (5)"
-MODE=warning expect "pull_request: added legacy number below the base's only warns" 0 "$d" base "::warning::api/migrations/000003_c has the sequential version 3"
+MODE=warning expect "pull_request: added legacy number below the base's only warns" 0 "$d" base "::warning::server/migrations/000003_c has the sequential version 3"
 
 # 4a'. Once the base has a timestamp version, any added legacy number fails,
 # in both modes: a database the earlier tool migrated to a timestamp version
@@ -68,7 +68,7 @@ d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; mig "$d" "$T2" t; commit "$d"
 git -C "$d" branch base
 mig "$d" 000006 up; commit "$d" pr
 expect "added legacy number after a timestamp version fails" 1 "$d" base "base already has timestamp versions"
-MODE=warning expect "pull_request: added legacy number after a timestamp version fails" 1 "$d" base "Renumber with make -C api migration-renumber"
+MODE=warning expect "pull_request: added legacy number after a timestamp version fails" 1 "$d" base "Renumber with make -C server migration-renumber"
 d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; commit "$d" base
 git -C "$d" branch base
 
@@ -106,28 +106,28 @@ expect "queue: an older timestamp behind a newer one passes" 0 "$d" queue-base
 # 7. Editing a merged up file fails; editing a down file passes.
 d="$(repo)"; mig "$d" 000001 a; mig "$d" 000002 b; commit "$d" base
 git -C "$d" branch base
-echo "-- note" >> "$d/api/migrations/000001_a.down.sql"; commit "$d" edit-down
+echo "-- note" >> "$d/server/migrations/000001_a.down.sql"; commit "$d" edit-down
 expect "fixing a merged down file passes" 0 "$d" base
-echo "-- note" >> "$d/api/migrations/000001_a.up.sql"; commit "$d" edit-up
+echo "-- note" >> "$d/server/migrations/000001_a.up.sql"; commit "$d" edit-up
 expect "changing a merged up file fails" 1 "$d" base "000001_a.up.sql is changed, but it has merged"
 
 # 7b. Renumbering or removing a merged migration fails.
 d="$(repo)"; mig "$d" 000001 a; mig "$d" 000002 b; commit "$d" base
 git -C "$d" branch base
-git -C "$d" mv api/migrations/000002_b.up.sql "api/migrations/${T1}_b.up.sql"
-git -C "$d" mv api/migrations/000002_b.down.sql "api/migrations/${T1}_b.down.sql"; commit "$d" renumber
+git -C "$d" mv server/migrations/000002_b.up.sql "server/migrations/${T1}_b.up.sql"
+git -C "$d" mv server/migrations/000002_b.down.sql "server/migrations/${T1}_b.down.sql"; commit "$d" renumber
 expect "renumbering a merged migration fails" 1 "$d" base "000002_b.up.sql is removed or renamed"
 
 # 8. A migration baseline replaces the chain up to its version (RFC-053).
 d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; mig "$d" 000009 c; commit "$d" base
 git -C "$d" branch base
-git -C "$d" rm -q api/migrations/00000[159]_*; mig "$d" 000009 baseline; mig "$d" "$T1" after; commit "$d" squash
+git -C "$d" rm -q server/migrations/00000[159]_*; mig "$d" 000009 baseline; mig "$d" "$T1" after; commit "$d" squash
 expect "baseline replacing the chain passes" 0 "$d" base
 
 # 9. A baseline that leaves older migrations in the tree removes a merged one.
 d="$(repo)"; mig "$d" 000001 a; mig "$d" 000005 b; commit "$d" base
 git -C "$d" branch base
-git -C "$d" rm -q api/migrations/000005_*; mig "$d" 000005 baseline; commit "$d" partial
+git -C "$d" rm -q server/migrations/000005_*; mig "$d" 000005 baseline; commit "$d" partial
 expect "baseline above an older migration fails" 1 "$d" base "000005_b.up.sql is removed or renamed"
 
 # 10. A push to develop that skipped the queue: the base is develop before the

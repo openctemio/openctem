@@ -4,7 +4,7 @@
  * opted in to wider ranges). The API enforces it; New scan uses it to say
  * why a range is too wide before create. Without scope:read, or while the
  * settings load, the /16 default applies. Design:
- * api/docs/rfcs/RFC-151-large-range-targets.md.
+ * server/docs/rfcs/RFC-151-large-range-targets.md.
  */
 
 import { useScopeSettingsApi } from '@/features/scope'

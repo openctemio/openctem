@@ -80,7 +80,7 @@ import {
   useDesignateCrownJewel,
   useUndesignateCrownJewel,
 } from '@/features/crown-jewels/api/use-crown-jewels'
-import { mutate } from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/lib/utils'
 import { CRITICALITY_BADGE_SOFT, type CriticalityLevel } from '@/lib/criticality-colors'

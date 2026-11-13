@@ -1,0 +1,190 @@
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/lib/pq"
+
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+)
+
+// AdminOrganizationRepository is the platform admin's cross-tenant read model
+// over tenants (RFC-022 Phase 2). It is deliberately NOT tenant-scoped: it is
+// wired only into /api/v1/admin routes behind AdminAuthMiddleware.
+type AdminOrganizationRepository struct {
+	db *DB
+}
+
+// NewAdminOrganizationRepository creates the repository.
+func NewAdminOrganizationRepository(db *DB) *AdminOrganizationRepository {
+	return &AdminOrganizationRepository{db: db}
+}
+
+var _ admin.OrganizationReader = (*AdminOrganizationRepository)(nil)
+
+// One row per tenant; every aggregate is a correlated subquery on an indexed
+// tenant_id, so the page costs a fixed number of index lookups (no N+1).
+const adminOrganizationSelect = `
+	SELECT t.id, t.name, t.slug, COALESCE(t.description, ''), t.created_at,
+	       (SELECT COUNT(*) FROM tenant_members m
+	         WHERE m.tenant_id = t.id AND m.status = 'active'),
+	       (SELECT MAX(u.last_login_at) FROM tenant_members m
+	         JOIN users u ON u.id = m.user_id
+	         WHERE m.tenant_id = t.id AND m.status = 'active'),
+	       COALESCE((SELECT array_agg(u.email ORDER BY u.email) FROM tenant_members m
+	         JOIN users u ON u.id = m.user_id
+	         JOIN v_user_effective_role ver ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
+	         WHERE m.tenant_id = t.id AND ver.role = 'owner' AND m.status = 'active'
+	           AND u.status = 'active' AND u.erased_at IS NULL), '{}'),
+	       EXISTS (SELECT 1 FROM saml_providers s WHERE s.tenant_id = t.id AND s.enabled),
+	       (SELECT COUNT(*) FROM tenant_identity_providers p
+	         WHERE p.tenant_id = t.id AND p.is_active),
+	       (SELECT COUNT(*) FROM verified_domains d
+	         WHERE d.tenant_id = t.id AND d.verified_at IS NOT NULL),
+	       COALESCE((t.settings -> 'security' ->> 'sso_enforced')::boolean, FALSE),
+	       (EXISTS (SELECT 1 FROM tenant_limits l WHERE l.tenant_id = t.id)
+	        OR EXISTS (SELECT 1 FROM tenant_feature_denies d WHERE d.tenant_id = t.id)),
+	       t.status, t.suspended_at, COALESCE(t.suspended_reason, ''), t.deletion_due_at,
+	       oi.status, oi.invitee_email, oi.send_count, oi.expires_at, oi.last_sent_at, oi.created_at, oi.responded_at
+	FROM tenants t
+	LEFT JOIN LATERAL (
+	       SELECT CASE WHEN i.status = 'pending' AND i.expires_at <= now() THEN 'expired' ELSE i.status END AS status,
+	              i.invitee_email, i.send_count, i.expires_at, i.last_sent_at, i.created_at, i.responded_at
+	         FROM organization_owner_invitations i
+	        WHERE i.tenant_id = t.id
+	        ORDER BY i.created_at DESC, i.id DESC
+	        LIMIT 1) oi ON TRUE`
+
+// adminOrganizationActiveOwner holds when the organization has a usable owner.
+var adminOrganizationActiveOwner = UsableOwnerExists("t.id")
+
+func scanOrganization(sc interface{ Scan(...any) error }) (*admin.Organization, error) {
+	var (
+		o      admin.Organization
+		id     string
+		owners pq.StringArray
+		// The newest ownership invitation (all NULL when none).
+		invStatus, invEmail          sql.NullString
+		invSends                     sql.NullInt64
+		invExpires, invSent, invMade sql.NullTime
+		invResponded                 sql.NullTime
+	)
+	if err := sc.Scan(&id, &o.Name, &o.Slug, &o.Description, &o.CreatedAt,
+		&o.ActiveMembers, &o.LastMemberSignInAt, &owners, &o.SAMLEnabled, &o.ActiveIdentityProviders,
+		&o.VerifiedDomains, &o.SSOEnforced, &o.LimitsApply,
+		&o.Status, &o.SuspendedAt, &o.SuspendedReason, &o.DeletionDueAt,
+		&invStatus, &invEmail, &invSends, &invExpires, &invSent, &invMade, &invResponded); err != nil {
+		return nil, err
+	}
+	if invStatus.Valid {
+		o.OwnerInvitation = &admin.OwnerInvitationSummary{
+			Status: invStatus.String, InviteeEmail: invEmail.String, SendCount: int(invSends.Int64),
+			ExpiresAt: invExpires.Time.UTC(), CreatedAt: invMade.Time.UTC(),
+		}
+		if invSent.Valid {
+			sent := invSent.Time.UTC()
+			o.OwnerInvitation.LastSentAt = &sent
+		}
+		if invResponded.Valid {
+			t := invResponded.Time.UTC()
+			o.OwnerInvitation.RespondedAt = &t
+		}
+	}
+	parsed, err := shared.IDFromString(id)
+	if err != nil {
+		return nil, err
+	}
+	o.ID = parsed
+	o.OwnerEmails = []string(owners)
+	return &o, nil
+}
+
+// ListOrganizations returns one page of organizations, newest first, and the
+// total matching the filter.
+func (r *AdminOrganizationRepository) ListOrganizations(ctx context.Context, f admin.OrganizationFilter) ([]*admin.Organization, int, error) {
+	conds := []string{}
+	args := []any{}
+	if s := strings.TrimSpace(f.Search); s != "" {
+		args = append(args, "%"+escapeLikePattern(s)+"%")
+		conds = append(conds, fmt.Sprintf("(t.name ILIKE $%d OR t.slug ILIKE $%d)", len(args), len(args)))
+	}
+	switch f.Owner {
+	case admin.OrganizationOwnerNone:
+		conds = append(conds, "NOT "+adminOrganizationActiveOwner)
+	case admin.OrganizationOwnerPresent:
+		conds = append(conds, adminOrganizationActiveOwner)
+	}
+	if f.Status != "" {
+		args = append(args, f.Status)
+		conds = append(conds, fmt.Sprintf("t.status = $%d", len(args)))
+	}
+	if !f.IncludeSystem {
+		args = append(args, tenant.SystemTenantID)
+		conds = append(conds, fmt.Sprintf("t.id <> $%d", len(args)))
+	}
+	where := ""
+	if len(conds) > 0 {
+		where = " WHERE " + strings.Join(conds, " AND ")
+	}
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM tenants t`+where, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count organizations: %w", err)
+	}
+
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	offset := max(f.Offset, 0)
+	q := adminOrganizationSelect + where +
+		fmt.Sprintf(" ORDER BY t.created_at DESC, t.id LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	rows, err := r.db.QueryContext(ctx, q, append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list organizations: %w", err)
+	}
+	defer rows.Close()
+
+	// Fixed capacity: limit is bounded above, but sizing an allocation from a
+	// request value is exactly what static analysis (rightly) distrusts.
+	out := make([]*admin.Organization, 0, 64)
+	for rows.Next() {
+		o, err := scanOrganization(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan organization: %w", err)
+		}
+		out = append(out, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("list organizations: %w", err)
+	}
+	return out, total, nil
+}
+
+// GetOrganization returns one organization.
+func (r *AdminOrganizationRepository) GetOrganization(ctx context.Context, id shared.ID) (*admin.Organization, error) {
+	o, err := scanOrganization(r.db.QueryRowContext(ctx, adminOrganizationSelect+` WHERE t.id = $1`, id.String()))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("%w: organization", shared.ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get organization: %w", err)
+	}
+	return o, nil
+}
+
+// CountUsableOwners returns how many usable owners the organization has
+// (UsableOwnerCount); 0 when it does not exist.
+func (r *AdminOrganizationRepository) CountUsableOwners(ctx context.Context, id shared.ID) (int, error) {
+	var n int
+	if err := r.db.QueryRowContext(ctx, UsableOwnerCount("$1"), id.String()).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count usable owners: %w", err)
+	}
+	return n, nil
+}

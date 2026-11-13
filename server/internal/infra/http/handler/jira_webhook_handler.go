@@ -1,0 +1,415 @@
+package handler
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/openctemio/openctem/server/internal/app/jira"
+	"github.com/openctemio/openctem/server/internal/app/ticketing"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
+)
+
+// JiraWebhookHandler handles Jira bidirectional ticket sync endpoints.
+//
+// Endpoints:
+//   - POST /api/v1/findings/{id}/link-ticket      — link a Jira ticket to a finding
+//   - DELETE /api/v1/findings/{id}/link-ticket     — unlink a Jira ticket from a finding
+//   - POST /hooks/jira-integrations/{integration_id} — receive Jira status-change webhooks
+type JiraWebhookHandler struct {
+	// orgs refuses deliveries for a suspended organization
+	// (docs/architecture/organization-suspension.md); nil admits all.
+	orgs      tenantdom.AccessGate
+	service   *jira.SyncService
+	validator *validator.Validator
+	logger    *logger.Logger
+
+	// github is the optional GitHub Issues ticket provider. Nil unless wired
+	// via SetGitHubTicketService — when nil, requests with provider=github are
+	// rejected with 400.
+	github *ticketing.GitHubTicketService
+	// verifier authenticates inbound deliveries; nil refuses them all.
+	verifier JiraDeliveryVerifier
+	// deliveries remembers delivery ids (replay protection).
+	deliveries WebhookDeliveryGuard
+	// audit records ticket link changes (nil → none).
+	audit *auditapp.AuditService
+	// policy is the ticket create policy (nil: none, every create goes
+	// through).
+	policy *jira.PolicyGate
+}
+
+// NewJiraWebhookHandler creates a new JiraWebhookHandler.
+func NewJiraWebhookHandler(svc *jira.SyncService, v *validator.Validator, log *logger.Logger) *JiraWebhookHandler {
+	return &JiraWebhookHandler{service: svc, validator: v, logger: log}
+}
+
+// decodeAndValidate reads the JSON body into dst and runs struct validation so
+// the `validate:` tags on the request structs are actually enforced (they were
+// previously declared but never run). On failure it writes a 400 and returns
+// false, so callers do `if !h.decodeAndValidate(w, r, &req) { return }`.
+func (h *JiraWebhookHandler) decodeAndValidate(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return false
+	}
+	if h.validator != nil {
+		if err := h.validator.Validate(dst); err != nil {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+			return false
+		}
+	}
+	return true
+}
+
+// SetGitHubTicketService wires the optional GitHub Issues ticket provider.
+// Safe to call after construction; a nil value leaves GitHub ticketing
+// disabled.
+func (h *JiraWebhookHandler) SetGitHubTicketService(svc *ticketing.GitHubTicketService) {
+	h.github = svc
+}
+
+// LinkTicketRequest is the request body for POST /api/v1/findings/{id}/link-ticket.
+type LinkTicketRequest struct {
+	TicketKey string `json:"ticket_key" validate:"required,min=1,max=255"`
+	TicketURL string `json:"ticket_url" validate:"required,url,max=1000"`
+}
+
+// UnlinkTicketRequest is the request body for DELETE /api/v1/findings/{id}/link-ticket.
+type UnlinkTicketRequest struct {
+	TicketURL string `json:"ticket_url" validate:"required,url,max=1000"`
+}
+
+// CreateTicketRequest is the request body for POST /api/v1/findings/{id}/create-ticket.
+type CreateTicketRequest struct {
+	// Provider selects the ticket backend: "jira" (default) or "github".
+	Provider string `json:"provider,omitempty" validate:"omitempty,oneof=jira github"`
+
+	// Jira fields.
+	ProjectKey string `json:"project_key,omitempty" validate:"omitempty,max=255"`
+	IssueType  string `json:"issue_type,omitempty" validate:"omitempty,max=255"`
+	// IntegrationID names one of the organization's Jira integrations; empty
+	// means the default (the first connected one).
+	IntegrationID string `json:"integration_id,omitempty" validate:"omitempty,uuid"`
+
+	// ConfirmBelowThreshold creates the issue even though the finding is
+	// below the integration's create policy (audited).
+	ConfirmBelowThreshold bool `json:"confirm_below_threshold,omitempty"`
+
+	// GitHub fields (required when provider=github).
+	Owner string `json:"owner,omitempty" validate:"omitempty,max=255"`
+	Repo  string `json:"repo,omitempty" validate:"omitempty,max=255"`
+}
+
+// CreateTicket handles POST /api/v1/findings/{id}/create-ticket.
+// Auto-creates a ticket (Jira by default, or a GitHub issue) from a finding
+// and links it.
+func (h *JiraWebhookHandler) CreateTicket(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	findingID := chi.URLParam(r, "id")
+	if findingID == "" {
+		apierror.BadRequest("finding id is required").WriteJSON(w)
+		return
+	}
+
+	var req CreateTicketRequest
+	if !h.decodeAndValidate(w, r, &req) {
+		return
+	}
+
+	if strings.EqualFold(req.Provider, "github") {
+		h.createGitHubTicket(w, r, tenantID, findingID, req)
+		return
+	}
+
+	in := jira.CreateTicketInput{
+		TenantID:      tenantID,
+		FindingID:     findingID,
+		ProjectKey:    req.ProjectKey,
+		IssueType:     req.IssueType,
+		IntegrationID: req.IntegrationID,
+	}
+	var (
+		result *jira.TicketInfo
+		below  *jira.BelowThreshold
+		err    error
+	)
+	if h.policy != nil {
+		result, below, err = h.policy.ManualCreate(r.Context(), in, req.ConfirmBelowThreshold)
+	} else {
+		result, err = h.service.CreateTicketFromFinding(r.Context(), in)
+	}
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+	if result == nil && below != nil {
+		writeBelowThreshold(w, below)
+		return
+	}
+	h.auditBelowThreshold(r, findingID, below, result.TicketKey)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// createGitHubTicket handles the provider=github branch of CreateTicket.
+func (h *JiraWebhookHandler) createGitHubTicket(w http.ResponseWriter, r *http.Request, tenantID, findingID string, req CreateTicketRequest) {
+	if h.github == nil {
+		apierror.BadRequest("github ticketing not configured").WriteJSON(w)
+		return
+	}
+
+	result, err := h.github.CreateTicketFromFinding(r.Context(), ticketing.GitHubTicketInput{
+		TenantID:  tenantID,
+		FindingID: findingID,
+		Owner:     req.Owner,
+		Repo:      req.Repo,
+	})
+	if err != nil {
+		h.handleError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// writeEgressRefusal answers a refusal of the outbound ticket gate: 403 with
+// code TICKET_EGRESS_REFUSED and the refusal's stable reason. The message is
+// the platform's own text.
+func writeEgressRefusal(w http.ResponseWriter, err error) bool {
+	var refused *ticketing.EgressRefusedError
+	if !errors.As(err, &refused) {
+		return false
+	}
+	apierror.New(http.StatusForbidden, apierror.Code("TICKET_EGRESS_REFUSED"), refused.Error()).
+		WithDetails(map[string]string{"reason": string(refused.Reason)}).WriteJSON(w)
+	return true
+}
+
+// ListJiraProjects handles GET /api/v1/integrations/jira/projects.
+// Returns the Jira projects visible to the tenant's connected ticketing
+// integration, for the admin destination-project picker (so an operator
+// selects the default project from a list rather than typing a raw key).
+func (h *JiraWebhookHandler) ListJiraProjects(w http.ResponseWriter, r *http.Request) {
+	tid, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
+	if err != nil {
+		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
+		return
+	}
+
+	projects, err := h.service.ListProjects(r.Context(), tid)
+	if err != nil {
+		if errors.Is(err, jira.ErrNoTicketingIntegration) {
+			apierror.NotFound("no connected Jira integration").WriteJSON(w)
+			return
+		}
+		h.logger.Error("list jira projects failed", "error", err)
+		apierror.InternalServerError("failed to list Jira projects").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"projects": projects})
+}
+
+// JiraDeliveryVerifier authenticates an inbound Jira delivery by the
+// integration named in its URL and returns that integration's tenant
+// (integration.IntegrationService.VerifyJiraDelivery).
+type JiraDeliveryVerifier interface {
+	VerifyJiraDelivery(ctx context.Context, integrationID shared.ID, body []byte, signature string) (shared.ID, error)
+}
+
+// Inbound Jira delivery limits.
+const (
+	jiraWebhookMaxBody = 2 * 1024 * 1024 // 2 MiB
+	// JiraDeliveryMaxAge refuses a delivery whose payload timestamp is older:
+	// Jira retries a failed delivery for a short while, and a replay after
+	// the dedup window falls outside this age as well.
+	JiraDeliveryMaxAge = time.Hour
+	// jiraDeliveryMaxSkew allows a sender clock slightly ahead of ours.
+	jiraDeliveryMaxSkew = 5 * time.Minute
+	// JiraDeliveryWindow is how long a delivery id is remembered (longer
+	// than JiraDeliveryMaxAge, so every replay is caught by one or the other).
+	JiraDeliveryWindow = 24 * time.Hour
+)
+
+// jiraDeliveryID is the shape of Jira's X-Atlassian-Webhook-Identifier.
+var jiraDeliveryID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// SetDeliveryVerifier wires inbound authentication (required for the route).
+func (h *JiraWebhookHandler) SetDeliveryVerifier(v JiraDeliveryVerifier) { h.verifier = v }
+
+// WebhookDeliveryReleaser forgets a delivery key, so a delivery that failed
+// to process can be retried by its sender.
+type WebhookDeliveryReleaser interface {
+	ReleaseDelivery(ctx context.Context, key string) error
+}
+
+// SetDeliveryGuard wires replay protection by delivery id and body.
+func (h *JiraWebhookHandler) SetDeliveryGuard(g WebhookDeliveryGuard) { h.deliveries = g }
+
+// SetOrganizationGate wires the organization access gate.
+func (h *JiraWebhookHandler) SetOrganizationGate(g tenantdom.AccessGate) { h.orgs = g }
+
+// IncomingJiraWebhook handles POST /hooks/jira-integrations/{integration_id}.
+// Public (no JWT): the integration id in the URL names one integration and so
+// one tenant, and the delivery must be signed with that integration's own
+// secret in X-Hub-Signature (sha256=<hex HMAC of the raw body>), the header
+// Jira sends for a webhook with a secret. Replays are refused by delivery id
+// (X-Atlassian-Webhook-Identifier, or the body hash when absent) and by the
+// payload timestamp's age.
+func (h *JiraWebhookHandler) IncomingJiraWebhook(w http.ResponseWriter, r *http.Request) {
+	integrationID, err := shared.IDFromString(chi.URLParam(r, "integration_id"))
+	if err != nil || h.verifier == nil {
+		apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, jiraWebhookMaxBody+1))
+	if err != nil || len(body) > jiraWebhookMaxBody {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	tenantID, err := h.verifier.VerifyJiraDelivery(r.Context(), integrationID, body, r.Header.Get("X-Hub-Signature"))
+	if err != nil {
+		h.logger.Warn("jira webhook rejected", "integration_id", integrationID.String(), "remote_ip", middleware.ClientIPKey(r))
+		apierror.Unauthorized("invalid webhook signature").WriteJSON(w)
+		return
+	}
+	// A suspended organization takes no deliveries (checked after the
+	// signature, so only the secret holder learns the status).
+	if h.orgs != nil {
+		if gerr := h.orgs.CheckAccess(r.Context(), tenantID); gerr != nil {
+			middleware.WriteOrganizationGateError(w, gerr, h.logger)
+			return
+		}
+	}
+
+	var payload jira.WebhookPayload
+	if err := json.Unmarshal(body, &payload); err != nil {
+		apierror.BadRequest("invalid jira webhook payload").WriteJSON(w)
+		return
+	}
+	if !jiraDeliveryFresh(payload.Timestamp, time.Now()) {
+		h.logger.Warn("SECURITY: jira webhook refused: stale or missing timestamp", "integration_id", integrationID.String())
+		apierror.Unauthorized("webhook delivery is too old").WriteJSON(w)
+		return
+	}
+	// Replay protection is mandatory: without a delivery store nothing is
+	// processed (production always has one; Redis is required at startup).
+	if h.deliveries == nil {
+		h.logger.Error("jira webhook: no delivery store; refusing", "integration_id", integrationID.String())
+		apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
+		return
+	}
+	// Two keys, both must be new: the body hash (the identifier header is
+	// not covered by the signature, so a captured body with a fresh
+	// identifier is still a replay) and Jira's delivery identifier.
+	sum := sha256.Sum256(body)
+	prefix := "jira:" + integrationID.String() + ":"
+	keys := []string{prefix + "body-" + hex.EncodeToString(sum[:])}
+	if id := r.Header.Get("X-Atlassian-Webhook-Identifier"); jiraDeliveryID.MatchString(id) {
+		keys = append(keys, prefix+"id-"+id)
+	}
+	claimed := make([]string, 0, len(keys))
+	release := func() {
+		if rel, ok := h.deliveries.(WebhookDeliveryReleaser); ok {
+			// Not the request context: a client that disconnects while the
+			// delivery is processed must not leave its keys held, or Jira's
+			// retry would be dropped as a replay.
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+			defer cancel()
+			for _, k := range claimed {
+				if err := rel.ReleaseDelivery(ctx, k); err != nil {
+					h.logger.Warn("jira webhook: could not release delivery key", "error", err)
+				}
+			}
+		}
+	}
+	for _, k := range keys {
+		first, derr := h.deliveries.FirstDelivery(r.Context(), k, JiraDeliveryWindow)
+		if derr != nil {
+			release()
+			h.logger.Error("jira webhook: delivery store unavailable", "integration_id", integrationID.String(), "error", derr)
+			apierror.ServiceUnavailable("webhook temporarily unavailable").WriteJSON(w)
+			return
+		}
+		if !first {
+			release()
+			h.logger.Warn("SECURITY: jira webhook replay ignored", "integration_id", integrationID.String())
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		claimed = append(claimed, k)
+	}
+
+	// The tracker side of the issue (assignee, status category) is recorded
+	// on the integration's links for every delivery, status change or not.
+	if err := h.service.RecordExternalChange(r.Context(), tenantID, integrationID, payload); err != nil {
+		release()
+		h.logger.Error("jira webhook: recording the tracker state failed",
+			"tenant_id", tenantID.String(), "integration_id", integrationID.String(), "error", err)
+		apierror.InternalServerError("webhook processing failed").WriteJSON(w)
+		return
+	}
+
+	if err := h.service.HandleJiraWebhook(r.Context(), tenantID, integrationID, payload); err != nil {
+		// Released, so Jira's retry of this delivery is processed.
+		release()
+		h.logger.Error("jira webhook processing failed",
+			"tenant_id", tenantID.String(),
+			"integration_id", integrationID.String(),
+			"error", err,
+		)
+		apierror.InternalServerError("webhook processing failed").WriteJSON(w)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// jiraDeliveryFresh reports whether a payload timestamp (milliseconds since
+// the epoch, as Jira sends it) is recent: not older than JiraDeliveryMaxAge
+// and not far in the future. A missing timestamp is not fresh.
+func jiraDeliveryFresh(tsMillis int64, now time.Time) bool {
+	if tsMillis <= 0 {
+		return false
+	}
+	ts := time.UnixMilli(tsMillis)
+	return now.Sub(ts) <= JiraDeliveryMaxAge && ts.Sub(now) <= jiraDeliveryMaxSkew
+}
+
+// handleError maps domain errors to HTTP responses.
+func (h *JiraWebhookHandler) handleError(w http.ResponseWriter, err error) {
+	if writeEgressRefusal(w, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("finding not found").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	default:
+		h.logger.Error("jira handler error", "error", err)
+		apierror.InternalServerError("internal server error").WriteJSON(w)
+	}
+}

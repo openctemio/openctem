@@ -1,5 +1,0 @@
-### Security: results bind to the lease epoch the sensor states, also over protocol v3
-
-- Protocol v3 `PutResult` and `CommitResult` now carry `lease_epoch` and the transport passes it to the results handler. Before, no v3 result call carried an epoch: a shared sensor's command-bound results over v3 were always refused (`command-not-found`), and an organization sensor's were never checked against the run.
-- A result request that names the new `results_lease_epoch` feature in `X-OpenCTEM-Sensor-Features` (sdk-go from the next release; every v3 result call that sets `lease_epoch`) must state the epoch: the same request without one is refused as `command-not-found`, so a late report of a run the platform took back cannot bind to the run it handed to the same sensor next. Hello lists the feature.
-- Senders that neither state an epoch nor name the feature keep the earlier rule (holder and grace window only). **Upgrade note:** update sensors to the sdk-go release that stores the epoch with each outbox report to close that case.

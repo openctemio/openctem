@@ -1,0 +1,232 @@
+// Package scim implements SCIM 2.0 provisioning (RFC-009): per-tenant bearer
+// tokens and the User provisioning that maps SCIM operations onto OpenCTEM
+// users + tenant memberships.
+package scim
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/server/internal/app/entitlement"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/domain/scimtoken"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// tokenPlaintextPrefix is the human-recognizable prefix of a SCIM bearer token.
+const tokenPlaintextPrefix = "oct_scim_"
+
+// TokenService mints, lists, revokes, and authenticates SCIM bearer tokens.
+// Tokens are stored as peppered HMAC-SHA256 hashes (see crypto.HashTokenPeppered)
+// exactly like API keys — a DB leak without APP_ENCRYPTION_KEY cannot be
+// brute-forced offline.
+type TokenService struct {
+	// orgs refuses the tokens of a suspended organization
+	// (docs/architecture/organization-suspension.md); nil admits all.
+	orgs tenantdom.AccessGate
+	// features refuses minting a token when the organization may not use
+	// SCIM (limits.FeatureSCIM); nil allows.
+	features entitlement.FeatureChecker
+	repo     scimtoken.Repository
+	pepper   string
+	legacy   []string // earlier peppers that still verify (key rotation)
+	logger   *logger.Logger
+	now      func() time.Time
+}
+
+// NewTokenService wires the service. pepper should be APP_ENCRYPTION_KEY.
+func NewTokenService(repo scimtoken.Repository, pepper string, log *logger.Logger) *TokenService {
+	return &TokenService{
+		repo:   repo,
+		pepper: pepper,
+		logger: log.With("service", "scim-token"),
+		now:    func() time.Time { return time.Now().UTC() },
+	}
+}
+
+// SetLegacyPeppers sets earlier peppers whose token hashes keep verifying
+// while APP_ENCRYPTION_KEY rotates (APP_ENCRYPTION_KEY_PREVIOUS). New tokens
+// are always hashed with the current pepper.
+func (s *TokenService) SetLegacyPeppers(peppers ...string) {
+	s.legacy = s.legacy[:0]
+	for _, p := range peppers {
+		if p != "" && p != s.pepper {
+			s.legacy = append(s.legacy, p)
+		}
+	}
+}
+
+// TokenRehasher is implemented by a repository that can replace a token hash
+// made with an earlier pepper (compare-and-swap on the old hash).
+type TokenRehasher interface {
+	RehashKey(ctx context.Context, id shared.ID, oldHash, newHash string) (bool, error)
+}
+
+// MintResult carries the plaintext, which is shown to the admin exactly once.
+type MintResult struct {
+	Token     *scimtoken.ScimToken
+	Plaintext string
+}
+
+// SetFeatureGate wires the feature check of SCIM: a new token needs scim to be
+// allowed (a token minted during the read-only grace would be new
+// configuration). Existing tokens keep working through the grace (the SCIM
+// API gate).
+func (s *TokenService) SetFeatureGate(g entitlement.FeatureChecker) { s.features = g }
+
+// Mint creates a new SCIM bearer token for a tenant, valid for
+// expiresInDays days (1..365, required: a provisioning credential that never
+// expires outlives the people and systems that hold it).
+func (s *TokenService) Mint(ctx context.Context, tenantID shared.ID, name string, createdBy *shared.ID, expiresInDays int) (*MintResult, error) {
+	if tenantID.IsZero() {
+		return nil, fmt.Errorf("%w: tenant id required", shared.ErrValidation)
+	}
+	if err := scimtoken.ValidateLifetimeDays(expiresInDays); err != nil {
+		return nil, err
+	}
+	if err := entitlement.RequireFeature(ctx, s.features, tenantID, limits.FeatureSCIM); err != nil {
+		return nil, err
+	}
+	if name == "" {
+		name = "SCIM token"
+	}
+
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, fmt.Errorf("generate scim token: %w", err)
+	}
+	plaintext := tokenPlaintextPrefix + base64.RawURLEncoding.EncodeToString(raw)
+	hash := crypto.HashTokenPeppered(plaintext, s.pepper)
+	prefix := plaintext[:len(tokenPlaintextPrefix)+4]
+
+	expiresAt := s.now().Add(time.Duration(expiresInDays) * 24 * time.Hour)
+	tok := scimtoken.New(shared.NewID(), tenantID, name, hash, prefix, expiresAt)
+	if createdBy != nil && !createdBy.IsZero() {
+		tok.SetCreatedBy(*createdBy)
+	}
+	if err := s.repo.Create(ctx, tok); err != nil {
+		return nil, err
+	}
+	s.logger.Info("scim token minted", "tenant_id", tenantID.String(), "token_id", tok.ID().String(), "expires_at", expiresAt)
+	return &MintResult{Token: tok, Plaintext: plaintext}, nil
+}
+
+// RotateResult is a rotation: the replacement token (plaintext shown once)
+// and the time the replaced one stops working.
+type RotateResult struct {
+	MintResult
+	Replaced          *scimtoken.ScimToken
+	ReplacedExpiresAt time.Time
+}
+
+// Rotate replaces one of the tenant's usable tokens: it mints a new token
+// with the same name, valid for expiresInDays days (0 keeps the old token's
+// lifetime), and brings the old token's expiry forward to at most
+// RotationOverlap from now, so the identity provider can switch to the new
+// token without a provisioning gap. A revoked, expired or other tenant's
+// token is ErrNotFound.
+func (s *TokenService) Rotate(ctx context.Context, tenantID, id shared.ID, createdBy *shared.ID, expiresInDays int) (*RotateResult, error) {
+	old, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	if !old.UsableAt(now) {
+		return nil, scimtoken.ErrNotFound
+	}
+	if expiresInDays == 0 {
+		expiresInDays = old.LifetimeDays()
+	}
+	minted, err := s.Mint(ctx, tenantID, old.Name(), createdBy, expiresInDays)
+	if err != nil {
+		return nil, err
+	}
+	cutoff := now.Add(scimtoken.RotationOverlap)
+	if err := s.repo.ShortenExpiry(ctx, tenantID, old.ID(), cutoff); err != nil {
+		// The old token could not be cut over (revoked meanwhile, or a
+		// write failure): withdraw the new one rather than leave two
+		// long-lived tokens.
+		minted.Token.Revoke()
+		if rerr := s.repo.Update(ctx, minted.Token); rerr != nil {
+			s.logger.Error("scim token rotation: withdrawing the new token failed", "token_id", minted.Token.ID().String(), "error", rerr)
+		}
+		return nil, fmt.Errorf("rotate scim token: %w", err)
+	}
+	old.ExpireBy(cutoff)
+	s.logger.Info("scim token rotated", "tenant_id", tenantID.String(), "token_id", old.ID().String(), "replacement_id", minted.Token.ID().String())
+	return &RotateResult{MintResult: *minted, Replaced: old, ReplacedExpiresAt: old.ExpiresAt()}, nil
+}
+
+// List returns a tenant's SCIM tokens (metadata only; never the plaintext/hash).
+func (s *TokenService) List(ctx context.Context, tenantID shared.ID) ([]*scimtoken.ScimToken, error) {
+	return s.repo.ListByTenant(ctx, tenantID)
+}
+
+// Revoke marks a tenant's token unusable.
+func (s *TokenService) Revoke(ctx context.Context, tenantID, id shared.ID) error {
+	tok, err := s.repo.GetByID(ctx, tenantID, id)
+	if err != nil {
+		return err
+	}
+	tok.Revoke()
+	return s.repo.Update(ctx, tok)
+}
+
+// SetOrganizationGate wires the organization access gate.
+func (s *TokenService) SetOrganizationGate(g tenantdom.AccessGate) { s.orgs = g }
+
+// Authenticate validates a presented bearer token and returns it when active.
+// Any invalid/revoked/unknown token returns scimtoken.ErrNotFound without
+// distinction, so the caller cannot enumerate tokens.
+func (s *TokenService) Authenticate(ctx context.Context, plaintext string) (*scimtoken.ScimToken, error) {
+	if plaintext == "" {
+		return nil, scimtoken.ErrNotFound
+	}
+	hash := crypto.HashTokenPeppered(plaintext, s.pepper)
+	tok, err := s.repo.GetByHash(ctx, hash)
+	matched := hash
+	for _, p := range s.legacy {
+		if err == nil {
+			break
+		}
+		matched = crypto.HashTokenPeppered(plaintext, p)
+		tok, err = s.repo.GetByHash(ctx, matched)
+	}
+	// Revoked, expired or unknown: one answer, so a caller cannot tell an
+	// expired token from one that never existed.
+	if err != nil || !tok.UsableAt(s.now()) {
+		return nil, scimtoken.ErrNotFound
+	}
+	// A suspended organization takes no provisioning. Checked after the
+	// token matched, so only its holder learns the status.
+	if s.orgs != nil {
+		if gerr := s.orgs.CheckAccess(ctx, tok.TenantID()); gerr != nil {
+			if errors.Is(gerr, tenantdom.ErrOrganizationSuspended) {
+				return nil, gerr
+			}
+			return nil, scimtoken.ErrNotFound
+		}
+	}
+	// A token that matched under an earlier pepper is re-hashed with the
+	// current one, so it stops depending on APP_ENCRYPTION_KEY_PREVIOUS.
+	if matched != hash {
+		if r, ok := s.repo.(TokenRehasher); ok {
+			if _, rerr := r.RehashKey(ctx, tok.ID(), matched, hash); rerr != nil {
+				s.logger.Warn("scim token re-hash under the current pepper failed", "token_id", tok.ID().String(), "error", rerr)
+			}
+		}
+	}
+	// Best-effort last-used stamp (non-fatal). Uses a status-preserving,
+	// active-only update so a concurrent revoke is never clobbered.
+	if uerr := s.repo.TouchLastUsed(ctx, tok.TenantID(), tok.ID(), s.now()); uerr != nil {
+		s.logger.Warn("scim token touch failed", "token_id", tok.ID().String(), "error", uerr)
+	}
+	return tok, nil
+}

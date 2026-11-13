@@ -1,12 +1,12 @@
 # =============================================================================
-# Overlay: monitor the shipped Compose deployment (api/deploy/docker-compose.yml)
+# Overlay: monitor the shipped Compose deployment (server/deploy/docker-compose.yml)
 # =============================================================================
 # The base file's defaults match a stack whose network, service names and
 # datastores differ from the shipped one. This overlay sets the shipped
 # stack's values: compose project `openctem`, web service `web`, Postgres with
 # TLS, Redis reachable over TLS only, verified against the stack's datastore CA.
 #
-#   docker compose -p openctem-obs --env-file api/deploy/.env \
+#   docker compose -p openctem-obs --env-file server/deploy/.env \
 #     -f deploy/observability/docker-compose.yml \
 #     -f deploy/observability/docker-compose.openctem.yml --profile observability up -d
 #

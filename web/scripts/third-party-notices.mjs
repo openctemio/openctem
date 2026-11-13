@@ -5,7 +5,7 @@
 // license text found in node_modules. No network. The image build runs it
 // (web/Dockerfile, the notices stage) and both apps serve the file read-only
 // to About > Open-source licenses. Same JSON shape as the API's notices
-// (api/pkg/notices). Design: api/docs/architecture/third-party-notices.md.
+// (server/pkg/notices). Design: server/docs/architecture/third-party-notices.md.
 //
 //   node scripts/third-party-notices.mjs [--root <web dir>] [--out <file>]
 import fs from 'node:fs'

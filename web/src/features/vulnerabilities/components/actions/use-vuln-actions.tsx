@@ -2,7 +2,7 @@
 
 /**
  * Actions on selected vulnerabilities, shared by the list's bulk bar and the
- * vulnerability page (api/docs/architecture/vulnerability-page.md, "Bulk
+ * vulnerability page (server/docs/architecture/vulnerability-page.md, "Bulk
  * actions"). Each acts on the open findings of the selected CVEs that the
  * list's filters select, resolved by the API as the signed-in person:
  *   - Create remediation task: the task-from-query flow (a finding is in at

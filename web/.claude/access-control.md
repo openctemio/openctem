@@ -153,7 +153,7 @@ A member's data scope is the assets of their active groups plus explicit
 per-user asset access grants (`asset_access_grants`). Naming a _user_ as an asset
 owner is an assignment, not a scope grant. Owners, admins and roles with
 `has_full_data_access` are not restricted; a member with no scope sees nothing.
-The API enforces this (`api/docs/architecture/authorization-matrix.md`, "Data scope").
+The API enforces this (`server/docs/architecture/authorization-matrix.md`, "Data scope").
 
 ## Permission Naming Convention
 
@@ -692,7 +692,7 @@ Assignment Rules automatically route findings to groups for triage based on find
 - `assignmentRules:write` - Create/update rules
 - `assignmentRules:delete` - Delete rules
 
-See `api/docs/architecture/access-control-rules.md` for complete backend documentation.
+See `server/docs/architecture/access-control-rules.md` for complete backend documentation.
 
 ---
 

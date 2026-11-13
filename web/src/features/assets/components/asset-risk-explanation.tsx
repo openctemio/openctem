@@ -1,7 +1,7 @@
 /**
  * "Why this score": the factors of an asset's risk score and the open
  * findings that drive it (GET /api/v1/assets/{id}/risk,
- * api/docs/architecture/asset-risk-score.md).
+ * server/docs/architecture/asset-risk-score.md).
  */
 
 'use client'

@@ -36,7 +36,16 @@ import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-o
 import { useMemberStats } from '@/features/organization/api/use-members'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useDisplayUser } from '@/hooks/use-display-user'
-import { OrgCard, orgInitials, type OrgCardOrganization } from './org-card'
+import dynamic from 'next/dynamic'
+import { orgInitials } from './org-initials'
+import type { OrgCardOrganization } from './org-card'
+
+// The organization card (member counts, invitations, search) is the popover's
+// content: it loads when the popover first opens, not with every page.
+const OrgCard = dynamic(() => import('./org-card').then((m) => m.OrgCard), {
+  ssr: false,
+  loading: () => <div className="h-40" aria-hidden />,
+})
 
 const CREATE_ORGANIZATION_URL = '/settings/tenant/create'
 

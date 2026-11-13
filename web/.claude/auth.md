@@ -239,7 +239,7 @@ OpenCTEM separates what a user may **do** (roles and permissions) from what data
 they may **see** (data scope: their groups' assets plus explicit asset access
 grants). The API is the only authority; the UI only hides what the user cannot
 use. See [access-control.md](./access-control.md) and
-`api/docs/architecture/authorization-matrix.md`.
+`server/docs/architecture/authorization-matrix.md`.
 
 ```typescript
 import { Can, Permission, usePermissions } from "@/lib/permissions";

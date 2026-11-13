@@ -1,5 +1,5 @@
 /**
- * Small pure helpers of the lifecycle settings (api/docs/rfcs/RFC-110-tenant-lifecycles.md).
+ * Small pure helpers of the lifecycle settings (server/docs/rfcs/RFC-110-tenant-lifecycles.md).
  * The API validates every value again; these only shape input and read limits.
  */
 

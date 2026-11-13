@@ -12,7 +12,7 @@ import {
  * ports, domains, IPs, certificates) from `asset.metadata` (the API's
  * `properties`).
  *
- * Every reader names a flat schema key (api/configs/asset-types.yaml)
+ * Every reader names a flat schema key (server/configs/asset-types.yaml)
  * through `prop()`, whose key type is the registry's `AssetPropertyKey`: a
  * key outside the schema does not compile (docs/architecture/
  * asset-inventory-v2.md, "Property names"). Ingest, REST and import fold

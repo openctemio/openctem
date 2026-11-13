@@ -13,7 +13,7 @@ group "default" {
 }
 
 target "api" {
-  context    = "api"
+  context    = "server"
   target     = "production"
   tags       = [API_IMAGE]
   cache-from = ["type=gha,scope=e2e-api"]

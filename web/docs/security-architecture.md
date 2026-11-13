@@ -160,6 +160,12 @@ The `PermissionProvider` (`src/context/permission-provider.tsx`) keeps permissio
 - Backend enforces `WHERE tenant_id = ?` on all data queries.
 - Permission cache keys include tenant ID to prevent cross-tenant data leaks.
 - Team switching exchanges tokens via `POST /api/auth/switch-team`.
+- A switch ends the tab's organization epoch: the address goes to the
+  section's list root without a query, the dashboard tree mounts again with a
+  fresh SWR cache, reads in flight are aborted, organization data in browser
+  storage is dropped, other tabs follow, and the API client sends nothing while
+  the session names another organization than the tab shows
+  ([organization-switch.md](organization-switch.md)).
 
 ---
 
@@ -343,7 +349,7 @@ nothing runs:
   `sso_state` cookie set when this browser started the flow, so a callback
   URL from another browser's flow is refused.
 - **API.** The `/api/v1` proxy forwards the pair, and the API's own
-  double-submit check (`api/internal/infra/http/middleware/csrf.go`) runs on
+  double-submit check (`server/internal/infra/http/middleware/csrf.go`) runs on
   every cookie-authenticated write.
 
 ---
@@ -442,7 +448,7 @@ Runs on: push/PR to main/develop + weekly (Monday 00:00 UTC)
 | Code quality | ESLint            | Yes       |
 | Formatting   | Prettier          | Yes       |
 | Unit tests   | Vitest + coverage | Yes       |
-| Build        | `next build`      | Push only |
+| Build        | `next build`      | Merge queue and push |
 
 ### 10.3 Pre-commit Hooks (`.githooks/` + lint-staged)
 

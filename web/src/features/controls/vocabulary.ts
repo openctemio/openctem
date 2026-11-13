@@ -9,8 +9,8 @@
  * cannot drift from the backend again.
  *
  * Kept in sync with:
- *   api/migrations/000146_compensating_controls.up.sql
- *   api/pkg/domain/compensatingcontrol/entity.go
+ *   server/migrations/000146_compensating_controls.up.sql
+ *   server/pkg/domain/compensatingcontrol/entity.go
  */
 
 export const CONTROL_TYPES = [

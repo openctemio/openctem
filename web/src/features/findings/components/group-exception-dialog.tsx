@@ -3,7 +3,7 @@
 /**
  * Ask for one exception (accepted risk or false positive) over every open
  * finding of a remediation task, decided once by the approvers
- * (api/docs/rfcs/RFC-111-approval-policy.md). A live preview shows the group
+ * (server/docs/rfcs/RFC-111-approval-policy.md). A live preview shows the group
  * tier and why, who may decide, and each finding with its own tier and end.
  * Informational only: the API evaluates again when the request is made.
  */

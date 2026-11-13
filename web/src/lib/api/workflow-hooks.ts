@@ -444,7 +444,7 @@ export function cancelWorkflowRun(runId: string): Promise<void> {
  * Invalidate workflows cache
  */
 export async function invalidateWorkflowsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/api/v1/workflows'), undefined, {
     revalidate: true,
   })
@@ -454,7 +454,7 @@ export async function invalidateWorkflowsCache() {
  * Invalidate workflow runs cache
  */
 export async function invalidateWorkflowRunsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/workflow-runs'),
     undefined,

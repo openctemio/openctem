@@ -94,7 +94,7 @@ export function usePolicyPreview(draft: ScanWindowPolicyRequest | null) {
 
 /** Revalidates every policy, override and evaluation request. */
 export async function invalidateScanWindows() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => {
       const k = Array.isArray(key) ? key[0] : key

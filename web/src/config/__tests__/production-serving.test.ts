@@ -24,7 +24,7 @@ describe('production serving', () => {
     expect(dockerfile).toMatch(/^USER nextjs$/m)
   })
 
-  it.each(['../api/deploy/docker-compose.yml'])(
+  it.each(['../server/deploy/docker-compose.yml'])(
     '%s runs the web read-only with only /tmp and .next/cache writable',
     (file) => {
       const compose = read(file)

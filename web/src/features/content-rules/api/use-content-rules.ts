@@ -39,7 +39,7 @@ export function useContentRules(enabled = true) {
 
 /** Revalidates every detection rule request, keeping the data on screen. */
 export async function invalidateContentRules() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.startsWith(API_BASE.CONTENT_RULES))
 }
 

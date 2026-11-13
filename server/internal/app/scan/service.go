@@ -1,0 +1,491 @@
+// Package scan implements the application service for the scan bounded context — orchestrates pkg/domain/scan entities and cross-cutting concerns (audit, notifications, RBAC).
+package scan
+
+import (
+	"context"
+	"time"
+
+	freshdom "github.com/openctemio/openctem/server/pkg/domain/assetfreshness"
+	"github.com/openctemio/openctem/server/pkg/domain/assetresolution"
+	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+
+	"github.com/robfig/cron/v3"
+
+	"github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/assetgroup"
+	"github.com/openctemio/openctem/server/pkg/domain/attribution"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/command"
+	"github.com/openctemio/openctem/server/pkg/domain/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+	"github.com/openctemio/openctem/server/pkg/domain/scanprofile"
+	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/domain/tool"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// Concurrent run limits for scans.
+const (
+	// MaxConcurrentRunsPerScan is the maximum concurrent runs per scan config.
+	MaxConcurrentRunsPerScan = 3
+
+	// MaxConcurrentRunsPerTenant is the maximum concurrent runs per tenant.
+	MaxConcurrentRunsPerTenant = 50
+)
+
+// ========== Interfaces ==========
+
+// SecurityValidator interface for security validation.
+type SecurityValidator interface {
+	ValidateIdentifier(value string, maxLen int, fieldName string) *ValidationResult
+	ValidateIdentifiers(values []string, maxLen int, fieldName string) *ValidationResult
+	ValidateScannerConfig(ctx context.Context, tenantID shared.ID, config map[string]any) *ValidationResult
+	ValidateCronExpression(cronExpr string) error
+}
+
+// ValidationResult represents the result of a validation.
+type ValidationResult struct {
+	Valid  bool
+	Errors []ValidationError
+}
+
+// ValidationError represents a validation error.
+type ValidationError struct {
+	Field   string
+	Message string
+	Code    string
+}
+
+// AuditService interface for audit logging.
+type AuditService interface {
+	LogEvent(ctx context.Context, actx AuditContext, event AuditEvent) error
+}
+
+// AuditContext contains context for audit logging.
+type AuditContext struct {
+	TenantID string
+	ActorID  string
+}
+
+// AuditEvent represents an audit event.
+type AuditEvent struct {
+	Action       audit.Action
+	ResourceType audit.ResourceType
+	ResourceID   string
+	ResourceName string
+	Message      string
+	Success      bool
+	Error        error
+	Metadata     map[string]any
+}
+
+// NewSuccessEvent creates a success audit event.
+func NewSuccessEvent(action audit.Action, resourceType audit.ResourceType, resourceID string) AuditEvent {
+	return AuditEvent{
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Success:      true,
+		Metadata:     make(map[string]any),
+	}
+}
+
+// NewFailureEvent creates a failure audit event.
+func NewFailureEvent(action audit.Action, resourceType audit.ResourceType, resourceID string, err error) AuditEvent {
+	return AuditEvent{
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Success:      false,
+		Error:        err,
+		Metadata:     make(map[string]any),
+	}
+}
+
+// WithResourceName sets the resource name.
+func (e AuditEvent) WithResourceName(name string) AuditEvent {
+	e.ResourceName = name
+	return e
+}
+
+// WithMessage sets the message.
+func (e AuditEvent) WithMessage(msg string) AuditEvent {
+	e.Message = msg
+	return e
+}
+
+// WithMetadata adds metadata.
+func (e AuditEvent) WithMetadata(key string, value any) AuditEvent {
+	if e.Metadata == nil {
+		e.Metadata = make(map[string]any)
+	}
+	e.Metadata[key] = value
+	return e
+}
+
+// SensorSelector interface for sensor selection.
+type SensorSelector interface {
+	CheckSensorAvailability(ctx context.Context, tenantID shared.ID, tool string, tenantOnly bool) *SensorAvailability
+	CanUsePlatformSensors(ctx context.Context, tenantID shared.ID) (bool, string)
+	SelectSensor(ctx context.Context, req SelectSensorRequest) (*SelectSensorResult, error)
+}
+
+// SensorAvailability represents sensor availability status.
+type SensorAvailability struct {
+	HasTenantSensor   bool
+	HasPlatformSensor bool
+	Available         bool
+	Message           string
+}
+
+// SelectSensorRequest represents a request to select a sensor.
+type SelectSensorRequest struct {
+	TenantID     shared.ID
+	Capabilities []string
+	Tool         string
+	Mode         SelectMode
+	AllowQueue   bool
+}
+
+// SelectMode represents the sensor selection mode.
+type SelectMode int
+
+const (
+	// SelectTenantFirst tries tenant sensors first, then platform.
+	SelectTenantFirst SelectMode = iota
+)
+
+// SelectSensorResult represents the result of sensor selection.
+type SelectSensorResult struct {
+	Sensor     *sensor.Sensor
+	IsPlatform bool
+	// TenantBusy: the tenant has capable sensors, all busy; the job waits
+	// for them (RFC-023 D14), it is not moved to shared sensors.
+	TenantBusy bool
+}
+
+// ========== Service ==========
+
+// Service handles scan business operations.
+type Service struct {
+	// programRules refuses runs a bug-bounty program's rules forbid
+	// (program_rules.go); nil: not checked.
+	programRules ProgramRuleChecker
+	// pathGate refuses path discovery scans the shared gate does not allow
+	// (path_discovery_gate.go).
+	pathGate PathDiscoveryTriggerGate
+	// scopeSnapshots records the scope each run relied on (RFC-065 §9).
+	scopeSnapshots ScopeSnapshotRecorder
+	scanRepo       scan.Repository
+	ownerActivity  OwnerActivity
+	// ownerAdmins and ownerNotifier tell the administrators once when a
+	// scan is paused for want of an active owner (owner.go).
+	ownerAdmins    AdminDirectory
+	ownerNotifier  InAppNotifier
+	templateRepo   scanworkflow.Repository
+	assetGroupRepo assetgroup.Repository
+	// selectorAssets reads the inventory behind dynamic target selectors
+	// (target_selectors.go); nil refuses a run that has one.
+	selectorAssets SelectorAssets
+	runRepo        scanrun.RunRepository
+	stepRepo       scanworkflow.StepRepository
+	// resolveEvidence and staleRefresher: resolve before active
+	// (resolve_evidence.go); nil hands every name on.
+	resolveEvidence freshdom.NameEvidenceReader
+	staleRefresher  StaleRefresher
+	// resolutionStore: names known not to resolve (resolve_evidence.go).
+	resolutionStore assetresolution.Store
+	// approvalGate and governanceAssets: scan approval (governance.go).
+	approvalGate        ApprovalGate
+	governanceAssets    GovernanceAssets
+	stepRunRepo         scanrun.StepRunRepository
+	commandRepo         command.Repository
+	scannerTemplateRepo scannertemplate.Repository
+	toolRepo            tool.Repository
+	targetMappingRepo   tool.TargetMappingRepository // For asset-scanner compatibility
+	toolConfigChecker   ToolConfigChecker
+	profileRepo         scanprofile.Repository // For ScanProfile linking and quality gates
+	sensorSelector      SensorSelector
+	securityValidator   SecurityValidator
+	auditService        AuditService
+	scopeExclusions     ScopeExclusionFilter // optional; nil = no exclusions configured
+	rangeLimits         RangeLimits          // optional; nil = every range target at most a /16
+	nameAddresses       NameAddressReader    // optional; resolution relations for the exclusion match (dispatch_gate.go)
+	attributionGate     AttributionGate      // optional in tests; production always wires it (nil = not checked on a run, refused by the dispatch gate)
+	scopeWaits          ScopeWaitStore       // start_when_scope_approved (nil = refused like any other out-of-scope target)
+	pendingScope        PendingScope
+	scopeWaitTrigger    func(context.Context, TriggerScanExecInput) (*scanrun.Run, error) // tests only; nil = TriggerScan
+	zones               ZoneDirectory                                                     // optional; nil = zone routing off (RFC-023)
+	instanceZones       InstanceZones                                                     // instance scan zones for shared sensors (instance_zones.go); nil: none
+	sharedUse           SharedUseObserver                                                 // anomaly signals of shared sensor use (shared_signals.go); nil: none
+	activeScan          FeatureAllower                                                    // active_scanning (active_scanning.go); nil: allowed
+	sharedLimits        SharedScanLimits                                                  // platform_scans_per_day (shared_limits.go); nil: never shared
+	zoneResolver        scanzone.Resolver                                                 // resolves hostname targets for zone routing
+	vantage             scanzone.VantageReader                                            // the sensors' own DNS answers (vantage.go)
+	windows             WindowLoader                                                      // optional; nil = no trigger-time scan window check (windows.go)
+	actScope            ActScopeChecker                                                   // optional; nil = act scope not enforced (research/15 L-06)
+	namePorts           NamePortReader                                                    // optional; nil = a coverage probe of a name tries its default ports only (coverage_named_ports.go)
+	// revealResolved lets a refusal show what a hostname resolved to
+	// (WithRevealResolved).
+	revealResolved bool
+	// proofPolicy is the platform's proof requirement (active_proof.go).
+	proofPolicy      ProofPolicy
+	connectorScans   ConnectorScans            // optional; nil = a connector cannot be a scanner (RFC-047)
+	policySensors    AvailableSensorLister     // optional; nil = no policy preflight outside zones (policy_preflight.go)
+	privatePolicy    PrivateTargetPolicy       // optional; nil = the private-target switch is not read at trigger
+	readiness        *readinessSources         // optional; nil = no workflow readiness (readiness.go)
+	toolAvailability ToolAvailability          // optional; nil = no tool availability check at trigger (tool_availability_gate.go)
+	coverageSettings CoverageSettings          // optional; nil = organization switches are not checked (a switched capability then reads as off)
+	coverageContent  CoverageContent           // optional; nil = coverage readiness does not check the lists a tool reads
+	tenantTools      TenantToolConfigs         // optional; nil = per-organization tool switch not enforced
+	optIns           OptInPolicy               // optional; nil = every sensor opt-in counts as enabled (opt_ins.go)
+	stepQueuer       StepQueuer                // the scan run service's step dispatcher; nil refuses workflow scans
+	workflowVersions scanworkflow.VersionStore // pins workflow runs to the version they start with; nil leaves them on the live workflow
+	logger           *logger.Logger
+	misfireEvents    ScheduleMissEvents // optional; nil = the scan records the misfire but no event is sent
+}
+
+// ScopeExclusionFilter reports which of the given candidate targets match an
+// active scope EXCLUSION for the tenant and must therefore be skipped by a scan.
+// Implemented by *scope.Service. A lookup error is returned, and the scan is
+// not dispatched: scanning something the tenant excluded is worse than a
+// delayed scan (fail closed).
+type ScopeExclusionFilter interface {
+	ExcludedTargets(ctx context.Context, tenantID string, candidates []scope.ExclusionCandidate) (map[shared.ID]bool, error)
+}
+
+// AttributionGate decides which assets and typed targets may not be checked
+// actively (RFC-036 §6.3 active_allowed, O4): an asset whose attribution is
+// not confirmed, a name under one the tenant rejected, and an
+// internet-facing asset with no record outside every scope target and seed.
+// Implemented by *easm.ActiveGate. A lookup error stops the dispatch.
+type AttributionGate interface {
+	// ActiveCheckBlocked returns the given assets that may not be probed,
+	// with the reason.
+	ActiveCheckBlocked(ctx context.Context, tenantID shared.ID, assetIDs []string) (map[string]attribution.State, error)
+	// BlockedTargets returns the typed targets that may not be probed: a
+	// target naming an inventory asset is decided as that asset; free text
+	// only when it is (or sits under) a name the tenant rejected.
+	BlockedTargets(ctx context.Context, tenantID shared.ID, targets []string) (map[string]attribution.State, error)
+	// TierExceeded returns the targets the tenant's scope authority covers,
+	// but only below tier (RFC-054 §4.2 step 6), with the covering entry of
+	// the highest ceiling.
+	TierExceeded(ctx context.Context, tenantID shared.ID, targets []string, tier scopedom.Tier) (map[string]*scopedom.RuleRef, error)
+	// UncoveredTargets returns the targets naming an internet host or
+	// address that no scope authority of the tenant covers (no scope
+	// target, root-domain seed or verified domain at or above them).
+	UncoveredTargets(ctx context.Context, tenantID shared.ID, targets []string) ([]string, error)
+}
+
+// ServiceOption is a functional option for Service.
+type ServiceOption func(*Service)
+
+// CoverageContent says whether the platform can supply the lists a
+// coverage run.s tool reads at a depth (contentpin.Planner): the small
+// platform pack at standard depth (steady coverage), the medium one at deep
+// depth (the onboarding pass of a new root).
+type CoverageContent interface {
+	CoverageContentReady(ctx context.Context, depth scanworkflow.Depth, requests []stage.WordlistRequest) (bool, error)
+}
+
+// CoverageSettings reads the organization's attack-surface settings.
+type CoverageSettings interface {
+	GetEASMSettings(ctx context.Context, tenantID string) (*tenant.EASMSettings, error)
+}
+
+// WithCoverageSettings lets coverage readiness hold a capability an
+// organization must switch on (capture.screenshot) until it does.
+func WithCoverageSettings(c CoverageSettings) ServiceOption {
+	return func(s *Service) { s.coverageSettings = c }
+}
+
+// WithCoverageContent makes coverage readiness pause a capability whose
+// tool reads a platform list the platform cannot supply yet, instead of
+// starting runs whose jobs are refused at claim.
+func WithCoverageContent(c CoverageContent) ServiceOption {
+	return func(s *Service) { s.coverageContent = c }
+}
+
+// WithAuditService sets the audit service for Service.
+func WithAuditService(auditService AuditService) ServiceOption {
+	return func(s *Service) {
+		s.auditService = auditService
+	}
+}
+
+// WithTargetMappingRepo sets the target mapping repository for asset-scanner compatibility.
+func WithTargetMappingRepo(repo tool.TargetMappingRepository) ServiceOption {
+	return func(s *Service) {
+		s.targetMappingRepo = repo
+	}
+}
+
+// WithProfileRepo sets the scan profile repository for ScanProfile linking and quality gates.
+func WithProfileRepo(repo scanprofile.Repository) ServiceOption {
+	return func(s *Service) {
+		s.profileRepo = repo
+	}
+}
+
+// WithScopeExclusionFilter wires scope-exclusion enforcement into scan target
+// selection: excluded targets are removed server-side before dispatch, and a
+// failed lookup stops the dispatch.
+func WithScopeExclusionFilter(f ScopeExclusionFilter) ServiceOption {
+	return func(s *Service) {
+		s.scopeExclusions = f
+	}
+}
+
+// WithAttributionGate makes every active-scan path refuse what the tenant
+// has not authorized: asset-group members and typed targets that name an
+// asset whose ownership is not confirmed, names under a rejected name, and
+// unattributed internet-facing assets (see AttributionGate).
+func WithAttributionGate(g AttributionGate) ServiceOption {
+	return func(s *Service) {
+		s.attributionGate = g
+	}
+}
+
+// ToolConfigChecker checks a scan's tool options against the tenant's own
+// sensors for that tool, as they will resolve them
+// (sensor.SensorService.CheckScanToolConfig): an error wrapping
+// shared.ErrValidation refuses the config.
+type ToolConfigChecker interface {
+	CheckScanToolConfig(ctx context.Context, tenantID shared.ID, tool string, config map[string]any) error
+}
+
+// WithToolConfigChecker makes saving a single-scanner scan check its tool
+// options against the sensors' tool settings: a config no sensor of the
+// tenant would accept (a sensor-only option, a value out of bounds, a raise
+// above the sensor's value) is refused when saved, not when a job fails.
+func WithToolConfigChecker(c ToolConfigChecker) ServiceOption {
+	return func(s *Service) {
+		s.toolConfigChecker = c
+	}
+}
+
+// checkToolConfig runs the ToolConfigChecker, when one is wired.
+func (s *Service) checkToolConfig(ctx context.Context, tenantID shared.ID, tool string, config map[string]any) error {
+	if s.toolConfigChecker == nil {
+		return nil
+	}
+	return s.toolConfigChecker.CheckScanToolConfig(ctx, tenantID, tool, config)
+}
+
+// NewService creates a new Service.
+func NewService(
+	scanRepo scan.Repository,
+	templateRepo scanworkflow.Repository,
+	assetGroupRepo assetgroup.Repository,
+	runRepo scanrun.RunRepository,
+	stepRepo scanworkflow.StepRepository,
+	stepRunRepo scanrun.StepRunRepository,
+	commandRepo command.Repository,
+	scannerTemplateRepo scannertemplate.Repository,
+	toolRepo tool.Repository,
+	sensorSelector SensorSelector,
+	securityValidator SecurityValidator,
+	log *logger.Logger,
+	opts ...ServiceOption,
+) *Service {
+	svc := &Service{
+		scanRepo:            scanRepo,
+		templateRepo:        templateRepo,
+		assetGroupRepo:      assetGroupRepo,
+		runRepo:             runRepo,
+		stepRepo:            stepRepo,
+		stepRunRepo:         stepRunRepo,
+		commandRepo:         commandRepo,
+		scannerTemplateRepo: scannerTemplateRepo,
+		toolRepo:            toolRepo,
+		sensorSelector:      sensorSelector,
+		securityValidator:   securityValidator,
+		logger:              log.With("service", "scan"),
+	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
+}
+
+type auditActorKey struct{}
+
+// WithAuditActor returns ctx carrying the id of the user making the request.
+// Most scan mutations (update, delete, activate, pause, disable, import,
+// export) take no actor argument; the HTTP handler attaches the caller here
+// so their audit entries say who made the change instead of leaving the actor
+// empty. An explicit AuditContext.ActorID still wins.
+func WithAuditActor(ctx context.Context, actorID string) context.Context {
+	if actorID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, auditActorKey{}, actorID)
+}
+
+func auditActorFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(auditActorKey{}).(string)
+	return v
+}
+
+// logAudit logs an audit event if audit service is configured.
+func (s *Service) logAudit(ctx context.Context, actx AuditContext, event AuditEvent) {
+	if s.auditService == nil {
+		return
+	}
+	if actx.ActorID == "" {
+		actx.ActorID = auditActorFromContext(ctx)
+	}
+	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
+		s.logger.Error("failed to log audit event", "error", err, "action", event.Action)
+	}
+}
+
+// recordScheduledOutcome writes a scheduled occurrence that did not produce a
+// run (skipped by the overlap policy, or the trigger failed) to the scan's
+// audit trail, with the reason.
+func (s *Service) recordScheduledOutcome(ctx context.Context, sc *scan.Scan, message string, cause error) {
+	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String()},
+		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), cause).
+			WithResourceName(sc.Name).
+			WithMessage(message).
+			WithMetadata("trigger_type", "schedule"))
+}
+
+// =============================================================================
+// Validation Helpers
+// =============================================================================
+
+// validateTimezone validates that a timezone string is a valid IANA timezone.
+// Returns error if the timezone cannot be loaded.
+func validateTimezone(tz string) error {
+	if tz == "" || tz == "UTC" || tz == "Local" {
+		return nil // Common valid timezones
+	}
+	_, err := time.LoadLocation(tz)
+	if err != nil {
+		return shared.NewDomainError("VALIDATION", "invalid timezone '"+tz+"': must be a valid IANA timezone (e.g., 'America/New_York', 'Europe/London')", shared.ErrValidation)
+	}
+	return nil
+}
+
+// validateCronParseable validates that a cron expression can be parsed and used by the scheduler.
+// This is a stricter validation than SecurityValidator.ValidateCronExpression which only checks format.
+func validateCronParseable(cronExpr string) error {
+	if cronExpr == "" {
+		return nil
+	}
+
+	// Use the same parser as the scheduler (robfig/cron)
+	parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	_, err := parser.Parse(cronExpr)
+	if err != nil {
+		return shared.NewDomainError("VALIDATION", "cannot parse cron expression: "+err.Error(), shared.ErrValidation)
+	}
+	return nil
+}

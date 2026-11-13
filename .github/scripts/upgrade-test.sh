@@ -9,10 +9,10 @@
 #   1. bootstrap the roles and apply the PREVIOUS release's migrations as the
 #      migrator (the schema owner, not a superuser): the database an install of
 #      that release has;
-#   2. load representative rows (api/scripts/upgrade-test/seed.sql);
+#   2. load representative rows (server/scripts/upgrade-test/seed.sql);
 #   3. apply THIS tree's migrations with this tree's openctem-migrate, re-run
 #      the roles script;
-#   0. (before any database work) check that api/migrations/released.json
+#   0. (before any database work) check that server/migrations/released.json
 #      lists the previous release with exactly the migrations it shipped,
 #      when that release still used the earlier tool: openctem-migrate's
 #      takeover records those files as applied and runs every other one
@@ -93,30 +93,34 @@ max_version() {
 
 echo "== Previous release: $PREV ($(git rev-parse --short "$PREV"))"
 mkdir -p "$work/prev"
+# The previous release may predate the backend directory rename: use the
+# directory that holds its migrations.
+prev_dir=api
+if git cat-file -e "$PREV:server/migrations" 2>/dev/null; then prev_dir=server; fi
 # One archive per path: `git archive` fails as a whole when one path is
-# missing, and a release older than the roles script has no api/deploy/postgres.
-for p in api/migrations api/deploy/postgres; do
+# missing, and a release older than the roles script has no server/deploy/postgres.
+for p in "$prev_dir/migrations" "$prev_dir/deploy/postgres"; do
   if git cat-file -e "$PREV:$p" 2>/dev/null; then git archive "$PREV" "$p" | tar -x -C "$work/prev"; fi
 done
-prev_migrations="$work/prev/api/migrations"
-[ -d "$prev_migrations" ] || fail "$PREV has no api/migrations"
-prev_roles="$work/prev/api/deploy/postgres/least-privilege-roles.sql"
-[ -f "$prev_roles" ] || prev_roles="api/deploy/postgres/least-privilege-roles.sql" # a release older than the roles script
+prev_migrations="$work/prev/$prev_dir/migrations"
+[ -d "$prev_migrations" ] || fail "$PREV has no $prev_dir/migrations"
+prev_roles="$work/prev/$prev_dir/deploy/postgres/least-privilege-roles.sql"
+[ -f "$prev_roles" ] || prev_roles="server/deploy/postgres/least-privilege-roles.sql" # a release older than the roles script
 prev_max="$(max_version "$prev_migrations")"
-new_max="$(max_version api/migrations)"
+new_max="$(max_version server/migrations)"
 echo "   its migrations end at $prev_max; this tree's end at $new_max"
 [ "$new_max" -ge "$prev_max" ] || fail "this tree's highest migration ($new_max) is below $PREV's ($prev_max)"
 
 # 0. Takeover data. A release that still shipped the earlier tool
 # (golang-migrate) keeps only its highest version; openctem-migrate records
-# as applied exactly the files api/migrations/released.json lists for the
+# as applied exactly the files server/migrations/released.json lists for the
 # release ending there, and runs every other one (a legacy-numbered file
 # merged below that version after the release was cut included). So the
 # previous release must be listed, with exactly the versions it shipped.
-if ! git cat-file -e "$PREV:api/cmd/openctem-migrate" 2>/dev/null; then
+if ! git cat-file -e "$PREV:$prev_dir/cmd/openctem-migrate" 2>/dev/null; then
   want="$(find "$prev_migrations" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed -n 's/^\([0-9]\{1,13\}\)_.*/\1/p' | sed 's/^0*//' | sort -n | paste -sd, -)"
-  grep -F "\"$PREV\"" api/migrations/released.json | grep -qF "\"versions\": [$want]" \
-    || fail "api/migrations/released.json does not list $PREV with the migrations it shipped: regenerate it (make -C api migrations-released)"
+  grep -F "\"$PREV\"" server/migrations/released.json | grep -qF "\"versions\": [$want]" \
+    || fail "server/migrations/released.json does not list $PREV with the migrations it shipped: regenerate it (make -C server migrations-released)"
   echo "   released.json lists $PREV's migrations for the takeover"
 fi
 if [ "$CHECK_ORDER_ONLY" = true ]; then exit 0; fi
@@ -128,10 +132,10 @@ fi
 # The previous release's own migration tool: its openctem-migrate, built from
 # the tag, or golang-migrate for a release before it.
 prev_migrate=migrate
-if git cat-file -e "$PREV:api/cmd/openctem-migrate/main.go" 2>/dev/null; then
+if git cat-file -e "$PREV:$prev_dir/cmd/openctem-migrate/main.go" 2>/dev/null; then
   mkdir -p "$work/prev-src"
-  git archive "$PREV" api | tar -x -C "$work/prev-src"
-  (cd "$work/prev-src/api" && GOWORK=off go build -o "$work/prev-migrate" ./cmd/openctem-migrate)
+  git archive "$PREV" "$prev_dir" | tar -x -C "$work/prev-src"
+  (cd "$work/prev-src/$prev_dir" && GOWORK=off go build -o "$work/prev-migrate" ./cmd/openctem-migrate)
   prev_migrate="$work/prev-migrate"
 fi
 
@@ -147,7 +151,7 @@ esac
 echo "   migrated to $prev_max, not dirty"
 
 echo "== 2. Representative rows"
-psql_super -q -f api/scripts/upgrade-test/seed.sql
+psql_super -q -f server/scripts/upgrade-test/seed.sql
 
 # key_counts: one "table count" line per key table, in a fixed order.
 key_tables=(tenants users tenant_members user_roles assets findings sensors audit_logs roles permissions)
@@ -163,12 +167,12 @@ awk '$1 == "findings" && $2 < 200 { bad = 1 } END { exit bad }' "$work/before.tx
 
 echo "== 3. This tree's migrations"
 start=$(date +%s)
-openctem-migrate -path api/migrations -database "$MIGRATOR_URL" up | tail -n 5
+openctem-migrate -path server/migrations -database "$MIGRATOR_URL" up | tail -n 5
 echo "   applied in $(( $(date +%s) - start )) s"
-psql_super -q -f api/deploy/postgres/least-privilege-roles.sql
+psql_super -q -f server/deploy/postgres/least-privilege-roles.sql
 
 echo "== 4. Assertions"
-pending="$(openctem-migrate -path api/migrations -database "$MIGRATOR_URL" status | sed -n 's/^pending: //p')"
+pending="$(openctem-migrate -path server/migrations -database "$MIGRATOR_URL" status | sed -n 's/^pending: //p')"
 [ "$pending" = 0 ] || fail "after the upgrade $pending migrations are still pending"
 state="$(psql_super -At -F ' ' -c "SELECT version, dirty FROM schema_migrations")"
 [ "$state" = "9223372036854775807 f" ] || fail "after the upgrade schema_migrations says '$state', want the runner's fence, not dirty"
@@ -194,8 +198,8 @@ done <"$work/before.txt"
 url_db() { local u="${1%%\?*}" q=""; [[ "$1" == *\?* ]] && q="?${1#*\?}"; echo "${u%/*}/$2$q"; }
 fresh_db="upgrade_fresh_$$"
 psql_super -q -c "CREATE DATABASE ${fresh_db}"
-psql "$(url_db "$SUPER_URL" "$fresh_db")" -X -q -v ON_ERROR_STOP=1 -f api/deploy/postgres/least-privilege-roles.sql
-openctem-migrate -path api/migrations -database "$(url_db "$MIGRATOR_URL" "$fresh_db")" up | tail -n 1
+psql "$(url_db "$SUPER_URL" "$fresh_db")" -X -q -v ON_ERROR_STOP=1 -f server/deploy/postgres/least-privilege-roles.sql
+openctem-migrate -path server/migrations -database "$(url_db "$MIGRATOR_URL" "$fresh_db")" up | tail -n 1
 psql_super -At -v ON_ERROR_STOP=1 -f .github/scripts/schema-fingerprint.sql >"$work/upgraded.fp"
 psql "$(url_db "$SUPER_URL" "$fresh_db")" -X -At -v ON_ERROR_STOP=1 -f .github/scripts/schema-fingerprint.sql >"$work/fresh.fp"
 psql_super -q -c "DROP DATABASE ${fresh_db} WITH (FORCE)"

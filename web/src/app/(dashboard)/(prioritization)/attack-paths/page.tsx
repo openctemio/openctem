@@ -7,7 +7,7 @@
  * a phone), choke points ("fix this to cut N paths") and the score of the
  * selected path as a breakdown of step weights. Data:
  * GET /api/v1/attack-surface/attack-paths/{id}, in the viewer's data scope
- * (api/docs/architecture/attack-paths.md); the targets come from the exposure
+ * (server/docs/architecture/attack-paths.md); the targets come from the exposure
  * chains.
  */
 

@@ -1,0 +1,197 @@
+// Package businessunit provides domain models for business unit management.
+package businessunit
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+)
+
+// BusinessUnit represents an organizational unit for risk aggregation.
+type BusinessUnit struct {
+	id                   shared.ID
+	tenantID             shared.ID
+	name                 string
+	description          string
+	ownerName            string
+	ownerEmail           string
+	criticality          Criticality
+	riskTolerance        RiskTolerance
+	parentID             *shared.ID
+	assetCount           int
+	findingCount         int
+	avgRiskScore         float64
+	criticalFindingCount int
+	tags                 []string
+	createdAt            time.Time
+	updatedAt            time.Time
+}
+
+// NewBusinessUnit creates a new business unit with sensible defaults.
+func NewBusinessUnit(tenantID shared.ID, name string) (*BusinessUnit, error) {
+	if name == "" {
+		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
+	}
+	now := time.Now()
+	return &BusinessUnit{
+		id: shared.NewID(), tenantID: tenantID, name: name,
+		criticality: CriticalityMedium, riskTolerance: RiskToleranceMedium,
+		tags: []string{}, createdAt: now, updatedAt: now,
+	}, nil
+}
+
+// ReconstituteBusinessUnit creates from persisted data.
+func ReconstituteBusinessUnit(
+	id, tenantID shared.ID, name, description, ownerName, ownerEmail string,
+	criticality Criticality, riskTolerance RiskTolerance, parentID *shared.ID,
+	assetCount, findingCount int, avgRiskScore float64, criticalFindingCount int,
+	tags []string, createdAt, updatedAt time.Time,
+) *BusinessUnit {
+	return &BusinessUnit{
+		id: id, tenantID: tenantID, name: name, description: description,
+		ownerName: ownerName, ownerEmail: ownerEmail,
+		criticality: criticality, riskTolerance: riskTolerance, parentID: parentID,
+		assetCount: assetCount, findingCount: findingCount,
+		avgRiskScore: avgRiskScore, criticalFindingCount: criticalFindingCount,
+		tags: tags, createdAt: createdAt, updatedAt: updatedAt,
+	}
+}
+
+// Getters
+func (b *BusinessUnit) ID() shared.ID                { return b.id }
+func (b *BusinessUnit) TenantID() shared.ID          { return b.tenantID }
+func (b *BusinessUnit) Name() string                 { return b.name }
+func (b *BusinessUnit) Description() string          { return b.description }
+func (b *BusinessUnit) OwnerName() string            { return b.ownerName }
+func (b *BusinessUnit) OwnerEmail() string           { return b.ownerEmail }
+func (b *BusinessUnit) Criticality() Criticality     { return b.criticality }
+func (b *BusinessUnit) RiskTolerance() RiskTolerance { return b.riskTolerance }
+func (b *BusinessUnit) ParentID() *shared.ID         { return b.parentID }
+func (b *BusinessUnit) AssetCount() int              { return b.assetCount }
+func (b *BusinessUnit) FindingCount() int            { return b.findingCount }
+func (b *BusinessUnit) AvgRiskScore() float64        { return b.avgRiskScore }
+func (b *BusinessUnit) CriticalFindingCount() int    { return b.criticalFindingCount }
+func (b *BusinessUnit) Tags() []string               { return b.tags }
+func (b *BusinessUnit) CreatedAt() time.Time         { return b.createdAt }
+func (b *BusinessUnit) UpdatedAt() time.Time         { return b.updatedAt }
+
+// Update sets mutable fields.
+func (b *BusinessUnit) Update(name, description, ownerName, ownerEmail string) {
+	if name != "" {
+		b.name = name
+	}
+	b.description = description
+	b.ownerName = ownerName
+	b.ownerEmail = ownerEmail
+	b.updatedAt = time.Now()
+}
+
+// SetTags sets tags.
+func (b *BusinessUnit) SetTags(tags []string) {
+	b.tags = tags
+	b.updatedAt = time.Now()
+}
+
+// SetCriticality validates and sets the business criticality.
+func (b *BusinessUnit) SetCriticality(c Criticality) error {
+	if !c.IsValid() {
+		return fmt.Errorf("%w: invalid criticality %q", shared.ErrValidation, c)
+	}
+	b.criticality = c
+	b.updatedAt = time.Now()
+	return nil
+}
+
+// SetRiskTolerance validates and sets the risk tolerance.
+func (b *BusinessUnit) SetRiskTolerance(t RiskTolerance) error {
+	if !t.IsValid() {
+		return fmt.Errorf("%w: invalid risk_tolerance %q", shared.ErrValidation, t)
+	}
+	b.riskTolerance = t
+	b.updatedAt = time.Now()
+	return nil
+}
+
+// SetParent sets the parent business unit. A unit cannot be its own parent.
+// Same-tenant and cycle enforcement live in the service layer, which has
+// repository access to walk the ancestor chain.
+func (b *BusinessUnit) SetParent(parentID *shared.ID) error {
+	if parentID != nil && *parentID == b.id {
+		return fmt.Errorf("%w: a business unit cannot be its own parent", shared.ErrValidation)
+	}
+	b.parentID = parentID
+	b.updatedAt = time.Now()
+	return nil
+}
+
+// UpdateStats updates cached statistics.
+func (b *BusinessUnit) UpdateStats(assetCount, findingCount, criticalCount int, avgRisk float64) {
+	b.assetCount = assetCount
+	b.findingCount = findingCount
+	b.criticalFindingCount = criticalCount
+	b.avgRiskScore = avgRisk
+	b.updatedAt = time.Now()
+}
+
+// ShowStats replaces the counters for display, without touching updated_at.
+// Used to present counts over a reader's data scope; never persist the unit
+// after calling it.
+func (b *BusinessUnit) ShowStats(st Stats) {
+	b.assetCount = st.AssetCount
+	b.findingCount = st.FindingCount
+	b.criticalFindingCount = st.CriticalFindingCount
+	b.avgRiskScore = st.AvgRiskScore
+}
+
+// HideOwnerEmail blanks the owner email for display, without touching
+// updated_at: a reader without full data access never sees it (personal
+// data). Never persist the unit after calling it.
+func (b *BusinessUnit) HideOwnerEmail() { b.ownerEmail = "" }
+
+// Errors
+var ErrNotFound = fmt.Errorf("%w: business unit not found", shared.ErrNotFound)
+
+// Filter defines listing criteria.
+type Filter struct {
+	TenantID *shared.ID
+	Search   *string
+	// IDs narrows the list to these units (the single-unit read path).
+	IDs []shared.ID
+	// ParentID narrows the list to the direct children of this unit.
+	ParentID *shared.ID
+	// DataScope: a restricted scope keeps only the units visible to that
+	// reader (the unit or one below it holds an asset in the scope); nil or
+	// an unrestricted scope lists every unit of the tenant.
+	DataScope *shared.DataScope
+}
+
+// Repository defines persistence.
+type Repository interface {
+	Create(ctx context.Context, bu *BusinessUnit) error
+	GetByID(ctx context.Context, tenantID, id shared.ID) (*BusinessUnit, error)
+	Update(ctx context.Context, bu *BusinessUnit) error
+	Delete(ctx context.Context, tenantID, id shared.ID) error
+	List(ctx context.Context, filter Filter, page pagination.Pagination) (pagination.Result[*BusinessUnit], error)
+	// Asset linking
+	AddAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error
+	RemoveAsset(ctx context.Context, tenantID, buID, assetID shared.ID) error
+	ListAssetIDs(ctx context.Context, tenantID, buID shared.ID) ([]shared.ID, error)
+	// RecalculateCounts refreshes the cached asset/finding rollup counters
+	// for a business unit from its current membership.
+	RecalculateCounts(ctx context.Context, tenantID, buID shared.ID) error
+	// ScopedStats returns the rollup counters of the given units counted
+	// over the assets inside scope only (a unit with no in-scope asset has
+	// all-zero stats). It never writes.
+	ScopedStats(ctx context.Context, tenantID shared.ID, buIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]Stats, error)
+}
+
+// Stats are a business unit's rollup counters.
+type Stats struct {
+	AssetCount           int
+	FindingCount         int
+	CriticalFindingCount int
+	AvgRiskScore         float64
+}

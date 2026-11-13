@@ -60,7 +60,7 @@ import {
   type ComplianceControlApi,
   type ComplianceAssessmentApi,
 } from '@/features/compliance/api/use-compliance-api'
-import { mutate as swrMutate } from 'swr'
+import { mutate as swrMutate } from '@/lib/swr-mutate'
 import { exportToCsv } from '@/hooks/use-csv-export'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Tag } from '@/components/ui/tag'

@@ -1,0 +1,102 @@
+package handler
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/openctemio/openctem/server/internal/app/asset"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// AssetImportHandler handles bulk asset import endpoints.
+type AssetImportHandler struct {
+	service      *asset.AssetImportService
+	logger       *logger.Logger
+	auditService *auditapp.AuditService
+	tagGovernor  TagGovernor
+}
+
+// SetAuditService wires the audit logger: every import records who imported
+// what and how many assets it created or updated.
+func (h *AssetImportHandler) SetAuditService(svc *auditapp.AuditService) {
+	h.auditService = svc
+}
+
+// auditImport records a finished import (counts only, never row data).
+func (h *AssetImportHandler) auditImport(r *http.Request, source string, result *asset.AssetImportResult) {
+	if h.auditService == nil || result == nil {
+		return
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetImported, auditdom.ResourceTypeAsset, "").
+		WithMessage("Assets imported from "+source).
+		WithSeverity(auditdom.SeverityForAction(auditdom.ActionAssetImported)).
+		WithMetadata("source", source).
+		WithMetadata("created", result.AssetsCreated).
+		WithMetadata("updated", result.AssetsUpdated).
+		WithMetadata("skipped", result.AssetsSkipped).
+		WithMetadata("errors", len(result.Errors))
+	actx := auditapp.AuditContext{
+		TenantID:   middleware.GetTenantID(r.Context()),
+		ActorID:    middleware.GetUserID(r.Context()),
+		ActorEmail: auditActorEmail(r.Context()),
+		ActorIP:    getClientIP(r),
+		UserAgent:  r.UserAgent(),
+		RequestID:  middleware.GetRequestID(r.Context()),
+	}
+	auditapp.RecordOrWarn(r.Context(), h.logger, h.auditService, actx, event)
+}
+
+// NewAssetImportHandler creates a new AssetImportHandler.
+func NewAssetImportHandler(svc *asset.AssetImportService, log *logger.Logger) *AssetImportHandler {
+	return &AssetImportHandler{service: svc, logger: log}
+}
+
+// MaxAssetCSVImportBody bounds the CSV body of POST /assets/import/csv. The
+// route declares it as its body limit, which replaces the global one.
+const MaxAssetCSVImportBody = 50 << 20
+
+// ImportCSV handles POST /api/v1/assets/import/csv
+// @Summary      Import assets from CSV
+// @Description  Creates or updates assets from a CSV body (at most 50 MB). Needs assets:write and assets:import.
+// @Tags         Assets
+// @Accept       text/csv
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  asset.AssetImportResult
+// @Failure      400  {object}  apierror.Error
+// @Failure      403  {object}  apierror.Error
+// @Router       /assets/import/csv [post]
+func (h *AssetImportHandler) ImportCSV(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	r.Body = http.MaxBytesReader(w, r.Body, MaxAssetCSVImportBody)
+
+	// A row that sets a tag a rule reads needs the permission of that rule.
+	guard := func(tags []string) error {
+		if _, refusal := checkTagChange(r.Context(), h.tagGovernor, tenantID, nil, tags); refusal != nil {
+			return fmt.Errorf("%s", refusal.message)
+		}
+		return nil
+	}
+	result, err := h.service.ImportCSVAssetsGuarded(r.Context(), tenantID, r.Body, guard)
+	if err != nil {
+		if strings.Contains(err.Error(), "validation") {
+			apierror.BadRequest(err.Error()).WriteJSON(w)
+		} else {
+			h.logger.Error("CSV import failed", "error", err)
+			apierror.InternalServerError("import failed").WriteJSON(w)
+		}
+		return
+	}
+	h.auditImport(r, "csv", result)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(result)
+}

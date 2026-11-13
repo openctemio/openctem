@@ -1,9 +1,10 @@
 /**
  * Ticket create policy of a Jira integration: which findings the automatic
  * path files as issues, its preview, and a finding's holds
- * (api/docs/architecture/ticket-create-policy.md).
+ * (server/docs/architecture/ticket-create-policy.md).
  */
-import useSWR, { mutate } from 'swr'
+import useSWR from 'swr'
+import { mutate } from '@/lib/swr-mutate'
 import { get, post, put } from '@/lib/api/client'
 import { useTenant } from '@/context/tenant-provider'
 

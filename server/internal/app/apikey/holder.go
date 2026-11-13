@@ -1,0 +1,99 @@
+package apikey
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
+	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
+)
+
+// MembershipSource reads a user's membership in a tenant (tenant.Repository).
+type MembershipSource interface {
+	GetMembership(ctx context.Context, userID, tenantID shared.ID) (*tenantdom.Membership, error)
+}
+
+// UserSource reads a user account (user.Repository).
+type UserSource interface {
+	GetByID(ctx context.Context, id shared.ID) (*userdom.User, error)
+}
+
+// PermissionSource returns a user's current permissions in a tenant
+// (PermissionCacheService: Redis, then the role tables).
+type PermissionSource interface {
+	GetPermissionsWithFallback(ctx context.Context, tenantID, userID string) ([]string, error)
+}
+
+// NewMembershipChecker returns the MembershipChecker production wires: the
+// key's user must be an ACTIVE member of the key's tenant and, when users is
+// non-nil, an active account (not blocked); when orgs is non-nil the
+// organization must not be suspended. A lookup error is returned and the key
+// rejected. API keys and MCP tokens both ask it on every request.
+func NewMembershipChecker(memberships MembershipSource, users UserSource, orgs tenantdom.AccessGate) MembershipChecker {
+	return membershipChecker{memberships: memberships, users: users, orgs: orgs}
+}
+
+type membershipChecker struct {
+	memberships MembershipSource
+	users       UserSource
+	orgs        tenantdom.AccessGate
+}
+
+func (c membershipChecker) IsActiveMember(ctx context.Context, tenantID, userID shared.ID) (bool, error) {
+	if c.orgs != nil {
+		if err := c.orgs.CheckAccess(ctx, tenantID); err != nil {
+			if errors.Is(err, tenantdom.ErrOrganizationSuspended) || errors.Is(err, shared.ErrNotFound) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
+	m, err := c.memberships.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return false, err
+	}
+	if m.Status() != tenantdom.MemberStatusActive || m.IsExpired(time.Now()) {
+		// An expired end date counts at once; the sweeper that suspends the
+		// membership runs once a minute.
+		return false, nil
+	}
+	if c.users != nil {
+		u, err := c.users.GetByID(ctx, userID)
+		if err != nil {
+			return false, err
+		}
+		if !u.IsActive() {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// NewHolderPermissions returns the HolderPermissions production wires. Owners
+// and admins bypass permission checks on the JWT path, so they hold every
+// permission; anyone else holds the permissions of their current roles.
+func NewHolderPermissions(memberships MembershipSource, perms PermissionSource) HolderPermissions {
+	return holderPermissions{memberships: memberships, perms: perms}
+}
+
+type holderPermissions struct {
+	memberships MembershipSource
+	perms       PermissionSource
+}
+
+func (h holderPermissions) HeldPermissions(ctx context.Context, tenantID, userID shared.ID) (bool, []string, error) {
+	m, err := h.memberships.GetMembership(ctx, userID, tenantID)
+	if err != nil {
+		return false, nil, err
+	}
+	if r := m.Role(); r == tenantdom.RoleOwner || r == tenantdom.RoleAdmin {
+		return true, nil, nil
+	}
+	perms, err := h.perms.GetPermissionsWithFallback(ctx, tenantID.String(), userID.String())
+	if err != nil {
+		return false, nil, err
+	}
+	return false, perms, nil
+}

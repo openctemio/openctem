@@ -68,8 +68,8 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -90,8 +90,8 @@ jobs:
 
       - name: Build the API, the migrations and the console
         run: |
-          go -C api build -o "$RUNNER_TEMP/server" ./cmd/server
-          go -C api build -o "$RUNNER_TEMP/openctem-migrate" ./cmd/openctem-migrate
+          go -C server build -o "$RUNNER_TEMP/server" ./cmd/server
+          go -C server build -o "$RUNNER_TEMP/openctem-migrate" ./cmd/openctem-migrate
           ln -s server "$RUNNER_TEMP/bootstrap-admin"
           npm --prefix web run build:console
 

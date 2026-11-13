@@ -1,0 +1,102 @@
+# Betterleaks configuration for OpenCTEM API (gitleaks-compatible format)
+# https://github.com/betterleaks/betterleaks/blob/main/docs/config.md
+
+[extend]
+# Use the default rules as a base
+useDefault = true
+
+[allowlist]
+description = "Allowlist for OpenCTEM API"
+paths = [
+    # Test files with fake credentials
+    '''.*_test\.go$''',
+    '''.*\.test\.go$''',
+    # Frontend unit tests and fixtures (web/ after the monorepo import)
+    '''.*\.test\.tsx?$''',
+    '''.*/__tests__/.*''',
+    '''.*/mock-data/.*''',
+    # Documentation
+    '''.*\.md$''',
+    # Example/template files
+    '''.*\.example$''',
+    '''.*\.sample$''',
+    # Generated files
+    '''vendor/.*''',
+    '''node_modules/.*''',
+    '''\.git/.*''',
+    # Development scripts (contains placeholder credentials for local dev)
+    '''scripts/.*''',
+    '''server/scripts/.*''',
+    '''.*/scripts/.*''',
+]
+
+# Regexes for allowed secrets (e.g., placeholder values)
+regexes = [
+    # Common placeholder patterns
+    '''(?i)your[-_]?(api[-_]?key|secret|token|password)''',
+    '''(?i)(example|sample|test|fake|dummy|placeholder)''',
+    '''xxx+''',
+    '''000+''',
+    '''changeme''',
+    '''<.*>''',
+    '''\$\{.*\}''',
+    # GitHub Personal Access Token placeholder (ghp_xxxx...)
+    '''ghp_x{10,}''',
+    # Ephemeral Postgres service container used by CI jobs
+    '''^secret$''',
+]
+
+# Allow specific commits (use sparingly)
+commits = []
+
+# Additional rules
+[[rules]]
+id = "internal-token"
+description = "Internal API key/token pattern"
+regex = '''(API_KEY|API_TOKEN)\s*=\s*["']?([a-zA-Z0-9_-]{20,})["']?'''
+entropy = 3.5
+secretGroup = 2
+allowlist = { regexes = ['''(test|example|placeholder|changeme|your-api-key)'''] }
+
+[[rules]]
+id = "postgresql-connection-string"
+description = "PostgreSQL connection string"
+regex = '''postgres(ql)?://[^:]+:[^@]+@[^/]+/\w+'''
+entropy = 0
+allowlist = { regexes = ['''postgres(ql)?://(user|username|test|admin|openctem):(pass|password|secret|changeme|openctem)@(localhost|127\.0\.0\.1|db|postgres|host)[:\d]*/'''] }
+
+[[rules]]
+id = "redis-connection-string"
+description = "Redis connection string"
+regex = '''redis://[^:]*:[^@]+@[^/]+'''
+entropy = 0
+allowlist = { regexes = ['''redis://[^:]*:(password|secret)@(localhost|127\.0\.0\.1|redis)'''] }
+
+# OpenCTEM sensor credentials (server/docs/architecture/agent-identity.md,
+# "Credential formats"). octs_ and octe_ are <prefix> + 43 base62 characters
+# (32 random bytes) + 6 base62 characters (CRC32 of the random part); the
+# regex pins that exact shape so it cannot match prose or placeholders. The
+# checksum cannot be checked in a regex: it is what lets a scanner with code
+# (and the API) discard look-alikes. Test fixtures never hold a literal key:
+# Go tests mint keys at run time and web fixtures use short placeholders
+# (web/src/test/sensor-keys.ts); *_test.go is also allowlisted above.
+[[rules]]
+id = "openctem-sensor-key"
+description = "OpenCTEM sensor API key (octs_)"
+regex = '''\b(octs_[0-9A-Za-z]{43}[0-9A-Za-z]{6})\b'''
+secretGroup = 1
+keywords = ["octs_"]
+
+[[rules]]
+id = "openctem-enrollment-token"
+description = "OpenCTEM sensor enrollment token (octe_)"
+regex = '''\b(octe_[0-9A-Za-z]{43}[0-9A-Za-z]{6})\b'''
+secretGroup = 1
+keywords = ["octe_"]
+
+[[rules]]
+id = "openctem-legacy-sensor-key"
+description = "OpenCTEM legacy sensor API key (rda_, retired after enrollment ships)"
+regex = '''\b(rda_[0-9a-f]{64})\b'''
+secretGroup = 1
+keywords = ["rda_"]

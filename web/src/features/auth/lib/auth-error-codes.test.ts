@@ -89,7 +89,10 @@ describe('loginErrorCodeFor', () => {
 // The API table (auth_error_codes.go) and this list must not drift.
 describe('API table in step with the web codes', () => {
   const goFile = readFileSync(
-    path.resolve(__dirname, '../../../../../api/internal/infra/http/handler/auth_error_codes.go'),
+    path.resolve(
+      __dirname,
+      '../../../../../server/internal/infra/http/handler/auth_error_codes.go'
+    ),
     'utf8'
   )
   const tableStart = goFile.indexOf('var authErrorTable')

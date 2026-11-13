@@ -3,7 +3,7 @@
  * the attribute facets (research/77). One function, so the inventory never
  * keeps a per-type key list.
  *
- * An attribute is a flat property key (api/configs/asset-types.yaml). Two
+ * An attribute is a flat property key (server/configs/asset-types.yaml). Two
  * types keep some facts in a column or an extension table instead of
  * `properties`; the registry declares them as attributes all the same:
  *  - `provider` is the assets.provider column on every type;

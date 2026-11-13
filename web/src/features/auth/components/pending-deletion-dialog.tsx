@@ -18,7 +18,7 @@ import { cancelOrganizationDeletionAction, type LoginTenant } from '../actions/l
 
 /**
  * Shown at sign-in to an owner of an organization that is scheduled for
- * deletion (api/docs/architecture/organization-deletion.md): the
+ * deletion (server/docs/architecture/organization-deletion.md): the
  * organization is closed until then, and an owner can cancel. `onCancelled`
  * gets the organization that was reopened; `onContinue` goes on without it.
  */

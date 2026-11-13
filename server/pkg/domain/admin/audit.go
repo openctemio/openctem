@@ -1,0 +1,366 @@
+package admin
+
+import (
+	"encoding/json"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+)
+
+// =============================================================================
+// Audit Log Entity
+// =============================================================================
+
+// AuditLog represents an immutable audit log entry for admin actions.
+// Once created, audit logs cannot be modified or deleted (append-only).
+type AuditLog struct {
+	ID shared.ID
+
+	// Who performed the action
+	AdminID    *shared.ID // May be nil if admin was deleted
+	AdminEmail string     // Preserved even if admin is deleted
+
+	// What action was performed
+	Action       string     // e.g., "sensor.create", "token.revoke"
+	ResourceType string     // e.g., "sensor", "token", "admin"
+	ResourceID   *shared.ID // ID of affected resource
+	ResourceName string     // Name for display (preserved if resource deleted)
+
+	// Request details (sanitized - no secrets)
+	RequestMethod string
+	RequestPath   string
+	RequestBody   map[string]interface{} // Sensitive fields should be redacted
+
+	// Response
+	ResponseStatus int
+
+	// Context
+	IPAddress string
+	UserAgent string
+
+	// Result
+	Success      bool
+	ErrorMessage string
+
+	// Severity is info by default; security-relevant events (break-glass
+	// sign-ins, platform IdP changes) are high.
+	Severity string
+
+	// Timestamp (immutable)
+	CreatedAt time.Time
+}
+
+// NewAuditLog creates a new AuditLog entry.
+func NewAuditLog(
+	admin *AdminUser,
+	action string,
+	resourceType string,
+	resourceID *shared.ID,
+	resourceName string,
+) *AuditLog {
+	var adminID *shared.ID
+	var adminEmail string
+
+	if admin != nil {
+		id := admin.ID()
+		adminID = &id
+		adminEmail = admin.Email()
+	}
+
+	return &AuditLog{
+		ID:           shared.NewID(),
+		AdminID:      adminID,
+		AdminEmail:   adminEmail,
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		ResourceName: resourceName,
+		Success:      true, // Default to success
+		Severity:     SeverityInfo,
+		CreatedAt:    time.Now(),
+	}
+}
+
+// Audit severities.
+const (
+	SeverityInfo = "info"
+	SeverityHigh = "high"
+	// SeverityCritical marks a change to the whole platform's security
+	// posture (the sign-up policy).
+	SeverityCritical = "critical"
+)
+
+// SetRequest sets the request details.
+func (a *AuditLog) SetRequest(method, path string, body map[string]interface{}) {
+	a.RequestMethod = method
+	a.RequestPath = path
+	a.RequestBody = redactSensitiveFields(body)
+}
+
+// SetResponse sets the response status.
+func (a *AuditLog) SetResponse(status int) {
+	a.ResponseStatus = status
+	a.Success = status >= 200 && status < 400
+}
+
+// SetContext sets the request context (IP, user agent).
+func (a *AuditLog) SetContext(ip, userAgent string) {
+	a.IPAddress = ip
+	a.UserAgent = userAgent
+}
+
+// SetError marks the audit log as failed with an error message.
+func (a *AuditLog) SetError(message string) {
+	a.Success = false
+	a.ErrorMessage = message
+}
+
+// =============================================================================
+// Audit Log Builder (fluent API)
+// =============================================================================
+
+// AuditLogBuilder provides a fluent API for creating audit logs.
+type AuditLogBuilder struct {
+	log *AuditLog
+}
+
+// NewAuditLogBuilder creates a new AuditLogBuilder.
+func NewAuditLogBuilder(admin *AdminUser, action string) *AuditLogBuilder {
+	return &AuditLogBuilder{
+		log: NewAuditLog(admin, action, "", nil, ""),
+	}
+}
+
+// Resource sets the resource being acted upon.
+func (b *AuditLogBuilder) Resource(resourceType string, resourceID *shared.ID, resourceName string) *AuditLogBuilder {
+	b.log.ResourceType = resourceType
+	b.log.ResourceID = resourceID
+	b.log.ResourceName = resourceName
+	return b
+}
+
+// Request sets the request details.
+func (b *AuditLogBuilder) Request(method, path string, body map[string]interface{}) *AuditLogBuilder {
+	b.log.SetRequest(method, path, body)
+	return b
+}
+
+// Response sets the response status.
+func (b *AuditLogBuilder) Response(status int) *AuditLogBuilder {
+	b.log.SetResponse(status)
+	return b
+}
+
+// Context sets the request context.
+func (b *AuditLogBuilder) Context(ip, userAgent string) *AuditLogBuilder {
+	b.log.SetContext(ip, userAgent)
+	return b
+}
+
+// Error marks the log as failed.
+func (b *AuditLogBuilder) Error(message string) *AuditLogBuilder {
+	b.log.SetError(message)
+	return b
+}
+
+// High marks the entry as high severity.
+func (b *AuditLogBuilder) High() *AuditLogBuilder {
+	b.log.Severity = SeverityHigh
+	return b
+}
+
+// Critical marks the entry as critical severity.
+func (b *AuditLogBuilder) Critical() *AuditLogBuilder {
+	b.log.Severity = SeverityCritical
+	return b
+}
+
+// Build returns the completed AuditLog.
+func (b *AuditLogBuilder) Build() *AuditLog {
+	return b.log
+}
+
+// =============================================================================
+// Audit Actions Constants
+// =============================================================================
+
+// Audit action constants for consistent naming.
+const (
+	// Admin user actions
+	AuditActionAdminCreate     = "admin.create"
+	AuditActionAdminUpdate     = "admin.update"
+	AuditActionAdminDelete     = "admin.delete"
+	AuditActionAdminActivate   = "admin.activate"
+	AuditActionAdminDeactivate = "admin.deactivate"
+	AuditActionAdminRotateKey  = "admin.rotate_key" // historical: admin API keys were removed
+
+	// Platform sensor actions
+	AuditActionSensorCreate  = "sensor.create"
+	AuditActionSensorUpdate  = "sensor.update"
+	AuditActionSensorDelete  = "sensor.delete"
+	AuditActionSensorEnable  = "sensor.enable"
+	AuditActionSensorDisable = "sensor.disable"
+
+	// Shared sensor enrollment (RFC-100 §7): a super administrator (or the
+	// install's bootstrap tool) issues a single-use token; a sensor spends
+	// it, is enrolled at instance scope and confirms its key.
+	AuditActionInstanceTokenCreate   = "sensor.instance_enrollment_token.create"
+	AuditActionInstanceTokenRedeem   = "sensor.instance_enrollment_token.redeem"
+	AuditActionSharedSensorEnrolled  = "sensor.shared_enrolled"
+	AuditActionSharedSensorConfirmed = "sensor.shared_pairing_completed"
+
+	// Bootstrap token actions
+	AuditActionTokenCreate = "token.create"
+	AuditActionTokenRevoke = "token.revoke"
+	AuditActionTokenDelete = "token.delete"
+
+	// Platform job actions
+	AuditActionJobCancel = "job.cancel"
+
+	// Target mapping actions
+	AuditActionTargetMappingCreate = "target_mapping.create"
+	AuditActionTargetMappingUpdate = "target_mapping.update"
+	AuditActionTargetMappingDelete = "target_mapping.delete"
+
+	// Authentication actions
+	AuditActionAuthSuccess = "auth.success"
+	AuditActionAuthFailure = "auth.failure"
+)
+
+// Resource type constants.
+const (
+	ResourceTypeAdmin         = "admin"
+	ResourceTypeSensor        = "sensor"
+	ResourceTypeToken         = "token"
+	ResourceTypeJob           = "job"
+	ResourceTypeTargetMapping = "target_mapping"
+
+	ResourceTypeInstanceEnrollmentToken = "instance_enrollment_token"
+)
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+// redactSensitiveFields redacts sensitive fields from request body.
+func redactSensitiveFields(body map[string]interface{}) map[string]interface{} {
+	if body == nil {
+		return nil
+	}
+
+	// Create a deep copy
+	result := make(map[string]interface{})
+	data, _ := json.Marshal(body)
+	_ = json.Unmarshal(data, &result)
+
+	// List of sensitive field names to redact
+	sensitiveFields := []string{
+		"password", "api_key", "apiKey", "api_key_hash",
+		"token", "secret", "credential", "credentials",
+		"authorization", "auth_token", "authToken",
+		"private_key", "privateKey", "access_token", "accessToken",
+		"refresh_token", "refreshToken", "client_secret", "clientSecret",
+		"totp_code", "totpCode",
+		"code", "totp", "recovery_code", "recovery_codes",
+	}
+
+	redactFields(result, sensitiveFields)
+	return result
+}
+
+// sensitiveSuffixes redact any key that ends with one of them, whatever its
+// case (client_secret, Signing_Key, reset_token, new_password, ...).
+var sensitiveSuffixes = []string{"_secret", "_key", "_token", "_password", "secret", "password"}
+
+func isSensitiveKey(key string, exact []string) bool {
+	for _, sensitive := range exact {
+		if strings.EqualFold(key, sensitive) {
+			return true
+		}
+	}
+	lower := strings.ToLower(key)
+	for _, suffix := range sensitiveSuffixes {
+		if strings.HasSuffix(lower, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// redactFields recursively redacts sensitive fields.
+func redactFields(data map[string]interface{}, sensitiveFields []string) {
+	for key, value := range data {
+		// Check if this key should be redacted
+		if isSensitiveKey(key, sensitiveFields) {
+			data[key] = "[REDACTED]"
+		} else if str, ok := value.(string); ok && isURLKey(key) {
+			data[key] = redactURL(str)
+		}
+
+		// Recurse into nested maps
+		switch v := value.(type) {
+		case map[string]interface{}:
+			redactFields(v, sensitiveFields)
+		case []interface{}:
+			for _, item := range v {
+				if nested, ok := item.(map[string]interface{}); ok {
+					redactFields(nested, sensitiveFields)
+				}
+			}
+		}
+	}
+}
+
+// isURLKey matches request fields that carry an address (url, webhook_url,
+// issuer_url, base_url...). A webhook address works as a bearer secret (its
+// path or query is the credential), so only its origin is recorded.
+func isURLKey(key string) bool {
+	lower := strings.ToLower(key)
+	return lower == "url" || strings.HasSuffix(lower, "_url") || strings.HasSuffix(lower, "url") || strings.Contains(lower, "webhook")
+}
+
+// redactURL keeps the scheme and host of an address and drops the user
+// information, path, query and fragment, which can hold a credential.
+func redactURL(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return raw
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return "[REDACTED]"
+	}
+	out := u.Scheme + "://" + u.Host
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		out += "/[REDACTED]"
+	}
+	return out
+}
+
+// =============================================================================
+// Audit Log Filter (for queries)
+// =============================================================================
+
+// AuditLogFilter represents filter options for listing audit logs.
+type AuditLogFilter struct {
+	AdminID      *shared.ID
+	AdminEmail   string
+	Action       string
+	ResourceType string
+	ResourceID   *shared.ID
+	Success      *bool
+	StartTime    *time.Time
+	EndTime      *time.Time
+	Search       string // Search in action, resource_name, error_message
+	// ChangesOnly leaves out reads and write-ahead rows: a row stays when it
+	// records a non-GET request (a write, a sign-in, an elevation), a request
+	// without a method (a command on the host), or anything that failed (a
+	// refused read is a change worth seeing). The rows themselves are never
+	// dropped; this is a view of the same chain.
+	ChangesOnly bool
+}
+
+// AuditActionWriteStarted is the write-ahead row an audited write stores
+// before it runs (its outcome follows in a row of its own).
+const AuditActionWriteStarted = "admin.write_started"

@@ -1,0 +1,1024 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	exposuresvc "github.com/openctemio/openctem/server/internal/app/exposure"
+	"github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/credential"
+	"github.com/openctemio/openctem/server/pkg/domain/ctemid"
+	"github.com/openctemio/openctem/server/pkg/domain/exposure"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/validator"
+)
+
+// ExposureHandler handles exposure event HTTP requests.
+type ExposureHandler struct {
+	service     *exposuresvc.ExposureService
+	userService *tenant.UserService
+	validator   *validator.Validator
+	logger      *logger.Logger
+	// unclassified is the tenant unclassified-scans mode for the Exposure
+	// Items view (nil: unclassified assets count as not scanned).
+	unclassified AssetUnclassifiedPolicy
+}
+
+// NewExposureHandler creates a new exposure handler.
+func NewExposureHandler(svc *exposuresvc.ExposureService, userSvc *tenant.UserService, v *validator.Validator, log *logger.Logger) *ExposureHandler {
+	return &ExposureHandler{
+		service:     svc,
+		userService: userSvc,
+		validator:   v,
+		logger:      log,
+	}
+}
+
+// ExposureResponse represents an exposure event in API responses.
+type ExposureResponse struct {
+	ID string `json:"id"`
+
+	// PendingDisposition is an accept or false-positive request on a high or
+	// critical exposure that waits for a second approver.
+	PendingDisposition *exposuresvc.PendingDispositionView `json:"pending_disposition,omitempty"`
+
+	AssetID   string `json:"asset_id,omitempty"`
+	EventType string `json:"event_type"`
+	// DisplayCategory is the fixed presentation group of the event type.
+	DisplayCategory string `json:"display_category"`
+	// Summary is the one-line description rendered from the details: an
+	// English sentence plus the values it was built from, so a client can
+	// render it in its own language. Scan output: render as text.
+	Summary ExposureSummaryResponse `json:"summary"`
+	// Severity is the effective severity (an analyst override when one
+	// stands).
+	Severity string `json:"severity"`
+	// SeverityOverride is present while an analyst override stands.
+	SeverityOverride *ExposureSeverityOverrideResponse `json:"severity_override,omitempty"`
+	State            string                            `json:"state"`
+	Title            string                            `json:"title"`
+	Description      string                            `json:"description,omitempty"`
+	Details          map[string]any                    `json:"details,omitempty"`
+	// CTEMID is the CTEM-ID code derived from the exposure, its details and
+	// its linked asset; absent when the data does not settle one.
+	CTEMID          *ExposureCTEMIDResponse `json:"ctem_id,omitempty"`
+	Fingerprint     string                  `json:"fingerprint"`
+	Source          string                  `json:"source"`
+	FirstSeenAt     time.Time               `json:"first_seen_at"`
+	LastSeenAt      time.Time               `json:"last_seen_at"`
+	ResolvedAt      *time.Time              `json:"resolved_at,omitempty"`
+	ResolvedBy      string                  `json:"resolved_by,omitempty"`
+	ResolutionNotes string                  `json:"resolution_notes,omitempty"`
+	CreatedAt       time.Time               `json:"created_at"`
+	UpdatedAt       time.Time               `json:"updated_at"`
+
+	// CTEM enrichment (read-time, additive). Present only when an enricher is
+	// wired and the exposure has a linked asset (criticality/reachability) or a
+	// CVE in its details (EPSS/KEV).
+	EffectiveCriticality string     `json:"effective_criticality,omitempty"`
+	IsInternetAccessible *bool      `json:"is_internet_accessible,omitempty"`
+	OnAttackPath         *bool      `json:"on_attack_path,omitempty"`
+	CVEID                string     `json:"cve_id,omitempty"`
+	EPSSScore            *float64   `json:"epss_score,omitempty"`
+	EPSSPercentile       *float64   `json:"epss_percentile,omitempty"`
+	IsInKEV              *bool      `json:"is_in_kev,omitempty"`
+	KEVDueDate           *time.Time `json:"kev_due_date,omitempty"`
+}
+
+// ExposureSummaryResponse is the one-line description of an exposure.
+type ExposureSummaryResponse struct {
+	Text    string            `json:"text"`
+	Variant string            `json:"variant,omitempty"`
+	Args    map[string]string `json:"args,omitempty"`
+}
+
+// ExposureCTEMIDResponse is an exposure's CTEM-ID code
+// (docs/architecture/ctem-id-mapping.md).
+type ExposureCTEMIDResponse struct {
+	// Code, such as CTEM-DOM-2.
+	Code string `json:"code"`
+	// CatalogVersion is the catalog version the rules follow.
+	CatalogVersion string `json:"catalog_version"`
+	// Basis is the signal the code was chosen from: lookalike_technique,
+	// credential_dump, asset_scope or asset_type.
+	Basis string `json:"basis"`
+	// URL is the code's page on ctem.org.
+	URL string `json:"url"`
+}
+
+func toCTEMIDResponse(m ctemid.Mapping) *ExposureCTEMIDResponse {
+	return &ExposureCTEMIDResponse{Code: string(m.Code), CatalogVersion: ctemid.CatalogVersion, Basis: string(m.Basis), URL: m.Code.URL()}
+}
+
+// ExposureSeverityOverrideResponse is a standing analyst severity override.
+type ExposureSeverityOverrideResponse struct {
+	// ReportedSeverity is what the producer reported (and keeps reporting).
+	ReportedSeverity string     `json:"reported_severity"`
+	Reason           string     `json:"reason"`
+	OverriddenBy     string     `json:"overridden_by,omitempty"`
+	OverriddenAt     *time.Time `json:"overridden_at,omitempty"`
+}
+
+// ChangeExposureSeverityRequest sets (severity) or removes (empty severity)
+// the analyst override of an exposure's severity.
+type ChangeExposureSeverityRequest struct {
+	Severity string `json:"severity" validate:"omitempty,oneof=critical high medium low info"`
+	Reason   string `json:"reason" validate:"required,max=1000"`
+}
+
+// applyEnrichment copies read-time CTEM enrichment onto an exposure response.
+func applyEnrichment(resp *ExposureResponse, enr exposuresvc.Enrichment) {
+	resp.EffectiveCriticality = enr.EffectiveCriticality
+	resp.IsInternetAccessible = enr.IsInternetAccessible
+	resp.OnAttackPath = enr.OnAttackPath
+	resp.CVEID = enr.CVEID
+	resp.EPSSScore = enr.EPSSScore
+	resp.EPSSPercentile = enr.EPSSPercentile
+	resp.IsInKEV = enr.IsInKEV
+	resp.KEVDueDate = enr.KEVDueDate
+	if enr.CTEMID != nil {
+		resp.CTEMID = toCTEMIDResponse(*enr.CTEMID)
+	}
+}
+
+// CreateExposureRequest represents the request to create an exposure event.
+type CreateExposureRequest struct {
+	AssetID     string         `json:"asset_id" validate:"omitempty,uuid"`
+	EventType   string         `json:"event_type" validate:"required"`
+	Severity    string         `json:"severity" validate:"required"`
+	Title       string         `json:"title" validate:"required,min=1,max=500"`
+	Description string         `json:"description" validate:"max=2000"`
+	Source      string         `json:"source" validate:"required,max=100"`
+	Details     map[string]any `json:"details"`
+}
+
+// ChangeStateRequest represents the request to change exposure state.
+type ChangeStateRequest struct {
+	Reason string `json:"reason" validate:"max=500"`
+	// SelfApprove: the owner approves their own pending request of a high or
+	// critical exposure because no other approver exists. Needs Reason and
+	// a fresh TOTPCode from the owner's authenticator app.
+	SelfApprove bool   `json:"self_approve,omitempty"`
+	TOTPCode    string `json:"totp_code,omitempty" validate:"max=16"`
+}
+
+// BulkIngestRequest represents the request to bulk ingest exposures.
+type BulkIngestRequest struct {
+	Exposures []CreateExposureRequest `json:"exposures" validate:"required,min=1,max=1000,dive"`
+}
+
+// BulkIngestError reports a single exposure item that was dropped during bulk
+// ingest because it failed enum/asset validation. Index is the item's position
+// in the request's exposures array.
+type BulkIngestError struct {
+	Index  int    `json:"index"`
+	Reason string `json:"reason"`
+}
+
+// StateHistoryResponse represents a state history entry in API responses.
+type StateHistoryResponse struct {
+	ID            string            `json:"id"`
+	PreviousState string            `json:"previous_state"`
+	NewState      string            `json:"new_state"`
+	ChangedBy     string            `json:"changed_by,omitempty"`
+	ChangedByUser *StateHistoryUser `json:"changed_by_user,omitempty"`
+	Reason        string            `json:"reason,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
+}
+
+// StateHistoryUser represents the user who changed the state.
+type StateHistoryUser struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Email     string `json:"email"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+}
+
+func toExposureResponse(e *exposure.ExposureEvent) ExposureResponse {
+	assetID := ""
+	if e.AssetID() != nil {
+		assetID = e.AssetID().String()
+	}
+	resolvedBy := ""
+	if e.ResolvedBy() != nil {
+		resolvedBy = e.ResolvedBy().String()
+	}
+	// A leaked credential's secret (sealed or legacy plaintext) never leaves
+	// through the exposure endpoints; see credential.RedactDetails. The
+	// summary is rendered from the redacted details too.
+	details := credential.RedactDetails(e.Details())
+	sum := exposure.SummaryOf(e.EventType(), e.Title(), details)
+	var override *ExposureSeverityOverrideResponse
+	if e.HasSeverityOverride() {
+		p := e.SeverityProvenance()
+		override = &ExposureSeverityOverrideResponse{
+			ReportedSeverity: e.SourceSeverity().String(), Reason: p.OverrideReason, OverriddenAt: p.OverriddenAt,
+		}
+		if p.OverriddenBy != nil {
+			override.OverriddenBy = p.OverriddenBy.String()
+		}
+	}
+	// The asset-free code; applyEnrichment refines it with the linked asset.
+	var ctem *ExposureCTEMIDResponse
+	if m, ok := ctemid.Map(ctemid.Input{EventType: e.EventType(), Details: e.Details()}); ok {
+		ctem = toCTEMIDResponse(m)
+	}
+	return ExposureResponse{
+		ID: e.ID().String(),
+
+		AssetID:          assetID,
+		EventType:        e.EventType().String(),
+		DisplayCategory:  string(e.EventType().Category()),
+		Summary:          ExposureSummaryResponse{Text: sum.Text, Variant: sum.Variant, Args: sum.Args},
+		Severity:         e.Severity().String(),
+		SeverityOverride: override,
+		State:            e.State().String(),
+		Title:            e.Title(),
+		Description:      e.Description(),
+		Details:          details,
+		CTEMID:           ctem,
+		Fingerprint:      e.Fingerprint(),
+		Source:           e.Source(),
+		FirstSeenAt:      e.FirstSeenAt(),
+		LastSeenAt:       e.LastSeenAt(),
+		ResolvedAt:       e.ResolvedAt(),
+		ResolvedBy:       resolvedBy,
+		ResolutionNotes:  e.ResolutionNotes(),
+		CreatedAt:        e.CreatedAt(),
+		UpdatedAt:        e.UpdatedAt(),
+	}
+}
+
+func toStateHistoryResponse(h *exposure.StateHistory) StateHistoryResponse {
+	changedBy := ""
+	if h.ChangedBy() != nil {
+		changedBy = h.ChangedBy().String()
+	}
+	return StateHistoryResponse{
+		ID:            h.ID().String(),
+		PreviousState: h.PreviousState().String(),
+		NewState:      h.NewState().String(),
+		ChangedBy:     changedBy,
+		Reason:        h.Reason(),
+		CreatedAt:     h.CreatedAt(),
+	}
+}
+
+// handleValidationError converts validation errors to API errors and writes response.
+func (h *ExposureHandler) handleValidationError(w http.ResponseWriter, err error) {
+	var validationErrors validator.ValidationErrors
+	if errors.As(err, &validationErrors) {
+		apiErrors := make([]apierror.ValidationError, len(validationErrors))
+		for i, ve := range validationErrors {
+			apiErrors[i] = apierror.ValidationError{
+				Field:   ve.Field,
+				Message: ve.Message,
+			}
+		}
+		apierror.ValidationFailed("Validation failed", apiErrors).WriteJSON(w)
+		return
+	}
+	apierror.BadRequest("Validation error").WriteJSON(w)
+}
+
+// handleServiceError converts service errors to API errors and writes response.
+func (h *ExposureHandler) handleServiceError(w http.ResponseWriter, err error) {
+	if writeDispositionError(w, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, shared.ErrNotFound),
+		exposure.IsExposureEventNotFound(err):
+		apierror.NotFound("exposure event").WriteJSON(w)
+	case exposure.IsExposureEventExists(err):
+		apierror.Conflict("exposure event already exists").WriteJSON(w)
+	case exposure.IsInvalidStateTransition(err):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	default:
+		h.logger.Error("exposure handler error", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+	}
+}
+
+// parseQueryInt64 parses a query parameter as an int64.
+// Returns defaultVal if the input is empty or invalid.
+func parseQueryInt64(s string, defaultVal int64) int64 {
+	if s == "" {
+		return defaultVal
+	}
+	val, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return defaultVal
+	}
+	return val
+}
+
+// Create handles POST /api/v1/exposures
+// @Summary      Create exposure
+// @Description  Create a new exposure event
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        request  body      CreateExposureRequest  true  "Exposure data"
+// @Success      201  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      401  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures [post]
+func (h *ExposureHandler) Create(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req CreateExposureRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	input := exposuresvc.CreateExposureInput{
+		TenantID: tenantID,
+
+		AssetID:     req.AssetID,
+		EventType:   req.EventType,
+		Severity:    req.Severity,
+		Title:       req.Title,
+		Description: req.Description,
+		Source:      req.Source,
+		Details:     req.Details,
+	}
+
+	event, err := h.service.CreateExposure(r.Context(), input)
+	if err != nil {
+		// A refused asset_id (unknown, deleted, another tenant's, or out of
+		// the caller's data scope) gets one generic answer.
+		if errors.Is(err, exposuresvc.ErrExposureAssetNotFound) {
+			apierror.NotFound("Asset").WriteJSON(w)
+			return
+		}
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+}
+
+// Get handles GET /api/v1/exposures/{id}
+// @Summary      Get exposure
+// @Description  Get a single exposure event by ID
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exposure ID"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id} [get]
+func (h *ExposureHandler) Get(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	exposureID := chi.URLParam(r, "id")
+
+	event, err := h.service.GetExposureSecure(r.Context(), tenantID, exposureID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	resp := toExposureResponse(event)
+	enrichMap := h.service.EnrichEvents(r.Context(), tenantID, []*exposure.ExposureEvent{event})
+	if enr, ok := enrichMap[event.ID()]; ok {
+		applyEnrichment(&resp, enr)
+	}
+	if err := h.attachPending(r, tenantID, []*ExposureResponse{&resp}, []*exposure.ExposureEvent{event}); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// Delete handles DELETE /api/v1/exposures/{id}
+// @Summary      Delete exposure
+// @Description  Delete an exposure event
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exposure ID"
+// @Success      204  "No Content"
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id} [delete]
+func (h *ExposureHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	exposureID := chi.URLParam(r, "id")
+
+	if err := h.service.DeleteExposure(r.Context(), exposureID, tenantID); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// List handles GET /api/v1/exposures
+// @Summary      List exposures
+// @Description  Get a paginated list of exposure events
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        asset_id    query     string  false  "Filter by asset ID"
+// @Param        event_type  query     []string false "Filter by event types"
+// @Param        severity    query     []string false "Filter by severities"
+// @Param        state       query     []string false "Filter by states (active, in_progress, resolved, accepted, false_positive)"
+// @Param        category    query     []string false "Filter by display categories (exposed_ports, web_interfaces, exposed_apis, ai_services, web_application, ssl_tls, certificates, hijackable_subdomains, email_security, cloud_storage, code_repositories, credentials_data, dns, lookalike_domains, identity, other)"
+// @Param        search      query     string  false  "Search term"
+// @Param        page        query     int     false  "Page number" default(1)
+// @Param        per_page    query     int     false  "Items per page" default(20)
+// @Success      200  {object}  ListResponse[ExposureResponse]
+// @Failure      400  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures [get]
+func (h *ExposureHandler) List(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	query := r.URL.Query()
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input := exposuresvc.ListExposuresInput{
+		TenantID: tenantID,
+
+		AssetID:         query.Get("asset_id"),
+		Search:          query.Get("search"),
+		FirstSeenAfter:  parseQueryInt64(query.Get("first_seen_after"), 0),
+		FirstSeenBefore: parseQueryInt64(query.Get("first_seen_before"), 0),
+		LastSeenAfter:   parseQueryInt64(query.Get("last_seen_after"), 0),
+		LastSeenBefore:  parseQueryInt64(query.Get("last_seen_before"), 0),
+		Page:            paging.Page,
+		PerPage:         paging.PerPage,
+		SortBy:          query.Get("sort_by"),
+		SortOrder:       query.Get("sort_order"),
+	}
+
+	if types := query["event_type"]; len(types) > 0 {
+		input.EventTypes = types
+	}
+	if sevs := query["severity"]; len(sevs) > 0 {
+		input.Severities = sevs
+	}
+	if states := query["state"]; len(states) > 0 {
+		input.States = states
+	}
+	if sources := query["source"]; len(sources) > 0 {
+		input.Sources = sources
+	}
+	if cats := query["category"]; len(cats) > 0 {
+		input.Categories = cats
+	}
+
+	result, err := h.service.ListExposures(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	enrichMap := h.service.EnrichEvents(r.Context(), tenantID, result.Data)
+	items := make([]ExposureResponse, 0, len(result.Data))
+	for _, e := range result.Data {
+		resp := toExposureResponse(e)
+		if enr, ok := enrichMap[e.ID()]; ok {
+			applyEnrichment(&resp, enr)
+		}
+		items = append(items, resp)
+	}
+	ptrs := make([]*ExposureResponse, len(items))
+	for i := range items {
+		ptrs[i] = &items[i]
+	}
+	if err := h.attachPending(r, tenantID, ptrs, result.Data); err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	response := ListResponse[ExposureResponse]{
+		Data:       items,
+		Total:      result.Total,
+		Page:       result.Page,
+		PerPage:    result.PerPage,
+		TotalPages: result.TotalPages,
+		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// BulkIngest handles POST /api/v1/exposures/ingest
+// @Summary      Bulk ingest exposures
+// @Description  Ingest multiple exposure events at once
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        request  body      BulkIngestRequest  true  "Exposures to ingest"
+// @Success      201  {object}  map[string]interface{}
+// @Failure      400  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/ingest [post]
+func (h *ExposureHandler) BulkIngest(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	var req BulkIngestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	inputs := make([]exposuresvc.CreateExposureInput, 0, len(req.Exposures))
+	for _, exp := range req.Exposures {
+		inputs = append(inputs, exposuresvc.CreateExposureInput{
+			TenantID: tenantID,
+
+			AssetID:     exp.AssetID,
+			EventType:   exp.EventType,
+			Severity:    exp.Severity,
+			Title:       exp.Title,
+			Description: exp.Description,
+			Source:      exp.Source,
+			Details:     exp.Details,
+		})
+	}
+
+	result, err := h.service.BulkIngestExposuresReport(r.Context(), inputs)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	items := make([]ExposureResponse, 0, len(result.Events))
+	for _, e := range result.Events {
+		items = append(items, toExposureResponse(e))
+	}
+
+	// Partial-success: items that failed enum/asset validation are dropped
+	// (not fatal — this batch path intentionally returns 201). Surface which
+	// items were rejected so clients aren't left guessing at a lower count.
+	errorItems := make([]BulkIngestError, 0, len(result.Failures))
+	for _, f := range result.Failures {
+		errorItems = append(errorItems, BulkIngestError{Index: f.Index, Reason: f.Reason})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ingested": len(items),
+		"items":    items,
+		"failed":   len(errorItems),
+		"errors":   errorItems,
+	})
+}
+
+// Resolve handles POST /api/v1/exposures/{id}/resolve
+// @Summary      Resolve exposure
+// @Description  Mark an exposure as resolved
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string             true   "Exposure ID"
+// @Param        request  body      ChangeStateRequest false  "Resolution reason"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/resolve [post]
+func (h *ExposureHandler) Resolve(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	exposureID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	var req ChangeStateRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	event, err := h.service.ResolveExposure(r.Context(), tenantID, exposureID, userID, req.Reason)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+}
+
+// Accept handles POST /api/v1/exposures/{id}/accept
+// @Summary      Accept exposure
+// @Description  Accept an exposure as a known risk
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string             true   "Exposure ID"
+// @Param        request  body      ChangeStateRequest false  "Accept reason"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/accept [post]
+func (h *ExposureHandler) Accept(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	exposureID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	var req ChangeStateRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	h.writeDisposition(w, r, exposuresvc.DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
+		State: exposure.StateAccepted, Reason: req.Reason, Audit: configAuditContext(r),
+		Self: exposuresvc.SelfApproval{Requested: req.SelfApprove, Code: req.TOTPCode}})
+}
+
+// MarkFalsePositive handles POST /api/v1/exposures/{id}/false-positive
+// @Summary      Mark as false positive
+// @Description  Mark an exposure as a false positive
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string             true   "Exposure ID"
+// @Param        request  body      ChangeStateRequest false  "Reason"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/false-positive [post]
+func (h *ExposureHandler) MarkFalsePositive(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	exposureID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	var req ChangeStateRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+
+	h.writeDisposition(w, r, exposuresvc.DispositionCall{TenantID: tenantID, ExposureID: exposureID, UserID: userID,
+		State: exposure.StateFalsePositive, Reason: req.Reason, Audit: configAuditContext(r),
+		Self: exposuresvc.SelfApproval{Requested: req.SelfApprove, Code: req.TOTPCode}})
+}
+
+// Reactivate handles POST /api/v1/exposures/{id}/reactivate
+// @Summary      Reactivate exposure
+// @Description  Reactivate a resolved or accepted exposure
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exposure ID"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/reactivate [post]
+func (h *ExposureHandler) Reactivate(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	exposureID := chi.URLParam(r, "id")
+	userID := middleware.GetUserID(r.Context())
+
+	event, err := h.service.ReactivateExposure(r.Context(), tenantID, exposureID, userID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toExposureResponse(event))
+}
+
+// StartProgress handles POST /api/v1/exposures/{id}/start-progress
+// @Summary      Start work on an exposure
+// @Description  Mark an open exposure as in progress (it stays open). Reactivate moves it back to active.
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string              true   "Exposure ID"
+// @Param        request  body      ChangeStateRequest  false  "Optional note"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/start-progress [post]
+func (h *ExposureHandler) StartProgress(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	var req ChangeStateRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	event, err := h.service.StartProgress(r.Context(), tenantID, chi.URLParam(r, "id"), middleware.GetUserID(r.Context()), req.Reason)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toExposureResponse(event))
+}
+
+// ChangeSeverity handles PATCH /api/v1/exposures/{id}/severity
+// @Summary      Override an exposure's severity
+// @Description  Set the effective severity of an exposure as an analyst decision, or remove the override with an empty severity. A reason is required and the change is audited. The reported severity is kept; the four-eyes rule on accepting or dismissing still reads the highest reported severity.
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                         true  "Exposure ID"
+// @Param        request  body      ChangeExposureSeverityRequest  true  "Severity and reason"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/severity [patch]
+func (h *ExposureHandler) ChangeSeverity(w http.ResponseWriter, r *http.Request) {
+	var req ChangeExposureSeverityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("Invalid request body").WriteJSON(w)
+		return
+	}
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	event, err := h.service.ChangeSeverity(r.Context(), exposuresvc.SeverityChangeCall{
+		TenantID: middleware.MustGetTenantID(r.Context()), ExposureID: chi.URLParam(r, "id"),
+		UserID: middleware.GetUserID(r.Context()), Severity: req.Severity, Reason: req.Reason,
+		Audit: configAuditContext(r),
+	})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toExposureResponse(event))
+}
+
+// GetHistory handles GET /api/v1/exposures/{id}/history
+// @Summary      Get exposure history
+// @Description  Get state change history for an exposure
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id   path      string  true  "Exposure ID"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/history [get]
+func (h *ExposureHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
+	exposureID := chi.URLParam(r, "id")
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	history, err := h.service.GetStateHistory(r.Context(), tenantID, exposureID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Collect unique user IDs from history entries
+	userIDMap := make(map[string]bool)
+	var userIDs []shared.ID
+	for _, entry := range history {
+		if entry.ChangedBy() != nil {
+			idStr := entry.ChangedBy().String()
+			if !userIDMap[idStr] {
+				userIDMap[idStr] = true
+				userIDs = append(userIDs, *entry.ChangedBy())
+			}
+		}
+	}
+
+	// Fetch users to enrich history with user info
+	userMap := make(map[string]*StateHistoryUser)
+	if len(userIDs) > 0 && h.userService != nil {
+		users, err := h.userService.GetByIDs(r.Context(), userIDs)
+		if err != nil {
+			h.logger.Warn("failed to fetch users for history", "error", err)
+			// Continue without user info rather than failing
+		} else {
+			for _, u := range users {
+				userMap[u.ID().String()] = &StateHistoryUser{
+					ID:        u.ID().String(),
+					Name:      u.Name(),
+					Email:     u.Email(),
+					AvatarURL: u.AvatarURL(),
+				}
+			}
+		}
+	}
+
+	// Build response with enriched user info
+	items := make([]StateHistoryResponse, 0, len(history))
+	for _, entry := range history {
+		resp := toStateHistoryResponse(entry)
+		if entry.ChangedBy() != nil {
+			if userInfo, ok := userMap[entry.ChangedBy().String()]; ok {
+				resp.ChangedByUser = userInfo
+			}
+		}
+		items = append(items, resp)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"items": items,
+		"total": len(items),
+	})
+}
+
+// GetStats handles GET /api/v1/exposures/stats
+// @Summary      Get exposure statistics
+// @Description  Get aggregated statistics for exposure events
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Failure      401  {object}  apierror.Error
+// @Failure      500  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/stats [get]
+func (h *ExposureHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+
+	stats, err := h.service.GetExposureStats(r.Context(), tenantID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(stats)
+}
+
+// writeDisposition runs an accept or false-positive call through the
+// four-eyes rule: 202 with the pending request when a second approver must
+// confirm, 200 with the changed exposure otherwise.
+func (h *ExposureHandler) writeDisposition(w http.ResponseWriter, r *http.Request, call exposuresvc.DispositionCall) {
+	out, err := h.service.RequestDisposition(r.Context(), call)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	resp := toExposureResponse(out.Event)
+	status := http.StatusOK
+	if out.Pending {
+		resp.PendingDisposition = exposuresvc.PendingView(out.Request)
+		h.markSelfApproval(r, resp.PendingDisposition)
+		status = http.StatusAccepted
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// DispositionRejectRequest is the body of a disposition rejection.
+type DispositionRejectRequest struct {
+	Reason string `json:"reason" validate:"max=1000"`
+}
+
+// RejectDisposition handles POST /api/v1/exposures/{id}/disposition/reject
+// @Summary      Reject a pending disposition
+// @Description  Reject the pending accept or false-positive request of a high or critical exposure. The requester rejecting their own request cancels it.
+// @Tags         Exposures
+// @Accept       json
+// @Produce      json
+// @Param        id       path      string                    true   "Exposure ID"
+// @Param        request  body      DispositionRejectRequest  false  "Reason"
+// @Success      200  {object}  ExposureResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      404  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /exposures/{id}/disposition/reject [post]
+func (h *ExposureHandler) RejectDisposition(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.MustGetTenantID(r.Context())
+	var req DispositionRejectRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
+	if err := h.validator.Validate(req); err != nil {
+		h.handleValidationError(w, err)
+		return
+	}
+	out, err := h.service.RejectDisposition(r.Context(), exposuresvc.DispositionCall{TenantID: tenantID,
+		ExposureID: chi.URLParam(r, "id"), UserID: middleware.GetUserID(r.Context()), Reason: req.Reason,
+		Audit: configAuditContext(r)})
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toExposureResponse(out.Event))
+}
+
+// attachPending fills the pending disposition of each response
+// (resps[i] is events[i]).
+func (h *ExposureHandler) attachPending(r *http.Request, tenantID string, resps []*ExposureResponse, events []*exposure.ExposureEvent) error {
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil || len(events) == 0 {
+		return nil //nolint:nilerr // the tenant id came from the auth context; nothing to attach
+	}
+	ids := make([]shared.ID, 0, len(events))
+	for _, e := range events {
+		ids = append(ids, e.ID())
+	}
+	pending, err := h.service.PendingDispositions(r.Context(), tid, ids)
+	if err != nil {
+		return err
+	}
+	for i, e := range events {
+		resps[i].PendingDisposition = exposuresvc.PendingView(pending[e.ID()])
+		h.markSelfApproval(r, resps[i].PendingDisposition)
+	}
+	return nil
+}
+
+// markSelfApproval tells the viewer whether they may approve their own
+// pending request (owner, no other approver). Best effort: the call
+// re-checks everything.
+func (h *ExposureHandler) markSelfApproval(r *http.Request, v *exposuresvc.PendingDispositionView) {
+	userID := middleware.GetUserID(r.Context())
+	if v == nil || userID == "" || v.RequestedBy != userID {
+		return
+	}
+	tid, err1 := shared.IDFromString(middleware.GetTenantID(r.Context()))
+	uid, err2 := shared.IDFromString(userID)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	ok, err := h.service.SelfApprovalAvailable(r.Context(), tid, uid)
+	if err != nil {
+		h.logger.Warn("self-approval availability", "error", err)
+		return
+	}
+	v.SelfApprovalAvailable = ok
+}
+
+// writeDispositionError answers the four-eyes refusals of an exposure or
+// credential disposition with their own status and message. False when err
+// is not one of them.
+func writeDispositionError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, exposure.ErrDispositionSelfApproval):
+		apierror.Forbidden("A second approver must confirm this request; you cannot approve your own").WriteJSON(w)
+	case errors.Is(err, exposure.ErrDispositionConflict):
+		apierror.Conflict("A different disposition is already pending; reject it first").WriteJSON(w)
+	case errors.Is(err, exposure.ErrNoPendingDisposition):
+		apierror.NotFound("pending disposition request").WriteJSON(w)
+	case errors.Is(err, shared.ErrConflict):
+		apierror.Conflict("The request was decided by someone else; reload and try again").WriteJSON(w)
+	case errors.Is(err, shared.ErrForbidden):
+		apierror.SafeForbidden(err).WriteJSON(w)
+	default:
+		return false
+	}
+	return true
+}
