@@ -53,6 +53,15 @@ describe('control scale', () => {
     expect(cls).toMatch(/\bmax-sm:px-0\b/)
   })
 
+  it('changes colour without animation unless hovered or focused (no flash on load)', () => {
+    render(<Button>Go</Button>)
+    const cls = screen.getByRole('button', { name: 'Go' }).className
+    expect(cls).not.toMatch(/(^|\s)transition-all(\s|$)/)
+    expect(cls).toMatch(/(^|\s)transition-none(\s|$)/)
+    expect(cls).toMatch(/\bhover:transition-\[/)
+    expect(cls).toMatch(/\bfocus-visible:transition-\[/)
+  })
+
   it('has no signal variant: the main action is ink', () => {
     render(<Button>Go</Button>)
     expect(screen.getByRole('button', { name: 'Go' }).className).toContain('bg-primary')
