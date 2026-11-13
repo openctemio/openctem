@@ -335,7 +335,9 @@ The New Scan wizard asks the inventory directly, under the caller's data
 scope: `GET /assets?under=<root>` for a wildcard and
 `GET /assets?in_cidr=<range>` for an inventory-mode CIDR (count, freshest
 name, sample). The run resolves under the scan actor's act scope, so the
-numbers are what the caller can see now, not a promise.
+numbers are what the caller can see now, not a promise. `in_cidr` also counts
+hosts by a recorded address ([asset-addresses.md](asset-addresses.md)); the
+inventory-mode CIDR selector still targets only assets named by an address.
 
 ### Typing and pasting targets in the wizard
 

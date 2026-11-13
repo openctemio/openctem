@@ -57,16 +57,20 @@ expecting it to stick: the next rescore replaces it. See
 `ip_address` asset as one full-mask address, or NULL when the name is not a
 bare address (a range, a host name, an address with a zone). The partial
 index `idx_assets_ip_addr ON assets (tenant_id, parse_asset_ip(name)) WHERE
-asset_type = 'ip_address'` serves the address filters (`asset_ip` on
-findings, `ip` in the query language): a range compiles to
+asset_type = 'ip_address'` serves the search box's exact address lookups.
+
+The range filters (`ip` on assets, `asset_ip` on findings, `in_cidr` and
+smart group rules) read `asset_ip_addresses`, every address an asset has
+(its name, and the recorded addresses of hosts and network devices), through
+`idx_asset_ip_addresses_range (tenant_id, addr)`: a range compiles to
 
 ```sql
-a.asset_type = 'ip_address'
-  AND parse_asset_ip(a.name) BETWEEN host(network($1::inet))::inet AND host(broadcast($1::inet))::inet
+x.tenant_id = $1
+  AND x.addr BETWEEN host(network($2::inet))::inet AND host(broadcast($2::inet))::inet
 ```
 
-one btree range scan per value, exact because every indexed address has a
-full mask (`pkg/domain/vulnerability.AssetIPRangeSQL`).
+one btree range scan per value, exact because every stored address has a
+full mask (`asset.AssetIDsInRangesSQL`, [asset-addresses.md](asset-addresses.md)).
 
 ### Repository Identifier Normalization
 

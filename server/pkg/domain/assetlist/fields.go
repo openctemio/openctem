@@ -117,13 +117,10 @@ const confidenceSQL = "COALESCE((SELECT acf.confidence FROM asset_attributions a
 const attributionStateSQL = "COALESCE((SELECT aat.state FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id), '" +
 	attribution.FilterUnrecorded + "')"
 
-// ipRangeSQL is an address asset (ip_address, or a host named by an
-// address) inside the bound range: one btree range on idx_assets_ip_addr
-// for ip_address assets (the branches stay apart so the partial index
-// applies).
-const ipRangeSQL = `a.tenant_id = {tenant} AND (
-	(a.asset_type = 'ip_address' AND parse_asset_ip(a.name) BETWEEN host(network({arg}))::inet AND host(broadcast({arg}))::inet)
-	OR (a.asset_type = 'host' AND parse_asset_ip(a.name) BETWEEN host(network({arg}))::inet AND host(broadcast({arg}))::inet))`
+// ipRangeSQL is an asset with its name or a recorded address inside the
+// bound range (asset.AssetIDsInRangesSQL, shared with the findings filter
+// and smart group rules): one btree range scan, pinned to the tenant.
+var ipRangeSQL = asset.AssetInRangesSQL("a.id", "{tenant}", "{arg}")
 
 // underSQL is "the name is one of the bound DNS names or below one on a
 // label boundary"; LIKE metacharacters of the name are escaped.
