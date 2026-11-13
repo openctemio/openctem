@@ -307,7 +307,60 @@ func (e *BuiltinExecutor) finish(ctx context.Context, run *aidom.Run, status aid
 	}
 }
 
+// prepared is what prepare built for one run: the organization's AI
+// settings, the use case setting, the masked bundle (its mapping already
+// saved on the platform) and the knowledge it retrieved.
+type prepared struct {
+	settings tenant.AISettings
+	uc       aidom.UseCaseSetting
+	bundle   *aibundle.Bundle
+	ret      *retrieval
+}
+
+// execute runs a prepared single-shot kind: prepare, the model call in the
+// API process, then apply.
 func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding, kind analyze.Kind, tpl PromptTemplate) ([]Action, error) {
+	prep, err := e.prepare(ctx, p, run, finding, tpl, aidom.ExecutorBuiltin)
+	if err != nil {
+		return nil, err
+	}
+	bundle := prep.bundle
+	provider, err := e.llm.CreateProviderForTenant(run.TenantID.String(), prep.settings)
+	if err != nil {
+		return nil, refused(RunErrNotConfigured)
+	}
+	run.Provider, run.Model = provider.Name(), provider.Model()
+	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
+	defer cancel()
+	resp, err := provider.Complete(callCtx, llm.CompletionRequest{
+		SystemPrompt: tpl.Text, UserPrompt: bundle.Text, MaxTokens: e.cfg.MaxTokens,
+		Temperature: e.cfg.Temperature, JSONMode: true,
+	})
+	if err != nil {
+		e.logger.Warn("AI model call failed", "run_id", run.ID.String(), "provider", provider.Name(), "error", logger.SanitizeError(err))
+		return nil, failed(RunErrProvider)
+	}
+	run.TokensIn, run.TokensOut = resp.PromptTokens, resp.CompletionTokens
+	if e.budget != nil && resp.TotalTokens > 0 {
+		if berr := e.budget.Record(ctx, run.TenantID, resp.TotalTokens); berr != nil {
+			e.logger.Warn("failed to record AI token usage", "run_id", run.ID.String(), "error", logger.SanitizeError(berr))
+		}
+	}
+
+	actions, err := e.apply(ctx, p, run, finding, kind, bundle, prep.ret, prep.uc, resp.Content)
+	if err != nil {
+		return actions, err
+	}
+	e.finish(ctx, run, aidom.RunCompleted, nil)
+	return actions, nil
+}
+
+// prepare runs every check and build step before the model sees anything,
+// for the executor the run is on: the organization's AI settings (AI off
+// refuses), the use case (off refuses) and the data class ceiling, the
+// masked bundle with its mapping saved on the platform, what the run sends
+// recorded on the run, and the token budget pre-check.
+func (e *BuiltinExecutor) prepare(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding, tpl PromptTemplate, executor aidom.Executor) (*prepared, error) {
 	settings, err := e.settings.Get(ctx, run.TenantID, tenant.AISettings{})
 	if err != nil {
 		return nil, err
@@ -316,7 +369,7 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 	if settings.Mode == tenant.AIModeDisabled {
 		return nil, refused(RunErrNotConfigured)
 	}
-	if settings.Mode == tenant.AIModeBYOK && e.ownProviderAllowed != nil && !e.ownProviderAllowed(ctx) {
+	if executor == aidom.ExecutorBuiltin && settings.Mode == tenant.AIModeBYOK && e.ownProviderAllowed != nil && !e.ownProviderAllowed(ctx) {
 		return nil, refused(RunErrNotConfigured)
 	}
 	// The organization's setting of this use case: off refuses the run; the
@@ -330,7 +383,12 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 		return nil, refused(RunErrUseCaseOff)
 	}
 	ceiling, err := aipolicy.ParseClass(string(uc.EffectiveCeiling(p.AIAgent.DataClassCeiling)))
-	if err != nil || ceiling == aipolicy.ClassTenantOnly {
+	if err != nil {
+		return nil, refused(RunErrPolicyRestricted)
+	}
+	// tenant_only data never leaves the organization: it reaches only a
+	// worker the organization runs, never a model the platform calls.
+	if ceiling == aipolicy.ClassTenantOnly && executor != aidom.ExecutorTenantWorker {
 		return nil, refused(RunErrPolicyRestricted)
 	}
 
@@ -377,34 +435,7 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 			return nil, refused(RunErrBudgetExhausted)
 		}
 	}
-	provider, err := e.llm.CreateProviderForTenant(run.TenantID.String(), settings)
-	if err != nil {
-		return nil, refused(RunErrNotConfigured)
-	}
-	run.Provider, run.Model = provider.Name(), provider.Model()
-	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
-	defer cancel()
-	resp, err := provider.Complete(callCtx, llm.CompletionRequest{
-		SystemPrompt: tpl.Text, UserPrompt: bundle.Text, MaxTokens: e.cfg.MaxTokens,
-		Temperature: e.cfg.Temperature, JSONMode: true,
-	})
-	if err != nil {
-		e.logger.Warn("AI model call failed", "run_id", run.ID.String(), "provider", provider.Name(), "error", logger.SanitizeError(err))
-		return nil, failed(RunErrProvider)
-	}
-	run.TokensIn, run.TokensOut = resp.PromptTokens, resp.CompletionTokens
-	if e.budget != nil && resp.TotalTokens > 0 {
-		if berr := e.budget.Record(ctx, run.TenantID, resp.TotalTokens); berr != nil {
-			e.logger.Warn("failed to record AI token usage", "run_id", run.ID.String(), "error", logger.SanitizeError(berr))
-		}
-	}
-
-	actions, err := e.act(ctx, p, run, finding, kind, bundle, ret, uc, resp.Content)
-	if err != nil {
-		return actions, err
-	}
-	e.finish(ctx, run, aidom.RunCompleted, nil)
-	return actions, nil
+	return &prepared{settings: settings, uc: uc, bundle: bundle, ret: ret}, nil
 }
 
 // unmaskPayload puts real values back into every string of a validated
@@ -441,7 +472,7 @@ func unmaskPayload(u *aimask.Unmasker, raw json.RawMessage) (json.RawMessage, bo
 	return b, unknown, err
 }
 
-// act validates the model output against the kind's schema, maps
+// apply validates the model output against the kind's schema, maps
 // placeholders back through the stored mapping, and turns each item into the
 // command a person would call, as the AI agent:
 //
@@ -459,7 +490,7 @@ func unmaskPayload(u *aimask.Unmasker, raw json.RawMessage) (json.RawMessage, bo
 // else changed it since the AI agent last saw it, the change is skipped (the
 // AI agent never overwrites a later decision), and every command carries the
 // row version it expects.
-func (e *BuiltinExecutor) act(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding,
+func (e *BuiltinExecutor) apply(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding,
 	kind analyze.Kind, bundle *aibundle.Bundle, ret *retrieval, uc aidom.UseCaseSetting, content string,
 ) ([]Action, error) {
 	out, err := analyze.ParseOutput(kind.Name, []byte(strings.TrimSpace(content)))
