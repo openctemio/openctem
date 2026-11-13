@@ -137,6 +137,31 @@ describe('brand tokens', () => {
       for (const s of ['--destructive', '--success', '--warning', '--info'])
         for (const bg of ['--background', '--card']) pair(s, bg, 4.5)
       pair('--destructive-foreground', '--destructive', 4.5)
+      // The destructive button on hover (bg-destructive/90) on every surface.
+      for (const bg of ['--background', '--card', '--popover']) {
+        const fill = blend(hex(t, '--destructive'), hex(t, bg), 0.9)
+        const r = contrast(hex(t, '--destructive-foreground'), fill)
+        expect(
+          r,
+          `${mode}: destructive button hover on ${bg} is ${r.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(4.5)
+      }
+    })
+
+    it(`${mode}: a highlighted menu row stands out from the popover`, () => {
+      // --hov is the text colour at a few percent over the surface it sits on.
+      const m = /^color-mix\(in srgb, var\((--[a-z-]+)\) (\d+)%, transparent\)$/.exec(
+        t['--hov'] ?? ''
+      )
+      expect(m, `${mode}: --hov is ${t['--hov']}`).not.toBeNull()
+      const [, fg, pct] = m as RegExpExecArray
+      const pop = hex(t, '--popover')
+      const r = contrast(blend(hex(t, fg), pop, Number(pct) / 100), pop)
+      // Light's old highlight (--accent on the popover) measured 1.08:1; dark's was 1.00:1.
+      expect(
+        r,
+        `${mode}: menu highlight is ${r.toFixed(3)}:1 on the popover`
+      ).toBeGreaterThanOrEqual(1.08)
     })
 
     it(`${mode}: the signal button fill carries its text at AA, and delta text reads on every surface`, () => {
