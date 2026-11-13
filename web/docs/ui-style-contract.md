@@ -290,12 +290,16 @@ load.
   `text-hero` 48/56, `text-wall` 56/64. `text-title`, `text-meta`,
   `text-data` and `text-kpi` remain as aliases. Weights are 400, 500 and 600
   only (no `font-bold`). Nothing under 12px.
-- Control heights come from the control scale: `h-control` 32,
-  `h-control-sm` 28 (dense places), `h-control-seg` 26, `h-control-xs` 24,
-  `h-control-entry` 36 (entry pages), `h-control-touch` 44 (below 768px);
-  rows `h-row` (40, or 32 / 52 under `data-density="compact|comfortable"`).
-  `h-control-field` is the text-field height and stays 36 until the field
-  kit is settled.
+- Control heights come from the control scale, set by the kit, never at the
+  call site: every control in a row is 32 (`h-control`; buttons, text fields,
+  selects, toggles); the small sizes (Button `sm` / `icon-sm`, SelectTrigger
+  `sm`, `h-control-dense`) are 28 only inside a dense place
+  (`data-control-density="dense"`: DataTable, the bulk bar; `DensityScope` in
+  `components/ui/density.tsx`) and 32 anywhere else; 26 a segment inside a
+  32 track, 24 the info icon (`xs`); entry pages without the app sidebar
+  (`data-control-scale="entry"` / `EntryScope`) are 36; below 768px every
+  control is 44. Rows: `h-row` (40, or 32 / 52 under
+  `data-density="compact|comfortable"`).
 - `scripts/check-design-tokens.sh` (run by `check-page-anatomy.sh`) refuses
   added lines with a raw colour, an arbitrary radius, shadow, line height,
   weight or tracking, `font-bold`, a height on a kit control, and raw

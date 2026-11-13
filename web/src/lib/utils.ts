@@ -44,6 +44,7 @@ export const SPACING_NAMES = [
   'control-entry',
   'control-touch',
   'control-field',
+  'control-dense',
   'row',
   'page',
   'page-tight',
