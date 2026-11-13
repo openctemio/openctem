@@ -39,6 +39,14 @@ const (
 	ProfileScanConnector = "scan-connector"
 	ProfileCIRunner      = "ci-runner"
 	ProfileEndpoint      = "endpoint-agent"
+	// ProfileAIWorker is an AI worker (docs/rfcs/RFC-131-ai-analysis.md):
+	// it runs analysis jobs (`analyze`) on data the platform sends with the
+	// job, and nothing else. No target network, no credentials, no push
+	// ingest, passive tier: it never reaches a target and its only write is
+	// the job's result. Its job types hold `analyze` alone, and Normalize
+	// refuses a grant that mixes `analyze` with other work, so one sensor is
+	// either an AI worker or a scanner, never both.
+	ProfileAIWorker = "ai-worker"
 	// ProfileCustom marks a grant edited away from its profile.
 	ProfileCustom = "custom"
 
@@ -101,6 +109,11 @@ var (
 	controlJobTyp = []string{"health_check", "cancel", "refresh_content", "proxy_test"}
 )
 
+// jobTypeAnalyze is the job type of an AI worker's analysis job
+// (command.CommandTypeAnalyze). A grant governs it like the work types, and
+// lists it alone (Normalize).
+const jobTypeAnalyze = "analyze"
+
 // Grant dimensions, as named in refusals, audits and diffs.
 const (
 	DimTrust         = "trust_level"
@@ -154,7 +167,7 @@ func (g *Grant) LegacyBroad() bool { return g != nil && g.Profile == ProfileLega
 // (legacy-broad is never selectable).
 func SelectableProfiles() []string {
 	return []string{ProfileInternalScanner, ProfileEASMExternal, ProfileAuthenticatedScanner,
-		ProfileCollector, ProfileScanConnector, ProfileCIRunner, ProfileEndpoint}
+		ProfileCollector, ProfileScanConnector, ProfileCIRunner, ProfileEndpoint, ProfileAIWorker}
 }
 
 // ValidProfile reports whether name may be picked ("collector:<name>" and
@@ -205,6 +218,8 @@ func NewGrantFromProfile(tenantID, sensorID shared.ID, profile string, zones []s
 		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = scanJobTypes(), TierPassive, TargetNetworkNone, true
 	case ProfileEndpoint:
 		g.JobTypes, g.TierCeiling, g.TargetNetwork, g.AllowPushIngest = append(scanJobTypes(), "collect"), TierPassive, TargetNetworkNone, true
+	case ProfileAIWorker:
+		g.JobTypes, g.TierCeiling, g.TargetNetwork = []string{jobTypeAnalyze}, TierPassive, TargetNetworkNone
 	}
 	return g, nil
 }
@@ -217,7 +232,7 @@ func NewGrantFromProfile(tenantID, sensorID shared.ID, profile string, zones []s
 func TrustableAtApproval(profile string) bool {
 	base, _, _ := strings.Cut(profile, ":")
 	switch base {
-	case ProfileInternalScanner, ProfileEASMExternal, ProfileScanConnector:
+	case ProfileInternalScanner, ProfileEASMExternal, ProfileScanConnector, ProfileAIWorker:
 	default:
 		return false
 	}
@@ -284,9 +299,14 @@ func (g *Grant) Normalize() error {
 	var err error
 	if g.JobTypes, err = normList(g.JobTypes, func(s string) (string, bool) {
 		s = strings.ToLower(strings.TrimSpace(s))
-		return s, slices.Contains(workJobTypes, s)
+		return s, s == jobTypeAnalyze || slices.Contains(workJobTypes, s)
 	}); err != nil {
 		return fmt.Errorf("%w: job type %v", ErrGrantInvalid, err)
+	}
+	if slices.Contains(g.JobTypes, jobTypeAnalyze) && len(g.JobTypes) > 1 {
+		// An AI worker holds model keys and reads masked data from many
+		// findings; it never also scans, collects or validates.
+		return fmt.Errorf("%w: job type analyze cannot be combined with other work", ErrGrantInvalid)
 	}
 	if g.Tools, err = normList(g.Tools, func(s string) (string, bool) { s = CanonicalTool(s); return s, isToken(s) }); err != nil {
 		return fmt.Errorf("%w: tool %v", ErrGrantInvalid, err)
@@ -536,8 +556,8 @@ func requiredCapabilities(payload json.RawMessage) []string {
 	return p.Required
 }
 
-// CommandTier is how intrusive a command is: collect and connector_sync are
-// T0, connector_scan and validate T1, a scan takes the lowest tier of the
+// CommandTier is how intrusive a command is: collect, connector_sync and
+// analyze are T0, connector_scan and validate T1, a scan takes the lowest tier of the
 // stages its tool implements (stage catalog); custom templates or
 // out-of-band callbacks make any job T2, and a scan whose tool the catalog
 // does not know is T2 (fail closed). A retest is rated at the tier of the
@@ -554,7 +574,8 @@ func CommandTierFor(cmdType string, job Job, c *ToolContract) int {
 		return TierIntrusive
 	}
 	switch cmdType {
-	case "collect", "connector_sync", "health_check", "cancel", "refresh_content", "proxy_test", "config_update":
+	case "collect", "connector_sync", "health_check", "cancel", "refresh_content", "proxy_test", "config_update", jobTypeAnalyze:
+		// An analysis job reads only the data sent with it: no target.
 		return TierPassive
 	case "connector_scan", "validate":
 		return TierActive
