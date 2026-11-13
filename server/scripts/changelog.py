@@ -25,16 +25,35 @@ Usage:
                                     file name per line) into CHANGELOG.md as
                                     "## HEADING", below every existing section,
                                     and delete them (one-off catch-up)
-  changelog.py release VERSION [--labels F]
+  changelog.py notes [--labels F]   print the release notes body: the Upgrade
+                                    notes block, then the categories
+  changelog.py release VERSION [--labels F] [--date YYYY-MM-DD]
                                     fold the fragments into CHANGELOG.md under
-                                    "## VERSION (YYYY-MM-DD)" and delete them
+                                    "## VERSION (date, default today)" and
+                                    delete them
+
+preview, notes and release take the fragments to use from git as well:
+  --ref REF      only fragments that exist at REF (a release tag: what shipped)
+  --since REF    leave out fragments that exist at REF (the previous release)
+  --since-previous TAG
+                 --since the newest vX.Y.Z tag below TAG (or below the newest
+                 tag when TAG is "latest")
+The fragment text is read from the working tree. A release tag's tree still
+holds the fragments of the releases before it until develop folded them, so
+"--ref vX.Y.Z --since-previous vX.Y.Z" is exactly that release's changes,
+whether or not the earlier releases were folded.
+
+The Upgrade notes block lists, for every chosen fragment, its "Upgrade note:"
+lines under "Before you upgrade" and the titles of its Behaviour change,
+Removed and Deprecated sections; with --labels it also lists the fragments
+under the operator headings below.
 
 --labels F names a JSON file {"<fragment file>": ["notes:migration", ...]}
 (.github/scripts/release/fragment-labels.sh writes it from the labels of the
 pull requests that added the fragments). With it, an "Upgrade notes" block at
 the top of the section lists the fragments under the operator headings below,
 so a reader sees the migrations, destructive migrations, identity changes and
-API contract changes before the categories. Without it nothing changes.
+API contract changes before the categories.
 
 Fragment format (server/changelog.d/<short-slug>.md):
 
@@ -79,6 +98,16 @@ OPERATOR_HEADINGS = [
     ("notes:identity", "Finding identity and fingerprint changes"),
     ("notes:api-contract", "API contract changes"),
 ]
+# Categories whose titles the Upgrade notes block repeats: what an operator
+# notices without reading every entry.
+NOTICE_CATEGORIES = ["Behaviour change", "Removed", "Deprecated"]
+# "- **Upgrade note:** text" (bold or not, "notes" too) inside a fragment.
+UPGRADE_NOTE = re.compile(
+    r"^(?P<indent>\s*)[-*]\s+(?:\*\*)?Upgrade notes?(?::\*\*|\*\*:|:)\s*(?P<text>\S.*)$",
+    re.IGNORECASE,
+)
+FRAGMENT_DIRS = ("server/changelog.d", "api/changelog.d")  # tags before the rename; rename-guard: allow
+TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 UNRELEASED = "## Unreleased"
 FRAGMENT_NOTE = (
     "Unreleased changes are kept one file per change in "
@@ -94,6 +123,68 @@ def fragments() -> list[pathlib.Path]:
     if not FRAGMENTS.is_dir():
         return []
     return sorted(p for p in FRAGMENTS.glob("*.md") if p.name != "README.md")
+
+
+def names_at(ref: str) -> set[str]:
+    """Fragment file names in the tree of ref (either backend directory name)."""
+    out = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-tree", "--name-only", ref, *(d + "/" for d in FRAGMENT_DIRS)],
+        capture_output=True, text=True,
+    )
+    if out.returncode != 0:
+        raise SystemExit(f"cannot read the fragments at {ref}: {out.stderr.strip()}")
+    names = {pathlib.PurePosixPath(n).name for n in out.stdout.split()}
+    return {n for n in names if n.endswith(".md") and n != "README.md"}
+
+
+def tag_key(tag: str) -> tuple[int, int, int]:
+    m = TAG.match(tag)
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (-1, -1, -1)
+
+
+def previous_tag(tag: str) -> str:
+    """The newest stable vX.Y.Z tag below tag ("latest": the newest tag of all)."""
+    tags = subprocess.run(["git", "-C", str(ROOT), "tag", "-l", "v*"],
+                          capture_output=True, text=True, check=True).stdout.split()
+    tags = sorted((t for t in tags if TAG.match(t)), key=tag_key)
+    if tag == "latest":
+        if not tags:
+            raise SystemExit("no vX.Y.Z tag in this clone (fetch the tags)")
+        return tags[-1]
+    if not TAG.match(tag):
+        raise SystemExit(f"--since-previous needs vX.Y.Z or latest, got {tag!r}")
+    below = [t for t in tags if tag_key(t) < tag_key(tag)]
+    if not below:
+        raise SystemExit(f"no release tag below {tag} in this clone (fetch the tags)")
+    return below[-1]
+
+
+def pop_option(argv: list[str], name: str) -> tuple[str | None, list[str]]:
+    if name not in argv:
+        return None, argv
+    i = argv.index(name)
+    if i + 1 >= len(argv):
+        raise SystemExit(f"{name} needs a value")
+    return argv[i + 1], argv[:i] + argv[i + 2:]
+
+
+def select(argv: list[str]) -> tuple[list[pathlib.Path], list[str]]:
+    """The fragments chosen by --ref / --since / --since-previous."""
+    ref, argv = pop_option(argv, "--ref")
+    since, argv = pop_option(argv, "--since")
+    prev, argv = pop_option(argv, "--since-previous")
+    if since and prev:
+        raise SystemExit("--since and --since-previous exclude each other")
+    if prev:
+        since = previous_tag(prev)
+    chosen = fragments()
+    if ref:
+        keep = names_at(ref)
+        chosen = [p for p in chosen if p.name in keep]
+    if since:
+        drop = names_at(since)
+        chosen = [p for p in chosen if p.name not in drop]
+    return chosen, argv
 
 
 def sections(text: str) -> list[tuple[str, str]]:
@@ -233,12 +324,58 @@ def read_labels(argv: list[str]) -> tuple[dict[str, list[str]] | None, list[str]
     return data, argv[:i] + argv[i + 2:]
 
 
+def upgrade_notes(body: str) -> list[str]:
+    """The "Upgrade note:" bullets of a section, continuation lines joined."""
+    notes: list[str] = []
+    cur: list[str] | None = None
+    indent = ""
+    for line in body.splitlines():
+        m = UPGRADE_NOTE.match(line)
+        if m:
+            if cur:
+                notes.append(" ".join(cur))
+            cur, indent = [m.group("text").strip()], m.group("indent")
+            continue
+        if cur is not None:
+            stripped = line.strip()
+            starts_item = re.match(r"^\s*[-*]\s", line) and len(line) - len(line.lstrip()) <= len(indent)
+            if not stripped or starts_item or line.startswith("#"):
+                notes.append(" ".join(cur))
+                cur = None
+            else:
+                cur.append(stripped)
+    if cur:
+        notes.append(" ".join(cur))
+    return notes
+
+
 def operator_block(labels: dict[str, list[str]] | None, paths: list[pathlib.Path] | None = None) -> str:
-    """The Upgrade notes block: fragment section titles under operator headings."""
-    if not labels:
-        return ""
+    """The Upgrade notes block: what to do before upgrading, what behaves
+    differently, and fragment section titles under the operator headings."""
     chosen = fragments() if paths is None else paths
+    labels = labels or {}
     lines: list[str] = []
+    before: list[tuple[int, str]] = []
+    notice: list[tuple[int, str]] = []
+    for p in chosen:
+        for cat, body in sections(p.read_text(encoding="utf-8")):
+            if not cat:
+                continue
+            title = body.splitlines()[0][4:]
+            rank = CATEGORIES.index(cat) if cat in CATEGORIES else len(CATEGORIES)
+            for note in upgrade_notes(body):
+                # Notes that need no action follow the ones that do.
+                no_action = note.lower().startswith("no action")
+                before.append((rank + (100 if no_action else 0), f"- **{title}**: {note}"))
+            if cat in NOTICE_CATEGORIES:
+                notice.append((rank, f"- {title} (`{p.name}`)"))
+    # In release order of the categories (stable: fragment order within one),
+    # notes that need an action first.
+    if before:
+        lines += ["#### Before you upgrade", "", *(t for _, t in sorted(before, key=lambda x: x[0])), ""]
+    if notice:
+        lines += ["#### Behaviour changes, removals and deprecations", "",
+                  *(t for _, t in sorted(notice, key=lambda x: x[0])), ""]
     for label, heading in OPERATOR_HEADINGS:
         items: list[str] = []
         for p in chosen:
@@ -271,16 +408,30 @@ def cmd_check(argv: list[str]) -> int:
 
 
 def cmd_preview(argv: list[str]) -> int:
-    labels, _ = read_labels(argv)
+    labels, argv = read_labels(argv)
+    chosen, _ = select(argv)
     print(UNRELEASED + "\n")
-    print(operator_block(labels) + assemble() if fragments() else "_No unreleased changes._\n")
+    print(operator_block(labels, chosen) + assemble(chosen) if chosen else "_No unreleased changes._\n")
+    return 0
+
+
+def cmd_notes(argv: list[str]) -> int:
+    labels, argv = read_labels(argv)
+    chosen, _ = select(argv)
+    print((operator_block(labels, chosen) + assemble(chosen)).rstrip() if chosen else "No notable changes.")
     return 0
 
 
 def cmd_release(argv: list[str]) -> int:
     labels, argv = read_labels(argv)
+    chosen, argv = select(argv)
+    date, argv = pop_option(argv, "--date")
+    if date is not None and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        print("--date must be YYYY-MM-DD", file=sys.stderr)
+        return 2
     if not argv or not re.fullmatch(r"v\d+\.\d+\.\d+", argv[0]):
-        print("usage: changelog.py release vX.Y.Z", file=sys.stderr)
+        print("usage: changelog.py release vX.Y.Z [--ref REF] [--since REF | --since-previous TAG] "
+              "[--date YYYY-MM-DD] [--labels F]", file=sys.stderr)
         return 2
     errors = validate()
     if errors:
@@ -295,15 +446,18 @@ def cmd_release(argv: list[str]) -> int:
     rest = text[start + len(UNRELEASED):]
     m = re.search(r"(?m)^## ", rest)
     older = rest[m.start():] if m else ""
-    date = _dt.date.today().isoformat()
-    body = (operator_block(labels) + assemble()).rstrip() or "No notable changes."
+    if f"\n## {argv[0]} (" in text:
+        print(f"server/CHANGELOG.md already has a section for {argv[0]}", file=sys.stderr)
+        return 1
+    date = date or _dt.date.today().isoformat()
+    body = (operator_block(labels, chosen) + assemble(chosen)).rstrip() or "No notable changes."
     CHANGELOG.write_text(
         f"{head}\n\n{FRAGMENT_NOTE}\n\n## {argv[0]} ({date})\n\n{body}\n\n{older}".rstrip() + "\n",
         encoding="utf-8",
     )
-    for p in fragments():
+    for p in chosen:
         p.unlink()
-    print(f"folded into CHANGELOG.md as {argv[0]}")
+    print(f"folded {len(chosen)} fragment(s) into CHANGELOG.md as {argv[0]}")
     return 0
 
 
@@ -336,7 +490,7 @@ def cmd_archive(argv: list[str]) -> int:
 
 
 def main(argv: list[str]) -> int:
-    cmds = {"check": cmd_check, "preview": cmd_preview, "release": cmd_release,
+    cmds = {"check": cmd_check, "preview": cmd_preview, "notes": cmd_notes, "release": cmd_release,
             "archive": cmd_archive}
     if not argv or argv[0] not in cmds:
         print(__doc__, file=sys.stderr)

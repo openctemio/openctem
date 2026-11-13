@@ -149,6 +149,15 @@ jobs:
           database and the \`api-data\` volume before upgrading.
           EOF
           sed -i 's/^          //' /tmp/release-header.md
+          # This release's changelog: the fragments in the tag's tree that the
+          # previous release's tree lacks (server/scripts/changelog.py), with
+          # the Upgrade notes block first. The checkout is the tag.
+          {
+            echo
+            echo "## Changes in ${TAG}"
+            echo
+            python3 server/scripts/changelog.py notes --ref "$TAG" --since-previous "$TAG"
+          } >> /tmp/release-header.md
       - name: Create the release (retried on GitHub API errors)
         env:
           GH_TOKEN: ${{ github.token }}
