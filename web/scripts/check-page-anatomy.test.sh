@@ -57,5 +57,6 @@ must_pass 'annotated exception' '<span className="text-[10px]">x</span> {/* anat
 must_pass 'tabs without margin' '<GatedSectionTabs tabs={T} label={l} />'
 
 find "$t" -delete
+sh "$here/check-design-tokens.test.sh" >/dev/null || { echo "FAIL check-design-tokens.test.sh"; fail=1; }
 [ $fail = 0 ] && echo ok
 exit $fail

@@ -46,6 +46,9 @@
 #      the page renders on the server and crashes on every visit.
 #
 # Escape hatch for a real exception: `anatomy-ok: <reason>` on the line.
+#
+# The same run calls check-design-tokens.sh (hard-coded colours, radii,
+# weights, control heights and the type ratchet; escape `design-ok:`).
 set -euo pipefail
 
 BASE_REF="${1:-origin/develop}"
@@ -96,7 +99,7 @@ hits="$(printf '%s\n' "$added" | grep -Ev "^(web/)?src/${OWNERS}" \
 
 hits="$(printf '%s\n' "$added" | grep -E '\btext-\[[0-9.]+(px|rem|em)\]' || true)"
 [[ -n "$hits" ]] && report "Arbitrary text size:" "$hits" \
-  "Use the type scale: text-xs (12px, meta and labels), text-sm (14px, body), text-base, text-lg, text-xl, text-2xl. Nothing under 12px."
+  "Use the type roles: text-cap 12, text-dense 13, text-body 14, text-card 14 600, text-section 16, text-dialog 20, text-page 24, text-figure 24 (src/styles/theme.css). Nothing under 12px."
 
 # Unprefixed size utilities only: a space, quote, backtick or brace before them.
 hits="$(printf '%s\n' "$added" | while IFS= read -r line; do
@@ -179,4 +182,8 @@ if [[ "$fail" = 0 ]]; then
 else
   printf '\nA real exception can be annotated on the line: // anatomy-ok: <reason>\n' >&2
 fi
+
+# Hard-coded design values (colours, radii, weights, control heights, the
+# type ratchet): its own script and escape comment, run in the same CI step.
+bash "$(dirname "$0")/check-design-tokens.sh" "$BASE_REF" || fail=1
 exit "$fail"
