@@ -142,7 +142,7 @@ with `bootstrap-admin` from the API image, with the same
 
 ```sh
 # 1. what would be copied
-bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run  # Kubernetes: a Job with the openctem-api image, command /app/bootstrap-admin
+bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments -dry-run  # Kubernetes: a Job with the openctem-server image, command /app/bootstrap-admin
 # 2. copy while the API runs (repeatable: copied objects are skipped)
 bootstrap-admin storage migrate -from local -to s3 -local-path /app/data/attachments
 # 3. stop the API, copy once more, set STORAGE_PROVIDER=s3, start the API

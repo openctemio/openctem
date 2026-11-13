@@ -10,7 +10,7 @@ the two parts that ship together:
 
 | Directory | What | Image |
 |---|---|---|
-| [`server/`](server/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/server`) | `ghcr.io/openctemio/openctem-api` |
+| [`server/`](server/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/server`) | `ghcr.io/openctemio/openctem-server` (`openctem-api` up to v0.22.x) |
 | [`web/`](web/) | Next.js web console, and the platform console for platform administrators (same source, `console` build target) | `ghcr.io/openctemio/openctem-web`, `ghcr.io/openctemio/openctem-console` |
 | [`deploy/allinone/`](deploy/allinone/) | API + web + platform console + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
 
@@ -40,8 +40,8 @@ The monorepo was formed on 2026-10-02
   means this repository.
 - **`ui/vX.Y.Z` tags** are the ui repository's tags, imported for history only.
   They release nothing; only `vX.Y.Z` tags do (see [Releases](#releases)).
-- **Images** moved from `ghcr.io/openctemio/api` / `ui` to `openctem-api` /
-  `openctem-web`; the old names are mirrored for a transition window.
+- **Images** moved from `ghcr.io/openctemio/api` / `ui` to `openctem-api` / `openctem-web` at v0.9.0. The server image is `openctem-server` from v0.23.0;
+  `openctem-api` and `api` keep their v0.22.x and earlier tags and receive no new ones.
 - `openctemio/agent` had already become [openctemio/sensor](https://github.com/openctemio/sensor) (RFC-023).
 
 More: [repository map](server/docs/development/repositories.md),
@@ -113,7 +113,7 @@ Installation, configuration and operations are documented at
 
 ## Releases
 
-One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
+One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-server`,
 `openctem-web`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, all
 `openctem-web`, `openctem-console`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, `admin-cli`, all
 multi-arch (amd64, arm64), signed with cosign, with a signed SPDX SBOM

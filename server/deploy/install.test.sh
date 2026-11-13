@@ -56,7 +56,7 @@ compose)
 	config)
 		v="$(sed -n 's/^OPENCTEM_VERSION=//p' .env)"
 		api="$(sed -n 's/^API_IMAGE=//p' .env)"
-		for i in "${api:-ghcr.io/openctemio/openctem-api}" ghcr.io/openctemio/openctem-web ghcr.io/openctemio/openctem-console \
+		for i in "${api:-ghcr.io/openctemio/openctem-server}" ghcr.io/openctemio/openctem-web ghcr.io/openctemio/openctem-console \
 			ghcr.io/openctemio/openctem-gateway ghcr.io/openctemio/migrations; do echo "$i:$v"; done
 		echo postgres:17
 		echo redis:7-alpine
@@ -140,6 +140,7 @@ check "every compose call saw that COMPOSE_FILE" bash -c "! grep '^compose' '$d/
 check "signatures verified before the pull" bash -c "grep -n 'cosign\|^run' '$d/log' | head -n 1 | grep -q '^[0-9]*:run' && [ \$(grep -n '^run' '$d/log' | tail -n 1 | cut -d: -f1) -lt \$(grep -n '^compose pull' '$d/log' | cut -d: -f1) ]"
 check "every release image verified, sensor included" bash -c "[ \$(grep -c '^run .* verify ghcr.io/openctemio/' '$d/log') = 6 ]"
 check "the sensor is checked against the sensor release identity" grep -q "verify ghcr.io/openctemio/sensor:v0.41.0 --certificate-identity https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/v0.41.0" "$d/log"
+check "the server image is checked against the openctem release identity" grep -Eq "verify ghcr.io/openctemio/openctem-server:v[0-9.]+ --certificate-identity https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v[0-9.]+" "$d/log"
 check "the configuration check ran before up" bash -c "[ \$(grep -n 'check-config' '$d/log' | cut -d: -f1) -lt \$(grep -n '^compose up' '$d/log' | cut -d: -f1) ]"
 check "credentials file written, mode 0600" bash -c "[ \$(stat -c %a '$d/first-admin.txt') = 600 ] && grep -q TEMPSECRET '$d/first-admin.txt'"
 check "bootstrap-admin got both administrators" grep -q "bootstrap-admin -email=admin@example.com -backup-email=breakglass@example.com -print-secrets" "$d/log"
@@ -220,7 +221,7 @@ check "moved tag: fails before up" bash -c "[ '$rc' != 0 ] && ! grep -q '^compos
 d="$(fixture)"
 rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9 --no-verify)"
 check "--no-verify: exit 0" [ "$rc" = 0 ] || cat "$d/out"
-check "--no-verify: warns and prints cosign verify commands" bash -c "grep -q 'SIGNATURE CHECK SKIPPED' '$d/out' && grep -q 'cosign verify ghcr.io/openctemio/openctem-api:v9.9.9' '$d/out' && ! grep -q '^run' '$d/log'"
+check "--no-verify: warns and prints cosign verify commands" bash -c "grep -q 'SIGNATURE CHECK SKIPPED' '$d/out' && grep -q 'cosign verify ghcr.io/openctemio/openctem-server:v9.9.9' '$d/out' && ! grep -q '^run' '$d/log'"
 
 # 13. A custom server image needs its own identity: refused by the release check.
 d="$(fixture)"

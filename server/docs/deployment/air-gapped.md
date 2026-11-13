@@ -12,7 +12,7 @@ diagrams per path) is "Air-gapped installs" on https://docs.openctem.io.
 
 | Artifact | Signed by (keyless, issuer `https://token.actions.githubusercontent.com`) | Check |
 |---|---|---|
-| Images (`openctem-api`, `-web`, `-console`, `-gateway`, `migrations`, `seed`, all-in-one `openctem`) | `https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<version>`, plus SLSA provenance and an SPDX SBOM attestation | `cosign verify`, `cosign verify-attestation` |
+| Images (`openctem-server` (`openctem-api` up to v0.22.x), `-web`, `-console`, `-gateway`, `migrations`, `seed`, all-in-one `openctem`) | `https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<version>`, plus SLSA provenance and an SPDX SBOM attestation | `cosign verify`, `cosign verify-attestation` |
 | Release files (`checksums-sha256.txt` covers every archive and SBOM) | `.../release.yml@refs/tags/<version>`, plus SLSA provenance per archive | `cosign verify-blob`, `sha256sum -c`, `gh attestation verify` |
 | Offline image bundle list (`openctem-images-<version>.txt`) | `.../docker-publish.yml@refs/tags/<version>` | `cosign verify-blob` |
 
@@ -63,7 +63,7 @@ release, or by another workflow, fails.
    pass; Nexus answers 404 on the referrers API and clients use the tag
    schema.
 2. Check from inside:
-   `cosign verify --certificate-identity https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<v> --certificate-oidc-issuer https://token.actions.githubusercontent.com nexus.example.internal:8443/openctemio/openctem-api:<v>`.
+   `cosign verify --certificate-identity https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<v> --certificate-oidc-issuer https://token.actions.githubusercontent.com nexus.example.internal:8443/openctemio/openctem-server:<v>`.
 3. Promote into Harbor with the CI mirror job (A2) using the Nexus proxy as
    `OPENCTEM_SOURCE_PREFIX` and the raw proxies as `RELEASES_BASE_URL` /
    `RELEASE_API_URL`: staging, Trivy, trusted, merge request.

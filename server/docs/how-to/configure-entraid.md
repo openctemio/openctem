@@ -612,7 +612,7 @@ the SSO `state`. Generate one with `openssl rand -hex 32`.
 ```yaml
 services:
   api:
-    image: ghcr.io/openctemio/openctem-api:vX.Y.Z   # v0.8.0 and earlier: ghcr.io/openctemio/api
+    image: ghcr.io/openctemio/openctem-server:vX.Y.Z   # v0.9.0 to v0.22.x: ghcr.io/openctemio/openctem-api
     environment:
       APP_ENV: production
       # Required — encrypts per-tenant client secrets + PKCE verifier

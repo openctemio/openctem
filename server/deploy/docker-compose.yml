@@ -135,11 +135,11 @@ services:
   # ---------------------------------------------------------------------------
   # Web UI (Next.js): internal only
   # ---------------------------------------------------------------------------
-  # Image names: releases from v0.9.0 on are published as
-  # ghcr.io/openctemio/openctem-web and ghcr.io/openctemio/openctem-api. The
-  # names of v0.8.0 and earlier (ghcr.io/openctemio/ui, ghcr.io/openctemio/api)
-  # do not hold every later release: set UI_IMAGE / API_IMAGE to them only to
-  # run such an old release with this file.
+  # Image names: the web image is ghcr.io/openctemio/openctem-web from v0.9.0,
+  # the server image ghcr.io/openctemio/openctem-server from v0.23.0. To run
+  # an older release with this file, set API_IMAGE to the name it was
+  # published under: ghcr.io/openctemio/openctem-api for v0.9.0 to v0.22.x
+  # (ghcr.io/openctemio/ui and ghcr.io/openctemio/api for v0.8.0 and earlier).
   web:
     image: ${UI_IMAGE:-ghcr.io/openctemio/openctem-web}:${UI_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
     expose:
@@ -330,7 +330,7 @@ services:
   # API (Go): internal only
   # ---------------------------------------------------------------------------
   api:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-server}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
     expose:
       - "8080"
     environment:
@@ -489,7 +489,7 @@ services:
   # root (recommended: sensors then pin the root out of band) and the scope
   # ledger are described in docker-compose.job-signer.yml and job-signing.md.
   signer:
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-server}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
     entrypoint: ["/app/openctem-signer"]
     command: ["serve"]
     user: "1001:1000"
@@ -547,7 +547,7 @@ services:
   # (`-h` lists every flag.) It is not started by `up`.
   bootstrap-admin:
     profiles: [tools]
-    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-api}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-server}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
     entrypoint: ["/app/bootstrap-admin"]
     environment:
       DB_HOST: ${DB_HOST:-postgres}

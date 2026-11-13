@@ -2,7 +2,7 @@
 # .github/workflows/web-e2e.yml with the GitHub Actions layer cache. Paths are
 # relative to the repository root (the bake-action's `source: .`).
 
-variable "API_IMAGE" { default = "local/openctem-api:e2e" }
+variable "API_IMAGE" { default = "local/openctem-server:e2e" }
 variable "WEB_IMAGE" { default = "local/openctem-web:e2e" }
 # "true" on a push to develop only: other refs read the cache and never write
 # it (their entries are readable by that ref alone and evict develop's).

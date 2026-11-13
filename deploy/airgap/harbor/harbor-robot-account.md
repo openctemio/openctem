@@ -60,7 +60,7 @@ Harbor signatures: keep them as the feed of `openctem-staging` only, and
 promote to `openctem-trusted` with `mirror-images.sh online <version>
 <harbor>/openctem-trusted --source-prefix <Nexus proxy or ghcr.io>`, which
 brings the signatures. Check in your Harbor version before relying on
-anything else: `cosign tree <harbor>/openctem-trusted/openctem-api:<version>`
+anything else: `cosign tree <harbor>/openctem-trusted/openctem-server:<version>`
 must list the signature.
 
 ## Egress exception (only when Harbor itself pulls from ghcr.io)

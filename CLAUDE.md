@@ -28,7 +28,7 @@ modules), `migration` (database migrations), `web-change` (web console).
 - Go: run tools from `server/` with `GOWORK=off`; module path is
   `github.com/openctemio/openctem/server`.
 - Release: one `vX.Y.Z` tag on `main` publishes every image from one commit
-  (`openctem-api`, `openctem-web`, `openctem-console`, all-in-one `openctem`,
+  (`openctem-server`, `openctem-web`, `openctem-console`, all-in-one `openctem`,
   `openctem-gateway`, `migrations`, `seed`). `ui/v*` tags are imported history from `openctemio/ui`; never create one.
 - Cite old web PRs as `openctemio/ui#NNN`: a bare `#NNN` means this repository.
 - CI, required checks and images: `server/docs/development/ci-cd.md`; repo map:
