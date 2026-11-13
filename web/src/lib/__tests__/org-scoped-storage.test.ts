@@ -66,6 +66,8 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/hooks/use-display-user.ts': 'not-org-data',
   'src/lib/auth-refresh-lock.ts': 'not-org-data',
   'src/lib/deployment-skew.ts': 'not-org-data',
+  // A one-time message shown on the next page (its text, no ids).
+  'src/lib/session-navigation.ts': 'not-org-data',
   'src/test/setup.ts': 'not-org-data',
 }
 

@@ -46,15 +46,19 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
-// jsdom has no real navigation; capture href writes instead.
+// jsdom has no real navigation; capture the page loaded instead
+// (navigateAfterSessionChange calls assign()).
 let originalLocation: Location
 beforeEach(() => {
   vi.clearAllMocks()
   originalLocation = window.location
-  Object.defineProperty(window, 'location', {
-    configurable: true,
-    value: { href: '' },
-  })
+  const fake = {
+    href: '',
+    assign(url: string) {
+      fake.href = url
+    },
+  }
+  Object.defineProperty(window, 'location', { configurable: true, value: fake })
   global.fetch = vi.fn().mockResolvedValue({ ok: true }) as unknown as typeof fetch
 })
 afterEach(() => {
