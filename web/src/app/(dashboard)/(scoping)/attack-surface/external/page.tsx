@@ -545,7 +545,11 @@ export default function ExternalSurfacePage() {
           <LabelChips
             className="max-w-[220px]"
             labels={row.original.tags ?? []}
-            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, row.original.tags ?? [], tags) : undefined}
+            onSave={
+              canWriteAssets
+                ? (tags) => saveRowLabels(row.original.id, row.original.tags ?? [], tags)
+                : undefined
+            }
           />
         ),
       },

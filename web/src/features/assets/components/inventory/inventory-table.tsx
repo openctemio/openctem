@@ -575,7 +575,11 @@ export function InventoryTable({
           <LabelChips
             className="max-w-[240px]"
             labels={row.original.tags ?? []}
-            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, row.original.tags ?? [], tags) : undefined}
+            onSave={
+              canWriteAssets
+                ? (tags) => saveRowLabels(row.original.id, row.original.tags ?? [], tags)
+                : undefined
+            }
             activeLabels={filterTags}
             onLabelClick={onToggleTagFilter}
           />

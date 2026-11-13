@@ -570,12 +570,7 @@ export interface CreateAssetInput {
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
   metadata?: AssetMetadata
-  /**
-   * Tags to add and to remove. An edit never sends the whole list: every
-   * stored tag it does not name stays (`features/assets/lib/tag-change.ts`).
-   */
-  tagsAdd?: string[]
-  tagsRemove?: string[]
+  tags?: string[]
   /**
    * Why exposure or criticality is lowered. Required by the API when the change
    * would drop an open P0/P1 finding on the asset.
@@ -603,7 +598,12 @@ export interface UpdateAssetInput {
   /** Free-text owner reference (team / contact / cost center). Max 500 chars. */
   ownerRef?: string
   metadata?: AssetMetadata
-  tags?: string[]
+  /**
+   * Tags to add and to remove. An edit never sends the whole list: every
+   * stored tag it does not name stays (`features/assets/lib/tag-change.ts`).
+   */
+  tagsAdd?: string[]
+  tagsRemove?: string[]
   /**
    * Why exposure or criticality is lowered. Required by the API when the change
    * would drop an open P0/P1 finding on the asset.
