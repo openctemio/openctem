@@ -17,6 +17,7 @@ non-container one.
 | `openctem-console-<v>-linux-<arch>.tar.gz` | linux amd64, arm64 (glibc) | the platform console, same layout |
 | `bootstrap-admin-<v>-<os>-<arch>.tar.gz` (`.zip` on Windows) | linux, macOS amd64/arm64, Windows amd64 | the first-administrator CLI as a standalone binary (the API image already contains it as `/app/bootstrap-admin`) |
 | `openctem-image-kit-<v>.tar.gz` | any | private registry and air-gap kit ([air-gapped.md](air-gapped.md)) |
+| `openctem-compose-<v>.tar.gz` | any | the Compose deployment files (`server/deploy` with `VERSION`) and `install.sh`, the one-command Compose install without a git checkout ([docker.md](docker.md#one-command-install)) |
 | `*.spdx.json` | | an SPDX SBOM per archive |
 | `checksums-sha256.txt` + `.sigstore.json` | | sha256 of every archive and SBOM, signed keyless by the Release workflow |
 
