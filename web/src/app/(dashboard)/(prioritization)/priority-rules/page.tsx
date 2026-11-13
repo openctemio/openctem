@@ -798,7 +798,7 @@ export default function PriorityRulesPage() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-9 w-9"
+
                               aria-label={t(
                                 'prioritization.rules.cond.removeUnknown',
                                 'Remove unknown condition'
@@ -856,7 +856,7 @@ export default function PriorityRulesPage() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="h-9 w-9"
+
                             aria-label={t('prioritization.rules.cond.remove', 'Remove condition')}
                             onClick={() => removeCondition(idx)}
                           >

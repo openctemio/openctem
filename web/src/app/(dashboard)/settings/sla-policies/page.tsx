@@ -197,7 +197,7 @@ export default function SlaPoliciesPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+
                   aria-label={t('settings.slaPolicies.page.edit', 'Edit {name}', { name: p.name })}
                   onClick={() => openEdit(p)}
                 >
@@ -209,7 +209,7 @@ export default function SlaPoliciesPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
+
                     aria-label={t(
                       'settings.slaPolicies.page.makeDefault',
                       'Make {name} the default',
@@ -236,7 +236,7 @@ export default function SlaPoliciesPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-destructive"
+                    className="text-destructive"
                     aria-label={t('settings.slaPolicies.page.delete', 'Delete {name}', {
                       name: p.name,
                     })}

@@ -145,7 +145,7 @@ export function CharterExclusionsField({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6"
+
                   aria-label={`Remove ${e.item}`}
                   onClick={() => onChange(value.filter((x) => x.item !== e.item))}
                 >

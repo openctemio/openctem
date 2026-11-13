@@ -173,7 +173,7 @@ export function EndpointSheet({ endpointId, onClose, onChanged }: EndpointSheetP
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6"
+
                           aria-label="Copy the example path"
                           onClick={() => {
                             void copyToClipboard(ep.example_path ?? '').then(() =>

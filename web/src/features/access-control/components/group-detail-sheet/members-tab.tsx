@@ -256,7 +256,7 @@ export function MembersTab({
           </span>
           <div className="flex items-center gap-1">
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset === 0}
               aria-label={t('org.teamMembers.prev', 'Previous page')}
@@ -265,7 +265,7 @@ export function MembersTab({
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset + limit >= totalCount}
               aria-label={t('org.teamMembers.next', 'Next page')}

@@ -502,7 +502,7 @@ function RelatedRow({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0"
+              className="shrink-0"
               aria-label={t('assets.related.actions', 'Actions for {name}', { name: a.name })}
             >
               <MoreHorizontal className="h-4 w-4" />

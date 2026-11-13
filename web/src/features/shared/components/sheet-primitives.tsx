@@ -115,7 +115,7 @@ export function SheetPaginationFooter({
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
+
           aria-label="Previous page"
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={page <= 1}
@@ -129,7 +129,7 @@ export function SheetPaginationFooter({
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
+
           aria-label="Next page"
           onClick={() => onPageChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}

@@ -386,8 +386,9 @@ export default function ExceptionsPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
+                  size="icon"
                   variant="ghost"
-                  className="h-8 w-8 p-0"
+                  className="p-0"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -479,7 +480,7 @@ export default function ExceptionsPage() {
             )}
           >
             <Can permission={Permission.SuppressionsWrite}>
-              <Button size="sm" onClick={openCreate}>
+              <Button iconOnlyBelow="sm" size="sm" onClick={openCreate}>
                 <Plus className="h-4 w-4 sm:me-2" />
                 <span className="sr-only sm:not-sr-only">
                   {t('exceptions.page.newRule', 'New rule')}
@@ -514,7 +515,7 @@ export default function ExceptionsPage() {
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-9 w-9"
+
                     onClick={handleRefresh}
                     disabled={isLoading}
                     aria-label={t('exceptions.page.refresh', 'Refresh')}

@@ -165,7 +165,7 @@ export function PathScoreCard({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-7"
+
               aria-label={t('prioritization.attackPath.prevPath', 'Previous path')}
               onClick={() => onSelect((selected - 1 + total) % total)}
             >
@@ -181,7 +181,7 @@ export function PathScoreCard({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-7"
+
               aria-label={t('prioritization.attackPath.nextPath', 'Next path')}
               onClick={() => onSelect((selected + 1) % total)}
             >

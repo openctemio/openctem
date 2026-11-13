@@ -124,6 +124,8 @@ checklist: the `web-change` skill in the repository root `.claude/skills/`.
 
 ### Styling
 
+- Sizes (control heights, type roles, spacing, density, radii) are listed once, in
+  "Sizes" at the top of [docs/ui-style-contract.md](docs/ui-style-contract.md); a test keeps it equal to the theme.
 - `cn()` for conditional classes, shadcn/ui variants, Tailwind utilities
 - Mobile-first, CSS variables for theming
 - **NO emoji in code/JSX** — use text or icon components (lucide-react)

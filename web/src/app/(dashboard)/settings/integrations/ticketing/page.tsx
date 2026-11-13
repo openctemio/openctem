@@ -519,7 +519,7 @@ function ConfigureTicketingDialog({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="shrink-0"
                     onClick={() => setStatusInbound((rows) => rows.filter((_, j) => j !== i))}
                     aria-label={t('ticketingIntegration.configure.removeMapping', 'Remove mapping')}
                   >

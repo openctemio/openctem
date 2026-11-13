@@ -131,7 +131,7 @@ function QuickViewAssets({
                         variant="ghost"
                         size="icon"
                         aria-label={`Remove ${asset.name} from the group`}
-                        className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
+                        className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive focus-visible:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation()
                           setPendingRemove({ id: asset.id, name: asset.name })

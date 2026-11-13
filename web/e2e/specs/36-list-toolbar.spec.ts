@@ -6,7 +6,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  * One list toolbar (research/267) on a sample of lists from different areas,
  * at 1440px and 390px:
  *   1. the search box is the toolbar's first control (after the joined filter
- *      trigger), 36px high, with a "Search ...…" placeholder;
+ *      trigger), at the field height of "Sizes" (32, 36 below 768px), with a
+ *      "Search ...…" placeholder;
  *   2. where the list has a filter trigger, it touches the search box (no gap)
  *      and both share the same top and height;
  *   3. "/" focuses the search box, Escape clears it;
@@ -53,7 +54,7 @@ for (const width of [1440, 390] as const) {
         const toolbar = page.locator('main [data-slot="list-toolbar"]').first()
         const search = toolbar.locator('[data-slot="list-search-input"]')
 
-        // 1. first control, 36px, placeholder pattern.
+        // 1. first control at the field height, placeholder pattern.
         const first = await toolbar.evaluate((el) => {
           const visible = (n: Element) => (n as HTMLElement).checkVisibility?.() ?? true
           const ctl = [...el.querySelectorAll('button, input, [role="combobox"]')].filter(visible)
@@ -62,7 +63,18 @@ for (const width of [1440, 390] as const) {
         expect(first[0] === 'list-search-input' || first[0] === 'filter-button').toBe(true)
         if (first[0] === 'filter-button') expect(first[1]).toBe('list-search-input')
         const sb = (await search.boundingBox())!
-        expect(Math.round(sb.height)).toBe(36)
+        // The field height from the theme ("Sizes"): the row height on a
+        // desktop, the phone height below 768px.
+        const fieldHeight = await page.evaluate(() => {
+          const name = window.innerWidth < 768 ? '--control-h-touch' : '--control-h-field'
+          const probe = document.createElement('div')
+          probe.style.height = `var(${name})`
+          document.body.append(probe)
+          const h = probe.getBoundingClientRect().height
+          probe.remove()
+          return Math.round(h)
+        })
+        expect(Math.round(sb.height)).toBe(fieldHeight)
         expect(await search.getAttribute('placeholder')).toMatch(/^\S.*…$/)
 
         // 2. the trigger touches the field.
@@ -73,7 +85,7 @@ for (const width of [1440, 390] as const) {
           const tb = (await trigger.boundingBox())!
           expect(Math.abs(sb.x - (tb.x + tb.width))).toBeLessThanOrEqual(1)
           expect(Math.abs(sb.y - tb.y)).toBeLessThanOrEqual(1)
-          expect(Math.round(tb.height)).toBe(36)
+          expect(Math.round(tb.height)).toBe(fieldHeight)
         }
 
         // 3. "/" focuses, Escape clears.

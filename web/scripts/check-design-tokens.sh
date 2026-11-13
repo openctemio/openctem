@@ -20,8 +20,8 @@
 #      are 400, 500 and 600.
 #   4. A height or size on a kit control's className (<Button className="h-7">,
 #      <Input className="h-11">, SelectTrigger, ToggleGroupItem, TabsTrigger):
-#      the control scale (h-control 32, h-control-sm 28 in dense places, 36 on
-#      entry pages, 44 below 768px) is set by the kit, never per call site.
+#      the control scale ("Sizes" in web/docs/ui-style-contract.md) is set by
+#      the kit, never per call site.
 #   5. The type ratchet: in a directory listed in scripts/type-migrated.txt, a
 #      raw Tailwind text size (text-xs, text-sm, text-base, text-lg, text-xl,
 #      text-2xl ...). Use the type roles: text-cap, text-cap-m, text-code,
@@ -92,7 +92,7 @@ KIT_CONTROL='<(Button|Input|SelectTrigger|ToggleGroupItem|TabsTrigger)\b'
 hits="$(printf '%s\n' "$added" | grep -Ev '^(console/)?src/components/ui/' \
   | grep -E "${KIT_CONTROL}[^>]*className=[^>]*(^|[\"'\` {:])(h|size|min-h)-([0-9]|\[|control)" || true)"
 [[ -n "$hits" ]] && report "A height on a kit control:" "$hits" \
-  "The kit sets the control height (32 default, 28 in dense places, 36 on entry pages, 44 below 768px). Remove the h-*/size-* from the call site; a real exception says why with design-ok."
+  "The kit sets the control height (\"Sizes\" in web/docs/ui-style-contract.md). Remove the h-*/size-* from the call site; a real exception says why with design-ok."
 
 migrated="$here/type-migrated.txt"
 if [[ -f "$migrated" ]]; then

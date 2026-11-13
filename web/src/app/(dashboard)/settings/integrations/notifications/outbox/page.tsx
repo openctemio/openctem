@@ -365,8 +365,8 @@ export default function NotificationOutboxPage() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
+                size="icon-sm"
+                className="p-0"
                 aria-label={t('notificationChannels.outbox.actionsFor', 'Actions for {title}', {
                   title: entry.title,
                 })}

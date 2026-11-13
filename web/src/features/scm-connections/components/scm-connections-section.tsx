@@ -82,7 +82,7 @@ export function SCMConnectionsSection({
             </Button>
           </CollapsibleTrigger>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isLoading}>
+            <Button variant="ghost" size="icon-sm" onClick={handleRefresh} disabled={isLoading}>
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

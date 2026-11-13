@@ -209,8 +209,8 @@ export function ComponentDetailView({ id }: { id: string }) {
               <code className="break-all font-mono text-xs">{pkg.purl}</code>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 px-2"
+                size="icon-sm"
+                className="px-2"
                 onClick={copyPurl}
                 aria-label={t('components.detail.copy', 'Copy the package URL')}
               >
@@ -521,8 +521,8 @@ function UsageRow({
         <TableCell>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
+            size="icon-sm"
+            className="p-0"
             aria-expanded={open}
             aria-label={t('components.usages.paths', 'Show how this package is brought in')}
             onClick={onToggle}

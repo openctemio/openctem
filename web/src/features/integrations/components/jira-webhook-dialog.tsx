@@ -54,7 +54,7 @@ function CopyField({ value, label }: { value: string; label: string }) {
         type="button"
         variant="outline"
         size="icon"
-        className="h-8 w-8 shrink-0"
+        className="shrink-0"
         aria-label={label}
         onClick={async () => {
           try {

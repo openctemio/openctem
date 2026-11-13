@@ -154,7 +154,7 @@ export function FindingTicketLinks({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+
               aria-label={t('findings.ticketLinks.unlinkAria', 'Unlink {key}', { key: l.key })}
               onClick={() => setUnlinking(l)}
             >

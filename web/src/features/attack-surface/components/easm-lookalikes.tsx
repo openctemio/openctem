@@ -218,7 +218,7 @@ function WatchRow({
           />
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('lookalikes.edit', 'Settings of {domain}', {
                 domain: watch.domain ?? '',
@@ -238,7 +238,7 @@ function WatchRow({
           )}
           {canDelete && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('lookalikes.remove', 'Stop watching {domain}', {
                 domain: watch.domain ?? '',

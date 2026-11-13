@@ -42,7 +42,7 @@ export function ViewSwitcher<T extends string>({
               type="button"
               variant={value === v ? 'secondary' : 'ghost'}
               size="icon"
-              className="h-7 w-7"
+
               aria-label={label}
               aria-pressed={value === v}
               onClick={() => onChange(v)}

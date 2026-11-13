@@ -323,7 +323,7 @@ export function FindingDetailDrawer({
               >
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon-sm"
                   disabled={!taskNav.onPrev}
                   onClick={taskNav.onPrev}
                   aria-label={t('remediationHub.drawer.prev', 'Previous finding')}
@@ -338,7 +338,7 @@ export function FindingDetailDrawer({
                 </span>
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="icon-sm"
                   disabled={!taskNav.onNext}
                   onClick={taskNav.onNext}
                   aria-label={t('remediationHub.drawer.next', 'Next finding')}

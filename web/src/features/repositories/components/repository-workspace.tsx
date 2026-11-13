@@ -2370,7 +2370,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" disabled={isDeleting}>
+                  <Button variant="ghost" size="icon-sm" disabled={isDeleting}>
                     {isDeleting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (

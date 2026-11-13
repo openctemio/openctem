@@ -123,7 +123,7 @@ function InvalidRow({
         type="button"
         variant="ghost"
         size="icon"
-        className="h-9 w-9 shrink-0 max-sm:h-11 max-sm:w-11"
+        className="shrink-0"
         onClick={() => setEditing(true)}
         aria-label={t('scans.paste.edit', undefined, { name: entry.input })}
       >
@@ -133,7 +133,7 @@ function InvalidRow({
         type="button"
         variant="ghost"
         size="icon"
-        className="h-9 w-9 shrink-0 max-sm:h-11 max-sm:w-11"
+        className="shrink-0"
         onClick={onRemove}
         aria-label={t('scans.paste.removeEntry', undefined, { name: entry.input })}
       >

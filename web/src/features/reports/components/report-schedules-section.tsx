@@ -232,7 +232,7 @@ export function ReportSchedulesSection() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+
             disabled={deletingId === schedule.id}
             aria-label={t('confirm.reportSchedule.deleteLabel', 'Delete {name}', {
               name: schedule.name,

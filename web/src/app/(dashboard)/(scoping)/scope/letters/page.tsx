@@ -293,7 +293,7 @@ export default function ScopeLettersPage() {
                     <TableCell className="text-right whitespace-nowrap">
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon-sm"
                         onClick={() => download(l)}
                         aria-label={t('letters.download', 'Download')}
                       >

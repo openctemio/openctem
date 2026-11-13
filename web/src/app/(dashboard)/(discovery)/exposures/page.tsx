@@ -575,7 +575,7 @@ export default function ExposuresPage() {
           <Button
             variant="outline"
             size="icon"
-            className="h-9 w-9"
+
             onClick={handleRefresh}
             disabled={isLoading}
             aria-label={t('exposures.toolbar.refresh', 'Refresh')}

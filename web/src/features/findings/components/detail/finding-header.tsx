@@ -237,7 +237,7 @@ export function FindingHeader({ finding, status, onTriageCompleted }: FindingHea
             <Button
               variant="ghost"
               size="icon"
-              className="size-8"
+
               aria-label={t('findings.header.moreActions', 'More actions')}
             >
               <MoreHorizontal className="h-4 w-4" />

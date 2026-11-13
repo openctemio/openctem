@@ -517,9 +517,10 @@ function ScanRunsTable() {
 
   const toolbarEnd = (
     <Button
+      iconOnlyBelow="sm"
       variant="outline"
       size="sm"
-      className="h-9"
+
       onClick={() => void exportRuns()}
       disabled={exporting || !data?.total}
       aria-busy={exporting}

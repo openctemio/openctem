@@ -93,7 +93,7 @@ export function SheetDetailToolbar({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
+
               aria-label="Close"
               onClick={onClose}
             >
@@ -115,7 +115,7 @@ function ToolbarButton({ action }: { action: ToolbarAction }) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7"
+
           aria-label={action.label}
           onClick={action.onClick}
         >
