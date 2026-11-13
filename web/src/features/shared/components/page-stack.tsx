@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils'
  * `PageHeader`, its tabs, banners, a `MetricStrip`, the list) in one
  * `PageStack` and the stack owns every gap between them:
  *
- * - 20px (`gap-page`) between any two blocks;
- * - 16px (`page-tight`) from a `PageHeader` to the tab strip right under it
+ * - 24px (`gap-page`, `--sp-page`) between any two blocks;
+ * - 16px (`--sp-section`) from a `PageHeader` to the tab strip right under it
  *   (route `SectionTabs` or in-page `Tabs`).
  *
  * Blocks carry no vertical margin of their own; the stack zeroes any that a
@@ -28,9 +28,12 @@ export function PageStack({ className, ...props }: ComponentProps<'div'>) {
       className={cn(
         'flex min-w-0 flex-col gap-page',
         '[&>*]:my-0!',
-        '[&>[data-slot=page-header]+[data-slot=page-tabs]]:-mt-1!',
+        // Tabs right under the header sit at the tight gap (--sp-section, 16px)
+        // instead of the page gap (--sp-page): the margin is the difference of
+        // the two tokens, so it follows either one.
+        '[&>[data-slot=page-header]+[data-slot=page-tabs]]:mt-[calc(var(--sp-section)-var(--sp-page))]!',
         // In-page tabs right under the header sit as close as route tabs.
-        '[&>[data-slot=page-header]+[data-slot=tabs]]:-mt-1!',
+        '[&>[data-slot=page-header]+[data-slot=tabs]]:mt-[calc(var(--sp-section)-var(--sp-page))]!',
         '[&>[data-slot=tabs]]:gap-page',
         className
       )}
