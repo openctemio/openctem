@@ -30,3 +30,9 @@ Read `web/CLAUDE.md` first; it points to the detailed guides in `web/.claude/`.
    design gate: `npx playwright test -c playwright.design.config.ts` (`web/docs/ui/design-gate.md`).
 8. **Design quality:** follow `web/.claude/style-guide.md`; keep pages space-efficient and consistent with
    their siblings.
+9. **Tokens, not values:** colours, radii, shadows, weights, line heights and control heights come from
+   `web/src/styles/theme.css` (type roles `text-cap` ... `text-page`, `h-control*`, `rounded-dialog`,
+   `shadow-overlay`). `web/scripts/check-design-tokens.sh` (run inside the page-anatomy step) refuses added
+   raw colours, arbitrary `rounded-[`/`shadow-[`/`leading-[`/`font-[`, `font-bold`, a height on a kit
+   control, and raw `text-xs`/`text-sm`... in the directories of `web/scripts/type-migrated.txt`; escape
+   with `design-ok: <reason>` on the line.
