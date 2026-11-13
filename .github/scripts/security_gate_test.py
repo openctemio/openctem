@@ -1305,7 +1305,13 @@ class SyncCountedTest(unittest.TestCase):
         self.write(self.d, self.S, "\n".join(lines) + "\n")
         self.develop = self.commit(self.d, "develop edits the same line")
         self.git(self.d, "checkout", "-q", "sync/develop-into-next-20261113")
-        subprocess.run(["git", "-C", self.d, "merge", "-q", "--no-edit", "develop"], capture_output=True)
+        # The merge stops on the conflict (exit 1); it needs an identity to start at all.
+        ident = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+        merged = subprocess.run(["git", "-C", self.d, "merge", "-q", "--no-edit", "develop"], capture_output=True,
+                                env={**os.environ, **ident})
+        self.assertEqual(merged.returncode, 1, merged.stderr)
+        self.assertTrue(pathlib.Path(self.d, ".git/MERGE_HEAD").exists())
         lines[5] = "line 5 resolved"
         self.write(self.d, self.S, "\n".join(lines) + "\n")
         head = self.commit(self.d, "resolved")
