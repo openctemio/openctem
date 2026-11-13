@@ -32,7 +32,7 @@ fi
 
 umask 077
 cat >"$out" <<ENV
-API_IMAGE=${API_IMAGE:-local/openctem-api:e2e}
+API_IMAGE=${API_IMAGE:-local/openctem-server:e2e}
 WEB_IMAGE=${WEB_IMAGE:-local/openctem-web:e2e}
 E2E_API_PORT=${E2E_API_PORT:-8080}
 E2E_WEB_PORT=${E2E_WEB_PORT:-3000}

@@ -10,7 +10,7 @@
 #     preceded by "/", ".", a word character or "-" is never a repository path);
 #   - runtime paths such as /opt/openctem/api/ and the kit layout $d/api/openapi
 #     (preceded by "/");
-#   - image names (openctem-api), compose service names, log values (service=api);
+#   - image names (openctem-api up to v0.22.x), compose service names, log values (service=api);
 #   - released history: every CHANGELOG.md and .git-blame-ignore-revs;
 #   - the rename tooling itself (scripts/rename/), this guard and its test;
 #   - merged migrations (**/migrations/**/*.sql): a merged migration never

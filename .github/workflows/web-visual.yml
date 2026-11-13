@@ -13,7 +13,7 @@ name: Web visual regression
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [develop, next]
     types: [labeled, synchronize]
   schedule:
     - cron: '30 3 * * *'
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      API_IMAGE: local/openctem-api:e2e
+      API_IMAGE: local/openctem-server:e2e
       WEB_IMAGE: local/openctem-web:e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
