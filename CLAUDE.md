@@ -15,6 +15,10 @@ modules), `migration` (database migrations), `web-change` (web console).
 
 - Branches: PRs target `develop`; `main` is the release branch. Merge with a
   merge commit or squash, never "rebase and merge" for branches containing merges.
+  `next` is the integration branch of the redesigned web console: only PRs of
+  that work target it, it takes no migrations (schema goes to `develop`,
+  additive), and it is synced from `develop` by a PR, never pushed to directly
+  (`server/docs/development/ci-cd.md#the-next-integration-branch`).
 - One PR may change both sides. The contract files (the OpenAPI spec, the web
   API types, the web route permission map, the route manifest) are generated,
   NOT committed: run `make generate` after pulling or after changing a
