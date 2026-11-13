@@ -1,4 +1,0 @@
-### Fixed: every sensor item ingest did not apply says why
-
-- Segment outcomes no longer call every unapplied asset `asset_invalid` ("asset has no usable value"). An asset or finding the output-type binding held for review is counted as quarantined with `held_for_review` (or `quarantine_full` when the quarantine could not keep it); one refused because the report already recorded as many assets outside its command's targets as one report may is `too_many`; one outside the upload actor's data scope is `out_of_scope`. (An asset outside the command's targets is recorded as a discovery, not refused.) `asset_invalid` is left for an asset ingest could not store for any other reason.
-- Findings held because their own type is out of contract (their asset applied) were counted as accepted; they are counted as quarantined. The step run's held and refused finding counts follow the same split.

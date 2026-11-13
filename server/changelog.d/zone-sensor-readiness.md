@@ -1,6 +1,0 @@
-### Behaviour change: scans are refused at plan time when no sensor of the zone could run them
-
-- A scan whose target's scan zone has only New sensors (passive work only) and whose job is above T0 is refused with `zone_sensor_new` and the fix `trust_sensor`, instead of being dispatched and refused when a sensor claims it. A passive (T0) job on a New sensor still runs.
-- A private target (RFC1918 or IPv6 ULA, or a name resolving to one) whose zone sensors all report that their host refuses private targets is refused with `zone_sensor_no_private` and the fix `allow_private_targets` (on the host: `SENSOR_ALLOW_PRIVATE_TARGETS=1`, then restart the sensor), instead of failing on the host.
-- Both checks run on the scan trigger and in the scope check (dry run). Every active sensor assigned to the zone counts, online or not; a batch is pinned only to an online sensor that passes both checks, and waits in the zone otherwise. The claim (grant) and the sensor still decide every job.
-- The sensor's local policy report carries `allow_private` also without a policy file (sdk-go with the field); the dispatch pre-check withholds a job with a private address from a sensor that reports `false`. A sensor on an older SDK that does not send it is unchanged.

@@ -8,6 +8,4564 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.21.0 (2026-11-12)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: the platform signs everything a sensor pins at pairing**: sensors built on the sdk-go release with signed pairing answers refuse to pair with a platform without this change ("upgrade the platform"). Sensors from before it ignore the new member and pair as before. Already paired sensors are unaffected.
+- **Security: SAML sign-in refuses malformed signed assertions (GO-2026-6909)**: none.
+- **Security: SAML sign-in checks more of the Web Browser SSO profile**: none expected. Identity providers that follow the SAML Web Browser SSO profile send all of this already; a refused sign-in is logged with its reason.
+- **Security: required scan identification, enforced fail closed**: update sensors to a release that reports `http.identity.required@1` before turning the requirement on. Until then, required jobs wait (fail closed).
+- **Security: the bundled sensor is v0.41.0 and the served seccomp profile is that release's**: an existing install keeps the profile file it downloaded. Write it again (re-run the install snippet, or `openctemio-sensor seccomp-profile` from the new image) when you move a sensor to v0.40.0 or later. The browser tool needs the new rule; other tools do not.
+- **Security: secrets reach sensor tools sealed, per task, only for the refs a signed job lists**: sensors must run the SDK release of the same version (task secrets); bearer-key sensors get no secrets and must be paired again to a key-bound identity. Scans whose settings hold a credential must be edited to remove it before they run again.
+- **Security: a scan trigger may set only allow-listed context keys**: an API client that sent other keys in the trigger context must stop sending them.
+- **Behaviour change: compliance results are control states, not findings**: existing compliance findings are not changed by the migration; the `compliance-checks` command (dry run by default) records their states and re-classifies them.
+- **Behaviour change: compliance findings take their priority from the benchmark level**: findings stored before this change keep their severity until the `compliance-checks` command re-classifies them (dry run by default).
+- **Behaviour change: compliance findings have their own SLA and leave vulnerability figures**: no figure moves at deploy: existing findings read as practice `other` until the `finding-practice` command is applied.
+- **Behaviour change: a second source never overwrites what the first one reported**: existing findings get records from the new operator command `finding-source-backfill` (a link to the server binary in the API image): a dry run by default that reports per channel what it would write; `-apply` writes in batches (`-batch`, default 500), `-tenant <id>` limits it to one organization. Backfilled records are marked "From earlier records". No downtime; the migration only adds a table.
+- **Added: asset liveness, and findings of gone assets close as obsolete**: closing is off by default. Run the asset lifecycle dry run and review `liveness` before turning it on.
+- **Added: the compliance-checks command moves stored compliance findings to check state**: on an existing installation run, each as a dry run first: `finding-practice -apply`, `compliance-checks -apply -undo <file>`, then `finding-practice -sla -apply -undo <file>`. The production apply is the owner's decision.
+- **Added: compliance SLA re-baseline in the `finding-practice` command**: run the dry run first; the apply on production is the owner's decision.
+- **Added: `finding-practice` command to set the practice of existing findings**: run `finding-practice` (dry run) after upgrading, review the report, then `finding-practice -apply`.
+- **Added: finding practice (the program that triages a finding)**: existing findings read as `other` until the practice backfill runs (an explicit operator command, shipped separately); new findings and new sightings of open findings get their practice at once.
+- **Added: who reported a finding, and filters by sensor, scan, run, tool and channel**: the migration backfills sightings from the receipt log (90 days) and from each finding's own upload, sensor, tool and CI fields; those rows are marked backfilled ("From earlier records"). Findings a person entered get none. The four secondary indexes are built `CONCURRENTLY` after the backfill.
+- **Changed: one version-match finding per host, with a location per service**: findings stored per origin before this release are folded by `vulnmatch-locations` (dry run by default, `-apply`, `-down` to revert from its journal). The surviving finding takes the strongest open triage status of the folded rows (in progress over confirmed over new), so a confirmed finding is not demoted by the fold; `-down` restores it. See docs/architecture/vulnerability-matching.md, "Locations".
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: overlapping scan zones of different sites no longer tie-break by name (`ambiguous-zone.md`)
+- Behaviour change: GET /assets refuses unknown params and bad values (`assets-list-filterspec.md`)
+- Behaviour change: retest auto-resolve in organizations without a closing mode (`closing-mode-every-close.md`)
+- Behaviour change: compliance results are control states, not findings (`compliance-check-state.md`)
+- Behaviour change: compliance findings take their priority from the benchmark level (`compliance-priority.md`)
+- Behaviour change: compliance findings have their own SLA and leave vulnerability figures (`compliance-sla.md`)
+- Behaviour change: a second source never overwrites what the first one reported (`finding-source-records.md`)
+- Behaviour change: the findings list opens on Vulnerabilities; one click shows Compliance (`findings-practice-switch.md`)
+- Behaviour change: a verified first-party tool that reports an undeclared type is ingested, not held (`first-party-contract-mismatch-ingested.md`)
+- Behaviour change: results outside a scan job's targets are recorded, not dropped (`ingest-records-outside-targets.md`)
+- Behaviour change: a Nessus import closes what the scan proves gone (`nessus-import-closes.md`)
+- Behaviour change: readable channel notifications, one message model for every channel (`notification-messages.md`)
+- Behaviour change: a sensor's local policy no longer keeps callback jobs away; the install policy leaves allow_interactsh out (`oob-local-policy-follows-platform.md`)
+- Behaviour change: a finding closed as out of scope is never counted or shown as fixed (`out-of-scope-findings-accountable.md`)
+- Behaviour change: decide the addresses your names resolve to in bulk (`resolved-addresses-bulk-and-lookup.md`)
+- Behaviour change: scans of a retired sensor tool are no longer dispatched (`retired-tool-dispatch-refusal.md`)
+- Behaviour change: the scans list and the runs list refuse unknown parameters (`scans-list-filterspec.md`)
+- Behaviour change: single sign-on is no longer a deniable feature; a count limit caps connections (`sso-connections-count-limit.md`)
+- Behaviour change: closing one finding no longer asks for an authenticator code (`step-up-policy.md`)
+- Behaviour change: Tenable.sc rotation waits at least a day, and purge joins the modes (`tenable-sc-rotation-modes.md`)
+- Behaviour change: template scans run low-severity templates at standard depth and info templates at deep (`vuln-templates-default-severities.md`)
+- Behaviour change: scans are refused at plan time when no sensor of the zone could run them (`zone-sensor-readiness.md`)
+- Removed: CERT_MONITOR_FEED_URL, CERT_MONITOR_CERTSPOTTER_URL, CERT_MONITOR_CERTSPOTTER_KEY (`ct-lookup-sensor.md`)
+- Removed: the unused "asset tags" permission scope type (`remove-unused-asset-tags-scope.md`)
+- Removed: the egress-credentials sensor route (`task-secrets.md`)
+- Deprecated: old GET /assets filter params (`assets-list-filterspec.md`)
+- Deprecated: the scans list parameters `search` and `tags` (`scans-list-filterspec.md`)
+
+### Security: AI triage masks hosts, addresses and e-mail addresses before the provider sees them
+
+- The AI triage prompt now uses the organization's AI masking policy (Settings > AI > Data masking), like an AI agent's run: host names, IP addresses, e-mail addresses, URL ids and parameters, and the organization's and asset's names become placeholders; secrets always do. The code snippet is masked with every class.
+- The model's answer is turned back into real values before it is stored, so the triage result shows real hosts and addresses. A placeholder the request never issued makes the result need review.
+- The placeholder map lives in memory for one request only; it is never stored, logged or sent. If the policy cannot be read, nothing is sent and the job retries.
+
+### Security: one validator for asset tags on every write path
+
+- Asset tags are now checked by one validator wherever they are written: the create, update, repository-create and CSV import APIs, and every import through CTIS ingest (sensor reports, connectors, importers). A tag is 1 to 50 characters, with no control, bidirectional, zero-width or newline characters, no `<` or `>`, no leading `=`, `+`, `-` or `@` (a CSV export would run it as a formula), and no reserved platform namespace (`sys:`, `system:`, `program:`, `source:`, `platform:`, `bug-bounty`, `dangling_cname`).
+- A person who sets a refused tag gets a validation error naming the reason. A CSV row with a refused tag is reported as an error. An import drops the tag and counts it in the metric `openctem_ingest_asset_tags_dropped_total{reason}`; one import sets at most 20 tags per asset.
+- Before, ingest had no length or character limit. A tag over 50 characters made the asset impossible to save from the console, and a sensor could write any string, including `bug-bounty`, which the asset list filter also reads for per-program visibility.
+- A tag an asset already carries is never re-checked, so an existing long or reserved-looking tag does not block saving the asset.
+- Follow-ups (not in this change): protected tags that rules read, bulk tagging on the server, cloud resource tags.
+
+### Security: the government and military scope rule becomes a console setting with per-organization exceptions
+
+- The scope guardrails' block on government and military names is now the platform setting "Blocked target names", on by default on new and existing installs (nothing changes on upgrade). A platform owner can turn it off, add the operator's own blocked names next to `SCOPE_DENY_EXTRA`, and grant one organization an expiring exception for one name (reason, reference to the written authorisation, expiry required). An exception lifts only that rule, only for that organization and name; the name still needs a scope entry through every scope rule, and an expired or revoked exception is refused when an entry is added and at dispatch.
+- Only platform owners change it (new permission `platform.settings.scope_guardrails`), with a fresh authenticator code and a reason; with `MANAGED_SERVICE` set, a grant, an extension and turning the rule off need a second owner's approval. Every change is a critical admin audit row and every administrator is e-mailed.
+- Loopback, link-local and cloud metadata addresses, the whole address space, public suffixes, shared provider apexes and the CIDR caps stay hard-coded.
+- A refused government name now answers `400 GOVERNMENT_NAME` ("government and military domains are blocked on this installation; your platform administrator can grant an exception") instead of `DENY_LIST` "contact support".
+- Migration `20261111161146_scope_name_exceptions` adds the exceptions table and the owner permission.
+
+### Security: every automatic close path follows the organization's closing mode
+
+- A coverage run held by the blinding guard no longer proposes closes when the organization's closing mode is `off`; in `review` and `auto` it still proposes, and closes nothing.
+- A retest that confirms a fix with the retest setting `auto_resolve` on now passes the closing mode (method `retest_verified`): `auto` resolves, `review` records a Ready to close proposal instead, `off` keeps the finding open. Confirming such a proposal records verification `retest`.
+- Every finding status a retest moves (a resolve, a regression reopen, a rejected fix) writes a `finding.status_changed` audit row in the same transaction, high when it closes a critical, P0 or KEV finding.
+
+### Security: a relayed request must carry the credential of the sensor its relay route names
+
+- A request that came through a sensor relay names the sensor of its route; a bearer key of any other sensor is now refused like a bad credential, as a signed request already was. No cross-tenant access was possible through it (the answer stays sealed to the sender), so this is defence in depth.
+- Two unused command lookups that read across organizations (by job auth token, and the shared queue position) are removed.
+- New DB-backed tests prove that no sensor of one organization (or shared sensor that does not hold the job) can claim, change, read the secrets, logs or reports of, or learn of another organization's jobs; they run as a required CI gate by name (`.github/scripts/cross-tenant-gate.sh`).
+
+### Security: lookup jobs are bound to one organization and to platform sensors
+
+- A lookup job is created for the swept organization and its answer read back by (organization, job id); only an active instance-scope sensor reporting the capability is offered or may answer it (an organization's sensor gets 403); a job is answered once, by the sensor that claimed it. The job signer signs a `lookup` statement only for the instance scope, the `ctlog` tool and one canonical root domain, and the scope ledger's exclusions apply.
+- The platform does not trust the answer: it is decoded strictly, bounded (8 MiB), and every name outside the domain the platform asked about is dropped before it reaches an exposure; a wildcard-only name never becomes a host.
+
+### Security: the platform no longer queries crt.sh or Cert Spotter itself
+
+- The Certificate Transparency monitor and the lookalike certificate count called crt.sh and Cert Spotter from the API process. That broke the rule that the platform talks only to its sensors, sent every organization's domain names out from the platform's own address, and used services without terms for commercial use (crt.sh) or whose free tier is for personal use (Cert Spotter). Both now go through a platform-sensor fetcher (`certmonitor.Fetcher`); the platform holds no CT client of its own.
+- Until a platform sensor carries CT lookups, the CT sweep and the lookalike certificate count are off. `GET /api/v1/easm/settings` reports `ct_available: false` with `ct_unavailable_reason: needs_platform_sensor`, and the monitoring card says so and disables the CT and lookalike-certificate switches. Certificate Transparency names keep reaching the inventory through the passive subdomain discovery (`discover.subdomains`) on sensors, whose subfinder queries crt.sh and Cert Spotter through the sensor's forwarder.
+
+### Security: scan approval rules read the effective criticality
+- A rule on high-criticality assets now sees an asset raised by its business unit (and the unit's parents), a business service or the assets it is a control plane for, with the same resolver finding priority uses. Before, it read only the asset's own criticality, so such an asset escaped the rule.
+- Deleted assets are no longer counted as scan targets in approval facts.
+- Coverage candidates are ordered by criticality rank (critical, high, medium, low), not by the text of the level.
+
+### Security: spreadsheet library on its v2.11.1 release
+
+- The API builds with excelize v2.11.1 (the tagged release) instead of an untagged commit of the same line. The commit used before already carried the fix for CVE-2026-107223 (a worksheet column range that could exhaust memory when a workbook is changed), but the dependency scan reads an untagged commit as the release before it and kept reporting the advisory. The tagged release makes the fixed version explicit. No behaviour change.
+
+### Security: forgot-password no longer voids a handed-over link when email is off
+
+- On an installation that cannot send email, `POST /api/v1/auth/forgot-password` issued a reset token it
+  could not send. The token replaced the account's stored link, which is also where an administrator's
+  one-time setup or reset link lives, so anyone who knew the address could make that link stop working.
+  Nothing is issued now while email is off; the answer is unchanged.
+
+### Security: Go 1.27.4 toolchain
+
+- The API builds, tests and ships with Go 1.27.4 (go.mod, container base images by digest, CI image list), which fixes GO-2026-6859 (net/http in the standard library).
+
+### Security: tags that rules read can no longer be changed by `assets:write` alone, or by an import
+
+- A tag is governing when an enabled team access rule (tag match), scan approval rule, scan window or assignment rule names it. A governing `key:value` tag governs its whole key. Before, anyone with `assets:write` could remove such a tag to leave an approval (for example `production` on the Standard preset), or add one to pull an asset into a team's data scope, and any sensor report or CSV file could do the same.
+- Creating, updating or CSV-importing an asset with a changed governing tag now needs the permission that edits that kind of rule: `team:groups:write` (team access rule), `team:assignment_rules:write` (assignment rule), `scans:windows:manage` (scan window), an owner or administrator (scan approval rule). Otherwise the API answers 403 and names the tag and the kind of rule. If the rules cannot be read the change is refused (503).
+- Imports (sensor reports, connectors, importers) never set a governing tag: it is dropped and counted in `openctem_ingest_asset_tags_dropped_total{reason="protected"}`. If the rules cannot be read, the report's tags are dropped.
+- New audit action `asset.governed_tags_changed`: an allowed change lists the tags and the kinds of rule; a refused attempt is recorded with the result `denied`.
+- The set of governing tags is cached for 15 seconds per organization.
+- Jira routing reads the finding's tags, not the asset's, so it is not part of the set. The scan approval preset keeps reading the tags `production` and `prod`; the assets `environment` field has no write path today, so it is not used.
+
+### Security: e-mail addresses in findings are masked at ingest
+
+- Every tool's findings keep no e-mail address: before a report is stored, fingerprinted, quarantined or logged, the local part of every address in a finding's title, description, message, snippet, tags, remediation, properties, source extras and evidence becomes `***` and the domain is kept (`jane.doe@example.com` becomes `***@example.com`, URL-encoded addresses too). A finding's identifiers (id, asset ref, fingerprints, source refs) are left alone, and marked sensitive spans and match ranges move with the text.
+- Evidence masking (`evidence.Mask`) masks them as well for every other writer (retests, uploads); they never reach the encrypted secret store.
+- Stored findings are not rewritten by this change.
+- A code finding whose snippet holds an address is keyed on the masked snippet from now on: such a finding is reported once more under its new key and the old one closes on the next covered scan.
+
+### Security: the CI trust preview's unverified iat read is reviewed and guarded
+
+- `pkg/oidc` reads a token's `iat` without verifying it only to pick the clock for the CI trust configuration preview (`IgnoreTimes`); the signature, issuer and audience are verified right after. The line now carries a reviewed security-gate waiver, and a test fails if any other code sets `IgnoreTimes` without the same review. No behaviour change.
+
+### Security: the platform signs everything a sensor pins at pairing
+
+- The approval and confirm answers of sensor pairing (`GET` and `POST
+  .../complete` under `/api/v2/sensor/pairings/{id}`) carry `grant`: the
+  identity with its content-signing keys, the job signer's keys and key set
+  (the hello's `signed_jobs` block) and, with `PLATFORM_CA_CERT_FILE`, the
+  root CAs of the platform's TLS certificate, signed with the platform
+  pairing key whose fingerprint the administrator compares. The statement
+  names the pairing, the sensor's key and its revealed nonce, so it cannot be
+  replayed to another sensor.
+- Before, only the start answer was signed: someone in the middle of a first
+  pairing could relay it untouched and swap the job-signing keys, the content
+  keys or the TLS anchor the sensor learned afterwards.
+- **Upgrade note:** sensors built on the sdk-go release with signed pairing
+  answers refuse to pair with a platform without this change ("upgrade the
+  platform"). Sensors from before it ignore the new member and pair as
+  before. Already paired sensors are unaffected.
+
+### Security: stored path exclusion prefixes are rewritten decoded
+
+- Path exclusions stored with a percent-escape (`/files/My%20Docs`) are rewritten to the decoded form (`/files/My Docs`), the form new exclusions get on save and the one the sensor compares a request path with. The pattern changes with them.
+- A row whose prefix does not decode cleanly is left as stored: an invalid escape, invalid UTF-8, a control character, an escaped `%`, a dot segment, or a `*` inside a segment. So is a row whose decoded pattern another exclusion of the tenant already holds. The platform still sends such rows as stored and decoded. Running the migration again changes nothing. Its down step is a no-op.
+
+### Security: shared mail providers' addresses are never offered as yours
+
+- The address classifier knows the Microsoft 365 Exchange front ends (Exchange Online, autodiscover, mail protection) as shared ranges, and the network names and host suffixes of the major shared mail and SaaS providers. The addresses `mail.*` and `autodiscover.*` names resolve to there are third-party on the Decisions card: never offered, never added automatically, passive checks only, and capped to web ports by the active-scan gate, even before their network lookup ran.
+
+### Security: results bind to the lease epoch the sensor states, also over protocol v3
+
+- Protocol v3 `PutResult` and `CommitResult` now carry `lease_epoch` and the transport passes it to the results handler. Before, no v3 result call carried an epoch: a shared sensor's command-bound results over v3 were always refused (`command-not-found`), and an organization sensor's were never checked against the run.
+- A result request that names the new `results_lease_epoch` feature in `X-OpenCTEM-Sensor-Features` (sdk-go from the next release; every v3 result call that sets `lease_epoch`) must state the epoch: the same request without one is refused as `command-not-found`, so a late report of a run the platform took back cannot bind to the run it handed to the same sensor next. Hello lists the feature.
+- Senders that neither state an epoch nor name the feature keep the earlier rule (holder and grace window only). **Upgrade note:** update sensors to the sdk-go release that stores the epoch with each outbox report to close that case.
+
+### Security: SAML sign-in refuses malformed signed assertions (GO-2026-6909)
+
+- A signed SAML assertion without an Issuer, Subject, Conditions or subject confirmation data is refused. Before, a missing element made the SAML library panic after the signature check, and the request ended in a server error.
+- A `NameID`, or a condition or confirmation element, outside the SAML assertion namespace is refused. Before, the library could read a foreign `NameID` as the signed-in user's identifier. Only someone who holds the identity provider's signing key could send such an assertion.
+- The API now imports `github.com/openctemio/saml` v0.5.2-openctem.2, a fork of `github.com/crewjam/saml` v0.5.1 that carries the fix sent upstream (crewjam/saml#674). `govulncheck` no longer reports GO-2026-6909.
+- **Upgrade note:** none.
+
+### Security: SAML sign-in checks more of the Web Browser SSO profile
+
+- A SAML assertion must carry an audience restriction, and every audience restriction must name this service provider. Before, an assertion with no restriction, or with one restriction for this service among others, was accepted.
+- Every subject confirmation must use the bearer method, and an assertion issued more than three minutes in the future is refused.
+- Authentication and attribute statements outside the SAML assertion namespace are refused, as are a namespace prefix declared for two different namespaces and a document type declaration anywhere in the response.
+- A request-tracking cookie with an empty AuthnRequest ID no longer matches a response that answers no request.
+- **Upgrade note:** none expected. Identity providers that follow the SAML Web Browser SSO profile send all of this already; a refused sign-in is logged with its reason.
+
+### Security: required scan identification, enforced fail closed
+
+- The platform, an organization or a bug-bounty program can require identification: every HTTP request of a scan must carry an identification header or the query parameter. A lower layer can never turn off a higher layer's requirement.
+- A job that requires identification but has no header and no query parameter at any layer fails at claim with `IDENTIFICATION_REQUIRED_MISSING` and a message naming the fix. It is never delivered.
+- Such a job goes only to a sensor that reports `http.identity.required@1`. An older sensor would drop the requirement silently, so the job waits for one that reports it (a claim by id answers `IDENTIFICATION_REQUIRED_UNSUPPORTED`). On the sensor, a tool that cannot carry the identification gets it from the task's forwarder, or the task is refused before it sends a request.
+- Turning an organization's requirement off is audited at high severity. Program imports and re-imports record the identification rules in force.
+- **Upgrade note:** update sensors to a release that reports `http.identity.required@1` before turning the requirement on. Until then, required jobs wait (fail closed).
+
+### Security: the bundled sensor is v0.41.0 and the served seccomp profile is that release's
+
+- `versions.yaml` `sensor.latest` is v0.41.0: the bundled sensor (`server/deploy/docker-compose.sensor.yml`) and the install snippets pin it. v0.40.0 and later pair only with a platform that signs its pairing answers, and v0.41.0 answers the platform's Certificate Transparency lookups (`lookup.ct@1`); this release has both.
+- The seccomp profile the platform serves to installs (`GET /api/v1/sensors/install/seccomp-profile`, both copies) is sensor v0.41.0's `docker/seccomp/sensor.json` (sha256 `f2ceafc7…1836`). It adds one rule: `chroot` is allowed, for the browser tool's Chromium renderer sandbox inside a user namespace it owns. The kernel still refuses `chroot` to a process without `CAP_SYS_CHROOT` in its own user namespace, and the sensor runs with every capability dropped.
+- **Upgrade note:** an existing install keeps the profile file it downloaded. Write it again (re-run the install snippet, or `openctemio-sensor seccomp-profile` from the new image) when you move a sensor to v0.40.0 or later. The browser tool needs the new rule; other tools do not.
+
+### Security: a stopped run no longer closes findings or marks branch occurrences fixed
+
+- A completed scan whose result says the run stopped (a non-zero exit code such as -1 from a scanner killed by the job budget, a status other than completed, a sensor stop or failure, or an unreadable result) now proves nothing. Older sensors deliver such a run as "completed" with full coverage and every target done.
+- Guarded paths: coverage auto-resolve (new reason `run_stopped`), the per-branch occurrence sweep (v1 and v2), per-target coverage settlement, the wildcard DNS mark, the collector's full-coverage check, and both retest methods (a fixed or not-reproduced verdict from a stopped run is inconclusive; a match still stands).
+- The v2 per-branch sweep of a report bound to a command now runs once per run, after the command completed by itself and every report completed. Two reports of one run on the same branch and tool sweep nothing.
+- A crashed run's finished targets count as unfinished and are scanned again.
+
+### Security: secrets reach sensor tools sealed, per task, only for the refs a signed job lists
+
+- A claimed scan, retest, validate or proxy test job lists the secrets it may use (payload member `secrets`, names only) before it is signed; the refs are recorded per claim (migration `20261105013221_command_secret_grants`).
+- `POST /api/v2/sensor/commands/{id}/secrets` answers the values for one task, sealed with HPKE to a single-use key in the request, only to a key-bound sensor (signed request) holding the command's lease under the epoch in the signed body, with a trusted grant, for refs recorded at claim, a bounded number of times. Shared sensors must be confined and get each held job's organization values only. Every refusal is command-not-found; deliveries and refusals are audited (`secret.delivered`, `secret.refused`) without values.
+- An untrusted sensor no longer receives proxy pool credentials, and a job's proxy credentials are those of the pool recorded when it was claimed, not the sensor's current pool.
+- The egress report reads the lease epoch from its body (`lease_epoch`, required); the lease header is no longer read there.
+- Credentials in a scan's settings are refused on create, update and clone (`SCANNER_CONFIG_SECRET`, naming the keys only), and a scan stored with one is blocked at trigger with the same code, so the value never reaches a command. Values that only look random stay warnings. Existing rows are not rewritten.
+- **Upgrade note:** sensors must run the SDK release of the same version (task secrets); bearer-key sensors get no secrets and must be paired again to a key-bound identity. Scans whose settings hold a credential must be edited to remove it before they run again.
+
+### Security: a scan trigger may set only allow-listed context keys
+
+- `POST /api/v1/scans/{id}/trigger` used to copy the request's `context` into the run context, removing only `rule_sources`. That context reaches the run's sensor jobs and decides its outcome, so a caller with `scans:execute` could set platform-owned keys (for example `uncovered_targets`, which forces the run partial, or routing and target keys).
+- A caller may now set only `reason` (text, at most 500 characters). Any other key, or a `reason` that is not short text, is refused with `400 TRIGGER_CONTEXT_REFUSED`, naming the refused keys. The web console sends no context and is unaffected.
+- **Upgrade note:** an API client that sent other keys in the trigger context must stop sending them.
+
+### Security: the platform decides how a web endpoint was found
+
+- The source of a reported web endpoint now comes from the capability of the command the report is bound to, not from the report: a crawl reports `crawl`, `js`, `sitemap` or `robots` (anything else it claims is stored as `crawl`), and only a path discovery job (`enumerate.web_paths`) produces the new source `guess`.
+- A guessed endpoint is stored only with response evidence (`extensions["io.openctem"].response`: body size and a 16-hex hash of the normalised body); without it the endpoint is refused and counted in `endpoints_no_evidence`.
+
+### Security: strict scope and program rules for enumeration
+
+- A path discovery job always carries a strict web scope: GET and HEAD, every path exclusion on its hosts denied unless its testing mode is allowed (`read_only` included), and a per-host request cap the sensor enforces (`max_requests_per_host`). The candidate list is filtered with the sensor's reading of paths.
+- A bug bounty program that forbids `bruteforce` or `automated_scanning` now gets no enumeration job (any `enumerate.*` capability or brute force) on its targets: refused at trigger, blocked in coverage, failed at claim with `PROGRAM_FORBIDS_ENUMERATION`.
+- New coverage gap reasons from path discovery; an origin is never marked covered on `edge_protected`, `throttled` or `budget`.
+
+### Security: one gate for every path discovery caller
+
+- The coverage planner, the workflow `paths` step and a scan someone starts share one gate: the switch, the daily request budget, an active scope entry naming the origin's host, the shared edge and program refusals, `edge_clear`, `inventory_changed` and a per-origin last-run ledger (`web_path_discovery_runs`), so the 300 requests per origin per 30 days hold across callers. The claim is made by the web job guard, and a retry of a task is refused the same way.
+- A path discovery job requires `net.confined@1`; its request cap is the platform's (a larger request is signed at the per-origin budget), and origins of one run on the same host share that host's budget. A wordlist pack runs only on origins an active scope entry names.
+- The derived list reads the organization's sibling path counts once per 10 minutes (new expression index on web origin names) and ignores paths path discovery itself guessed.
+- New coverage gap reasons: `path_ran_recently`, `not_an_origin`, `host_budget`.
+
+### Behaviour change: overlapping scan zones of different sites no longer tie-break by name
+
+- When two or more scan zones hold a target at the same narrowest range and their assigned sensors differ (two sites that reuse 10.0.0.0/16, an office and a cloud network), the target is no longer sent to whichever zone name sorts first. It is not scanned and is reported with kind and refusal code `ambiguous_zone` (fix `pick_zone`): pick the scan's zone (site) in the scan form, and it runs there. Zones that hold the same range with the same sensors still route as before (first by name), a narrower zone still wins over a wider one, and disjoint zones are unchanged.
+- A scan whose saved target lies in such a tie is still accepted at create, since it is inside zones; the trigger and the scope check ask for the zone.
+- Creating or updating a scan zone returns `same_range_zones`: the organization's other zones that hold one of its ranges exactly, so the console can warn that scans of those addresses will ask which site.
+- Tenants that relied on the name tie-break see `ambiguous_zone` until they pick a zone for those scans, or give the zones the same sensors, or narrow one of the ranges.
+
+### Behaviour change: GET /assets refuses unknown params and bad values
+
+- An unknown param or an enum value the field does not take is `400 INVALID_FILTER` (it used to be ignored), so a typo never widens a list. The value is never echoed.
+- Tag filters (`tag`, `tag_not`, `tag_all` and the old `tags`, `exclude_tags`) take at most 20 tags of at most 50 characters, and `tags_mode` takes only `any` or `all`; anything else is `400 INVALID_FILTER` (it was `422`).
+- `name=x` is now the exact name or a pattern (`*x*`); `name_contains=x` is the old partial match.
+- A user-less API key matches the system tags of private bug-bounty programs it is not a member of no more (owners and program members still do).
+
+### Behaviour change: retest auto-resolve in organizations without a closing mode
+
+- An organization created before the closing mode existed reads as `review`: its passing retests with `auto_resolve` on now become Ready to close proposals instead of closing on their own. Set the closing mode to `auto` (Settings > Finding lifecycle) to keep the old behaviour.
+
+### Behaviour change: compliance results are control states, not findings
+
+- Every benchmark check result (finding type `compliance`) is now stored as the latest state of its control on its asset, with its evidence (actual and expected value, the scanner's message, the audit file) and a history of every change (migration `20261108115557_compliance_check_state`: `compliance_check_states`, `compliance_check_results`, `compliance_posture`, `findings.compliance_level`).
+- Only a FAILED result (and a WARNING, which needs a person) is a finding. A not-applicable and an error result are kept as states only and counted on the receipt as `compliance_state`; an error is no longer folded into not applicable.
+- `findings.compliance_level` holds the benchmark level (CIS Level 1 or 2, a STIG category) read from the benchmark profile.
+- A compliance finding's remediation group is its benchmark control (`control:<benchmark>:<control>`, key rules version 5): one fix of a control covers every asset. Compliance findings never join package or solution groups. Existing keys are derived again by the remediation key backfill.
+- The dashboard maintainer keeps a per-asset benchmark posture (controls per result) for the pass rate.
+- **Upgrade note:** existing compliance findings are not changed by the migration; the `compliance-checks` command (dry run by default) records their states and re-classifies them.
+
+### Behaviour change: compliance findings take their priority from the benchmark level
+
+- A benchmark check that failed no longer takes the scanner's severity (a Nessus CIS FAILED arrived as High, then P2 with a 15-day window). Its severity comes from the benchmark level (level 1 or unknown: medium; level 2 or 3: low; a warning: low), raised one band on a crown jewel, a critical asset or in production; its class is P2 for high, P3 otherwise, never P0 or P1 by itself. Exploitation signals never apply to a benchmark check; a tenant priority rule may still raise one.
+- The scanner's severity is kept on the control's check state and in the sighting's source data.
+- New findings filter `compliance_level` (lists, saved views, export); the check result and level filters have labels in the picker.
+- **Upgrade note:** findings stored before this change keep their severity until the `compliance-checks` command re-classifies them (dry run by default).
+
+### Behaviour change: compliance findings have their own SLA and leave vulnerability figures
+
+- SLA policies take a `practice`: empty (every finding except compliance, as before) or `compliance` (only
+  benchmark check results). A compliance finding is governed only by compliance policies (asset, then the tenant
+  default, then the platform compliance windows P1 30, P2 90, P3 180 days); the known exploited cap does not apply.
+  A vulnerability is never governed by a compliance policy (RFC-152).
+- Dashboard figures (executive summary, KPIs, SLA percentage, trends and the dashboard facts) leave compliance
+  findings out; a practice change refreshes the asset's facts.
+- Deadlines stay tighten-only: a compliance finding that already has a shorter deadline keeps it until an explicit
+  re-baseline.
+- Migrations `20261107133346_sla_policy_practice` (nullable column, CHECK, the default index rebuilt per practice on
+  the small policy table) and `20261107134605_dashboard_facts_without_compliance` (function replacement).
+- **Upgrade note:** no figure moves at deploy: existing findings read as practice `other` until the `finding-practice`
+  command is applied.
+
+### Behaviour change: a second source never overwrites what the first one reported
+
+- A finding that several tools report (the same CVE and port on the same host from a sensor scan, a Nessus upload and a connector) now keeps each source's own latest record: title, description, snippet, recommendation, message, severity and CVSS, type details, native id and scheme, native family, vendor severity, status, lifecycle and solution, scores, vulnerability ids, unmapped source fields and location key, with first and last seen per source (`finding_source_records`, migration `finding_source_records`). One row per finding and source (channel, the organization's sensor, CI repository or connector, tool), at most 64 sources per finding, every value capped; rows live with their finding, move with it in a merge and are removed with the organization.
+- The finding row is a merged view with one fixed rule instead of "the last writer wins": the first reporting tool (the primary source) refreshes its own values; any other tool only fills fields that are empty. This applies to the text fields and to the stored source data (native id and scheme, source meta, scores, vulnerability ids, unmapped fields, location key). Severity and CVSS still take the maximum.
+- New read `GET /api/v1/findings/{id}/source-records` (`findings:read`; 404 outside the caller's data scope; the sensor only with `sensors:read`): each source's record, primary first, and the fields the sources disagree on side by side.
+- **Upgrade note:** existing findings get records from the new operator command `finding-source-backfill` (a link to the server binary in the API image): a dry run by default that reports per channel what it would write; `-apply` writes in batches (`-batch`, default 500), `-tenant <id>` limits it to one organization. Backfilled records are marked "From earlier records". No downtime; the migration only adds a table.
+
+### Behaviour change: the findings list opens on Vulnerabilities; one click shows Compliance
+
+- A practice switch above the findings list: Vulnerabilities (the default, every practice except compliance),
+  Compliance, each other practice that holds findings, and All, with the caller's counts. The choice is part of the
+  URL and of saved views (RFC-152).
+- `GET /api/v1/findings?include=practice_counts` adds `practice_counts` to the page: the list's filters with the
+  practice condition left out, counted per practice in the caller's scope. The switch's counts cost the page no
+  request of its own; any other `include` value is 400 INVALID_FILTER.
+- Settings > SLA policies: a new policy applies to Vulnerabilities or to Compliance; compliance policies are marked
+  in the list.
+
+### Behaviour change: a verified first-party tool that reports an undeclared type is ingested, not held
+
+- A report from a built-in tool (origin builtin) on a trusted sensor, whose descriptor was sent by the sensor and matches its digest, no longer has its assets and findings parked in the review queue because its descriptor lags its importer. What the platform catalog allows for the tool and the command's targets cover is ingested and flagged: a `contract_mismatch` entry on the ingest receipt, the audit event `sensor_result.contract_mismatch`, and one notice to the platform administrators per tool, type and version a day.
+- Unchanged: third-party, unsigned or untrusted tools and descriptors, unverified sensors, assets outside the command's targets, dependencies, endpoints and the quarantine caps still hold the report for review.
+- No migration.
+
+### Behaviour change: results outside a scan job's targets are recorded, not dropped
+
+- A sensor result for a host outside its command's targets (a host a template scanner reached after a redirect, an address a port scan found that no target name states) or outside an address-only command's addresses is now recorded: a new asset is created as a scan discovery, an existing one is only marked seen, and its findings are stored. Recording grants nothing: the active-scan gate still decides what may be probed, so a third-party or shared host stays passive until a person puts it in scope.
+- Findings on such assets send no notifications, open no tickets and are routed to no group, and the run does not count those assets as covered, so absence never closes their other findings.
+- One report records at most 1000 such assets; the rest are refused with their findings (`assets_over_cap`, `findings_over_cap`, item error `too_many`, receipt item `over_cap`). The `sensor.results_outside_job` audit entry now reports what was recorded and what was refused (severity medium, high when the cap refused some).
+
+### Behaviour change: a Nessus import closes what the scan proves gone
+
+- A `.nessus` upload closes, without any declaration, the open Nessus findings of its own hosts that it no longer reports, only where the file proves it: the host's scan finished, the check (plugin or family) ran, and a local check only where the scan logged in. Critical and known-exploited findings, leaked secrets, human sources, branch occurrences and findings last seen by a platform sensor never close; the uploader needs `findings:verify`; nothing closes when any file or row of the upload failed; the mass-close guard holds.
+- A `PASSED` compliance result resolves the open `FAILED` finding of the same host and check; `WARNING` and `ERROR` never do. A passed check is no longer stored as an open finding.
+- A finding's last seen time is the scan's time from the file, and only moves forward; a file reopens a closed finding only when it saw it after the close, and a close is dated at the host's scan end, so files uploaded out of order give the same result.
+- The import result counts what closed by reason and why the rest stayed open (host not finished, local checks not run, check not run, seen later, file incomplete, verify permission, guard), and says on how many hosts authentication failed.
+
+### Behaviour change: readable channel notifications, one message model for every channel
+
+- Slack, Teams, Telegram, e-mail, webhook and Splunk messages are built from one card: the headline once, the severity once (a line plus a coloured marker), the asset, what it is (title, CVE, KEV, EPSS, exposure class), why it matters, the next step, the organization, and one action button. The console link is never written into the text (it was shown defanged next to the button) and visible text carries no internal IDs.
+- A channel has a detail level (`minimal`, `standard`, `full`) instead of the include-details switch. New channels are `standard`. Existing channels keep what they sent: details on became `full`, off became `minimal` (migration `notification_detail_level`); switch a channel to `standard` in Settings > Integrations > Notifications to get the asset, the reason and the next step.
+- Message templates use a closed set of variables (`title`, `severity`, `asset`, `asset_type`, `what`, `why`, `next_step`, `organization`, `count`, `description`), are validated on save (400 for an unknown variable such as `{severity_emoji}`, `{url}`, `{body}` or `{timestamp}`), and never render raw braces: a stored template that no longer validates falls back to the default layout. New endpoint `POST /api/v1/integrations/notifications/preview` renders sample data with the same code; the channel dialogs show it live.
+- Messages are written in the organization's default language (en, vi).
+- The generic webhook and Splunk payloads add a `notification` object (schema `openctem.notification/v1`).
+- API: `include_details` is replaced by `detail_level` on the notification channel endpoints.
+
+### Behaviour change: a sensor's local policy no longer keeps callback jobs away; the install policy leaves allow_interactsh out
+
+- A job that asks for out-of-band callbacks (interactsh) is no longer held back from a sensor whose reported local policy does not allow them: the sensor runs it without callbacks and its result says why (`oob` state `unavailable`, reason `local_policy`). The organization's own interactsh switch still refuses such jobs when it is off.
+- The local policy the console renders for a new sensor no longer sets `allow_interactsh: false`; it keeps the line as a commented example. A policy without the key follows the platform, and callbacks only ever use the sensor's own interaction server (`SENSOR_OOB_SERVER`), never a public one.
+- The sensor page's help texts say so.
+
+### Behaviour change: a finding closed as out of scope is never counted or shown as fixed
+
+- Findings closed because their asset was marked not ours or retired (closure reason `out_of_scope`) no longer count as remediated in MTTR, fix rate, program, CTEM cycle and risk snapshot figures.
+- They leave the SLA (`sla_status = not_applicable`) instead of counting as met or missed; migration `out_of_scope_sla_not_applicable` backfills existing ones. Re-including the asset reopens them with the deadline they had.
+- Every close and reopen by the scope effects reconciler writes a `finding.status_changed` audit entry naming the exclusion and its kind (or the "not ours" decision); high severity for critical, P0 or KEV findings.
+- The outbound ticket push now runs for these moves. A linked Jira issue gets a comment and is not moved to a done status; a linked GitHub issue is left open.
+- A permanent not ours or retired exclusion that would close open critical, P0 or KEV findings is refused with `EXCLUSION_CLOSES_CRITICAL_FINDINGS` (409, details `critical_findings`) until the request carries `confirm_critical`. The bulk preview returns `critical_findings`; both out-of-scope dialogs ask for the confirm.
+
+### Behaviour change: decide the addresses your names resolve to in bulk
+
+- Attack surface > Discovery > Decisions: every group and list of the addresses card has checkboxes, "Select all" (and every waiting address past the list), "Add selected (as ranges)" and "Not ours". Chosen addresses next to each other become one range that holds only the chosen addresses. Each group offers "Add all N (as ranges)" and "Not ours". The per-address Add button is gone.
+- The confirmation lists the network owners and counts of the selection and flags third-party addresses; they are left out unless the person ticks them in, and then each is its own exact entry.
+- The card opens with a summary: added automatically (yours), third-party (never scanned), and how many need you.
+- `POST /api/v1/easm/suggestions/addresses/add` and `/reject` take `groups` and `all_waiting` beside `addresses` (up to 2000 addresses); `include_shared` now admits several third-party addresses.
+
+### Behaviour change: scans of a retired sensor tool are no longer dispatched
+
+- When an organization stops using a tool of one of its sensors as a source of findings, the claim no longer hands that sensor the tool's scan tasks (scheduled, manual and coverage runs, including runs queued before the retirement). Another sensor of the organization with the tool takes the task (the task shows the placement reason `source_retired`); a task pinned to that sensor, or one no other sensor may run, is refused with `SOURCE_RETIRED`.
+- Its step is skipped with `SOURCE_RETIRED` and the reason, never failed: the rest of the run goes on and ends partial, or failed when nothing produced results. The run page explains the code and links to the retired sources. "Use this source again" makes the tool run again at the next claim.
+- A retirement only stops the organization's own sensors; another organization's work is never affected. Retirements that cannot be read withhold the task (fail closed). No migration.
+
+### Behaviour change: the scans list and the runs list refuse unknown parameters
+
+- An unknown query parameter on `GET /api/v1/scans` or `GET /api/v1/scan-runs` is now `400 INVALID_FILTER` instead of being ignored. A value that is not valid for its field (a status that does not exist, a malformed id) is the same error and never quotes the value.
+- `GET /api/v1/scans?asset_group_id=` now also matches a scan that names the group in its list of groups, not only its first group.
+
+### Behaviour change: single sign-on is no longer a deniable feature; a count limit caps connections
+
+- The named features `sso.connections` and `sso.enforcement` are removed. Signing in through SSO, configuring a connection and requiring SSO are security controls and are never withheld by a plan or an operator deny.
+- New limit key `sso_connections` (SAML configuration plus OIDC identity providers). At the limit only creating another connection is refused; changing or deleting a connection, signing in and requiring SSO keep working. Without a limit source (self-managed Community) it is unlimited. The limit shows in Settings > Limits.
+- The hourly sweep that switched SSO enforcement off after a downgrade is removed, together with its controller: enforcement stays on after a limit change.
+- A control plane that still sends `sso.connections` or `sso.enforcement` in `denied_features` is refused as an unknown feature; send `sso_connections` in `limits` instead.
+
+### Behaviour change: closing one finding no longer asks for an authenticator code
+
+- Closing a single finding (from the findings list, a single Ready-to-close confirm, or the finding's
+  own status change) is now a **routine** action. Routine actions do not ask for re-verification
+  unless the organization turns it on. Closing two or more findings still asks.
+
+### Behaviour change: Tenable.sc rotation waits at least a day, and purge joins the modes
+
+- Aging is the recommended license rotation: a dedicated universal rotation repository with 1-day lifetimes as the coverage repository. `coverage_rotation_wait_hours` is now 24-72 (default 26, was 1-72 with 12), because Tenable.sc frees aged data only at its nightly cleanup. A stored value under 24 is refused, and the coverage panel says why coverage waits.
+- New mode `purge` (Beta, unverified, behind the same acknowledgement): after the previous batch was ingested, the next batch asks the connector to remove that batch's addresses from its rotation repository (the previous command is read tenant-scoped). A purge the connector cannot confirm (`purge_unverified`) stalls rotation.
+- Recycle stays opt-in and needs a Tenable.sc Administrator key on the connector; the connector dialog says so. A refusal before launch keeps the pending recycle or purge and does not stall rotation.
+- An import Tenable.sc Blocked for the license (`IMPORT_BLOCKED`) no longer stalls rotation: its targets stay due, and the next batch imports that scan result again with the blocked batch's targets once the license guard sees capacity.
+- Needs connector-tenable with the matching release (rotation_mode, purge, reimport_scan_result_id).
+
+### Behaviour change: template scans run low-severity templates at standard depth and info templates at deep
+
+- `vuln.templates` steps that set no severity now run low to critical at standard depth and info to critical at deep (owner decision OD-1). Before, a step without a severity ran whatever the sensor defaulted to, and the built-in recon workflows ran only critical to medium at standard and critical to low at deep, so scans of well-kept hosts reported nothing. Info matches are filed as info exposures, not findings.
+- Migration 20261104164815 updates the template steps of the built-in recon workflows, and tenant copies that still hold the earlier built-in values; a severity an organization set itself is kept. A step's own severity, its depth params and (once available) the scan's per-step settings still replace the default.
+
+### Behaviour change: scans are refused at plan time when no sensor of the zone could run them
+
+- A scan whose target's scan zone has only New sensors (passive work only) and whose job is above T0 is refused with `zone_sensor_new` and the fix `trust_sensor`, instead of being dispatched and refused when a sensor claims it. A passive (T0) job on a New sensor still runs.
+- A private target (RFC1918 or IPv6 ULA, or a name resolving to one) whose zone sensors all report that their host refuses private targets is refused with `zone_sensor_no_private` and the fix `allow_private_targets` (on the host: `SENSOR_ALLOW_PRIVATE_TARGETS=1`, then restart the sensor), instead of failing on the host.
+- Both checks run on the scan trigger and in the scope check (dry run). Every active sensor assigned to the zone counts, online or not; a batch is pinned only to an online sensor that passes both checks, and waits in the zone otherwise. The claim (grant) and the sensor still decide every job.
+- The sensor's local policy report carries `allow_private` also without a policy file (sdk-go with the field); the dispatch pre-check withholds a job with a private address from a sensor that reports `false`. A sensor on an older SDK that does not send it is unchanged.
+
+### Removed: CERT_MONITOR_FEED_URL, CERT_MONITOR_CERTSPOTTER_URL, CERT_MONITOR_CERTSPOTTER_KEY
+
+- The platform no longer queries CT sources, so these settings are gone; the API refuses to start while one is set and names the sensor settings instead: `SENSOR_CT_CRTSH_URL`, `SENSOR_CT_CERTSPOTTER_URL`, `SENSOR_CT_CERTSPOTTER_KEY` on the platform sensor. Upgrade note: unset them before upgrading (no install template set them).
+
+### Removed: the unused "asset tags" permission scope type
+
+- The permission scope type `asset_tags` (and its siblings `all`, `owned_assets`, `asset_type`, `severity`, with the `ScopeValue` document) was declared in the access-control domain but nothing stored or enforced it: a role could never carry such a scope, and nothing read one. The unused declarations are removed so they cannot be mistaken for a working restriction.
+- Nothing changes at runtime and no data is touched. Tag-based access is, and stays, the team scope rule `tag_match` (data scope), which is enforced.
+
+### Removed: the egress-credentials sensor route
+
+- `POST /api/v2/sensor/commands/{id}/egress-credentials` is removed without an alias: the proxy pool's credentials are the task secret `egress_proxy`.
+
+### Deprecated: old GET /assets filter params
+
+- `types`, `lenses`, `criticalities`, `statuses`, `scopes`, `exposures`, `tags`, `exclude_tags`, `search`, `min_risk_score`, `max_risk_score`, `is_crown_jewel`, `business_unit_ids`, `asset_group_ids`, `owner_ids`, `ids`, `in_cidr`, `data_classifications`, `is_control_plane`, `environments`, `providers`, `last_seen_after`, `last_seen_before`, `expires_after`, `expires_before`, `min_confidence`, `max_confidence`, `first_seen_after`, `first_seen_before`, `tags_mode` and `technology_version` next to `technology` keep working and answer with `Deprecation`, `Sunset` (2026-12-20) and a `Warning` naming the new param. They are removed two releases later.
+
+### Deprecated: the scans list parameters `search` and `tags`
+
+- `search` is now `q` and `tags` is now `tag` on `GET /api/v1/scans`. The old names keep working with `Deprecation`, `Sunset` (2027-05-08) and `Warning` headers, and are counted in `deprecated_query_param_requests_total`.
+
+### Added: addresses your own network holds join scope automatically
+
+- New scope setting "Addresses your names resolve to" (`address_auto_add`): `auto_strong` (default), `ask` or `never`. In `auto_strong`, an address your in-scope names resolve to is added as its own scope entry when your declared network holds it (your AS network seed or a prefix that AS announces) and more evidence agrees, with nothing holding it back (a brand-new address, names of other organizations on it). Two or more such addresses in one of your announced prefixes add that prefix as one entry. Shared, CDN, hosting and provider addresses are never added. Without a network seed nothing is added.
+- Automatic entries follow the organization's approval policy like a person's add: with approvals required they wait for an approver. They carry origin `auto_address`, are audited with their evidence, and the administrators are told. Each pattern is added at most once: a removed entry stays removed. Under Strict scan approval nothing is added automatically. `never` hides the addresses card.
+- Migration 20261104162111 allows the origin `auto_address` on scope entries (the down migration turns them into `system` entries) and adds the table `easm_address_auto_adds` (tenant, pattern) that remembers what was added.
+
+### Added: filter findings by the address of their asset
+
+- New findings filter `asset_ip` (one IP address or a CIDR range, e.g. `asset_ip=10.0.0.0/8`, up to 20 values) on `GET /findings`, `POST /findings/search`, stats and export, and `asset.ip` in the query language; assets queries take `ip`. It matches `ip_address` assets and needs `assets:read`, like other asset attributes.
+- Migrations `20261107151034_asset_ip_function` (function `parse_asset_ip`) and `20261107151035_assets_ip_index` (partial index `idx_assets_ip_addr`, built concurrently; no table rewrite, no write lock).
+- Filter fields can now be marked ordered (severity, priority class and asset criticality: an editor can offer "at least high") or as taking name patterns (asset name, asset domain).
+
+### Added: asset liveness, and findings of gone assets close as obsolete
+
+- Every asset now has a liveness state read from the coverage loop's per-target verdicts: alive, unreachable (checks
+  got no answer, 3 times over 72 hours by default), unresolvable (the name has no address or the lookup failed) or
+  gone (no address 3 times over 72 hours from two scan zones or sensors, or over 7 days from one; the dangling DNS
+  check ran clean; not pinned by a person). An edge protection that blocks a check counts as an answer. A dangling
+  name is never gone: it stays unresolvable with reason `dangling` and its takeover risk stays a finding.
+- Organizations can turn on `liveness.close_findings_when_gone` in the asset lifecycle settings: open findings of a
+  gone asset (version-match findings included) then close as resolved / `obsolete_asset` (never counted as fixed)
+  and reopen to their previous status, with the SLA deadline kept and not as a regression, when the asset resolves
+  or answers again. Every move is on the finding's timeline and audited; owners and administrators are told. At
+  most 50 assets with open findings become gone per day by default.
+- Asset responses carry `liveness` (state, since, last check and which zone or sensor made it). The asset lifecycle
+  dry run reports assets per liveness state and the findings a pass would close and reopen.
+- Thresholds are tenant settings with safe floors; turning closing on or lowering them is a loosening (step-up,
+  high-severity audit, owners told).
+- Migration `asset_liveness` adds the evidence table and seeds it from the coverage ledger.
+- **Upgrade note:** closing is off by default. Run the asset lifecycle dry run and review `liveness` before turning
+  it on.
+- A finding closed because its asset was gone reopens only on stored evidence that the asset is back: an asset that lost its liveness record, or one that was deleted, keeps the finding closed.
+
+### Added: open ports of assets
+
+- New derived table `asset_ports` (migration `20261108191259`): the open ports each asset answers on (the open_port service, the address that exposes it, the names that resolve to that address), kept current by the `asset-ports` worker from a trigger-filled queue. It backs the asset list's port and service filters and its Open ports column. Every live service asset is queued once on upgrade; the worker fills the table in the background. Design: `docs/architecture/asset-ports.md`.
+
+### Added: asset inventory search box, type tabs and saved views
+
+- The asset inventory filter bar has the Query toggle of the findings list: the filter as one line of query text on the shared search box, written back as flat URL params when the chips can show it and kept whole as an Advanced chip when they cannot (an OR across fields, a group).
+- Inside the External surface lens the type is a tab with a count: Domains, Subdomains, IP addresses, Services, Web endpoints, Certificates (`?lens=external_surface&tab=ip_address`). A tab is a locked type condition. Old `types=<one type>` links open the matching tab; other lenses keep the type facet.
+- The IP addresses tab shows the address's Network /24 (a click filters to it), the names that resolve to it, and its open ports, and can group the addresses by network.
+- Saved views work on the inventory (page `assets`, personal, shared with a group or the organization). The old quick Views became built-in starter views, with a few more for each tab.
+- Totals show "10,000+" when the list stopped counting at 10,000.
+- The web console now sends the list query contract's parameter names to `GET /api/v1/assets`; the deprecated names still work until 2026-12-20.
+
+### Added: network, port and service filters and the IP addresses tab columns
+
+- `GET /assets` filters `network=10.1.2.0/24` (the /24 of IPv4, the /64 of IPv6; an address means its network), `port=443`, `port:80,443`, `port>=8000`, and `service=https` (from `asset_ports`).
+- Every address row of the list carries `ip`: its `network`, up to 3 names that resolve to it and up to 5 open ports, with totals; only names and ports in the caller's data scope are listed or counted.
+- `GET /assets/networks` groups the addresses a list filter matches by network (at most 500, `capped` above), with the same params, registry and scope as the list.
+- Migrations `20261108192453` (function `asset_ip_network`) and `20261108192454` (`idx_assets_ip_network`, built concurrently, partial on address assets; no row is rewritten).
+
+### Added: the asset inventory on the list query contract
+
+- `GET /assets` reads its filter through the `assets` field registry (`pkg/domain/assetlist`), like the findings list: every filter is a registry field, compiled as the caller with the tenant and data scope first. New: `POST /assets/search` takes a FilterDocument (OR groups, NOT, long lists), saved views for the assets page (`GET /assets?view=<id>`, migration `20261108184839`), the search box (`entity=assets` on `/query/parse`, `/query/values`, `/query/schema`) knows every inventory filter, `name` takes patterns (`api-*`), and new fields `domain` (domain membership), `tag_all`, `finding_count`, `technology=name@version`.
+- Counts stop at 10,000: `total` is exact up to 10,000, above it `total_capped` is true. `cursor` (empty for the first page) pages in last seen order with `next_cursor`, without the 10,000 offset limit.
+- List and count statements run read-only under a 5 s statement timeout (503 `QUERY_TIMEOUT`).
+
+### Added: Blocked names tab in the platform console
+
+- Scanning > Platform scanning > Blocked names: the government and military rule switch (with a standing warning while it is off), the operator's own blocked names (server names shown read-only), the longest exception, and the exceptions table (organization, domain, reason, authorisation reference, granted by, expiry, state) with Grant, Extend and Revoke. Every change asks for a reason and an authenticator code; a submit error shows in the dialog footer. The four-eyes approval prompt names the new actions.
+
+### Added: benchmark posture, controls and control history reads
+
+- `GET /api/v1/findings/compliance/benchmarks` (pass rate per benchmark over the caller's assets, or one asset), `GET /api/v1/findings/compliance/benchmarks/{key}/controls` (a benchmark's controls, failed first), `GET /api/v1/findings/compliance/benchmarks/{key}/assets?control=` (one control's state per asset with its evidence and finding) and `GET /api/v1/findings/{id}/compliance-history` (every change of the control a finding fails). All need `findings:read` and run in the caller's data scope.
+
+### Added: the compliance-checks command moves stored compliance findings to check state
+
+- A new operator command in the API image, `compliance-checks` (dry run by default, aggregates only), records the control state of every open compliance finding, re-classifies failures and warnings from their benchmark level and asset, and resolves stored passed, not-applicable and errored checks with the new closure reason `reclassified_check_state` (never counted as fixed; migration `20261108123051_finding_closure_reclassified_check_state`). Every close gets a timeline entry and an audit log entry; each run one audit entry per tenant.
+- `-apply` needs `-undo <file>`: the previous status, severity, class and level of every changed row are written there first. A rerun changes nothing; closed findings are never touched.
+- **Upgrade note:** on an existing installation run, each as a dry run first: `finding-practice -apply`, `compliance-checks -apply -undo <file>`, then `finding-practice -sla -apply -undo <file>`. The production apply is the owner's decision.
+
+### Added: compliance SLA re-baseline in the `finding-practice` command
+
+- `finding-practice -sla` reports, per tenant, the open compliance findings whose deadline would move to the
+  compliance window from first detection (count, days in all, overdue before and after); `-sla -apply -undo <file>`
+  writes them (later only), with an undo file and an `sla_rebaselined` timeline entry per finding.
+- Migrations `20261107135618_finding_activity_sla_rebaselined` (timeline entry type, CHECK re-added NOT VALID) and
+  `20261107135619_finding_activity_sla_rebaselined_validate`.
+- **Upgrade note:** run the dry run first; the apply on production is the owner's decision.
+
+### Added: compliance view on the findings list and a control's status history
+
+- Findings, Compliance practice: a Benchmarks section with the pass rate per benchmark over your assets (passed out of passed and failed), the assets failing and when each was last checked. A benchmark opens its controls, failing ones first, and a control opens the assets it was checked on with what the check saw and a link to the finding.
+- The configuration check panel of a finding shows the status history of its control (every change of result, newest first).
+- English and Vietnamese.
+
+### Added: continuous coverage collects info-level template results
+
+- `vuln.templates` coverage now also runs an info pass (severity info only) on web services, next to the regular low to critical pass, so no template runs twice. It runs on the asset's first coverage, when its technologies or web surface change (at most once per 7 days) and otherwise every 30 days. Info matches are filed as info exposures, not findings.
+- Console: Scoping > Settings has "Info checks" (on by default) and an interval of 7 to 90 days. The asset coverage list shows the info pass as its own capability, with its own state and gaps.
+- The regular pass now sets its severities explicitly (low to critical). No migration; the setting is part of the scope settings.
+
+### Added: Certificate Transparency monitoring through platform sensors (lookup.ct@1)
+
+- The CT sweep, certificate-expiry and subdomain exposures from CT are back, without the platform contacting a CT source: each watched domain is a lookup job that a platform-owned, instance-scope sensor reporting `lookup.ct@1` answers (sensor `SENSOR_CT_LOOKUP`, on by default on a shared sensor with a pinned job-signing key; the bundled sensor once it runs a sensor version with CT lookups). The sensor queries crt.sh, then Cert Spotter, and returns certificate records with a status per source.
+- `GET /api/v1/easm/settings` reports `ct_available: true` while such a sensor is connected and a job signer is configured, checked per request; otherwise `ct_unavailable_reason: needs_platform_sensor` as before. A sensor connected later turns monitoring on without a restart. Older sensors keep working; CT stays off with them.
+- New sensor routes `GET /api/v2/sensor/lookups/next` and `POST /api/v2/sensor/lookups/{id}/done`, a stage catalog entry `lookup.ct` (cross-cutting, T0, tool `ctlog`), and migration `20261112040823_sensor_lookup_jobs` (open questions only, deleted once answered).
+
+### Added: the Decisions card groups addresses by network and decides them in bulk
+
+- Attack surface > Discovery > Decisions groups the addresses your in-scope names resolve to: by your own prefix, by network (AS and holder), else by /24 or /48, and shared ones by provider. Each group shows its count, the names behind it and its evidence, with one action: **Add N addresses**, or **Add range <prefix>** for your own announced prefix, and **Not ours**. Rows can be selected across groups (**Add selected**, **Not ours**), and **Add all** adds every waiting address after a confirmation that lists them and says that names do not prove ownership. Every dialog lists exactly what changes, and every decision has an Undo.
+- **Is this network yours?** once per network: **Yes** records it as a network seed, so its addresses, now and later, are added automatically when the evidence is strong (through your approval rules); **No** marks the group not yours and the question is not asked again (migration `20261105055329_easm_declined_networks`).
+- New routes `POST /api/v1/easm/suggestions/addresses/add`, `/addresses/reject`, `/networks/ours`, `/networks/not-ours` and `DELETE /declined-networks/{id}`. The server accepts only addresses and ranges on the caller's own card (tenant, data scope); a shared or CDN address is never part of a bulk add. Each decision is one audit event listing its items.
+- The Decisions badge counts one decision per address group, not one per card.
+
+### Added: exploration leads for people (API)
+
+- `GET /api/v1/exploration/leads` (`assets:read`, groups waiting / next / running / done, keyset paging)
+  and `GET /api/v1/exploration/leads/{id}` (links and verdicts) list and read leads within the caller's
+  data scope: a lead is seen when its subject asset is; out of scope answers 404.
+- `POST /api/v1/exploration/leads` (`scans:execute`) asks a catalog question about an asset in the
+  caller's data scope; the tier decides its first state as for a rule's lead.
+- `POST /api/v1/exploration/leads/approve` (`scans:approve` and a fresh step-up) lets up to 100 waiting
+  leads run; `POST /api/v1/exploration/leads/reject` (`scans:approve`) closes up to 100 live leads.
+  Results are per lead. Approvals and dismissals are audited (`exploration.lead_approved`,
+  `exploration.lead_dismissed`, with the reason).
+
+### Added: exploration leads are scored and dispatched
+
+- A new background job (`ExplorationController`, module Scans, every 2 minutes, one replica) runs the
+  exploration rules, then scores open leads in code (expected value: likelihood updated by the
+  organization's own outcomes x the subject's value / the tool's learned duration, 20 % of each pass
+  reserved for kinds of step never tried, a kind with 10 useless outcomes in a row demoted) and starts
+  the best ones.
+- Steps start only through the coverage run path: the dispatch gate (scope entries, exclusions,
+  guardrails, zones), the signed job and the sensor's local policy apply, the target is always the
+  subject asset's own name, and every step counts against the organization's coverage daily budget
+  (`ASSET_COVERAGE_DAILY_BUDGET`). A refused target blocks the lead with the gate's code; nothing runs.
+  At most 4 running leads per organization and one per asset and capability. Intrusive steps are never
+  started by the system. Active steps run only while automatic coverage is on or a person approved them.
+- Finished steps settle the lead with an append-only verdict and `yields` links, including "nothing
+  found"; failed steps are retried until the lead type's attempt limit, then the lead is exhausted.
+  Every state change is audited (`exploration.lead_state_changed`, `exploration.lead_verdict`).
+
+### Added: lead type catalog for exploration
+
+- `server/configs/lead-types.yaml` lists each kind of exploration question with its typed next actions
+  (stage catalog capabilities, per subject asset type), allowed params, prior band, value weight,
+  attempt limit and reason codes. `make generate-lead-types` writes the Go and TypeScript catalogs;
+  the generator refuses a capability or asset type the catalogs do not know, and every action takes
+  the stage catalog's tier. First types: `dns.takeover_check`, `version.confirm`,
+  `asset.gone_with_findings`.
+
+### Added: exploration leads, links and verdicts (storage)
+
+- New tables `explorations`, `exploration_leads`, `exploration_links` and `exploration_verdicts`
+  (migration `exploration_layer`): an open question about an asset or finding with a typed next
+  action, the evidence it came from, the run it was dispatched as, what that run yielded, and
+  append-only verdicts. Every reference is a typed column with a composite tenant foreign key.
+  Nothing reads or writes them yet; additive only, no upgrade step.
+
+### Added: precomputed exploration figures
+
+- New table `exploration_rollups` (migration `exploration_rollups`), recomputed by the exploration job
+  after every pass: live leads by state, leads settled and proven or refuted in the last 30 days,
+  dispatches, the share opened by rules, the median time to a verdict and the last step.
+- `GET /api/v1/exploration/summary` and `POST /api/v1/exploration/summary/refresh` (`assets:read`,
+  Refresh now at most once a minute) return them with their freshness to callers who see the whole
+  organization or view organization dashboards; any other member gets live counts within their data
+  scope.
+
+### Added: exploration rules open leads
+
+- Three deterministic rules open exploration leads in each organization's continuous exploration:
+  `dns.takeover_check` (an active dangling alias found by the platform's DNS check, not yet found
+  claimable), `version.confirm` (an open KEV or critical version-match finding whose match is only
+  potential) and `asset.gone_with_findings` (an asset the liveness ledger holds gone while findings
+  stay open). Each lead cites its evidence (`derived_from` links) and is audited
+  (`exploration.lead_opened`, actor `rule:<type>@<version>`).
+- Passive steps open at once; active steps open at once only while automatic coverage is on,
+  otherwise they wait for approval. Caps: 5 live leads per asset, 500 per exploration. A closed
+  question is not asked again for 30 days. Nothing dispatches yet.
+
+### Added: Exploration page and asset Next steps (web)
+
+- Discovery has an **Exploration** page (`/exploration`, `assets:read`, module Scans). It opens with
+  one status sentence from the precomputed figures (next steps, waiting for approval, last step) and
+  Refresh now for organization-wide figures, then one list grouped as Waiting for you, Next, Running
+  and Done recently, with keyset paging. Each row says what is checked, on which asset, why, how
+  intrusive the step is and how it ranks; a drawer shows the rationale, links, answers (heuristic and
+  AI answers are labelled as unverified), the score inputs and why a step is blocked.
+- People with `scans:approve` approve (with step-up) or dismiss waiting steps one by one or in bulk;
+  each step is answered on its own.
+- The asset page and drawer show **Next steps**: up to three steps on the asset with their state,
+  See all (the Exploration page for that asset) and Ask (`scans:execute`), which asks a catalog
+  question about the asset.
+- The audit log labels the exploration actions (`exploration.lead_opened`, `lead_approved`,
+  `lead_dismissed`, `lead_state_changed`, `lead_verdict`).
+
+### Added: How we found this on the finding and asset pages
+
+- The finding page shows a "How we found this" section: the scope entry, the assets the finding was found under, the scan runs and sources that reported it, each linked. The asset page and sheet show the same timeline in their discovery section (renamed "How we found this"). A step you may not see reads "A step you cannot see".
+
+### Added: how we found this, for findings and assets
+
+- `GET /api/v1/findings/{id}/story` (`findings:read`) and `GET /api/v1/assets/{id}/story` (`assets:read`) return a short ordered chain from records already stored: the scope entry in effect that covers the subject, its discovery chain, the scan runs that derived, scanned or reported it, the sources that reported it and the finding. No migration.
+- A step the caller may not see (an ancestor outside their data scope, the asset of a finding assigned to them outside their scope, a run without `scans:read`) is returned as hidden and counted, never named; scope entries need `attack_surface:scope:read`, sensors `sensors:read`.
+
+### Added: `finding-practice` command to set the practice of existing findings
+
+- A new operator command in the API image (`finding-practice`, a link to the server binary) derives the practice of
+  findings stored before practices existed, and of open findings whose inputs changed, with the same rules as ingest.
+- A dry run is the default: a read-only connection and a report of aggregates per tenant (findings per practice
+  before and after, moves between practices with open and closed counts, rows to change). `-apply` writes only the
+  differences in pages, queues a dashboard refresh for the moved assets, and can be rerun safely.
+- **Upgrade note:** run `finding-practice` (dry run) after upgrading, review the report, then `finding-practice -apply`.
+
+### Added: finding practice (the program that triages a finding)
+
+- Every finding now has a `practice`: `aspm`, `infra`, `external`, `cloud`, `compliance`, `offensive`, `identity`,
+  `runtime` or `other`, derived when it is written from its type, source, tool and its asset's type and exposure
+  (RFC-152). `compliance` means exactly a benchmark check result (`finding_type = compliance`).
+- The findings list, stats, groups, export, saved views, the query language and the MCP `list_findings` tool filter
+  on `practice` (`practice_not=compliance` lists vulnerabilities only) and on `compliance_result` (pass, fail,
+  manual, not_applicable, error, unknown). The finding response and the export carry `practice`.
+- Migrations `20261107130420_finding_practice` (two columns with a default and a CHECK added NOT VALID then
+  validated: no rewrite, no write lock) and `20261107130421_finding_practice_index` (built concurrently).
+- **Upgrade note:** existing findings read as `other` until the practice backfill runs (an explicit operator
+  command, shipped separately); new findings and new sightings of open findings get their practice at once.
+
+### Added: who reported a finding, and filters by sensor, scan, run, tool and channel
+
+- Every upload, scan run, sensor task or report, CI run, connector sync and platform match now records who reported each finding it created or saw again: one row per finding and source (channel, the organization's sensor, CI repository or connector, tool, scan) with first and last seen and how many runs or uploads saw it (`finding_sightings`, migrations `finding_sightings` and four `finding_sightings_*_index`). Repeats of the same source update that row; at most 64 sources per finding.
+- The finding page shows "Seen by": each source, its tool and version, first and last seen, a link to the last run and to everything that source reported. The sensor is shown only with `sensors:read`, a scan's name only with `scans:read`. New read `GET /api/v1/findings/{id}/sightings` (`findings:read`, 404 outside the caller's data scope).
+- The findings list takes `seen_by_sensor_id` (needs `sensors:read`), `seen_by_scan_id`, `seen_in_run_id` (what a run's receipt recorded, kept 90 days), `seen_by_tool` and `seen_by_channel`. The run page, the scan page and the sensor page link to "Findings this run / scan / sensor reported".
+- **Upgrade note:** the migration backfills sightings from the receipt log (90 days) and from each finding's own upload, sensor, tool and CI fields; those rows are marked backfilled ("From earlier records"). Findings a person entered get none. The four secondary indexes are built `CONCURRENTLY` after the backfill.
+
+### Added: findings filters by asset type, domain and name pattern
+
+- `asset_type` / `asset_type_not`: findings on assets of the given stored types (`domain`, `subdomain`, `ip_address`, `service`, `repository`, ...).
+- `asset_domain` / `asset_domain_not`: `example.com` is every finding on anything that belongs to the domain (its names, the addresses they resolve to, services on those addresses, certificates, web applications); `*.example.com` leaves the name itself out. CDN, edge and shared-hosting addresses never count. Membership is precomputed in `asset_domain_memberships` by the new `asset-domain-membership` worker from a queue that triggers fill (docs/architecture/asset-domain-membership.md).
+- `asset_name` / `asset_name_not`: a name pattern (`*` any characters, `?` one), translated to an escaped match, never a regular expression.
+- A filter takes at most two pattern or contains filters; a third is refused with a reason. A findings list that times out logs the names of its filter fields.
+- The MCP `list_findings` tool takes `asset_type`, `asset_domain` and `asset_name`.
+- Migration 20261106125549 adds the membership and queue tables and triggers, and queues every live asset once (no existing row changes).
+
+### Added: findings filter "Only reported by a retired source"
+
+- `retired_source_only=true` on the findings list (and its counts, groups and export) returns the findings every one of whose sources the organization stopped using: the findings a source retirement kept open or archived that no other source corroborates. `false` is the complement. It uses the retirement classifier's own rule (shared SQL), is tenant-pinned, and runs inside the caller's data scope. The filter picker offers it, and the retired sources section links to it.
+
+### Added: edit the findings filter as text
+
+- The findings filter bar has a Query toggle (Ctrl+/): the whole filter as one line of text in the shared search box, e.g. `severity>=high kev=true -status:accepted last_seen<7d domain=*.example.com`. Filters that chips can show are written back as the usual URL params, so links and bookmarks keep their form; a filter chips cannot show (an OR across fields, a group) is kept as `fq=<text>` and shown as one Advanced chip, never dropped.
+- With an `fq` filter the list runs through `POST /findings/search`; the overview numbers are not shown, and stats, export and bulk actions refuse it rather than acting on a wider set.
+
+### Added: the Inbox counts in one call
+
+- `GET /api/v1/me/inbox/summary` returns the signed-in person's count of each Inbox queue (assigned, team, due soon, awaiting my review, requested by me, acceptances expiring, my tasks, ready to close) and the Inbox total (assigned + review + requested + expiring + tasks + ready to close). The console can read the sidebar and tab counts with one request instead of four.
+- Each count is computed by the service behind the list the queue opens, with that list's filter, as the caller: the tenant comes from the session, the caller's data scope and pentest membership apply, and a count always equals the total of its list. A queue the caller has no permission or module for is left out of the response (never reported as 0): awaiting my review needs `findings:approve`, ready to close `findings:verify`, my tasks `findings:remediation:read` and the remediation module, every finding queue `findings:read`.
+- An organization API key or a platform caller gets 400. The response is never cached (`Cache-Control: no-store`) and runs under the heavy-read limiter. No migration.
+
+### Added: stored info matches of template scanners move to exposures
+
+- New closure reason `reclassified_exposure` (resolved, verification `none`): a finding the platform moved to its asset's exposures. It never counts as fixed (MTTR, fix rate, the Fixed lens).
+- `refingerprint -info-exposures [-tenant <id>] [-apply] [-down]` moves the open informational findings of template scanners (nuclei) filed before info matches became exposures, exactly as ingest moves a new match: the same exposure event, the finding resolved as `reclassified_exposure`, severity `none` mapped to `info`, a timeline entry per finding and one `findings.reclassified` audit entry per tenant. Findings on a ticket, in a remediation task or with a pending decision are held. Dry run by default; `-down -apply` undoes it.
+
+### Added: info matches of template scans become exposures, counted per run
+
+- The info-severity matches of nuclei (technology, login panels, TLS and header posture, WAF detection) are filed as info exposures of their assets instead of findings, one per template, matcher and URL, and re-seen on every scan. Each scan step run counts them ("N info observations" on the run map), so a scan that found no vulnerability still shows what it saw.
+- Attack surface settings gain `info_matches_as_findings` (off by default) for organizations that want them as info findings.
+- Migration 20261104162823 adds `scan_run_steps.info_observations` (constant default, no table rewrite).
+
+### Added: scan targets up to a /8, scanned live hosts first in /16 chunks
+
+- One scan target may now name up to an IPv4 /8 (16,777,216 addresses) or an IPv6 /104, for example `10.0.0.0/8` or `172.16.0.0/12`. Before, the limit was a /16.
+- Ranges wider than a /16 are opt-in: every organization, existing ones included, keeps a /16 limit until an approver raises the scope policy setting "Widest range one scan target may name" (`max_range_prefix`, /8 to /24, default /16). Raising it needs a recent sign-in, is audited at high severity and every administrator is told.
+- Such a range is scanned live hosts first only: a host discovery pass sweeps it and only the hosts it finds go to the port and vulnerability stages. Saving one with "Every address" or "Inventory" is refused (`LARGE_RANGE_NEEDS_LIVENESS`), and so is a single-scanner scan or a workflow without a host discovery step (`LIVENESS_NEEDS_HOST_DISCOVERY`).
+- The API requires `confirm_large_range: true` to create, edit or import (`?confirm_large_range=true`) a scan whose targets hold such a range; without it the request is refused with `LARGE_RANGE_UNCONFIRMED` and the address and chunk counts. New scan sends it after its confirmation.
+- At each run the range is cut into /16 chunks, after removing the addresses no scope entry of the organization covers, the exclusions and the deny list. Nothing is stored or sent per address. Each chunk routes to the scan zone that holds it, and every sensor and job limit applies as before.
+- New scan shows the address count, the chunk count and a rough duration, and asks for a confirmation before create; it reads the organization's limit to explain a range that is too wide.
+- An asset group member network wider than a /16 is bounded and cut like a typed range.
+- A range that holds private, link-local or loopback addresses anywhere (for example `172.0.0.0/8`, which holds `172.16.0.0/12`) now counts as internal and is scanned only inside a scan zone; before, only its first address was checked.
+- Design: `docs/rfcs/RFC-151-large-range-targets.md`.
+
+### Added: filter param of the MCP list tools
+
+- `list_findings` and `search_assets` take `filter`, the console search box syntax (`severity>=high kev=true -status:accepted`, `type=subdomain domain=example.com last_seen<7d`), ANDed with the other params. It is parsed and planned by the query language as the key's owner, with the same field permissions, and runs through the list's own registry, so tenant, data scope and limits are those of the console. Problems are reported by code and position, never by value.
+- `search_assets` now runs on the inventory registry (the same filter as `GET /assets`): its total is capped at 10,000 (`total_capped`).
+
+### Added: Nessus host inventory on import
+
+- A credentialed `.nessus` import now records each host's installed packages (Software Enumeration (SSH), Windows Installed Software Enumeration), its application CPEs as technologies and software (so vulnerability matching finds CVEs from them), its listening sockets as services marked `observed_from` host or network with `bind_address` and `process`, and its SSH host key fingerprints. Compliance results keep their cross-framework references, sub-checks and check errors in the source data. A file exported without plugin details is flagged on the import result.
+- ctis v2.0.2 also brings the nmap, testssl, ffuf, S3Scanner, arjun, line-list and CTIS import formats.
+
+### Added: public, versioned back-end extension API (`pkg/extension`) and custom builds through `server.Main`
+
+- Anyone can build their own edition: a separate Go module requires `github.com/openctemio/openctem/server`, writes extensions against `server/pkg/extension`, and calls `server.Main(ext1, ext2, ...)` from its own `main`; Go then lets it use only the public `server/pkg` packages. Several extensions per build; names, schemas and config keys must be unique, and at most one extension provides grants. The server checks the whole build before anything starts and refuses to start on a mistake.
+- An extension can add a grant provider, background controllers, HTTP routes under `/api/v1` (each needs a core permission and a grant key; mounted behind the organization chain, the permission and the grant; core routes and planes cannot be replaced), migrations in its own schema, and the config keys it reads (core settings are refused). What the core hands over (`Deps`) is interfaces only: a scoped `Store` (one transaction per call, no pool), declared settings, entitlements, read access to the administrators' audit chain, and the environment.
+- `pkg/extension/example` is a complete extension and `server/examples/custombuild` a complete custom build, both compiled in every core build; `pkg/extension/extensiontest` gives an extension's tests the real core `Deps` and a migrated test database; `testdata/api.golden` records the exported surface. The extension API stays at version 1 until the core's 1.0 release.
+- `/api/v1/version` (and `openctem-server -version`) lists the build's `extensions` (empty for Community) and the `extension_api` version.
+
+### Added: POST /api/v1/query/parse checks a search box filter
+
+- Takes search box text (short or long form), a filter document or a list's URL params on an entity and returns the version 1 filter document (relative times kept), its canonical short and long text, the top-level conditions as chips (or one "advanced" chip for groups chips cannot show, never flattened), the list's flat params when every chip has one, and problems with a code, a byte range and "did you mean" suggestions.
+- Same permission as the entity's list (`findings:read` for findings); fields the caller may not use are unknown. Nothing reads data; rate limited per user (burst 30, 5 per second). A filter the findings list cannot run is reported as a `not_on_list` problem.
+
+### Added: GET /api/v1/query/values completes search box values with counts
+
+- The most frequent values (up to 20) of one field, with their counts, under the search box filter (`fq`) minus that field's own conditions, for value completion and facets. Counts run through the same plan as the list, so the tenant, the caller's data scope, the pentest member rule and the server-side exclusions apply; fields the caller may not use are unknown.
+- A 1 second budget: past it the answer has no counts (enum and boolean values are still listed). Answers are cached per caller for 60 seconds. Rate limited per user (burst 20, 2 per second) and bounded by the custom query concurrency caps.
+
+### Added: Actionable and Known exploited quick views
+
+- `GET /api/v1/findings/quick-views` adds two built-in views for the Findings board tabs: `actionable` (open P0 and P1 findings, `state=open&priority_class=P0,P1`) and `known_exploited` (open findings on the known exploited vulnerabilities list, `state=open&is_in_kev=true`).
+- Like every quick view, each count is the total of `GET /findings?<params>` for the same caller (tenant, data scope and pentest membership applied), compiled in the same statement as the other views. They use only existing list filters and carry no informational filter. No migration.
+
+### Added: every finding a scan sends is accounted for on its receipt
+
+- A receipt now counts what the producer sent (`received`, before any filter) and where each finding went beyond the action counts (`outcomes`): repeats merged, info matches filed as exposures, mitigated at the source, findings that named no asset of their segment, findings held by the tool's output contract, a refused reserved tool name, and the extra findings a multi-CVE finding became. Received + split always equals created + still detected + reopened + suppressed + failed + skipped + the other outcomes.
+- The run page shows them under "Where the other findings went" (en, vi).
+- Migration `receipt_outcomes` adds a jsonb column with a constant default to `ingest_receipts` and `ingest_receipt_tools` (no rewrite, no long lock).
+
+### Added: where the network lookup of an address stands, with a retry
+
+- An address with no network data says whether its sensor lookup (`lookup.asn`) is still running, found no routing data, or failed. A failed lookup reads "Network lookup failed", or "Network lookup failed (source unavailable)" when the routing data source did not answer, with "Retry lookup" (`POST /api/v1/easm/suggestions/addresses/lookup`, `assets:write`), which makes the lookup due again for a sensor. The platform itself looks nothing up.
+
+### Added: stop using an import source
+
+- An administrator can stop using a source of findings (a sensor's tool, an uploaded tool, a connector source, or a Tenable.sc connector integration): `POST /api/v1/findings/sources/retirements`, with a server-side preview (`/preview`). New data from the source is refused and counted on each receipt under the new outcome `source_retired`. The open findings only that source reported are archived as source retired (resolved, closure reason `obsolete_source`: not fixed, out of metrics and SLA); findings another source also reported, findings in remediation and secrets stay open. Critical and known-exploited findings need a separate confirmation.
+- "Use this source again" (`POST /api/v1/findings/sources/retirements/{id}/reactivate`) restores exactly the archived set from a journal, leaving findings someone changed since.
+- New permission `findings:sources:retire` (owner and administrator); retire and restore need re-authentication and full data access; audited as `import_source.retired` and `import_source.restored`. Migration `source_retirements` (two new tables, no change to existing rows).
+
+### Added: exposures for risky internet-facing services
+
+- An internet-facing open port whose measured kind is risky (RDP, VNC, Telnet, SMB, NFS, databases, caches, search engines, Docker and Kubernetes APIs, industrial protocols, ...) raises a `risky_service_exposed` exposure under Exposed ports. Severity follows the kind (industrial protocols critical) and is raised when the service answered without credentials. A kind guessed from the port never raises one. A changed kind or a closed port resolves it automatically.
+- Migration `20261105124942_risky_service_exposed` admits the exposure type.
+
+### Added: Cloudflare R2 works as an S3-compatible storage target
+
+- For any custom `STORAGE_ENDPOINT` (and a tenant's own bucket endpoint) the S3 driver now computes request checksums and validates responses only where an operation requires them. The SDK default trailing checksum is rejected by R2 and other S3-compatible stores; AWS S3 keeps the defaults.
+- `STORAGE_SSE` and `STORAGE_SSE_KMS_KEY_ID` are refused at start-up when the endpoint is a Cloudflare R2 endpoint (R2 always encrypts at rest).
+- New "Cloudflare R2" section in the file storage architecture doc: endpoints, bucket-scoped token, bucket lock for `audit-archive/`, location and jurisdictions.
+
+### Added: User-Agent rotation and an identification query parameter
+
+- Each layer (platform, organization, bug-bounty program) can set a User-Agent rotation list instead of one User-Agent: at most 200 distinct values, 1-256 printable ASCII characters each. The winning layer's list is used whole. An enforced platform User-Agent locks the list too.
+- Each target host of a run gets one value of the list, the same for every request of the run to that host (HMAC-SHA-256 keyed by the run over the canonical host; contract `identity.SelectUserAgent`). Jobs carry `user_agents` and `user_agent_key` (the scan run id). `user_agent` holds the first value for sensors without rotation.
+- The platform and organizations can set one identification query parameter (`query`, `tool_http_query`; name and value 1-64 of letters, digits and `. _ ~ -`). The platform can enforce it.
+- The run detail can show what each step's requests were sent with: the sensor's `http_identity` report is stored on the step (`sensor_settings.sent_with`). It is bounded and cleaned, secret-looking values are masked, and it is display only.
+
+### Added: a scan can set the standard params of single workflow steps
+
+- `step_params` on a scan (create, update, read, export, import) overrides capability standard params per workflow step, or for every step of a capability (`*:vuln.templates`), without copying the workflow, so system workflows can be tuned per scan. The override applies after the workflow step and its depth overlay.
+- Unknown params, tool extras, wrong values and intrusive template tags are refused when the scan is saved. The tag refusal list for workflow steps now also covers `default-login`, `bruteforce` and `brute-force`, as the sensor tier already did.
+- The New and Edit scan wizard shows a Step settings section (severity, tags, excluded tags of template steps) with the workflow's value and an override switch.
+- Migration 20261104165231 adds `scans.step_params` (constant default, no table rewrite).
+
+### Added: the scans list and the runs list use the list query contract
+
+- `GET /api/v1/scans` takes the same filter model as findings: `status`, `scan_type`, `schedule_type`, `sensor_preference`, `origin`, `tag`, `asset_group_id`, `scan_workflow_id`, `profile_id`, `scan_zone_id`, `scanner_name`, `last_run_status`, `created_by`, `name` (pattern or `name_contains`), the time fields `created_at`, `last_run_at` and `next_run_at` (`_gte`, `_lte`, `_gt`, `_lt`), `total_runs` and `failed_runs`, each with a comma list, `_not` lists and ranges where the type allows.
+- `POST /api/v1/scans/search` takes a filter document (OR, nesting, long id lists) with the same fields, permission (`scans:read`) and visibility rules as the list.
+- `GET /api/v1/scan-runs` takes `trigger_type`, `asset_id`, `id`, `created_at`, `started_at`, `completed_at`, `duration` (seconds) and `total_findings` filters besides the ones it had, as lists and ranges.
+- The query language has a `scans` entity (`POST /api/v1/query/parse`, `GET /api/v1/query/schema`, `POST /api/v1/query/run`), and the scans page has the query text box with an Advanced chip for a filter its controls cannot show.
+
+### Added: a missed scheduled scan run is visible on the scan and sent as an event
+
+- When the platform was unavailable and a scheduled occurrence was more than one interval late, the scheduler skipped it and only the audit log said so. The scan now keeps the missed time and a reason (`last_missed_at`, `last_missed_reason` on the scan API), the console shows "Missed <time>: <reason>" next to Next run with a Run now button, and a `scan.schedule_missed` notification event is sent once per missed occurrence (on by default for new channels, selectable under Scan Events).
+- The note clears when the next scheduled run starts. Migration 20261107031732 adds two nullable columns to `scans` (no backfill, no table rewrite).
+
+### Added: replace a scope entry's pattern
+
+- The Edit scope entry dialog has a Replace pattern section: a new entry with the corrected pattern takes the old entry's place, with the checks, step-up and approvals of adding an entry. It shows the coverage added and removed and whether approval is needed before the click.
+- The old entry stays in effect until the replacement is in effect, then is kept as superseded with its history; both change in one transaction. One audit event `scope_target.replaced` names both patterns and the reason.
+- Scan zones that name the old range are listed; a person who may change scan zones can update them in the same flow.
+- New routes `POST /api/v1/scope/targets/{id}/replace` and `/replace/preview` (`attack_surface:scope:write`). Migration `20261106174420_scope_entry_replace` (two nullable columns, a wider status constraint, a partial unique index; no rewrite).
+
+### Added: short search syntax for filters
+
+- The query language takes a second spelling for search boxes: `severity>=high kev=true -status:accepted last_seen<7d domain=*.example.com`. `field=value` and `field:value` are both accepted (`:` takes comma lists), `=` is exact, `*` and `?` are patterns on name fields, `~` is contains (3 characters or more), `-` negates, `>`/`>=`/`<`/`<=` compare numbers, times and ordered values (severity, priority, asset criticality), `lo..hi` is a range, `AND`/`OR`/parentheses group, and plain words stay a text search. A bare IP address, CIDR range or CVE id becomes a condition on the asset address or the CVE.
+- Ages: `last_seen<7d` is "seen in the last 7 days"; the signed form `last_seen<-7d` is still a point in time. Minutes (`30m`) are accepted in both forms.
+- Short names (`cve`, `kev`, `epss`, `port`, `domain`, `ip`, `last_seen`, `age`, ...) resolve to their fields; the canonical text always prints the field path.
+- Query problems now carry a `code` (`unknown_field`, `operator_not_allowed`, `unknown_value`, `bad_value`, `pattern_not_allowed`, `syntax`, ...) and `suggestions` ("did you mean", from the fields the caller may use only). Messages never repeat a value from the query.
+
+### Added: approve a sensor as trusted, with its networks and scope, in one step
+
+- The approve form can make a new sensor **Trusted for active scanning**. This is offered only for a sensor that started with the code the console made, for the internal scanner, external attack surface and scanner connector profiles, and to someone with `sensors:grant:widen`. The approval's step-up counts as the re-authentication, and the change is audited and announced like a promotion. Codes the sensor printed itself, enrollment tokens, re-pairs, authenticated scanners and collectors still start New.
+- The approve form takes the **networks the sensor scans** (private ranges only, `sensors:zones:write`). The sensor joins the scan zone with exactly those ranges, or a new zone is created for it, in the same transaction.
+- **Also add to scope** adds the networks to scope after the approval, as a separate entry through the usual scope approvals.
+- `POST /api/v1/sensor-pairings/{id}/approve` takes `trusted` and `ranges`; pairing views carry `trust_eligible`.
+
+### Added: the platform explains a sensor's DNS failures and warns before scanning its core infrastructure
+
+- The setup checklist explains the sensor checks `runtime.control_dns` (the platform host name resolves, does not resolve and the sensor dials its last-known-good address with TLS still verifying the name, does not resolve and the sensor lost the platform, or failed for a while and recovered) and `network.core_addresses`, with the fix: pin the platform host (compose `extra_hosts`, a Kubernetes `hostAliases` entry, `/etc/hosts`), check the resolver, and keep DNS servers, gateways, firewalls, the platform and the sensor host out of intrusive scans.
+- The sensor detail names "DNS failure" as the reason a sensor went offline when its last report said its lookups of the platform host failed, and shows the window of a DNS outage it recovered from.
+- New `GET /api/v1/sensors/core-addresses` (`sensors:read`): the resolvers, gateways, own address and platform addresses the organization's active sensors reported, re-parsed as IP addresses. The new-scan form warns (never blocks) when address or range targets cover one of them, and "Exclude these" adds them to the scope exclusions as do-not-scan (`scope:write`).
+- Needs sensors on an SDK that sends these checks; older sensors show nothing new.
+
+### Added: Add sensor asks what the sensor will scan
+
+- Sensors, Add sensor first asks whether the sensor scans internet-facing targets, internal networks or both. For internal networks (or both) the install command carries `SENSOR_ALLOW_PRIVATE_TARGETS=1` with a comment that explains it, so the host owner no longer edits the environment and restarts the sensor before an internal scan can run. An internet-only sensor never gets the switch.
+- For internal networks the command can also restrict the host to the listed private ranges (`SENSOR_ALLOWED_RANGES`, opt-in).
+- `POST /api/v1/sensors/install-templates` takes `purpose` (`internet`, `internal`, `both`) and `allowed_ranges` (private ranges, `internal` only); `GET` takes `purpose`.
+
+### Added: a readiness checklist for every sensor
+
+- `GET /api/v1/sensors/{id}/readiness` (`sensors:read`) lists what still stops a sensor from scanning, in fix order: online, trusted, host allows private networks, host kill switch, networks assigned, networks in scope (or waiting for approval), tool confinement on the host. Each item has one fix and the permission it needs.
+- The checklist shows on the sensor sheet, at the end of Add sensor, and in New scan for the sensors of the chosen zone. Promote, Add to scope, the host line to copy, Assign networks and the host requirements guide are one click away.
+
+### Added: the console shows a sensor that runs its tools without the sandbox
+
+- A sensor whose host has no tool sandbox (it is Linux only: macOS or Windows sensors) now refuses tools that contact their targets unless its operator sets `SENSOR_SANDBOX=off` (sdk-go, sensor). The platform reads the new posture member `sandbox.unconfined` (`refused` or `acknowledged`): `GET /api/v1/sensors` returns `posture.tools_unconfined`, the sensor is flagged unhardened with the new reason `tools_unconfined` (also a `kind` of `openctem_sensors_unhardened`), the sensor's Security posture block and the install review's Tool sandbox check say what runs there, and the config report check `runtime.sandbox_unconfined` (`sandboxed`, `active_refused`, `acknowledged`) has its title and fix.
+
+### Added: names only an internal sensor can resolve are scanned through that sensor's zone
+
+- A company network that answers names differently inside and outside (split-horizon DNS) no longer has its internal-only names refused as "does not resolve in DNS from the platform". The platform keeps, per sensor, what each name resolved to in the reports of that sensor's commands, and zone routing uses that answer: a name a sensor resolves to a private address of its own scan zone routes to that zone.
+- A name is refused as unresolved only when neither the platform nor any sensor of the organization resolves it. A sensor's private answer is never a scope grant: the address must be inside the sensor's zone and not excluded or rejected, otherwise the name is refused (`vantage_out_of_scope`). Shared and platform sensors never record or receive such names.
+- Migration 20261107025253 adds the `name_resolutions` table (empty at first; it fills as sensors report).
+
+### Added: Approve a sensor button on the Sensors page
+
+- The Sensors page header has an "Approve a sensor" button that opens the approve page, for users who can pair sensors.
+
+### Added: service kinds
+
+- Every service asset now carries a normalised kind (its application protocol: rdp, smb, http, redis, modbus, ...), the kind's category (remote access, database, industrial control, ...) and how the kind is known (protocol fingerprint, TLS negotiation, HTTP probe, reported, guessed from the port). A kind guessed from the port is always labelled a guess. The keys are set by the platform only: REST and import refuse them, reports cannot set them.
+- The Services, HTTP services and Open ports views filter by kind, category and source, with labels in English and Vietnamese.
+- Migration `20261105123637_service_kind_backfill` classifies stored services from their own properties and moves a transport misfiled as `protocol` on open ports to `transport`. Design: `docs/architecture/service-kinds.md`.
+
+### Added: a step run records what it ran with, and the run map shows it
+
+- Each step run now stores the standard params its command carried (for example the nuclei severities and tags) with the layer that set each one (workflow step, depth overlay, scan override, fixed by the stage, platform port set), and what the sensor reported it ran with and ignored. The run map card and the step panel show "severity low..critical (depth default)", the tags, and the settings the sensor ignored, so a run with no findings is explainable.
+- The workflow editor inspector shows the depth overlay values of a step (standard and deep) and lets the author edit them per depth; system templates stay read-only. Saving a workflow from the editor no longer drops the steps' depth overlays.
+- Migration 20261104165321 adds two nullable columns to `scan_run_steps` (no rewrite).
+
+### Added: re-verification policy per organization
+
+- Owners choose, per tier, how often people confirm their identity again before an action.
+  - Tiers: critical, sensitive and routine.
+  - Choices: every time, once per 10 minutes, 1 hour, 4 hours, 8 hours, once per sign-in, or never.
+  - Where: Settings > Security > Authentication, card "Re-verification", or `step_up` on
+    `PATCH /api/v1/tenants/{tenant}/settings/security`.
+- Critical actions (roles, sign-in, credentials, secrets, deletion, approving active scanning,
+  exports) always ask, every time or once per 10 minutes. The API refuses anything else with 422
+  `STEP_UP_POLICY_BELOW_FLOOR`.
+- Defaults:
+  - Existing organizations keep today's behaviour: critical and sensitive once per 10 minutes.
+  - New organizations: critical once per 10 minutes, sensitive once per hour.
+  - Routine is off for both.
+- Changes are audited as `tenant.step_up_policy_changed`, high when looser. Every audited action
+  behind re-verification records the rule that admitted it (metadata `step_up`).
+- Migration `20261106030244` adds `sessions.step_up_spent_at`, used by the "every time" rule. It is
+  nullable and rewrites no rows.
+
+### Added: jobs of a tool that needs strong isolation wait for a sensor that proved it
+
+- A tool whose manifest says `isolation: strong` gets `required_features: ["isolation.strong@1"]` on its jobs. Only a sensor that itself reported the capability (it ran a confined task on a strong isolation backend at start-up) is offered them; others leave them queued with the placement reason `strong_isolation_missing`, and the run page explains it in English and Vietnamese. A job is never run on the process sandbox instead and never refused when it is queued.
+- No bundled tool needs strong isolation yet and no strong backend ships yet, so nothing changes for existing scans.
+
+### Added: organization keys for the third-party sources scan tools query
+
+- Settings, Scanning, Tool source keys: an organization stores its own keys of the data sources scan tools query (subfinder's passive sources: securitytrails, shodan, censys, virustotal and the others; the provider registry is the contract's). Keys are encrypted with `APP_ENCRYPTION_KEY` and bound to their organization and source (a ciphertext copied to another row does not open), never shown again (last four characters only), can be replaced, switched off and removed; every change needs an administrator with a fresh step-up and is audited (migration `20261104150216_tool_source_keys`).
+- A key reaches a sensor only as a task secret of that organization's job. A key whose first part names where the tool connects (intelx and zoomeye `HOST:KEY`, redhuntlabs `ENDPOINT_URL:KEY`) is accepted only for the provider's own service.
+- Design: `docs/architecture/task-secrets.md`, `docs/rfcs/RFC-149-task-secrets.md`.
+- Sensor config check `runtime.task_root_memory`: warns when the directory where tools write files for a run (with the keys a task received) is on disk instead of in memory.
+- Credential checks in settings are stricter: a value nested deeper than the scan looks is refused, only an explicit list of mode words (`basic`, `bearer`, `digest`, `none`, `oauth2`, `apikey`, `header`, `query`, `cookie`, `form`) is exempt under a credential-named key, and a path value is exempt only under a file or path key. Workflow step settings are checked on save and when a step becomes a command, and a quick scan is refused before it is stored.
+- A job's proxy credentials cover only the endpoints in the egress block it was signed with. `secret.refused` audit rows are written once per sensor and reason per 10 minutes, with the folded count on the next row. A `secrets` member forged into a payload is removed however its name is spelled.
+
+### Added: template info matches become asset facts
+
+- A nuclei info match is now stored as what it is about the asset instead of an exposure: detected technologies (with the version a template extracts) join the asset's technologies and the software history, missing security headers fill the origin's header posture, and robots.txt, security.txt and app-link files join the web surface. Panels and exposed consoles stay exposures. Matches no mapping names stay generic info exposures and are counted (`info_unmapped` on the receipt) so new templates get reviewed.
+- The mapping is a signed platform content pack of the new kind `template-facts`. The built-in `template-facts-core@2026.11.1` is installed on first start, and a super admin can publish a new version on the stable channel. Organizations cannot upload this kind.
+- Template detections are secondary readings: they never replace the source, category, vendor or CPE a fingerprinting probe recorded for a technology, and with a confidence below 80 one detection never establishes a version.
+- `http_posture` accepts `none` for `frame_options` and `referrer_policy` (the header was not sent), and the console reads it as missing. The technologies tooltip names the kind of check that saw a technology (HTTP probe, template scan, detection rule pack).
+- Nothing is discarded. The e-mail extractor and the DOM heuristics templates stay info exposures, and every e-mail address in a finding's text, evidence and extracted values is stored masked on every path, including when the organization files info matches as findings and when the asset is out of scope. A header posture a template match proves only fills keys the stored `http_posture` lacks, so a probe's stored reading wins across reports, and a technology both a detection rule and a template match state keeps the rule's source.
+- A template match the mapping names but whose fact stored nothing (a header the posture map does not list, posture on an asset that is not a web origin, a technology name that is not one token, a surface match with no clean path, endpoints past the per-report cap) is filed as an info exposure and counted in `info_unmapped`, never dropped.
+
+### Added: confirmations can show what will change and ask for a reason, and held requests share one band
+
+- The confirmation dialog can show what an action will change (a sentence with the count, the first five names and "and N more") and can ask for a reason, required when the action is recorded or approved. No existing confirmation changes behaviour.
+- The "Awaiting approval" band with Cancel request is now one shared component. Findings use it unchanged; other guarded acts can reuse it.
+- The step-up dialog no longer says every confirmed action "changes how your organization is secured": it says the action continues right away once the identity is confirmed.
+
+### Added: design gate for redesigned pages
+
+- New CI workflow "Web design gate" (`Design gate OK`): every page listed in `web/e2e/design/manifest.ts` is loaded with the design's sample data from a mock API and compared, at 1440 and 390 px in light and dark, with the reference images exported from its design board (`web/scripts/design-reference.mjs`, board hash recorded in the manifest). A layout pass in Vietnamese with long and empty data fails on sideways scroll, clipped text and overlapping controls. Seeded with the sign-in page: the layout pass blocks, the comparison reports as pending until the page moves to its board. Guide: `web/docs/ui/design-gate.md`.
+
+### Added: response evidence on web endpoints
+
+- Web endpoints return `resp_size` and `resp_hash` when path discovery confirmed them, and `GET /api/v1/web-endpoints` accepts `source=guess`.
+- Migration `20261105051408_web_endpoint_response_evidence` adds two nullable columns to `web_endpoints` (no rewrite, no backfill); their CHECKs are added NOT VALID and validated by the next migration `20261105134252_web_endpoint_response_evidence_validate`, in its own transaction, with a lock timeout.
+
+### Added: web path discovery at Standard depth
+
+- New capability `enumerate.web_paths@1` (tool `webguess`, T1, GET and HEAD only): the platform requests paths derived from the organization's own inventory (backup copies of observed files, older and next API versions, paths its other origins serve, declared API paths never seen) and records the answers that differ from the origin's not-found page.
+- Planned by automatic coverage on web services an active scope entry names, at most one run per origin per 30 days unless its inventory changed, and as an optional `paths` step in the Standard recon, Web and Deep recon workflows (migration `20261105060450_easm_workflow_path_discovery_step`).
+- On by default; turn it off with `path_discovery: false` in the scope settings (audited). Budgets: `PATH_DISCOVERY_REQUESTS_PER_ORIGIN` (default 300) and `PATH_DISCOVERY_DAILY_REQUESTS` (default 50000); origins over the daily budget are deferred, never marked covered.
+
+### Added: guessed backup, archive and dump files are verified
+
+- A guessed backup, archive or dump file is checked with the sensor's own `openctem-backup-file-signature` template, requested by id; a finding comes only from its hit.
+
+### Added: one search box component with completion and fixes
+
+- The web console has one shared search box, `QueryInput`: plain words search as before, and conditions such as `severity>=high kev=true -status:accepted last_seen<7d` are completed (fields, operators, enum values and ages, and the most frequent values with counts in your own access), checked by the server as you type, and shown with their first problem and a one-click fix ("did you mean"). Keyboard: Tab or Enter accepts a suggestion, Enter runs, Ctrl+Space opens suggestions, Up recalls the last query, Esc closes. English and Vietnamese.
+- Recent queries are kept in this browser only and are cleared at sign-out, when the session ends and on organization switch.
+- The remediation hub's "task from a query" dialog uses it and accepts the short form too (the task stores the long form the server prints).
+
+### Added: web screenshots are planned by asset coverage
+
+- The capability `capture.screenshot` is routed to the sensor tool `webshot` (a headless browser in the sensor's `browser` image). Every web service gets a screenshot pair every 30 days, and again at once (at most daily per asset) when a probe changes its title, status code, redirect target or favicon.
+- Screenshots stay off by default and are now off for real: while an organization has `web_screenshots_enabled` off (or the setting cannot be read), the pairs are paused with the new readiness reason `feature_off` and no job is created, so the picture is not even taken. Turning the switch on makes the pairs due.
+
+### Added: the signal button variant and the delta and single-measure colour tokens
+
+- `Button` gains `variant="signal"`: a teal fill (the live shape, shadow and hover) for the one main action of a page. No page uses it yet and it is never for destructive acts.
+- New theme tokens in light and dark: `--good` and `--bad` for delta meaning (by outcome, not direction), and `--viz-ink` and `--viz-ink-weak` for a chart that shows one measure.
+- A single-measure bar and the stat progress fill are neutral ink instead of teal, so teal no longer encodes data. Small chart labels are 12 px.
+- The palette check validates the ink colours (4.5:1 on the chart surface) and keeps `theme.css` and `chart-palette.json` in step.
+
+### Changed: asset domain and asset name in queries need assets:read
+
+- In the query language, `asset.domain` and `asset.name` (formerly written `asset_domain` and `asset_name`, which keep working) are asset attributes and need `assets:read`, like the other `asset.` fields.
+
+### Changed: a refused government name tells the organization who can help
+
+- Adding a government or military domain to scope now says "Government and military domains are blocked on this installation. Your platform administrator can grant an exception." (code `GOVERNMENT_NAME`, in the scope dialog, bulk add and rule suggestions), and the scan-time refusal "Not allowed by the platform" says the same for such names. No other organization's exceptions are ever shown.
+- New operator guide: Blocked target names and exceptions (`server/docs/how-to/blocked-target-names.md`), including the operator's responsibility to verify the written authorisation.
+
+### Changed: CI runner releases reach instances through the release feed
+
+- The signed release feed now lists the CI runner (openctemio/ci) next to the sensor products and the SDK. The effective CI runner release is the built-in `ci.latest` raised by the verified feed, never lowered; the token exchange, pipeline health, CI alerts and the console's pipeline snippets resolve it per use, so a CI runner release applies without a platform release or restart. `CI_RUNNER_LATEST_VERSION`, when set, still wins.
+- `GET /api/v1/ci/settings` answers the release the snippets pin as `runner_release` (read-only).
+- `ci.min` is v0.4.0, the first CI runner that speaks CTIS 2.0: an older runner is refused at the token exchange. The built-in `ci.latest` is v0.4.0.
+- The release train refreshes every component's built-in `latest` from the published releases when it cuts a release; the release preflight no longer blocks on a `latest` behind the published release, only on a `latest` or `min` that is not a published release.
+
+### Changed: the dashboard header has no description line
+
+- The dashboard page no longer repeats a description under its title (it named the blocks shown right below it). The header keeps the title, scope, refresh times and actions. A dashboard's description still shows on the Dashboards list, where it helps pick one.
+
+### Changed: new architecture page "OpenCTEM as one machine"
+- Adds an organ map and eight flow diagrams (scan cycle, dispatch and claim, trust, memory, reflexes, learning, distribution), with shipped and planned parts marked.
+
+### Changed: emerging threats page is a triage queue
+
+- Prioritization > Emerging threats now reads as a triage queue: levels are shown as Act now, This week and Watch (the API values immediate, digest and listed are unchanged), the summary has five filter tiles (Act now, Untriaged, This week, Known exploited, Internet-facing), filters sit in one toolbar with a filter panel, rows are compact, and a row opens a drawer with the score breakdown, affected product versions, crown jewels and every action, including scanning the affected assets.
+- `GET /api/v1/emerging-threats` adds `product`, `product_count`, `critical_assets` and `ets_breakdown` to each row, `new` to the summary, and the `kev=true` filter. Product and counts are computed over the caller's in-scope assets only.
+
+### Changed: Exposure flow and Intake wires flow with their volume
+
+- The travelling light on a healthy wire now runs faster for more findings received (log scale, 3.2 s to 1.1 s per cycle); none for a wire with nothing received.
+- The lights pause while the card is off screen or the browser tab is hidden, and are not drawn at all when the system asks for reduced motion. Width and figures carry the same numbers.
+
+### Changed: finding detail reads scanner text and configuration checks clearly
+- Scanner descriptions, remediation and fix text render as safe formatted text (one shared renderer, no raw HTML, only http and https links, no images): scripts and commands become highlighted code blocks with Copy and Show more, and what a command prints is shown apart as "Example output". Long tokens wrap instead of scrolling the page.
+- A configuration check (a benchmark check such as a CIS check from a Nessus audit) has its own panel: the result (Passed, Failed, Warning, Error, Skipped), benchmark and version, profile, control and audit file, the expected (policy) value beside the actual value, the sub-checks failed first with their file, expression and matched lines, and the mapped controls grouped by framework. The description no longer repeats those sections.
+- The header shows what the finding is (Vulnerability, Configuration check, ...) and, separately, what found it.
+
+### Changed: the finding page view carries the per-source records
+
+- `GET /api/v1/findings/{id}/view` now includes the part for `GET /api/v1/findings/{id}/source-records`, so a hard load of the finding page makes four API requests again instead of five. The records pass the same tenant, data-scope and `sensors:read` checks as a direct call and are read only when the finding itself answered 200; if they fail alone, the view still answers and the page reads them itself. `GET /api/v1/findings/{id}/source-records` is unchanged and stays, because the view is built from it.
+
+### Changed: provider edge addresses are recorded as the provider's
+
+- A new address a scan finds inside a range a provider publishes for a front end many organizations share (for example a cloud front door's IPv6 range) gets the attribution state `dependency` with the rule `provider_shared_front_end`: recorded and watched passively, never the organization's own internet-facing asset, never raised by automation. The names that resolve to it stay the organization's.
+
+### Changed: exposure chains and attack paths are labelled possible, not proven
+
+- Each exposure chain and the routes to one asset carry `proof: "possible"` in the API; the MCP tool `get_exposure_chains` describes them as possible paths, not proven ones, with a `proof_note`.
+- The exposure chains page, the attack paths page and the dashboard's crown-jewel paths show "Possible path, not proven", and their wording says "could reach". No migration.
+
+### Changed: open port summaries name a service only when it was identified
+
+- "Port 6379 (Redis) is open" was written from the port number alone. A port number now names a service only as a guess ("Port 6379 is open to the internet (probably Redis)"), and the open port exposure's identity no longer depends on the application protocol (it uses the transport).
+
+### Changed: New and Edit Scan Targets step is balanced and can pick from the scope
+
+- The Targets step shows what you scan on the left (the targets field, "Paste or upload a list",
+  "From assets or groups", "From scope") and, on the right, what the scan probes grouped by kind (domains,
+  wildcards, address ranges, IP addresses, URLs, assets, asset groups) with each target's scope answer.
+- Each setting sits next to the group it applies to and appears only when that group exists: the coverage
+  level by the domains, how ranges are scanned by the ranges, and the options of what a run resolves again
+  (with a one-line summary) under the groups. Both choices are compact segments with the chosen option
+  explained on one line.
+- "From scope" lists the organization's active in-scope domains, wildcards, addresses and ranges, with
+  search, multi-select and "Add all in-scope entries". A wildcard entry becomes a `*.domain` target and a
+  range a range target; name patterns cannot be picked and entries about to expire are flagged. It is shown
+  only to people who can read the scope, and every picked target still passes the scope check.
+
+### Changed: query language details
+
+- `severity > high` and other range comparisons on ordered values are now valid (they mean the values above high) instead of an error.
+- A `~` (contains) search needs at least 3 characters.
+
+### Changed: the server's code moved to server/internal/server; server/pkg/server.Main is the public entry point
+- The server's code moved from `server/cmd/server` to `server/internal/server`. `server/cmd/server/main.go` is now one line that calls `server.Main()` from the new public package `server/pkg/server`, which a custom build in a separate Go module can import and call from its own `main`.
+- The server's command-line flags are defined on a flag set created inside `Main`, so importing the package adds nothing to the importer's global flags. The binary's behaviour, flags and tool dispatch are unchanged.
+
+### Changed: one version-match finding per host, with a location per service
+
+- The vulnerability matcher keeps one finding per host, product, version and CVE instead of one per web origin: http:80, https:443 and http:8080 of one host running the same version are one finding on the oldest of those services, with one location per service (`finding_locations`, migration `20261107112404`). Each location has its own evidence, sightings and state (affected, fixed, not affected); the finding stays open while any location is affected and closes when none is, through the organization's closing mode. Another version on another service is another finding. Services are grouped only when every user sees them alike.
+- Every location change is on the finding timeline and in the audit log (`finding.location_changed`). `GET /api/v1/findings/{id}` returns `locations`, limited to assets in the caller's data scope; the finding page says on which services the finding is affected.
+- **Upgrade note:** findings stored per origin before this release are folded by `vulnmatch-locations` (dry run by default, `-apply`, `-down` to revert from its journal). The surviving finding takes the strongest open triage status of the folded rows (in progress over confirmed over new), so a confirmed finding is not demoted by the fold; `-down` restores it. See docs/architecture/vulnerability-matching.md, "Locations".
+
+### Changed: one shared sparkline and delta, and metric tiles can show a change and a trend
+
+- A single `Sparkline` (line or bars) and `Delta` in the UI kit replace three private sparkline implementations and the inline delta markup. Each sparkline is one image named by a text summary for screen readers.
+- Metric strip tiles accept a change against the previous period and a small trend under the value.
+- Deltas are coloured by outcome (better or worse), using the new `--good` and `--bad` tokens, with the arrow and a spoken verdict so colour is never the only signal. The sensor heartbeat bars use neutral ink.
+
+### Changed: a workflow scan over several scan zones runs one zone run per zone
+- A workflow scan whose targets fall in several scan zones (or in a zone and outside every zone) is no longer refused with `ZONE_SPLIT_REQUIRED`. It runs as one zone run per zone under a parent run; each zone run uses only its zone's sensors, the targets outside every zone route to shared or organization sensors as before, and the parent settles from its zone runs.
+- The run detail shows a "Scan zones" section with each zone's targets, status and zone run. The routing preview reports `zone_runs` instead of an error.
+- Migration: nullable `scan_runs.parent_run_id` (same-tenant foreign key) and a partial index.
+
+### Fixed: the assignment rule condition "asset tags" checks the asset's tags
+
+- The condition compared the finding's own tags (scanner vocabulary such as `nuclei`, `http`) instead of the tags of the finding's asset, so a rule such as "asset tagged `team:payments`" never fired, or fired on a scanner tag.
+- It now matches the asset's tags (case-insensitive, any of the listed tags). The "Test rule" preview uses the same asset lookup. The console labels the condition "Asset tags".
+- Rules that already used this condition start matching on asset tags: review them if they were written against scanner tags.
+
+### Fixed: `backup.sh restore` stops the job signer before replacing its volumes
+
+- The Compose restore wiped and unpacked `signer-keys` and `signer-state` while the `signer` container kept running, so the signer could write its sequence state into a half-restored volume. The restore now stops the signer too when it runs, and starts it again with the rest of the stack. The restore still leaves `.env` alone (restore `env.tar.gz` by hand on a new host).
+
+### Fixed: automatic coverage runs for an organization without any scope entry
+- Everything found is in scope unless excluded: an organization that has no scope entry and scans unclassified assets (`low_impact`, the default, or `full`) is no longer paused as `no_scope`. Its coverage runs, and the scope gate decides each target as before (low-impact checks for what no entry covers, tier and guardrail refusals unchanged).
+- The `off` setting, the Strict scan approval mode (read as `off`) and an unreadable setting keep the `no_scope` pause.
+- The Scope page and onboarding no longer say that scans refuse every target no entry covers.
+
+### Fixed: Coverage pairs no task carried are no longer reported as platform failures
+- A pair whose name was scanned through the addresses it resolves to now takes the result of those addresses.
+- A pair the sensor could not reach (TARGET_UNREACHABLE) is an unreachable pair, rechecked on the target-side schedule, and a pair the run's tasks left out is a `not_scanned` coverage gap of the organization.
+- Only a pair for which no task was planned at all stays `not_dispatched`, the platform-side outcome that alerts administrators. The administrators' email says what failed.
+
+### Fixed: credential leak sheet no longer shows "Asset not found"
+- The credential leak detail sheet asked per-asset endpoints (scope and scanning, owners, timeline, relations) with a credential id, which is not an asset id, so they answered 404 and the sheet showed an error. It now asks none of them.
+- "Scope and scanning" shows "does not apply" for a type the asset type registry lists no scan target for, instead of loading.
+- The Risk card names open findings the severity breakdown does not place, and a credential leak counts its one finding in its own severity.
+
+### Fixed: removing a crown jewel asks for the reason and waits for approval honestly
+- The removal dialog previews what removing the flag does to the open findings and asks for the reason the API requires when an open P0 or P1 finding would drop; it shows the API's error instead of a generic one.
+- A removal held for approval (202) changes nothing on the asset until it is approved, the business impact score and notes included, and the console says it is pending approval instead of "removed".
+- `PATCH /assets/{id}/crown-jewel`: an omitted `business_impact_score` or `business_impact_notes` keeps the stored value.
+
+### Fixed: CTEM cycle writes never fail silently
+- Scope refinement notes can be written on a cycle whose charter was never edited (it was stored as JSON null and the write failed). Charters are now always JSON objects; existing null charters become `{}`.
+- The cycle description is stored and shown; an update that omits it keeps it.
+- Activation and its scope snapshot are one transaction: a failed snapshot leaves the cycle in planning and the error is shown, instead of an active cycle with no snapshot.
+- Closing is refused when the validation coverage check cannot run. A person may close anyway with a reason; the override is recorded in the audit log (`ctem_cycle.close_overridden`) before the close, and never lifts an enforced coverage SLO.
+
+### Fixed: a dashboard opened before its first build shows the figures once they exist
+
+- Opening a dashboard while the organization's dashboard data was still being built for the first time stored a snapshot in which every widget said "being built". That snapshot was served until its next scheduled refresh (an hour by default), so the figures stayed hidden long after they were ready.
+- Opening the dashboard now computes it again as soon as the first build has finished; a snapshot of built data is served as before.
+
+### Fixed: a failed dialog action shows why, above the buttons
+
+- A refused or failed submit in a dialog or sheet is now always visible and announced: the error sits in a fixed region directly above the footer buttons (`DialogSubmitError`, role alert) instead of at the top of the scrolling body, where it was out of sight when the person was at the bottom next to the submit button. Adding a refused target to scope (for example a government domain) showed no message at all.
+- The scope refusals read in plain words and say what to do: a denied target now says the installation does not allow it (for example a government or military domain) and to ask the platform administrator if the organization is authorised; public suffix, address range and shared code host refusals are reworded, in English and Vietnamese. The request id shows as a small Reference line.
+- Moved to the shared region: Add to scope, add user, invite, member access, transfer ownership, trusted organizations, setup link, group membership end, scan window policy and override, scan zone, CI repository settings, report template upload, sensor products, support access, and in the admin console create administrator, create first owner, elevation, confirmations, content packs, security keys and support sessions. A guard test keeps new dialogs from putting a submit error back in the body.
+- Display only: the API still decides what is allowed.
+
+### Fixed: the admin console never keeps a one-time code or a reason after a dialog closes
+
+- The confirmations of the platform console that ask for a reason and an authenticator code (scan approval policy, shared sensors and their egress, anomaly thresholds, enrollment, platform sensor proof, sign-up policy and alerts, default limits, e-mail, legal texts, audit chain, scan zones) reopened with the code typed the previous time. The reason and code now live in one shared hook and are cleared every time the dialog opens or closes and after every answer; a refused code is cleared at once and its error is gone on the next opening.
+- The reason is marked required with a hint saying so, and the cursor goes to the first empty field when the dialog opens.
+
+### Fixed: short scan jobs no longer wait hours behind a batch of long ones on a sensor
+
+- A sensor's claim used to order its organization's pending jobs by priority class and age only. A batch of long jobs (vulnerability scans of half an hour each) queued first held every slot until the whole batch had run, and a discovery run queued an hour later waited behind it: on 2026-11-04 its first DNS lookup started 4 h 41 min after the run.
+- Each claim now splits the jobs into short (expected to take at most 5 minutes at the claiming sensor's measured speed for the tool, from its fresh load report) and long. While short jobs used no more than half of the sensor's time in the last hour they go first, so they start at the next free slot; once they used more, long jobs go first, so long work keeps at least half of the sensor. Without a fresh load report the order is unchanged.
+- The round-robin across runs now counts the jobs a run already has running, so a run with nothing running goes before one that has, also when a sensor claims one job at a time (it used to fall back to first-come-first-served).
+- The order only changes which of the jobs a sensor may claim comes first: routing, zones, tools, capabilities, scope, refusals, host politeness, proxy pools and the slot cap are unchanged, and every read is limited to the claiming sensor's organization. No migration.
+
+### Fixed: untranslated text in the AI triage result and the create team form, console approvals wording
+
+- The AI triage result card and the create team form now show their text from the en and vi catalogs; they were English only.
+- Console approvals name the role "platform owner", as the rest of the console does, instead of "super admin".
+- Removed the unused console string about content packs not being delivered.
+
+### Fixed: every Exposure flow source has its wire, carrying findings
+
+- Grouped by sensor or instance, the Exposure flow card now draws a wire from every shown source row to the rings, as it already did grouped by tool. A source that sent no findings gets a thin dashed still wire instead of none.
+- A wire always carries the findings a source sent, also when the sources are ranked by assets, in the Exposure flow and in the Intake panel. Ranked by assets, a line under the switchers says that assets are not findings and that the lines carry findings only.
+
+### Fixed: a failed host discovery no longer lets the port scan sweep the whole range
+
+- A streamed workflow step started as soon as its source finished one task, even when that task reached none of its targets (a host discovery chunk whose probes never left the sensor). The step then took its seeds alone (for a swept scan, every address of the range) and kept running after the source failed. Such a task no longer starts the stream.
+- A streamed step whose source then fails (or ends without results) stops: its open tasks are canceled, the sensor holding one is told to stop, and the step ends with the new code DEPENDENCY_FAILED (skipped when nothing of it finished, partial when some tasks finished and kept their results). Workflows set to continue on a failed dependency keep the step running.
+
+### Fixed: an imported scanner report no longer reads "a person reported this finding"
+- A scanner's report imported from a file arrives on the manual channel and was treated as a person's finding. Retest availability now names the reason `reimport_to_verify`, and the Verification panel offers "Import newer results" to members allowed to import. Findings from people (manual, pentest, bug bounty, red team) keep `no_automatic_retest`.
+
+### Fixed: grouped list headers no longer overflow their row
+
+- In grouped lists (Findings grouped by CVE, asset, owner, severity, source, component, type or family, the fixes awaiting verification queue, and leaked credentials grouped by identity), a group header with a status summary and actions ran past the table on narrower screens or with the filter panel open: the name was squeezed out, Approve and Reject sat over the Source and Location columns and under the row-actions column, and the table scrolled sideways.
+- The header is now one wrapping line of three slots (name and facts, status summary, actions). When it does not fit, the summary and then the actions move to the next line; the actions never shrink or overlap.
+
+### Fixed: covered scans no longer close info findings as fixed
+
+- A covered nuclei scan whose info matches went to exposures no longer auto-resolves the informational findings of that tool as fixed: it never reports them as findings, so their absence proves nothing.
+
+### Fixed: closures for an out-of-scope asset no longer count as fixed in dashboards
+
+- `RemediatedSQL` left `out_of_scope` closures in the fixed counts while `CountsAsRemediated` left them out; both now leave out every obsolete reason.
+
+### Fixed: a sensor report the worker does not apply keeps its payload
+
+- When the ingest worker's re-check refused a queued v2 report (the sensor was revoked or disabled, or the
+  command was taken back and handed out again), its job completed and its stored segment was emptied. The
+  report was lost on the platform, and the sensor had already deleted its own copy on the 202.
+- Such a job now ends dead with the public code `report_dropped` and keeps its sealed segment for the staging
+  retention (7 days). The report still shows `failed`, nothing is applied, and the drop is audited as before.
+  An identical re-send of the report re-queues it, so it is applied once the reason is gone.
+
+### Fixed: services on a scan job's own target hosts were dropped
+
+- A port scan of a host-scoped job lost every service it found on the target's addresses: the stored service name was not split into its host, so each service read as outside the job's targets.
+- An address-only command's out-of-range assets were dropped without an audit entry and their findings were labelled as outside the uploader's scope.
+
+### Fixed: a long non-ASCII asset description no longer loses the asset and its findings
+
+- An asset description over 4 KB was cut at a byte offset, which could split a Vietnamese, CJK or emoji character. PostgreSQL refused the invalid UTF-8, so the asset was not stored and every finding on it was rejected. The description is now cut on a character boundary.
+- The same byte cut was fixed in the other ingest values it applied to: the ingest job's stored error text, a trusted collector's source reference, the output-binding label and two log sanitizers. One shared helper, `safetext.TruncateBytes`, does the cut.
+
+### Fixed: a database blip during ingest no longer rejects the report's findings
+
+- A transient store error while a report was applied (a lost connection, a lock or statement timeout, a deadlock or serialization failure, no pooled connection before the deadline) was recorded like invalid data: the findings it kept out were counted as rejected (`asset_unresolved`, `finding_not_stored`), the report completed, and the sensor deleted its copy. Those findings were lost.
+- The ingest now stops at such an error and the job is retried with back-off: nothing is counted as rejected, no receipt is written for the failed attempt, and the report stays unfinished, so the sensor keeps its copy and keeps polling. On the last attempt the report is marked `failed` and the sensor sends the same bytes again, as before. Re-applying a report is idempotent by fingerprint. A permanent error (a value the database refuses) is still recorded as a rejection.
+
+### Fixed: a panic in a background job no longer stops the API
+
+- A panic in any background controller, or in one of the background goroutines of the scan scheduler, ingest (sensor statistics, audit writes, contract-mismatch notices) and sensor key use, killed the whole API process, HTTP included; a panic that repeats on the same data crash-looped every replica.
+- Each controller run is now recovered: the panic is logged once with the controller name and the stack, counted in `openctem_panics_recovered_total{where="controller:<name>"}` and in the controller's reconcile errors, and the controller runs again on its next tick. The goroutines run through the new `internal/safego` helper, which does the same.
+
+### Fixed: make lint-new removes its private temp dir on interrupt or kill
+- The per-run TMPDIR is now removed by a shell trap, so an interrupted or killed lint run no longer leaves a directory behind.
+
+### Fixed: a name refused without a DNS kind never counts as NXDOMAIN
+
+- A sensor before sdk-go v0.38.0 refuses a name as `unresolvable` without saying whether its resolver answered
+  "no such name" or the lookup failed (a timeout or SERVFAIL, for example a resolver under scan load). Asset
+  liveness read such a refusal as NXDOMAIN, so repeated refusals could move the name towards `gone` and, with
+  closing turned on, close its findings. The refusal is now `dns_unknown`: no liveness evidence, it neither
+  advances nor resets the gone streak, never parks the name, and coverage rechecks it as a failed lookup.
+  Only an explicit `name_gone` is evidence of absence. The dry run uses the same rule.
+- Streaks recorded before this fix are kept as they are. A tenant that turned on closing when gone can check
+  the dry run before the next pass.
+
+### Fixed: packages of a multi-host import land on their own host
+
+- A dependency that names its asset (`asset_ref`) is stored on that asset only, and skipped when that asset was not stored; before, a file with several hosts put every package on one of them.
+
+### Fixed: new-asset notices link to the assets and label shared provider edges
+
+- A notice of new internet-facing assets links to the assets (one asset, or the inventory filtered to the assets added in the window with the new `first_seen_before` filter), no longer to the scan run.
+- Addresses inside a provider's published shared front-end ranges are labelled with the provider ("N new addresses on a shared provider edge") instead of being announced as the organization's internet-facing assets; listed addresses name the host they were resolved from.
+
+### Fixed: a sensor that goes offline no longer uses up its tasks' attempts
+
+- A scan task whose sensor went offline (a network or DNS outage on the sensor's host) lost a dispatch attempt each time its lease ended. With one sensor that kept dropping off, every task spent its 3 attempts on `infra.sensor_offline` in minutes and the step failed hours later. Such a task now waits without using an attempt, and its state reads "waiting for sensor <name> to come back". It runs again when an eligible sensor is online.
+- A task that takes its sensor offline every time still ends: after 8 waits each lost lease counts again. A lost lease of a sensor that is still online counts as before.
+- A task moved to another sensor after an infrastructure failure now waits out the re-queue back-off (5 seconds, doubling to 5 minutes) instead of being offered again at once.
+
+### Fixed: the OutboxDeadLetters alert fires when a notification gives up
+
+- The alert read the number of outbox rows in status `dead`, but the outbox archives and removes a finished entry at once and the per-channel delivery never sets that status, so the alert could not fire.
+- New counter `openctem_notification_dead_letters_total` (label `where`: `channel` when one integration's retries ran out, `entry` when the event's integrations or routing could not be read within the retries). `OutboxDeadLetters` now fires on `sum(increase(...[1h])) > 0`. An entry that gives up at entry level now also logs an ERROR.
+
+### Fixed: organizations created for an owner work on an installation without email
+
+- An ownership invitation issued without email is recorded as never sent (`send_count` 0, no
+  `last_sent_at`); "Send again" is refused with 409 `EMAIL_UNAVAILABLE` instead of counting a send that did
+  not happen. Migration `20261111155507_owner_invitation_not_sent` (constraint and nullability only;
+  existing rows unchanged).
+- The console says "Not sent: this server cannot send email" on the Owners card, in the create and
+  change-invitee dialogs and on the Users tab, hides Send again, Last sent and Sends left, and shows the
+  address where the person accepts (`owner_invitation.accept_url`, with a Copy button). An expired
+  invitation is renewed with Change invitee and the same address.
+- The invited person sees a banner with "Review invitation" wherever they land after signing in (the
+  organization shell, or the account space of a person with no organization).
+- The new owner's one-time set-password link shown in the console is now the web app's address
+  (`setup_url`); the console used to build it from its own site, which has no set-password page.
+- New `POST /api/v1/admin/platform-users/{user_id}/setup-link` (organization and reason in the body):
+  without email only, a new one-time link for an organization's new owner who has not set a password,
+  shown once and never stored in clear; the earlier link stops working. Owner-bootstrap permission,
+  fresh step-up, support rate limit, admin and organization audit (never the link), `no-store`.
+  Users tab: "New setup link".
+
+### Fixed: addresses your in-scope names resolve to get their network looked up
+
+- The weekly network lookup (`lookup.asn`) of the asset coverage loop refused every address no scope entry covered and whose network was unknown, so the addresses on Attack surface > Discovery > Decisions stayed "Network unknown" for good. A passive step may now take a bare public address that one of the organization's names in scope resolves to: it sends nothing to the address and reads public routing data only. Active checks are unchanged; exclusions, the deny list and rejections still refuse first, another organization's names never count, and a failed lookup leaves the address refused.
+
+### Fixed: a Nessus compliance check that could not run is kept as an error
+
+- The CTIS importer (v2.0.3) no longer folds a Nessus compliance result of ERROR into skipped: it stays kind `not_applicable` and carries `compliance_outcome: error` (or `skipped`), so an import shows which checks could not run. No migration and no operator step.
+
+### Fixed: The registration lookup is planned per registered domain, and a run that skipped its targets says why
+- A registration lookup (`lookup.rdap`) takes the registrable domain of each name once (public suffix list, ICANN section) instead of every subdomain of a scan: a registry has no record of a subdomain, so most of a large scope ended with nothing. This applies to the scan's own targets and to the names an earlier step found.
+- A finished step with no output whose sensor skipped targets now says why in the run map warning (for example that its targets were refused because the name does not resolve) instead of only "produced nothing". The run map step outcome carries `no_longer_resolve_count`.
+
+### Fixed: a run's held and refused findings are on its receipt item log
+
+- A finding the output-type binding held for review is now an item of the run's receipt (`quarantined`, reason `held_for_review`, or `rejected`, `quarantine_full` when the quarantine could not keep it), and a protocol v2 finding that names no asset of its segment is one too (`rejected`, `unresolved_ref`). Before, these findings were dropped before the finding processor and left nothing on `GET /findings/imports/{id}/items`, which is why the item log stayed empty while scans lost findings. No migration.
+
+### Fixed: every receipt reconciles on every ingest path
+
+- A finding whose store failed, or whose batch failed the fingerprint check, is counted as failed with its error; before, a failed fingerprint check left the batch on no count, and a failed batch store hid the skipped findings beside it.
+- A failed finding is no longer also counted as still detected when a row with its key exists.
+- An upload's records the parser skipped (below the minimum severity) and bundle files it did not read count as received as well as skipped, so the upload's receipt reconciles.
+- A report held in the results quarantine counts its findings under the new `quarantined` outcome.
+- The receipt view shows the findings closed on arrival by a rule, and says how many received findings an older receipt does not explain. "Repeats merged" reads "Repeated in the same scan".
+- The dashboard funnel keeps "received → new or reopened"; its tooltip lists where every received finding went (seen again unchanged, repeated in the same scan, closed on arrival, not stored, each other outcome, and what older receipts leave unexplained). The intake API returns `noise.seen_again`, `noise.repeated`, `noise.outcomes`, `noise.unaccounted` and each source's `outcomes`.
+
+### Fixed: a quarantined report that is released is counted as received once
+
+- The results quarantine counted a held report's findings as received; the release counted them again, so the intake totals, the funnel and the receipt list showed them twice. The release now moves them off the quarantined outcome and received, and the hold and the release share one receipt. Older receipts keep their earlier figures.
+- The intake card's noise bar no longer subtracts suppressed findings from New a second time: the receipt counts suppressed apart from created, so New, Merged, Suppressed and Not stored sum to Received, and suppressed is its own segment.
+
+### Fixed: a report released from the quarantine counts under its sensor, not a connector
+
+- A held sensor report that the platform later released (or a person accepted) was filed on a receipt of source kind connector, so the dashboard's Sources card showed a sensor's results twice, once as "Sensor" and once as "Connector". It is now recorded under the sensor that sent it, with the original tool, and marked "Released from quarantine" on the receipt list and the Sources card. How the report is applied does not change.
+- Migration 20261106022653 adds the release marker columns (no backfill).
+- A source made stale by one of its senders now says when that sender last reported, not when the freshest sender did.
+- New operator command `receipt-reattribute` (a dry run by default, `-apply` to change) moves the receipts an earlier auto-release filed under a connector back to the sensor, only where the quarantine record shows the release.
+
+### Fixed: the Release Train refuses a run started from another branch and no longer waits out its timeout
+
+- The train checks out develop's release scripts whatever branch the run was started from. A run started from main used main's older copy of the workflow, which gives the scripts no GitHub token: refreshing the components' built-in releases retried each one for five minutes and the plan job hit its 15-minute timeout. The plan now stops at once unless the run was started from develop.
+- Refreshing a component's built-in release retries a failed read for about 30 seconds instead of five minutes (an unreadable component keeps its value, as before), and the warning names the cause.
+
+### Fixed: release feed tests no longer fail intermittently
+
+- The test signer for release feeds logged a signature one second before its virtual certificate began when the clock crossed a second boundary between reading the time and signing, so verification occasionally refused a good feed. The signer now signs again at the certificate start in that case, and the version check route test signs at the time of each call. Test support only; no production code or verification rule changed.
+
+### Fixed: console pages load about 38 KB less JavaScript again
+- The markdown renderer for scanner text was re-exported from the shared component index, so every page that used any shared component downloaded it on first load (median first-load JS per route 517 KB gzipped, over its 480 KB budget, and the asset detail page over 900 KB). It now loads only on the finding pages that show scanner text: median 479 KB, asset detail 890 KB. Nothing changes on screen.
+
+### Fixed: A scan run's receipt shows what the run received, and reads as processing while the run is going
+- The run page shows the reports and findings received and the assets created and updated, and says "No findings yet" instead of a grid of zeros while a run has produced none.
+- A run's receipt no longer reads `completed` while its run is still pending or running.
+
+### Fixed: New Scan said "Ranges: swept whole" for ranges that are scanned live hosts first
+
+- A new scan with an address range showed "Ranges: swept whole" in its options summary while the API
+  saves it as live hosts first. The choice shown and the summary now follow the API's rule: live hosts
+  first for a new scan that can run it, every address (with live hosts first disabled and the reason) for a
+  workflow without a Host discovery step, and every address for a saved scan without a choice.
+
+### Fixed: the setup checklist names the real cause when user namespaces are unavailable
+
+- The `runtime.sandbox_network` catalog gains `userns_disabled_host` (the host sets `kernel.unprivileged_userns_clone=0` or `user.max_user_namespaces=0`; the fix is the sysctl, keeping the AppArmor restriction on). `userns_blocked` now says the seccomp profile is the cause only when the host allows user namespaces, and `userns_restricted` points at an AppArmor profile that grants `userns` instead of loosening the host.
+
+### Fixed: a scan step shows what became of the findings its sensor reported
+
+- A step that reported matches whose assets the platform held for review (an out-of-contract asset type) or did not store used to read "N findings" while the findings list showed none of them. Each step run now also counts the findings held for review (`findings_held`) and the findings not stored (`findings_refused`), and the run map shows "N held for review" and "N not stored" next to the findings and info observation counts.
+- Informational matches are stored with severity `info`, not `none` (`none` is a CVSS score of zero). Findings already stored as `none` keep that value.
+- Migration 20261105065518 adds `scan_run_steps.findings_held` and `findings_refused` (constant defaults, no table rewrite).
+- Sensors older than the nuclei descriptor fix (sensor changelog: nuclei declares `asset:web_origin`) report web origins their descriptor does not declare, so their nuclei findings are held for review in the results quarantine; upgrade the sensor, and approve the held reports.
+
+### Fixed: table refresh bar sits on the table frame, not over the search box
+
+- The Findings list no longer draws a grey line over the top edge of its search box while it refreshes.
+- Tables show a refresh in progress with one shared, indeterminate bar on the top edge of the table frame, below the toolbar, without moving the layout; the Vulnerabilities list uses it too.
+
+### Fixed: A private range with no scan zone is refused as zone_none, and typed targets can be edited
+- A private address or range that no scan zone covers is now refused with `zone_none` and the `add_zone` fix instead of `invalid_target`. Loopback, link-local and metadata addresses stay invalid.
+- New scan, Targets step: a typed target chip can be edited in place (click, Enter or F2; Enter or blur commits, Escape cancels, an empty edit removes it).
+- New scan, Targets step: the zone refusal group explains what to do, offers "Add scan zone" with the range prefilled when you may write scan zones, and a refusal code the form does not know shows the server's own reason.
+
+### Fixed: a range too wide for one scan target says why and can be split
+
+- New scan → Targets named every refused typed line with one generic message. Each one now shows its own
+  reason inline; a range wider than one target can hold says so with numbers (for example
+  "10.0.0.0/8 has 16,777,216 addresses; the most one target can hold is 65,536 (/16)").
+- A range that fits in at most 256 ranges of the widest accepted size gets a one-click
+  "Split into N /16 ranges" action, in the Targets step and in the paste list.
+
+### Fixed: a changed i18n dictionary gets the full web test shards
+
+- Web CI counted only TypeScript and JavaScript files when it chose how many test shards a pull request needs, so a change to a translation catalog (which almost every test reaches) ran about a thousand tests in a single shard and timed out. JSON files now count as part of the import graph.
+
+### Fixed: a long single sign-on provider name no longer pushes the sign-in form past its card
+
+- On `/login?org=...` an identity provider with a long display name widened the "Sign in with ..." button and the whole form beyond the card, cutting off the fields and buttons at every width. The name now ends in an ellipsis and the full text is in the button's tooltip.
+
+### Fixed: a failed load shows an error with Retry instead of an empty page or zeros
+
+- Scans (counts), Workflows, Exceptions, Compliance (frameworks and totals), Business impact (figures, asset criticality, crown jewels), Validation (coverage), ATT&CK coverage, Executive summary (headline figures, process health) and Threat intelligence (overview, sync, CVE lookup) now show the shared error state with Retry and Report this problem when a read fails. Before, a failed read showed "No frameworks yet", zeros, an empty heatmap, or "CVE not found".
+- A failed CVE lookup is told apart from a CVE that has no data: only a 404 says "not found".
+- A new test fails when a route page that fetches data has no error state; the pages still to fix are listed in a file that can only shrink.
+
+### Fixed: a path discovery job that does nothing no longer holds its origin for 30 days
+
+- The ledger claim is made last by the web job guard, after the confined-sensor check and the scope build, and is all or nothing across a job's origins. A job refused after the claim, one the repository cannot store, and an origin the sensor reports as `no_candidates` (no request sent) give the claim back and restore the previous row (migration column `claim_command_id`, `prev_*` of `web_path_discovery_runs`).
+- Discovery deny paths are built with the same rule as every other web job (decoded forms, a `*` segment cut for sensors before webpath 1.3.1).
+- New coverage gap reason `no_candidates` (en and vi words in the run view).
+- Path discovery limits apply to any job whose required capability words name `enumerate.web_paths`, not only to the discovery tool; a discovery job with no origin target is refused.
+- The ledger release for a sensor-reported empty job needs the exact origin, a detail that shows no request was sent, and happens once per origin per 30 days.
+- An IPv6 origin is matched to its scope entry as a whole address.
+
+### Fixed: a path exclusion with a `*` segment no longer blocks a whole origin on sensors that read it
+
+- A web job's scope now keeps the deny paths as written beside the cut form. A sensor that reads `*` segments (v0.38.2 and v0.37.2 or later, contract webpath 1.3.1) is sent the written form, so `/tenants/*/admin` denies the admin path of every tenant and nothing else; an older, unknown or shared sensor still gets the cut form (`/tenants/`), which over-blocks but never lets the path through. The platform-only key is removed before a job is signed or handed out.
+
+## v0.20.3 (2026-11-07)
+
+### Security: path exclusions with a percent-escape or a `*` segment hold on every sensor
+
+- A path exclusion written with a percent-escape (`/files/My%20Docs`) was stored as written. The sensor compares the decoded request path, so the exclusion never matched and `/files/My%20Docs/a.bak` was requested. This affected every web-scoped job, nuclei included. Prefixes are now stored decoded (`/files/My Docs`). A prefix that decodes to a dot segment, a control character or a `%` (an escaped `%25`), or that has an invalid escape, is refused. Prefixes already stored escaped are sent to the sensor in both forms until the data migration (separate change) rewrites them.
+- An exclusion with a `*` segment (`/tenants/*/admin`) was sent as is, and released sensors compare `*` literally. It is now sent cut before its first `*` (`/tenants/`). This over-blocks on purpose until every sensor reads `*` as a segment (sensor v0.38.2 and v0.37.2).
+- Dispatch and ingest checks read an endpoint path as written and decoded, ignoring ASCII case, as the sensor does.
+
+### Security: build with golang.org/x/net 0.62.0
+
+- Bumps `golang.org/x/net` from 0.61.0 to 0.62.0, which fixes CVE-2026-78661 (high) and CVE-2026-97045 (medium) reported against the API module. No behaviour change.
+
+### Fixed: findings with a long CVSS vector are stored again
+
+- Every finding scored with a full CVSS 4.0 vector (up to 178 characters), or a CVSS 3.1 vector with temporal and environmental metrics, failed to store: `findings.cvss_vector` held only 100 characters. The version matcher counted these findings as failed on each pass, and scanner or pentest findings carrying such a vector failed the same way. Migration 20261107155426 widens the column to 255 characters (a catalog change, no table rewrite); the next matcher sweep stores the held findings.
+- A finding the version matcher cannot store is booked on the platform's receipt with the `store_failed` code, and is retried on the organization's next reconcile. The API log names the CVE and the reason.
+- The finding classify API accepts CVSS vectors up to 255 characters, and the vulnerability catalog API up to 200, matching their columns.
+
+## v0.20.2 (2026-11-05)
+
+### Fixed: every sensor item ingest did not apply says why
+
+- Segment outcomes no longer call every unapplied asset `asset_invalid` ("asset has no usable value"). An asset or finding the output-type binding held for review is counted as quarantined with `held_for_review` (or `quarantine_full` when the quarantine could not keep it); one refused because the report already recorded as many assets outside its command's targets as one report may is `too_many`; one outside the upload actor's data scope is `out_of_scope`. (An asset outside the command's targets is recorded as a discovery, not refused.) `asset_invalid` is left for an asset ingest could not store for any other reason.
+- Findings held because their own type is out of contract (their asset applied) were counted as accepted; they are counted as quarantined. The step run's held and refused finding counts follow the same split.
+
+## v0.20.1 (2026-11-05)
+
+### Fixed: held sensor results are released once the tool's descriptor declares their types
+
+- Reports held as `out_of_contract` (for example nuclei findings on `web_origin` assets while the sensor's descriptor did not declare that type yet) are now re-checked against the tool's current descriptor every 5 minutes and when the sensor registers a changed manifest. An item whose every type is now declared, and that nothing else refuses, is applied through the same path as a person's accept and audited as `sensor_result.auto_accepted` (actor system). Everything else stays pending for review.
+- No migration.
+
+## v0.20.0 (2026-11-05)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: leaked-secret fingerprints are keyed per organization**: nothing to do. Rehearse with `go run ./cmd/encrypt-credentials -dry-run` on a restored backup; to roll back to an older build, stop the new servers and run `go run ./cmd/encrypt-credentials -revert-credential-fingerprints`.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: a scan runs as far as the organization's tools and sensors support (`scan-runs-what-is-supported.md`)
+
+### Security: CDN edge addresses are no longer offered for scope; one click adds only addresses with strong evidence
+
+- The address classifier knew the published edge ranges of two providers only. Amazon CloudFront, Azure Front Door, Gcore, bunny.net, Imperva and Sucuri edges, Amazon S3 and API Gateway front ends and Google's own front ends were treated as possibly the organization's when the address carried no network data, so the attack surface Decisions card offered them for scope (a scope entry on a CDN edge scans every customer of that edge), and the active-scan gate did not cap names served by them to web ports. The built-in dataset now holds those providers' published lists, rebuilt by a maintainer with `server/scripts/edgeaddr-dataset.py`; the platform never downloads them at run time.
+- The Decisions card's one-click add now takes only the addresses in the high ownership band (an anchor the organization set, such as its own network, plus more evidence). Every other address is added from its own row ("Add"), after a person reads it; "Not ours" is unchanged.
+- An IPv6 address no longer runs over the names next to it in the address list.
+
+### Security: leaked-secret fingerprints are keyed per organization
+
+- The fingerprint of a leaked credential's secret was keyed with one install-wide key, so the same password leaked for two organizations had the same fingerprint and a database reader could link them. It is now HMAC-SHA256 under an organization key derived with HKDF from `APP_ENCRYPTION_KEY` and the organization id. Dedup inside one organization is unchanged.
+- Stored fingerprints are re-keyed on every start (idempotent, resumable, batched, recomputed from the sealed value; only the two fingerprint keys of `exposure_events.details` change, no schema migration). Rows whose value cannot be decrypted are left as they are and logged.
+- **Upgrade note:** nothing to do. Rehearse with `go run ./cmd/encrypt-credentials -dry-run` on a restored backup; to roll back to an older build, stop the new servers and run `go run ./cmd/encrypt-credentials -revert-credential-fingerprints`.
+
+### Security: a dangling DNS name is no longer resolved when someone else starts answering for it
+
+- The EASM DNS check used to resolve an open `dangling_cname` (and a confirmed `subdomain_takeover`) as soon as
+  the missing CNAME target existed again, which is exactly what a successful takeover looks like. It now resolves
+  only when the name points into the organization (its own domain or a confirmed root, or confirmed addresses
+  outside provider space, or no record at all). A name that answers from a new third party raises a suspected
+  `subdomain_takeover` (high) that only a person resolves.
+
+### Security: port scan edges follow the report's authority
+
+- A port scan's `exposes` (address to port) and `resolves_to` (host name to address) edges are added only when the report may change their source asset: an unsolicited report, an address outside a bound command's targets, or an upload whose actor may not change the asset no longer adds them (RFC-040 §5.3).
+- Port `exposes` edges record when they were last seen, so a rescan refreshes them.
+
+### Behaviour change: a scan runs as far as the organization's tools and sensors support
+
+- Creating or saving a scan, and saving or activating a workflow, is no longer refused because a step's
+  tool is not installed, is turned off, has no sensor, or because no tool implements a step's capability
+  (`WORKFLOW_NOT_RUNNABLE` is removed; a single scan on a disabled scanner can be saved too). A definition
+  that is wrong in itself is still refused.
+- At run time (manual and scheduled alike) such a step is skipped with its reason and a code
+  (`NO_MATCHING_TOOL`, `TOOL_NOT_INSTALLED`, `TOOL_DISABLED`, `NO_SENSOR_FOR_TOOL`), required or optional;
+  the steps that need its results are skipped as `DEPENDENCY_SKIPPED`; the run goes on with every other
+  step and ends `partial`, not `completed` or `failed`. Before, one step without a tool or sensor refused
+  the whole run (`NO_SENSOR_FOR_TOOL`, `TOOL_NOT_FOUND`, `TOOL_DISABLED`) or failed it.
+- Only a trigger in which no step can run is refused, as a blocked run with `NO_RUNNABLE_STEPS` naming the
+  missing steps and why.
+- Scope, intensity, approvals and the passive-only entitlement still refuse a run as before.
+- The run API lists each step's `skip_reason` (step runs and run map nodes); the run view shows it and
+  explains the new codes in English and Vietnamese.
+
+### Added: asset neighborhood graph with lineage
+
+- `GET /api/v1/assets/{id}/neighborhood` returns the assets up to three hops around an asset (both directions, or `out`/`in`; `types`, `relations`, `limit`), with groups of more than 8 siblings as counted clusters and the asset's discovery lineage. Related assets outside the caller's data scope are counted per node (`hidden_neighbors`), never returned or walked through. Bounded by depth, a node cap (300), a 3 s statement timeout per hop and a per-user rate limit.
+- The asset page's relationship graph now draws that neighborhood on the shared graph canvas: the lineage up to the root is always drawn (an address shows the name that resolves to it and the domain that contains the name), depth 1 to 3, clusters such as "10 assets" expand on demand, any node can be expanded or opened, legend by asset type, keyboard navigation. The 30-relationship limit is gone; the list stays the complete view.
+- Full screen for the relationships graph and the attack-path graph: a "Full screen" button on the canvas (or `f`) opens the same graph, with the same hops, expansions and selection, in a full-viewport view (full-screen sheet on a phone); Escape leaves it.
+
+### Added: organizations choose whether leaked secret values are kept
+
+- New organization setting **Settings > Leaked credentials** (`/api/v1/organization/settings/credentials`, owners and administrators) and platform default **System > Leaked credentials** in the console (`/api/v1/admin/settings/leaked-secret-storage`, super admin with a fresh step-up and a reason). While the platform default is unset, values are kept on a self-managed install (as before) and not kept on a managed service (`MANAGED_SERVICE`).
+- When off, an import keeps only the masked form, the credential type and the fingerprint; nothing can be revealed. Values already kept stay.
+
+### Added: dangling names hosted by a provider, and dangling names stay in inventory
+
+- Names that point at a provider which no longer serves them (its "not configured" page, or certificate
+  trouble on the name while the CNAME still points at the provider) now raise `dangling_cname` with a response
+  class and evidence (CNAME chain, provider, claimability, TLS state). A takeover template match on such a name
+  is confirmed without an earlier DNS-only record.
+- New provider list entry: LadiPage.
+- Assets with an open dangling or takeover exposure are never demoted to stale by the lifecycle worker, and
+  carry the tag `dangling_cname` while the exposure is open. No migration.
+
+### Added: the run map counts the names active steps skipped because they no longer resolve
+
+- A step that leaves out names known not to resolve records the count, and the run map shows "N names no longer resolve, skipped by active steps" (English and Vietnamese). Passive steps and the DNS resolution step still take those names.
+
+### Added: the scan wizard offers a passive-only organization passive scans only
+
+- `GET /api/v1/scans/capabilities` (`scans:read`; the organization comes from the credential) answers
+  whether the organization may scan above passive (`active_scanning`).
+- New and Edit Scan offer a passive-only organization Passive intensity only, and so only passive tools
+  and workflows, with one line saying why. A higher intensity left in a draft or a saved scan moves to
+  Passive. The server still refuses a scan above passive for such an organization.
+- Workflow readiness (`GET /scan-workflows?include=readiness`) names the tool a ready step runs with
+  (`tool`), so the scan wizard can say "runs with <tool>".
+
+### Changed: the Assets filter panel toggles like Findings
+- The Assets page has the same filter button as Findings: from large screens up it slides the facet panel (type, criticality, exposure, owner, tags, attributes) in beside the table, with the number of active filters on the button; on phones it still opens the sheet.
+- The panel starts closed and your choice is remembered in this browser. Add filter and the filter chips stay as they were.
+- The filter layout (open-state memory and the side card) is now one shared component used by Findings, Assets, asset groups and scans.
+
+### Changed: platform console elevation in one dialog, shown in the header row
+
+- Elevating the console session asks for the role, the duration, the reason and the authenticator code in one dialog; the separate "Confirm it is you" dialog no longer opens on top of it. A wrong code is shown under the code field. Administrators with a security key can leave the code empty and confirm with the key; a console that accepts only security keys asks for the key after Elevate.
+- The read-only or elevated state is a compact control in the header row (role and end time, "End now") instead of a full-width banner on every page.
+
+### Changed: New and Edit Scan can be moved through freely, with a live summary and bulk targets
+
+- Every step of the New and Edit Scan wizards can be opened at any time, also before the earlier ones are
+  complete. Each step shows whether it is complete or how many problems it has; Create (or Save) stays
+  disabled until every step is valid and names the first problem as a link to its step. Ctrl/Cmd+Enter
+  creates or saves.
+- A summary beside every step (a bar above the footer on phones) shows what will run, the intensity in
+  plain words and whether the scan needs an approval, how many targets there are, the schedule with its
+  next runs, and an estimate of the jobs per run.
+- Targets: "Paste or upload a list" reads a pasted list or a `.txt` / `.csv` file in the browser, shows the
+  kinds, repeats and every entry that will not be added with the reason (fix or remove one, or all), and
+  adds the new ones in one go. Past 20 typed targets they show as a searchable list with the scope answer
+  of each. Unicode domains are sent in their ASCII form and `[v6]:port` is accepted; ranges larger than
+  65,536 addresses, punycode top-level domains and repository references are refused with the reason
+  before create, as the API does.
+- Workflow steps in the summary: each step says the tool it runs with, or that it is skipped and why (no tool
+  provides the capability yet, no sensor offers it) with the fix, and how many of the steps will run. The
+  starter workflows say up front which optional steps are skipped. Tool readiness never blocks Create or Save.
+- The New Scan draft is kept per organization and per user in the tab; closing with changes offers
+  "Keep as draft". Edit Scan no longer resets the form when the scan is refetched while it is open.
+
+### Changed: the run map says why a step's chunks wait
+
+- A waiting step no longer always reads "Waiting for a sensor". When every queued chunk waits for hosts another task of the organization is scanning, it reads "Waiting for its hosts: another task is scanning them". When every one was refused by a sensor's local policy, it reads "Waiting for a sensor whose local policy allows it". Otherwise each gate's count is listed on the step card and in its panel, for running steps too.
+- `GET /scan-runs/{id}/map`: node `chunks` gains `hosts_busy` and `refused` (subsets of `queued`), and a waiting node's `reason` can be `waiting_for_hosts` or `waiting_after_refusal`, besides `waiting_for_sensor`.
+
+### Changed: Latest sensor v0.37.0 and sdk-go v0.46.3
+
+- The compatibility manifest names sensor v0.37.0 and sdk-go v0.46.3 as the releases this platform release was built with (the bundled sensor compose default follows). The floors do not change.
+
+### Changed: vulnerability matching reads product ranges through the vulnerability catalog reader
+
+- New `vulncatalog.Reader` (RFC-143): one read seam for the public vulnerability catalog (product ranges, global products and aliases, CVE facts and records, KEV, EPSS, advisory id aliases), with a Postgres implementation over today's tables and a disabled implementation whose every read fails with `vulncatalog.ErrUnavailable`. Matching and version retests read product ranges through it; results are unchanged.
+- "Catalog unavailable" means unknown, never "no ranges": a matcher run that cannot read ranges stops before it replaces version results or reconciles any organization, so it closes no finding.
+- The reader reads global rows only: a tenant-private product or alias is never returned.
+- A ratchet test lists the files that still name catalog tables; new code reads through the reader.
+- No schema change and no configuration change.
+
+### Changed: version matches on a provider's shared hosting are attributed to the provider
+
+- A version-based match on a host that a provider's shared front end serves (CDN or WAF edges, SaaS and
+  site-builder hosting, including an address that the organization's names reach only through such a provider)
+  now records `hosted_by` and `attributed_to: provider` and is capped at priority P3: it is context on the
+  organization's name, not its own critical vulnerability. Matches on the organization's own addresses are
+  unchanged.
+- The edge labels' dataset knows LadiPage (`ladipage.com`, SaaS hosting).
+- Regression tests pin that a CVE with no version range for the product, and a distribution build, are never
+  raised by default.
+
+### Fixed: console e2e and tooling resolve the default extension module
+- The `@extension/*` alias is now also in the `tsconfig` paths of the web app and the console app, so Playwright (which loads the console navigation through the e2e helpers) finds the default `@extension/console` stub; the Console E2E workflow no longer fails with `Cannot find module '@extension/console'`. A test keeps the three alias configs (bundler, vitest, tsconfig) pointing at the same default module.
+
+### Fixed: an idle sensor is told about work its claim would split
+
+- The heartbeat doorbell counted only tasks whose hosts were all free. A run-step task waiting for a few hosts another task held is split by the next claim (its free targets start at once), but the doorbell said `pending_jobs=0`, so an idle sensor took that work only on its five-minute safety poll. When nothing else is ready and the sensor has a free slot, the doorbell now also counts the tasks its next claim would split (read-only, the same plan the claim applies, within the sensor's own organization).
+
+### Fixed: key figures widget without the extra whitespace
+  - The Key figures strip on dashboards no longer leaves a blank band under its tiles when the stored layout gave it more than one row: it is now always as tall as its tiles.
+  - The strip sits flush in its widget frame: its first figure lines up with the title and the tiles are shorter, instead of padding on top of padding. `MetricStrip` gets an `embedded` variant for this, replacing a one-off class override.
+
+### Fixed: New scan adds the recorded addresses and uses the preview column
+- The coverage level "Host, subdomains and their IPs" now reads the addresses an inventory name records under `ip_addresses` (and its older synonyms), so they are added to the scan instead of "no recorded addresses". The note tells apart "no names below the domain" from "names without a recorded address".
+- The Targets step preview column lists the ready targets and what a wildcard or coverage level includes (inventory names below it, added addresses); the options use the full width.
+- The Review step's run plan shows why a step is skipped (no tool provides its capability, tool off, no sensor) and that steps needing a skipped step are skipped too (`DEPENDENCY_SKIPPED`).
+
+### Fixed: the priority recompute no longer undoes the P2 cap on potential version matches
+
+- A version match below 80 percent confidence (for example a banner match) that is not in the known exploited list and not confirmed by a scan is capped at P2 when the matcher creates it. The priority recompute ran afterwards without that rule and moved such findings back to P1, so they got the P1 SLA and showed as overdue. The recompute now applies the same cap (one shared function), so these findings stay at P2. The same holds for the P3 cap on matches served by a provider's shared front end.
+- Findings already moved to P1 come back to P2 on their next recompute (the daily reconcile of every open finding); no manual data change is needed. A priority set by hand is never capped.
+- SLA deadlines follow the existing rule: a deadline is never moved later by a recompute, so a finding that already has a P1 deadline keeps it (an extension stays an explicit decision). New findings get the P2 deadline.
+
+### Fixed: a sensor no longer gets back, at every policy flip, a task it refused under that policy
+
+- A change of a sensor's reported local policy lifts its exclusion from the pending tasks it refused only when the sensor has not already refused the task under the new policy (the refusal records the policy digest). A policy report that flipped between two values handed the same task back to the same sensor each time.
+- A task a sensor refused as a whole whose listed targets are all names that do not resolve (the sensor says `unresolvable`, or a sensor that predates the reason says `denied_by_policy` and the organization's own resolution state says the name is `not_resolving`) now completes with per-target skips instead of being re-queued to another sensor.
+
+### Fixed: the sensor jobs card no longer shows more jobs running than its capacity without saying why
+
+- A sensor sizes its job slots from the CPU and memory free on its host, so its capacity can drop below the jobs it already runs when the host gets busier. The sensor detail card, the Jobs tab, the sensors table and the phone card showed that as a bare "2 / 1, 0 slots free". They now say "Over capacity by 1, no new jobs" (warning tone, with the reason on hover), and the meter no longer runs past its end.
+- The free slots shown are the platform's own dispatch figure (`available_slots`: capacity minus the jobs the platform counts as held, a fresh load report's free slots and host pressure), so the console and placement never disagree; "host busy" is shown when host pressure is what narrows them.
+- No API, migration or sensor change is needed; older sensors and older APIs (no `available_slots`) fall back to capacity minus running.
+
+### Fixed: subdomain takeover exposure events name the resolved addresses ip_addresses
+
+- The suspected-takeover event detail key `addresses` is now `ip_addresses`, the canonical property name, which keeps the property-synonym lint green.
+
+### Fixed: a finding is only closed as fixed by a version change after the new version was evaluated
+
+- When the inventory reported another version of a product, the matcher could close the finding as fixed before the new version had been checked against the CVE's ranges. A version that was still affected then reopened the finding on a later pass: a false fixed close on the timeline, a reopened finding, and a restarted history.
+- The close now waits until the new version has been evaluated. If the new version is still affected, the one finding stays open (no close, no reopen) and records the version it is observed on. If it is fixed, the organization's closing mode applies as before (close, ask a person, or keep).
+- A version that was never evaluated keeps its finding open: a missing match is not proof of a fix.
+
+### Fixed: Web CI gives a narrowed pull request one test shard per 150 affected files
+
+- A change to a widely imported web file reached about 1,000 test files but still got a single shard and hit the job timeout. The shard count now follows the number of affected test files (1 to 3).
+
+## v0.19.1 (2026-11-04)
+
+### Changed: web image size budget 330 MB
+
+- The image guard's budget for `openctem-web` is 330 MB (was 300 MB). v0.19.0's web image is 302 MB, mostly the open-source notices data, so Docker Publish refused it and skipped signing every image.
+
+## v0.19.0 (2026-11-04)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Behaviour change: CTIS 2.0 only; upgrade sensors and connectors together with the platform**: follow `docs/operations/ctis-2-upgrade.md`: review pending quarantined reports and let the ingest queue drain first, stop the producers, upgrade the platform, then upgrade the producers to the minimum versions. On first start the server moves stored asset names to their CTIS 2.0 canonical form (renames, or merges into the asset that already has the name; journal table `asset_canonical_changes`, migration `20261103034828_ctis2_asset_canonical_changes`). Dry run first: `asset-canonical`; renames are undone with `asset-canonical -revert`, merges are not.
+- **Added: feeds through platform relay sensors, so the platform needs no outbound access**: existing installations keep direct delivery until an administrator selects relay mode. A relay sensor needs an SDK with `feed.relay@1` (on by default on a shared sensor with a pinned job-signing key; `SENSOR_FEED_RELAY=0` turns it off). Relay mode is not available while `VULNFEED_BUNDLE_DIR` is set or without a job signer. Backups may skip the data of `feed_relay_files` (it is re-fetched).
+- **Changed: finding identity uses CTIS fingerprint recipe v2; stored findings are re-keyed in place**: the API re-keys stored findings on start (one replica at a time, scan auto-resolve paused per organization while it runs; each organization changed gets a `findings.refingerprinted` audit entry). No manual step. To roll back to an earlier release, stop the API and run `refingerprint -down -apply` with this release's image first.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: CTIS 2.0 only; upgrade sensors and connectors together with the platform (`ctis-2-switch.md`)
+- Removed: module switches that did nothing, and the switches of two modules that must always apply (`module-retire-noop-switches.md`)
+- Removed: pinned release feed keys (`release-feed-keyless.md`)
+
+### Security: an organization without active scanning never has a probe sent to any sensor
+
+- New named feature `active_scanning` (allowed unless denied, like the other named features; the hosted control plane denies it per organization through the internal entitlements API, and the catalog endpoint lists it). An organization that is denied runs passive work only (tier 0: certificate logs, passive DNS, registration data, intel matching, imports).
+- Enforced on the server at every claim path (poll, claim by id, claim-N and the shared sensors' claim): the claim-time re-check fails a job above tier 0 with `ACTIVE_SCANNING_NOT_ENTITLED`, and the sensor-side gate withholds a job whose tool contract lifts it above passive. The tier is computed on the server, never read from a request, and the lookup is by the command's own organization. A lookup error refuses tier above 0 and leaves passive work alone.
+- Scan create, update and run refuse a scan above passive for such an organization with the validation code `ACTIVE_SCANNING_NOT_ENTITLED`, in addition to the dispatch check.
+
+### Security: the database chains every audit row and refuses to change it
+
+- Every tenant audit row is now chained by the database in the transaction that inserts it, over the whole row (actor, changes, metadata, message, severity, request and session ids, not only action, resource and result). Rows written straight into `audit_logs` by repository transactions and data migrations were left unchained before; they are covered now.
+- `UPDATE` and `TRUNCATE` of the audit log and of the chain evidence tables are refused by the database. Only a platform rebaseline rewrites chain hashes, and nothing else on a chain row.
+- Deleting an account or an organization no longer rewrites its audit rows (actor and organization were set to empty): the ids stay as recorded. Rows of organizations deleted earlier get their organization back from their chain row.
+- Older chain rows keep their hash version and verify as before; the hourly verifier, the classification, the rebaseline, `chainaudit` and the retention archive understand both versions.
+
+### Security: The platform test e-mail is rate limited per administrator
+- `POST /api/v1/admin/settings/email/test` allows 5 test messages per minute per administrator and answers `429` beyond that, so the route cannot be used to send a stream of mail through the stored SMTP server. Other limits are unchanged.
+
+### Security: the release feed is signed keyless (Sigstore), with no signing key to hold
+
+- The release feed is signed by the `release-feed` workflow with its GitHub OIDC identity (`cosign sign-blob`, certificate and transparency log entry) instead of an Ed25519 key kept in the `RELEASE_FEED_SIGNING_KEY` secret. There is no secret to set up, lose or steal.
+- An instance verifies the feed offline, with the Sigstore trusted root embedded in the release (`CONTENT_SIGSTORE_TRUSTED_ROOT` may name a newer one), and accepts only the `release-feed.yml` workflow of `openctemio/openctem` on `main` or a release tag, from the GitHub Actions issuer.
+- The `id-token` permission exists only in the workflow's sign job, which runs nothing but cosign; a publish job verifies the file as an instance would before uploading it.
+
+### Security: the request log names who a request authenticated as
+
+- Each request log line now carries `user_id` and `tenant_id` (or `admin_id` on the platform admin plane) once the request authenticated, so refused (401/403) and failed requests can be attributed to an account and organization. Identifiers only, never an e-mail.
+
+### Security: a workflow scan runs only its organization's workflow or a system template
+
+- The trigger loads the scan's workflow scoped to the scan's organization, or as a shared system template,
+  before any gate reads its steps. A scan row naming another organization's private workflow is refused
+  with `PIPELINE_NOT_FOUND` and nothing is dispatched; before, the trigger read that workflow unscoped.
+
+### Security: SCIM deprovisioning works when the SCIM feature is off
+
+- The SCIM feature gate refused every request of an organization that lost the feature (and failed closed on a limits read error), including the DELETE and active:false calls an identity provider sends to remove a leaver. A disabled feature kept the leaver's access.
+- A user DELETE, PUT or PATCH now passes the gate; the handler then accepts only a deactivating outcome (active:true is refused with 403). Creating users, reads and group changes stay gated.
+
+### Security: an organization's sign-in never rewrites a password account's address
+
+- A sign-in through an organization's identity provider adopts the address the provider sends only for an account without a password. A password account linked to the organization's sign-in keeps its address, which is how it signs in and recovers its password in every organization.
+
+### Security: step-up says why a code was refused, and each code is sent once
+
+- `auth.step_up_failed` audit events record the reason (`invalid_code`, `replayed_code`, `invalid_password`, `account_locked`, `no_totp_factor`, `decrypt_error`, `rate_limited`), never the code. A rate-limited step-up is audited once a minute per person.
+- `POST /api/v1/auth/step-up` answers `403 STEP_UP_CODE_USED` for a code from an already used time step (still refused and counted towards the lockout); an unreadable authenticator secret is a server error, no longer reported as a wrong code and not counted towards the lockout. A code typed as `123-456` is accepted.
+- The confirm dialog sends each code once (auto-submit, Confirm and Enter share one lock), shows distinct messages for a wrong code (naming the host whose authenticator entry to use), a used code and too many attempts.
+- New authenticator entries are labeled with the host, e.g. `OpenCTEM (app.example.com)`, so entries of two installations can be told apart. Existing entries are unchanged.
+- The verification-code field is centered in every dialog and screen that uses it.
+
+### Security: golang.org/x/crypto updated for GO-2026-5932
+
+- The OpenPGP armor reader in golang.org/x/crypto (GO-2026-5932) is fixed in a post-v0.58.0 commit, so the module is pinned to that commit until the next tagged release. The release-feed test helper and the HTTP body limiter reach the affected reader through the standard library, so the dependency scan blocked every pull request.
+
+### Behaviour change: CTIS 2.0 only; upgrade sensors and connectors together with the platform
+
+- The platform accepts only CTIS 2.x documents on every path: sensor results (protocol v2 media type `application/vnd.ctis+json; version=2.0`), CI uploads, finding imports, DefectDojo syncs and quarantined reports. A 1.x document is refused (`422 version-mismatch` on protocol v2, a validation error elsewhere) with a message that names the upgrade. A CI upload and a job result are the document itself: the `{"report": ...}` envelope is refused (`400` on `POST /api/v1/ci/runs/{id}/results`). There is no compatibility layer.
+- Minimum producer versions: sdk-go v0.46.0, connector-tenable v0.2.0, ai-worker v0.1.0; sensor, asset-collector and openctem-ci: the first release with CTIS 2.0 (sensor v0.36.0, asset-collector v0.3.0, openctem-ci v0.4.0).
+- Every document is checked with the CTIS 2.0 validator: `metadata.id` is the producer's UUIDv7 idempotency key and never one of the platform's ids (the report id comes from the transport), references are never UUID-shaped, asset values are canonical, and every finding names an asset of the document (no fallback asset any more).
+- `properties` no longer steer the platform for sensor, CI and upload reports; the typed members (`technical.http`, `service` assets with `exposes`, `technologies`, `owners`, `last_seen_at`, `extensions["io.openctem"]`) replace them.
+- Import mappings are `openctem.io/mapping/v2`; a saved v1 mapping must be re-saved with the CTIS 2.0 member names.
+- `has_address` relationships (ctis v2.0.1) (a machine to its interface or management `ip_address` assets) give network devices and hosts their addresses; a producer's `ip_addresses` property is ignored.
+- Orchestration contracts moved to `github.com/openctemio/contract` (v1.1.1, transfer v1.0.1).
+- **Upgrade note:** follow `docs/operations/ctis-2-upgrade.md`: review pending quarantined reports and let the ingest queue drain first, stop the producers, upgrade the platform, then upgrade the producers to the minimum versions. On first start the server moves stored asset names to their CTIS 2.0 canonical form (renames, or merges into the asset that already has the name; journal table `asset_canonical_changes`, migration `20261103034828_ctis2_asset_canonical_changes`). Dry run first: `asset-canonical`; renames are undone with `asset-canonical -revert`, merges are not.
+
+### Removed: module switches that did nothing, and the switches of two modules that must always apply
+
+- Settings > Modules no longer lists, and the registry no longer has, Risk Analysis, SBOM Export, Tools, Scan Profiles and the integration sub-modules (they gated no route, job or tool), nor Business Impact, Crown Jewels, CTEM Maturity, Executive Summary and MITRE Coverage (they hid a console page only): each page now follows the module of its parent. Their permissions and event types move to the parent; an organization's old switch for a retired module is dropped.
+- Risk scoring and suppressions are always on. An organization that had switched Suppressions off does not get its rules muting again: the upgrade deactivates its approved rules (status expired, marked `deactivated_by_migration`, restored by the down migration), and the organization can approve rules again; no audit-log row is written by the migration (the log is hash-chained by the application), so this note is the record; an organization that had switched Risk Scoring off keeps the settings page.
+- AI triage is not a switch on Settings > Modules (Settings > AI owns whether AI runs); an organization that had switched it off keeps AI triage off (the choice moves to its AI settings, triage use case off), and the module stays an entitlement only.
+
+### Removed: pinned release feed keys
+
+- `releasefeed.PinnedKeys`, the `release-feed keygen` command and the release feed key of `scripts/signing/init-keys.sh` are gone. The published file has a new format (`openctem.io/release-bundle/v2`); instances of an earlier release cannot read it and keep the sensor and SDK versions built into their release until they upgrade.
+
+### Added: the administrators' audit chain report carries the chain head
+
+- GET /api/v1/admin/audit-logs/chain and bootstrap-admin verify-audit (text and -json) now include the chain head (position and hash of the newest row, or of the newest anchor when no row is online) in every edition, so a copy of the log can be verified offline and compared with an earlier copy without a forwarding sink.
+
+### Added: a Playwright suite for the platform console
+- `web/console/e2e` checks every console page (read from the app directory and the navigation config, so a new or moved page is covered without editing the suite) at 1440 and 390 px: one h1, no sideways scroll, no console error, axe WCAG 2.2 AA with no critical or serious violation, no " · " or em dash in the text, and the same page-anatomy checks as the tenant app's suite. A second spec covers the elevation flow.
+- The workflow `console-e2e.yml` builds the API and the console in the job and runs the suite on a pull request that changes the console, nightly, and on demand.
+
+### Added: attack surface posture score
+
+- Attack surface > Posture grades the external attack surface from A to F, for the organization and for each root domain. Six categories contribute: vulnerabilities, hijackable subdomains, exposed services, cloud storage, misconfiguration, and suspicious activity.
+- For each category the page shows the score once its issues are fixed. It also shows a fix plan that reaches the next grade and the risk reduction by asset criticality. Formula: `server/docs/architecture/easm-posture.md`.
+- Figures are precomputed per asset on each organization's schedule (manual, 1 h, 6 h by default, or 24 h), or on demand with Recalculate now (at most once every 5 minutes). Every read applies the reader's data scope.
+- New routes:
+  - `GET /api/v1/attack-surface/posture` (`assets:read`);
+  - `POST /api/v1/attack-surface/posture/refresh` (`assets:write`, audited);
+  - `PUT /api/v1/attack-surface/posture/schedule` (`settings:write`, audited).
+- New dashboard metric `surface.posture`. New controller `easm-posture`. Migration `easm_posture` adds two empty tables.
+
+### Added: edition fence and entitlement key registry
+
+- CI check "Edition fence" (and the pre-commit hook) keeps extension code and restricted words out of this repository; the extension mount points are git-ignored.
+- Every limit key and named feature has a description in `pkg/domain/limits`; the entitlement keys test fails on an undescribed, unknown or literal key.
+- Docs: [Editions](../docs/development/editions.md); the pull request template has an extension-point checklist. No behaviour change.
+
+### Added: an opt-in HTTPS proxy for the platform's own feeds
+
+- `OPENCTEM_HTTPSEC_FEED_PROXY` (`http://[user:password@]host:port` or `https://...`) routes the vulnerability bundles, CISA KEV, EPSS, the CTEM-ID catalog, the public program feed and the release feed through a corporate proxy; `OPENCTEM_HTTPSEC_FEED_NO_PROXY` lists hosts reached directly (an internal mirror). Webhooks, integrations, identity providers and anything an organization configures never use it, and `HTTPS_PROXY` is still not read.
+- The destination is checked before the request reaches the proxy (blocked literals, dangerous names, blocked local answers); only https destinations are proxied, with TLS end to end, and the API refuses to start on a malformed value without echoing the password.
+- A vulnerability bundle URL whose name does not resolve at start-up no longer disables the import until the next restart: each fetch is checked when it is made.
+- The air-gapped guide lists the outbound hosts to allow and how KEV and EPSS arrive offline with the signed bundles.
+
+### Added: feeds through platform relay sensors, so the platform needs no outbound access
+
+- New feed delivery mode `relay` (`GET/PUT /api/v1/admin/settings/feed-relay`; any administrator reads, a super admin with a step-up changes it, audited): one to three designated platform (instance-scope) sensors relay the signed vulnerability feed (with its KEV, EPSS, alias and vulnerability-id side files) and the version check's release feed. The mode and the relay sensors are saved in one write; a sensor that is not an active platform sensor reporting `feed.relay@1` is refused at save time. The platform plans which files it needs, a relay downloads exactly those, and the importers verify them with each feed's pinned root as for a bundle directory: a relay can withhold data, never alter it (RFC-142).
+- Any designated relay claims the oldest open round; an idle claim (nothing uploaded for 10 minutes) or one held by a sensor no longer designated is taken over by another, so two or three relays fail over automatically.
+- In relay mode the platform makes no outbound feed request: the KEV/EPSS direct fetch, the online version check and the program feed URLs are off. The vulnerability feed is relayed from `VULNFEED_BASE_URL` only (not the direct-mode mirrors). An unreadable setting counts as relay mode: never an automatic fallback to direct.
+- Relayed files are stored in the database (`feed_relay_files`, shared by every API replica, 32 MiB per file, 256 MiB per round, 512 MiB in total, one upload per file per round) and copied by the replica that holds the `feed-relay` controller lease into `<FEED_CACHE_DIR>/relay` before it plans or imports. No shared volume is needed on compose, Helm or the installer kit.
+- Sensor routes `GET /api/v2/sensor/feed-relay-rounds/next` (204 with `Retry-After` when there is no round), `PUT .../{round}/files/{name}` (Content-Length and Content-Digest required, pinned files hash-checked before they enter the spool), `POST .../{round}/done`; only designated sensors reporting `feed.relay@1` are offered rounds, and an organization's sensor gets 403. Rounds are signed by the job signer; a round the signer refuses is closed with `signer_refused` and the reason.
+- The status shows per feed the applied release and its age, the round in progress (files and bytes delivered, which relay claimed it) and one stale reason from a fixed list (for example `relay_offline`, `signer_refused`, `upstream_missing`, `verify_failed`), and per relay sensor whether it is online, its last round and the bytes it relayed today.
+- Platform administrators are alerted (e-mail and the alert webhook) in relay mode when no designated relay sensor has been seen for an hour, the vulnerability feed is 48 hours old, or a round failed verification (`verify_failed`, `pin_mismatch`, `rollback_refused`) or was refused by the job signer. One alert per condition, kept across restarts (platform setting `feed_relay.alerts`), with a "resolved" notice when it clears. The status lists the open alerts and the platform sensors that may be designated (with the reason the others may not).
+- New compose installs with the bundled sensor start in relay mode: `bootstrap-admin sensor-token -feed-relay` (now in `docker-compose.sensor.yml`) stores relay mode only when the setting was never written, and the bundled sensor is designated once it enrolls and reports `feed.relay@1`.
+- Migration `20261101225650_feed_relay_rounds`: tables `feed_relay_rounds` and `feed_relay_files` (platform-wide, no tenant data), origin `relay` for the version check state, and `egress.mode.feeds` = direct for an existing installation (a database that has users).
+- **Upgrade note:** existing installations keep direct delivery until an administrator selects relay mode. A relay sensor needs an SDK with `feed.relay@1` (on by default on a shared sensor with a pinned job-signing key; `SENSOR_FEED_RELAY=0` turns it off). Relay mode is not available while `VULNFEED_BUNDLE_DIR` is set or without a job signer. Backups may skip the data of `feed_relay_files` (it is re-fetched).
+
+### Added: feed delivery card in the platform console
+
+- System > Threat intelligence has a "Feed delivery" card: choose direct or relay (super admin, fresh authenticator code, audited by the API), pick one to three relay sensors from the platform sensors that can relay (the others are listed with the reason: not active, or cannot relay because the host set `SENSOR_FEED_RELAY=0`, there is no pinned job-signing key or the release is too old; organizations' sensors are never offered).
+- In relay mode it shows, per feed, the last good import, the feed age, the round in progress (files and bytes received, which relay claimed it) and why a feed is stale in plain words with the fix; per relay sensor whether it is online, its last round and the bytes it relayed in the last 24 hours; the alerts sent to administrators; and the explicit escape hatches (switch to direct now, with a confirmation, and the offline bundle guide).
+
+### Added: extension point for things that are off unless granted
+
+- The core asks one entitlement answer for granted extras (`Addon`, `RequireAddon` with 403 `ADDON_NOT_LICENSED` / `ADDON_LICENSE_EXPIRED`, and installation notices for banners). The Community build has no provider: nothing is granted, there are no notices, and no Community feature, limit or security control changes.
+- RFC-145 is re-scoped to the grant seam and the guarantees every grant provider keeps (a grant only adds, fails closed for grants only, never touches sign-in, SSO, MFA, audit or security controls, keeps data, makes no outbound call). No migration, no licence code, no grant key and no new setting in this repository.
+
+### Added: report a bug, send feedback or report a vulnerability from the Help menu
+
+- The Help menu (app and admin console) and the command palette now separate "Report a bug", "Send feedback" and "Report a security vulnerability". A vulnerability never goes to a public issue: it opens the security policy, or the operator's security contact.
+- Error pages and failed-to-load states get "Report this problem" and "Copy diagnostics". The diagnostics are the version, the channel, the browser, the error code and request ID, and the route with ids and query stripped. They never include organization names, e-mail addresses, domains or data. The link only opens the project's issue form in the user's browser (the platform makes no outbound call); "Copy diagnostics" serves installs without internet access.
+- Console > System > Legal can repoint "Report a bug" and "Send feedback" to the operator's own tracker or helpdesk, or hide them (with the error pages' report link). The change is audited like the other legal settings. The security entry follows the existing security contact and policy link.
+
+### Added: certificate exposures per host, even when the host resets every HTTP request
+
+- The recon exposure bridge judges each https service and the certificate it served: `certificate_expired` (high), `certificate_expiring` (medium, high within 7 days), and `ssl_issue` with issue `not_yet_valid` (medium), `name_mismatch` (medium: no name of the certificate covers the host) or `foreign_certificate` (high: no name shares the host's registrable domain, typically a hosting platform's default certificate on a name that points at an unclaimed site; marked `takeover_candidate` with the host's CNAME chain). The facts come from the TLS handshake, so a host that resets every request (reported by the sensor with status 0) is judged too.
+- One exposure per service and problem; a later scan that sees the host serve a certificate without the problem resolves it automatically, and seeing it again reopens it. Accepted and false-positive exposures are never changed.
+- The certificate-level expiry exposure is raised only for a certificate seen without a serving host; once a scan sees a host serve it, the certificate-level one is resolved as superseded by the per-host exposures.
+
+### Added: hotfix and incident response procedure
+
+- New runbook `server/docs/operations/hotfix-and-incident-response.md`: severity levels and target times, intake, triage, containment before the fix (switches, credentials, quarantining a poison job, rollback), the hotfix release path, deploy and rollback with the deployment kit, sensor and SDK fixes, disclosure and the post-incident review. Linked from `SECURITY.md` and the docs index. No code or configuration change.
+
+### Added: transactional e-mails in English and Vietnamese
+
+- Verification, password reset and changed, welcome, invitation, account setup, member suspended and reactivated, security notices and the domain-managed notice are written in one language per recipient: the account's own language, else the default language of the organization the e-mail is sent for, else English. Any other language falls back to English.
+- The wording lives in per-language catalogs (`server/pkg/email/locales/en.json`, `vi.json`); the HTML layout is shared. A failed language lookup falls back to English and never blocks the e-mail.
+- Subjects are no longer HTML-escaped (an apostrophe in an organization name no longer shows as `&#39;`); line breaks are still stripped and the header encoded.
+- Texts other packages pass in whole (SAML certificate expiry, e-mail relay stopped, support access, ownership transfer, and the summary line of an SSO change) stay as supplied.
+
+### Added: installation-wide modules
+
+- A module can have `scope: platform` in the registry: the platform administrator's switch, off for every organization while the platform has it off, answered as `403 MODULE_NOT_ENABLED` with `reason: disabled_by_platform`. No module uses it yet.
+
+### Added: a CI check refuses AI attribution in commits and pull requests
+
+- The new "No AI attribution" check fails a pull request (and a merge queue group) when a commit message, the pull request title or its body carries a `Co-Authored-By` trailer naming an AI assistant, a session trailer or link, or a "Generated with" line. The local `commit-msg` hook only runs in clones where hooks are enabled; the check runs on the server for everyone.
+- The hook and the check share one script, `.github/scripts/check-attribution.sh`, with a self-test.
+
+### Added: About > Open-source licenses
+
+- The tenant app and the platform console list the open-source components of the build (API, web app, console) with their versions, license identifiers and license texts, searchable, from Help > About > Open-source licenses.
+- The lists are generated when the images are built (`server/cmd/third-party-notices`, `web/scripts/third-party-notices.mjs`) and served read-only to signed-in users at `GET /api/v1/licenses` and `GET /api/v1/admin/licenses` (API) and by each web server; nothing is fetched at run time. A build without the files shows an empty list.
+- The page is part of the core: no brand or white-label setting removes it.
+
+### Added: a platform administrator can create an organization for someone who already has an account
+
+- Console > Organizations > New organization with the email of an existing account no longer refuses
+  ("This person already has an account..."). The organization is created with no owner and no member,
+  and that account gets an ownership invitation (7 days, at most 5 sends, 10 minutes apart). The person
+  accepts or declines in the web app (My account, or the page the email links to); accepting needs a
+  recent re-authentication and a verified email address. Nobody becomes an owner without accepting.
+- The console shows "Waiting for owner to accept" on the organization, with Send again, Change invitee
+  and Cancel invitation on its Users tab. A new email works as before.
+- New routes: `GET /api/v1/me/ownership-invitations`, `POST /api/v1/me/ownership-invitations/{id}/accept`
+  (step-up), `POST .../decline`, `POST /api/v1/admin/tenants/{tenantId}/owner-invitation/resend`,
+  `DELETE /api/v1/admin/tenants/{tenantId}/owner-invitation` (ops_admin+, step-up).
+- Migration `20261102094502_organization_owner_invitations` (new table only).
+- Design: `docs/architecture/organization-ownership-invitations.md`.
+
+### Added: SAML setup from metadata files in the admin console
+
+- The SAML form of an organization (admin console, Single sign-on) downloads the service provider metadata as an XML file (`GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata`) to upload in the identity provider's SAML application.
+- It also imports the identity provider side (entity ID, sign-in URL, signing certificates) from the IdP's federation metadata URL, for Microsoft Entra ID the App Federation Metadata Url, or from an uploaded metadata file (`POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata`). The import only fills the form; saving still waits for an owner's approval.
+- The fetch is https only through the outbound SSRF guard (every redirect checked), capped at 1 MiB and 10 seconds; a document with a DOCTYPE or entity declaration is refused; certificates are taken only from the signing keys of the SAML IdP descriptor.
+
+### Added: internal CA certificate for the platform e-mail server, and a test e-mail that names the cause
+
+- Console > Settings > E-mail takes an optional PEM bundle of the internal certificate authority that signed the mail server's certificate (`ca_pem` on `PUT /admin/settings/email`; `BOOTSTRAP_SMTP_CA_FILE` for `bootstrap-admin`). Only CERTIFICATE blocks are accepted (a private key, other text, more than 16 certificates or 64 KB is refused). It is write-only (reads return `ca_set` and a SHA-256 `ca_fingerprint`), replaces the system roots for this one connection, is part of the relay approval target (setting, replacing or removing it needs a second super administrator, like a new host), and is audited by fingerprint only. A stored bundle that cannot be parsed turns platform e-mail off instead of falling back to the system roots. There is still no switch to skip certificate verification.
+- A failed test e-mail now returns `EMAIL_TEST_FAILED` with `details.reason` (untrusted certificate, name mismatch, expired certificate, TLS failure, login refused, login required, sender refused, relay denied, address blocked by the network rules, cannot connect, timeout, not configured), and the console shows what to fix (en and vi). No server text is returned.
+- The SMTP error chain is now kept (`%w`), so the cause can be classified; the API log is unchanged.
+- No migration.
+
+### Added: a password account links its organization's single sign-on
+
+- Account > Security has an "Organization sign-in" card: a member whose account has a password (every organization's first owner, created by local sign-up) links the organization's Entra ID, Okta or Google Workspace sign-in, and can then sign in through it. Before, such a sign-in was refused with "link this identity provider" and there was no way to do so, so "Require single sign-on" could not be satisfied for that owner.
+- Linking and unlinking need an explicit confirmation and a proof typed at that moment (the authenticator code, or the password when two-factor authentication is off), and the identity provider is asked to authenticate the person again. The link is bound to the account, the session and the browser that started it, single use, and only for an active member of the organization; an identity of another account is refused. Linking signs the account out of its other devices, is audited (also in the organization's audit log) and e-mailed. No session is issued by a link.
+- The sign-in error for an existing account now points to Account > Security.
+- API: `GET /api/v1/me/sso-links`, `POST /api/v1/me/sso-links/{provider}/start`, `POST /api/v1/me/sso-links/{provider}/complete`, `DELETE /api/v1/me/sso-links/identities/{identity}`. SAML linking is not included yet.
+- A state store that cannot be read no longer lets an identity-link state pass as an ordinary sign-in: the sign-in callback and the link completion refuse it (invalid state).
+- The link confirmation says that after linking, signing in through the organization's identity provider opens the account without the account's own second factor, so that provider's administrator controls access to it.
+
+### Added: web extension API
+
+- The web app and the console have a public, versioned extension API (`web/src/lib/extension`): an extension build can add sidebar rows, settings pages, console rows, catalog entries (never replacing a core string), content in named slots of core pages (`reports.sections`, `settings.scim.sections`) and replace a short allowlist of components (`auth.footer`). Every row carries `module`, `permission` and `grant`; a row is shown only when its grant is on. The default build resolves the `@extension/*` modules to an empty default and renders nothing extra.
+- The build switch is `EXTENSIONS=on` (unset means off, any other value fails the build); the extension is mounted at `web/src/extensions`. A production build without the switch refuses to run while that directory exists.
+- Web gates only hide. The API checks permission and grant on every extension route and is the security boundary; nothing secret may live in an extension bundle, which reaches browsers like any web code.
+
+### Added: an account space for a person with no organization
+
+- Signing in with no organization opens `/welcome` instead of a dead end: the invitations sent to the verified address (accept or decline), links to profile, security, sessions, sign-in methods and preferences, and sign out. "Create an organization" appears only when the sign-up policy allows it for the person; on a self-hosted installation (the default) the page says to ask an administrator. The account pages render without the organization sidebar, and a page that needs an organization sends the person back to `/welcome`.
+- The "Your organization isn't set up yet" page, shown for a refused sign-up, now lists next steps and names no organization.
+
+### Changed: a refused page says what is missing and who can grant it
+
+- A page the signed-in person may not open now shows the same notice as a refused read inside a page: the page's name, the missing permission by its id, which built-in roles hold it (for example "Owners and administrators have it"), and that an owner or administrator can give it through a role. It replaces an English-only "Access Denied" card that showed only the raw permission id.
+- Every sentence of the notice and of permission-denied messages in toasts is translated (English and Vietnamese); the route table no longer carries English-only messages.
+- A protected page no longer renders before the access check on the first load of an organization: it used to fire its reads first, so a person without the permission caused refused requests (each one a refused-action audit row) and saw the page flash before the notice. Unprotected pages still render at once; a background refresh of permissions keeps the open page mounted.
+- Display only: the API still decides every request; no permission, role or route gate changed.
+
+### Changed: the AI worker is described as a separately distributed sensor
+
+- The glossary, RFC-132, RFC-133, RFC-135 and the sensor and AI harness architecture notes no longer link a worker repository. The AI worker is a sensor in the `ai-worker` role that is distributed separately from the core. The open parts are the sdk-go `pkg/harness`, the `ai-worker` sensor role and the job, grant and result contract, so anyone can build a worker against them.
+
+### Changed: audit rows carry the request id; log records name their service
+
+- An audit row written during a request now carries the request id and the client address (trusted-proxy rule applied) even when the code that wrote it did not pass them; until now most rows had neither. An explicit value still wins; background work records neither.
+- Every application log record carries `service`, `version` and `env`.
+
+### Changed: the image guard installs trivy from its release asset
+
+- CI, the security scans and image publishing install the pinned trivy release straight from its GitHub release asset, checked against the published SHA-256 and retried on network errors, instead of the setup action's install script, whose downloads failed on the hosted runners and failed every merge group.
+
+### Changed: a web pull request runs one Vitest shard
+
+- `Web tests` on a pull request whose tests are narrowed to the files the change can affect now starts one shard instead of three, saving two runners (each with its own install) per web PR so merge-queue jobs start sooner. The merge queue, pushes to develop, the `ci:full` label, an API contract change and any change that cannot be narrowed keep the three balanced shards. Required check names are unchanged (`Web CI OK`).
+
+### Changed: platform console Admin activity shows changes by default
+
+- Admin activity and an organization's Activity tab open on "Changes": writes, sign-ins, elevations and refused attempts. Page views and the record written before each change are under "All events", one click away; no row leaves the hash-chained log.
+- The organization overview and the user page list recent changes only.
+- `GET /api/v1/admin/audit-logs` takes `kind=changes` for that view (any other value lists every row).
+
+### Changed: New console authenticator entries show the console host
+- A new authenticator enrolment in the admin console is labeled "OpenCTEM Admin (admin.example.com)" (the host of `ADMIN_PUBLIC_URL`), so administrators of two installations can tell the entries apart.
+- Existing entries keep their label and their secret; nothing needs re-enrolling.
+
+### Changed: platform console danger zones on organization and user pages
+
+- Suspending and deleting an organization moved from the page header to a "Danger zone" at the end of its Overview tab; lifting a suspension stays in the header. Deleting still needs a fresh code, a reason and the organization's name typed back, and the API still asks for a second approver where the installation requires one.
+- On a user's page, "Sign out everywhere", "Reset two-factor" and "Block account" are in a danger zone at the end of the page; the everyday actions stay under the name.
+- Organization states ("Suspended", "Deletion scheduled") use the shared state pill.
+
+### Changed: platform console Health page in three tabs
+
+- Health opens on a Summary tab (services, storage, backup, certificates, database schema, version); work queues and the sensor fleet are on "Queues and sensors", and background jobs on their own tab.
+- The Background jobs tab counts and lists the jobs that stopped or failed since the start, most errors first; the others are one click away behind "Show all". The list uses the shared table (cards on a phone).
+
+### Changed: platform console navigation by task, with a settings rail
+
+- The console sidebar has four groups (Customers, Sensors and scanning, Security and audit, Monitoring) and one Settings entry instead of 35 entries. On a settings page the sidebar shows the settings rail, grouped by subject, with "Back to console". Page addresses are unchanged and the command palette still finds every page.
+- Announcements moved to Customers, AI applications to Security and audit, and the scanning policies (Scan approval, Scan identification, Platform scanning) to the settings rail.
+- The sidebar header, the elevation bar and locked pages use the platform role names the elevation dialog offers ("Platform owner", "Read-only until you elevate"); the retired names "Super admin", "Operations admin" and "Read-only admin" no longer appear there.
+
+### Changed: platform console organization list shows status and last member sign-in
+
+- The organization list has a Status column (Active, Suspended, Deletion scheduled, as the shared state pill) with a status filter, and a "Last member sign-in" column.
+- `GET /api/v1/admin/tenants` returns `last_member_sign_in_at`: the latest sign-in of any active member. Sign-in times are kept per account, so a member's sign-in for another organization counts.
+
+### Changed: the platform console overview says whether the installation is healthy
+
+- The Overview opens with an Installation strip: services, storage, backups, platform sensors and the database schema, each as a state in words with a link to the page that explains it.
+- Needs attention is one compact list (a row per problem) and the customer numbers follow it, so they stay on the first screen.
+- "No sensor is online" replaces "sensors does not answer its health check", volumes on one filesystem are reported once, and every administrator gets the way to an overdue break-glass test.
+- Counts read as real plurals ("1 request", "2 requests") instead of "request(s)".
+
+### Changed: platform console settings save from one sticky bar
+
+- Every console settings form (sign-up, social login, two-factor floor, CAPTCHA, legal, e-mail, mail relay, alerts, AI provider, limits, scan approval, scan identification, platform sensor scanning, threat intelligence, storage) saves from the shared save bar used across the app: it appears with the first unsaved change, offers Discard and Save changes (also Ctrl+S or Cmd+S), and asks before leaving the page with unsaved changes.
+- Save still opens the same confirmation: the reason, and the authenticator code where the setting asks for one. Nothing changed in what the API requires.
+
+### Changed: the platform console uses the same UI components as the main app, checked by lint
+
+- Console pages and components may no longer hand-roll a list table, a raw HTML table, an alert dialog or tabs used as a filter: lint points to the shared component. Files that predate the rule are listed and move one PR at a time. The component map is in `web/docs/ui/shared-kit.md`.
+
+### Changed: sensors and connectors must speak CTIS 2.0
+
+- The platform accepts CTIS 2.0 documents only. Upgrade every sensor to v0.36.0 or later and the Tenable connector to v0.2.0 or later together with this release; older ones now show "version unsupported" in the console (they stay connected, but their results are refused). Sensors built on sdk-go older than v0.46.0 show "SDK unsupported".
+
+### Changed: the dashboard home loads with one request
+- New `GET /api/v1/me/dashboards/home` returns the viewer's dashboards, the organization dashboards they may read, the dashboard to open and its figures in one response. The server applies the landing rule to the viewer's remembered choice; lists and figures come from the same services as the per-dashboard routes, so permissions, audience, data scope and the stored snapshots are unchanged.
+- The `/` page made three dashboard reads in a row (own list, organization list after the bootstrap, then the figures); it now makes one and no longer waits for the bootstrap.
+
+### Changed: Dashboard templates follow one set of layout rules
+
+- Every template opens on its headline figures, then its hero visual, what to act on, trends and breakdowns; rows are full and of one height, at most ten widgets, and no two widgets show the same figures. A test checks every template against these rules.
+- New Attack surface template (discovery coverage, posture, attack paths, fix next, new assets, certificate expiry). The Overview template is removed: it repeated CTEM; existing copies keep working.
+- CTEM drops the weekly brief and intake (the levers and the exposure flow already carry them); Executive drops the levers and adds attack paths and campaign progress; Triage adds open findings by age; Vulnerability program drops open findings by SLA state.
+- Short bar lists take one row instead of two, so they no longer stretch into blank space.
+- A narrow widget with no data keeps its row height instead of leaving a hole beside its neighbour.
+- Stored dashboards are not changed: copies of a template are offered the new layout (keep or switch).
+
+### Changed: the admin console flags an Entra ID provider that has no directory ID
+
+- A saved Entra ID provider whose Directory (Tenant) ID is a domain name, `common`, `organizations`, `consumers` or empty is marked "Needs directory ID" with a notice that members see "SSO not configured" until the directory GUID is entered, so the administrator can correct it.
+
+### Changed: the edition fence checks neutral extension mount points and keeps its word list out of the repository
+
+- Web extension mount points are `web/src/extensions/` and `(extensions)` route groups; the old in-tree Go overlay directory and its build-tag rules are gone (a custom build is its own Go module that calls `server/pkg/server.Main()`).
+- New rule: `server/go.mod` has no `replace` directive, so the core always builds from public sources and works as a dependency.
+- The restricted-word list is no longer committed: CI reads it from the `FENCE_RESTRICTED_WORDS` secret, a local clone from `.git/info/restricted-words`; without a list the rule is skipped and the script says so.
+
+### Changed: finding identity uses CTIS fingerprint recipe v2; stored findings are re-keyed in place
+
+- Ingest keys every finding kind with the CTIS fingerprint recipe v2 (`ctis-fp/2`) bound to its asset (identity version 3). Compliance, smart-contract and rule-only findings now have a recipe of their own; a finding's title is never part of its identity.
+- Stored findings move to their new key in place: same finding id, triage, tickets and history; the old key stays an alias, so a late report in the old scheme lands on the same finding. Two stored findings that turn out to be one are merged through the finding merge (the earliest survives, nothing is deleted). CI run sightings follow the key.
+- Compliance findings are keyed on the framework's CTIS registry token (identity version 4): a finding stored as `PCI-DSS` and a CTIS 2.0 report of `pci_dss` are one finding. The start-up re-key moves such findings; every other key is unchanged.
+- Secret findings stay keyed by the per-tenant keyed HMAC of the secret; no unsalted hash is ever used.
+- **Upgrade note:** the API re-keys stored findings on start (one replica at a time, scan auto-resolve paused per organization while it runs; each organization changed gets a `findings.refingerprinted` audit entry). No manual step. To roll back to an earlier release, stop the API and run `refingerprint -down -apply` with this release's image first.
+- **Rollback caveat:** findings of the kinds added in this release (compliance, smart contract, rule-only) that were created after the upgrade have no older key; `refingerprint -down` skips them (`no_previous_key`), so an earlier release reports them again as new findings.
+- **Deploy check:** after the upgrade the log shows one `finding re-key on start finished` line (`incomplete=0`, `failed=false`), and `finding_rekey_runs` has `status = 'completed'` at the current target version for every organization that had findings. Later starts skip completed organizations without reading findings.
+- Old-key findings of the new kinds that converge on one key are merged on their next sighting (the earliest survives with its triage); none is left behind to be auto-resolved.
+
+### Changed: Go 1.27.3 toolchain
+
+- The API builds, tests and ships with Go 1.27.3 (go.mod, container base images by digest), which fixes GO-2026-6809 (crypto/x509 certificate verification).
+- CI lint tooling moves with it: golangci-lint v2.14.0 (config migrated to the v2 format) and staticcheck v0.8.2, the first releases that read Go 1.27.
+
+### Changed: image and contract builds retry the Go module download
+
+- The API image and the OpenAPI contract build retry `go mod download` up to three times, so a reset HTTP/2 stream from the module proxy no longer fails a whole merge group. Checksums are verified as before.
+
+### Changed: the intake panel keeps each source's figure beside its name
+
+- On a wide card, the intake panel's source rows keep one reading width at the left. Each figure stays next to its tool's name, the summary sits at the right edge, and the connector curves stretch across the space between, instead of the figure drifting away from its name. The rows and the summary sit side by side from a full-width card in a 1024 px window, each in a thin dashed frame.
+- Sources are the same ranked rows as the exposure flow: rank by findings or assets, group by tool or by source instance (an instance lists the tools it ran under its name), discovery tools (subfinder, dnsx, httpx and similar) show the assets they found instead of "0", and sources with nothing in the period fold into one line. The per-source table adds an Assets column.
+
+### Changed: Settings > Modules shows what a change does before saving
+
+- Every group is open, with a search box and an On, Off or Unavailable filter, and a count of what is on.
+- Module names and descriptions are translated (English and Vietnamese) and say in plain words what each module does and what it runs on a schedule.
+- What a module needs and what needs it is written under it by name ("Requires Scope", "Required by CTEM cycles").
+- Turning a module off previews the modules that need it, which turn off together in the same save, and what stops (pages, scheduled jobs, automations, MCP tools); the data is kept. Turning one on turns on what it needs.
+- A module this organization does not have, one turned off for the whole installation, or one in its read-only period shows a lock and the reason instead of a usable switch; a module running with less shows "Degraded".
+- Members who may not change modules see the page read-only. The page names who changed the modules last, with a link to the audit log.
+
+### Changed: a SAML configuration may trust several IdP signing certificates
+
+- `idp_certificate` accepts up to five PEM certificates (the IdP's current and next signing key), so a key rollover at the IdP does not stop sign-in. Any configured, unexpired certificate verifies an assertion. The expiry shown and alerted on is the soonest one among the unexpired certificates.
+
+### Changed: more settings pages save with the sticky save bar
+
+- License policy, Vulnerability matching, Asset lifecycle and Finding approvals no longer have a Save button of their own: like the other settings forms, a bar appears at the bottom while there are unsaved changes, with Discard, Save changes (also Ctrl or Cmd+S) and a prompt before leaving the page with unsaved changes.
+- Vulnerability matching and Asset lifecycle say who can open them with the shared notice instead of an "Insufficient permissions" alert; a failed load offers Retry the same way as every other page.
+- Settings, Members: the Approve and Reject buttons of a request to join wrap on a phone instead of running off the card.
+- Settings, Members: a person who cannot read invitations no longer sees a "Pending invitations 0" tile or the "cannot send email" notice meant for inviters.
+- Accessibility: the settings rail's section headings meet the 4.5:1 contrast ratio (tenant app and console), the settings search no longer names a results region that is not on the page, and the information buttons on Risk scoring have a name.
+- Security overview card: "1 risk, 1 warning" instead of "1 risks, 1 warnings".
+- A pull request that adds a Save button of its own to a settings page, a hand-made "no permission" message, or a raw table in a page now fails the page-anatomy check, in the tenant app and in the platform console.
+
+### Fixed: audit inserts no longer deadlock across tenants
+- The hourly approval and acceptance expiry sweeps insert their audit rows in tenant order, and the DAST identity repair writes its audit rows after the findings it changes, so every transaction takes the per-tenant audit chain lock after its business-row locks and in one order.
+
+### Fixed: Branch finding counts and branch compare follow where a finding is present
+
+- A repository branch now counts every open finding present on it (an open occurrence on the branch), not only the findings whose headline branch it is. A finding on `main` and on a feature branch counts on both; one fixed on the feature branch counts only on `main`.
+- Comparing two branches reports new, fixed and common findings by their presence on each branch. Before, a finding still present on the compared branch was reported fixed there when it was also on `main`.
+- New findings by severity in a branch compare count every new finding, not only the 50 listed.
+- A failed query in the branch compare returns an error instead of empty details.
+
+### Fixed: a CI/CD settings link to a section scrolls to it reliably
+- A link that names a section (`?section=break-glass`) now waits for the code-host apps in the pull request feedback section to load before it scrolls, so the target no longer ends up off-screen when that section grows.
+
+### Fixed: the collector's install commands say how to pull its private image
+- The docker run, Compose and Kubernetes commands of a collector sensor now say that the default image (`ghcr.io/openctemio/asset-collector`) is private and how to log in (`docker login ghcr.io` with a token that has `read:packages`; on Kubernetes a pull secret and a commented `imagePullSecrets`). Without a login the pull failed with `denied` and nothing said why.
+- They link the collector's guide (`/sensors/asset-collector/` on the documentation site) instead of naming a page that did not exist.
+- The **Trust this collector** help text no longer says a trusted collector never changes existing assets: its complete reports update the assets it created and mark the ones it no longer lists as stale (English and Vietnamese).
+
+### Fixed: console filters and tables are keyboard and screen-reader correct, one version check read per page
+- The platform console's list filters (Users state, Configuration, AI applications) are radio groups (the shared lens control) instead of tabs without panels, which pointed `aria-controls` at nothing.
+- Every table scroller is a focusable, named region, so a table wider than a phone screen scrolls with the keyboard.
+- The console reads the version check once per page (one SWR key, no trailing slash) instead of twice.
+
+### Fixed: console support access without the support permission
+
+- Support access no longer shows "Support grants could not be loaded: insufficient permissions" to a read-only session: it offers the elevation instead and does not send the request the API would refuse.
+
+### Fixed: Platform sensors page no longer names the unreleased feed relay role
+- The console's Platform sensors notice lists "feed relay" among the platform roles only when a platform sensor advertises the relay tool; installations without the feature no longer see it.
+
+### Fixed: links from notifications open in the right organization
+
+- Every link the platform sends to a console page (in-app notifications, e-mail digests and notification e-mails, Slack, Teams, Telegram and webhook deliveries, CI check runs, Jira descriptions and ticket fields, AI agent tool results, copy-link buttons) now names its organization (`?org=<organization id>`). A person who belongs to several organizations and opens such a link while another one is selected is switched to it through the normal organization switch (the API still checks the membership) before the page loads, instead of seeing "not found". A person who is not a member gets the same "not found" as before.
+- Links in channel deliveries (e-mail, Slack, Teams, Telegram, webhook) are now absolute, joined to `SMTP_BASE_URL`; they were sent as console-relative paths.
+
+### Fixed: dashboard source wires start at their own row and carry the travelling light
+- The Sources card and the Exposure flow draw every wire with one shared component. A wire leaves from the centre of its row's name and bar (a stale note line no longer shifts it), is re-measured when a row changes height, when the data refreshes or when fonts load, and is dropped when its anchor lies outside the card.
+- Healthy wires with data show a light travelling from source to target at one speed; stale, failed and empty wires stay still, and nothing moves under reduced motion.
+
+### Fixed: Exposure flow draws a wire only for the source rows that are listed
+- Folding the sources with nothing ("+N sources with nothing") left their wires hanging in empty space; wires now follow the rows on screen and re-measure when rows are folded or listed.
+- A listed source with nothing keeps a thin, still, dashed wire.
+- Past SLA is a part of Open, not an outcome: it no longer gets its own thread from the rings (it stays listed under Open with its red count).
+
+### Fixed: dashboard exposure flow wires follow the source rows after the findings/assets switch
+
+- The wires were measured while the ranked rows were still sliding to their new place, so after switching Sources between findings and assets they started at the old row positions and stayed there. They are now measured again once the slide ends, and a row with no layout gets no wire.
+
+### Fixed: core start-up and key rotation on a database that also holds an extension schema
+
+- The administrator bootstrap and the credential encryption tool probe only the core schema, so a table of the same name in another schema (an extension's) never answers for a core table.
+- Key rotation (`rekey`) sweeps every schema for values the old key still opens and refuses the rotation when it finds one outside the locations it re-encrypts, or a table the connecting role may not read, instead of leaving such a value unreadable under the new key.
+
+### Fixed: feed relay bootstrap alert test no longer depends on the calendar date
+
+- The test fixture published its feed at a fixed 2026-11-01 stamp while the test ran on the wall clock, so the vulnfeed age alert fired once the date passed 2026-11-03.
+
+### Fixed: the gateway sends the CI OIDC token exchange to the API
+- `POST /api/v1/ci/oidc/exchange` carries its credential in the body, so the gateway sent it to the web app, which refused it with a CSRF 403 and broke the exchange for CI runners behind the stock gateway. The edge table now routes that one path straight to the API (the run endpoints already reach it by their bearer token). The gateway smoke test probes both.
+
+### Fixed: run-once effects in the console read their latest values without lint suppressions
+
+- The ranked-bars move animation, the sign-in notice, the sensor onboarding auto-start and the pairing-code lookup now run once through effect events, so they always use the current translation function and callbacks instead of a captured one. No behaviour or request count changes.
+
+### Fixed: recon certificate exposures were never raised from stored certificates
+
+- The certificate projection read a nested `certificate` map that stored certificate assets do not have (they carry flat `not_after`, `is_expired`, `is_self_signed`), so expired, expiring and self-signed certificates found by recon scans raised no exposure. It now reads both shapes.
+
+### Fixed: a sensor report with an endpoint no longer crashes the API
+
+- Ingest appends the web origin of an endpoint as a derived asset; when one was not stored, the per-asset outcome indexed past the producer's asset list and panicked, killing the API, and the queue handed the same job out again after every restart. Derived assets are now kept out of the producer's counts and item errors, and a panic in one ingest job marks that job dead (apply_failed) instead of stopping the process.
+
+### Fixed: an asset kept out by a scope exclusion no longer counts as rejected
+- A sensor report (v2) that carried a new asset matching one of the organization's scope exclusions got the item error `asset_invalid` ("asset has no usable value") and counted the asset as rejected. For a trusted collector this switched off the not-seen sweep of its complete reports for as long as the exclusion matched, so assets it stopped reporting were never marked stale.
+- Such an asset now gets the item error `asset_excluded` and is counted neither as accepted nor as rejected; the sweep runs. Assets that were not stored for any other reason are still rejected and still hold the sweep.
+
+### Fixed: lists say when they could not load
+- A table whose request failed no longer reads as an empty list: it shows the shared error state with a Retry, and its toolbar and filters stay. Applies to suggestions, scans, automations, exceptions, business impact, priority rules, compliance controls, attack simulation, control testing, controls, pentest campaigns, pentest templates, executive insights, audit log and SLA policies.
+
+### Fixed: background jobs leave an organization alone when the module that owns them is off
+
+- Program sync, the program feed reconcile and program assignment (scope), the remediation task reconcile, query tasks and Jira issue push (remediation), and the AI agent sweep (AI triage) no longer run for an organization that switched the module off or is not entitled to it. The other module jobs were already guarded and are now covered by one test per job.
+- Asset coverage and asset enrichment belong to core scanning: they no longer stop when attack surface is off. Web evidence retention, VEX statement expiry, AI use-case downgrade, automation run cleanup and the scope effects, pending and attestation jobs keep running whatever the organization chose, since they enforce retention or keep the scope boundary consistent.
+- A sweep over the oldest rows of every organization no longer lets an organization with the module off fill the batch and starve the others.
+- The attack surface posture refresh skips an organization whose attack surface module is off; its state resumes when the module is back on.
+
+### Fixed: MCP read tools work during the read-only grace of a module
+
+- Read tools and prompts of a module in its read-only grace answer as the GET routes do; tools that change data stay refused.
+
+### Fixed: the module state cache and its ETag follow every change of the effective state
+
+- A read-only grace or a timed deny that ends by itself is no longer served from a stale cache or a stale `304`: the cache entry ends at that moment, and the ETag of the modules endpoints includes a hash of the effective state.
+- An entitlement that could not be read (every module reported unavailable, fail closed) is answered for that request only. It is no longer kept for a few seconds, and the console no longer keeps the "everything off" payload through `304` after the reader recovers.
+- A Redis flush or eviction no longer resets the module version to a value an old ETag can match, and a toggle racing a cache read can no longer leave the old state cached.
+- The threat-alert planner reads the same module cache as the routes, so entitlement and module changes reach it at once.
+
+### Fixed: modules follow their hard dependencies, and presets stay within reach
+
+- A module is off whenever a module it hard-requires is off: a deny of compensating controls, scanner templates or scope now also stops control testing, rule sources and CTEM cycles (routes, jobs, MCP tools, console), and a dependent of a module in its read-only grace is read-only until the same date.
+- A preset changes only the modules Settings > Modules lists, so it can no longer switch off a module no page can switch back on; a module the organization is not entitled to is reported as unavailable instead of failing the whole preset.
+- IOCs and suppressions, which own console pages, are listed on Settings > Modules.
+
+### Fixed: the port-less network finding takeover test runs on a real legacy row
+
+- `TestNetworkFindingWithoutCVE_LegacyRowKeepsItsTriage` (red since the finding identity re-key) writes the legacy row as the previous release stored it; test-only, no behaviour change.
+
+### Fixed: the SAML form showed the console's address in the service provider URLs
+
+- The URLs to register at the IdP are now built on the API's public address (`APP_URL`), the same one the SP metadata uses.
+- With several signing certificates stored, an IdP that signs without an embedded certificate now signs in: each stored certificate is tried in turn (each still checked for validity); a signature that embeds a certificate must still match a stored one.
+- A metadata URL that is unreachable, answers something malformed, or answers something that is not SAML metadata is refused with one reason in the response; the detail is logged server-side.
+
+### Fixed: Run now on a workflow with steps that wait for a tool answered "Scan not found"
+
+- A workflow scan on the Standard recon, Web or Deep recon system workflow could not run, by hand or on its
+  schedule: their optional steps on a capability no installed tool implements yet (screenshots, service
+  detection) made the tool lookup answer "not found", which the trigger did not treat as "no tool" and the
+  API answered as "Scan not found". Those steps are now skipped with the reason, as the workflow preview
+  already showed, and the scan runs.
+- A trigger whose scan was found but whose workflow is gone now answers `PIPELINE_NOT_FOUND`, and any other
+  missing reference `SCAN_DEPENDENCY_MISSING` (both recorded as a blocked run), instead of "Scan not found".
+  A scheduled run that hit this no longer fails without a trace on the scan.
+
+### Fixed: security lint compares the API SSRF tables with the contract module addrscope
+
+- sdk-go moved its deny list from ctis addrscope to the contract module; rule 6 now reads the module path from sdk-go's own import and checks the API tables against that source (both directions), instead of falling back to a table diff that no longer exists.
+- The API httpsec tables are unchanged.
+
+### Fixed: on a phone, "Back to app" and "Settings" keep the sidebar open
+
+- In the phone sidebar, "Back to app" closed the sidebar and the app navigation had to be opened again; "Settings" did the same the other way. Both now switch the open sidebar between the app navigation and the settings navigation in place, and focus moves to the first row of the new set. Picking a page still navigates and closes the sidebar.
+- Desktop is unchanged: "Back to app" returns to the last app page and "Settings" opens the settings overview, collapsed or expanded.
+
+### Fixed: times read in the console language
+
+- Relative times ("5 days ago") and their hover dates follow the console language everywhere: the shared relative-time label reads the language itself, so the Vietnamese console no longer shows English times in lists, drawers and activity.
+- The exceptions list and drawer, the finding group exceptions panel, notification history, outbox and events, activity items and the KEV badge used English-only times; they use the console language now.
+
+## v0.18.1 (2026-11-03)
+
+### Fixed: the all-in-one image publishes again
+
+- The v0.18.0 all-in-one image measured 561 MB unpacked, 1 MB over its 560 MB size budget, so the release did not publish or sign it (and the image signing step, which runs after it, was skipped for every image). The budget is now 645 MB: today's size plus the usual 15% headroom.
+
+## v0.18.0 (2026-11-03)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: an organization's Entra ID sign-in is pinned to its directory**: an organization whose Entra provider has no directory GUID must have it set in the admin console (Organizations > the organization > Single sign-on), which goes through the owner's approval as usual.
+- **Security: the approver picks the fingerprint the host shows**: API clients that approve pairings must send `fingerprint` (one of the review's `fingerprint_choices`). Sensors print the link from the sdk-go release that reads `verification_uri_complete`; older sensors still pair (the dialog finds them, or enter their code on /activate).
+- **Security: the job signer signs feed relay rounds only for allowlisted feed origins**: nothing to do. Set `SIGNER_FEED_ORIGINS` only when a feed mirror will be relayed.
+- **Behaviour change: chained scan steps start on each finished task of their predecessor**: on by default. `SCAN_STAGE_STREAMING=false` restores the barrier for every workflow; `stage_barrier: true` in a workflow's settings restores it for that workflow.
+- **Removed: CTEM-ID catalog download and the manual exposure tag**: remove `CTEM_ID_FEED_URL` from the environment if set (it is ignored).
+- **Deprecated: SENSOR_CA_CERT_FILE on the API**: rename `SENSOR_CA_CERT_FILE` to `PLATFORM_CA_CERT_FILE` in the API's environment (the bundled `deploy/docker-compose.yml` does it already).
+- **Added: deep subdomain enumeration once for every new root domain**: roots never enumerated so far get the deep pass once after the upgrade; roots already enumerated keep the weekly standard pass. No migration.
+- **Changed: the API keeps its database connections open between bursts**: PostgreSQL may now hold up to `DB_MAX_OPEN_CONNS` idle connections from each API replica. Set `DB_MAX_IDLE_CONNS` explicitly to keep the old behaviour.
+- **Changed: one remediation group per vulnerable package version**: the remediation key rules move to version 4. The tenant's keys are re-derived before the next suggestion run (no operator action). Open suggestions built on the old groups are replaced by the consolidated ones; findings already in a remediation task stay in it.
+- **Changed: a fresh install runs the current sensor, and the release train refuses an old one**: the bundled sensor (`server/deploy/docker-compose.sensor.yml`) moves to v0.29.1 on the next `docker compose up -d` unless `SENSOR_VERSION` is set in `.env`. Its identity and outbox stay on the `sensor-data` volume; it does not pair again.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: AI results wait for a person unless the use case auto-applies (`ai-use-cases.md`)
+- Behaviour change: certificate-transparency names respect excluded dedicated addresses (`easm-ct-dedicated-address-exclusion.md`)
+- Behaviour change: chained scan steps start on each finished task of their predecessor (`stage-streaming.md`)
+- Removed: CTEM-ID catalog download and the manual exposure tag (`ctemid-static-mapping.md`)
+- Deprecated: SENSOR_CA_CERT_FILE on the API (`sensor-platform-ca-pin.md`)
+
+### Security: Automatic AI triage policy can be saved; widening it and lowering approvers need step-up and tell owners and administrators
+
+- New `GET`/`PUT /api/v1/organization/settings/ai/auto-triage` (owner or administrator, `settings:write`) writes the automatic triage policy (on/off, severities, delay); before, the stored policy was never written and the platform defaults always applied. Turning it on, or adding a severity while it is on, needs a recent sign-in, is audited high (`ai_settings.auto_triage_updated`) and every owner and administrator is told; turning it off, fewer severities and the delay apply at once. Settings > AI has an Automatic triage card.
+- Lowering scan approval (strict, on, off) or loosening an enforcing scan approval rule is audited critical and every owner and administrator gets an in-app notice.
+- Scheduling a lower false-positive or risk acceptance approval level (two people to one), a lower second-look share or a relaxing approval policy is audited critical (metadata `loosened`), and the approvers' notice says "Finding approvals lowered" and names a lowered second-look share.
+
+### Security: an organization's Entra ID sign-in is pinned to its directory
+
+- An organization's Microsoft Entra ID provider must name its directory by its GUID (Directory (tenant) ID). Saving one with an empty value, `common`, `organizations`, `consumers` or a domain name is refused; such a value let any Microsoft directory, personal accounts included, reach the sign-in checks, and a domain name could never match the token's `tid`.
+- A stored Entra provider without a directory GUID is no longer offered on the sign-in page and refuses sign-in ("SSO provider not configured"). `SSO_ENTRA_TENANT_ID` (env fallback) must be a directory GUID, `common` or `organizations`.
+- The SSO callback must present the same `redirect_uri` as the authorize request; another one is refused before the code is redeemed.
+- **Upgrade note:** an organization whose Entra provider has no directory GUID must have it set in the admin console (Organizations > the organization > Single sign-on), which goes through the owner's approval as usual.
+
+### Security: go-jose v4.1.7
+- Bump `github.com/go-jose/go-jose/v4` (indirect, via the sigstore verifier) from 4.1.4 to 4.1.7, which fixes CVE-2026-116587 (fixed in 4.1.6). `github.com/klauspost/compress` is already 1.20.3 (the advisory is fixed from 1.18.7).
+
+### Security: an organization's identity provider vouches for a person in that organization only
+
+- A sign-in through organization A's identity provider skips the account's own password and second factor; A trusts its IdP for that. The session could also open every other organization the person belongs to that required neither two-factor nor SSO, so A's IdP administrator controlled the person's access there. Such a session now opens another organization only when that organization trusts A as the member's home organization, or when the account has no sign-in of its own (an account the IdP created). Otherwise token issuance and every `/tenants/{tenant}/` request answer `403 OWN_SIGN_IN_REQUIRED`: sign in with your own account, or through that organization's IdP.
+- A second factor proven by A's IdP counts only for A (or a host that trusts A as the member's home). It no longer satisfies another organization's personal-account or outside-member rule, and an owner break-glass or SSO exception needs the account's own password and second factor.
+- Deleting the account and signing out everywhere (`DELETE /api/v1/me/account`, `DELETE /api/v1/users/me/sessions`) need the account's own sign-in when the account has one: an organization IdP's session, even a freshly re-authenticated one, gets `403 OWN_SIGN_IN_REQUIRED`.
+- The per-request entry check on `/tenants/{tenant}/` routes also applies the organization's verified-email rule, as token issuance does: a token minted for another organization no longer passes it with an unverified address.
+
+### Security: an IP allowlist change reaches every API replica at once
+
+- Each API replica cached an organization's IP allowlist for 30 seconds and only the replica that saved the change dropped it, so other replicas kept admitting a removed address for up to 30 seconds. The change is now published on Redis and every replica drops its cached entry at once.
+- The 30 second cache bound remains for a lost message or a deployment without Redis. The message carries only a tenant id and can only drop a cache entry.
+
+### Security: a framework's stats only for a framework the organization can see
+
+- `GET /api/v1/compliance/frameworks/{id}/stats` answers 404 for another organization's custom framework; it used to return that framework's control count (no assessment data of the other organization).
+
+### Security: terminal sign-in codes resist phishing and guessing
+
+- The person must type the user code (no pre-filled link), codes expire after 10 minutes, a code belongs to the first person who enters it, entering codes is limited per address and per person, a device request cannot be opened by its id, a device code works only for its client and a replayed one revokes the connection it created.
+
+### Security: two-factor cannot be turned off while it is required
+
+- My account > Security: turning off two-factor authentication is refused while an organization you belong to, or the platform's two-factor floor (also during its grace period), requires it. The answer (409 `MFA_REQUIRED_BY_POLICY`) and the page name who requires it. Before, the factor could be off until the open sessions expired. The refusal is audited and never spends a recovery code.
+- New **Replace authenticator** (`POST /me/2fa/replacement/start`, then `/complete`): move two-factor to a new phone with the password and a current or recovery code; the old app works until the new one is confirmed, every recovery code is replaced.
+- Turning two-factor off, and replacing the authenticator, now sign out every other session of the account, and the page says so.
+
+### Security: web build tooling no longer pulls glob and minimatch versions with known advisories
+
+- The web dependency tree resolved glob 13.0.6 and minimatch 10.2.4 (build and lint tooling only, not shipped to browsers). Both are now pinned to patched releases (glob 14.0.3, minimatch 11.0.3) because no parent package release carries the fix yet. `npm audit --omit=dev` reports no vulnerabilities.
+
+### Security: Organization maximum API key lifetime (default 90 days) and an expiry notice
+
+- New keys may live at most the organization's maximum: 90 days by default, settable from 1 day up to the platform ceiling of 365 days (`GET`/`PUT /api/v1/organization/settings/api-keys`). Before, every key could live a year. Create refuses a longer `expires_in_days` from every entry point (API keys, service accounts, MCP connection key); a policy that cannot be read refuses.
+- Raising the maximum needs a recent sign-in, is audited high (`tenant.api_key_policy_updated`) and every owner and administrator is told; lowering it applies at once.
+- Existing keys keep their expiry; one minted for longer than the current maximum is flagged (`exceeds_org_max`, "Over the maximum" in Settings > API keys).
+- A week before a key expires, the person who minted it gets one in-app notice. Migration 20261031060420 adds `api_keys.expiry_notified_at` (nullable, no backfill).
+- Settings > API keys has a Maximum key lifetime card; the key dialogs offer only lifetimes within the maximum.
+
+### Security: logged and stored fetch errors no longer carry URL credentials
+
+- A failed outbound fetch quotes its full URL in the error. The vulnerability bundle download follows a presigned release-asset link whose query holds a signature and a token, so every retry wrote a usable download credential to the API log, and the feed status kept it as the last error on the platform admin route.
+- The log handler now removes the userinfo and the whole query string and fragment of every URL in an error or string attribute and in the message, for every caller, including the transfer library that logs its own retries. `logger.SanitizeError` and `logger.RedactText` do the same, and the KEV, EPSS and vulnerability bundle status store the redacted text. Scheme, host and path stay, so the log still names the endpoint that failed.
+
+### Security: SAML sign-ins from Entra ID are keyed on the Entra object id
+
+- A SAML account binding is now keyed on Entra ID's `tenantid` + `objectidentifier` claims, which Entra sends in every assertion, instead of nothing (Entra's default email-format NameID keyed no identity, so the email alone found the account). A renamed or reused address no longer inherits the previous holder's account once that holder has signed in: another directory user presenting the same address is refused.
+- Identities bound earlier under a persistent NameID are re-keyed to the object id on the next sign-in; other IdPs keep the persistent NameID rule. No operator action.
+- The Entra claims count only when the assertion's Issuer is `https://sts.windows.net/{tenantid}/` for the tenantid in the same assertion. A different IdP passing through attributes with Entra's names cannot choose the identity (it keys on the persistent NameID), and an Entra issuer whose tenantid claim disagrees is refused.
+
+### Security: a SCIM group keeps only the organization's own members
+
+- A SCIM client could put the id of any account on the platform into one of its organization's groups. Nothing was granted at once, but the stored row raised that person's role the day they joined the organization, and the stored id confirmed that the account existed.
+- Create, replace and both member patches now keep only the organization's active members; other ids are dropped as if unknown. A failed membership lookup refuses the change.
+
+### Security: a sensor whose identity runs on two hosts gets no new work
+
+- When the same sensor key is seen in use from two hosts at once (the existing `identity_cloned` health reason), the platform now withholds new work from that sensor on every claim path and the heartbeat doorbell, instead of only flagging it. Work it already holds finishes normally.
+- A waiting task names the reason `identity_cloned` ("Why waiting?"). Re-pair the sensor on the host you keep and stop the other copy; re-pairing (or regenerating a bearer key) clears the flag.
+
+### Security: the approver picks the fingerprint the host shows
+
+- The review offers three fingerprints, one of them the sensor's; the approval sends the picked one (`fingerprint`) and the API compares it with the sensor's. A wrong pick closes the request, is audited at high severity and notifies every administrator. This replaces the "fingerprint matches" tick (`fingerprint_confirmed` is no longer accepted).
+- **Upgrade note:** API clients that approve pairings must send `fingerprint` (one of the review's `fingerprint_choices`). Sensors print the link from the sdk-go release that reads `verification_uri_complete`; older sensors still pair (the dialog finds them, or enter their code on /activate).
+
+### Security: sensor pairing approval names and binds the organization
+
+- The pairing review now states the organization the sensor joins, and the approval must name the same organization: an approval sent after the approver switched organization is refused (`409 ORGANIZATION_MISMATCH`) before re-authentication, and audited.
+- The review shows the request's address with its network class (private or public, and the edge or hosting provider when known) next to the approver's own address, the product, the SDK version and the request's age. The console warns, where the sensor showed the code, never to approve a code someone else sent.
+- Rejecting a request no organization claimed yet now needs its code, like an approval (`POST /api/v1/sensor-pairings/{id}/reject` takes `{"code": "..."}`).
+- The failed code lookup that locks a user's lookups is audited (`sensor.pairing_lookup_locked`, high).
+- No migration. API clients that approve pairings must send `organization_id` (the value the lookup returns).
+
+### Security: only a re-pair code from the console can replace a sensor's key
+
+- A sensor that used an ordinary "Add sensor" code while naming an existing sensor turned the request into a re-pair of that sensor; approving it revoked the named sensor's working key. The code now decides: an ordinary code always adds a sensor, a re-pair code always re-pairs its sensor, and an approval must name the sensor it re-pairs (`repair_sensor_id`, `409 REPAIR_NOT_ACKNOWLEDGED` otherwise).
+
+### Security: sensor results stay inside the job's targets and cannot choose their channel
+
+- A report bound to a scan or retest command whose targets name a host now
+  creates or changes names, addresses, services and web applications only at
+  or under the job's target names, at its target addresses and ranges, or at
+  addresses an in-bound asset of the same report resolves to. Anything else
+  is dropped with its findings, counted (`sensor_results_outside_job_total`),
+  shown on the receipt (`outside_job_targets`) and audited
+  (`sensor.results_outside_job`). Before, only address-range scans dropped
+  out-of-target assets.
+- The channel of a sensor's findings (`ingest_channel`) is now set by the
+  platform: `collector` for a collector sensor, `scanner` for any other. A
+  report's `metadata.source_type` can no longer file a sensor's findings as
+  `manual` or `integration`. Findings already stored keep their channel.
+
+### Security: a revoked sensor can no longer be disabled and then re-activated
+
+- `POST /api/v1/sensors/{id}/disable` on a revoked sensor now answers 403, like activate and the status edit already did. Before, disabling a revoked sensor turned it into a paused one that activate could bring back, and a legacy bearer-key sensor would then authenticate again with its old key. Revoked is final; install a new sensor (or re-pair) instead.
+
+### Security: tenant-scoped deletes, audit diffs for scan profiles, ingest warning
+
+- Deleting or changing a tenant tool configuration, reading one by id, and deleting an integration now filter on the organization in the same statement (they filtered on the id alone, with the callers checking the organization first). Defense in depth; no behaviour change for valid requests.
+- Updating a scan profile, changing its quality gate, or setting it as the default now records what changed (field-level before and after) in the audit log, not only that it happened.
+- Ingest logs a warning with the organization id when it cannot load the organization, instead of silently using the default identity and reconciliation rules.
+- The web shell no longer polls the support-access banner for people without team:read (a 403 on every page).
+
+### Security: loosening lifecycle, cycle and attack-surface settings needs a recent sign-in; policy reads narrowed
+
+- Loosening the asset lifecycle (turning it on, a shorter stale threshold or grace period, running while an integration is unhealthy, fewer excluded source types), the CTEM cycle coverage requirement (turned off) and the attack-surface monitoring settings (a monitor, enrichment or the digest turned off, a longer interval or reappear window, web screenshots on) now needs a recent re-authentication, is audited at high severity and notifies owners and administrators. Tightening needs none.
+- Reading the application-access (MCP) policy, its clients and the members' access requests is for owners and administrators. Reading the attack-surface monitoring settings needs scope:write. A viewer or member with only settings:read no longer reads them.
+- A priority override rule can no longer rank a finding on an asset with no owner below P2 (the ownership floor now applies to rule results, as to the built-in classification).
+- The role editor no longer offers team:members:invite and team:members:write (their routes also need the owner or administrator role, so a custom role holding them did nothing). The built-in Member role no longer holds integrations:scm:write, which did nothing there but made the role privileged (migration 20261031041207).
+
+### Security: the job signer signs feed relay rounds only for allowlisted feed origins
+
+- New statement kind of work for the job signer: `command_type` `feed_relay`, the platform tenant id (nil UUID), a platform (instance) sensor, no tool, and feed origins as targets (RFC-142). It is the first step of receiving signed feeds through a platform sensor so the platform needs no outbound access.
+- The signer signs such a statement only when every origin is in its own allowlist `SIGNER_FEED_ORIGINS` (default: the official vulnerability feed and release feed origins; `none` turns feed relays off). The nil tenant id is refused on every other job, and a feed relay naming an organization, an organization sensor, a tool or templates is refused.
+- **Upgrade note:** nothing to do. Set `SIGNER_FEED_ORIGINS` only when a feed mirror will be relayed.
+
+### Security: a social sign-in no longer signs in an identity the organization's single sign-on manages
+
+- A Google or Microsoft social sign-in whose provider identity was created by an organization's Entra ID or Google Workspace sign-on (identity source `sso`) used to sign the person in. It is now refused with `409 OAUTH_USE_ORG_SSO` ("This account signs in through your organization. Use your organization's sign-in."): the person never confirmed that route. No session opens, nothing on the account changes, and the refusal is audited (`auth.failed`, user id and provider only).
+- The sign-in page shows the message and the organization sign-in offered for the typed work email.
+- Behaviour change: such a person must use the organization's sign-in; a social identity and the organization's own sign-on work as before.
+
+### Security: a session without an organization reaches only its own account
+
+- An access token without a tenant (a person in no organization, or a social or SSO sign-in before an organization is chosen) is refused with `401 TENANT_REQUIRED` on every route outside an explicit account allow-list: profile, preferences, password, two-factor, sessions, sign-in methods, account deletion, creating an organization where allowed, accepting an invitation, step-up and sign-out. Previously routes mounted without the tenant chain (for example `/openapi.yaml` and `/api/v1/ws`) accepted it. A route test checks every user-plane route against the list (RFC-141).
+
+### Security: tool lookups by category are tenant-scoped
+- Checking whether a tool category is in use (when a tenant deletes a custom category) only counts platform tools and the caller's own tools, never another tenant's.
+- Removed the unused list-tools-by-category-name lookup, which had no tenant filter.
+
+### Behaviour change: AI results wait for a person unless the use case auto-applies
+
+- Every use case starts in suggest mode. Until an owner or administrator turns auto-apply on, an AI
+  agent with the triage preset no longer confirms findings or files false-positive and severity
+  requests on its own (it comments), and AI triage no longer files false-positive requests on its own.
+- A severity is never changed by AI, even in auto-apply: a raise stays a suggestion, a downgrade
+  becomes a severity request.
+- AI triage sends only the fields within the triage use case's ceiling: the code snippet is
+  restricted and no longer sent under the default (internal). A finding with nothing within the
+  ceiling fails with `nothing_to_send`; a use case that is off refuses with `AI_USE_CASE_OFF`.
+
+### Behaviour change: certificate-transparency names respect excluded dedicated addresses
+
+- The CT sweep now skips an existing name that resolves to an excluded dedicated address. It is no longer promoted again and gets no CT evidence. The check uses the name's address properties or its `resolves_to` relations. Certificate SAN promotion and scan dispatch already followed this rule.
+- Shared provider front ends never propagate, so names behind a CDN edge are still promoted.
+- A failed address lookup promotes nothing for that run. Exposures are still written. No migration.
+
+### Behaviour change: chained scan steps start on each finished task of their predecessor
+
+- A chained workflow step no longer waits for its whole predecessor step: it takes the results of each
+  finished predecessor task as that task's report is ingested, and a step a successor streams from is cut
+  into about four smaller tasks. Every target still passes the per-hop gate (type contract, hop limit,
+  fan-out caps, scope exclusions, act scope, zone, ownership and tier) and reaches the sensor in a signed
+  job with an explicit target list. A streamed step finishes after its predecessor; coverage and closing
+  stay decided per command (RFC-137).
+- Migration `20261031062911_stage_streaming` adds the stream columns to `scan_run_stage_plans` (add-only).
+- `GET /api/v1/scan-runs/{id}/stages` adds `streamed`, `stream_open`, `waves` and `first_dispatch_at`;
+  workflow settings add `stage_barrier`.
+- Metrics: `scan_stage_stream_waves_total`, `scan_stage_time_to_first_successor_seconds`,
+  `scan_stage_barrier_wait_saved_seconds`.
+- **Upgrade note:** on by default. `SCAN_STAGE_STREAMING=false` restores the barrier for every workflow;
+  `stage_barrier: true` in a workflow's settings restores it for that workflow.
+
+### Removed: CTEM-ID catalog download and the manual exposure tag
+
+- The daily `ctem-id-refresh` job, `CTEM_ID_FEED_URL`, `GET /api/v1/ctem-ids` and `PUT /api/v1/exposures/{id}/ctem-id` are removed. The platform makes no request to ctem.org.
+- The exposure response's `ctem_id` changes from a free-text string to the object above.
+- Migration `20261102020530_drop_ctem_id_catalog` drops the `ctem_id_catalog` table (a downloaded copy of public reference data; no tenant data).
+- **Upgrade note:** remove `CTEM_ID_FEED_URL` from the environment if set (it is ignored).
+
+### Deprecated: SENSOR_CA_CERT_FILE on the API
+
+- The API's `SENSOR_CA_CERT_FILE` is now `PLATFORM_CA_CERT_FILE`; the old name is read only when the new one is unset, and startup warns. On a sensor host `SENSOR_CA_CERT_FILE` keeps its meaning.
+- **Upgrade note:** rename `SENSOR_CA_CERT_FILE` to `PLATFORM_CA_CERT_FILE` in the API's environment (the bundled `deploy/docker-compose.yml` does it already).
+
+### Added: why an address behind your names is probably yours
+
+- `GET /api/v1/easm/suggestions`: each address on the `addresses_behind_names` card now carries `ownership` (band high, medium, low or unknown, and the evidence: your network seeds, network holder, reverse name, how many of your names point at it, how long, blockers such as a brand-new address). The card lists the strongest first and counts addresses per band (`bands`). Read only: nothing is added to scope automatically (RFC-054 §21).
+
+### Added: knowledge sources for AI agents, cited in triage runs
+
+- Organizations can give their AI agents runbooks, conventions and architecture notes (Settings > AI > Knowledge sources). Text or Markdown up to 256 KB per document; a document holding a credential is refused; text that tries to instruct a model is quarantined until a reviewer acknowledges it.
+- Nothing reaches an AI agent until a second person approves it (the organization owner may approve their own, recorded as a self-approval). Editing a document creates a pending version; the approved one keeps serving until then. Disabling a source applies at once.
+- A source is visible to every AI agent of the organization or only to AI agents in chosen teams, and carries a data class (internal or restricted) checked against each agent's ceiling. Retrieval never crosses organizations.
+- Built-in triage, remediation and summary runs retrieve matching excerpts as the AI agent, masked and fenced, and cite them as `kb:<n>`. Knowledge alone never changes a finding: such a suggestion is written as a comment. The AI agent's comment names the cited documents, and the run detail lists what the run saw (`retrieval_mode`, `knowledge`).
+- New permissions `ai_knowledge:read` and `ai_knowledge:manage` (owner and administrator roles). Migration 20261031065120.
+
+### Added: Settings > AI > Use cases tab
+
+- A new tab on Settings > AI lists triage, remediation steps and summary, each with its mode (Off,
+  Suggest, Auto-apply), the most sensitive data sent and the minimum confidence to auto-apply. A
+  change that lets AI do more asks for confirmation (and a recent sign-in). A use case that fell
+  back to Suggest says when and why and offers to turn auto-apply back on.
+- AI triage explains the new refusals (`AI_USE_CASE_OFF`, `ai_use_case_off`, `nothing_to_send`), and
+  the Activity tab lists use case changes and downgrades.
+
+### Added: per-use-case AI settings (Settings > AI > Use cases)
+
+- For triage, remediation steps and summary an organization sets the mode (off, suggest, auto-apply),
+  the most sensitive data class sent (public, internal, restricted) and the minimum confidence to
+  apply on its own (0.50 to 0.99, default 0.85). `GET /api/v1/organization/settings/ai/use-cases`
+  (settings:read) and `PUT /api/v1/organization/settings/ai/use-cases/{use_case}` (owner or
+  administrator with settings:write). Migration `ai_use_cases` adds `tenant_ai_settings.use_cases`
+  (no rewrite, no backfill).
+- Turning auto-apply on, raising the ceiling above internal, or lowering the minimum confidence while
+  auto-applying needs a recent sign-in, is audited `ai_use_case.updated` at critical severity and
+  tells every owner and administrator.
+- A use case in auto-apply falls back to suggest when people reject 20 percent of the last 50 (at
+  least 10) requests its AI filed since auto-apply was turned on (`ai_use_case.downgraded`).
+
+### Added: the takeover check step runs nuclei's takeover templates
+
+- `check.takeover` is now a routed capability: nuclei runs it with only its `takeover` templates, on domains and subdomains (active, T1). The takeover check step of Subdomains and Deep recon runs instead of being skipped; a match on a name whose DNS check holds an open dangling CNAME raises a confirmed subdomain takeover, as nuclei takeover findings already did.
+- The step cannot widen the template set: the tag set is fixed by the platform at dispatch and checked again by the sensor. The job runs as a nuclei job, so every sensor version takes it (no sensor upgrade needed).
+- A workflow step that pins nuclei without naming a capability still runs vulnerability templates.
+
+### Added: the console manages the two-factor floor and organization mail servers
+
+- Console Settings > Two-factor sets the lowest two-factor requirement of every organization (no floor, owners and administrators, everyone) and the days current and new members get to set it up. It shows where the value comes from (`AUTH_MFA_FLOOR` or the console) and recommends a floor on an upgraded install still on none. Lowering the floor asks for confirmation.
+- Console Settings > E-mail gains Organization mail servers: whether an organization's own mail server sends its organization mail (never, only from a verified domain, always). Account security mail always uses the platform server.
+- Both used existing API routes that had no page (`/api/v1/admin/settings/auth-mfa`, `/api/v1/admin/settings/email-relay`): super admin, fresh step-up, a reason, critical audit and every administrator told. The Configuration overview links both settings to their pages.
+
+### Added: the edge protection vendor on coverage gaps and the asset coverage view
+
+- Run task coverage gaps carry `edge` (challenged or blocked) and `vendor` (a short token the sensor sends, shown as text); the asset coverage entry carries `last_edge_vendor`. The run page and the asset coverage section say "blocked by edge protection (vendor)" and link to the fixes: allow the scanner addresses, use another proxy pool, lower the scan rate.
+- Migration 20261031134406 adds the nullable `asset_coverage.last_edge_vendor` column (catalog-only, no rewrite).
+
+### Added: CTEM-ID code on exposures, derived from our own data
+
+- Exposures carry `ctem_id {code, catalog_version, basis, url}` when their type, details and linked asset settle a CTEM-ID code (catalog 1.0; 9 of 29 codes derivable today: lookalike domains by technique, publicly dumped credentials of the organization or a vendor, internet-facing systems by asset scope or type, vendor public repositories). No code is shown when the data does not settle one. The exposure detail shows the code linked to its ctem.org page. See `docs/architecture/ctem-id-mapping.md`.
+
+### Added: emerging threats dashboard widget
+
+- New widget "Emerging threats affecting you": the open emerging-threat alerts affecting the viewer's assets, by level (immediate, digest, listed). Each level opens the emerging-threats list filtered to it, with the same count; with no alert ever in scope it says there is nothing to measure yet instead of showing 0.
+- Dashboard widgets of a module that is turned off for the organization are no longer offered in the widget gallery and are hidden on the dashboard, including figures stored before the module was turned off.
+- The emerging-threats list keeps its filters (level, state, match, internet-facing, search, page) in the address, so a filtered view can be linked to.
+
+### Added: discovery coverage says why assets are not covered
+
+- The Discovery coverage widget splits the uncovered assets by cause: no eligible sensor, sensor or proxy failure, paused, target did not answer, never run, overdue, out of scope. Each cause opens the matching asset list (new asset list filter `coverage_cause`).
+
+### Added: closure quality, campaign progress and false-positive dashboard widgets
+
+- "Closure quality": findings fixed in the period by a person and closed by the platform on its own, fixed findings that came back, and the Ready to close proposals waiting now; each row opens its list.
+- "Remediation campaign progress": active campaigns, the latest first, with the share of their tasks done, counted over what the viewer may see; each row opens the campaign.
+- "False positives by tool": per tool, the share of findings closed in the period that were false positives, for tools with at least 20 closes; organization dashboards only.
+- The findings list can filter on whether a person closed a finding (`resolved_by_null`) and on when a fixed finding came back (`last_reopened_at`).
+
+### Added: attack surface and accepted-risk dashboard widgets
+
+- Three widgets for every dashboard: "New on the attack surface" (assets added in the period by type, with the period before), "Certificate expiry" (expired, or expiring within 7, 30 and 90 days) and "Accepted risks ending" (acceptances ending within 7 days, 8 to 30 days, or later).
+- Each band opens the asset or findings list it counts, follows the viewer's data scope on personal dashboards, and is stored in the dashboard snapshot like every widget. The CTEM, Overview and Executive templates include them; existing copies are offered them by the "new on this layout" notice.
+
+### Added: detection rules for web fingerprints and exposed secrets
+
+- Two new kinds of signed platform content pack, `web-fingerprints` and `secret-rules`, run by the platform on the web content each report already carries (URL, final URL, title, `Server` header, cookie names, favicon hash, script paths), before anything is stored. No sensor change.
+- Fingerprint matches become asset technologies with a version, category and CPE (source `rules:<pack>@<version>`); versioned products also become software components for CVE matching. A tool's own report of the same technology wins.
+- Secret matches (keys, tokens, private keys, credentials in URLs, internal host names, debug output) become `credential_leaked` or `sensitive_data_exposed` exposures holding only a keyed fingerprint, a short preview, the length and the location; the value is never stored or logged.
+- Built-in packs `web-fingerprints-core` and `secret-rules-core` (release 2026.10.1) are installed on first start when no stable channel of that name exists.
+- Organizations manage their own rules under `/api/v1/content-rules` (`scans:content:read` / `scans:content:write`): validated RE2 patterns with keyword prefilter and size limits, versioned, audited, at most 200, with a masked test against a pasted sample.
+- Every command-bound report records the rule packs it was matched with in its command's content pins (`rules`).
+- Migration 20261031090033 adds `tenant_content_rules`.
+
+### Added: how an asset was found, on the asset page
+
+- The asset page and the asset sheet show "How this asset was found": the chain of parent assets from
+  the root down to the asset (each one a link), the discovery source and tool, when it was first found,
+  and its attribution confidence. The reasons for the confidence stay in the Ownership and scope section.
+- New endpoint `GET /api/v1/assets/{id}/lineage` (`assets:read`): the asset and up to 5 ancestors, one
+  parent per hop (parent, contains, exposes, serves certificate, resolves to), tenant-bound on every hop
+  and never revisiting an asset. An ancestor outside the caller's data scope is returned as a hidden node
+  with no name, id or type. The asset view primes it. No migration.
+
+### Added: certificate names become candidate subdomains
+
+- The subject alternative names (and the subject CN) of every TLS certificate a report puts in the inventory (httpx, tlsx, nuclei, uploads) are now proposed as subdomain assets when they sit strictly below one of the organization's domains (attributed domain assets, verified domains, permanent scope entries with discovery on). Names of shared CDN or hosting certificates outside those domains create nothing; wildcard names, addresses and names of certificates that lapsed more than 90 days ago are skipped.
+- A new name is a `candidate` with `discovery_source = certificate` and one `certificate_san` evidence row (a new weak attribution rule, 0.40) that names the certificate asset, its issuer and expiry, and the tool. A certificate never confirms or scopes a name by itself; a permanent scope entry covering the name still confirms it, as for Certificate Transparency names. The inventory "Discovered by" filter and the review reasons offer the new rule.
+- Exclusions (also an excluded dedicated address of an existing name), excluded domains and rejected names (any tombstone) are respected; an existing asset keeps its standing; at most 500 new assets per report. Best-effort: a failed lookup promotes nothing and never fails the ingest. No migration.
+
+### Added: deep subdomain enumeration once for every new root domain
+
+- The first `enumerate.subdomains` coverage pass of a new root (a `domain` asset under an active scope entry whose enumeration never succeeded) runs once at deep depth: the medium wordlist pack (`wordlists-m`) with the learned labels and their permutations. The root then returns to the weekly standard pass (`wordlists-s`).
+- "Once" is the first success of the pair in the coverage ledger, so restarts and replicas never repeat it. At most 10 roots go in one deep run, ahead of the steady batch; one coverage run per capability is active at a time.
+- A deep pass that fails 3 times in a row falls back to standard; without a stable `wordlists-m` the pass runs at standard depth.
+- Upgrade note: roots never enumerated so far get the deep pass once after the upgrade; roots already enumerated keep the weekly standard pass. No migration.
+- Security: which roots may be enumerated is unchanged (scope entry, full dispatch gate, claim-time re-check, domain proof on shared sensors); onboarding state is per tenant.
+
+### Added: Discovery management for the attack surface
+
+- Attack surface > Discovery shows the organization's coverage work in four stages (asset discovery, exposure scan, validation and scoping, technology discovery): status (idle, running, paused with its reason, failed), last run, progress, per-capability ledger counts, the daily budget and the number of assets in the last automatic attribution pass. Export as CSV.
+- Run per stage and Run all make the stage's covered, due and failed coverage pairs due now; the coverage loop plans them on its next pass through the dispatch gate, within the daily budget. Paused, blocked and queued pairs are left alone. At most once a minute per stage (429 with `Retry-After`); refused while automatic coverage is off or the budget is spent (409).
+- Abort all cancels the organization's active coverage runs through the run cancel; people's scans are not touched.
+- `GET /api/v1/attack-surface/discovery` and `/export` need `scans:read`; `POST .../stages/{stage}/run` and `.../run` need `scans:write` and `scans:execute`; `POST .../cancel` needs `scans:write`. Every route needs access to all of the organization's assets (403 `DISCOVERY_FULL_DATA_REQUIRED` otherwise). Run and Abort are audited (`easm_discovery.run`, `easm_discovery.aborted`).
+- No migration.
+
+### Added: Exposure items view of the external attack surface
+
+- Attack surface > Exposure items lists every exposure with the asset it is on, the asset's monitoring state and a primary-asset marker (one of the organization's root domains), with counts by severity and by type, a group-by-asset view, first and last seen, a CSV export, the severity override from the severity cell and the status actions in the row menu. It opens on open exposures (active and in progress) of monitored assets.
+- `GET /api/v1/attack-surface/exposures`, `/stats` and `/assets` (`findings:read` and `findings:exposures:read`, attack surface module) on the list query contract: filters by severity, state, type, display category, asset, asset monitoring state, primary asset and dates; the tenant and the caller's asset data scope apply to every read, and exposures without an asset are visible to unrestricted callers only.
+
+### Added: exposure display categories, one-line summaries, in-progress state and severity override
+
+- Every exposure has a fixed display category (exposed ports, hijackable subdomains, email security, SSL/TLS, certificates, ...) and a one-line summary such as "Port 6379 (Redis) is open to the internet", returned as `display_category` and `summary` on the exposure API. `GET /api/v1/exposures?category=` filters by category and `GET /api/v1/exposures/stats` returns `by_category`.
+- New exposure types `web_interface_exposed`, `mcp_server_exposed` and `mail_server_blocklisted` (their producers are planned).
+- Exposures have an `in_progress` state (still open): `POST /api/v1/exposures/{id}/start-progress` (`findings:write` and `findings:exposures:triage`). Automatic resolutions (closed port, rejected name, DNS check) also resolve in-progress exposures.
+- `PATCH /api/v1/exposures/{id}/severity` sets or removes an analyst severity override with a required reason (`findings:severity` and `findings:exposures:triage`), audited as `exposure.severity_changed`. The reported severity is kept and re-sightings never revert the override; the second-approver rule keeps reading the highest reported severity.
+- Assets have one derived monitoring state (monitored, not monitored, pending decision, unvalidated, irrelevant, inactive, out of scope): `GET /api/v1/assets?monitoring_state=` filters by it and `?with_triage=true` adds it to each row.
+- Migration `20261030200514_exposure_taxonomy_progress_severity` (new CHECK values and four nullable columns on `exposure_events`; no rewrite).
+
+### Added: inline monitoring decisions and scoping decision cards on Assets
+
+- The monitoring state of an inventory row is a menu for a caller with `assets:write`: Ours, Watch only, Ours on third-party infrastructure, Not ours, or Undo the decision, each with what it does; a pick records the ownership decision through `PUT /api/v1/assets/{id}/attribution` (audited, unchanged).
+- Assets > Needs attention gains a "Scoping decisions" group with two queues, Validate primary assets (root domains not yet confirmed) and Decide monitoring (names awaiting review or with too little evidence); the same cards show above the inventory while assets wait.
+- `GET /api/v1/assets?primary=true` keeps primary assets only: domain assets named like the root of a permanent domain scope entry or a verified domain, tenant-scoped.
+
+### Added: Technologies view of the external attack surface
+
+- `GET /api/v1/attack-surface/technologies` lists the technologies detected on the tenant's assets, one row per technology and version, with the vendor, category, detecting tools, the number of assets running it, the CVEs the corpus knows for that version (count, top CVE and its CVSS), a known-exploited and public-exploit flag and the open emerging-threat alerts about those CVEs. `GET /api/v1/attack-surface/technologies/stats` counts the same set. Both follow the list query contract (filters, sort, search, pagination), apply the caller's data scope to every asset before counting and need `assets:read`.
+- The External Attack Surface section has a Technologies tab: version rows, a count strip (with CVEs, known exploited, version unknown) that filters the table, category and version filters, server-side sort and a CSV export. The asset count opens the asset inventory filtered to that exact version.
+- `GET /api/v1/assets` takes `technology_version` (with `technology`): only assets running that exact version; present and empty selects a version the tools could not tell.
+- Migration `20261030200208_asset_technologies_vendor_cpe` adds the nullable `vendor` and `cpe` columns to `asset_technologies` (catalog-only change, no backfill); a probe's CPE 2.3 name now fills them.
+
+### Added: import history and KEV chip on the finding page
+
+- The finding page's side rail lists every upload or run that acted on the finding, newest first, with what it did (new, still detected, reopened, resolved, suppressed by a rule, held for review), the tool and when. A run opens its run page. The list comes from the existing `GET /api/v1/findings/{id}/imports` read, which answers 404 outside the caller's data scope; the panel is then hidden. No API change.
+- The page header shows the KEV chip (and Ransomware when CISA marks it) first, when CISA lists the finding's CVE.
+
+### Added: MCP search_assets and get_asset
+
+- `search_assets` searches the assets the connection can see like the console's inventory: free text, an IP or CIDR, a CVE (assets with an open finding of it), type, exposure, criticality, internet facing, monitoring state, scope status, owner, technology and whether it has findings. Riskiest first, paged, each row with a link to the asset page.
+- `get_asset` returns an asset as its page shows it, by id or exact name: overview, open findings by severity with the top ones by priority, coverage per capability, open ports and services, lineage and recent changes. `sections` asks for fewer. Each section is the asset page endpoint's own response, under the same data scope.
+
+### Added: sign an AI assistant in from a remote terminal with a code
+
+- MCP clients running where the browser is not (an SSH session, a container, a remote desktop) can now sign in with the OAuth device authorization grant (RFC 8628): the terminal shows a short code, the person enters it at `/oauth/device` in any signed-in browser and approves on the usual consent page, which shows the address and user agent the terminal asked from. Endpoint `POST /oauth/device_authorization`, grant type `urn:ietf:params:oauth:grant-type:device_code` at `POST /oauth/token`, both advertised in the authorization server metadata. The platform's terminal client is `octc_terminal`; an organization's own registered clients work too, in that organization only.
+- Approving needs a recent sign-in; such a connection never reads all organization data and is listed as a terminal sign-in under Connected applications.
+- New organization policy switch `device_flow_allowed` (on by default) under AI assistants (MCP): off refuses new codes and stops existing terminal connections.
+- Migration `mcp_oauth_device_grant`: new columns on `mcp_oauth_requests` and `mcp_oauth_grants` (constant defaults, no rewrite) and the `octc_terminal` client row.
+
+### Added: MCP list tools page and list_findings takes the findings list's filters
+
+- `list_findings` reads the findings list (GET /findings) with its own parser and order: `state`, `asset_id`, `cve`, `kev`, `min_epss`, `priority_class`, `sla_status`, `assignee` (`me` or a user id), created and updated ranges and `sort`, beside severity, status, source and search. It returns priority class, KEV, EPSS, SLA status and first detection per finding.
+- `list_findings`, `list_active_cves`, `list_assets` and `list_remediation_groups` take `page` and `limit` and return `total`, `has_more` and `next_page`.
+- `get_exposure_chains` says that a length 0 chain is a directly exposed asset, counts multi-hop chains, and says plainly when no asset relationships exist to build longer paths.
+
+### Added: scanner addresses to allowlist at a WAF or edge protection
+
+- Settings, Scanning, Proxies has a "Scanner addresses" card: the addresses your scans leave from, with copy buttons and ready allowlist snippets, so a target owner can allowlist the scanner instead of the scan being blocked or challenged. API: `GET /api/v1/proxy-pools/scanner-addresses` (`sensors:egress:read`).
+- Only addresses the platform observed itself are listed: a proxy endpoint's exit address is kept from a proxy test only when the platform's test echo saw that address for the same test (a sensor's report alone never adds one), your sensors' addresses are the ones the platform saw them connect from, and shared sensors' published egress is listed when the organization may use them.
+- The retest and run help for edge-blocked results now point to the card.
+- Migration `proxy_exit_addresses`: two new tables and a unique constraint on `proxy_endpoints`.
+
+### Added: three role templates: remediation lead, validation lead and detection engineer
+
+- **Remediation lead** (engineering managers, security champions): everything a remediation owner does, plus the team's remediation tasks (create, split, merge, tracker issue, mark fixed, one exception), assignment within the team and bulk status. Never severity, verify, approve or triage.
+- **Validation lead** (pentest and red team leads): a validation engineer who also maintains methodology checklists and attacker profiles. Never changes or approves scope (a new target is active at once where scope approvals are off) and never approves risk.
+- **Detection engineer** (detection, SOC and purple team defenders): reads simulations, control tests and observed campaigns, and records compensating controls and their test results. Runs no attack or scan and changes no finding.
+- Each is available as a role template and as a team preset.
+
+### Added: task logs follow a running task live
+
+- The Logs dialog of a run task re-reads the log every 3 seconds while the task is queued or running, follows the newest line while you are at the bottom of the list, and reads once more when the task finishes so its last lines show. A running task with no lines yet says it is waiting for them instead of "No logs from this task". No API or database change.
+
+### Added: scan identification headers for the organization and the platform
+
+- Organizations set up to 6 request headers with free names and values (for example `ATTT: is-here`) beside the existing scan User-Agent, in Settings > Scanning > Scan identification, with a live preview of what a target receives. Saved in the security settings (`tool_http_headers`; owner, step-up, audited).
+- Platform administrators set an instance-wide User-Agent and up to 4 headers, each optionally enforced, in Console > System > Scan identification (`/api/v1/admin/settings/scan-identification`; step-up, reason, audited, administrators notified).
+- The two layers merge (union; the organization wins a clash unless the platform enforces the header; bug-bounty program rules go over both) into the signed `http_policy` of every scan, retest and validate job. Retest and validate jobs now carry the organization's User-Agent and TLS setting too.
+- Header names must be HTTP tokens; connection, proxy, `Host`, `Authorization` and `Cookie` headers and line breaks are refused. A job whose program headers would push it over 10 headers fails with `PROGRAM_RULES_CONFLICT`.
+
+### Added: one command and one approval to add a sensor
+
+- **Sensors → Add sensor** offers one path: pick the platform, copy one command, paste it on the host. The command carries a single-use code so the dialog finds the sensor by itself; the sensor prints the same code, a link to approve it on and its fingerprint, and the command ends by itself once the sensor is paired. The choice between "create a pairing code first" and "pair a sensor that shows a code" is gone.
+- New page **/activate**: the link a sensor prints (`<APP_URL>/activate?code=…`) opens the review; without a code it asks for the one the sensor printed. The page removes the code from the address bar and never approves on load.
+- A start with a code uses it as the request's own code, so a command run after its code expired still pairs through the link. Every start without a token answers `user_code` and, when `APP_URL` is set, `verification_uri` and `verification_uri_complete`.
+- The install commands write no local policy file: the sensor follows the organization's scope; the host owner may add a narrowing `/etc/openctem/sensor-policy.yaml` and the `STOP` kill switch at any time.
+
+### Added: sensors reach a platform behind a private CA by pinning its root
+
+- `PLATFORM_CA_CERT_FILE`: the PEM bundle of the CA certificate(s) that sign the platform's TLS certificate. The API parses it at startup and re-reads it when it changes; a file that holds a private key is refused as a whole (logged), and only CA certificates are kept.
+- `GET /api/v1/sensors/platform-ca` serves that bundle: public, the same for every organization, certificates only (`application/x-pem-file`, `Cache-Control: public, max-age=300`), rate limited per IP, 404 when no CA is configured.
+- Every install command pins the CA's root as `SENSOR_CA_SHA256` (docker run, Compose, Kubernetes, Linux service, Helm, env), so a sensor that does not trust the platform's chain fetches the bundle and trusts only a matching root that signs the chain. Install answers carry `platform_ca` (each certificate's name, SHA-256, root or intermediate, expiry; the pin; the download path).
+- The Add sensor dialog shows the CA's certificates with their SHA-256, the pinned root and a download, and offers a fifth choice, several sensors on one host, with the multi-sensor kit's `sensors.sh add ... --ca-sha256` command.
+- Guide: `docs/how-to/sensors-behind-a-private-ca.md`.
+
+### Added: sensor local policy summary reports the target mode
+- The summary a sensor reports gains `mode` (`allow_all`, `allow_list` or `platform_scope`); unknown values are dropped. The sensor page shows "Targets: allows everything the platform signs" for `allow_all`. Sensors that do not report a mode are shown as before.
+
+### Added: Re-pair a sensor from the console
+
+- **Sensors → sensor → Re-pair…**: pick why (identity lost, host rebuilt or moved, key may be compromised, new install method), optionally revoke the current key at once, run the command with a re-pair code for that sensor only, compare what the platform last knew with the host asking, and approve with the fingerprint and your second factor.
+- The sensor keeps its name, zones, grant and history; its trust level returns to New. Its earlier keys are revoked and the jobs it held are taken back at approval (also when its last key is revoked). Migration `20261031113852` adds `sensor_pairings.repair_reason`.
+
+### Added: run page shows stage streaming, workflows can switch it off
+- A stage lane on the run page shows **Streaming** while the stage still takes results from the stage before it, and **Streamed in N waves** after, with how much earlier it started than that stage finished when that is clear.
+- Workflow settings gain **Wait for each stage to finish before the next starts** (`stage_barrier`).
+
+### Added: account token and declining an invitation without the email link
+
+- `POST /api/v1/auth/account-token` gives a person with no organization they can open an account-only access token, so they can manage their account; members get 409 and exchange for their organization as before.
+- `POST /api/v1/auth/onboarding/decline` declines an invitation listed for the verified address, by its account-bound reference; audited in the inviting organization.
+
+### Added: the `monitor.web_content` capability, so page monitoring can fetch
+
+- The stage catalog lists `monitor.web_content@1` (tier T1, input a web URL, run by `httpx` only for a step or job that names it; a step that pins `httpx` alone is still the HTTP probe). The capability reports no asset of its own: the capture is the `web_content` property of the web asset the URL belongs to.
+- It is an active capability: coverage sends it through the same dispatch gate as every active fetch (scope entry, exclusions, tier ceiling, the claim-time re-check), as the coverage policy and never as a member.
+- Updates the CTIS dependency to v1.6.5, which defines the capability and carries the capture through the `httpx` mapping.
+
+### Added: Attack surface › Page changes
+
+- A new tab lists what changed on watched pages and scripts (new third-party script hosts, scripts added and removed, changed JS files with old and new size and hash, new URLs in scripts, text lines in full-page mode), with a diff view that shows every value from the page as plain text.
+- Watch a URL of one of your web services (scripts only by default, or full page), change its schedule and ignore patterns, see the scripts watched with each page and the state of the last check, and watch suggested home, sign-in and admin pages and scripts in one click. Watch changes need `scans:write`; reading needs `assets:read`.
+
+### Added: web page monitoring (API)
+
+- Watch URLs of the organization's web services: JS-only mode (default) keeps the scripts a page loads and, for each first-party script, its hash, size and the URLs found in it; full mode also keeps the page's masked visible text. Routes under `/api/v1/easm/page-monitoring` (watches, suggestions, changes with their diff); reads follow the data scope of the watch's web service, watch changes need `scans:write` and are audited.
+- Fetch results arrive as the reserved report property `web_content` and are normalized and diffed on the platform (cache busters, build hashes, nonces and other volatile tokens ignored; per-watch ignore patterns); only a change is stored (last 5 snapshots per watch, changes kept 180 days).
+- A new third-party script host on a watched page is a `third_party_script_added` exposure (high), announced through the attack surface alerts and resolved when the page drops the host.
+- Fetches are dispatched every 10 minutes through the coverage path (scope and active-scan gates, signed jobs) for organizations with automatic coverage on; until a sensor can run the `monitor.web_content` capability, watches show as waiting.
+- Migration 20261031064439 adds the `web_watches`, `web_snapshots` and `web_changes` tables and the exposure type.
+
+### Added: subdomain enumeration works on a fresh install
+
+- The curated wordlist packs of the current release (`wordlists-s`, `wordlists-m`, 2026.10.1) are built into the API and installed on start when the platform has no stable wordlist pack, so asset coverage no longer waits on an import (`content_missing`). An existing stable channel is never moved.
+- The list generated for each enumeration job now adds permutations of the organization's own labels: numbered neighbors (`web09` → `web10`), numbered environment names (`charts-uat` → `charts-uat2`) and base words crossed with the environment words the organization uses.
+- The wordlist release workflow checks the published assets are byte for byte the built-in packs.
+
+### Added: organization wordlists and a record of what each enumeration job read
+
+- Organizations can add their own DNS label lists (paste or upload a `.txt`) with `/api/v1/wordlists` (`scans:content:read` / `scans:content:write`). Lines are normalised to DNS labels; invalid and secret-looking lines are dropped and reported. Lists are versioned, can be switched off, and every change is audited.
+- Every enabled list joins the organization's subdomain enumeration jobs inline, after the labels learned from its names and before the platform pack, on its own and shared sensors.
+- `GET /api/v1/wordlists/preview?root=` counts what an enumeration job of a root would query, per source.
+- Each signed job records what it read (pack name, version and digest; generated lists with source, lines and sha256; organization lists with their versions) in `commands.content_pins`, shown as `content_pins` on the run's tasks.
+
+### Added: Settings > Scanning > Wordlists, and the wordlists a discovery task used
+
+- A new settings page lists the organization's wordlists with their label counts and versions: add a list by pasting labels or uploading a `.txt`, edit it, switch it on or off, or delete it. Saving says what was kept and what was dropped.
+- "Preview for a domain" counts, per source, the labels a standard discovery run of a domain would try (platform list and version, learned labels with variants, your lists) without sending anything.
+- On a run's tasks, a discovery task names the wordlists it read: the platform list and version, the learned labels, and your lists with their versions.
+
+### Changed: Attack surface opens on five views instead of eleven tabs
+
+- Discovery > Attack surface shows one strip with Overview, Inventory, Exposures, Changes and Discovery. A view
+  with more than one page (Inventory: Technologies, Certificates, Web surface; Exposures: Exposure items,
+  Lookalikes; Changes: Surface, Page changes; Discovery: Stages, Decisions; Overview: Summary, Posture) switches
+  between them with a segmented control under the strip. Every page keeps its URL and its permission; the
+  number of decisions waiting now shows on Discovery.
+
+### Changed: the Attack surface overview answers four questions, and assets open in a drawer
+
+- One strip of five tiles (surface assets, internet-facing, new in 7 days, open exposures, waiting for a
+  decision), each opening the list it counts. "New in 7 days" is now one number (first seen) instead of two
+  different figures on the same page.
+- "Fix first" lists the most severe open external exposures; each row opens its asset. "Discovery" shows what
+  waits for a decision, the names kept passive and how fresh the Certificate Transparency watch is, with a
+  Decide button; the monitoring settings open in a drawer instead of filling the overview.
+- Removed from the overview: the decision cards strip (they live on Discovery > Decisions), the
+  critical internet-facing tile, the duplicate "Exposed assets" list and the "include discovered" switch.
+- Across the attack surface views (overview, changes, certificates, decisions), clicking an asset opens its
+  drawer over the list; a modified click opens the asset page.
+
+### Changed: a pull request that changes the schema runs the schema-wide tests
+
+- A pull request that changes a migration, the role script, the Postgres repositories or the tenant-table lint now runs the few tests that read every table (`Schema-wide tests (PostgreSQL)`): tenant table list, the schema-wide delete seeder, duplicate indexes and the merge reference coverage. They used to run only in the merge queue, so a new table could pass on the pull request and then fail in the queue. Other pull requests are unchanged.
+
+### Changed: CI/CD runs show why first, and refused pipelines are announced
+
+- **Runs** uses the console's shared table: a phone gets one card per run instead of a table cut off at the right edge, with the same pagination and Verdict filter as other lists. The repository shows without its code-host prefix, with the provider icon and the workflow name.
+- A run's panel leads with the verdict, the findings summary and the blocking reasons; provider, commit, tools and posting status follow under **Details**. The pull request number is in the panel's subtitle.
+- **Pipelines** tells a CI writer when pipelines were refused in the last 7 days ("5 pipelines were refused in the last 7 days. See why"), linking to the refused list under Settings. A refused pipeline never appears in the list, so a wrong trust rule no longer looks like silence.
+- The Inactive metric tile is gone (its count is on the Show inactive switch) and the Runner column moved out of the pipeline list (an unsupported runner already shows as Degraded; the version is in the pipeline panel).
+
+### Changed: CI/CD settings on one page, Connect a pipeline in the header
+
+- The CI/CD **Trust and gate** tab is now **Settings** and shows every section on one page, in the order a pipeline is set up: Trusted pipelines (with the OIDC requirement and the recent refused pipelines), Gate policy, Pull request feedback and Break-glass. The Section picker is gone; `?section=` links scroll to their section.
+- **Connect a pipeline** sits in the CI/CD page header on every tab (owners and administrators).
+- Trust configurations are compact rows (provider, scope, last used, actions); the issuer and audience stay in the edit form and the pipeline snippet. The OIDC requirement is one line while it is on and a warning only while CI sensor keys are still accepted. The refused pipelines list shows the latest three, the rest on request.
+- The tab panel is linked to its tab (an accessibility fix).
+
+### Changed: platform sensors have their own console page
+
+- The console has a new Platform sensors page (Scanning group, shown with the `platform.sensors.read` permission). It holds the sensor enrollment card, the sensor list with pause and retire, and the instance scan zones. They were in the Fleet and Zones tabs of Platform scanning, which are hidden while shared scanning is not available in the release, so an administrator had no way to enroll or see a platform sensor (feed relay, passive discovery, AI worker). The page does not depend on that switch.
+- Platform scanning keeps the policy, queue, egress and anomaly tabs and the instance switch, and links to the new page. The Overview tile for platform sensors opens it.
+- No API change: the routes behind the page were never gated by the switch.
+
+### Changed: dashboard templates open on their headline figures
+
+- Every built-in template (CTEM, Overview, Executive, Vulnerability program, Triage) now opens on its key figures, then the decision widget (levers or Fix next), then the story in CTEM loop order, and ends with diagnostics. Rows are full with one height per row on wide screens and leave no gap on tablets and phones; the levers, weekly brief, attack paths and intake take less blank space.
+- The Vulnerability program template shows KEV open instead of the raw open count, and open findings by SLA state beside accepted risks ending. Triage puts Fix next right under its figures.
+- A widget grouped by a dimension other than its metric's default is titled "<metric> by <dimension>" (for example "Open findings by SLA state"), so two widgets of one metric are told apart.
+- A personal copy of any template whose widgets are in an earlier order or size is offered the new arrangement ("Switch to the new layout"; the old dashboard is kept). Saved dashboards are never changed without the person choosing.
+
+### Changed: the API keeps its database connections open between bursts
+
+- `DB_MAX_IDLE_CONNS` now defaults to `DB_MAX_OPEN_CONNS` (25) instead of 5. With 5, every burst of more than five concurrent queries (one page load fans out to many) closed the extra connections and reopened them on the next burst, each with a TCP and SCRAM handshake and a new PostgreSQL server process. On a restored copy of the UAT database at 10 concurrent requests, `GET /me/bootstrap` went from 455-500 ms to 183-266 ms median and twice the throughput; small reads lost about half their p95.
+- **Upgrade note:** PostgreSQL may now hold up to `DB_MAX_OPEN_CONNS` idle connections from each API replica. Set `DB_MAX_IDLE_CONNS` explicitly to keep the old behaviour.
+
+### Changed: the exposure flow fills a wide card and shows the funnel as three rings
+
+- From a 900 px wide card (a full-width card in a 1280 px window), the exposure flow is three columns that fill the card: the sources in their thin dashed frame at the left edge (wide enough that a source's name, kind and figure fit; its status wraps under it instead of being cut off), the outcomes in a matching frame at the right edge, each a box with its label above its figure, and the core taking all the space between, with the curves spanning it and recomputed on every resize.
+- The core is three concentric rings read from the outside in: findings received by source, new or reopened by source, and actionable findings by priority class, with the actionable total in the middle. Each segment is a link with its name, count and share of its ring; hover, keyboard focus or a tap lights it and its source's row, dims the rest and opens the tooltip with its list. A source keeps one colour on its row, its arcs and, when focused, its curve, the only curve that glows. A curve's width is proportional to its volume. Every ring has a muted track, so an empty ring still reads as one; the rings draw in once, never under reduced motion. A phone shows the same rings small beside the "Actionable now" headline.
+- A stale source now says "Stale, last receipt 6 days ago".
+
+### Changed: the exposure flow reads in one glance on a phone
+
+- On a phone the dashboard's exposure flow puts the answer first: "Actionable now" with its priority split as one bar and four figures, the outcomes as a grid (Past SLA, In progress, Open, then the closures of the period), the five stages as a list, and the sources last. The card is about 1.4 screens instead of more than 1.5 (up to 3 with many sources), and every figure is a tap target of at least 44 px.
+- Sources are a ranked bar list, the busiest first: rank by findings or by assets (discovery tools no longer show 0), group by tool or by source instance (sensor, CI project, connector, platform; remembered on this browser). Sources with nothing in the period fold into one line; a stale or failed source stays in view with its status. When a refresh changes the order, rows slide to their new place (none under reduced motion) and show how many places they moved. A source's tooltip shows received, new or reopened, seen again and not stored, the instances that fed it, and a link to the sensor.
+
+### Changed: the exposure flow lists every source by default
+
+- Sources with nothing in the period (for example dnsx or httpx before their counts arrive) are listed under the others instead of folded into "+N with nothing"; "Hide N with nothing" folds them.
+
+### Changed: the KEV sync no longer reads the whole vulnerability state table
+
+- Migration `20261101083322_vuln_event_state_in_kev_index` adds a partial index on the KEV flag (built concurrently, no write lock). The sync's three statements now probe it instead of scanning about 345 000 rows: on a restored copy of the UAT database the removal update went from 16-22 ms to 2-6 ms, the state upsert from 23-29 ms to under 1 ms, and the event insert from 47-53 ms to about 1 ms. The upsert also stops locking every already-flagged row on each sync.
+
+### Changed: the sensors, scope and compliance pages send fewer requests
+
+- Sensors: the page refreshes the fleet every 15 seconds with one request that carries the fleet stats and only the sensors whose details changed since the previous refresh (`GET /api/v1/sensors?changed_since=<cursor>`; an empty cursor answers the whole fleet). It used to read every page of sensors and the stats separately on each refresh. The server keeps no state: the cursor holds a short digest per sensor, so any change shows, including a state that moves on with the clock. Fleets above 200 sensors get the whole fleet on each refresh, still in one request.
+- Scope: `GET /api/v1/scope/targets` and `/scope/exclusions` accept `include=status_counts` and then count every entry the caller may see per status. The page reads its strip, tab and approval counts from two such requests instead of six.
+- Compliance: `GET /api/v1/compliance/frameworks?include=stats` carries each framework's stats, so the framework cards no longer send one request each. A framework's stats now refresh after an assessment is saved.
+
+### Changed: MCP tools explain a partial data scope in one line
+
+- When a connection reads only the person's groups' assets, the asset and finding tools add `scope_notice`: "You can see N of M assets; the rest are not assigned to a group you belong to." The organization's total is shown only to a person whose role reads it in the web console.
+
+### Changed: Program health answers one question first
+- The page opens with one answer (P0 fixed within target), a "Where to act" list of links to the filtered lists behind off-track figures, and one strip of up to five linked tiles. The 19 per-metric cards and their On track pills are gone; figures that open no list are plain rows. Same scoped API reads, no new requests.
+
+### Changed: Proxies settings page shows health at a glance and edits every pool the same way
+
+- Settings, Scanning, Proxies opens with the organization's proxy health (proxies in use, healthy, on probation, quarantined) and re-reads it every 30 seconds while the page is visible.
+- The default pool and every other pool share one card (health summary, routing strategy, sensors, Test, Edit) and one edit dialog, so the default pool can now set its strategy and description too.
+- "Use proxies for scans" saves as soon as it is confirmed: turning it on lists the sensors it would hold back, turning it off warns that sensors scan from their own address. A new default pool starts off.
+- Each proxy shows its connect time (p95), connection counts, last error and when its stored credentials last changed; on a phone the proxies render as cards.
+
+### Changed: one remediation group per vulnerable package version
+
+- A package with many advisories was one "Upgrade <package> to <version>" group per advisory (for example about 20 Django groups for one repository, three jQuery groups for the same assets). Every open finding of one installed package version now gets one upgrade target, the highest any of them needs, so the remediation groups list (console and MCP) shows one group that closes them all.
+- When a scanner gives the fixed versions only as advice text ("Upgrade Django to 1.11.28, 2.2.10, 3.0.3"), the versions are read from it, so those findings form upgrade groups instead of one group per advice text.
+- **Upgrade note:** the remediation key rules move to version 4. The tenant's keys are re-derived before the next suggestion run (no operator action). Open suggestions built on the old groups are replaced by the consolidated ones; findings already in a remediation task stay in it.
+
+### Changed: the "Quick Scan Template" workflow no longer shows as Not available
+
+- The leftover system workflow "Quick Scan Template" named a capability no tool provides, so it always showed as Not available in the workflow list. It is now retired (deactivated, not deleted): quick and single scans do not use it as a workflow and keep running as before, and their runs keep their link to it.
+- Migration 20261031033816 deactivates it; its down migration reactivates it.
+
+### Changed: a fresh install runs the current sensor, and the release train refuses an old one
+
+- `versions.yaml` names the current releases: sensor v0.29.1 (was v0.23.2), sdk-go v0.41.0 (was
+  v0.34.0), CI runner v0.3.1 (was v0.3.0). They are what an instance installs without the release
+  feed: the bundled Compose sensor's default image, the chart's sensor tag at release, and the
+  install snippets of an instance that cannot reach the feed. Instances with the feed already
+  pinned the newer releases.
+- The release train's preflight lists each release line of `versions.yaml` against the published
+  release and blocks the cut when one is behind (fix: set it, run `sync-versions.sh`).
+- **Upgrade note:** the bundled sensor (`server/deploy/docker-compose.sensor.yml`) moves to v0.29.1
+  on the next `docker compose up -d` unless `SENSOR_VERSION` is set in `.env`. Its identity and
+  outbox stay on the `sensor-data` volume; it does not pair again.
+- Release Tooling checks that the seccomp profile the API serves and the bundled sensor runs is
+  the pinned sensor release's file, and runs that release's install-guide test (when it has one)
+  against the install snippet templates, so a setting or flag the sensor renamed fails CI.
+
+### Changed: the sensor list fits the screen and says why a sensor needs attention
+
+- The list shows five columns by default (Sensor, Status, Version, Jobs, Tools) and fits a 1440 px screen without scrolling sideways. Outbox, Key, Local policy and Content are under **Display**; a problem in any of them now appears under the sensor's status in plain words ("420 results waiting, 2h", "no local policy: network jobs refused", "key expires in 3d", "added 5d ago, never connected"). The phone card uses the same words.
+- A sensor at trust level New is tagged "Passive only" (what New means) instead of "New".
+- A hint above the list counts the sensors that never connected for over a day or have been offline for over 7 days, and **Review them** lists only those, ready to select and delete or disable.
+- Selected sensors can be disabled together (sensors:write), next to bulk delete.
+- "Identity used from two hosts" shows on the row when the platform saw one sensor identity on two hosts.
+
+### Changed: Settings > AI is a status strip and five tabs
+
+- The page opens on a strip that shows whether AI triage is on, where the AI comes from, this month's use against the limit, automatic triage and how many kinds of data are masked; each tile opens the tab that changes it.
+- Tabs (in the URL): Provider (consent and AI source with its connection test), Features (automatic triage, AI agents), Knowledge (sources AI agents cite; shown to those who may read them), Limits and data (use against the monthly limit, the TLP policy link, data masking), Activity (the latest AI events from the audit log; shown to those who may read it). "What is sent" folds open on demand. Settings search links (for example AI data masking) open the right tab.
+
+### Changed: shorter notification settings, a help line on the console's "Everyone" floor
+
+- My account > Notifications: notification kinds have short sentence-case names, and a one-line hint only where the name alone does not say it (approvals, AI application requests, the digest, SLA breaches, system alerts). Redundant lines (on/off echo, repeated card text) are gone.
+- Console > Two-factor: the "Everyone" floor stays available and says it is the operator's call on a self-managed install, and that members need an authenticator app until organization passkeys exist.
+
+### Changed: Members filters read whole, shorter Authentication hints
+
+- Settings > Members: the status, membership and role filters use the shared filter token ("Status: Current members") instead of fixed-width selects that cut the value off.
+- Settings > Authentication: the two-factor, SSO proof and new-member hints are shorter, in English and Vietnamese. No setting or rule changes.
+
+### Changed: settings pages sit with the task they serve
+
+- Access & security: Service accounts, API keys and AI assistants (MCP) form a new **API access** section; SSO approvals moved to **Sign-in**; Audit log moved from Organization to **Oversight**, next to Security overview and Support access.
+- Findings & assets: finding handling first, then a **Risk and threats** section (Risk scoring, Vulnerability matching, Emerging threats, License policy) and an **Assets** section (Asset sources, Asset lifecycle).
+- Scanning: a **Sensors** section (Sensor products, Proxies) between Tools and Scanner content.
+- Only the settings rail, the /settings overview and the command palette order change. No page, URL, permission or module gate changes, so old links keep working.
+
+### Changed: settings rail in six groups, a shorter settings index
+
+- The settings rail has six groups instead of eight: My account, Organization, Access & security, Findings & assets, Scanning, Integrations. Access & security lists people and keys first, then Sign-in (Authentication, Domains, Directory sync, Trusted organizations) and Oversight (Security overview, SSO approvals, Support access, AI assistants) under sub-headings; Scanning holds its tools and the scanner content under sub-headings. Audit log and AI moved to Organization. Every page keeps its URL.
+- The `/settings` index lists page names only (the one-line descriptions are found by search and shown on hover), down from about 630 words.
+
+### Changed: the Entra ID setup guide in the admin console no longer offers a logout URL
+
+- Microsoft Entra ID sends no back-channel logout and does not notify on a disabled or deleted user, so the guide no longer asks for a "Front-channel logout URL" or the `sid` claim. It says that disabling a user in Entra does not end their sessions and points to SCIM provisioning.
+- Every exit of the organization SSO callback, including an unknown provider, a provider error, missing parameters and an early state failure, clears the single-use state, return-path and browser-binding cookies.
+
+### Changed: a team's detail has one Access tab, no Overview
+
+- Settings > Teams, team detail: the Access (presets and asset scope) and Roles (custom roles) tabs are one **Access** tab, presets first, then custom roles; the note that a team "also carries roles listed on the Roles tab" is gone. The outside-member notice appears once; the custom roles keep their "give the role to a person" action.
+- The Overview tab is gone: the counts are on the tabs, the description and creation date are in the header (edited with the name), and the team ID stays in the menu. The sheet opens on Members.
+- The sheet's header, buttons, type labels and toasts are translated (en, vi).
+
+### Changed: the Validation overview shows what is waiting for you
+
+- Validation › Overview has one "Waiting for you" list: fixes waiting for validation, pentest retests due, closes ready for a verifier and open campaigns, each with the one action that empties it. Queues with nothing in them leave the list; with nothing waiting, the block names the places where validation work starts.
+- One strip above it: P0/P1 validation coverage (the closed P0/P1 figure the CTEM cycle's close gate uses, with its two classes, and a header link to how it is measured), findings validated in the last 30 days, findings whose latest re-check still reproduces them, and findings reopened in the last 30 days. Each tile opens the findings list it counts.
+- The page no longer repeats the sidebar as cards and no longer loads 200 pentest findings for a recent-activity list. A module the organization switched off leaves the page without a request to its API; owners and admins see one line naming the switched-off validation modules, with a link to Settings › Modules.
+- The overview and the Retest queue header are translated (English and Vietnamese).
+
+### Changed: dashboard chart tooltips colour the change against the previous bucket
+
+- The "vs previous" column, the Total row and a flow's Net change row in the time-series chart tooltip now read green when the change is good and red when it is bad, using the widget's own polarity (open findings and exposures: lower is better). Neutral or unknown figures stay muted; the sign stays and screen readers hear "better", "worse" or "unchanged".
+
+### Fixed: an edge-protected host no longer counts as a platform-side coverage failure
+
+- Scan commands now name `outcome_revision: 2`. Sensors sent the per-target classes that say why a target was not covered (`edge_blocked`, `edge_challenged`, `rate_limited`, `name_gone`, `resolver_failed`, `sensor_network_fault`) only to a platform that names revision 2. The platform never named it, so a host that answered 403 behind an edge protection arrived as `tool_error`. That outcome counts as a platform-side failure: it grew `platform_fail_streak` and raised the operator alert "Coverage vuln.templates cannot run on N assets (platform side)". Such a host now settles as `edge_blocked`, an observation of the target.
+- Commands that are already queued keep their payload, so the change applies to scans planned after the upgrade. No migration.
+
+### Fixed: a task claimed after its run's deadline moved no longer runs 30 s and fails
+
+- When a sensor claims a task, the task's payload `deadline` is now always set to the run's current deadline. Before, it was updated only when that same claim moved the run's deadline. A task created before an earlier claim moved the run therefore kept its creation-time deadline. After hours in the queue that deadline had passed, so the sensor gave the job its least budget (30 s), and the job failed with "context deadline exceeded" as a platform-side coverage failure. No migration.
+
+### Fixed: a host that answers TLS and resets every request is no longer shown as "stopped answering"
+
+- A coverage gap now carries what the sensor saw when it rechecked the host (sensor with sdk-go `tlsprobe`): `cause` is `http_reset` (the host completes the TLS handshake and resets or closes every HTTP request: it is up and refuses the scanner, which may mean it blocks the scanner's address or its backend is down), `tls_failed`, `reset`, `refused`, `no_answer` or `answered`, and `cert` is the problem of the certificate it served (`expired`, `not_yet_valid`, `name_mismatch`, `self_signed`). The run map, the task list and the step message show it in plain words with the fix: allow the scanner addresses (Settings, Scanning, Proxies) and scan again, or wait for the next scan. Unknown values from a sensor are dropped and the gap kept.
+- The gap still makes the host not covered: a rechecked host is never read as clean and its findings are never closed by that run.
+- Without a recheck (an older sensor) `breaker_open` now reads "failed every request" instead of claiming the host stopped answering.
+
+### Fixed: a host an edge protection blocked no longer reads as covered
+
+- A completed task from a sensor that sends no per-target outcomes covered every host, even one its coverage gaps listed as blocked. The coverage ledger now reads `coverage_gaps` too: a blocked host settles as edge blocked (or challenged), a rate-limited one as rate limited, a stopped one as unreachable and a proxy failure as a platform-side fault. A gap beats a done outcome for the same host, and a gap list shorter than its count covers nothing of the task.
+
+### Fixed: dashboard editor and dashboard actions
+
+- The editor toolbar (Undo, Add widget, Cancel, Save) stays in sight below the app header while the widgets scroll; it used to slide under the header.
+- A widget added from the gallery is scrolled into view and focused when its settings close, instead of landing out of sight at the end of a long dashboard. Story widgets (key figures, levers, exposure flow, intake) are added full width.
+- "Edit details" in a dashboard's menu opens that dashboard's details form (name, description, columns), for organization dashboards too (managers only, checked by the server); it used to open the list of personal dashboards.
+- A dashboard made from a template opens on the dashboard itself and carries the template's description. Saved dashboard cards keep Open, Customize and a menu (Edit details, Set as my default, Delete) on one row; the delete question no longer says "for everyone" about a personal dashboard.
+- Phones get touch wording for the editor help; finding sources in the widget filters are named in English and Vietnamese.
+
+### Fixed: dashboard widgets never draw a figure before there is something to count
+
+- A scope with no finding yet shows every findings widget in one compact "No data yet" state with the next step (import results or set up a scan) instead of zeros, empty charts or a diagram of zeros; Priority exposure no longer reports its target as met when nothing has been measured. An empty widget takes one row of the dashboard.
+- "KEV on your assets" shows how many open findings it is part of ("3 of 40 open").
+
+### Fixed: the Exposure flow and Intake widgets fill their card on wide screens
+- The source list now starts at the card's left padding and the summary ends at its right padding; the curves take the space between instead of leaving empty gutters on a wide card. Narrow and phone layouts are unchanged.
+
+### Fixed: the exposure flow and intake widgets keep their parts together at every size
+
+- Both widgets now lay out on their own card width instead of the screen width. On a wide card the sources, the ring and the outcomes form one centred composition with short wires, instead of being pinned to the card edges with long stretched curves. A medium card puts the ring next to the outcomes and lists the first three sources above them. A narrow card or a phone shows one column without wires, and the CTEM stages wrap onto two rows.
+- In the intake widget, each source's count and wire now sit right after its name, and the "Stale" or "Failed" note sits on that source's row.
+- Widget titles are now second-level headings, so the headings inside a widget keep their order for screen readers.
+
+### Fixed: outbound connections report every address they tried and alternate IPv4 and IPv6
+
+- The SSRF-guarded dialer tried the vetted addresses of a host one after the other but reported only the last failure, so on a network without an IPv6 route a fetch that also failed over IPv4 logged only `connect: network is unreachable` for an IPv6 address, which read as "IPv4 was never tried". The error now names every address and its cause.
+- Addresses are tried with the two families alternating (starting with the resolver's first answer), and each attempt but the last is bounded to 4 seconds, so a family a firewall silently drops no longer uses up the request's time before the other family is tried.
+- The SSRF check is unchanged: every resolved address is vetted before any connection, and one blocked answer refuses the dial.
+
+### Fixed: the exposure flow showed the actionable total twice and contradicted itself
+
+- The actionable total appears once (the ring centre on a desktop, the headline on a phone); the stray divider and the "open now, not part of the period" caption are gone; the funnel says "Findings received".
+- The stage marked "Act here" kept its own state icon instead of a filled brand circle with a cross, so a colour no longer contradicts its icon; each stage figure names what it measures ("79% scanned", "8 open P0"), so counts and shares no longer read as one unit. The loop widget uses the same icons.
+- The footnotes under the flow moved into the info popover, which already said the same; the info button and the "Show table" button have 44 px touch targets.
+
+### Fixed: the exposures list speaks the console language
+
+- The exposures page and its table, detail panel, security context, charts and state breakdowns now show their text in the language the console is set to (English or Vietnamese). Before, lens names, strip labels, column headers, row actions, empty states, the export columns and toasts stayed in English.
+
+### Fixed: long evidence stays inside the finding detail drawer
+
+- A finding whose evidence held a long unbroken value (an extracted JSON string with escaped slashes, a long path or digest) made the drawer scroll sideways and pushed the evidence, the matched line, the template line and the due date out of view. Such values now wrap inside their evidence item, and the header's address line wraps too. Raw request and response blocks still scroll inside their own box. The full finding page shares these components.
+
+### Fixed: "Last seen in" no longer calls a rule decision "still detected"
+
+- A receipt that stored a new finding as decided by a suppression rule, or held it for review, was described as "still detected it" on the finding page. It now says what happened.
+
+### Fixed: the intake counts each source as the tool that reported, and names its senders
+
+- A scan run or CI run that carries reports of several tools no longer books every tool's findings on the
+  first tool that reported (a discovery tool showed the findings of the scanners after it). Each report now
+  adds its counts to its own tool's row of the receipt (`ingest_receipt_tools`, migration
+  `20261031193712_ingest_receipt_tools`); the receipt list's tool filter and its totals read the same rows,
+  so every intake figure still equals the list it opens. Receipts written before the upgrade keep their
+  counts on their first tool.
+- Findings the inventory version matcher stores are booked on a receipt of the platform (`source_kind`
+  `platform`, tool `version-match`) and show as their own source.
+- Each intake source carries `assets` (assets its reports created or updated), `kind` (`discovery`,
+  `detection` or `platform`) and `instances` (its senders: sensors, CI repositories, connectors, uploads,
+  the platform, with their figures and health); a source is as unhealthy as its worst sender. Only the
+  organization's own sensors are named and linked.
+
+### Fixed: job-bound results no longer name alias asset types
+
+- The check that keeps a bound report inside the job's targets listed the input-only alias types (website, web application, API) as located types. A stored asset is never one of them (they resolve to application), so behaviour is unchanged; the asset-type alias lint passes again.
+
+### Fixed: e-mail has Date and Message-ID headers, encoded non-ASCII subjects and a plain-text part
+
+- Mail from the platform now carries `Date`, a `Message-ID` on the sender's domain and `Auto-Submitted: auto-generated`.
+  Subjects and sender names with non-ASCII text (for example Vietnamese organization names) are RFC 2047 encoded.
+  HTML mail is sent as `multipart/alternative` with a generated plain-text part, quoted-printable encoded and wrapped
+  at 76 characters. CR and LF in any header value are still removed, so a value cannot inject a header.
+- The notification e-mail channel now sends through the same `pkg/email` sender as account mail, so there is one
+  SMTP stack. TLS rules, the port and managed-service rules, and the choice between the platform relay and an
+  organization relay are unchanged.
+
+### Fixed: a tool added to the catalog is used on sensors that already reported it, without a sensor restart
+
+- A sensor sends its manifest at start and when it changes. When the manifest named a tool the platform's catalog did not have yet (a sensor newer than the platform), the tool was dropped, and it stayed dropped after a platform update added it to the catalog, until the sensor restarted. This is how `dnsx-enum` (`enumerate.subdomains`) stayed off sensors registered before the update, so subdomain enumeration was paused with "no sensor has the tool it needs".
+- When the platform starts, every sensor whose stored manifest has an unknown tool or capability is asked once to send it again, and an unchanged manifest is stored again when the platform now keeps an item it dropped. The sensor's manifest tab and timeline show the tool as added.
+- No migration and no operator step.
+
+### Fixed: AI assistant client tabs follow the tab rule
+
+- On Settings > AI assistants > Connect, the "Remote or VPS" tab was the only client tab with an icon. Tabs in one strip either all have icons or none do, so the icon is removed.
+
+### Fixed: the API starts again without APP_URL
+
+- With APP_URL unset (MCP OAuth discovery off) the API panicked at startup while wiring the get_asset tool. It now starts, and get_asset answers without console links.
+
+### Fixed: one fix source for the vulnerabilities list, the package inventory and the remediation groups
+
+- `has_fix` is true when the scanner listed fixed versions or said a fix is available, or a finding is in a remediation group; each vulnerabilities list row lists its remediation group titles (`remediations`). The `remedy_available` column, which defaults to true, no longer marks every package finding as fixable in the package inventory.
+- The pentest TLP limit for AI applications now also applies to `list_active_cves` and `finding_stats`.
+
+### Fixed: MCP finding_stats and list_active_cves agree, and every CVE on an open finding is listed
+
+- `list_active_cves` now reads as the same caller as `finding_stats` and the web console: a connection allowed to read all organization data lists every CVE of the organization, not only the CVEs of the person's own groups' assets. Before, `finding_stats` could report open KEV findings while `list_active_cves(kev_only=true)` returned none.
+- One definition of a known exploited finding (its `is_in_kev` flag, kept in step with the CISA KEV catalog) for `finding_stats.kev_open`, the vulnerabilities list and the dashboard metric. Each CVE row carries `open_kev_findings`; their sum equals `kev_open`. The vulnerability catalog's own KEV date no longer marks a CVE known exploited on the vulnerabilities list.
+- `list_active_cves` rows say `catalog_status` ("in catalog" or "not in catalog"), and the tools say that a finding's status is per finding and per asset.
+- `list_assets` lists the riskiest assets first and returns `risk_scored_at`.
+
+### Fixed: pages no longer call a switched-off module's API while the module list loads
+
+The web treated every module as on until the organization's module list arrived, so pages such as Validation requested attack simulation and control testing even when an administrator had switched them off, and the browser showed 403 MODULE_NOT_ENABLED errors. A module now counts as off until the list has loaded.
+
+### Fixed: a sidebar pin shows only on the row under the pointer
+
+- The pin button of a sidebar row no longer stays visible after a click (it followed focus inside the row) and a menu item's pin no longer shows while the pointer is on one of its quick views. Keyboard focus on the pin still shows it, and it now covers the row's count instead of overlapping it.
+
+### Fixed: the Add sensor dialog sees the sensor that used its pairing code
+
+- After "Create pairing code first", the dialog checked the code once and then
+  stopped: its 1-second countdown restarted the 3-second check before it ran,
+  so it stayed on "Waiting for the sensor" and the fingerprint never appeared
+  for approval. It now checks every 3 seconds until the fingerprint is known
+  or the code ends, and stops when the dialog closes.
+- The waiting step has a "Check now" button, and a failed check says so there
+  (it is not retried on its own, so a rate limit is respected).
+- The same restart affected the proxy pool test results, finding retest
+  status, a scan's latest runs and the platform console's feed list on pages
+  that re-render often; a test now refuses an inline polling interval.
+
+### Fixed: a sensor whose local policy allows nothing no longer gets scans, and refused work waits for another sensor
+
+- The platform no longer offers a scan to a sensor whose local policy allows no target (an explicit `targets.allow: []`, as in a newly added multi-sensor install) or that requires a policy and has none. A trigger that only such sensors could run is refused with the sensor's name and the file to edit (`sensors/<name>/policy/sensor-policy.yaml`).
+- A scan task a sensor refuses under its local policy goes back to the queue instead of failing: to another eligible sensor at once, or it waits up to 6 hours for one ("waiting for an eligible sensor"). A sensor whose policy changes is offered the tasks it refused again. After three refusals, or when the wait ends, the task fails with a reason that names the target, the sensors that refused and the policy file.
+- A shared job a shared sensor refuses goes to another shared sensor that may take it (before, only the organization's own sensors were considered, which never take shared jobs); the reason never names a shared sensor.
+- A refusal of the platform's signed scope fails closed and is never handed to another sensor; a target on the built-in deny list fails at once.
+- The sensors page shows the policy mode: "Follows platform scope", "Narrowed by host policy (N rules)" or "Allows nothing yet", with the file and restart command.
+
+### Fixed: parallel requests no longer sign people out
+
+- Several requests refreshing the session at the same moment (a page load after the
+  access token expired, several tabs) presented the same refresh token; the first
+  rotated it and the others were treated as a stolen token, ending the session. For a
+  short grace after a rotation (`AUTH_REFRESH_REUSE_GRACE`, default 30s, max 2m, 0
+  off), the same client presenting the token it just rotated receives the successor
+  already issued. Any other reuse still ends the session and is audited.
+- Migration `20261031184414_refresh_token_rotation_successor` adds two nullable
+  columns to `refresh_tokens` (catalog-only change).
+
+### Fixed: risk scoring settings page is fully translated
+
+- Every label, hint, preset name, tooltip and explanation on Settings, Risk scoring now comes from the English and Vietnamese catalogs instead of being hard-coded in English.
+
+### Fixed: role templates hold what their people need, and nothing that opens no route
+
+- An audit of every template against the route gates its people use found grants that did not work and work that was missing. New template versions (roles and team presets created from the old version keep their permissions and show "update available"):
+  - program lead v3: approves exposure dispositions (`findings:exposures:triage`), approves scan runs (`scans:approve`), manages organization dashboards, shares saved views with the organization;
+  - risk approver v2: approves exposure dispositions (`findings:exposures:triage`; alone it changes nothing);
+  - remediation owner v2: follows the pentest campaigns they are a client of (`pentest:campaigns:read`, `pentest:findings:read`; campaign membership is still checked on every campaign route);
+  - validation engineer v3: runs targeted scans (`scans:write`; a run needs it with `scans:execute`);
+  - security analyst v4: drops `scans:execute`, which opened no route without `scans:write`;
+  - AppSec engineer v3 and CI integrator v2: `integrations:read`, without which `integrations:scm:read` listed no code host connection; AppSec also reads scope and runs AI triage;
+  - vulnerability manager v4: shares saved views with the organization; scan operator v2: browses the content catalog; auditor v2: reads simulations, control tests and automations.
+- The generated authorization reference now includes the 33 campaign routes registered in a nested route group (it listed only routes on a router named `r` or `router`).
+- New tests in `internal/authzdoc` check that every template permission opens a route the template passes, and that each template passes its daily routes and fails the ones separation of duties keeps from it.
+
+### Fixed: the Scan zones tab speaks your language and uses the same sensor states
+
+- Every label, message and toast on the Scan zones tab and the sensor zones section is now translated (English and Vietnamese).
+- A sensor in a zone now shows the same state as on the Sensors tab: a sensor that never connected reads "Never connected" (not "Offline"), and a degraded one reads "Degraded". The dot is coloured by that state.
+- The "Go to sensors" button in the zone sensors dialog opens the Sensors page directly.
+
+### Fixed: "Add to scope" on a service asset starts with its host
+
+- On an asset page, "Add to scope" for a service or open port (for example 162.159.141.75:8443:tcp) or a URL now starts the entry dialog with its host (162.159.141.75, as an IP address), the same entry the bulk action adds, instead of the service name the dialog could not recognise.
+
+### Fixed: security lint Rule 6 when sdk-go needs a newer Go
+
+- Rule 6 downloads the ctis version sdk-go pins to compare deny lists. Once sdk-go required Go 1.27, the download failed under the CI's pinned Go 1.26 and every API CI run failed. The download now fetches the toolchain it needs; nothing is built with it.
+
+### Fixed: late results of an older run are fenced, and a failed delivery hands the claim back
+
+- An organization sensor's results are now fenced by the lease epoch, as a
+  shared sensor's already were: a stated old epoch is refused
+  (`command-not-found`), and the ingest worker drops a queued report when its
+  command was taken back and handed out again (to another sensor, or to the
+  same one as a new run) after the report was accepted. Migration
+  `ingest_reports_command_lease_epoch` adds a nullable column (no backfill,
+  no lock beyond a catalog change).
+- When a claim fails after the commands were claimed (the organization's
+  HTTP policy, program rules or tool settings cannot be read, or the claimed
+  rows cannot be read back), every claimed command is handed back at once.
+  Before, the commands waited for their lease to expire, which counted an
+  attempt, recorded the sensor as offline and excluded a healthy sensor.
+
+### Fixed: the console says why a sensor did not arrive on a pairing code
+
+- When a sensor's attempt on a code made with **Create pairing code** is refused (its clock is off, it retried too often, another sensor already holds the code, or its key is busy or already registered), the waiting step now says so in plain words with the next step, instead of waiting with no explanation. Only the organization that made the code sees it; the sensor's answer is unchanged. Migration `20261031121231` adds the columns.
+
+### Fixed: an approval the sensor never confirmed no longer leaves a sensor behind
+
+- A sensor approved while it was stopped stayed in the list for ever, never connected. When its 10-minute confirmation window closes, the sensor (never used, no key, no jobs) is now removed and the removal is audited.
+
+### Fixed: a sensor stopped before approval can pair again with its key
+
+- A sensor keeps the key it generated, so starting it again with a new pairing
+  code (or after its code expired) used to answer `500` and then rate-limit the
+  sensor, and re-pairing needed its data volume wiped. The new start now closes
+  the key's earlier requests that nobody approved (audited as
+  `sensor.pairing_superseded`) and opens the new one; started again with the
+  same code, the sensor re-uses its own request.
+- A key that was ever registered to a sensor is refused `409` with the problem
+  type `pairing-key-registered` (a key never pairs twice, into any
+  organization); a start that loses a race for its key answers `409`
+  `pairing-key-busy` with a `Retry-After`. A code another key holds is still
+  never taken over. No migration.
+
+### Fixed: the sensors page no longer writes when it loads
+- `GET /api/v1/sensors/install-templates` returns the install commands without a pairing code (same permission as the POST). The Add sensor panel reads it with GET on load; the POST stays for commands that carry a pairing code, and is sent only after the user created a code.
+
+### Fixed: the Sensors page offers only actions that work and gives one reason per problem
+
+- **Rotate key** is offered only for a sensor that has an API key, in an organization that still allows them. It was offered for key-bound (paired) sensors and in organizations that require key-bound identity, where the API always refused it.
+- A sensor that never connected shows one problem, "Not connected yet", with "run its install command on the host". It also said "Tools not reported, upgrade the sensor" and "install the sensor with its key", which was wrong for a paired sensor.
+- An installed tool a New sensor may not run reads "passive only while New", with how to promote the sensor, instead of "not in grant" and the grant field's internal name.
+- The sensor list row menu has **Revoke**, as the sensor drawer does.
+- "Expect a sensor" is now "Create a pairing code first" everywhere: the API reference, the audit message and the `sensors:pair` permission description (migration 20261031112916).
+
+### Fixed: dead redirects and route guards removed, settings search anchors, env registry and doc drift
+
+- The redirects from `/settings/users`, `/settings/access-control/groups` and `/scanner-templates` are gone: they sent sub-pages to pages that do not exist, and renamed pages keep no redirect.
+- Twenty-two route-permission entries (`/x/**`) for pages with nothing below them are removed; a test now fails when one is added without a page.
+- Settings search finds Pending invitations (Members), Create a role, the SCIM endpoint, Scope approval policy, Approval tiers and approvers, and the unowned-findings floor and CTEM bonus points in Risk scoring, and scrolls to them.
+- The environment registry drops `AUTH_COOKIE_NAME` (nothing reads it) and lists `GATEWAY_VERSION`, `OPENCTEM_ADMIN_PUBLIC_URL`, `BACKUP_STATUS_DIR` and the `PG_*` memory settings the compose file uses. The authorization matrix names the real membership role route.
+
+### Fixed: settings pages no longer show a failed load as empty
+
+- My account > Activity, My account > Connected applications, Settings > AI assistants (organization connections) and Settings > Domains show "Failed to load" with Retry when the request fails, instead of "nothing here".
+
+### Fixed: Settings pages stay on the type scale and no longer nest a card in a card
+- Badges and notes on the modules, roles, API keys, service accounts, members, crown jewels and cycles pages use the 12px minimum instead of 10 and 11px.
+- The empty state on Wordlists and Support access sits inside its card instead of drawing a second card.
+
+### Fixed: organization SSO sign-in completes in the web app
+
+- The organization SSO callback (`/auth/sso/callback/{provider}`, Microsoft Entra ID, Okta, Google Workspace) is now a route handler. As a page, writing the session cookies threw "Cookies can only be modified in a Server Action or Route Handler" and every organization SSO sign-in landed back on the sign-in page.
+
+### Fixed: a team with outside members says so before full data access is tried
+
+- A team that has members from outside the organization (external members or service accounts) still cannot carry a full-data role; that rule is unchanged and the API keeps refusing with `TEAM_EXTERNAL_FULL_DATA`.
+- The refusal now names those members in `details.outside_members` (id, name, whether a service account) for a caller who may read the team's members. `GET /api/v1/groups/{id}` returns `outside_members` (up to 20) and `carries_full_data`; each item of `GET /api/v1/groups/{id}/members` carries `outside` and `service`.
+- Settings > Teams: on the Roles and Access tabs, full-data roles and presets are off while the team has outside members, with a notice naming them and three ways forward (show them, a new team without them, give the role to a person directly). The Members tab marks outside members and filters to them; Add member does not offer an outside person for a team that gives full data access.
+
+### Fixed: one weak sighting of a new version no longer closes a finding
+
+- Every version a source reports at a place on an asset keeps its history (evidence class, sightings, consecutive readings). A new version replaces the established one only on strong evidence (inventory, SBOM, or an active probe at confidence 80 or more) or after three consecutive scans over at least 12 hours; alternating readings (load balancer, stale cache, blue/green) never do. Versions one scan reports together are both kept.
+- The matcher builds findings on established versions only and closes a finding as "version changed" only when another version is established. The Ready to close proposal now names the product, both versions, the source, evidence class, confidence and sightings; a version that comes back cancels its proposal.
+- Out-of-order reports, re-imports, partial versions ("7.1" against 7.1.3) and distribution builds of the same version never move the established version.
+- Migration `20261101125837_asset_software_version_history` adds the history columns and repairs versions that superseded the previous one on a single weak sighting (the previous version is established again; the next matcher pass cancels the proposals they caused).
+
+### Fixed: a duplicate index on organization wordlists is dropped
+
+- The wordlists table carried two indexes on the same columns (the unique name constraint already serves lookups). Migration 20261031051532 drops the extra one, which also keeps the duplicate-index check green.
+
+### Fixed: threat intelligence indicators and detections speak the console language
+- The indicators (IOC) and detections views, their dialogs, toasts and type names now follow the console language instead of showing English under Vietnamese.
+
+### Fixed: controls are named by what they show, the finding properties are valid lists
+
+- Voice control: the organization switcher, the search button, the Triage button, each finding row and every "Copy ID" button now carry their visible text inside their accessible name, so saying what is on screen activates them. Shortcut hints and the initials chip are drawn as decoration, and the search button states its shortcut through `aria-keyshortcuts`.
+- In the findings list the title is the button that opens a finding; the CVE link next to it is no longer nested inside another control.
+- The finding page and drawer list their properties, people and folded details as separate description lists, so screen readers announce terms and values correctly.
+- Links inside running text are underlined (shared `link-inline` style); on /scope the link was told apart from the text around it by colour alone (2.3:1).
+
+### Fixed: signing in after a deploy no longer fails in a tab that was already open
+- The web build sets a Next.js deployment id (from the build commit), so an old tab reloads on its next navigation instead of calling server actions that no longer exist.
+- A client guard watches for the "server action not found" response, shows "OpenCTEM was updated" and reloads once (never in a loop). It covers sign-in, SSO and social start, account linking and every other server action.
+
+### Fixed: a cold page load could throw a render error, and two lists moved while loading
+
+- A page opened with a cold cache could end with "Minified React error #467": the language catalog arrived while React was rendering and the component waiting for it was replayed with hooks after `use()`. The wait is now its own hook-free component.
+- Findings on a phone: the "Informational hidden" chip is drawn only once its count is known. Before, it appeared first and was withdrawn when nothing was hidden, which moved the list up by a row.
+- Assets: the Monitoring column joins the columns that hide on a narrow table (after open findings), so the list no longer scrolls sideways at 1440px with the sidebar collapsed.
+
+### Fixed: the finding page no longer jumps while its panels load
+
+- The finding page now appears once its bands and side panels (approval, remediation task, verification, retest, watchers) have answered, at most 1.5 seconds after the finding itself, instead of showing the body and then pushing it about 760px down on a phone (layout shift 0.29 to 0). The loading skeleton follows the page's own grid and order.
+- New shared `SettleGroup` / `useSettleSignal` (`features/shared/components/settle-group.tsx`) for pages whose blocks load their own data.
+
+### Fixed: metric strips and the attack surface overview keep their place while loading
+
+- A metric strip keeps its height while its numbers load (the value skeleton has the value's line height, and a tile with a detail line holds that line), so the blocks below no longer jump when the numbers arrive. Applies to every page with a metric strip.
+- The attack surface overview shows its numbers, the discovery suggestions and the external surface together (at most 1.5 seconds after the first answer) instead of one after another (layout shift 0.11 to 0.17 before).
+- The asset page shows its identity, timeline and side panels together once they answered (at most 1.5 seconds), so a panel that loads late or hides when empty no longer pushes the page (layout shift 0.08 at 1440px and up to 0.46 at 390px before, now 0 and 0.01).
+
+### Fixed: phone lists start one row higher, and an empty asset list says why
+
+- On a phone, a list with filter chips (findings, assets and every list with "Add filter") puts its saved views, grouping and display buttons on the chips row instead of a line of their own: the search keeps the first line and the list starts one row higher (36px on the findings list).
+- The asset inventory with no filter and no assets says "No assets in this organization yet" with Add asset and Set up discovery, instead of "No assets match these filters".
+- Settings sections keep their description readable on a phone: the Save button wraps under it instead of squeezing it into a narrow column.
+- The full-screen button is no longer in the phone top bar.
+
+### Fixed: the web console refreshes a session once, and says why a session ended
+
+- The web server refreshes through one shared single-flight function: concurrent and
+  recent (20s) requests that carry the same refresh token share one refresh and its
+  result, so a page load after the access token expired no longer presents a rotated
+  token again. A refused refresh (401) is not retried with the same token.
+- Browser tabs share one refresh: a tab that waited while another refreshed reuses
+  that refresh, and every tab picks up the new access token.
+- When a session ends, the sign-in page says why: used from two places, expired, or
+  signed out elsewhere / ended by an administrator.
+
+### Fixed: scan workflows speak the console language
+
+- The scan workflows page and the workflow form, builder dialog and issues panel now show their text through the console dictionaries, so Vietnamese users no longer see English toasts, column headers, empty states and form labels.
+
+### Fixed: a sensor that stopped taking jobs says so on the Sensors page
+
+- A sensor whose local storage is full (it stopped claiming jobs) showed as "Degraded" while the fleet strip said "Needs attention 0, nothing to fix" and counted it as able to take jobs. It now counts under Needs attention as "storage full", is no longer counted as able to take jobs (nor as covering its zones), its phone card reads "takes no new jobs: storage full", and the sensor drawer explains the cause the sensor reported and what to do (free disk space on the host or raise the store quota; it resumes on its own).
+- Any health reason the page has no word for now still counts under Needs attention ("other problem"), so a degraded sensor is never shown with "nothing to fix".
+
+### Fixed: the Sensors page on a phone
+
+- Metric strips whose tiles carry a detail line no longer use thirds on a phone: halves, the first tile full width when the count is odd, captions kept. Every tile's content starts at the top (a toggle tile's label sat lower than its neighbours'), and in a strip of thirds the labels keep two lines so the values line up. This applies to every page with a metric strip.
+- Tab strips sit 20px apart on a phone, so three tabs with counts fit 390px; the end fade now appears whenever a tab is cut (it missed tabs that grew after the first render, such as a count arriving).
+- The fleet "Refresh content" button is an icon on a narrow toolbar, and the search placeholder is shorter, so it is no longer cut.
+- The status legend under the list is a one-line "What the states mean" that opens a short list, instead of a paragraph that ran under the phone browser's toolbar.
+- Enrollment tokens show as one card per token on a phone (state, uses, expiry, last use, approval, Revoke) instead of a seven-column table scrolling sideways.
+
+### Fixed: platform notices no longer push the page down when it loads
+
+- Within a session a page renders before the session data that carries the platform notices and the support-access banner, so a banner used to appear a moment later and move the whole page (layout shift 0.12 to 0.16 on every page on a phone). The banner area now keeps the height its banners had on the previous page while that data loads. Only the height is kept (session storage, per organization), never the banner text.
+
+### Fixed: Settings and Help stay at the bottom of the phone sidebar
+
+- In the sidebar drawer (screens under 768px wide) Settings and Help scrolled away with the nav since the drawer became one scrolling column; on a long nav (settings) they sat 2,600px down. The nav is again the drawer's only scroller and the header and footer stay put, as on the desktop sidebar. On a short screen (under 30rem high, a phone on its side) the whole drawer still scrolls as one column so the nav is not squeezed.
+
+### Fixed: a role or team change applies without signing in again
+
+- After a role or team change, the console renews its session as soon as any answer says the permissions changed, so the next write goes through instead of being refused until the next sign-in. Renewals are at most one per 10 seconds.
+
+### Fixed: "outdated permissions" error after a role or team change
+
+- A write right after a role or team change was refused with "Your session is using outdated permissions. Refresh your token and retry." The web client only reloaded the permission list, never the session token that carries the permission version, so every write kept failing until the next sign-in or token expiry. It now refreshes the session and retries the write once; a second refusal or a failed refresh shows the error as before.
+
+### Fixed: recon workflows with optional steps are available again
+
+- Subdomains, Web, Standard recon and Deep recon showed "Not available" because their optional steps (takeover check, screenshots, service detection), whose capability no tool implements yet, blocked the whole workflow in the readiness check, although a run already skips such a step with the reason. Readiness now reports an optional step without a tool as `skipped` with its reason, and the workflow stays ready (or waiting for a sensor). Required steps still block.
+- Each step's readiness carries a stable reason `code` and the `tools` it names. The workflow list badge opens the steps that need attention and the skipped optional steps, with the reason and the fix link, in English and Vietnamese.
+
+## v0.17.0 (2026-10-31)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: social sign-in matches addresses in any case, ends sessions on link and unlink, and keeps organization sign-on identities managed by the organization**: migration `20261030181143` stops with a clear message, changing nothing, when two accounts already hold the same address in different case; resolve them (`SELECT lower(email), count(*) FROM users GROUP BY 1 HAVING count(*) > 1`) and rerun.
+- **Security: queued sensor report segments are sealed at rest**: do not run API workers of the previous release next to this one: an older worker cannot open a sealed segment. Single-replica and compose installs (stop, then start) need nothing. During an `APP_ENCRYPTION_KEY` rotation keep the previous key until the ingest queue has drained.
+- **Behaviour change: automatic social linking is switched off on upgrade**: migration `signup_policy_social_auto_link_off` removes the stored `social_auto_link` value from the sign-up policy. This turns automatic linking **off on every deployment, including one where an administrator had explicitly turned it on**. The value is removed because the console sent the old default (on) with every save, so a stored "on" usually was not a choice.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: those closes become proposals in review mode (`closing-mode-all-paths.md`)
+- Behaviour change: INGEST_COVERAGE_AUTO_RESOLVE=enforce follows the organization's closing mode (`closing-mode.md`)
+- Behaviour change: a coverage check that could not run no longer counts as the asset failing (`coverage-platform-side-failures.md`)
+- Behaviour change: existing dashboards get the exposure flow panel once (`dashboard-flow-panel.md`)
+- Behaviour change: an exclusion of a CDN edge address no longer excludes the names behind it (`edge-exclusion-stays-on-address.md`)
+- Behaviour change: coverage auto-close needs a verified report (`ingest-report-manifest.md`)
+- Behaviour change: port scans that name no ports scan the top 1 000 ports (`port-scan-default-top-1000.md`)
+- Behaviour change: automatic social linking is switched off on upgrade (`social-link-explicit.md`)
+- Behaviour change: the Standard recon template scans the top 1 000 ports at Standard depth (`standard-recon-top-1000.md`)
+- Removed: automatic linking of social sign-in to an existing account (`remove-social-auto-link.md`)
+
+### Security: an accepted risk without an end no longer passes the CI gate forever
+
+- The CI gate honoured an accepted finding with no recorded end as if it never ended. One writer (a finding an accepted-risk suppression rule matches at ingest) sets the end in a separate best-effort step, so a failure there left a permanent pass. The gate now refuses an acceptance without an end (fail closed).
+- The database enforces that an accepted risk always ends: an accepted finding written without an end gets the 90-day default, capped by its priority (30 days for P0 or KEV), with a timeline note for rows fixed by the migration. An end a writer sets is kept.
+- Migration 20261030072206 adds the trigger and fills existing accepted findings without an end (none on a typical install).
+
+### Security: destructive deletes now leave an audit-log entry
+
+- Deleting an asset group (single and bulk), a business unit, a business service, an attacker profile, a pentest finding template or an asset relationship, and approving a duplicate-asset merge (which deletes the merged assets), wrote no audit-log entry, so nobody could tell afterwards who removed an object. Each delete now records one entry per deleted object (`asset_group.deleted`, `business_unit.deleted`, `business_service.deleted`, `attacker_profile.deleted`, `pentest_template.deleted`, `asset_relationship.deleted`, and `asset.duplicate_merged` for each merged asset), with the actor, the tenant of the caller and the stored name of the object. A bulk delete records one entry for each group it deleted, none for an id that was refused. A refused or failed delete records nothing.
+- Bulk asset-group delete accepts at most 100 ids (it was 1000); a longer list is refused with 400.
+
+### Security: social sign-in matches addresses in any case, ends sessions on link and unlink, and keeps organization sign-on identities managed by the organization
+
+- A provider sending an existing account's address in another case (`Alice@Corp.example` for `alice@corp.example`) now reaches that account (its refusal or pending link) instead of creating a second account. Addresses are trimmed and lower-cased on every write, lookups compare case-insensitively, and `users.email` is unique on `lower(email)` (migration `20261030181143_users_email_case_insensitive_unique`).
+- Unlinking a social provider and completing an explicit link revoke every other session of the account first (keeping the session that proved the change); when the revoke fails nothing changes.
+- An organization's Entra ID or Google Workspace sign-on identity is no longer shown or unlinked as a social Microsoft or Google link: identities record their source (migration `20261030181144_user_identities_source`, backfilled from the organizations' configured sign-on), the organization's sign-on marks the identities it asserts, and a social sign-in through such an identity never changes the account's address.
+- The pending-link confirm dialog shows the provider account's name, handle and picture.
+- **Upgrade note:** migration `20261030181143` stops with a clear message, changing nothing, when two accounts already hold the same address in different case; resolve them (`SELECT lower(email), count(*) FROM users GROUP BY 1 HAVING count(*) > 1`) and rerun.
+
+### Security: the organization's closing mode governs every automatic close
+
+- A clean full default-branch scan, a full-coverage upload (`coverage=full`) and a software version change no longer close findings around the organization's closing mode. Each now goes through the same rule as coverage auto-resolve: `off` keeps the finding open, `review` records a Ready to close proposal (methods `ci_default_branch`, `covered_scan`, `source_reported`), `auto` closes per the tier rule.
+- The daily evidence limit holds under concurrent writes: recorded request/response evidence is counted inside the insert transaction under a per-tenant lock.
+
+### Security: loosening the closing mode waits 24 hours
+
+- A change that lets the platform close more findings alone (off to review or auto, review to auto, critical findings without review) now takes effect 24 hours later; until then the stricter policy applies. The waiting change shows in `pending_mode`, `pending_critical_auto_close` and `pending_at`, owners and administrators are told, and `DELETE /api/v1/organization/settings/closure/pending` cancels it. Tightening stays immediate.
+- Settings > Finding lifecycle has a Closing findings section (en, vi), and the finding's verification plan now says why a covered scan will not close it: critical findings wait for review in auto mode, the organization reviews every close, or closing is off for the organization.
+
+### Security: an exclusion of a dedicated address now stops the names resolving to it on every dispatch path
+
+- The coverage batch, the workflow hop (names, asset ids and named open ports) and the claim-time recheck handed the gate bare names, so an out-of-scope dedicated address did not stop a name that resolves to it, contradicting the documentation and the bulk preview. The dispatch gate itself now reads the tenant's resolution relations (and what a probe of an asset id reaches) before matching exclusions, so every path behaves the same. The lookups are batched and tenant-scoped; a failed lookup stops the dispatch.
+- Shared CDN and edge addresses still do not propagate to the names behind them.
+
+### Security: a report commit can no longer race a late segment, and replay and decode budgets are accounted exactly
+
+- A segment could be stored after its report was committed (the receiver checked the report on an earlier read, then parsed and sealed slowly), so a manifest-verified report could include a segment the manifest never covered and finalize before a real segment was processed. The database now refuses a segment on a report that is no longer receiving, a commit succeeds only when the reserved segment count equals the committed count (a commit that loses the race fails and the sensor retries), and finalize counts only outcomes for real segment numbers.
+- Replaying a segment of a failed report now passes the per-tenant queue admission (the continuation ceiling) before its jobs are requeued, so replay cannot skip the ceiling.
+- A compressed upload now reserves its encoded size plus twice the decoded size it may reach from the shared decode budget, matching the real peak (chunks plus the joined copy).
+
+### Security: queued sensor payloads are all sealed, and queued bytes are capped
+
+- The in-place sealing of payloads queued in plaintext no longer stalls on a row it cannot seal: the row is logged (job and organization ids, never content), marked and skipped, the rows behind it are sealed, and it is retried after a day. Each sealing step is also capped by stored bytes (64 MiB), not only by row count.
+- Legacy protocol v1 sensor jobs still queued in plaintext are sealed the same way, the worker reads sealed and legacy rows, and a finished v1 job now empties its payload (migration `20261030164211_ingest_jobs_seal_failed_mark` empties those already applied and adds `payload_seal_failed_at`).
+- New `INGEST_MAX_QUEUED_BYTES_PER_TENANT` (default 1 GiB): an organization whose unfinished sensor segments hold that many decoded bytes gets `429 queue-full` with `Retry-After` for a new report (a started report may go to twice it), so a few organizations cannot fill the database disk. `0` turns it off.
+
+### Security: queued sensor report segments are sealed at rest
+
+- Protocol v2 sensor segments waiting in the ingest queue (`ingest_jobs.payload`) were stored decoded and in plaintext until imported, so secret-scanner findings and other evidence sat in clear in the database and its backups. They are now sealed with the same per-tenant key as queued CI uploads (AES-256-GCM, key derived from `APP_ENCRYPTION_KEY`), bound to tenant, job, report, segment number and content hash, opened only by the ingest worker, and emptied as soon as the segment is applied. Stored bytes drop to about a tenth.
+- Segments already queued in plaintext are sealed in place by the worker (batched, safe on several replicas); the migration `20261030071818_ingest_jobs_sealed_payload` adds `payload_key_id` and `payload_bytes` and empties the payloads of jobs already applied.
+- **Upgrade note:** do not run API workers of the previous release next to this one: an older worker cannot open a sealed segment. Single-replica and compose installs (stop, then start) need nothing. During an `APP_ENCRYPTION_KEY` rotation keep the previous key until the ingest queue has drained.
+
+### Security: linking or unlinking a sign-in method always asks for your code or password
+
+- Linking Google, GitHub or Microsoft (from Account > Security, or by confirming "Link {provider} to your account?" after a refused social sign-in) and unlinking one now each need a proof typed in the confirm dialog for that request: the code from your authenticator app when two-factor authentication is on (never a recovery code, and never the code already used to sign in), otherwise your password.
+- A recent sign-in or an open re-authentication window no longer counts for these changes, so the three routes (`POST /api/v1/me/sign-in-method-links/{provider}/start`, `POST /api/v1/me/pending-sign-in-link/complete`, `DELETE /api/v1/me/sign-in-methods/{id}`) are no longer behind `STEP_UP_REQUIRED`. They take `{"step_up": {"totp": "..."}}` or `{"step_up": {"password": "..."}}` and answer `403 LINK_PROOF_REQUIRED`, `LINK_PROOF_FAILED` or `LINK_PROOF_UNAVAILABLE`.
+- An account that signs in only through a provider and has no two-factor authentication must turn it on before it can link or unlink a sign-in method.
+- A wrong code or password counts towards the account lockout. Every attempt is audited with the factor used and what it was for; link and unlink events record the factor.
+- A mistyped proof keeps the pending link, so the person can try again within its 10 minutes.
+
+### Security: link start runs on the server, the two-factor floor has its own permission
+
+- Linking a social sign-in (Account > Security) now starts in a server action: the one-time browser binding the API returns stays on the server and in an HttpOnly cookie, and never reaches page JavaScript. The typed authenticator code or password is still required.
+- Confirming a pending link now revokes the account's other sessions before the sign-in method is linked, and refuses the link when the revoke fails (it used to log and link anyway).
+- Changing the platform two-factor floor (`PUT /admin/settings/auth-mfa`) needs the new owner-only permission `platform.settings.mfa`. A role granted `platform.settings.general.write` (CAPTCHA, region, alerts, storage quota) can no longer change every organization's floor. Migration 20261030164401 adds the permission to the platform owner role; no other role holds it.
+
+### Security: pentest request/responses are masked and their secrets encrypted
+
+- A request/response recorded on a pentest finding (the finding editor API, the Burp Suite import, the MCP draft tool) was stored in clear in the finding's metadata and returned with the finding, so session cookies, bearer tokens, API keys and passwords it carried reached every reader of the finding, the generic finding response and anything built from the finding. It now goes through the finding evidence service: masked in the stored item, secret values encrypted apart and readable only through the audited reveal (`findings:evidence:reveal`, recent sign-in). Read them with `GET /api/v1/findings/{id}/evidence-items`.
+- **Behaviour change:** the pentest finding response no longer has `request_responses`, and the MCP pentest finding view no longer has `request_response_count`. `request_responses` is still accepted on create and update: an update adds new exchanges (an exchange already on the finding is skipped) and refuses one that holds masked placeholders. At most 50 per finding. Base64 messages in a Burp export are decoded before masking.
+- Recorded request/responses are kept as long as the finding (the 365-day evidence retention does not delete them); their secret values expire with the organization's evidence secret retention.
+- The finding page and the pentest finding sheet show them with the shared evidence viewer; the web type section no longer prints `request`/`response` from finding metadata.
+- Migration `20261030053915_finding_evidence_manual_origin` adds the `manual` evidence origin. **Upgrade note:** at start-up the API moves request/responses stored before this release into masked, encrypted evidence and removes them from the finding (batched, idempotent, safe across replicas). The move is one-way; rolling the migration back does not put values back in clear.
+
+### Security: social sign-in never links itself to an existing account by default
+
+- A Google, GitHub or Microsoft sign-in whose address belongs to an existing account no longer links to it automatically. Nothing on the account changes: the sign-in is refused with `409 OAUTH_ACCOUNT_EXISTS`. The person signs in to the account (password and second factor, or the method they used before) and the app asks "Link {provider} to your account?". They can also link the provider from Account > Security.
+- A confirmed link signs out the account's other sessions, is audited (`how=after_sign_in`) and e-mails the account's address.
+- The pending link's secret travels only in an HttpOnly, SameSite=Lax cookie (`__Host-oauth_pending_link` with Secure cookies), valid for 10 minutes and usable once. It is never in a response body or URL.
+- New routes: `POST /api/v1/me/pending-sign-in-link/{describe,complete,cancel}`, all with the CSRF check. The confirm also needs a step-up and a session that signed in after the refused sign-in.
+- Automatic linking (Console > Settings > Sign-up, "Link Google and Microsoft sign-in to existing accounts", `social_auto_link`) is now off by default. When turned on, it applies only to password accounts.
+- When a provider changes the address of an account it created, the new address counts as verified only where the provider is authoritative for it (Gmail, the address's own Workspace domain, or a Microsoft domain-owner-verified address).
+
+### Security: run status, retry release, group counters and ingest job writes now carry the tenant
+
+- Updating a scan run's status, releasing a failed retry claim, recalculating an asset group's counters and completing or failing an ingest job were written by id alone. Each now also requires the tenant of the row, so an id of another tenant changes nothing. The callers already hold the tenant.
+- The tenant-SQL lint now requires the tenant predicate in the statement's own WHERE. A `tenant_id` inside a subquery or CTE no longer protects the outer statement.
+
+### Behaviour change: those closes become proposals in review mode
+
+- Organizations in `review` (including every organization created before the setting existed) get Ready to close proposals for those closes instead of automatic ones. A held run (blinding guard) proposes its findings unless the mode is `off`. A full-coverage upload that only proposed carries the receipt note `proposed`. Confirming a `ci_default_branch` proposal records verification `covered_scan`.
+
+### Behaviour change: INGEST_COVERAGE_AUTO_RESOLVE=enforce follows the organization's closing mode
+
+- `enforce` (and its new alias `tenant`) now acts per each organization's closing mode and the tier rule instead of closing every covered finding; `off` and `dry_run` (default) are unchanged and close nothing.
+- Proposed closes are recorded on the ingest receipt (`coverage.note = review`) and in the coverage dry-run audit entry (`decision = review`).
+- The verification plan's covered-scan method follows the same rule.
+
+### Behaviour change: a coverage check that could not run no longer counts as the asset failing
+
+- A coverage pair whose check did not run (no task carried the target, the run stalled, the task or tool failed, the sensor's egress, network or proxy failed, or the run did not finish the target; any unknown outcome too) no longer grows its fail streak nor the organization's "keeps failing" alert. It grows a separate platform streak with its own back-off, and the asset page shows it as "Not checked" instead of "Failed". Edge answers (blocked, challenged, rate limited) and unreachable or timed-out targets still count.
+- Operators get these failures instead: metrics `openctem_asset_coverage_platform_failures_total{capability,outcome}` and `openctem_asset_coverage_platform_failing_pairs{capability,outcome}`, and an alert to the platform administrators (e-mail and the console alert webhook) when a capability's count appears or gets clearly worse. Counts only, no organization or asset names.
+- Migration `20261030075332_asset_coverage_platform_fail_streak` adds `asset_coverage.platform_fail_streak` and moves the streak of pairs whose last outcome was a platform-side failure into it (row updates only, no table rewrite).
+
+### Behaviour change: existing dashboards get the exposure flow panel once
+
+- Every dashboard that existed before this release is offered the exposure flow panel once, at the top of its layout, the first time someone who may edit it opens it. A toast offers Undo; a removed panel is never added again. Empty dashboards and dashboards that already show the flow are left alone; new dashboards are never changed.
+- New routes `POST /me/dashboards/{id}/flow-panels`, `DELETE /me/dashboards/{id}/flow-panels/{widget_id}` and the same under `/organization/dashboards/{id}` (needs `dashboards:org:manage`). Dashboards carry `flow_panel_at`. Adding and undoing are audited (`dashboard.flow_panel_added`, `dashboard.flow_panel_undone`).
+- Migration adds the nullable column `user_dashboards.flow_panel_at` (no rewrite, no downtime).
+
+### Behaviour change: an exclusion of a CDN edge address no longer excludes the names behind it
+
+- An exclusion of an address inside a range a CDN, edge or hosting provider publishes for a shared front end now blocks only that address (bare, `host:port`, URL, and inside range targets) on every dispatch path. Names that resolve to it keep being scanned through the edge; their port scans are capped to the web ports. Before, one exclusion of a shared edge address stopped scanning every name the organization served through that provider.
+- An exclusion of any other address (dedicated, a cloud static address, or one labeled an edge only by its network holder or CDN record) still excludes every name that resolves to it.
+- A port scan of a name served through a shared front end is capped to the web ports even when a scope entry covers the edge address.
+- `POST /scope/exclusions/bulk/preview` adds `resolving_names` and `resolving_sample` (names an address, range or CIDR exclusion also stops, within the caller's data scope) and, for a shared front end, `edge` and `names_unaffected`.
+
+### Behaviour change: coverage auto-close needs a verified report
+
+- A segmented report committed without a manifest (older SDKs) no longer proves absence for coverage auto-close (`integrity_unverified`). Single-segment reports, which are all reports on most installs today, are unaffected.
+
+### Behaviour change: port scans that name no ports scan the top 1 000 ports
+
+- The platform now names the port set of every port scan. A coverage run of `scan.ports`, a workflow port scan step and a single-tool port scan that set no `ports` or `top_n` scan the top 1 000 ports (`top_ports: 1000` in the job). Before, no setting reached the sensor and every such scan ran the sensor's own default, the top 100 ports, so the top-1 000 depth the coverage policy promised never ran.
+- A set list, `top-100` or `full` is kept; the whole range still runs only when a scan sets it. Scope clamps are unchanged: names whose addresses are not in scope stay limited to the web ports, unclassified assets to the low-impact list, and port-limited program targets refuse any top list.
+- A top-1 000 scan removes an open port that the same source found with the top 100 or the old default, so ports that closed leave the asset after the switch.
+- Expect about ten times the probes per address on the weekly coverage scan; no sensor upgrade is needed (`top_ports` is in every supported naabu build).
+
+### Behaviour change: automatic social linking is switched off on upgrade
+
+- **Upgrade note:** migration `signup_policy_social_auto_link_off` removes the stored `social_auto_link` value from the sign-up policy. This turns automatic linking **off on every deployment, including one where an administrator had explicitly turned it on**. The value is removed because the console sent the old default (on) with every save, so a stored "on" usually was not a choice.
+- To turn it back on, a platform administrator opens Console > Settings > Sign-up, switches on "Link Google and Microsoft sign-in to existing accounts", saves and enters their authenticator code. The change is audited and the other administrators are notified.
+- The setting carries a warning: whoever controls a mailbox then reaches the account with that address (a reassigned mailbox, a domain that changed hands, a compromised provider account), subject to two-factor authentication. Leave it off unless every account has a verified address you trust.
+
+### Behaviour change: the Standard recon template scans the top 1 000 ports at Standard depth
+
+- The system templates Standard recon and Deep recon set `top_n` 100 on their port step at Standard depth; it is now 1 000, as the platform's default port set and coverage runs use (Deep depth was already 1 000, and differs from Standard by its target cap and the extra steps). A migration updates only those two system templates. A tenant's copy keeps its own value, edited or not; the template-update check offers the new value to a copy that still matches its source. See `docs/architecture/scan-stages.md`.
+
+### Removed: automatic linking of social sign-in to an existing account
+
+- The "Link Google and Microsoft sign-in to existing accounts" setting (`social_auto_link`) is gone from Console > Settings > Sign-up, from the sign-up policy API (`GET`/`PUT /api/v1/admin/settings/signup`) and from the audit of policy changes. No setting can make a sign-in link itself: a sign-in whose address belongs to an existing account is always refused with `409 OAUTH_ACCOUNT_EXISTS` and linking needs the person's typed proof.
+- Migration `signup_policy_drop_social_auto_link` removes any stored `social_auto_link` value from the sign-up policy and keeps the rest.
+- The security notice e-mail for a new link no longer has an "automatic" wording; `auth.identity_linked` rows written earlier with `how=automatic` stay readable.
+
+### Added: closing mode per organization
+
+- Each organization chooses how findings close without a person: `auto` (per the tier rule), `review` (every close becomes a proposal) or `off`. `GET|PUT /api/v1/organization/settings/closure`, owner or administrator.
+- New organizations start in `auto`; existing organizations read as `review` (no data migration).
+- In `auto`, a covered scan with no fix claimed closes standard and high findings and proposes critical, P0 and KEV ones, unless the owner turns on `critical_auto_close`.
+- Loosening the policy needs a recent re-authentication, is audited `tenant.closure_updated` at high severity and notifies owners and administrators; `critical_auto_close` is owner-only. Tightening is immediate.
+
+### Added: Ready to close and Recently auto-closed in the web app
+
+- A new Ready to close queue lists the closes the platform proposes, with the evidence for each. People with permission confirm (the finding closes as fixed) or keep it open with a reason. Confirming asks for a recent sign-in.
+- Recently auto-closed lists what the platform closed by itself, with a Reopen as not fixed action.
+- The sidebar shows the Ready to close count.
+
+### Added: continuous coverage probes a name on the other open ports of its addresses
+
+- A coverage batch of the HTTP probe also probes `<name>:<port>` for each other open TCP port (not 80 or 443) of the addresses each name of the batch resolves to, at most 20 per name. A virtual host, CDN or load balancer that routes by name now has its services on those ports found.
+- Each `<name>:<port>` passes the same target gate as the batch (exclusions in host:port form, name ownership, scope entries and tier, zones). The port lookup is tenant-scoped; a failed lookup or gate check leaves the batch as before.
+
+### Added: dashboard findings table
+- The Fix next widget can be drawn as a findings table (priority, finding with its asset and KEV chip, severity, SLA) with the list's count in the header, its filters as read-only chips, and "Top n of total" with an "Open in Findings" link.
+- The Fix next result carries `total`, the open count of the list the widget opens, read with the same scope as its rows.
+
+### Added: dashboard levers, weekly brief and KPI strip
+
+- Three new dashboard widgets, computed into the dashboard snapshot on its refresh schedule (and by Refresh now), in the reader's scope:
+  - **What would cut exposure most** (`exposure.levers`): up to three actions (fix the known-exploited findings, fix the P0-P1 findings past their SLA, apply the proposed remediation that clears the most risk, cover the assets with no successful scan), each with its exact effect on a measured figure and the list it opens.
+  - **This week in brief** (`brief.weekly`): up to three fixed sentences from the snapshot with linked figures; no AI involved.
+  - **Key figures** (`exposure.kpis`): P0-P1 open, known exploited, within SLA, median time to fix and discovery coverage in one strip.
+- The Overview and CTEM templates lead with the levers, the exposure flow and the key figures, show the brief beside the attack paths and end with the Fix next table; the Executive template gains the three widgets. Earlier copies of these templates are offered the new widgets.
+
+### Added: the http and https views of one page are linked as one issue
+
+- A DAST or template check (nuclei and similar) that reports the same rule and method at the same host, path and parameter names over http and over https, on the default ports, is linked as the same issue (rule `dast_scheme`), not merged: each scheme stays its own finding with its own evidence and status. The earliest finding is the original; the dashboard counts the page once; the second view raises no second "new finding" notification while the original is open, unless it is more severe.
+- The finding page names the `vuln_asset` and `dast_scheme` link reasons (English and Vietnamese).
+- Migration 20261030065958 adds the key kind `dast_point` and the rule `dast_scheme` (constraint changes only). **Upgrade note:** run `refingerprint -links` (dry run first, then `-apply`) to link findings that already exist.
+
+### Added: a domain's page shows the ports of its resolved addresses
+
+- `GET /api/v1/assets/{id}/resolved-ports` lists the open ports of the addresses a domain or subdomain resolves to (name `resolves_to` address `exposes` open port), with the address, service, product, version and last seen time. Each address and port is filtered by the caller's data scope; the others are only counted (`hidden_count`).
+- `GET /api/v1/assets/{id}/view` answers the asset and the reads of its page's panels in one response (each part through its own endpoint's gates; a refused asset ends the view). The asset page loads through it, so the new section adds no request.
+- The asset page of a domain or subdomain has a "Ports on resolved addresses" section.
+
+### Added: weekly active subdomain enumeration on scope-entry domains
+
+- Asset coverage now runs `enumerate.subdomains` (tool `dnsx-enum`) every 7 days on each `domain` asset under a scope entry. It brute-forces DNS labels from the platform's small wordlist pack plus the labels learned from the organization's own names, and keeps only names that resolve. This finds subdomains that passive sources miss.
+- It is an active capability: it needs a scope entry, passes the full dispatch gate and the claim-time re-check, and is not on the low-impact list. The learned labels are read for the job's own organization only and sealed into the signed job.
+- While the platform has no `wordlists-s` pack, the capability is paused with the new readiness reason `content_missing`, and its alert asks an instance administrator to import the pack. Coverage resumes on its own after the import.
+
+### Added: Certificates view of the external attack surface
+
+- `GET /api/v1/attack-surface/certificates` lists the tenant's certificate assets (issued to, fingerprint, issuer and organization, issued on, expires on, detection date) with an expiry status computed at read time (expired, expiring within 30 days, valid, unknown), and `GET /api/v1/attack-surface/certificates/stats` counts them by status. Both follow the list query contract (filters, sort, search, pagination), apply the caller's data scope to each certificate asset and need `assets:read`.
+- The External Attack Surface section has a Certificates tab: a table with a copyable SHA-256 fingerprint, a status per row, expired and expiring-soon counts that filter the table, search and a CSV export.
+
+### Added: delta gating for heavy workflow stages
+
+- With the workflow setting `delta_gating` (on in the EASM recon workflows), template scans, crawls, screenshots and service detection run only on assets that are new, changed or due since the previous run of the same scan. The rest are recorded `unchanged`. A run with nothing new finishes its heavy steps at once with "nothing new since the last run".
+- A partial or failed step of the previous run never counts as done. Without a previous run every asset is scanned.
+
+### Added: assets and scope entries say when an address is a CDN or edge provider's
+
+- `GET /assets` and `GET /assets/{id}` carry `edge {class, provider, address?}` when the asset is a CDN, edge, SaaS-hosting or cloud-shared address, or a name or service served through one; `GET /scope/targets` carries it on an address, range or CIDR entry wholly inside a published edge range and on a name entry under a provider's host suffix. Computed on read by the one address classifier (`pkg/domain/edgeaddr`); no query and no stored copy.
+- The platform does not refuse these addresses by itself: the organization adds the address to out of scope, and a test now pins that every dispatch path (scan trigger, scan runs and workflow hops, coverage, enrichment, web verify, retests and validation, connector coverage, the claim-time re-check and `POST /commands`) leaves an excluded edge address out for port scans, httpx and nuclei, in every target form, and cuts it out of a range.
+
+### Added: "Behind <provider>" and edge labels, with one-click "Add to out of scope"
+
+- The inventory and asset drawer show **Behind <provider>** on a name or service served through a CDN or edge provider, and **<provider> edge** (or *hosting*, *shared*) on an address that belongs to one; Scoping > In scope labels an address, range or CIDR entry inside a published edge range. One shared component, from the API's `edge` label.
+- On an address, a person with scope write can click the label to add it to out of scope: a confirm dialog explains that scanning a shared edge address tests the provider, not the organization, and that names resolving to it stop being scanned too; then one *Do not scan* exclusion through the existing bulk exclusion path (same permission, audit and approval rule). The platform still refuses nothing by itself.
+
+### Added: the finding page loads in one request
+
+- `GET /api/v1/findings/{id}/view` (permission `findings:read`) answers the finding and the reads its page shows on load in one response. Each part is keyed by its endpoint's URL and carries that endpoint's status and body. Every part goes through its own endpoint's gates with the caller's credentials, so a panel the caller may not read comes back as that endpoint's refusal (for example `403 MODULE_NOT_ENABLED`), never as a failure of the page. The finding is read first; a missing, out-of-scope or other organization's finding yields only that 404.
+- The web console's finding page uses it on the first load of each finding. The panels' own reads are answered from the view without another request, so opening a finding sends four API requests instead of twenty-one, and takes 3 tokens of the per-user read budget (`RATE_LIMIT_READ_PER_MIN`, unchanged) instead of about twenty: stepping through findings no longer runs into "Too many requests". The view's parts are spared a token of their own by a mark only server code can set; the view is refused with 429 before any part runs when the budget cannot cover it. Later reads (after a save) go to each endpoint as before.
+- `GET /dashboard/overview` and the new view share one part dispatcher. A part whose handler panics now fails alone (500) instead of taking the request down.
+- A burst of refused reads (429) shows one "Too many requests" toast instead of one per panel.
+- The request budget gate now covers every page with an id in its path (`dynamicRoutes` in `web/e2e/request-budget.json`), the finding page included. Design: RFC-136, `docs/architecture/page-views.md`.
+
+### Added: Fix next rows carry the finding's EPSS probability
+
+- The `fix.next` and `sla.at_risk` list widgets return `epss` (0 to 1) on each row when the feed has a score for the finding, and omit it otherwise. The dashboard draws the shared EPSS bar from it. Snapshots stored before this change lack the field until they refresh; the bar then shows no score.
+
+### Added: verified commit manifest for segmented sensor reports
+
+- The commit of a segmented sensor report may carry a manifest: each segment's SHA-256 over its decoded content, its size, its asset and finding counts, the report totals and one hash for the whole report. The server compares every value with what it received and refuses a mismatch (`409 segment-set-mismatch`, naming `hash_mismatch`, `size_mismatch`, `count_mismatch` or `report_hash_mismatch`); the report then stays uncommitted. Hello lists the feature `results_manifest`.
+- Each committed report records its integrity (`single`, `manifest`, `digest_only`) and a content hash; the report status shows the integrity, and the status of an uncommitted report lists the segments the server holds, so a sensor resuming an upload sends only the missing ones.
+- New counter `openctem_ingest_v2_commit_integrity_total{result}`.
+
+### Added: Ready to close proposals and Recently auto-closed
+
+- A close that the organization's closing mode or the tier rule sends to a person is now stored as a proposal (one pending per finding, with the evidence of the scan), and every candidate of a run held by the blinding guard is proposed instead of only logged. Applies when `INGEST_COVERAGE_AUTO_RESOLVE` is `enforce` (or `tenant`).
+- `GET /api/v1/findings/closure/proposals` and `POST /api/v1/findings/closure/proposals/decide` (confirm or dismiss up to 200, `findings:verify`, step-up on every confirm, eligibility re-checked, audited).
+- `GET /api/v1/findings/closure/auto-closed` (last 7 days) and `POST /api/v1/findings/{id}/reopen`.
+- The bootstrap carries `badges.ready_to_close` for verifiers.
+
+### Changed: fewer requests on every page (support access, AI setup, SLA windows come with `/me/bootstrap`)
+
+- `GET /me/bootstrap` now also carries `support_access` (the active platform support grants, for callers with `team:read`), `ai_config` (the AI setup summary, for callers with `findings:read` and `ai_triage:read` while the `ai_triage` module is on) and `sla` (the windows that govern the organization's assets, plus whether any asset has a policy of its own, for callers with `assets:read`). A caller who may not read one gets no field. The console reads the three from the bootstrap, so every page sends one request less, and a finding or asset page no longer asks for the AI setup or for each asset's windows.
+- Reference reads (AI setup, SLA windows, notification event types, organization settings) are no longer refetched on every mount, and module state no longer refetches on window focus. The limits are unchanged.
+
+### Changed: continuous coverage probes a name whose addresses expose only non-standard web ports
+
+- A name was probed over HTTP only when an address it resolves to had an open port in the standard web set, a web origin of the name was seen, or its ports were unknown. A name whose addresses exposed only a port such as 2083 (control panel), 10443 or 7443 was never probed, so the web service there was never seen with the right Host header and TLS server name.
+- The rule now also counts an open port in the alternate web list, any port 8000-8999, or any port whose detected service is http, https or ssl. A name with only ports such as 22 or 3306 is still not probed. The derived `<name>:<port>` targets (at most 20 per name) pass the same target gate as before, and the lookup stays scoped to the organization.
+
+### Changed: the edge address exclusion dialog says what it really stops
+
+- The "Add to out of scope" confirm dialog for a CDN, edge, hosting or shared cloud address now asks the bulk exclusion preview and shows the result: names served through a shared edge address keep being scanned (web ports only); otherwise the number of names with a dedicated address in the excluded range, with a sample. The preview is requested only when the dialog opens.
+- Ports on a provider's edge address are labelled "Provider ports" instead of looking like your open ports.
+
+### Changed: data-scope checks run their queries once per request
+
+- A finding or asset request no longer repeats the same data-scope queries: the by-id route guard installs a per-request memo, so the scope the services resolve again, the finding or asset check they repeat, and the asset-in-scope check reuse the guard's answer. A finding sub-request by a scoped member makes 3 data-scope queries instead of 6; by an administrator of an organization with a private bug-bounty program, 3 instead of 8.
+- The memo is per request only, keyed by tenant and caller; refusals and lookup errors are never reused, so access stays fail closed and a revoked role or group is seen by the next request. No migration.
+
+### Changed: tool availability is computed once per decision, not once per tool
+
+- Scan triggers, workflow previews and the coverage planner read the tenant's tool availability (catalog, sensors, zones, grants, manifests) once per decision instead of once per tool, which cuts the database reads of each decision to a fraction. The result is held for that one operation only, so a sensor going offline is seen by the next decision.
+
+### Changed: emerging-threat fan-out looks up affected organizations once per page of events
+
+- The emerging-threat planner used to run one affected-organizations query per vulnerability event (two lookups each, one of them a full read of the software inventory), so a large vulnerability-feed import with hundreds of thousands of events cost the database close to an hour. It now resolves a page of 500 events with one query: about 50 ms per page instead of about 5 s. Which organizations get alerts, the wait on id gaps and rejection handling are unchanged. No migration.
+
+### Changed: finishing a delta vulnerability bundle no longer reads the whole range table
+
+- The last step of a delta vulnerability-feed bundle (the removal guard and the removal of the ranges it replaced) read every row of `vulnerability_affected` (2.2 million rows, about 870 MB on a full corpus) twice per bundle, because the delta and snapshot conditions shared one statement. A delta now reads only the ranges of the CVEs it carries: about 50 ms instead of 0.6 s with a warm cache and up to 8 s cold, without pushing the table through the cache. Snapshots and the guard's result are unchanged. No migration.
+
+### Changed: the compliance page loads controls only on the Controls tab
+
+- The Frameworks tab (the default) no longer loads the first framework's
+  controls and assessments (two 200-row lists): two fewer requests on every
+  visit. The Controls metric's "implemented" hint shows on the Controls tab,
+  where it counts the selected framework.
+
+### Changed: the web console downloads only the active language's text
+
+- Every page carried both message catalogs (English and Vietnamese, about
+  780 KB gzipped together) in its first-load JavaScript. A page now loads only
+  its own language's catalog, on demand and cached by the browser: median
+  first-load JavaScript per page fell from 1235 KB to 455 KB gzipped (the
+  heaviest, /scans, from 1648 KB to 869 KB), plus about 380 to 410 KB for the
+  one catalog.
+- Web CI checks first-load JavaScript per page after the production build
+  (`web/scripts/route-js-budget.mjs`, budget in `web/scripts/route-js-budget.json`).
+
+### Changed: Scans pages load the scan wizard when it opens
+
+- The new, quick, edit and clone scan dialogs, the scan-assets dialog and the
+  run drawer load the first time they open instead of with the page. Scans
+  pages, the external attack surface and asset detail no longer download the
+  scan wizard (workflow graph, form schemas, schedule parsing) up front.
+
+### Fixed: the HTTP probe after a port scan of a host name probes the name on the open ports
+
+- A port scan of a domain or subdomain stores each open port on the address it was found on, so a chained HTTP probe received only `<address>:<port>`. A virtual host, CDN or load balancer answers a bare address with a default page, a certificate error or nothing, and the probe of the name covered only ports 80 and 443. The probe now also gets `<name>:<port>` for each open port on an address the scanned name resolves to.
+- Only names the port-scan step itself scanned are used. Each `<name>:<port>` passes the same target gate as every derived target (exclusions in host:port form, ownership of the name, act scope, tier, zone), and the resolution lookup is scoped to the run's organization.
+
+### Fixed: a scan closes what it no longer finds on the hosts it really covered
+
+- Coverage auto-resolve decides coverage per target when the command result says how every target ended (`target_outcomes`). One host that stopped answering, sat behind an edge block, hit the rate floor or timed out no longer makes the whole run prove nothing: the other targets, whose outcome is `done` and whose host no gap, unreached or refused entry names, count as covered. A target without an outcome, a cut-short gap list or unreadable metadata counts as not covered.
+- With per-target outcomes, the covered assets also include the assets with open findings of the same tool last seen by a command aimed at a covered target, when the asset is that target's own host, also when this run reported nothing there. Before, only assets the run's report named were candidates, so a host where the scan found nothing could never close its old findings. An asset whose host or address the result names as uncovered never closes, whichever target it falls under (a subdomain of a domain target, an address inside a range).
+- A finding that recorded no template release is no longer resolved by a run that reports one: it is marked stale (not observed), like a release change.
+- Every other condition is unchanged: the coverage mode (`INGEST_COVERAGE_AUTO_RESOLVE`, default `dry_run`), same tool and scan profile as the last sighting, the template release, the blinding guard, command-bound assets, secrets marked not observed, protected sources. A run from an older sensor without per-target outcomes keeps today's behaviour (full and clean, only the touched assets). Repository runs are unchanged.
+
+### Fixed: finding comments are read with their own tenant condition
+
+- The queries behind `GET /findings/{id}/comments` and the comment count filtered by finding id only; tenant safety rested on the route guard and the service's finding check. Both queries now also filter by the caller's tenant, so a finding id of another tenant returns no rows even if a caller skips those checks.
+
+### Fixed: heartbeat history gap_beats, and shared proxy endpoints need two sensors
+
+- The sensor heartbeat history counted every heartbeat that had a previous
+  one as a gap (`gap_beats` always equalled `beats` minus the first), so the
+  table said nothing about late heartbeats. `gap_beats` now counts heartbeats
+  whose gap exceeded 1.5 intervals (the `heartbeat_late` rule); the old count
+  moves to the new `prev_beats` column (migration
+  `20261030090000_sensor_heartbeat_prev_beats`), the divisor of the average
+  gap.
+- A proxy endpoint that jobs of several sensors went through in the last 30
+  minutes is quarantined from task reports only when at least two distinct
+  sensors reported faults through it, so one sensor's own network problem can
+  no longer take a shared endpoint away from everyone. An endpoint used by a
+  single sensor keeps the earlier rule.
+
+### Fixed: a sensor report refused part-way by a full ingest queue
+
+- Queue back-pressure on sensor results is decided per report: the first segment of a new report is checked against `INGEST_MAX_PENDING_PER_TENANT`, further segments of a report already admitted against twice that, so a busy queue no longer leaves half-received reports that expire and never count.
+- A `429 queue-full` to a sensor now carries a `Retry-After` computed from how fast the organization's jobs drain (5 s to 5 min), jittered so sensors refused at the same moment do not all retry together. It was a fixed 30 s.
+- New gauge `openctem_ingest_queue_oldest_seconds{lane}`: how long the oldest claimable ingest job has waited, the import lag per lane.
+
+### Fixed: no false "Could not sign in" message when starting Google, GitHub, Microsoft or SSO sign-in
+- Starting a social or SSO sign-in no longer shows a red error while the browser is already going to the provider (seen on iPhone Safari). The sign-in start now hands the provider address to the page, which opens it only when it is an https address; a real failure still shows the message.
+
+### Fixed: phone layouts no longer run text into the next column
+
+- A run's status with a note ("Partial 9 unreachable, 373 skipped") stayed on one line and ran into the Tasks column of its phone card. A machine state with a detail now keeps the state on one line and puts the detail beside it, where it drops under the state and wraps when the space is narrow. Wide table rows look the same as before.
+- The field values of a list's phone card wrap inside their own column instead of keeping table-row text on one line.
+- The end of a list toolbar (sort, view switch, "New task from query") wraps onto a second line on a phone instead of running past the screen edge.
+- Checklist cards in Settings > Pentest no longer squeeze the checklist name to nothing next to their buttons; the buttons move under the name.
+- The material-change selects in Settings > Finding approvals fit a phone screen.
+- The workflow editor header no longer runs its hint under the Clone button; the actions wrap under the name on a phone.
+
+### Fixed: a proxy that jobs report as down is quarantined
+
+- A proxy pool endpoint stayed "healthy" while the jobs through it reported
+  hosts the pool could not carry (`proxy_unavailable` coverage gaps): its
+  health came only from the sensor's separate egress report. The platform now
+  records the pool and endpoints it hands each pooled scan, retest or
+  validate job (new table `proxy_command_egress`, migration
+  `20261030060530_proxy_command_egress`) and charges each ended job's proxy
+  verdict to exactly those endpoints. 5 faulted jobs in 30 minutes, or more
+  than half of at least 5 jobs, quarantine the endpoint; the quarantine is
+  audited (`proxy_pool.endpoint_quarantined`, `source: task_reports`) and
+  counted (`openctem_proxy_endpoint_quarantines_total`,
+  `openctem_proxy_task_verdicts_total`). Target-side failures never count, a
+  sensor cannot name an endpoint it was not handed, and another
+  organization's jobs never touch a pool.
+
+### Fixed: the run page names a failed proxy as the cause of a coverage gap
+
+- A host a sensor could not judge because the scan's proxy failed (gap reason `proxy_unavailable`) is now kept in the task's coverage gaps and its summary, and the run page shows it with its own label (en, vi), instead of dropping it.
+
+## v0.16.1 (2026-10-29)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: console passkeys and recovery codes are written by the console database role alone**: an installation with `DB_ADMIN_USER` must re-run `least-privilege-roles.sql` from this release with `admin_user` after migrating (the shipped Compose stack does it through `db-grants`). Until it does, console passkey and recovery-code sign-in fails. The ansible kit must vendor `least-privilege-roles.sql` from this release.
+
+### Security: console passkeys and recovery codes are written by the console database role alone
+
+- Under the least-privilege production model (`DB_ADMIN_USER`) the API's app role could still read and write `admin_webauthn_credentials`, `admin_recovery_codes` and `admin_webauthn_ceremonies`. A SQL injection in the tenant plane, or a compromised API process on the app pool, could plant a passkey or a known recovery code for a platform administrator and take over the console.
+- The console's factor repository now runs on the console pool, and `deploy/postgres/least-privilege-roles.sql` gives those three tables to the console role: the app role has no `SELECT`, `INSERT`, `UPDATE`, `DELETE` or `TRUNCATE` on them, and the script's own check fails if it does.
+- On the tenant plane in production the API refuses to start while `DB_USER` can insert into those tables, as it already did for `admin_users`; elsewhere it logs an error.
+- Upgrade notes: an installation with `DB_ADMIN_USER` must re-run `least-privilege-roles.sql` from this release with `admin_user` after migrating (the shipped Compose stack does it through `db-grants`). Until it does, console passkey and recovery-code sign-in fails. The ansible kit must vendor `least-privilege-roles.sql` from this release.
+
+### Security: support sessions expire on time under the console database role
+
+- With the console database role (`DB_ADMIN_USER`, the least-privilege production model) the API's app role cannot read `admin_sessions`, yet the support-access queries did: the every-minute sweep that ends stale support sessions failed with `permission denied for table admin_sessions`, and every support grant read (the organization's support access page, the console's grant list, opening and using a support session) failed the same way. Support access was unusable (it failed closed) and nothing ended stale sessions.
+- The queries now ask one narrow question through `admin_session_live` (migration `20261029202804_admin_session_live`): a read-only `SECURITY DEFINER` function that returns whether one console session is alive. The app role still has no privilege on `admin_sessions`.
+- A support session unused for 30 minutes is now refused when it is next used, before the sweep ends it; a read no longer revives it.
+- Removing a console passkey no longer row-locks `admin_users` (which the app role may not do): it serializes on a per-administrator advisory lock instead.
+- A guard test fails the build when SQL on the app pool touches a console identity table, reading the grants from `deploy/postgres/least-privilege-roles.sql`, and an integration test runs the support and passkey statements as the app role on a database bootstrapped with the console role.
+
+## v0.16.0 (2026-10-29)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: new platform administrators are invited by e-mail, never handed a password**: the response field `temporary_password` is replaced by `invitation_emailed`, `invitation_failed`, `invitation_url` and `expires_at`. `bootstrap-admin invite -email=... -role=...` is new: it invites an administrator from the host and prints the link once (critical audit row, roster notice), the path for a new super admin on an install without e-mail while approvals are on. The first-install `bootstrap-admin` still prints a temporary password once.
+- **Security: console settings audit rows no longer keep webhook addresses, and sign-in settings take a fresh code**: rows written before this release still hold the full address. Rotate the alert webhook (and any webhook address entered in the console) after upgrading.
+- **Security: an organization's mail server must use a submission port, a login and TLS on a hosted service**: on a hosted service, an existing e-mail channel that does not meet the rule stops sending at its next delivery. The integration shows `INTEGRATION_EMAIL_RELAY_POLICY` with the reason, and each organization owner gets an in-app notice and an e-mail from the platform. Editing the channel to port 465, 587 or 2525 with a login and TLS, then testing it, resumes delivery. No migration.
+- **Security: platform two-factor floor, with grace and a factor before creating credentials**: migration 20261028153743 widens the `platform_settings.source` check to allow `migration`. Self-managed operators who want the floor set `AUTH_MFA_FLOOR` or change it in the console.
+- **Security: platform roles for the console in every edition**: with a console database role (`DB_ADMIN_USER`) the new tables are granted by `deploy/postgres/least-privilege-roles.sql`, which the Compose `db-grants` step and the chart already re-run after migrating; an installation that applies the grants by hand runs it again, or the console answers 503 until it does. Assigning the additional roles comes with the console's role management.
+- **Security: changing a target mapping needs a super administrator, a step-up and a reason**: clients of these three endpoints must send `reason`; a request without one is answered with 400. Operations administrators keep read access.
+- **Behaviour change: one account for a platform administrator and an application user**: a person who kept a second account to work in an organization can have the organization invite the administrator's account, then offboard the old one. Nothing changes for existing administrators on the console.
+- **Added: social login (Google, GitHub, Microsoft) is configured in the platform console**: `OAUTH_<PROVIDER>_*` keep working as an override: while `OAUTH_<PROVIDER>_CLIENT_SECRET` is set, that provider is pinned and read-only in the console. Remove the variables to manage a provider in the console. `OAUTH_ENABLED=false` still switches all providers off; `OAUTH_STATE_SECRET` stays server-side.
+- **Added: choose where KEV and EPSS come from (signed release or direct fetch)**: nothing changes until an administrator sets source `bundle`. Do it after the publisher has released hourly for seven days.
+- **Added: resolution state of host names in the console**: migration 20261028153738 is a new table and clears `asset_wildcard_dns`; the platform needs DNS egress from the API host for the checks (the scan-zone resolver).
+- **Changed: migrations are tracked one by one, so a migration merged late is never skipped**: nothing to do. The first run takes the database over: it records the migrations golang-migrate had applied and puts a fence version in `schema_migrations`, after which an older migrations image refuses the database (as it already refused a database a newer release had migrated). Roll back the API image, not the migration job. The commands and arguments are unchanged; `force V` now records migration V as applied and `force -1` only clears the dirty flag (see "Dirty-migration recovery" in `docs/deployment/safe-deploy-and-migrations.md`).
+- **Changed: target mappings hold only administrators' additions; the asset type catalog is the built-in source**: the down migration puts the removed seed rows back with their original ids.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: an existing account no longer becomes an organization owner without consent (`owner-needs-consent.md`)
+- Behaviour change: confirming a pentest finding needs its proof basis (`pentest-proof-basis.md`)
+- Behaviour change: one account for a platform administrator and an application user (`platform-admin-single-identity.md`)
+- Removed: the six inert AI triage sub-modules (`ai-triage-retire-submodules.md`)
+- Removed: `email_verification_required` from `GET /auth/info` (`auth-error-codes.md`)
+- Removed: unused custom wordlist reference on tool configurations (`content-pinning-jobs.md`)
+- Removed: the admin-cli image is no longer published (`drop-admin-cli-image.md`)
+- Removed: `GET /api/v1/vulnerabilities/active` and `GET /api/v1/vulnerabilities/active/stats` (`vulnerabilities-epss-trend.md`)
+- Removed: Active CVEs tab (`vulnerabilities-list.md`)
+
+### Security: read-only administrators no longer read audit log addresses and request bodies
+
+- `GET /admin/audit-logs` (and `/stats`, `/{id}`) returned every administrator's network address, user agent and request body to any administrator role. The bodies include reasons typed for support actions on customer accounts and the e-mail of a new administrator, data the administrator roster already hides from read-only accounts. A read-only administrator now reads the action, the actor, the time and the result; the address, user agent and request body are returned only to operations administrators and super administrators.
+
+### Security: elevating a console session needs a fresh code
+
+- `POST /admin/auth/elevate` used the five-minute step-up window, so any step-up in the last five minutes (removing a key, ending a session, starting a support session) let the same session elevate to super administrator for up to an hour without a code. Elevation now takes a fresh authenticator code or a security-key confirmation given within the last minute. That proof opens the step-up window, so the first protected action after elevating needs no second code.
+
+### Security: new platform administrators are invited by e-mail, never handed a password
+
+- `POST /admin/administrators` used to create the account with a temporary password and return it to the administrator who made the request. Whoever signed in first with it enrolled the second factor and set the password, so a super admin whose request for a second super admin had just been approved could sign in as that account, and then approve their own later requests with it. The account is now created with no password and the new administrator is e-mailed a single-use set-password link that expires after 24 hours. The response carries no password.
+- Without platform e-mail (SMTP), the link is returned once only for a non-super role, or for any role while four-eyes approvals are off. While approvals are on, adding a super admin without working e-mail is refused (409 `INVITATION_NEEDS_EMAIL`) before any approval is spent. A link shown in the console is recorded in a critical `admin.invitation_link_disclosed` audit row. A failed send never falls back to showing the link.
+- The first console sign-in of a new administrator is announced by e-mail to every other administrator.
+- **Upgrade note:** the response field `temporary_password` is replaced by `invitation_emailed`, `invitation_failed`, `invitation_url` and `expires_at`. `bootstrap-admin invite -email=... -role=...` is new: it invites an administrator from the host and prints the link once (critical audit row, roster notice), the path for a new super admin on an install without e-mail while approvals are on. The first-install `bootstrap-admin` still prints a temporary password once.
+
+### Security: the admin console sign-in no longer reveals a correct password
+
+- With "require identity provider" on, a correct password for a non-emergency administrator used to get a 403 (`IDP_SIGN_IN_REQUIRED`) while every other failure got a 401, so one request per guess told an attacker whether the password was right. Every refused password sign-in now gets the same 401 "Wrong email or password". The refusal is still audited and still counts toward the lockout. The sign-in page shows the identity provider hint and button after any refused password sign-in when a provider is configured.
+
+### Security: every console write is audited before it runs, and elevation fails closed
+
+- The write-ahead audit row (`admin.write_started`) was written only when the session acted as a super administrator. An unelevated super administrator acts as read-only, so their elevation, security key, recovery code and password writes were not written ahead, and operations administrators' writes never were. Every state-changing console request now writes the row first and is refused with 503 `AUDIT_UNAVAILABLE` when it cannot be stored.
+- Elevating a console session wrote its audit row after granting the elevation and only logged a warning when the row failed. The row is now written first; with the audit log unavailable the elevation is refused (503 `AUDIT_UNAVAILABLE`) and the session stays read-only.
+
+### Security: every AI context bundle is masked, and only the platform can map it back
+
+- Finding context built for an AI model replaces hosts, IP addresses and networks (class kept), e-mail addresses, user and organization names, URL ids and parameters and ticket ids with typed placeholders derived from a per-run secret key; the same value is a different placeholder in another run or organization. Secrets (credentials, tokens, private keys, cookies, session ids) are removed for good and never kept. Text that already looks like a placeholder is escaped first, and a placeholder the platform did not issue is never resolved in AI output.
+- Fields are classed public, internal, restricted or tenant-only; a use case's ceiling decides what is sent and the rest is recorded as withheld. Restricted data is always fully masked; a leaked-secret finding never sends its snippet.
+- The placeholder map of each run is stored encrypted with `APP_ENCRYPTION_KEY` (rekey registry), scoped to the organization, and purged after `AI_MASK_MAP_TTL` (default `168h`). Migration `20261028153736_ai_mask_maps`.
+
+### Security: an on-demand AI run never files a risk-lowering request
+
+- When a person starts an AI analysis on demand, the AI agent leaves a false-positive verdict or a severity downgrade as a comment instead of filing the request, because that person could otherwise approve it as the second person. Scheduled and event-triggered runs still file the request for a person to decide. Raising severity is unchanged.
+- Masking fails closed: when the organization's or the asset's name cannot be read, the run (and the masking preview) stops instead of sending text in which those names are not masked.
+
+### Security: console settings audit rows no longer keep webhook addresses, and sign-in settings take a fresh code
+
+- The write-ahead audit row of every super admin change recorded the request body with only secret-named keys redacted, so the full alert webhook address (`PUT /api/v1/admin/settings/alerts`, field `url`) was readable by every administrator, read-only ones included. A webhook path or query works as a bearer secret. Address fields (`url`, `*url`, `*webhook*`) now keep only their scheme and host.
+- **Upgrade note:** rows written before this release still hold the full address. Rotate the alert webhook (and any webhook address entered in the console) after upgrading.
+- The administrators' identity provider (`PUT`/`DELETE /api/v1/admin/platform-idp`), the platform e-mail relay (`PUT /api/v1/admin/settings/email`) and the sign-up policy (`PUT /api/v1/admin/settings/signup`) now need a fresh authenticator code on every change instead of the console session's step-up window. The console already asks for the code when the API requests it.
+- Identity provider changes and removals, and the console security-key policy, are audited at critical severity with the configuration before the change (the security-key policy was recorded at info severity with no previous value).
+
+### Security: a password reset, a password change and "sign out all others" end connected applications
+
+- A password reset, a password change and "sign out all others" now revoke the person's MCP connected applications in every organization (their grants, tokens and any unredeemed authorization code, nobody else's), so a connector approved with a stolen session no longer survives the recovery. The next refresh answers `invalid_grant`.
+- API keys the person owns are revoked too when the request sets `revoke_api_keys` (reset password, change password, `DELETE /api/v1/users/me/sessions?revoke_api_keys=true`). The web dialogs tick "Also revoke API keys (N)" by default. `GET /api/v1/users/me/sessions` returns `active_api_keys`.
+- Approving an MCP consent (`POST /api/v1/oauth/requests/{id}/approve`) now needs a recent sign-in (step-up).
+- A blocked or suspended account can no longer exchange or refresh a token, or open an OAuth or SSO session (`ACCOUNT_SUSPENDED`).
+- A membership past its end date now stops its API keys and MCP tokens at once instead of after the expiry sweeper.
+- The sessions-revoked hook is now a list (`AddSessionsRevokedHook`); the console-session hook is kept.
+
+### Security: the console directory shows less personal data below the roles that need it
+
+- Accounts linked to a platform administrator are no longer listed (rows, tab counts) or readable (404) in Users below super admin; before, an ops admin could list them with their sign-in sessions.
+- Reads of the Users directory are limited to 120 per minute per administrator.
+- The Organizations list no longer carries owners' email addresses: ops admin and above get the owners' domains, read-only gets the owner count. The organization's own page still shows the owners' addresses to ops admin and above, and each view is now written to the admin audit log (`organization.view`).
+- A read-only administrator no longer sees the free-text suspension reason of an organization, nor the requesters' addresses and notes in the access-request queue (addresses are masked, notes are not sent).
+
+### Security: one organization can no longer skip e-mail verification for the others
+
+- Verifying an e-mail address is a property of the account. An organization set to `never` made sign-in skip verification for every organization the account belongs to. The setting `never` is retired (refused on save, a stored value reads as `auto`), and `always` now means "members must have a verified address to enter this organization": entering it is refused until the address is verified, while the account's other organizations are unaffected.
+- Entering an organization is refused for an unverified account when the organization's setting cannot be read (it no longer lets the account in), and accepting an invitation applies the same entry rule.
+
+### Security: an invitation token no longer proves the invitee's mailbox
+
+- Registering with an invitation token used to create an account with a verified e-mail. The organization that sent the invitation holds the raw token, so it could register the invitee's address, then be offered another organization's pending invitation for that address (or join by verified domain) and take that organization's seat. An invitation token now proves only that its holder may join the inviting organization: the account is created unverified and verifies through a link the platform mails to the address. Until then it sees no other organization's invitations and cannot join by domain. An invitation from an organization that has verified the address's domain still verifies at once. The inviting organization's own `email_verification_mode: never` no longer lowers this.
+- Owner action: `server/docs/operations/invitation-registered-accounts-review.sql` is a read-only query that lists accounts created this way that may need review.
+
+### Security: linking a sign-in provider is bound to the browser that started it
+
+- `POST /api/v1/me/sign-in-method-links/{provider}/start` now returns `browser_binding`, a one-time secret for the starting browser, and `…/complete` refuses a completion without it (`400 OAUTH_INVALID_STATE`), the same check a social sign-in makes. The link's PKCE record is single use and expires with its state, so a replayed or expired state, or a link finished in another browser, is refused before the code exchange. The web console keeps the secret in the HttpOnly binding cookie a sign-in uses.
+
+### Security: an organization's mail server must use a submission port, a login and TLS on a hosted service
+
+- With `MANAGED_SERVICE=true`, the e-mail notification channel refuses port 25 and any relay without a username and password or without TLS or STARTTLS, when it is saved, tested and before every send. One shared rule (`pkg/email` `ValidateTenantRelay`) covers the integration service and the notifier, so the platform's egress no longer delivers mail directly to any public host with a sender the organization chose. Self-managed installs are unchanged.
+- **Upgrade note:** on a hosted service, an existing e-mail channel that does not meet the rule stops sending at its next delivery. The integration shows `INTEGRATION_EMAIL_RELAY_POLICY` with the reason, and each organization owner gets an in-app notice and an e-mail from the platform. Editing the channel to port 465, 587 or 2525 with a login and TLS, then testing it, resumes delivery. No migration.
+
+### Security: unauthenticated MCP authorization requests no longer fill the AI applications list
+
+- `GET /oauth/authorize` fetched a Client ID Metadata Document for any `https` client_id and stored the client, with the name the document chose, before anyone had signed in. Anyone on the internet could therefore fill the platform administrators' AI applications list with entries that looked legitimate. The fetched document now travels with the authorization request and the client is stored only when a signed-in person approves the consent. A client blocked after the request started is refused at approval.
+- Migration: metadata-document clients that no one ever approved (no grant, no authorization request in the last day, not blocked) are deleted.
+- Console, System, AI applications: applications that name themselves show their host first and the name as "declares itself as"; the usage line is separate items instead of one dotted line.
+- Console, System, AI applications: the list was cut off silently at the newest 1000 clients. It now pages on the server (`GET /api/v1/admin/mcp-clients` takes `page`, `per_page`, `q` for host or name, and `blocked`) with a search box and a blocked filter. Counts in the usage line use plural forms per language.
+
+### Security: only the migrator can write the migration tracking tables
+
+- `deploy/postgres/least-privilege-roles.sql` creates `schema_migrations_applied` ahead of the first migration and
+  gives the app role read-only access, like `schema_migrations`: a compromised API cannot make the next migration run
+  skip or repeat a migration. Re-run the roles script on upgrade, as the compose stack and the deployment kit do.
+- Installs that never re-run the roles script (binary, all-in-one) are covered too: every migration run revokes
+  INSERT, UPDATE, DELETE and TRUNCATE on both tracking tables from every role but their owner, and warns when its role
+  cannot. Re-running the roles script remains the documented step on upgrade.
+- The runner names the tracking tables with the schema it locked, so a migration that changes `search_path` cannot
+  redirect its records, and warns when an applied migration was recorded under another name than the shipped file.
+- The first run on a database golang-migrate migrated records exactly the migrations of the release it was at
+  (`server/migrations/released.json`, generated from the release tags and checked in CI) and runs every other one, so a
+  migration merged with a lower number after that release was cut (003420 after v0.15.4) runs instead of being marked
+  applied. A database no release matches (a development build, or one golang-migrate left dirty) is refused until an
+  operator lists the applied versions with `-assume-applied FILE`; `force -1` no longer clears such a database.
+- The API refuses to start when a newer release's database lacks a migration this binary ships, and when its role
+  may not read the migration state (it no longer skips the check).
+
+### Security: a job narrowed at claim no longer keeps its full target list in its tool settings
+
+- A quick scan carries its target list in its tool settings (`config.targets`, `scanner_config.targets`) as well as in `targets`. When a job was narrowed before a sensor got it (targets the scope re-check refused, or targets left for later because another task held their hosts), only `targets` and `context.targets` were narrowed, so the settings still named every original target, refused ones included. The sensor runs `targets` only, but a job must never name a target it may not run on. The settings' target lists are now narrowed the same way.
+
+### Security: changing where platform AI sends data needs a second super admin
+
+- Saving the platform AI provider turned on with a different destination than the last one applied while on (provider, server address, private-network switch or API key) now needs another super admin's approval first (`platform_ai.destination`, 428 `SECOND_APPROVAL_REQUIRED`). The approval is bound to the exact destination, including a keyed fingerprint of the API key, so a key swap cannot ride on an approval for something else.
+- Model and allowed-model changes and turning platform AI off stay one-person, so an incident response is never blocked. Removing the key of a platform that stays on is a destination change and asks. A save that carries a key is refused when the encryption backend cannot fingerprint it. With a single super admin the existing single-admin fallback applies (audited critical, every administrator told).
+- The console's waiting dialog now reads "Waiting for a second administrator".
+
+### Security: changing the mail server of platform e-mail needs a second super admin
+
+- Saving platform e-mail turned on with a host, port, connection security or SMTP username that differs from the last relay applied while on now needs another super admin's approval first (`platform_email.relay`, 428 `SECOND_APPROVAL_REQUIRED`). The relay receives every set-password, password-reset and invitation link, so repointing it would let one session take over accounts. The approval is bound to the exact host, port, security and SMTP username (a different login on the same server is another mailbox owner).
+- Rotating the password of the same login, changing the sender, sending a test message and turning e-mail off stay one-person. With a single super admin the existing single-admin fallback applies (audited critical, every administrator told).
+
+### Security: platform two-factor floor, with grace and a factor before creating credentials
+
+- New platform setting `auth.mfa` (console API `/admin/settings/auth-mfa`, env default `AUTH_MFA_FLOOR`): `none`, `admins` (owners, administrators and members holding a privileged role, by direct or team grant) or `everyone`. Organizations can require more, never less: saving 2FA settings below the floor is refused (422 `MFA_BELOW_PLATFORM_FLOOR`), and the settings read returns `platform_mfa_floor` with the flags already raised to it, without rewriting stored rows.
+- Sign-in is gated by the floor after a grace period: 14 days for existing members from the floor taking effect, 7 days for new accounts, whichever ends later (settable). The account 2FA status shows `grace_due_at`. An organization's own requirement has no grace. Sign-in rules are the same as for the organization's policy: its own identity provider counts unless the organization requires proof, a social sign-in never counts. "2FA for administrators" now also covers members with a privileged role (it checked only the owner and admin roles).
+- Creating an API key, service account key, sensor or sensor key, sensor enrolment token, stored secret, or saving an integration needs an enrolled second factor from the start, including during grace (403 `MFA_ENROLLMENT_REQUIRED`).
+- Defaults: `admins` on a hosted service (`MANAGED_SERVICE=true`) and on new self-managed installs. An installation that already has users keeps `none` (migration 20261028153743 seeds the row; the console API returns `recommend_raise`), so an upgrade locks nobody out. A hosted service ignores that seed and starts the 14-day grace at the upgrade.
+- **Upgrade note:** migration 20261028153743 widens the `platform_settings.source` check to allow `migration`. Self-managed operators who want the floor set `AUTH_MFA_FLOOR` or change it in the console.
+
+### Security: platform roles for the console in every edition
+
+- Console authorization moves from three hard-coded tiers to platform roles and permissions (RFC-134). A `platform.*` permission catalogue in code, built-in roles `platform_owner`, `platform_admin`, `platform_viewer` (the former `super_admin`, `ops_admin`, `readonly`, unchanged in what they reach) plus `operator`, `support`, `security_auditor` and `billing`, stored in their own tables (migration 20261028144535) that the tenant plane cannot read.
+- Every console route is listed with its permission; an unlisted route is never served (deny by default). Elevation now names a role (`POST /api/v1/admin/auth/elevate {"role": "support"}`), never above what the administrator holds; `ops_admin` and `super_admin` still work. `GET /api/v1/admin/auth/validate` returns `roles`, `permissions` and `max_permissions`.
+- An organization owner may name any active platform administrator in a support grant; only an administrator whose roles hold support access can use it.
+- **Upgrade note:** with a console database role (`DB_ADMIN_USER`) the new tables are granted by `deploy/postgres/least-privilege-roles.sql`, which the Compose `db-grants` step and the chart already re-run after migrating; an installation that applies the grants by hand runs it again, or the console answers 503 until it does. Assigning the additional roles comes with the console's role management.
+- The reset-link, mark-verified and two-factor-reset actions on a platform user need the new `platform.users.credentials` permission, held only by `platform_owner`: exactly the super-admin-only access they had. The two-factor floor and threat-intel source settings keep their owner-only writes (`platform.settings.general.write`).
+
+### Security: an immediate organization deletion now fails closed when its audit row cannot be written
+
+- `POST /api/v1/admin/tenants/{tenantId}/purge` wrote its admin audit row only after the irreversible delete, and only logged a failed write, so an audit outage could erase an organization with no admin audit trail. The `organization.purge_requested` row (critical, with the reason) is now written first; when it cannot be written the request answers 503, nothing is deleted or locked out, and the second approval is handed back. The outcome row `organization.purged` follows the deletion.
+
+### Security: key rotation re-encrypts the CAPTCHA secret and the alert webhook
+
+- `cmd/rekey` now re-encrypts the console's CAPTCHA secret and the alert webhook address and signing secret. Before, rotating `APP_ENCRYPTION_KEY` left them sealed under the old key: sign-in steps that need CAPTCHA were refused and alerts stopped. A test fails when a console setting adds an encrypted field the tool does not cover.
+
+### Security: release images are built without a shared registry cache
+
+- The release build (`docker-publish.yml`) took layers from, and wrote layers to, a `buildcache-<arch>` tag in the release packages. Any job in the repository holding a `packages: write` token could overwrite that tag, and the next release would be built from those layers and signed. Release builds no longer use a registry cache: every layer comes from the tag's sources and the digest-pinned base images. The Postgres and Redis service containers of the all-in-one smoke test are pinned by digest too. A release build takes longer, since each image is compiled from scratch.
+
+### Security: the claim-time scope recheck reads targets from the run context
+
+- A job that named its targets only in its run context (`context.targets`) had nothing to recheck and was handed out unchecked, although the narrowing already edited that context. The recheck now reads the context targets too, cuts a target refused since dispatch and fails a job with nothing left.
+
+### Security: sensor authentication failures no longer log the error text
+
+- The ingest, protocol v2 and v3 authentication paths logged the error of a failed sensor authentication at debug level; that error can carry material from the request's credential headers. They now log a fixed reason (`paused`, `bearer_on_v3`, `invalid_credentials`).
+- fast-uri 3.1.8 to 3.1.9 in the web lockfile (CVE-2026-110306, CVE-2026-110180).
+
+### Security: enrollment token threat model
+
+- A leaked token yields at most passive sensors (trust New) in the preset zones until it expires, runs out of uses or is revoked; uses are counted per sensor key under a row lock; a token whose creator is no longer an active member stops working; the tenant always comes from the token, never the sensor.
+
+### Security: changes to a group that teams or scans use are audited, and guarded for privileged teams
+
+- A rule change or a bulk add that brings assets into a group that team scope rules or scans use is recorded as `asset_group.rule_widened` and answered with an impact summary. Changing the members or the rule of a group that a team holding a privileged role uses needs the owner and a recent sign-in.
+
+### Security: a provider never replaces the second factor
+
+- A password account signed into through a linked provider takes the same second step as its password sign-in: the OAuth callback answers the two-factor challenge (`mfa_required`) instead of a session, and the sign-in page asks for the code. Organization SSO enforcement and two-factor requirements apply to the session as before.
+
+### Security: Google and GitHub sign-in no longer trust an address they cannot vouch for
+
+- A personal Google account created on a company address (no Workspace domain on the account) or a GitHub account could use that address to join the company by its domain policy, claim an invitation, or claim an account an administrator provisioned for it. Social sign-in now treats the address as proved only for `gmail.com`/`googlemail.com` or when the Google `hd` claim equals the address's domain; GitHub never proves a domain address and only its primary verified address is read.
+- Without that proof, only an account already bound to the provider identity signs in. An older account of the same provider that was never bound is bound on the first sign-in only for GitHub or a proved address; otherwise the sign-in is refused (`EMAIL_NOT_AUTHORITATIVE`) and the person signs in with their password or asks an administrator, then links the provider. A new account is created only where sign-up is open, unverified, with no domain join and no invitation claim.
+
+### Security: sign-in state is single use and browser bound; Require SSO cannot lock an organization out or be bypassed with a password alone
+
+- Social and per-organization OIDC sign-in: the state is now an opaque handle to a server-side record (nonce, PKCE verifier, browser-binding hash) that the first callback consumes atomically. A replayed callback, a callback from another browser, or a forged state is refused, and the PKCE verifier no longer travels in the state. The authorize response returns a one-time `browser_binding` secret that the web app keeps in an HttpOnly `__Host-` cookie and sends back with the callback (`POST /auth/sso/{provider}/callback` and `POST /auth/oauth/{provider}/callback` now require `browser_binding`). The state signature uses a key derived from the JWT secret for this purpose only.
+- Require SSO can be turned on only after an owner or admin has signed in through the organization's identity provider once and an owner has two-factor authentication on. Turning it on revokes the user API keys and AI connections that exist at that moment unless `revoke_credentials=false`; the console shows both preconditions and the counts.
+- Owner break-glass in an organization that requires SSO needs the password and the owner's second factor. It is written to the audit log as `sso.break_glass_used` and announced to the other owners and admins.
+- SAML sign-in now sets the refresh cookie lifetime from `AUTH_REFRESH_TOKEN_DURATION` instead of a fixed 30 days.
+- Migration: `tenant_members.last_sso_signin_at`.
+
+### Security: changing a target mapping needs a super administrator, a step-up and a reason
+
+- Target mappings decide which asset types every organization's scans take or skip (for example `url` to `website`). Creating, editing or deleting one took only an operations administrator's role, with no step-up and no reason, so a mistaken or compromised account could silently turn off DAST for every site on the platform. `POST`, `PATCH` and `DELETE /admin/target-mappings` now require a super administrator, a step-up code (`target_mapping.change`) and a `reason` of 10 to 500 characters in the JSON body (also for `DELETE`). The reason is kept in the audit row.
+- **Upgrade note:** clients of these three endpoints must send `reason`; a request without one is answered with 400. Operations administrators keep read access.
+
+### Security: teams with elevated access are the owner's
+
+- Setting **all assets** or a privileged preset on a team, and renaming or deactivating such a team, is owner only with a recent sign-in, audited at critical severity. Adding or removing people in it needs `team:members:write`; outside members and service accounts never join an all-assets team.
+- Managed roles cannot be edited, deleted, assigned to a person, used in an invitation or bound to another team, in the service and in the database.
+
+### Security: organization requirements now apply on every /tenants/{tenant} route
+
+- Routes that name the organization in the URL (members, invitations, created users, settings, modules, SSO change approval) accept a token minted for another organization the caller belongs to, and a tenantless token from a social or SSO sign-in. The organization's two-factor rule, personal-account policy and the second factor an SSO exception needs ran only when a token was issued, so a member without two-factor could administer an organization that requires it. One entry check now runs on every such request: the URL organization's requirements are applied to the token's own session (cached 15 seconds per session and organization), and a token bound to no organization is refused with `ACCOUNT_TOKEN_NOT_ALLOWED`. Exchange the sign-in token for an organization token first. The check fails closed.
+
+### Security: vulnerabilities list hardening
+
+- The route refuses the deprecated findings param names (`severities`, `statuses`, `search`...) and the legacy
+  `branch_status` with 400 instead of mapping them, and sends no deprecation headers.
+- The product and version joins of the list and the vulnerability page also check the row is global or the
+  caller's organization's.
+
+### Behaviour change: an existing account no longer becomes an organization owner without consent
+
+- Creating an organization from the console (`POST /api/v1/admin/tenants`) with an owner email that already has an account now answers 409. Before, that person silently became the owner of an organization they never asked for and was not told. The person can create the organization after signing in.
+- Approving an access request attaches an existing account as owner only when the requester confirmed the address by email. Without a mail server nothing is confirmed, so anyone could file a request naming someone else's address; that approval is now refused with 409. A confirmed existing account is emailed that the request was approved.
+- The operator command (`bootstrap-admin -org-*`) keeps working with an existing account. The internal provisioning API is unchanged.
+
+### Behaviour change: confirming a pentest finding needs its proof basis
+
+- Moving a pentest finding to confirmed now needs a proof basis: executed live, executed in a lab, or inferred from code or configuration. Send `proof_basis` with the status change (or the edit that carries the status). Without it the API answers 422 `PROOF_BASIS_REQUIRED` and the finding stays as it was.
+- A reviewer can confirm without a basis by sending `proof_override_reason` (10 to 500 characters). The reason is kept on the finding with who and when, shown as "Confirmed without a proof basis", and written to the audit log as `finding.proof_basis_overridden`.
+- The confirm dialog in the finding sheet and the editor asks for the basis and lists what is missing (steps to reproduce, a proof evidence item, the impact, a target). The list advises and never blocks.
+- Findings that are already confirmed are not touched; the requirement applies to the next move to confirmed. API clients that confirm findings must send `proof_basis`. No migration.
+
+### Behaviour change: one account for a platform administrator and an application user
+
+- An administrator's account may now be an ordinary member of organizations and sign in on the main site, where it acts with its organization role only. The platform role counts only on the console, which keeps its own sign-in, second factor and session (RFC-134, RFC-022 revision 25). Migration 20261029050639 drops the membership trigger.
+- A break-glass administrator stays console-only: its account cannot join an organization, and an account that is a member cannot be marked break-glass (409).
+- A break-glass account is also refused on every main-site sign-in path (password, refresh, token exchange, social and SSO) with the same 401 as a wrong password, and the attempt is logged as a security event.
+- An administrator can no longer approve an access request made by their own account or with their own e-mail (403); another administrator decides it.
+- `bootstrap-admin -org-owner-email` may name the installing administrator (not the break-glass one) as the first organization's owner.
+- `GET /api/v1/users/me` no longer returns `is_platform_admin`.
+- **Upgrade note:** a person who kept a second account to work in an organization can have the organization invite the administrator's account, then offboard the old one. Nothing changes for existing administrators on the console.
+
+### Removed: the six inert AI triage sub-modules
+
+- The sub-modules `ai_triage.bulk`, `ai_triage.auto`, `ai_triage.workflow`, `ai_triage.byok`, `ai_triage.agent` and `ai_triage.custom_prompts` are removed. Nothing ever checked them: AI triage is gated by the `ai_triage` module and the `ai_triage:*` permissions, so switching a sub-module off did nothing.
+- Migration `20261028153739_retire_ai_triage_submodules` moves any permission or event type filed under them to `ai_triage` and deletes the sub-module rows and the per-tenant toggles of those sub-modules (they had no effect). Its down restores the six rows but not the toggles.
+- The `ai_triage` module description no longer lists modes.
+- A test now guards that AI triage never writes a finding's severity or priority: model output stays a suggestion on the triage result until a person acts on it.
+
+### Removed: `email_verification_required` from `GET /auth/info`
+
+- The field reported the configured flag, not the rule that applies to a person (an organization can tighten it). Nothing read it.
+
+### Removed: unused custom wordlist reference on tool configurations
+
+- `tenant_tool_configs.custom_wordlists` was stored and never read; wordlists are content packs of kind `wordlist`. The column is dropped.
+
+### Removed: the admin-cli image is no longer published
+- `ghcr.io/openctemio/admin-cli` held only `bootstrap-admin`, which the API image already ships as `/app/bootstrap-admin`. Run it from the API image instead: `docker compose run --rm bootstrap-admin ...` with Docker Compose, or a Job using the `openctem-api` image with command `/app/bootstrap-admin` on Kubernetes.
+- Air-gapped installs: the image kit, the mirror list, the Harbor replication rule and the signature-verification policy template no longer include `admin-cli`.
+
+### Removed: `GET /api/v1/vulnerabilities/active` and `GET /api/v1/vulnerabilities/active/stats`
+- Use `GET /api/v1/vulnerability-exposures` (the vulnerabilities list), which takes every findings filter.
+
+### Removed: Active CVEs tab
+
+- The "Affecting my assets" list on Exposures, Vulnerabilities is replaced by `/vulnerabilities` (linked from that
+  page's header). The page keeps its summary and the CVE catalog. `GET /api/v1/vulnerabilities/active` stays for now.
+
+### Added: AI agents, service accounts that triage like a person with accountable owners
+
+- An AI agent is a service account with an AI profile (`ai_agents`): it calls the same finding commands as a person, with its own role and data scope, and its changes go through the same approvals, audit and notifications. It never signs in, never approves, never holds full data access and is not a seat.
+- Presets `suggest` (read, comment, approval requests) and `triage` (also status, duplicates, severity, assignment), defined in code; the person who sets one must hold its permissions. A fixed deny list keeps approve, verify, delete, export, reveal, bulk and administration with people. An AI agent has no API key, MCP grant or role of its own (the schema refuses them), and its risk-lowering requests always wait for a person, whatever the organization's approval levels.
+- Every AI agent has accountable owners, people or teams (`ai_agent_owners`). Its effective permissions never exceed what they hold; it pauses when no owner is active or the 90-day attestation runs out (checked at run start and by an hourly sweep).
+- Everything an AI agent does carries its provenance: timeline rows are labeled `ai` by the database and carry the run, model, prompt and accountable owners; audit rows carry the same under `metadata.ai`.
+- `ai_runs` records every run (AI agent, accountable snapshot, model, prompt, digests, usage); one live run per subject and use case.
+- API: `/api/v1/ai/agents` (list, create, owners, preset, attest, suspend, reactivate, disable, delete), `/api/v1/ai/runs/{id}`, `/api/v1/findings/{id}/ai/runs`. Migrations `20261028153734_ai_agents` and `20261028153735_ai_agent_activity_index` (built concurrently); no operator action.
+- Read-only AI assistance runs under the viewer and writes nothing: in an assistance context every finding write path and every writing database statement is refused, and no AI agent can be resolved.
+
+### Added: the `openctem.analyze/v1` contract for AI executors
+
+- The job an AI executor receives, the result it returns, the typed suggestions (verdict, severity, remediation steps, summary) and the output of each kind (`triage.v1`, `remediation.v1`, `summary.v1`) are published as versioned JSON Schemas in `server/pkg/sensorproto/analyze/schemas/`, with a validator. Outputs are closed (no field a model could use to state a direction, a state or a target), bounded, and cite evidence only as `bundle:<field>` or `tool:<n>`. RFC-131 describes the design. No migration, no operator action.
+
+### Added: an AI agent analyzes a finding and acts through the finding commands
+
+- `POST /api/v1/findings/{id}/ai/analyze` (`kind`: `triage.v1`, `remediation.v1` or `summary.v1`; optional `ai_agent_id`) runs one model call on the built-in executor as an AI agent. The AI agent must be active (an active accountable owner, a fresh attestation), the finding in its scope and in an owner's, and the person asking must see the finding.
+- The context bundle holds only the fields the AI agent's data class ceiling allows; sensitive values are masked with a per-run key, the mapping stays on the platform, and the output must satisfy the kind's JSON Schema before placeholders are mapped back (unknown ones are never resolved, secrets never).
+- The output becomes the AI agent's own commands: comments (analysis, remediation plan), a confirmation and severity raise when its preset allows, and approval or severity requests for anything that lowers risk, which a person decides. Output without real evidence, with an unknown placeholder, from a bundle with injection markers, or under 0.5 confidence is written as a comment only. Every change re-reads the finding and carries its row version: a concurrent change by someone else is never overwritten.
+- The response lists the run (provenance, accountable owners) and what the AI agent did with each item. Rate-limited like AI triage. No migration, no operator action.
+
+### Added: organization AI masking policy and preview
+
+- `GET/PUT /api/v1/organization/settings/ai/masking`: which classes stay masked in internal data, a switch to mask subdomain labels too, and up to 200 extra terms. Owners and administrators; a change needs a recent sign-in and is audited (`ai_settings.masking_updated`, flagged when it masks less).
+- `POST /api/v1/organization/settings/ai/masking/preview`: the exact masked context the AI would get for one finding the caller can read, with placeholders and their classes (never their values). Audited (`ai_settings.masking_previewed`).
+
+### Added: Settings > AI > AI agents, one AI badge with accountable owners, and AI data masking
+
+- Settings > AI has an AI agents section. An AI agent takes part in triage like a person, as its own service account. The list shows each AI agent's name, preset, status (active, paused or disabled, with the reason: no active owner, attestation overdue, paused by an administrator, missing permissions), accountable owners and the date its attestation is due. People who hold `service_accounts:manage` can create an AI agent (name, description, preset Suggest or Triage with a one-line explanation of each, and at least one accountable person or team), change its owners or preset, resume, disable and delete it, each after a confirmation; creating, changing owners or preset, resuming and deleting ask for a recent sign-in. An accountable person can also attest to and pause their own AI agent. Everyone else sees the list without actions.
+- Every AI-made item carries one shared AI badge. An AI agent shows as "AI agent {name}" with a muted second line "Accountable: {owners}"; an AI application connected over MCP and the built-in AI triage result keep their labels. In a finding's activity feed, a change an AI agent made names the AI agent and its accountable owners from the activity's provenance; older AI rows without provenance read "AI assistant". A gate test fails when a component that renders an AI actor does not use the badge.
+- Settings > AI has a Data masking section: switches per class of value masked in internal data (hosts, IP addresses, e-mail addresses, user names, URL ids and parameters, organization names, ticket ids), the subdomain label switch and extra terms (up to 200, 3 to 128 characters). Secrets are shown as always masked and locked, restricted data as always fully masked. A preview shows, for one finding id, the masked text the model would get (plain text), the placeholders with their class only, and the fields sent and withheld, with a note on what masking does not hide. Saving needs a recent sign-in; a change that masks less asks first.
+- The console shows nothing of the AI agents or masking sections until the API offers their routes.
+
+### Added: flaky-test quarantine with an owner and a fix date
+
+- `.github/quarantine.yml` lists flaky tests that API CI (`go test -skip`) and Web E2E (`--grep-invert`) skip until their `fix_by` date, at most 14 days after they were added; then they run again. Each entry names its tracking issue and owner. Security tests are refused, and the list is a security-sensitive path (adding an entry needs `security-ack`). Checked by `.github/scripts/quarantine.py check` in Workflow Lint.
+
+### Added: jobs pin the content they read, and shared sensors fetch platform packs
+
+- Shared sensors may read the content routes in a platform-only scope: the platform's `stable` packs, one copy for all organizations. An organization's pack is `404` for them and never reaches a shared sensor. RFC-061 §3.7 is amended to match.
+- The heartbeat answer carries `content_version` (the ETag of the sensor's desired set), the pairing identity carries `content_signing` (the platform key, and the organization's key for its own sensors), and the heartbeat's `local_store.content` (held digests and counters) is stored with the sensor's report.
+- Scan and retest jobs pin content at claim time: the platform sets `content[]` (packs by digest) and `inputs[]` (lists generated from the organization's own names) on the sensor's copy of the command, the signed statement lists each pack's `{slot, digest}`, and every digest is checked to be deliverable to the job's organization before it is signed. A job asks for a wordlist with a `wordlists` payload member; depth picks the class (standard S, deep M).
+- The signer validates the statement's `content` member (`bad_content` refusal).
+
+### Added: exposure flow hero and intake panel on the dashboard
+
+- The CTEM and Overview templates open with the exposure flow: sources with their health, received to new or reopened to actionable, a labelled ring of actionable findings by priority class, the five CTEM stages and the outcomes. Hover, keyboard focus or a first tap lights a figure and its path and opens a tooltip with its definition and list; every number opens the list it counts. The CTEM template ends with the intake and noise reduction panel (sources wired into one summary, the noise bar, false positives, per-source table).
+- New page `/findings/imports`: the import and run receipts a dashboard intake figure opens, filtered by source, tool and period, with the totals of the filter.
+- Existing personal copies of these templates are offered the new widgets (layout hint version 3); nothing changes until the person chooses.
+- One definition per figure: "New or reopened" is the receipt list's New plus Reopened everywhere (summary, noise headline, funnel, tooltip), with suppressed shown as part of it, so every number equals the list it opens. The hero funnel keeps received and new or reopened as the period's flow and shows "Actionable now" (open P0 to P3) apart from it as a stock.
+
+### Added: the same CVE on one asset from different techniques is linked as one issue
+
+- A version match, a template check (nuclei and similar), a network scanner import and a package inventory that report the same CVE on the same asset, on agreeing ports, are linked as the same issue (rule `vuln_asset`), not merged. The earliest finding is the original and is never demoted; no status, severity or SLA changes; the dashboard counts the group once.
+- An open template check or network scanner report confirms a version match in its group: the "potential" P2 cap is lifted and the finding counts on the attack path again.
+- A new finding that joins the group of an open original raises no second "new finding" notification, unless it is more severe than the rest of the group.
+- Migration 20261028153744 adds the key kind, the locator column, the rule and the timeline entry type; 20261028153745 validates the widened activity type check without blocking writes. **Upgrade note:** run `refingerprint -links` (dry run first, then `-apply`) to link findings that already exist.
+
+### Added: the console shows what to register in Microsoft Entra ID
+
+- The identity provider form of an organization (admin console, Single sign-on tab) now opens with a "Set up in Microsoft Entra ID" block: the redirect URI and the front-channel logout URL with copy buttons, and the optional ID claims to add (`xms_edov` required, `auth_time`, `sid`). Okta and Google Workspace show their redirect URI the same way.
+- `GET /api/v1/admin/tenants/{tenantId}/sso/identity-providers` also returns `app_url`, the origin of `APP_URL`, so the console can build those addresses.
+
+### Added: roles and order for a finding's evidence, and an evidence version
+
+- Evidence items on a finding now have a role (baseline, proof, verification or supporting) and a position. A person with write access to findings sets the role and the order from the Evidence tab; the change is audited and shown on the finding's timeline. New items are supporting and keep the newest-first order until someone orders them.
+- `findings.evidence_version` counts every change to a finding's evidence (added, removed, re-roled, reordered). The evidence list returns it with a proof count. Migration 003461 adds the columns and the triggers that keep the version; it takes no long lock, and the version bump leaves `row_version` alone.
+- New routes: `PATCH /api/v1/findings/{id}/evidence-items/{item_id}` and `PUT /api/v1/findings/{id}/evidence-items/order`. On a pentest finding they follow the campaign's evidence rules.
+
+### Added: finding page list context, previous and next, and "why this date" for the SLA
+
+- A finding opened from the findings list shows that list above it ("Findings, Open P0 and P1, 31"), its position ("3 of 31") and previous and next buttons (also the j and k keys). Back keeps the list's filters. The list context is the list's query and the ids of the page shown, kept in the browser tab; neighbouring pages are read through `GET /findings`, so the caller's tenant and data scope apply on every read, and the return link only ever goes to the findings list.
+- The SLA row has a "Why this date" popover: the window in days and what set it (priority class or severity), the governing policy (asset, organization or the platform defaults), when the clock started or restarted (first detection, a regression found by a scan or retest, or a priority rise), the CISA KEV cap, and why the date can be earlier than the window.
+- `GET /findings/{id}` carries `sla_basis` with those facts, computed with the same rule that sets the deadline. It rides on the single-finding read, so its permission and data-scope check apply; there is no new route.
+
+### Added: import a reconFTW results directory
+
+- `POST /api/v1/findings/imports` now reads a ZIP that is a reconFTW results directory (detected from its layout) as one unit: subdomains, addresses, ports, live web services, URLs (as endpoints) and nuclei results are joined into one partial-coverage report. The answer lists the files skipped by policy (people and credential data under `osint/`, screenshots) and the files the importer does not know.
+- Hosts the organization's scope does not cover are held as candidates for review and are never scanned; findings on them stay visible with the tag `candidate`. The scope verdict comes from the organization's scope entries, never from the target the file names.
+- A recon directory never closes findings: `coverage=full` is refused for it, and a CI-run upload refuses it.
+
+### Added: a task that fails for a reason that is not the target's moves to another sensor
+
+- A sensor can say why a task failed: the tool crashed or is missing, it ran out of memory or disk, the tool's content could not be read, or its own network or resolver failed (`failure` and the new `error_code` values on `POST /api/v2/sensor/commands/{id}/fail`; a sensor that sends neither is read by its message text). Routed scan work then goes to another eligible sensor and the sensors that already failed it are excluded. A lost lease excludes the old holder too, when another sensor could take the work.
+- The 3 attempts per task are shared by every cause. When they are spent or no other sensor can take the task, it fails naming every cause, with the step codes `TOOL_UNAVAILABLE`, `TOOL_CRASHED_ON_INPUT`, `RESOURCE_EXHAUSTED`, `CONTENT_UNAVAILABLE` or `SENSOR_LOST`, instead of "Max dispatch attempts exceeded".
+- Stop rule: when the same tool and content version fails on 2 different sensors within 30 minutes, the task is not moved to more sensors and fails with `FLEET_TOOL_FAILURE`.
+- Targets that failed because of the sensor's own network or resolver go out again on another sensor. Targets that failed because of the target (unreachable, blocked or challenged by a WAF or CDN, rate limited) are never resent from another sensor in the same run.
+- The run timeline explains every move in English and Vietnamese, and the placement view shows `failed_here_earlier`.
+- Migration `20261028153740_command_infra_failure` adds `commands.failed_on`, `attempts`, `failure_class` and the `failure_breakers` table.
+
+### Added: AI clients can ask whether a target is in scope
+
+- New read-only MCP tool `check_scope`: an AI application connected to the platform asks whether a domain, IP, CIDR or URL may be tested at an intensity (passive, active or intrusive) and gets the same answer a scan would, from the organization's scope entries. The answer is `allowed`, `passive_only` or `refused`, with reason codes and a hint for the person; a refusal says it is the platform's decision and that variations are refused too.
+- The tool never widens a scope and never lists scope entries or deny-list contents. A lookup error refuses. A target covered only by a bug-bounty program rule is allowed only for a member of that program who names it. Each connection is rate limited, and the audit trail stores the target as a digest.
+- New OAuth scope `mcp:scope.read` (permission `attack_surface:scope:read`), offered with the other read scopes and shown on the consent page.
+
+### Added: AI applications connected over MCP can save pentest findings as drafts
+
+- New MCP tool `draft_pentest_finding` with the write scope `mcp:pentest.draft` (permission `pentest:findings:write`), granted only through an `insufficient_scope` challenge and only when the organization's AI assistants policy lists it (off by default). `oct_` API keys cannot use it.
+- The finding is saved in the name of the person who connected the application, always as a draft (never visible to the campaign client), after the campaign membership, TLP limit and AI switch checks and under the usual phase and role rule for adding findings. It records the application (`drafted_via`), kept on every edit.
+- Behaviour change: the creator of a finding their AI application drafted cannot confirm it; another campaign member (a reviewer or the lead) does. The finding sheet shows "Proposed by AI application" and hides Confirm for the creator.
+
+### Added: Allow an AI application to read all organization data
+
+- On the AI application consent page, a person whose role has full organization data access (owner, administrator, or a role with full data access) sees a new choice, "Allow access to all organization data", off by default. Turning it on needs a fresh re-authentication, is audited (`mcp_grant.full_data_allowed`, with the application's host), and the connection shows a "All organization data" badge on the organization's AI applications page and on the person's own connections.
+- Such a connection reads all data only while its person still holds a full-data role: the role is checked on every request, so losing it makes the connection scoped immediately. Private program assets and pentest campaign membership follow the same rules as in the web console. `oct_` API keys never get this.
+- Shorter life for these connections: 7 days in total, refresh token 24 hours unused, access token 5 minutes (scoped connections: up to 90 days, 14 days, 10 minutes).
+- The person, or an organization administrator, can revoke the connection or set it back to the person's own data scope without revoking it.
+- Migration `mcp_grant_full_data` adds `full_data` (default off) to MCP authorization requests and grants; existing connections are unchanged.
+
+### Added: recovery paths for a server that cannot send email
+
+- `GET /api/v1/auth/providers` reports `email_delivery`. The forgot-password page says "ask your administrator for a reset link" instead of promising an email, and the members page shows a "This server cannot send email" banner. `GET /api/v1/me/bootstrap` carries the same `email_delivery` flag, so dashboard pages read it without asking `/auth/providers`.
+- Console > Users: a super admin can copy a one-hour password reset link (shown once, stored only as a hash, never logged or written to the audit row, refused while email works), mark an email verified, and reset a user's two-factor authentication (needs a second super admin's approval, ends every session).
+- Invitations: `POST /tenants/{tenant}/invitations/{id}/link` copies a new link (the token rotates, no email) and `.../renew` renews an expired invitation. The members page offers "Copy new link" and "Renew".
+- `POST /auth/resend-verification` sends the verification link again (always 202, one email per address every two minutes). The verification failure page and a sign-in refused with `EMAIL_NOT_VERIFIED` offer it.
+
+### Added: platform setting for an organization's own mail relay (off, verified sender, on)
+
+- An organization's e-mail notification channel can now carry the organization's business mail (invitation notices, member notices, scheduled reports) when "Also send my organization's business mail through this server" is ticked. Only an owner or administrator can tick it. This path was wired but never active, because it read other metadata keys than the integration service stores; it now reads the stored shape (settings from the metadata, the login from the encrypted credentials) and supports implicit TLS (port 465).
+- New platform setting `email.tenant_relay` (console API `/admin/settings/email-relay`, env default `ORG_EMAIL_RELAY_MODE`): `off`, `verified_sender` (the sender address must be on a DNS-verified domain of the organization) or `on`. Defaults: `on` on a self-managed install, `verified_sender` with `MANAGED_SERVICE=true`. Changes need a super admin, a fresh step-up and a reason, and are audited as critical.
+- Account security mail (account setup and set-password links, first owner and owner recovery links, verification, password reset, MFA and sign-in notices) always goes through the platform relay, never an organization relay. A relay that cannot be used makes invitation notices fall back to the platform relay; scheduled reports are not sent.
+- **Behaviour change:** channels saved before this change have the flag off, so nothing changes until an owner or administrator ticks it. New channels have it off too.
+- No migration.
+
+### Added: a Web section on the page of a web origin
+
+- The page of an http_service or website asset has a Web section with an Overview (security header posture from the `http_posture` property, or a clear empty state when none is reported), and Endpoints, Parameters and Changes tabs that reuse the Web surface tables, filtered to that origin. Each tab exports CSV; cells starting with `=`, `+`, `-` or `@` are prefixed so a spreadsheet never runs them as a formula. Stored values render as text only, and the origin links only when it is an http or https URL.
+
+### Added: why something is out of scope, and its findings follow
+
+- Scope exclusions have a kind: `do_not_scan` (default; findings stay open), `not_ours` or `retired`. A permanent `not_ours` or `retired` exclusion in effect, or a "not ours" decision, closes the open findings of the assets it matches as resolved with the closure reason `out_of_scope` (never counted as fixed); taking it out of effect reopens them to their previous status. Remediation tasks, tickets and SLA follow the findings. Each pass is audited (`scope_exclusion.effects_applied`).
+- A member with limited data access can create, edit or activate only exact closing rules (one hostname or IP, no wildcard, network or range): `CLOSING_RULE_NEEDS_FULL_ACCESS`. A closing rule that reaches assets they cannot see is refused (`EXCLUSION_REACHES_OUTSIDE_SCOPE`). The bulk preview reports `closing_needs_full_access` and the mark-out-of-scope dialog turns off "By rule" with the reason.
+- The bulk exclusion preview returns `open_findings`; bulk delete (the inventory's Undo) takes 200 ids, as many as one bulk create.
+- Migration `20261028153742_scope_exclusion_kind`. Existing exclusions become `do_not_scan`, and the migration records a cut-over (`scope_effects_cutover`): "not ours" decisions made before it only stop scanning, so the upgrade closes nothing.
+
+### Added: a pentest write-up records the evidence it was written against
+
+- A pentest finding's write-up now stores the finding's evidence version when it is saved. When evidence is added, removed, re-roled or reordered afterwards, the finding shows "Evidence changed since this write-up" in the finding sheet and the editor, until the write-up is saved again.
+- Saving a write-up with an `evidence_version` older than the finding's current one is refused with 409 `CONFLICT`, so an author who opened the write-up before new evidence arrived reloads first. A save without `evidence_version` still lands and records the current version.
+- The single-finding responses carry `evidence_version`, `writeup_evidence_version`, `writeup_stale` and `proof_evidence_count`.
+
+### Added: platform role management in the console
+
+- Security > Roles lists the platform roles, what each allows and who holds them; a platform owner gives or takes the additional roles (operator, support, security auditor, billing) with a step-up and a reason, audited and announced to the other administrators (RFC-134). Nobody changes their own roles or gives a role whose permissions they do not hold; the owner role still follows the administrator's role and needs a second owner.
+- The console warns while fewer than two named platform owners exist, hides navigation and actions by permission, and its elevation dialog offers the roles held.
+- New routes: `GET /api/v1/admin/platform-roles`, `GET /api/v1/admin/platform-roles/assignments`, `POST /api/v1/admin/users/{id}/platform-roles`, `DELETE /api/v1/admin/users/{id}/platform-roles/{role}`. Generated reference: `docs/architecture/platform-permissions.md`.
+- A break-glass account holds its base platform role only: extra roles are refused in the API (409) and by database triggers (migration 20261029050640). Each role change is audited in the same transaction as the change, and repeating a grant changes and audits nothing.
+
+### Added: a task held by a proxy pool says why, and proxy changes preview their impact
+- A queued task that waits because a sensor's jobs use a proxy pool the sensor cannot honor now says so: the placement answer carries `egress_unsupported` (scan and retest jobs) or `egress_validate_unsupported` (validation jobs), and names the pool in the per-sensor verdict (for callers with `sensors:read`). The run page shows one sentence per sensor and links the sensor page to fix it.
+- Settings, Scanning, Proxies: turning the default pool on lists the sensors it would stop sending jobs to and why, before you save. Choosing a pool for a sensor that cannot use it asks first. The paste box has a Build a line helper that percent-encodes the user name and password, and warns about a `socks5` or `http` proxy with credentials on a public address, where the login travels unencrypted.
+
+### Added: test a proxy pool, run a direct-only sensor direct, send validate probes through the pool
+
+- **Test a pool.** `POST /api/v1/proxy-pools/{id}/test` asks 1 to 3 online sensors of the organization to test every endpoint of the pool (handshake time, exit address through the platform's echo, IPv4 and IPv6, a proxy that only allows port 443); `GET /api/v1/proxy-pools/{id}/tests` returns the results. The platform never connects to a proxy. A pool can be tested before it is enabled or assigned. One test per pool per minute; every test and its outcome are audited; a passing test lifts a quarantined endpoint to probation and wrong credentials quarantine it. New command type `proxy_test` (migration), sensor capability `proxy.test@1`, and the echo `GET /api/v1/proxy-test-echoes/{nonce}` (token of one live test, no session). New settings `PROXY_TEST_ECHO_URL` and `PROXY_TEST_ALT_PORT`. The Test button is on Settings, Scanning, Proxies.
+- **Host direct-only.** A sensor with `SENSOR_SCAN_EGRESS=direct-only` reports `egress.host-direct@1`. When it only inherits the organization's default pool the platform runs its scans direct and the sensor page says "Direct (set on the sensor host)", where it used to hold them and tell the administrator to upgrade. A pool assigned to such a sensor still holds its jobs (never direct).
+- **Validate through the pool.** The platform no longer withholds validate jobs from a pooled sensor that reports `egress.validate@1`; sensors that send their re-check probes through the job's pool report it.
+
+### Added: add a pasted list of names to scope in one go
+
+- The Add to scope dialog accepts a list: one value per line, or separated by commas or spaces, so a spreadsheet column can be pasted. Each value's kind is detected, repeats are counted once, values that are not recognised can be removed, and the Covers choice, duration and probe depth apply to the whole list. Lists of up to 1,000 values are sent in batches of 200 with one step-up, and the result shows what was added, what was already in scope and what was refused, with the reason.
+- `POST /scope/targets/bulk` takes optional `expires_in_days` and `max_tier`, applied to every item under the same rules as `POST /scope/targets`. Omitted, the entries stay permanent at the organization's default tier, as before.
+
+### Added: organization enrollment tokens for sensor fleets
+
+- **Sensors → Enrollment tokens**: an administrator creates a token for unattended installs (Kubernetes, Terraform, many hosts) with an expiry (1 hour to 30 days), a use limit (1 to 1000 sensors), scan zones, grant profile, labels, optional allowed source addresses and an optional "approve each sensor". A sensor that starts pairing with it joins the organization through the same key-bound exchange, at trust level New, without a fingerprint compare unless approval is required; those wait under **Waiting for approval**.
+- The token is shown once and stored only as a keyed hash. The sensor reads it from `SENSOR_ENROLLMENT_TOKEN` or `SENSOR_ENROLLMENT_TOKEN_FILE` and sends it with `enrollment_scope: organization` (new optional field of the pairing start request), so an organization token is never taken for an instance token or the reverse. **Upgrade note:** needs a sensor built with the sdk-go release that reads `SENSOR_ENROLLMENT_TOKEN`; older sensors keep pairing interactively. Creating one needs `sensors:approve` and a recent re-authentication; revoking stops it at once. Every creation, enrollment, refusal and revocation is audited, and administrators are notified.
+- New routes under `/api/v1/sensor-pairings`: `enrollment-tokens` (list, create, revoke) and `pending`. Migration `003430_sensor_enrollment_tokens` (new table, one nullable column on `sensor_pairings`; no backfill).
+
+### Added: a sensor's host pressure narrows what it is given, and the sensor page shows it
+
+- The heartbeat's load report may carry `resources.pressure` (level `ok`, `elevated` or `overloaded`, stall percentages, load per CPU, noisy-neighbour flag) and `capacity.launches_held`, `tools_running` and `transient` counters. All are optional; a sensor that sends none behaves as before.
+- While the report is fresh, an overloaded sensor is given no new scan when it already holds one (at most one when idle) and an elevated sensor at most one; selection prefers less pressured sensors. The report can only lower what dispatch offers, and its values are clamped.
+- A task waiting on such a sensor says `sensor_overloaded` (the sensor's host is overloaded) instead of a plain busy.
+- The sensor page has a Host pressure section, with a warning when other programs on the host use most of its CPU.
+
+### Added: the suggested sensor-local policy comes from your organization's scope
+
+- A sensor in no scan zone no longer gets an empty local policy template (which admits any target outside the built-in deny list): the install commands and the sensor drawer suggest the organization's active scope (networks, addresses, domains, URL hosts) as `targets.allow`, and active network and name exclusions as `targets.deny`. A sensor in a zone keeps its zones' ranges, now with the exclusions as `deny`. Entries the sensor would refuse to load (loopback, link-local, metadata or reserved addresses) are left out and counted in the file.
+- The scope is read only for a member who may read it (`attack_surface:scope:read`); others get the zones only.
+- A sensor that refuses network jobs for lack of a policy shows "Suggested local policy" in its drawer: one host command that writes `/etc/openctem/sensor-policy.yaml`, then reload with SIGHUP. The platform only proposes the text; once on the host it cannot change it.
+- The policy template no longer cites an internal design document or a note about sensor releases older than v0.9.0.
+
+### Added: pinned pages and findings views in the sidebar
+
+- Members pin pages, findings quick views and saved views to a Pinned section at the top of the sidebar, in their own order (up to 12 per organization). Each pinned view shows its live count, computed as the member, so it equals the list it opens.
+- New `GET /api/v1/me/pins` and `PUT /api/v1/me/pins` (self-scoped). A saved view pin is shown only while the member can still see the view; page pins must be in-app paths. The session bootstrap (`GET /api/v1/me/bootstrap`) carries the pins with their counts as `pins`, so the sidebar adds no request to a page load. Migration `nav_pins`.
+
+### Added: asset groups that fill themselves
+
+- A group can hold a rule: the same filters as the Assets page, plus domains (with or without subdomains, wildcard and international names accepted), the scope entries that cover an asset, and an option to bring the services, URLs and certificates of the matched hosts. The group is the rule's matches, plus the assets added by hand or from a pasted list, minus the assets taken out by hand (taking an asset out of a rule group keeps it out).
+- Members are stored as before, now with how each came in (rule, manual or paste) and a join and leave history with the reason. New `PUT /asset-groups/{id}/rule`, `POST /asset-groups/rule/preview` (count, first 20 matches, who would join and leave, which teams and scans use the group), `POST /asset-groups/{id}/assets/paste` (names, addresses, CIDR ranges and URLs, at most 10,000 lines; the missing ones can be created through the scope check, with candidates for names outside the scope), `POST /asset-groups/{id}/assets/matching` ("add all matching", not limited to a page), and `GET /asset-groups/{id}/history`.
+- Rules are evaluated when assets are created or change (debounced per tenant) and again every hour, as the person who last saved the rule and inside the data scope that person holds; a rule group holds at most 50,000 members. If that person leaves the organization the rule pauses and the members stay.
+- Migration `003440_smart_asset_groups` adds the rule and status columns of `asset_groups`, `asset_group_members.source` (existing members become manual), the exclusions table and the history table.
+
+### Added: link Google, GitHub and Microsoft sign-in to an existing account
+
+- Account > Security has "Connected sign-in methods": a signed-in person links or unlinks Google, GitHub and Microsoft sign-in (`GET /api/v1/me/sign-in-methods`, `POST /api/v1/me/sign-in-method-links/{provider}/start` and `…/complete`, `DELETE …/{id}`). Linking and unlinking need step-up; the link state is bound to the account and session that started it; the last sign-in method cannot be removed (`409 LAST_SIGN_IN_METHOD`). Each change is audited (`auth.identity_linked`, `auth.identity_unlinked`) and e-mailed to the account.
+- A Google or Microsoft sign-in links itself to an existing password account with the same address when the provider runs the address (Gmail, a Workspace or Microsoft domain equal to the address domain; never GitHub), the account's address is verified and the platform allows it (Console > Settings > Sign-up, "Link Google and Microsoft sign-in to existing accounts", on by default). Every other session of the account is signed out and a pending password reset link is cancelled.
+
+### Added: social login (Google, GitHub, Microsoft) is configured in the platform console
+
+- Settings > Social login: per provider the client ID, client secret (encrypted, write-only), scopes and "Offer on the sign-in page". The page shows the exact redirect URI to register, the impact on who can sign in, and "Test configuration" against the provider's token endpoint.
+- Changes need a super admin, a fresh confirmation and a reason, are audited critical (never the secret) and apply on every replica without a restart. New setting key `auth.social_login`; no migration. `rekey` covers its secrets.
+- **Upgrade note:** `OAUTH_<PROVIDER>_*` keep working as an override: while `OAUTH_<PROVIDER>_CLIENT_SECRET` is set, that provider is pinned and read-only in the console. Remove the variables to manage a provider in the console. `OAUTH_ENABLED=false` still switches all providers off; `OAUTH_STATE_SECRET` stays server-side.
+- Changing a provider's client ID needs the matching client secret in the same save (the stored secret is never reused with a new ID). "Test configuration" checks either the stored client ID and secret, or an ID and secret entered together; a different client ID is never tested with the stored secret. Each check is audited (provider, client ID and result, never the secret) and rate limited like a sign-in attempt.
+
+### Added: a team carries access, add people and they inherit it
+
+- A team's **Access** settings name one or more presets (role templates) and a scope mode (specific assets, or all assets). Each preset becomes a managed role of the team; members inherit the permissions and the scope when they are added and lose them when they leave or their membership ends. No role needs to be created first. New routes `GET/PUT /api/v1/groups/{groupId}/access`, `POST /api/v1/groups/{groupId}/access/upgrade` and `GET /api/v1/users/{userId}/team-access`; migration `003545_team_access_presets`. See RFC-127 and the how-to "Give a team access".
+- A preset follows its template: the team shows when a newer version is available and applies it on request.
+
+### Added: KEV and EPSS from the signed vulnerability release
+
+- The vulnerability bundle importer reads the release's signed KEV/EPSS side manifest (verified with the same pinned root and key set, bound to the applied release sequence) and applies each stream only when its data date is newer than the data the platform holds, from either path. A replayed or older copy never rolls the catalog back, a snapshot under 90 % of the stored count is refused, and KEV removals stay behind the existing prune guard. A stream that is not newer is not downloaded; a refused stream is recorded in that source's status and never undoes the corpus import. Unknown streams are skipped and listed.
+- The sync status of KEV and EPSS records which path supplied the data (`delivered_via`), its data date (`intel_as_of`), and when the collector last read the source (`bundle_fetched_at`). The direct KEV and EPSS fetches keep running as before.
+- The findings sweep, KEV reconciliation and event log that follow a KEV or EPSS sync are one shared function, run after a direct sync and after a bundle import.
+
+### Added: choose where KEV and EPSS come from (signed release or direct fetch)
+
+- New console setting (System > Threat intelligence, `/admin/settings/threat-intel-source`; super admin, step-up, audited). **Source** `direct` (default, today's behaviour) keeps the platform's own scheduled fetch from CISA and FIRST as the supplier; `bundle` makes the signed vulnerability release the supplier and runs the own fetch only as a fallback when the release's copy was last read more than 6 hours ago (KEV) or 48 hours ago (EPSS). **Direct fetch** `auto` (default) or `off`: strict-egress installs turn it off and the platform never calls CISA or FIRST (scheduled and manual syncs both refuse).
+- The page shows, per feed, when the collector last read the source, whether the release's copy is fresh and which path supplied the data held; the sync status carries `delivered_via` and `data_as_of`.
+- **Upgrade note:** nothing changes until an administrator sets source `bundle`. Do it after the publisher has released hourly for seven days.
+
+### Added: resolution state of host names in the console
+
+- Assets list filter `resolution=not_resolving`; the asset detail shows when the name last resolved (`resolution` in `GET /assets/{id}/freshness`); the run page has a "No longer resolve" skip group.
+- **Upgrade note:** migration 20261028153738 is a new table and clears `asset_wildcard_dns`; the platform needs DNS egress from the API host for the checks (the scan-zone resolver).
+
+### Added: actions and saved views on the vulnerabilities list
+
+- Select vulnerabilities on `/vulnerabilities` (or use the actions on a vulnerability page) to create one remediation
+  task for their open findings (a finding stays in at most one active task; conflicts are shown, skipped or moved),
+  request one exception (accepted risk or false positive) decided by the organization's approval policy, retest the
+  open findings (the 50 most urgent, each the way its source allows), or export the findings behind the rows as CSV.
+  Every action covers only the findings you can see under the current filters, and is audited.
+- API: `POST /api/v1/vulnerability-exposures/exception/preview`, `POST /api/v1/vulnerability-exposures/exception`
+  (`findings:write`), `POST /api/v1/vulnerability-exposures/retests` (`findings:verify`),
+  `GET /api/v1/vulnerability-exposures/export` (`findings:export`); each also needs `vulnerabilities:read` and
+  `findings:read`.
+- Saved views on the vulnerabilities list (`view=<id>` in the URL), storing the list's own filters and sort beside
+  the findings filter. A view can now be shared with the whole organization by a holder of the new permission
+  `findings:views:share` (owners and administrators by default); a view always runs as the person using it.
+- The findings export's title falls back to the rule name, then the rule id, then the message (the title the list
+  shows).
+
+### Added: EPSS trend on the vulnerabilities list and the vulnerability page
+- The EPSS sync keeps a daily score per CVE for 30 days (`epss_score_history`, only CVEs that findings carry).
+- Each row of `GET /vulnerability-exposures` carries `epss_trend` (oldest first), drawn as a small line under the EPSS score.
+- `GET /vulnerability-exposures/{id}` carries `epss_trend` when the caller has a finding of the CVE in scope, shown as a chart on the page.
+- The history is never read by CVE id alone: another organization's CVE, or one only on an asset outside the caller's scope, gets no trend.
+
+### Added: vulnerabilities list
+
+- `/vulnerabilities` (main navigation, under Findings) lists one row per CVE across the assets you can see, sorted by
+  risk (worst priority, known exploited, emerging threat, EPSS, CVSS, reach): title and aliases, KEV with its due
+  date, public exploit, emerging-threat alert, severity and CVSS, EPSS, affected assets (internet-facing), affected
+  product and versions, fixed version, SLA breaches and how much is already in a remediation task. Every count opens
+  the findings list with the same filters; a row opens the vulnerability page.
+- Filters: known exploited, public exploit, emerging threat, past SLA, EPSS threshold, fix known or not, severity,
+  priority, source, asset group, the findings lens (open, fixed, accepted or false positive, all) and a search on
+  the CVE, advisory alias or title. Every filter is in the URL.
+- API: `GET /api/v1/vulnerability-exposures` takes every `GET /findings` filter param plus `kev`, `exploit`,
+  `has_fix`, `emerging`, `past_sla`, `epss_gte`, `q` and `sort`, and needs `vulnerabilities:read` and
+  `findings:read`. A row's counts equal the findings list filtered by that CVE for the same person.
+- The vulnerability page's affected assets show where on each asset the findings point (port, URL path or file).
+
+### Added: web content intelligence, first slice
+
+- Origin response header posture (`http_posture` on `http_service` assets): allow-listed flags and enums only, never a header or cookie value. Reports without it are unchanged.
+- Endpoints get platform labels at ingest: `ext:backup|config|archive|dbdump|source|log` from the file extension and `auth:login` for a password form.
+- The sensitive-path catalog gains a `verify` field; the 20 most critical entries are mapped to signed template ids. New or changed 2xx in-scope catalog endpoints are verified by a budgeted `web_verify` run (100 endpoints per tenant per day, T1 only, excluded paths never requested). A finding is filed only from a template hit.
+- New change kinds `web_sensitive_new`, `web_auth_lost` and `web_param_added_sensitive` in the attack surface changes and the weekly digest. A critical new sensitive path and a lost authentication also alert at once, once per alert fingerprint lifetime.
+- Migration 003432: `web_endpoint_verifications`, `web_alert_fingerprints`, and `web_verify` as a managed scan owner.
+
+### Added: first-party wordlist packs S and M, built from pinned upstream files
+
+- `go run ./cmd/wordlists-build` builds the platform wordlist packs `wordlists-s` and `wordlists-m` reproducibly: each upstream file is pinned by commit and sha256, only files whose own license is on the allow-list are used (MIT, Apache-2.0, BSD, ISC, CC0, Unlicense, WTFPL, CC-BY-4.0), lines are normalised per purpose, ranked, de-duplicated and capped, and every pack carries `wordlists.yaml` and a `NOTICE` with each source, commit and license plus the files left out. The lists are release assets (workflow `Wordlists Release`), imported as platform packs through the existing import route.
+- The wordlist linter now checks `wordlists.yaml` when a pack has one (a platform wordlist pack must): line counts, sha256, valid and unique entries, licenses, pinned sources and `NOTICE`. A false manifest refuses the pack.
+
+### Changed: attack paths page shows the routes to one asset
+
+- `/attack-paths` now draws the routes from the internet through entry points and hops to a chosen asset on a flow canvas, with the finding and weight of every step, the score of the selected route as a breakdown, and the choke points ranked by how many routes a fix cuts ("Fix this to cut N of M paths"), each linking to exactly the findings it counts.
+- Hover or focus a node to light its routes; the arrow keys follow the edges, `[` and `]` switch routes, Enter opens a step's findings. A list view of the same routes is one click away and the default on a phone.
+- Steps outside your data scope show as "Outside your access" and the likelihood of a route through them is withheld. Each exposure chain links to the attack paths of its target.
+
+### Changed: CI runs the API test suite once, as the least-privilege app role
+
+- `Tests (Postgres + Redis)` now bootstraps the database roles, applies every migration as the migrator and runs the suite as `openctem_app`, on every pull request that changes the API as well as in the merge queue. A query that needs a grant the app role lacks now fails on the pull request instead of first in the merge queue.
+- The separate `Tests (least-privilege DB role)` job, which ran the same suite a second time (6 shards), is removed: with row-level security not enabled on any table, a test that passes as the app role also passes as the owner. About 48 runner-minutes less per merge group that changes the API. Required check names are unchanged (`API CI OK`).
+
+### Changed: the request budget check runs on pull requests that change a page's data
+- A pull request that changes `web/src/app/`, a feature's API hooks or `web/src/lib/api/` now runs the Playwright request budget job, so a page over its budget fails the PR instead of the merge queue. The full suite still runs only in the queue.
+
+### Changed: CI builds each image once per content key and shares it across workflows
+- `build-images.yml` builds the API, web, console, admin CLI and all-in-one images once per content key (git tree hashes of their build inputs plus the workflow and key script), pushes them to `ghcr.io/openctemio/ci-images` with a build provenance attestation, and Web E2E and All-in-one CI use them by digest. Only develop and main pushes and merge-queue runs push; the plain tag is trusted only when built on develop or main, a queue tag only inside its own queue run.
+- Pull requests never get `packages: write`: they reuse develop's verified images through the read-only `resolve-images.yml` and build locally otherwise. The contract files are generated in their own read-only job, and `npm ci` there runs with `--ignore-scripts`. A repo-security self-test fails when a pull-request path can reach `packages: write`.
+- A daily job deletes CI images older than 14 days.
+
+### Changed: CI runs only the jobs a change's kind needs, also in the merge queue
+
+- New `.github/scripts/scope.sh` classifies a change finer than api/web: application code, the e2e suite (`web/e2e/`), translation catalogs, and the CI files each workflow actually uses. It only narrows what `changed.sh` selected and runs on pull requests and in the merge queue.
+- A change to `web/e2e/` alone runs Web checks and Web E2E; it no longer runs the web unit tests, the all-in-one image build or CodeQL.
+- A change to non-English catalogs only runs Web checks and the catalog tests plus the tests that read a catalog (new job `Web i18n tests`, about 50 files) instead of the whole suite and Web E2E. English catalogs still run Web tests and Web E2E, which find elements by English text.
+- A change to a workflow or CI script runs the workflows that use it (plus Workflow Lint and the self-tests), not every workflow.
+- Required check names and aggregator rules are unchanged: `Web CI OK`, `E2E OK`, `All-in-one OK`, `API CI OK` and `CodeQL OK` pass when their work is skipped for a change they cannot be affected by.
+
+### Changed: CodeQL on develop pushes analyses only the changed languages; nightly runs test develop; no PostgreSQL compatibility run on push
+
+- A push to develop runs CodeQL only for the side that changed (Go for `server/`, JavaScript/TypeScript for `web/`, both for shared or CI files), as on a pull request. A new daily run (03:00 UTC) analyses both languages on develop, so develop's baseline is never older than a day; a push to main still analyses both.
+- The scheduled test workflows (fuzz, authorization matrix, ingest load, PostgreSQL compatibility, upgrade test, visual regression) and the daily CodeQL run check out develop: the default branch is main, and a schedule runs main's copy of the workflow on main's code. Takes effect once this reaches main.
+- API PostgreSQL Compatibility no longer runs on develop pushes (6 shards of about 15 minutes each): API CI applies every migration on PostgreSQL 18 in the merge queue, and the nightly run covers PostgreSQL 16 and 18 within a day. It still runs on a pull request that changes the workflow or the role script.
+
+### Changed: Web E2E runs the specs a change needs
+
+- Pull requests and merge-queue groups run the Playwright specs that the changed files map to (`web/e2e/impact-map.yml`) plus a smoke set, in 1 to 4 duration-balanced shards; shared or unmapped paths still run everything.
+- Pushes to `develop` and a nightly run execute every spec; a failure opens or updates an `e2e-regression` issue.
+
+### Changed: CI stops doomed work after the first failed job
+
+- In the merge queue, a failed job behind `API CI OK`, `Web CI OK`, `E2E OK` or `All-in-one OK` cancels every unfinished run of the same merge-group commit, so a group that will be ejected no longer holds runners until its slowest shard ends. Runs of other commits are never touched.
+- On a pull request, a failed job cancels the rest of its own workflow run only; other workflows keep reporting separately. Fork pull requests are unaffected (read-only token).
+- The Go, least-privilege, web unit and Playwright test matrices now use `fail-fast: true`.
+
+### Changed: pull request CI re-runs only what a push changed, and a verified release PR skips the heavy suites
+
+- A push to a pull request is measured against the PR's last commit whose required checks all passed, so areas that did not change since then report success as "unchanged since" that commit. The merge queue and pushes to develop and main still run the full tier.
+- A release pull request (release/vX.Y.Z into main) whose content is a develop commit with every required check green plus the version bump (or the last tag plus cherry-picks of green develop commits) skips the heavy suites; anything else runs the full tier. The code-scanning gate of a release PR compares with develop.
+- New high or critical code-scanning alerts and fixable image advisories on develop open one GitHub issue labelled security, and the Release Train plan runs a release preflight (`.github/scripts/release-preflight.sh`) that fails on blockers.
+
+### Changed: CI runs less on pull requests and a listed acker can acknowledge by comment
+
+- A pull request runs the Playwright smoke set only (more with the `run-e2e` label or a changed suite); the merge queue, the nightly run, pushes to `develop` and `release/*` pull requests run the whole suite.
+- The migration order check (fresh install against upgraded database) only warns on a pull request; the merge queue and `develop` still fail on it.
+- `docs/` counts as documentation like `server/docs/`: a docs-only pull request skips the Go, web and CodeQL jobs.
+- Heavy CI jobs go to the self-hosted pool for a share of runs (`CI_SELFHOSTED_SHARE`, default 20 percent of `github.run_id` modulo 100) and to hosted runners for the rest; `CI_RUNNER_HEAVY` and `CI_RUNNER_MERGE` still override, fork pull requests stay hosted.
+- `/security-ack` and `/security-unack` on a pull request comment add or remove the `security-ack` label (only users listed under `ackers`, from the default branch, reacting with a thumbs up or down). The gate records the acker from the comment, with the same settle and carry rules as a label added by hand.
+
+### Changed: a push to main no longer re-runs the full CI suites
+
+- API CI, Web CI, All-in-one CI and the API/Web Security push scans now run on pushes to `develop` only. `main` receives release and hotfix PRs that were already gated, and the tag build has its own image guard, so the extra runs only competed with Docker Publish for runners. Pull request and merge queue behaviour is unchanged.
+
+### Changed: the merge queue skips tests for a tree that already passed
+
+- A merge-queue group whose git tree equals the tree a pull request (or an earlier queue or push run) already passed every required check on skips the heavy jobs; the required checks still report success, with the verified tree and commit in their log. Any difference runs the normal tier.
+
+### Changed: CI runs the full suite once per pull request, in the merge queue
+
+- A pull request now runs a fast tier: lint, type-check, build, and the unit tests of the Go packages it changed (and everything that imports them), plus the e2e smoke set when `web/` changed. The Postgres suite with the race detector, PostgreSQL 18 and the whole e2e suite run in the merge queue, which is authoritative. The `ci:full` label (or a changed CI definition) still runs the full tier on the PR.
+- API CI, Web CI and Web E2E skip in the queue when the part they test is identical to a commit already verified by a full-tier run (the queue entry ahead of the group, or develop). Required check names are unchanged and report success when skipped.
+
+### Changed: API CI generates the OpenAPI spec once instead of in each of the 14 test shards
+- A new `OpenAPI spec` job uploads the spec; the test and least-privilege shards download it. About 27 runner-minutes less per merge group, same wall time.
+
+### Changed: the merge queue runs the API tests without the race detector
+
+- The merge queue runs the API test suite without the race detector (it roughly doubled each shard and was the slowest part of every group); the race detector still runs on every push to develop.
+
+### Changed: light CI jobs can run on the self-hosted runners
+
+- A new repository variable `CI_RUNNER_LIGHT` moves the short first-stage jobs (change detection, the OpenAPI spec, the API contract, the e2e shard plan, the "... OK" gates, Workflow Lint, secret scanning, docs check) to the self-hosted runners, so they no longer queue behind the limit on GitHub-hosted runners while the heavy jobs wait for them. Same rules as `CI_RUNNER_HEAVY`: pushes and pull requests from this repository only, merge groups only through `CI_RUNNER_MERGE`, unset means GitHub-hosted. Check names do not change.
+- Workflow Lint fails when a `runs-on` is not a GitHub-hosted label or an approved runner selector, and proves that every selector keeps fork pull requests on GitHub-hosted runners (`.github/scripts/check-runners.sh`).
+- Jobs that call the GitHub CLI, and the fail-fast step, install a pinned, checksum-verified `gh` when the runner has none; the e2e shard planner sets up Node.js.
+
+### Changed: Web CI reuses the merge queue's result on develop pushes, and every CI job has a timeout
+
+- A push to develop of a commit the merge queue already passed with Web CI skips `Web checks` and `Web tests` (`.github/scripts/queue-verified.sh`, as API CI, All-in-one CI and Web E2E already do). `API contract` and `Build` still run on that push, so the tenant-bundle check and develop's Next.js cache stay current. Before, the tree-reuse check never matched on a push and every develop push re-ran the whole web suite (about 45k runner minutes a month).
+- Every workflow job sets `timeout-minutes` (about two to three times its measured p90) instead of GitHub's default of 360 minutes; `Workflow Lint` fails when a job has none (`.github/scripts/check-job-timeouts.sh`).
+
+### Changed: continuous coverage starts a batch when it fills a task
+
+- Coverage started a run as soon as one pair of a capability was due. Due times are spread over a tenth of the cadence, so pairs checked together came due again across many hours and each hour became its own run of a few targets (on one installation, 26 coverage runs a day, most carrying 3 to 5 targets).
+- A capability's due batch now starts when it fills one task of its tool, or when its oldest due pair has waited a tenth of the cadence, at most 6 hours. Until then the pairs stay due and the batch collects the pairs that fall due meanwhile. Scans started by a person are not affected.
+
+### Changed: continuous coverage parks names that do not resolve instead of failing them
+
+- A name that does not resolve was scored as a failed or blocked DNS check and retried every few hours, and it could raise coverage gaps and failure streaks. On one installation 77% of the DNS checks never settled for this reason.
+- A DNS check that finds no address now settles the name as checked with the outcome "no answer" and parks it: port scans, HTTP probes and template scans are not sent to it, and its DNS is rechecked after 1 day, 3 days, 7 days and then weekly. A parked name is never a coverage gap.
+- When a parked name resolves again, its checks go through the full scope gate again, so a name taken over by someone else is refused there.
+- Another check whose target the sensor could not resolve is held as "unresolvable" on the same schedule instead of failing.
+
+### Changed: automatic coverage stops starting runs that no sensor takes
+
+- After 3 coverage runs of a capability in a row end with no sensor taking the work (`NO_SENSOR`), the capability is paused for the organization with the reason "no sensor took its last runs" instead of being started again after every back-off. Administrators get the usual "Coverage paused" alert with a link to the sensors, and each asset's coverage shows the paused reason.
+- It resumes by itself when the organization's sensors, their grants or local policies, zone assignments or shared-sensor setting change, or at a probe run 2 hours later (doubling after each further unclaimed run, at most 48 hours).
+
+### Changed: targets that do not answer coverage are tracked per sensor or zone and raise their own alert
+
+- A coverage pair whose target did not answer (unreachable, timeout) now records which scan zone or sensor tried. Its recheck wait widens (1 day, 3 days, then weekly) only while the same zone or sensor finds it silent; another zone or sensor gets the short recheck again. A success clears it.
+- These pairs count as unreachable instead of as coverage gaps, and raise one alert per capability on change: "Coverage: <capability> targets unreachable" with the count (never the targets), sent in-app and to integrations like the other coverage alerts.
+- The asset's Coverage section says "unreachable from your sensors", or names the organization's own zone or sensor that tried (`unreached_from` on `GET /assets/{id}/coverage`; a platform sensor is never named).
+
+### Changed: the Sigstore publisher verifier is its own package
+- The Sigstore client moved to `pkg/contentpkg/sigstore`, wired only by `cmd/server`, so tools that only read the content catalog no longer link it. A test fails if `pkg/contentpkg` links `github.com/sigstore/*`.
+
+### Changed: email header rendered by a template, not string building
+
+- The brand header of every email is now a named html/template sub-template (the app name is escaped by the template engine); the rendered output is unchanged.
+
+### Changed: the Entra ID how-to follows the admin console
+
+- `configure-entraid.md` starts with a 15-minute checklist and describes identity providers and verified domains in the admin console, owner approval of SSO changes, and email-first sign-in. The SSO architecture doc no longer says the organization toggles enforcement itself.
+
+### Changed: a finding reads with its target wherever it is listed
+
+- Finding lists show the target (host and port, or the URL) as a line under the title, through one shared cell on the Findings page, phone cards, My work, triage mode, asset findings, remediation tasks, the duplicate picker, the verify list and the suppression preview. Two findings of one issue on two assets no longer read as duplicates. The Location column is off by default (Display turns it on).
+- Findings gain a server-computed `display_title` ("<title> on <target>") in `GET /findings`, `GET /findings/{id}`, the export (new `display_title` column after `title`), MCP finding results, Jira summaries and GitHub issue titles, approval notices and e-mails, and the ticket mapping attribute `finding.display_title` (used by the security bug and service desk presets). The stored title is unchanged.
+
+### Changed: a workflow pull request keeps its security ack over clean develop merges
+
+- The security gate kept `security-ack` on a pull request that changes `.github/workflows/**`, `.github/actions/**`, the path list or the gate script only for the exact commit it was given on, so merging develop in to resolve a conflict or pick up a fix dropped the ack every time. It now also covers a head that is the acknowledged commit plus clean merges of the base branch and nothing else: the acknowledged commit is an ancestor, the merge has no conflict, and the head's whole tree equals that merge's tree. Any other change, a hand-resolved conflict, a rebase or a force-push still needs a new ack.
+
+### Changed: new OpenCTEM logo
+
+- The logo is now the Scope symbol with an outlined "OpenCTEM" wordmark, replacing the "openCtem" lockup. It reads the same on the sign-in pages, the legal pages, the sidebar and the admin console.
+- The web app gets dedicated 16 px and 32 px favicons, an Apple touch icon, a web manifest with the brand ink as theme colour and a social preview image. The admin console gets its favicon and Apple icon (it had none).
+- E-mails carry the OpenCTEM lockup as an embedded image (no remote image is fetched when a mail is opened) with the name as text for clients that block images. Buttons and headers use the brand ink instead of blue. Instances with their own brand keep their name as text.
+- White-label instances are unchanged: they show their own logo or name.
+
+### Changed: MCP refusals say they are a platform decision
+
+- When an AI client is refused by a permission, a campaign role, a restricted campaign or a missing person-approved connection, the message now states that the platform made a policy decision, that variations of the call are refused too, and where a person can change it. This stops automated clients from retrying with other arguments.
+- Tests now pin the injection notices of the AI triage prompt and of the MCP prompts and results, so a later edit cannot drop them.
+- The architecture note for AI triage describes what an AI reviewer may see.
+
+### Changed: migrations are tracked one by one, so a migration merged late is never skipped
+
+- `openctem-migrate` (RFC-130) replaces golang-migrate in the migrations image, the all-in-one image, the binary and
+  air-gap archives, the development entrypoint and CI. It records every applied migration in
+  `schema_migrations_applied` and applies every shipped migration a database lacks, lowest version first: a migration
+  merged after a higher-numbered one now runs instead of being skipped silently.
+- New migrations take UTC timestamp versions (`make -C server migration-new`); versions only have to be unique. CI refuses
+  a changed, removed or renamed merged migration and proves that a fresh install and an upgraded database get the
+  same schema whatever order the migrations arrive in.
+- The API refuses to start while any shipped migration is unapplied (not only when the newest one is), and the console
+  and metrics read the highest applied version from the new table.
+- **Upgrade note:** nothing to do. The first run takes the database over: it records the migrations golang-migrate had
+  applied and puts a fence version in `schema_migrations`, after which an older migrations image refuses the database
+  (as it already refused a database a newer release had migrated). Roll back the API image, not the migration job.
+  The commands and arguments are unchanged; `force V` now records migration V as applied and `force -1` only clears
+  the dirty flag (see "Dirty-migration recovery" in `docs/deployment/safe-deploy-and-migrations.md`).
+
+### Changed: user-facing text no longer cites internal design documents
+
+- Error and help texts, metric descriptions, the authorization reference, API annotations, the sensor protocol spec, shipped JSON schemas, the environment-variable reference and generated sensor policy templates now explain themselves in plain words instead of pointing at RFC numbers or research notes.
+- A CI gate (`go test ./tools/lint/internalrefs/`) and a web test (`src/lib/i18n/__tests__/no-internal-references.test.ts`) fail when a string, an API annotation, a shipped schema or an i18n value cites one again.
+
+### Changed: Retired scan workflows are hidden and say what replaced them
+- `GET /scan-workflows` no longer lists retired system workflows (Discover, Discover + Vuln, Web app and the older presets) unless `include_retired=true`. Each retired workflow carries `is_retired` and `superseded_by` (new column `scan_workflows.superseded_by`, migration `workflow_superseded_by`).
+- Starting a scan from, or copying, a retired workflow is refused with an error that names its replacement. Existing scans and tenant copies keep working, and a copy's detail response gains `based_on_retired`.
+
+### Changed: RFC-133 and the harness architecture note use generic AI names
+
+- The runtime is the sdk-go `pkg/harness`, the AI worker is distributed separately from the core and the sensor role is `ai-worker`. The CLI groups are `openctem playbook` (scaffold and test a playbook) and `openctem aiagent` (build, sign and publish an own AI agent). The platform principal is an "AI agent" with a role; the analyst is the first role. RFC-133 and the architecture note are renamed to `RFC-133-ai-harness.md` and `ai-harness.md`.
+- RFC-133 gains section 10a, a concept map for AI agents that organizations build themselves, with the controls that are stricter by design.
+
+### Changed: RFC-133 designs the model provider layer of the AI worker
+
+- New section 6a: the adapter families (OpenAI Chat Completions and Responses with Azure OpenAI and every OpenAI-compatible or local server, Anthropic Messages, Gemini and Vertex AI, Bedrock Converse, Cohere), the capability matrix, degradation rules, credential sources (platform-managed, worker-held, platform-provided; keyless cloud identities preferred) and authentication per family, the hardened HTTP client, retries and rate limits, tokens and the price table as data, region and retention, the settings schema the console stores, policy-safe fallback chains with circuit breakers, and the conformance kit.
+- The threat model, decisions and plan, and the harness architecture note, are updated to match.
+
+### Changed: the Runs tab lists runs started by people by default
+
+- Scans > Runs now opens on runs started by people. A "Started by people / System / All" switch shows the runs the platform starts on its own (continuous coverage), which stay listed and exportable.
+- While system runs are hidden, one line says how many runs continuous coverage started, with links to show them and to the coverage settings.
+- The kind filter no longer has a "Continuous coverage" entry; the System switch replaces it (`/scans/runs?origin=system`).
+
+### Changed: New Scan and Edit Scan Targets step laid out for phones and desktops
+- The Targets step reads in working order: the targets field (chips inside, type or paste to add, assets and asset groups from a picker), then one readiness line (targets, ready, blocked), then the blocked targets grouped by reason with ranked fixes, and the options in a collapsed section with a one-line summary. Desktop shows two columns.
+- The footer is one row: Back on the left, Next on the right. Cancel is the header's close button, which asks before discarding changes. Phones show "Step N of M" with a progress bar; desktops label every step.
+- Next is disabled while no target can be scanned, with the reason under it; when some can, the Review step lists the ones that will be skipped.
+- `POST /scope/check` returns `remedies` for each refused target, best first: run on your own sensor (when one is online), verify the domain, lower the intensity (when the target is allowed at that tier) and remove. The scan form shows them in that order instead of guessing.
+
+### Changed: the sensor install commands explain the data volume and link the Run the sensor guide
+
+- The `docker run` and Compose install commands keep the sensor's data in a named volume and now say why: a host directory mounted at `/var/lib/openctem` must be owned by the sensor's user (`sudo chown -R 999:999 <dir>`), or the sensor stops at start. The install dialog shows the same note with a link to the Run the sensor guide (English and Vietnamese).
+
+### Changed: a shared sensor's poll no longer ranks every pending shared job
+
+- The shared poll now reads, per organization with pending shared work, only its first round of jobs
+  straight from a new index, and counts in-flight shared jobs through an index that holds no finished job.
+  Its work is bounded by the organizations with pending shared work (at most 200 ranked per poll), not by
+  the depth of their queues or by shared job history. The order of offered jobs is unchanged: rounds of five
+  per organization, fewest in flight first, one verification job may jump (RFC-129).
+- Migrations `003447_commands_shared_inflight_index` and `003448_commands_shared_pending_index` build two
+  partial indexes on `commands` with `CREATE INDEX CONCURRENTLY` (no write lock; build time grows with the
+  number of pending and in-flight shared jobs, which is small).
+
+### Changed: shared sensors protect a target host across organizations
+
+- A shared (platform) sensor job now starts only while fewer than two shared jobs of any organizations hold
+  one of its hosts (one for intrusive work). Before, per-host politeness on the shared fleet was per
+  organization only, so several organizations could scan one host from the platform's egress at once.
+- The claim locks and counts the host across organizations and within its own batch. A waiting organization
+  sees only that its job waits for its hosts, never who else scans them. Organization sensors keep
+  per-organization host keys and are not affected (RFC-129).
+
+### Changed: target mappings hold only administrators' additions; the asset type catalog is the built-in source
+
+- Which asset types a scanner target type can scan is decided by the asset type catalog (`scannable_by`). The target mapping table duplicated most of it with seeded rows that changed nothing. Migration `target_mappings_registry_covered_seed_rows` removes the 32 seeded rows the catalog already declares (the 6 seed rows that go beyond it, and every row an administrator created, stay), so scans decide exactly as before.
+- `POST /admin/target-mappings` refuses a pair the catalog already has (409). `GET /admin/target-mappings/registry` lists the built-in pairs, and the console shows them read-only under the custom mappings.
+- Upgrade note: the down migration puts the removed seed rows back with their original ids.
+
+### Changed: threat intelligence feeds report one computed state
+
+- `GET /api/v1/admin/threat-intel/sync` returns, per feed, a server-computed `state` (`up_to_date`, `waiting_for_publisher`, `stale`, `failing`, `refused`, `running`, `off`), an `error_code` with `error_params`, `last_attempt_at`, `last_success_at`, `failing_since`, `next_run_at` (the scheduler's real interval: 20 minutes for vulnerability bundles, hourly for KEV, daily for EPSS), `catalog_records`, `records_changed`, `data_as_of`, and for `vulnfeed` the applied sequence, key set version, bundle age and per-source freshness. The old `last_sync_status`, `records_synced` and `next_sync_at` fields are gone from the admin route.
+- A missing publisher (404 on the key set or pointer) reads "waiting for the publisher" instead of a failure; a run with nothing newer now clears an earlier failure.
+- The organization routes keep `last_sync_status`, `records_synced` and `next_sync_at` and add `state`, `data_as_of` and `last_success_at`; they carry no error text.
+- Console: the Threat intelligence page shows one card per feed with the state, the error as a code with an action (raw text behind Details), catalog size and last-run changes separately, last attempt and last success separately, and the bundle feed's sequence, signature and per-source freshness. No migration.
+
+### Changed: "Sync now" runs in the background
+
+- `POST /api/v1/admin/threat-intel/sync` queues the sync and answers 202 at once with a result per feed (`queued`, `already_running` or `skipped` with `disabled`, `not_configured` or `rate_limited`). Before, the download ran on the request, under the 30 second request timeout, and could be cut off or overlap the scheduled run. A feed that is switched off or has no bundle root key is not started (409 for a single feed); a feed started less than 15 seconds ago answers 429 with `Retry-After`.
+- A feed runs once at a time: the scheduled run and an operator's request claim the feed's status row with one conditional update, across replicas. A run left `running` for more than an hour counts as interrupted and can be claimed again.
+- The background job runs the whole controller pass (fetch, priority recompute for the findings whose CVE intel moved, KEV flag reconciliation, vulnerability events).
+- Console: the card shows Running while a feed runs, the page refreshes every 2 seconds meanwhile, and a toast reports the real outcome of each requested sync.
+
+### Changed: one name per concept in the web console text
+
+- The organization is called an organization everywhere (sign-in picker, onboarding, empty states, dialogs), no longer a team, tenant or workspace; Settings > Teams (access groups) is unchanged. Spelling is American.
+- Vietnamese text uses one word per concept: sensor, lần chạy, nhật ký kiểm toán, kiểm tra lại, mức độ nghiêm trọng, mức độ quan trọng, phát hiện (dashboards no longer leave "finding" in English).
+- Every section tab (Exposures, Scope, Business context, Threat model, Scans, Assets, Attack surface) now has a translated label instead of showing English in Vietnamese.
+- A glossary check fails the unit tests when a retired word comes back into the en or vi catalogs.
+
+### Changed: The platform version comes from the tag, not from a committed value
+- `docker-compose*.yml` no longer carry a default `OPENCTEM_VERSION`: `./setup.sh` writes it into `.env` from `--version vX.Y.Z`, else `server/deploy/VERSION` (present in a release tag's checkout), else the tag checked out. From a branch checkout, pass `--version`.
+- `versions.yaml` no longer has `platform` or `chart` sections; the platform release the content catalog checks against is the running build's version.
+- A release no longer opens a version-bump PR to `develop`: the follow-up after a train only merges `main` back (`-s ours`, no file change), and a hotfix has none.
+
+### Changed: the MCP tool `list_active_cves` uses the vulnerabilities list read
+- It returns the CVEs of open findings the key's owner can see, in the list's risk order, with the same scope rules as the page.
+
+### Changed: the CVE catalog filters and table are translated
+- Every label, column, count and empty or error message on the catalog tab of /exposures/vulnerabilities now comes from the English and Vietnamese catalogs.
+
+### Changed: vulnerabilities list performance
+
+- `GET /api/v1/vulnerability-exposures` answers an organization with 300,000 findings in under a second (was 3 to
+  4 s): one hash aggregation per CVE without sorting the findings, JIT compilation off for the read, the per-CVE
+  hash tables held in memory. A database test holds the list to a 1.5 s budget at 200,000 findings and fails on a
+  JIT-compiled or spilling plan.
+
+### Changed: the vulnerability feed is read from openctemio/vulnfeed-bundles
+
+- The default `VULNFEED_BASE_URL` is now `https://github.com/openctemio/vulnfeed-bundles/releases`: the signed feed moved to its own repository, separate from the collector code (openctemio/vulnfeed). The pinned root key and the bundle format are unchanged, so a platform needs no other change. Until 30 days after this release the old location keeps a verified copy of the feed, so a platform that sets `VULNFEED_BASE_URL` to it, or runs an older version, still imports.
+- An air-gapped mirror or an explicit `VULNFEED_BASE_URL` is used as before. Firewalls that allow `github.com` need no change (the host is the same).
+
+### Fixed: sign-in refusals say what the person can do, in their language
+
+- Every refusal of a sign-in, single sign-on, SAML, social sign-in or invitation now carries a stable `code` from one table (`handler/auth_error_codes.go`). The services return sentinel errors, not sentences. The web console words each code in English and Vietnamese and no longer shows the server's sentence when the code is known.
+- Expected refusals answer 4xx instead of 500: an identity provider response that fails verification, one without an email address, and sign-up closed for single sign-on.
+- New codes tell the person what to do: `SSO_AWAITING_APPROVAL`, `SSO_NOT_A_MEMBER`, `LIMIT_REACHED` (no free seat), `SSO_DOMAIN_NOT_ALLOWED`, `ACCOUNT_LINK_REQUIRED`, `SSO_REQUIRED`, `SSO_DIFFERENT_METHOD`, `EMAIL_UNVERIFIED_AT_IDP`, `USE_ADMIN_CONSOLE`, `ACCOUNT_SUSPENDED`, `EMAIL_NOT_VERIFIED`, `ORGANIZATION_SUSPENDED`. A SAML failure redirects to `/login?error=<code>` instead of one generic flag, and both callback pages show the matching message. The answers before the password is proven stay generic, and none names another organization.
+- "This email is registered with a different login method" is its own refusal (`SSO_DIFFERENT_METHOD`); it was reported as "Your email domain is not allowed".
+- A platform administrator who signs in through an identity provider is told to use the admin console (`USE_ADMIN_CONSOLE`) instead of a generic failure.
+- Invitation refusals (already a member, membership suspended, reactivate instead of inviting) have codes `INVITATION_ALREADY_MEMBER`, `INVITATION_MEMBERSHIP_SUSPENDED` and `MEMBERSHIP_SUSPENDED_REACTIVATE`.
+- The `MFA_ENROLLMENT_REQUIRED` answer for a session that must prove a second factor through its identity provider is now `MFA_IDP_EVIDENCE_REQUIRED`.
+- The wrong "Must be admin, member, or viewer" default-role message now says member or viewer.
+- Error and dictionary text follows the text rules: no em dashes or middle dots, "organization" instead of "team". `scripts/check-separators.sh` checks the sign-in dictionaries whole and the API error strings it adds.
+
+### Fixed: a failed CI job keeps its "failure" conclusion
+
+- The fail-fast step no longer cancels its own workflow run. Cancelling it turned the failing job into "cancelled", so a merge-queue group that failed a test (for example the request budget) looked like a lost runner and was re-queued again and again. In the merge queue it still cancels the group's other runs; on pull requests it cancels nothing.
+
+### Fixed: golangci-lint no longer runs out of memory on self-hosted runners
+
+- The "Lint (golangci-lint on new code)" step sets `GOMAXPROCS=4` and `GOMEMLIMIT=8GiB`. The pinned golangci-lint ignores the container's CPU limit and started one type-check worker per host CPU; it now uses the runner's 4 CPUs, and the Go runtime collects garbage before the container's memory limit is reached instead of the process being killed.
+
+### Fixed: CI jobs pass on the self-hosted runners
+
+- The gateway smoke test copies the Caddyfile and its test certificate into Docker volumes instead of bind-mounting the checkout, which a runner's separate Docker-in-Docker daemon cannot see (every gateway check failed there with status 000).
+- Every PostgreSQL health check in CI names its user and database (`pg_isready -U ... -d ...`), so the service log no longer shows `role "root" does not exist`.
+- CodeQL sets up Node.js before the JavaScript/TypeScript analysis, which the self-hosted runner image does not ship.
+- `server/docs/development/ci-cd.md` lists the rules for jobs that may run on a self-hosted runner.
+- The production compose render check installs its pinned `yq` when the runner has none.
+
+### Fixed: CI jobs on the self-hosted runners
+
+- `API static checks` installs `yq` when the runner image lacks it again; the installer from the self-hosted runner fix was lost in a later merge, so the job failed with `yq: command not found`.
+- `Web checks` gives `tsc` a 4 GB heap; Node's default on a self-hosted runner (about 2 GB) ran out.
+- The Scans › Configurations page tests get a 30 s test timeout: every interaction re-renders the 25-row table, and on a busy runner a test with five interactions passed the 5 s default.
+
+### Fixed: a closure needs evidence that survives a second look
+
+- A retest no longer counts an edge block as a fix when the sensor sends per-request lines: the platform also classifies the recorded exchange at the finding's endpoint, and a CDN or WAF challenge or block stays `edge_blocked`.
+- A retest no longer resolves a finding that a scan sighted again after the check ran: the fix is recorded `inconclusive` (new reason `seen_after_check`, migration `retest_seen_after_check`) and the finding stays open.
+- The one hour between two origin refusals of an exposure check is measured between the checks' completion times, not to the moment the second is settled.
+- A retest of a non-exposure check that is answered by a redirect to another page (a login) is `inconclusive` (`auth_changed`), not a fix.
+- A full-coverage import closes findings only for an uploader who also holds `findings:verify` (otherwise it imports and closes nothing, receipt note `needs_verify`), leaves critical and known-exploited findings open, and closes only findings whose latest sighting was an upload, never one a platform sensor saw last.
+- A report observed before a finding was resolved no longer reopens it; a report observed after the fix still does.
+
+### Fixed: console confirmations no longer freeze after a refused authenticator code
+
+- A console form that asks for its own authenticator code (System > E-mail and
+  every other settings form with a code field) no longer opens the console's
+  step-up dialog on top of its confirmation when the code is wrong or was
+  already used. That second dialog dimmed the confirmation, put its code field
+  out of reach and kept its Confirm button disabled. The refusal is now shown
+  under the form's own code field, which is cleared and focused for the next
+  code. Codes asked for by the step-up dialog itself are asked for again as
+  before. No API change.
+
+### Fixed: continuous coverage runs are visible under Scans
+
+- Scans > Runs labels the runs of scans the platform manages (continuous coverage, enrichment) with a badge, and the kind filter gains "Continuous coverage". "Scans" leaves those runs out, "All kinds" lists everything. `GET /api/v1/scan-runs` takes `origin=user|system` and each row carries `managed_by`.
+- Scans lists the managed scans in a read-only section, "Managed by continuous coverage", with links to the coverage settings and to their runs.
+- The "new internet-facing assets discovered" notification links to the scan run that found the assets when one run found them all.
+- The Runs empty state no longer says "No scan runs yet" while the counters show runs.
+
+### Fixed: coverage alerts no longer repeat while a small count flaps
+
+- A coverage alert (gap, keeps failing, produces nothing, paused) stays one open alert per capability and kind. It is sent again only when it gets clearly worse: the count at least doubles and grows by 5 or more, at most once a day. A count going down updates the alert silently instead of notifying every administrator.
+- A condition that clears and comes back within three days (was one day) comes back silently, so a failing streak on a few assets that passes and fails from run to run no longer re-alerts.
+
+### Fixed: a scan that left hosts uncovered no longer closes findings by absence
+
+- Coverage auto-resolve closed open findings that a run did not repeat even when the sensor reported coverage gaps (hosts it gave up or that blocked it), unreached targets or targets its local policy refused, as long as the report said `coverage_type: full`. A finding on a host the run never finished scanning was then closed as fixed. Such a run now closes nothing (reason `uncovered_targets` in the coverage metrics). Repository scans and enforce-mode network scans are both covered.
+
+### Fixed: continuous coverage DNS resolution no longer waits behind other scans; large single-scanner runs are shared across sensor slots
+
+- A single-scanner or continuous coverage command of a passive tool that reaches no target host (DNS resolution through resolvers, subdomain discovery, RDAP, ASN lookups) now holds no per-host politeness keys, as a passive workflow stage already did. Before, it got the keys of its names, waited behind every port, HTTP and template scan of them, and was failed as "no sensor picked up this run's work within 1h" while the sensors were idle; in one organization 533 of 555 names never got resolved, so ports, HTTP probing and template scans never ran on them. A DNS tool given custom resolvers keeps its keys.
+- An unzoned single-scanner run of a list-taking tool is cut into commands of the scan's `targets_per_job` when that is 2 or more (continuous coverage sets the capability's chunk size, 25 for template scans), as the documentation already said. Before, a coverage template scan of 50 targets was one command on one sensor slot that ran past its two-hour deadline while other slots idled. `targets_per_job` 1 (the default of a new scan) keeps one command.
+- A web service reached by an IPv4 address is no longer template-scanned by continuous coverage when a web service reached by a host name serves the same address on the same port (new coverage predicate `no_named_twin`, reason shown on the asset's coverage). A named virtual host or CDN-fronted application answers its bare address with a default page, so the checks run once, on the named service with the right Host and SNI. An address service with no named twin is still scanned, and becomes due again if the named service goes away.
+
+### Fixed: dashboard time-series charts show their values on hover, focus and tap
+
+- Area charts showed only the date in an empty box (the row text took the series' card-coloured stroke). Every dashboard-kit time-series chart (columns, area, line, new vs fixed) now uses one tooltip: the span of the bucket ("Week of Oct 20 – 26"), one row per series in the order the marks are stacked with its palette colour, value and change against the previous bucket, a Total for stacks, a Net change for new vs fixed, and zero series folded into one line on charts with three or more series.
+- It opens on hover, on keyboard focus of the chart (arrow keys move between buckets) and on tap.
+
+### Fixed: the settings reachability e2e no longer times out on a cold server
+
+- "every settings rail entry opens" loads one page per rail entry inside the default 60 s test budget, which a cold server exceeded once the rail grew (issue #3234). The budget now grows with the number of entries.
+
+### Fixed: Fix next rows keep one grid
+- A dashboard list row with no severity (or the stored "none") keeps its severity dot slot (info or a neutral Unknown dot), and a row with no SLA due date shows "No due date" instead of an empty right column.
+
+### Fixed: a sensor's retest-templates capability and dnsx-enum tool are no longer dropped
+- A sensor's `retest-templates:<tool>` capability (its retest handler also runs templates delivered with the command) was removed from every report as an unknown capability, so a retest with a custom check found no sensor and never ran. It is now kept for a tool in the catalog, like `retest:<tool>`.
+- The `dnsx-enum` tool (subdomain brute force, `enumerate.subdomains@1`) is in the tool catalog (migration), so a sensor's report and manifest keep it.
+- The sensor manifest tab says "This sensor is newer than the platform; these items will be used after the platform is updated" when every ignored item is one the platform does not know yet, and says some items are invalid otherwise.
+
+### Fixed: MCP tools explain an empty data scope
+
+- An MCP connection reads only the assets the user's groups and scope rules grant, not the full-data access an owner or administrator has in the web console. A user in no group therefore got empty assets, findings, finding statistics and active CVEs that looked like an empty organization. Every such empty result now carries a `scope_notice` saying the user's data scope covers 0 assets and to ask an owner for access. The MCP authorization docs now state the rule (they said tokens kept full data access).
+
+### Fixed: the sidebar drawer on a phone holds still and shows one current row
+
+- The phone drawer scrolls as one column (header, nav and footer together), so the footer no longer squeezes the nav to a sliver on a short or sideways screen and iOS Safari has no nested scroller to bounce.
+- Sheets and dialogs move above the keyboard only while a text field is focused; browser toolbar changes, the end-of-scroll bounce and pinch zoom no longer move the panel's bottom edge every frame.
+- Sheets lost a 500 ms transition on every property that ran on top of their slide animation.
+- One filled row in the sidebar: a row whose quick view is current (Findings with Active) keeps its weight without the fill, and a pinned page or quick view mirrors the current row unfilled.
+- The pin button is not offered in the phone drawer, where it sat over every row's count.
+- The drawer no longer scrolls sideways: a few pixels of horizontal overflow let a finger drag the rows left and clip the first letters of every label.
+
+### Fixed: a reset link works once, and a declined invitation must be pending
+
+- Of two requests that present the same password reset link at the same moment, exactly one now succeeds: the token is cleared by a conditional update.
+- Declining an invitation through the public decline route is refused (409) unless the invitation is pending, so an accepted invitation is no longer revoked and audited as declined.
+
+### Fixed: Google sign-in for an address that already has an account answers 409, not 500
+
+- `POST /api/v1/auth/oauth/{provider}/callback` answered `500 INTERNAL_ERROR` when the provider's verified address belonged to an account that signs in another way (a password account, or an account of another provider). It now answers `409 OAUTH_ACCOUNT_EXISTS`; a provider that returns no address answers `400 OAUTH_NO_EMAIL`. Nothing is written in either case.
+- The sign-in page keeps a notice on screen: an account with this email already exists, sign in with your password, then link the provider in Account > Security, with a link to reset the password.
+
+### Fixed: pre-push hook lints only new code in a git worktree
+- The hook unsets the `GIT_DIR` that git exports to a linked worktree's hooks, so `golangci-lint --new-from-rev` diffs against the base instead of linting the whole tree.
+- `make lint-new` runs golangci-lint with its own `TMPDIR`, so parallel runs no longer collide on its lock file.
+
+### Fixed: KEV flag, SLA policy read errors and an all-zero risk configuration
+
+- A finding loses its KEV flag when its CVE leaves the KEV catalog. The priority classifier only ever set `findings.is_in_kev`, so a CVE removed from the catalog, or a finding whose CVE changed, kept the KEV exploitation floor (P0/P1), the KEV deadline cap and the KEV dashboard count, and the intel refresh requeued its asset on every run. The flag and the KEV due date are now cleared when the catalog lookup succeeded and the CVE is not in it; a failed lookup keeps the stored value. The SLA deadline set while the finding was KEV stays (deadlines only tighten).
+- An SLA policy that cannot be read (a database error, not "no policy configured") no longer turns into the platform default windows and the default KEV cap for that pass. Deadlines only tighten, so a default written on a transient error stuck for good. The deadline computation now fails for that finding and the next pass retries; no policy configured still gives the platform defaults.
+- Risk scoring weights that put the whole weight on CTEM while CTEM points are off are refused (every asset scored 0). A configuration stored before this change scores with the platform weights.
+
+### Fixed: continuous discovery can be saved before the first sensor connects
+- A scan whose tools are enabled but that no sensor has offered yet is saved as waiting ("Waits for a sensor with Port scan") instead of being refused; it runs once a sensor with those tools is online. Disabled tools and CI-only steps are still refused.
+- Creating Continuous Discovery shows one result, with a note and a link to the sensors when the probing scan waits, instead of an error next to a success.
+
+### Fixed: release-train hotfix mode
+
+- A hotfix can pick a PR's merge commit (cherry-picked by its first-parent diff).
+- A hotfix runs the version checks with the previous tag's own scripts, so a later layout change no longer fails it.
+- The post-release back-merge of a hotfix whose picks are all on develop is a `-s ours` merge instead of a conflict.
+
+### Fixed: retest of a version-based finding re-checks the version, not a template named after its CVE
+
+- A finding raised by version matching (tool `version-match`, a software version in a CVE's affected range) is re-checked by running the fingerprint that read the version again on the asset (`httpx` for a web technology or `Server` header, `naabu` for a port's service), as an ad-hoc scan through every scan gate. The version it reads decides: the same version or another affected one keeps the finding open with the new version as evidence, a version outside every affected range is a verified fix, nothing read is inconclusive. Before, the retest and "Re-verify" sent the CVE id to the sensor as a nuclei template id and failed with "the check is not installed on this sensor".
+- When a template named after the CVE ran on one of the organization's sensors before, it is offered as an optional "Active check" on that sensor; it is never required.
+- A nuclei template retest is addressed to the sensor that reported the finding, else to a sensor with the finding's template release or newer. When every online sensor has an older release, the retest is refused with `RETEST_NO_TEMPLATE_SENSOR` instead of a run that fails.
+- A finding a person reported (manual, pentest, bug bounty, red team) has no automatic retest: the console shows a disabled button and the reason (attach a retest check to retest it).
+- The retest list (`GET /api/v1/findings/{id}/retests`) adds `strategy`, `reason` and `active_check`; `POST` takes an optional `{"mode": "active_check"}`. A refused retest returns 422 with `RETEST_NOT_AVAILABLE`, `RETEST_NO_SENSOR`, `RETEST_NO_CHECK_SENSOR` or `RETEST_NO_TEMPLATE_SENSOR` and `details.reason` (was 400 with free text).
+- Migration 003529 adds `finding_retests.method` and the reason codes `version_not_observed`, `version_still_affected`, `version_not_affected`. Additive, no data change.
+
+### Fixed: a run's deadline counts active work, not queue wait
+
+- When a sensor claims a task, its run gets at least the time the task's targets need at that sensor's measured speed (its reported targets per minute for the tool, twice over plus 5 minutes), or the run's configured timeout from the claim when the sensor reports no speed. The claimed task's payload deadline follows, so the sensor budgets the job to it. The deadline only moves forward, never past the 24 h platform cap, and never when the scan's owner set a max duration. The run page shows the reason "Moved when a sensor took the work".
+- A run whose open tasks all wait for a busy sensor of the organization (one that could take them is online with no free slot) or for their hosts is no longer timed out at its deadline, and is no longer failed as "no sensor picked up this run's work within 1h". Before, a two-hour coverage run that queued behind other runs was cut before a sensor worked on it, and its partial work was lost.
+- Migration 003452 adds `work_estimate` to the allowed `scan_runs.deadline_reason` values (constraint swap only, no row rewritten).
+
+### Fixed: a running scan run shows its findings and counts live
+- The run's Findings figure came from the count each sensor wrote on its command result, which is 0 for tools that report through ingest, so it stayed 0 on running, partial and completed runs. It now follows the run's receipt (new, still detected and reopened findings) as each report lands and is never lowered by the step bookkeeping.
+- "What this run did to findings" refreshes while the run is running, shows "Counted when the run finishes" for Untouched, and no longer says a run could close findings before its tasks have finished; a run that ended partial, failed or timed out says only tasks that finished cleanly could close findings.
+
+### Fixed: a failed run no longer shows the last run's assets as gone
+
+- The run view compared every step's outputs with the previous completed run of the scan. A step that did no work (no sensor picked it up, it failed or timed out) produced no asset, so the view showed "Compared with the last run: 9 gone" for every asset of the last run, although nothing disappeared. The comparison was display only: no asset state changed. `GET /scan-runs/{id}/map` now compares only steps that finished their work (completed or partial); the others carry no `previous`, `added` or `gone`.
+
+### Fixed: a finished run without a stage plan no longer says its stages are "not planned yet"
+
+- A run that ran its scan's step directly (a quick scan, every continuous coverage run) never records a stage plan, so its Stages section said "No stage of this run has been planned yet" even after the run finished or failed. A finished run now says that no stage plan was recorded for it; a run in progress keeps the "not planned yet" text.
+
+### Fixed: an exclusion that can never match is refused
+
+- Creating an exclusion with a reversed range (`10.0.0.9-10.0.0.1`), an impossible network (`10.0.0.0/33`), a network in an IP address exclusion, or a URL in a domain exclusion is refused with a validation error. Such exclusions were accepted and shown as protecting their target while excluding nothing. Existing exclusions are not changed.
+
+### Fixed: work spreads across an organization's sensors, and a sensor never runs more scans than its slots
+
+- Every eligible sensor is woken when a task is queued, and the first claim used to take every task up to its free slots, so the sensor with the lowest round trip (or the one that had just finished the previous stage) got almost all the work while an equally able peer stayed idle. A claim now leaves fresh tasks (queued less than 10 seconds ago) to the least-loaded eligible sensor: the largest share of free slots first, then the fewest recent claims. After the window any eligible sensor takes the task, so a peer that does not claim delays it by seconds at most. Sensors without the tool, outside the zone, offline, disabled, full, shared or of another organization never count.
+- The claim caps scans at the sensor's free slots inside its own transaction, under a per-sensor lock, so two claims of the same sensor racing (a poll and a stream wake, two API replicas) can no longer exceed its job limit together.
+- The sensor's job count counts scan tasks only, the same count the slots use: a content refresh in flight no longer shows a sensor as 6 of 5.
+- The task placement panel says when a sensor that could take a fresh task leaves it to a less-loaded one.
+
+### Fixed: the sign-in form says "Too many attempts" on a rate-limited sign-in
+
+- A sign-in refused by the request rate limit (429, `RATE_LIMIT_EXCEEDED`) showed only "Sign-in failed", which reads like a wrong password. The form now asks the person to wait a minute and try again (en and vi).
+- The e2e sign-in helper recognises that text again, so a worker that hits the per-address sign-in limit waits for the window instead of failing after 30 seconds; any other refusal fails at once with the form's message.
+
+### Fixed: a support session now ends with the console session that opened it
+
+- Signing out of the console, a console session expiring, or going idle left the support session open until the grant expired (up to 72 hours), so every member of the organization kept seeing "support is viewing now" and the owners never learned it had ended. Sign-out now ends the administrator's support sessions at once; a sweeper (`support-session-sweep`, every minute) ends sessions whose console session is gone, whose grant ended, or that were unused for 30 minutes. Each ended session writes `support.session_ended` to both audit logs and emails the owners with the cause. The organization's open-session signal also requires a live console session, so it drops immediately.
+
+### Fixed: refused team member changes now say why
+
+- Adding, removing or extending a member of a team that carries a privileged role answered every refusal with the generic "You do not have permission to do this", so the organization owner could not tell a missing recent sign-in from a rule. The refusals now have their own codes and sentences: `TEAM_PRIVILEGED_OWNER_ONLY` (only the organization owner changes the members of such a team), `TEAM_EXTERNAL_FULL_DATA` (an outside member never gets full data access through a team) and `TEAM_SELF_JOIN` (nobody adds themselves to a team that carries roles). `STEP_UP_REQUIRED` and `STEP_UP_UNAVAILABLE` are registered codes with console wording in English and Vietnamese; `STEP_UP_REQUIRED` still opens the re-authentication dialog and retries once.
+
+### Fixed: the EPSS data date was the time of the fetch
+
+- The EPSS file's `score_date` was never read (the metadata comment line was split at its comma and only the first half parsed), so every direct fetch dated its data with the fetch time. It now carries FIRST's real score date, which the no-rollback rule compares.
+
+### Fixed: threat intelligence feeds report what they did
+
+- An unchanged CISA KEV catalog (HTTP 304) no longer overwrites the stored record count with 0; a count an earlier run already zeroed is repaired from the catalog.
+- A KEV response with no entries (an empty or renamed `vulnerabilities` array) and an empty EPSS file are failed syncs. The validators of a bad KEV response are not stored, so the next run fetches again.
+- KEV and EPSS refuse a snapshot smaller than 90% of the stored catalog.
+- `POST /api/v1/admin/threat-intel/sync` always answers 200 with one result per feed (`success`, `error`); it no longer answers 206 on a failure, which the console showed as "Sync finished." It accepts `vulnfeed` and "all" includes it. A feed that is switched off or not configured is reported as failed.
+- The organization routes (`GET /api/v1/threat-intel/sync`, `/sync/{source}`, `/stats`) no longer return the raw `last_error` text of a failed fetch; the platform admin route still does.
+
+### Fixed: names that no longer resolve are skipped, not failed or dispatched
+
+- A scan task whose every target is a name that does not resolve now completes with per-target skips (reason `target_unresolvable`) instead of failing; the run shows "N names no longer resolve" as information. Older sensors that report it as a failed command are handled too.
+- Active stages no longer take names the platform knows do not resolve (new per-name resolution state, migration 20261028153738). Passive stages keep them, so a name comes back by itself when it resolves again.
+- Names that do not resolve at all are no longer marked wildcard-only: a name the filtered resolver left out is checked against DNS, and only a name that resolves through a probed wildcard record of its parent zone is marked. The migration clears the existing wildcard-only marks (they held no proof); the next resolve run marks again only the real ones.
+
+### Fixed: an organization whose only owner is blocked or erased can now be recovered
+
+- A platform administrator blocking (or erasing) the sole owner's account left the organization unmanageable: the Organizations list still showed the owner, Overview raised no "without owner" item, the Users tab hid the recovery action and the API answered "has an active owner". Owner recovery, the list's owner filter, Overview and the Users tab now share one definition of an owner who can act (active membership, account active and not erased).
+- `GET /api/v1/admin/tenants/{id}/users` returns `active_owner_count`, so a read-only administrator no longer sees a wrong "every owner is suspended" notice.
+
+### Fixed: a task every sensor withholds says why instead of waiting in silence
+
+- When a sensor's grant, local policy or the scan's intensity keeps a queued task from it, the reason is recorded on the task (its code only, at most every 10 minutes) and logged once per sensor and reason per 10 minutes. Neither the record nor the log carries targets, settings or the sensor's identity on the task.
+- "Why waiting?" on a run's task names that reason, also for platform scanning and the shared fleet (`withheld` on `GET /scan-runs/{id}/tasks/{task_id}/placement`).
+- A run that no sensor picked up ends with the reason in its message, e.g. "withheld by sensor permissions: credentials", and its tasks show it, translated (`withheld_reason` on run tasks).
+
+## v0.15.6 (2026-10-29)
+
+### Fixed: scan jobs naming a long host name no longer wait for a sensor until they fail
+
+- The secret detector of scan settings counted long host names (for example `static-01.example-group.com.vn`) as high-entropy secrets. A quick scan carries its targets in its settings, so the sensor grant read such a job as one that carries credentials and withheld it from every sensor whose grant does not allow credentials. The job stayed queued until the run's deadline and the run failed with "no sensor picked up this run's work". On the hosted service this failed most continuous coverage runs of `resolve.dns`, `scan.ports` and `probe.http`.
+- Host names, IP addresses and ranges are no longer high-entropy values, and a `target`/`targets` list is checked only for credential formats (a URL with a user and password in it). The `scanner_config_warnings` of a scan drop the same false warnings.
+
 ## v0.15.5 (2026-10-27)
 
 ### Behaviour change: ownership confirmation applies only to platform sensors of the hosted service

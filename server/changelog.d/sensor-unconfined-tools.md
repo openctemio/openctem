@@ -1,3 +1,0 @@
-### Added: the console shows a sensor that runs its tools without the sandbox
-
-- A sensor whose host has no tool sandbox (it is Linux only: macOS or Windows sensors) now refuses tools that contact their targets unless its operator sets `SENSOR_SANDBOX=off` (sdk-go, sensor). The platform reads the new posture member `sandbox.unconfined` (`refused` or `acknowledged`): `GET /api/v1/sensors` returns `posture.tools_unconfined`, the sensor is flagged unhardened with the new reason `tools_unconfined` (also a `kind` of `openctem_sensors_unhardened`), the sensor's Security posture block and the install review's Tool sandbox check say what runs there, and the config report check `runtime.sandbox_unconfined` (`sandboxed`, `active_refused`, `acknowledged`) has its title and fix.

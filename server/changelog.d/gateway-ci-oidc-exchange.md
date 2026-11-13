@@ -1,2 +1,0 @@
-### Fixed: the gateway sends the CI OIDC token exchange to the API
-- `POST /api/v1/ci/oidc/exchange` carries its credential in the body, so the gateway sent it to the web app, which refused it with a CSRF 403 and broke the exchange for CI runners behind the stock gateway. The edge table now routes that one path straight to the API (the run endpoints already reach it by their bearer token). The gateway smoke test probes both.

@@ -5,3 +5,5 @@
 - Other tabs of the same browser follow the switch and say so. A tab sends no request while the session belongs to another organization than the one it shows, so a bulk action on the previous organization's selection is never sent.
 - The back button no longer reopens the previous organization's page.
 - The server already refused all of these requests: it reads the organization from the access token, and a record of another organization answers like an unknown one. This change makes the console match.
+- **Upgrade note:** no action. After switching organization, users land on the section's list (or the dashboard) instead of the same address, and their other tabs of the console follow the switch.
+- Docs: none (the console now matches what the server already enforced; no setting or workflow changes)

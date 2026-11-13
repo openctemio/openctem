@@ -1,3 +1,0 @@
-### Fixed: an asset kept out by a scope exclusion no longer counts as rejected
-- A sensor report (v2) that carried a new asset matching one of the organization's scope exclusions got the item error `asset_invalid` ("asset has no usable value") and counted the asset as rejected. For a trusted collector this switched off the not-seen sweep of its complete reports for as long as the exclusion matched, so assets it stopped reporting were never marked stale.
-- Such an asset now gets the item error `asset_excluded` and is counted neither as accepted nor as rejected; the sweep runs. Assets that were not stored for any other reason are still rejected and still hold the sweep.

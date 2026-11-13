@@ -227,12 +227,14 @@ jobs:
             exit 0
           fi
           changed="$(sed -n 's/^CHANGED=//p' "$RUNNER_TEMP/post.env")"
+          folded="$(sed -n 's/^FOLDED=//p' "$RUNNER_TEMP/post.env")"
           title="chore(release): merge ${VERSION} back into develop"
           if [ -z "$changed" ]; then
-            body="Follow-up of ${VERSION}: merges main back into develop, so the tag becomes reachable from develop. It changes no file: everything in ${VERSION} is on develop already, and the install version (server/deploy/VERSION) stays on the release branch and main. Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point."
+            body="Follow-up of ${VERSION}: merges main back into develop, so the tag becomes reachable from develop. The merge changes no file: everything in ${VERSION} is on develop already, and the install version (server/deploy/VERSION) stays on the release branch and main. Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point."
           else
             body="Follow-up of ${VERSION}: merges main back into develop, so the tag becomes reachable from develop. ${VERSION} has changes develop lacked; this brings them to develop instead of dropping them. Review them: \`${changed}\`. The install version (server/deploy/VERSION) and changelog fragments develop already folded are not carried. Merge with the queue (merge commit), never squash: a squash drops the second parent, which is the point."
           fi
+          body="${body} A second commit folds the ${folded:-0} changelog fragment(s) of ${VERSION} into server/CHANGELOG.md (the same notes as the GitHub Release)."
           if [ "$HAS_RELEASE_TOKEN" != true ]; then
             url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/develop...${branch}?expand=1"
             echo "Open the develop follow-up PR (title \`${title}\`; merge with the queue, never squash): $url" >> "$GITHUB_STEP_SUMMARY"

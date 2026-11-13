@@ -1,7 +1,0 @@
-### Changed: finding detail reads scanner text and configuration checks clearly
-- Scanner descriptions, remediation and fix text render as safe formatted text (one shared renderer, no raw HTML, only http and https links, no images): scripts and commands become highlighted code blocks with Copy and Show more, and what a command prints is shown apart as "Example output". Long tokens wrap instead of scrolling the page.
-- A configuration check (a benchmark check such as a CIS check from a Nessus audit) has its own panel: the result (Passed, Failed, Warning, Error, Skipped), benchmark and version, profile, control and audit file, the expected (policy) value beside the actual value, the sub-checks failed first with their file, expression and matched lines, and the mapped controls grouped by framework. The description no longer repeats those sections.
-- The header shows what the finding is (Vulnerability, Configuration check, ...) and, separately, what found it.
-
-### Fixed: an imported scanner report no longer reads "a person reported this finding"
-- A scanner's report imported from a file arrives on the manual channel and was treated as a person's finding. Retest availability now names the reason `reimport_to_verify`, and the Verification panel offers "Import newer results" to members allowed to import. Findings from people (manual, pentest, bug bounty, red team) keep `no_automatic_retest`.
