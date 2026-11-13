@@ -1,0 +1,10 @@
+{"contract":"openctem.analyze/v1","job_id":"01a18087-4972-7af5-8ce4-36833fe53fc4","tenant_id":"01a18087-4972-7af5-8ce4-36833fe53fc5",
+ "kind":"triage.v1","use_case":"triage",
+ "subject":{"type":"finding","id":"01a18087-4972-7af5-8ce4-36833fe53fc6","asset_id":"01a18087-4972-7af5-8ce4-36833fe53fc7"},
+ "bundle":{"digest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","data_class":"internal",
+  "fields":["finding.title","finding.rule","evidence.redacted","asset.kind"],"fields_withheld":["asset.owner_email"],"masked":true,
+  "text":"finding.title: Outdated TLS configuration on HOST_1\nfinding.rule: tls-version\nevidence.redacted: HOST_1:443 accepts TLS 1.0 (URL_1)\nasset.kind: domain"},
+ "output_schema":"openctem.ai.triage/v1",
+ "prompt_template":{"id":"triage.v1","digest":"sha256:3333333333333333333333333333333333333333333333333333333333333333"},
+ "budgets":{"tokens":40000,"seconds":120},
+ "deadline":"2026-11-13T10:00:00Z"}
