@@ -156,7 +156,7 @@ func TestAssetIPTab_ExplainUsesIndexes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := owner.ExecContext(ctx, `ANALYZE assets; ANALYZE asset_ports`); err != nil {
+	if _, err := owner.ExecContext(ctx, `ANALYZE assets; ANALYZE asset_ports; ANALYZE asset_ip_addresses`); err != nil {
 		t.Fatal(err)
 	}
 	sys := filterspec.SystemActor(tenant, "explain test")
@@ -166,7 +166,7 @@ func TestAssetIPTab_ExplainUsesIndexes(t *testing.T) {
 		index string
 	}{
 		{"network", leafDoc("network", "in", []any{"10.0.7.0/24"}), "idx_assets_ip_network"},
-		{"ip", leafDoc("ip", "in", []any{"10.0.7.0/24"}), "idx_assets_ip_addr"},
+		{"ip", leafDoc("ip", "in", []any{"10.0.7.0/24"}), "idx_asset_ip_addresses_range"},
 		{"port", leafDoc("port", "in", []any{1443}), "idx_asset_ports_port"},
 	} {
 		w := compileAssets(t, sys, c.doc)

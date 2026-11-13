@@ -111,7 +111,7 @@ op     := "=" | "!=" | ">" | ">=" | "<" | "<=" | "~"
 | `severity>=high` | ordered values: at least high | `in ["critical","high"]` (fields marked `Ordered`: severity, priority class, asset criticality) |
 | `file_path~"src/main"` | contains, case-insensitive, at least 3 characters | `contains` |
 | `asset.name=api-*`, `domain=*.example.com` | name patterns (`*`, `?`) on fields marked `Glob` | the field's pattern or membership keys |
-| `ip=10.0.0.0/8`, `ip:10.0.0.0/8,192.168.0.0/16` | the asset's address is inside a range | `asset_ip in [...]` (`idx_assets_ip_addr`) |
+| `ip=10.0.0.0/8`, `ip:10.0.0.0/8,192.168.0.0/16` | the asset's name or a recorded address is inside a range ([asset-addresses.md](asset-addresses.md)) | `asset_ip in [...]` (`idx_asset_ip_addresses_range`) |
 | `port:8000..8999`, `cvss:7..` | range | `gte` + `lte` |
 | `last_seen<7d` | age: seen less than 7 days ago | `last_seen_at gt "-P7D"` |
 | `last_seen<-7d` | a point in time: before 7 days ago | `last_seen_at lt "-P7D"` |

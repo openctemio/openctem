@@ -1492,23 +1492,36 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
 	}
 
-	// Address assets inside these ranges. The address is the asset's name
-	// (text); a name that is not an address is never cast.
+	// Assets with their name or a recorded address inside these ranges: the
+	// same condition as the assets ip filter and the findings asset_ip
+	// filter (asset.AssetIDsInRangesSQL), so a smart group rule and the
+	// list agree. A range that does not parse matches nothing.
 	if len(filter.InCIDRs) > 0 {
-		cidrs := make([]string, 0, len(filter.InCIDRs))
+		ranges := make([]string, 0, len(filter.InCIDRs))
 		for _, c := range filter.InCIDRs {
-			if p, err := netip.ParsePrefix(strings.TrimSpace(c)); err == nil {
-				cidrs = append(cidrs, p.Masked().String())
+			p, err := netip.ParsePrefix(strings.TrimSpace(c))
+			if err != nil {
+				// One address is the range of itself, as in the ip filter.
+				addr, aerr := netip.ParseAddr(strings.TrimSpace(c))
+				if aerr != nil {
+					continue
+				}
+				p = netip.PrefixFrom(addr, addr.BitLen())
 			}
+			ranges = append(ranges, fmt.Sprintf("$%d::inet", argIndex))
+			args = append(args, p.Masked().String())
+			argIndex++
 		}
-		if len(cidrs) == 0 {
+		if len(ranges) == 0 {
 			conditions = append(conditions, "FALSE")
 		} else {
-			conditions = append(conditions, fmt.Sprintf(
-				`(a.asset_type IN ('ip_address', 'host') AND position('/' IN a.name) = 0
-				  AND pg_input_is_valid(a.name, 'inet') AND a.name::inet <<= ANY($%d::inet[]))`, argIndex))
-			args = append(args, pq.Array(cidrs))
-			argIndex++
+			// The tenant is bound once ($1) so the ids are read once; without
+			// a tenant filter the row's own tenant pins the lookup.
+			tenant := "a.tenant_id"
+			if filter.TenantID != nil && *filter.TenantID != "" {
+				tenant = "$1::uuid"
+			}
+			conditions = append(conditions, asset.AssetInRangesSQL("a.id", tenant, ranges...))
 		}
 	}
 
