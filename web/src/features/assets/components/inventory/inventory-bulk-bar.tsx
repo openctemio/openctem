@@ -73,7 +73,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTenant } from '@/context/tenant-provider'
 import { useGroups } from '@/features/access-control/api/use-groups'
-import { updateAsset } from '../../hooks/use-assets'
+import { bulkChangeAssetTags, updateAsset } from '../../hooks/use-assets'
 import { InventoryBusinessContextActions } from './inventory-business-context-actions'
 import { addAssetOwner } from '../../hooks/use-asset-owners'
 import {
@@ -82,7 +82,6 @@ import {
   type Asset,
   type Criticality,
   type OwnershipType,
-  type UpdateAssetInput,
 } from '../../types/asset.types'
 import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
@@ -107,25 +106,6 @@ async function runBulk<T>(items: T[], fn: (item: T) => Promise<unknown>): Promis
     failed += results.filter((r) => r.status === 'rejected').length
   }
   return failed
-}
-
-/**
- * A full PUT body from the asset's CURRENT values plus the caller's overrides.
- * The update endpoint takes the whole asset, so echoing the existing fields
- * keeps a bulk criticality/tag change from clobbering name, scope, etc.
- */
-function fullUpdate(a: Asset, overrides: Partial<UpdateAssetInput>): UpdateAssetInput {
-  return {
-    name: a.name,
-    description: a.description,
-    criticality: a.criticality,
-    scope: a.scope,
-    exposure: a.exposure,
-    ownerRef: a.ownerRef,
-    tags: a.tags,
-    metadata: a.metadata,
-    ...overrides,
-  }
 }
 
 type PickerOption =
@@ -297,7 +277,9 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       // person's approval (202 with the request): it is not "set".
       let held = 0
       const failed = await runBulk(selected, async (a) => {
-        const saved = await updateAsset(a.id, fullUpdate(a, { criticality }))
+        // Only the criticality: the row's copy of the other fields may be
+        // older than what is stored.
+        const saved = await updateAsset(a.id, { criticality })
         if (saved?.pendingRiskRequest) held++
       })
       const label = t('assets.bulk.criticalitySet', 'Set criticality to {value}', {
@@ -342,10 +324,12 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     }
     setSubmitting(true)
     try {
-      const failed = await runBulk(selected, (a) => {
-        const nextTags = Array.from(new Set([...(a.tags ?? []), value]))
-        return updateAsset(a.id, fullUpdate(a, { tags: nextTags }))
-      })
+      // One change for the whole selection, applied by the API to each
+      // asset's stored tags: no other tag and no other field changes.
+      const { failed } = await bulkChangeAssetTags(
+        selected.map((a) => a.id),
+        { add: [value] }
+      )
       reportResult(t('assets.bulk.tagAdded', 'Added tag "{value}"', { value }), failed)
       if (failed < count) {
         closeDialog()
@@ -364,11 +348,10 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     const affected = selected.filter((a) => (a.tags ?? []).some((tg) => tagsToRemove.includes(tg)))
     setSubmitting(true)
     try {
-      const failed = await runBulk(affected, (a) =>
-        updateAsset(
-          a.id,
-          fullUpdate(a, { tags: (a.tags ?? []).filter((tg) => !tagsToRemove.includes(tg)) })
-        )
+      // Only the ticked tags leave, on each asset's stored list.
+      const { failed } = await bulkChangeAssetTags(
+        affected.map((a) => a.id),
+        { remove: tagsToRemove }
       )
       const vars = { count: affected.length, done: affected.length - failed, failed }
       if (failed === 0) {

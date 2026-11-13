@@ -10,10 +10,12 @@ import (
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	tagdom "github.com/openctemio/openctem/server/pkg/domain/tag"
 )
 
 // auditAsset writes one audit event about an asset. Metadata carries field
 // names, counts and ids, never field values: properties may hold secrets.
+// Tag names are the one exception (assetUpdateAuditMetadata).
 func (h *AssetHandler) auditAsset(r *http.Request, action auditdom.Action, assetID, assetName, message string, metadata map[string]any) {
 	if h.auditService == nil {
 		return
@@ -54,6 +56,25 @@ func assetChangedFields(before, after *asset.Asset) []string {
 	add("impact_integrity", before.ImpactIntegrity() != after.ImpactIntegrity())
 	add("impact_availability", before.ImpactAvailability() != after.ImpactAvailability())
 	return append(changed, changedPropertyKeys(before.Properties(), after.Properties())...)
+}
+
+// assetUpdateAuditMetadata is the metadata of an asset.updated entry: the
+// changed field names, and for tags the tags added and removed. Tags are
+// labels every reader of the asset sees, never secrets; naming them keeps
+// who set or removed which tag, which the asset row does not record.
+func assetUpdateAuditMetadata(before, after *asset.Asset) map[string]any {
+	md := map[string]any{"changed_fields": assetChangedFields(before, after)}
+	if before == nil || after == nil {
+		return md
+	}
+	added, removed := tagdom.Diff(before.Tags(), after.Tags())
+	if len(added) > 0 {
+		md["tags_added"] = added
+	}
+	if len(removed) > 0 {
+		md["tags_removed"] = removed
+	}
+	return md
 }
 
 func sameStrings(a, b []string) bool {

@@ -63,6 +63,7 @@ import { CriticalityBadge, ExposureBadge } from '../classification-badges'
 import { AssetDetailSheet } from '../asset-detail-sheet'
 import { ScanConfirmDialog } from '../scan-confirm-dialog'
 import { getAsset, updateAsset } from '../../hooks'
+import { tagChange } from '../../lib/tag-change'
 import { useAssetTags } from '../../hooks/use-asset-tags'
 import { isPlainLeftClick } from '../../lib/plain-click'
 import { AssetTypeIcon } from '../../lib/asset-type-icon'
@@ -236,11 +237,12 @@ export function InventoryTable({
   // RFC-042 class and lens of each row ("Code repository · Code").
   const { registry, classAndLens } = useAssetTypeRegistry()
 
-  // "+ Add label" on a row: one PUT of that asset's tags, then a refetch.
+  // "+ Add label" on a row: the label added to that asset's tags (never the
+  // row's whole list: a tag stored since the list loaded stays), then a refetch.
   const saveRowLabels = useCallback(
-    async (id: string, tags: string[]) => {
+    async (id: string, shown: string[], tags: string[]) => {
       try {
-        await updateAsset(id, { tags })
+        await updateAsset(id, tagChange(shown, tags))
         toast.success(t('assets.inv.labelAdded', 'Label added'))
         onAssetUpdated?.()
       } catch (err) {
@@ -573,7 +575,7 @@ export function InventoryTable({
           <LabelChips
             className="max-w-[240px]"
             labels={row.original.tags ?? []}
-            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, tags) : undefined}
+            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, row.original.tags ?? [], tags) : undefined}
             activeLabels={filterTags}
             onLabelClick={onToggleTagFilter}
           />
@@ -859,7 +861,10 @@ export function InventoryTable({
             ? async (tags: string[]) => {
                 if (!selectedAsset) return
                 try {
-                  const updated = await updateAsset(selectedAsset.id, { tags })
+                  const updated = await updateAsset(
+                    selectedAsset.id,
+                    tagChange(selectedAsset.tags ?? [], tags)
+                  )
                   toast.success(t('assets.inv.tagsUpdated', 'Tags updated'))
                   // Lift the fresh asset into the sheet so it re-renders with the
                   // saved tags, then refetch the list in the background.
