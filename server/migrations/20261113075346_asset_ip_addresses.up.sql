@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS asset_ip_addresses (
 -- The range filter: tenant first, then a btree range over the address.
 CREATE INDEX IF NOT EXISTS idx_asset_ip_addresses_range ON asset_ip_addresses (tenant_id, addr);
 
+-- The tenant isolation policy every tenant table carries (row level security
+-- runs in shadow mode: the policy is defined, the queries filter on
+-- tenant_id).
+CREATE POLICY asset_ip_addresses_tenant_isolation ON asset_ip_addresses
+    USING (((tenant_id = (NULLIF(current_setting('app.current_tenant_id'::text, true), ''::text))::uuid)
+        OR (current_setting('app.is_platform_admin'::text, true) = 'true'::text)));
+
 COMMENT ON TABLE asset_ip_addresses IS
     'IP addresses of each live asset (asset_recorded_addresses), for the address range filters; written only by the triggers on assets.';
 
