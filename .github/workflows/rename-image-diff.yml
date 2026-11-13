@@ -11,7 +11,7 @@ name: Rename image diff
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [develop, next]
     paths:
       - "server/go.mod"
       - "scripts/rename/**"

@@ -13,7 +13,7 @@ name: Web visual regression
 
 on:
   pull_request:
-    branches: [develop]
+    branches: [develop, next]
     types: [labeled, synchronize]
   schedule:
     - cron: '30 3 * * *'

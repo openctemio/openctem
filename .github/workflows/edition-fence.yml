@@ -10,9 +10,9 @@ name: Edition fence
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, next]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
   merge_group:
     types: [checks_requested]
 

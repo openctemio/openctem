@@ -12,7 +12,7 @@ name: API Security
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, next]
     paths:
       - 'server/**'
       - 'Makefile'
@@ -23,7 +23,7 @@ on:
       - '!**/*.md'
       - '!server/docs/**'
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
     paths:
       - 'server/**'
       - 'Makefile'

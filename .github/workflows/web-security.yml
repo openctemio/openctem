@@ -11,7 +11,7 @@ name: Web Security
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, next]
     paths:
       - 'web/**'
       - 'Makefile'
@@ -21,7 +21,7 @@ on:
       - 'deploy/**'
       - '!**/*.md'
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
     paths:
       - 'web/**'
       - 'Makefile'
