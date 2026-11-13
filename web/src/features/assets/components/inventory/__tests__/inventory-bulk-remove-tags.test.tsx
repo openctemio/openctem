@@ -80,7 +80,7 @@ describe('bulk remove tags', () => {
 })
 
 describe('bulk add tag', () => {
-  it('sends one change for the whole selection, never the rows\' tag lists', async () => {
+  it("sends one change for the whole selection, never the rows' tag lists", async () => {
     const onDone = vi.fn()
     render(
       <InventoryBulkBar
@@ -101,7 +101,7 @@ describe('bulk add tag', () => {
 })
 
 describe('bulk criticality', () => {
-  it('sends only the criticality, not the rows\' copies of other fields', async () => {
+  it("sends only the criticality, not the rows' copies of other fields", async () => {
     const onDone = vi.fn()
     render(
       <InventoryBulkBar

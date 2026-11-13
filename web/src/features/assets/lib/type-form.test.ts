@@ -93,12 +93,10 @@ describe('type form', () => {
   })
 
   it('on edit, sends the tags added and removed, never the whole list', () => {
-    const update = updateInputFromForm(
-      host,
-      { name: 'web-1', tags: ['pci', 'prod'] },
-      {},
-      ['team:web', 'pci']
-    )
+    const update = updateInputFromForm(host, { name: 'web-1', tags: ['pci', 'prod'] }, {}, [
+      'team:web',
+      'pci',
+    ])
     expect(update).toMatchObject({ tagsAdd: ['prod'], tagsRemove: ['team:web'] })
     expect(update).not.toHaveProperty('tags')
   })
