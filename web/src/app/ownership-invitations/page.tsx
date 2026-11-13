@@ -18,7 +18,10 @@ export const metadata: Metadata = {
 export default function OwnershipInvitationsPage() {
   return (
     <TenantProvider>
-      <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+      <div
+        data-control-scale="entry"
+        className="flex min-h-screen items-center justify-center bg-muted/30 p-4"
+      >
         <div className="w-full max-w-xl">
           <OwnershipInvitationsCard />
         </div>

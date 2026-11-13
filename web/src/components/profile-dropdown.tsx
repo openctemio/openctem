@@ -49,7 +49,8 @@ export function ProfileDropdown() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="relative h-8 w-8 rounded-full"
+            size="icon"
+            className="relative rounded-full"
             aria-label={t('userMenu.open', 'Open user menu')}
           >
             <Avatar className="h-8 w-8">

@@ -205,10 +205,12 @@
   --control-h-xs: 1.5rem;
   --control-h-entry: 2.25rem;
   --control-h-touch: 2.75rem;
-  /* OPEN (design freeze item 1: field kit 36 vs control scale 32). Text
-     fields keep today's 36 until the field family is settled; change only
-     this line when it is. */
-  --control-h-field: var(--control-h-entry);
+  /* Text fields and selects share the row's height (freeze item 1, decided
+     2026-11-13): 32 in the app, 36 on entry pages, 44 below 768px. */
+  --control-h-field: var(--control-h);
+  /* The small sizes (Button sm and icon-sm, SelectTrigger sm): 28 only in a
+     dense place (data-control-density="dense"), 32 anywhere else. */
+  --control-h-dense: var(--control-h);
 
   /* Row density: 40 default, 32 compact, 52 comfortable, chosen by
      data-density on any ancestor. Class: h-row. */
@@ -459,6 +461,20 @@
   --viz-ink-weak: #3a4a63;
 }
 
+/* A dense place (components/ui/density.tsx): table rows, the bulk bar. */
+[data-control-density='dense'] {
+  --control-h-dense: var(--control-h-sm);
+}
+
+/* Entry pages without the app sidebar (sign-in, onboarding, invitations):
+   every control 36. Custom properties resolve where they are declared, so the
+   names that derive from --control-h are declared again here. */
+[data-control-scale='entry'] {
+  --control-h: var(--control-h-entry);
+  --control-h-field: var(--control-h-entry);
+  --control-h-dense: var(--control-h-entry);
+}
+
 /* Row density per person or per list: data-density on any ancestor. */
 [data-density='compact'] {
   --row-h: 2rem;
@@ -580,7 +596,8 @@
   --spacing-section: var(--sp-section);
 
   /* Control and row heights: h-control, h-control-sm, h-control-seg,
-     h-control-xs, h-control-entry, h-control-touch, h-control-field, h-row
+     h-control-xs, h-control-entry, h-control-touch, h-control-field,
+     h-control-dense (28 in a dense place, 32 elsewhere), h-row
      (also size-*, min-h-*). */
   --spacing-control: var(--control-h);
   --spacing-control-sm: var(--control-h-sm);
@@ -589,6 +606,7 @@
   --spacing-control-entry: var(--control-h-entry);
   --spacing-control-touch: var(--control-h-touch);
   --spacing-control-field: var(--control-h-field);
+  --spacing-control-dense: var(--control-h-dense);
   --spacing-row: var(--row-h);
 
   --color-sel: var(--sel);

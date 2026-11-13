@@ -19,7 +19,7 @@ describe('FilterButton', () => {
     const btn = screen.getByRole('button', { name: 'Filters' })
     expect(btn).toHaveTextContent('')
     expect(btn.querySelector('svg')).not.toBeNull()
-    expect(btn).toHaveClass('size-9')
+    expect(btn).toHaveClass('size-control', 'max-md:size-control-touch')
     expect(btn).not.toHaveAttribute('aria-pressed')
     expect(btn).not.toHaveAttribute('data-active')
   })
