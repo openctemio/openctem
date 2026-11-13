@@ -106,3 +106,58 @@ test.describe('Findings list', { tag: ['@findings', '@smoke'] }, () => {
     ).toBeVisible()
   })
 })
+
+test.describe('Finding detail section headings', { tag: ['@findings', '@layout'] }, () => {
+  // The shared DetailSection heading row wraps: the title never collapses and
+  // its actions (Verification: "Import newer results", "Checklist") never run
+  // past the section, at a phone width and at a desktop width.
+  for (const width of [360, 1280]) {
+    test(`titles stay visible and actions stay inside their section at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 })
+      const findings = await listFindings(page)
+      test.skip(findings.length === 0, 'Needs a finding')
+
+      await page.goto(`/findings/${findings[0].id}`)
+      await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({
+        timeout: 30_000,
+      })
+      const heads = page.locator('[data-slot="detail-section-head"]')
+      await expect(heads.first()).toBeAttached({ timeout: 30_000 })
+
+      const boxes = await heads.evaluateAll((els) =>
+        els.map((head) => {
+          const section = head.closest('section')!.getBoundingClientRect()
+          const title = head.querySelector('h3')!.getBoundingClientRect()
+          const actions = head.querySelector('[data-slot="detail-section-actions"]')
+          const a = actions?.getBoundingClientRect()
+          return {
+            name: head.querySelector('h3')!.textContent,
+            titleWidth: title.width,
+            sectionLeft: section.left,
+            sectionRight: section.right,
+            actionsRight: a ? a.right : null,
+            actionsLeft: a ? a.left : null,
+          }
+        })
+      )
+      for (const b of boxes) {
+        expect(b.titleWidth, `${b.name}: title has width`).toBeGreaterThan(20)
+        if (b.actionsRight !== null && b.actionsLeft !== null) {
+          expect(b.actionsRight, `${b.name}: actions inside right edge`).toBeLessThanOrEqual(
+            b.sectionRight + 1
+          )
+          expect(b.actionsLeft, `${b.name}: actions inside left edge`).toBeGreaterThanOrEqual(
+            b.sectionLeft - 1
+          )
+        }
+      }
+
+      const verification = page.getByRole('region', { name: /Verification/ })
+      if (await verification.count()) {
+        await expect(verification.getByRole('heading', { level: 3 })).toBeVisible()
+      }
+    })
+  }
+})
