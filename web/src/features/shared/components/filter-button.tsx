@@ -73,7 +73,7 @@ export const FilterButton = React.forwardRef<HTMLButtonElement, FilterButtonProp
             data-slot="filter-button"
             data-active={active ? '' : undefined}
             className={cn(
-              'relative size-9 shrink-0',
+              'relative shrink-0',
               panelOpen && PRESSED_CLASS,
               active && ACTIVE_CLASS,
               className

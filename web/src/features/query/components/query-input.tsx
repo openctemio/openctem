@@ -330,7 +330,7 @@ export function QueryInput({
         {multiline ? (
           <Textarea ref={ref} rows={3} className="font-mono text-sm" {...shared} />
         ) : (
-          <Input ref={ref} className="h-9 font-mono text-sm" {...shared} />
+          <Input ref={ref} className="font-mono" {...shared} />
         )}
         <ul
           id={listId}
