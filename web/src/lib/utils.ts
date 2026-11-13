@@ -10,12 +10,50 @@ const stepKeyId = customAlphabet(
 )
 
 /**
- * tailwind-merge that knows the type-scale sizes in src/styles/theme.css
- * (text-title, text-meta, ...). Without this it reads `text-meta` as a colour
- * and drops it next to `text-muted-foreground`.
+ * tailwind-merge that knows the theme's own names in src/styles/theme.css:
+ * the type roles (text-cap, text-page, ...), the control and row heights
+ * (h-control, size-control-sm, h-row, ...), the page gaps and the dialog
+ * radius. Without this it reads `text-figure` as a colour and drops it next
+ * to `text-success`, and keeps both `h-7` and `h-control`.
  */
-export const TYPE_SCALE = ['title', 'section', 'body', 'meta', 'data', 'kpi'] as const
-const twMerge = extendTailwindMerge({ extend: { theme: { text: [...TYPE_SCALE] } } })
+export const TYPE_SCALE = [
+  'cap',
+  'cap-m',
+  'code',
+  'dense',
+  'body',
+  'card',
+  'section',
+  'dialog',
+  'page',
+  'figure',
+  'figure-lead',
+  'hero',
+  'wall',
+  // research/244 names, aliases of the roles above
+  'title',
+  'meta',
+  'data',
+  'kpi',
+] as const
+export const SPACING_NAMES = [
+  'control',
+  'control-sm',
+  'control-seg',
+  'control-xs',
+  'control-entry',
+  'control-touch',
+  'control-field',
+  'row',
+  'page',
+  'page-tight',
+  'section',
+] as const
+const twMerge = extendTailwindMerge({
+  extend: {
+    theme: { text: [...TYPE_SCALE], spacing: [...SPACING_NAMES], radius: ['dialog'] },
+  },
+})
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
