@@ -271,6 +271,7 @@ jobs:
           bash server/scripts/released-migrations.sh --check
           bash server/scripts/dev-tools.test.sh >/dev/null
           bash server/deploy/backup.test.sh >/dev/null
+          bash server/deploy/install.test.sh >/dev/null
           bash server/deploy/backup/overlay.test.sh >/dev/null
           case "$EVENT" in
             pull_request) MIGRATION_DUPLICATE=warning bash .github/scripts/check-migration-versions.sh "origin/${BASE_REF}" ;;

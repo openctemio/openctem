@@ -5,3 +5,6 @@ certs/
 sensor/sensor-policy.yaml
 backup-secrets/
 backup-repo/
+# install.sh: .env backups made before it changes a setting, and its state
+.env.bak-*
+.install-state

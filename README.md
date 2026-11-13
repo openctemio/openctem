@@ -58,6 +58,23 @@ make check     # what CI runs, both components
 
 ## Deploying
 
+### Quick start (self-hosting with Docker Compose)
+
+On a Linux host with 4 GB of memory or more, from a checkout of a release tag
+(or the release's verified `openctem-compose-vX.Y.Z.tar.gz` bundle, see
+[the guide](server/docs/deployment/docker.md#one-command-install)):
+
+```bash
+cd server/deploy
+./install.sh
+```
+
+It checks Docker and the host, asks for the host name, the TLS mode, the first
+administrators and the bundled sensor (Enter accepts each default), writes
+`.env` with generated secrets, verifies the image signatures, starts the stack,
+waits until it is healthy and prints the URLs and how to sign in.
+`./install.sh --help` lists the options for unattended installs.
+
 - **Compose, one HTTPS port:** [`server/deploy/docker-compose.yml`](server/deploy/docker-compose.yml)
   runs the gateway ([`server/deploy/gateway`](server/deploy/gateway), Caddy), web, the
   platform console, API, the job signer, Postgres and Redis, plus one-shot

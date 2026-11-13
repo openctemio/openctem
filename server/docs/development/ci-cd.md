@@ -243,6 +243,25 @@ through the API; nothing depends on a run started by the label.
 - Release pull requests (`release/vX.Y.Z` into `main`) are judged only on what
   the release branch adds on top of `develop`, whose commits already passed the
   gate.
+- Sync pull requests into `next` (any same-repository pull request whose base
+  is in `SYNC_BRANCHES`, set in `security-gate.yml`) are judged only on the
+  files that differ from git's clean merge of `develop` into `next`, so the
+  daily develop -> next sync does not ask for a second ack of what was acked on
+  `develop`. The gate computes the merge itself from the fetched commits, never
+  from a label or the branch name: `side` = merge-base(head, base) (where the
+  pull request starts on `next`), `integ` = merge-base(head, `develop`'s tip)
+  (the newest `develop` commit the head contains), `merged` =
+  `git merge-tree side integ`. A file whose blob in the head equals its blob in
+  `merged` is not judged again: it is `develop`'s acked content combined with
+  `next`'s acked content by a clean merge, the same rule that keeps an ack
+  over a base merge (above). Judged as usual: a conflict resolved by hand, an
+  edit hidden in the merge commit or made in a later commit, a `next` change
+  the merge dropped (for example a file taken whole from `develop`), and
+  anything from a branch that is not on `develop`. A pull request that merges
+  nothing new from `develop`, a fork, and any git or API error get every file
+  judged. The gate script runs from the base commit, so the rule applies on
+  `next` from the first sync that carries this version of
+  `.github/scripts/security_gate.py`; that first sync is acked in full.
 - Automation working under the maintainer's account must never add
   `security-ack`: the label is the maintainer's own decision. GitHub cannot
   tell such automation from the maintainer while they share an account; once
@@ -1656,7 +1675,10 @@ dry-runs) for:
   archives for linux/amd64 and linux/arm64 (web and console on a native runner
   per arch: their bundles hold native modules);
 - `bootstrap-admin` for linux, darwin (amd64, arm64) and windows/amd64;
-- `openctem-image-kit` (`deploy/airgap`).
+- `openctem-image-kit` (`deploy/airgap`);
+- `openctem-compose` (`server/deploy`, tracked files only, without tests, with
+  the release's `VERSION`): the one-command Compose install (`install.sh`)
+  without a git checkout.
 
 Go builds are static (CGO off), `-trimpath`, with the commit time as build
 time and as every archive entry's time: the same tag gives byte-identical
