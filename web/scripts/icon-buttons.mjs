@@ -81,7 +81,7 @@ export function findIconButtons(web, { write = false } = {}) {
       let m = /\b(sm|md|lg):not-sr-only\b/.exec(c)
       if (m && /\bsr-only\b/.test(c)) return m[1]
       m =
-        /(?:^|[\s"'`])hidden\b[^"'`]*\b(sm|md|lg):(inline|block|inline-flex|flex|inline-block)\b/.exec(
+        /(?:^|[\s"'`])hidden\b[^"'`]*?(?:^|\s)(sm|md|lg|@2xl\/toolbar):(inline|block|inline-flex|flex|inline-block)\b/.exec(
           c
         )
       return m ? m[1] : null

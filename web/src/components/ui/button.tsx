@@ -50,9 +50,12 @@ const buttonVariants = cva(
  * src/components/ui/__tests__/icon-button-guard.test.ts enforces both.
  */
 const ICON_ONLY_BELOW = {
-  sm: 'max-sm:aspect-square max-sm:px-0',
-  md: 'max-md:aspect-square max-md:px-0',
-  lg: 'max-lg:aspect-square max-lg:px-0',
+  sm: 'max-sm:aspect-square max-sm:px-0 max-sm:has-[>svg]:px-0',
+  md: 'max-md:aspect-square max-md:px-0 max-md:has-[>svg]:px-0',
+  lg: 'max-lg:aspect-square max-lg:px-0 max-lg:has-[>svg]:px-0',
+  // The list toolbar's container (DataTable): the label shows from @2xl.
+  '@2xl/toolbar':
+    '@max-2xl/toolbar:aspect-square @max-2xl/toolbar:px-0 @max-2xl/toolbar:has-[>svg]:px-0',
 } as const
 
 function Button({
