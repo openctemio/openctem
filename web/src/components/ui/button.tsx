@@ -5,7 +5,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  "relative cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-body font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none max-md:text-dense max-md:before:absolute max-md:before:inset-x-[-4px] max-md:before:top-1/2 max-md:before:h-touch-target max-md:before:-translate-y-1/2 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "relative cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-body font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none max-md:text-dense max-md:before:absolute max-md:before:inset-x-0 max-md:before:top-1/2 max-md:before:h-touch-target max-md:before:-translate-y-1/2 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
@@ -24,8 +24,8 @@ const buttonVariants = cva(
       // (entry pages); xs 24 (the info icon). Below 768px the live UI's
       // heights (36, sm 32, lg 40) with compact content (13px text, 10px
       // padding, 8 beside an icon) and an invisible touch target (::before):
-      // 44px tall, 4px wider on each side, so buttons 8px apart never share
-      // a hit area.
+      // 44px tall, the button's own width, so neighbours never share a hit
+      // area and nothing reaches past the button's sides.
       size: {
         default:
           'h-control px-3 has-[>svg]:px-2.5 max-md:h-control-touch max-md:px-2.5 max-md:has-[>svg]:px-2',

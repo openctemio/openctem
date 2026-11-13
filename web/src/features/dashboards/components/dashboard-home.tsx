@@ -411,7 +411,7 @@ export function DashboardHome() {
               organization={organization}
               active={active}
               onChoose={choose}
-              className="h-11 min-w-0 max-w-none flex-1 justify-start sm:h-8 sm:max-w-[16rem] sm:flex-none"
+              className="min-w-0 max-w-none flex-1 justify-start sm:max-w-[16rem] sm:flex-none"
             />
             {canCustomize && (
               <Button
@@ -438,8 +438,8 @@ export function DashboardHome() {
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
+                    size="icon-sm"
+                    className="shrink-0"
                     aria-label={t('dashboards.actions.more', 'More dashboard actions')}
                   >
                     <MoreHorizontal className="h-4 w-4" aria-hidden />

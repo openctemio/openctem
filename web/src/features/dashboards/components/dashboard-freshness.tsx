@@ -208,7 +208,7 @@ export function RefreshButton({
       iconOnlyBelow="sm"
       variant="outline"
       size="sm"
-      className="h-11 w-11 shrink-0 px-0 sm:h-8 sm:w-auto sm:px-3"
+      className="shrink-0"
       onClick={refresh}
       disabled={refreshing || disabled}
       aria-busy={refreshing || undefined}

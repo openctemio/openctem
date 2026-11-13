@@ -33,8 +33,7 @@ disagree. Change both together.
 - Below 768 px buttons have compact content: text 13 px (`text-dense`), padding
   10 px (8 beside an icon), icon 16, gap 6. Fields keep 16 px text (`text-base`),
   so phones never zoom into a focused field; the viewport is never locked. The
-  touch target reaches 4 px beyond each side, so buttons 8 px apart never share
-  one.
+  touch target is as wide as the button, so neighbours never share one.
 - Icon-only buttons are squares at every size (`icon`, `icon-sm`, `xs`, or
   `iconOnlyBelow` when the label shows only from a width up);
   `src/components/ui/__tests__/icon-button-guard.test.ts` and the page-rhythm

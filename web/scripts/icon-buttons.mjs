@@ -2,6 +2,7 @@
 // "Sizes"). Finds, and with --write fixes, a <Button> whose content is only an
 // icon but has a text size (default, sm, lg), and a button that is icon-only
 // below a breakpoint without iconOnlyBelow.
+// Scope: the tenant app (src/); the platform console joins with its shell PR.
 // usage: node scripts/icon-buttons.mjs [--write]   (from web/)
 // src/components/ui/__tests__/icon-button-guard.test.ts runs findIconButtons().
 // Icon-only: every child (ignoring whitespace) is an icon element (a component
@@ -15,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 export function findIconButtons(web, { write = false } = {}) {
-  const files = execSync("git ls-files 'src/*.tsx' 'console/src/*.tsx'", {
+  const files = execSync("git ls-files 'src/*.tsx'", {
     cwd: web,
     encoding: 'utf8',
   })
@@ -42,7 +43,6 @@ export function findIconButtons(web, { write = false } = {}) {
       }
     }
     const tagName = (n) => (ts.isJsxElement(n) ? n.openingElement.tagName : n.tagName).getText(sf)
-    const attrs = (n) => (ts.isJsxElement(n) ? n.openingElement.attributes : n.attributes)
     const isIcon = (n) => {
       if (ts.isJsxSelfClosingElement(n) || ts.isJsxElement(n)) {
         const t = tagName(n)
@@ -81,7 +81,7 @@ export function findIconButtons(web, { write = false } = {}) {
       let m = /\b(sm|md|lg):not-sr-only\b/.exec(c)
       if (m && /\bsr-only\b/.test(c)) return m[1]
       m =
-        /(?:^|[\s"'`])hidden\b[^"'`]*?(?:^|\s)(sm|md|lg|@2xl\/toolbar):(inline|block|inline-flex|flex|inline-block)\b/.exec(
+        /(?:^|[\s"'`])hidden\b[^"'`]*?\s(sm|md|lg|@2xl\/toolbar):(inline|block|inline-flex|flex|inline-block)\b/.exec(
           c
         )
       return m ? m[1] : null

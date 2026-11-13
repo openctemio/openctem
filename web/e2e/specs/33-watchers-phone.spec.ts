@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/authenticated-page'
+import { touchTargetHeight } from '../helpers/touch'
 
 /**
  * Watchers on a phone (390px), finding detail page (research/256).
@@ -52,8 +53,7 @@ test(
     await expect(people.getByRole('button', { name: /^Remove/ })).toHaveCount(0)
     const toggle = people.getByTestId('watch-toggle')
     for (const l of [summary, toggle]) {
-      const box = await l.boundingBox()
-      expect(box && box.height, 'touch target').toBeGreaterThanOrEqual(TOUCH)
+      expect(await touchTargetHeight(l), 'touch target').toBeGreaterThanOrEqual(TOUCH)
     }
     await testInfo.attach('watchers-rail-390.png', {
       body: await people.screenshot(),
@@ -76,8 +76,7 @@ test(
     const n = await removes.count()
     if (n > 0) {
       const first = removes.first()
-      const box = await first.boundingBox()
-      expect(box && box.height, 'Remove touch target').toBeGreaterThanOrEqual(TOUCH)
+      expect(await touchTargetHeight(first), 'Remove touch target').toBeGreaterThanOrEqual(TOUCH)
       const name = ((await first.getAttribute('aria-label')) ?? '').replace(/^Remove /, '')
       await testInfo.attach('watchers-sheet-390.png', {
         body: await page.screenshot(),
