@@ -117,7 +117,7 @@ describe('control scale and rows', () => {
   })
 
   it('every control height is a Tailwind spacing key (h-control, h-control-sm, ...)', () => {
-    for (const k of ['', '-sm', '-seg', '-xs', '-entry', '-touch', '-field']) {
+    for (const k of ['', '-sm', '-seg', '-xs', '-entry', '-touch', '-field', '-dense']) {
       expect(theme[`--spacing-control${k}`]).toBe(`var(--control-h${k})`)
     }
     expect(theme['--spacing-row']).toBe('var(--row-h)')
@@ -141,10 +141,22 @@ describe('spacing', () => {
   })
 })
 
-describe('values the design has not settled (one token each, today’s value)', () => {
-  it('text fields stay 36 (freeze item 1)', () => {
-    expect(px(root['--control-h-field'])).toBe(36)
+describe('fields share the row height (freeze item 1, decided)', () => {
+  it('fields and the small sizes are 32 in the app', () => {
+    expect(px(root['--control-h-field'])).toBe(32)
+    expect(px(root['--control-h-dense'])).toBe(32)
   })
+  it('the small sizes are 28 in a dense place', () => {
+    expect(px(block("[data-control-density='dense']")['--control-h-dense'], { ...root })).toBe(28)
+  })
+  it('every control is 36 on an entry page', () => {
+    const entry = block("[data-control-scale='entry']")
+    for (const k of ['--control-h', '--control-h-field', '--control-h-dense'])
+      expect(px(entry[k]), k).toBe(36)
+  })
+})
+
+describe('values the design has not settled (one token each, today’s value)', () => {
   it('dialog radius stays 8 (freeze item 7)', () => {
     expect(px(theme['--radius-dialog'])).toBe(8)
   })
