@@ -29,6 +29,7 @@ vi.mock('@/context/tenant-provider', () => ({
 }))
 
 import { DeleteOrganization } from '../delete-organization'
+import { takeSessionFlash } from '@/lib/session-navigation'
 
 async function confirmDelete() {
   const user = userEvent.setup()
@@ -52,20 +53,21 @@ describe('DeleteOrganization', () => {
     del.mockResolvedValue(undefined)
     switchTeam.mockRejectedValue(new Error('switch failed'))
     await confirmDelete()
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
-    expect(toastError).not.toHaveBeenCalled()
     await waitFor(() => expect(window.location.replace).toHaveBeenCalled())
+    expect(toastError).not.toHaveBeenCalled()
+    expect(takeSessionFlash()?.title).toContain('will be deleted on')
   })
 
   it('says when the scheduled deletion happens and that an owner can cancel', async () => {
     del.mockResolvedValue({ status: 'pending_deletion', deletion_due_at: '2026-11-01T09:00:00Z' })
     switchTeam.mockResolvedValue(undefined)
     await confirmDelete()
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalled())
-    const [message, opts] = toastSuccess.mock.calls[0] as [string, { description: string }]
-    expect(message).toContain('Acme')
-    expect(message).toContain('will be deleted on')
-    expect(opts.description).toMatch(/owner can cancel/i)
+    // Said on the page that loads next (the reload would drop a toast here).
+    await waitFor(() => expect(window.location.replace).toHaveBeenCalled())
+    const flash = takeSessionFlash()
+    expect(flash?.title).toContain('Acme')
+    expect(flash?.title).toContain('will be deleted on')
+    expect(flash?.description).toMatch(/owner can cancel/i)
   })
 
   it('a failed delete is reported as a failure', async () => {

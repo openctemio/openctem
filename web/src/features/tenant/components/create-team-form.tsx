@@ -29,6 +29,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { toast } from 'sonner'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { csrfHeaders } from '@/lib/csrf-client'
 import { useCreateTenant } from '../api'
@@ -140,27 +141,29 @@ function CreateFirstTeamFormInner({ showCancel }: { showCancel: boolean }) {
       if (!result.success && result.mfaEnrollmentRequired) {
         // The team exists; its owner must use two-factor authentication.
         // Signing in again walks through the authenticator set-up.
-        toast.success('Team created. Secure your account to continue.', {
-          description: 'Sign in again to set up two-factor authentication.',
+        navigateAfterSessionChange('/login?mfa=setup', {
+          flash: {
+            kind: 'success',
+            title: 'Team created. Secure your account to continue.',
+            description: 'Sign in again to set up two-factor authentication.',
+          },
         })
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the session and team cookies are re-read
-        window.location.href = '/login?mfa=setup'
         return
       }
 
       if (result.success && result.tenant) {
-        toast.success('Team created successfully', {
-          description: `Welcome to ${result.tenant.name}!`,
-        })
-
         // createFirstTeamAction already set the access-token cookie for the new
         // tenant, so this client-side preset apply is authorised. Non-blocking:
         // the team exists regardless of whether this succeeds.
         await applySelectedPreset(result.tenant.id, [...selected][0])
 
-        // Force full page reload to pick up new cookies
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the session and team cookies are re-read
-        window.location.href = '/'
+        navigateAfterSessionChange('/', {
+          flash: {
+            kind: 'success',
+            title: 'Team created successfully',
+            description: `Welcome to ${result.tenant.name}!`,
+          },
+        })
       } else {
         throw new Error(result.error || 'Failed to create team')
       }
@@ -244,10 +247,6 @@ function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) 
       })
 
       if (result) {
-        toast.success('Team created successfully', {
-          description: `Welcome to ${result.name}!`,
-        })
-
         // Call switch-team API directly to set cookies, then reload
         // This avoids race condition with refreshTenants/switchTeam
         try {
@@ -273,9 +272,13 @@ function CreateAdditionalTeamFormInner({ showCancel }: { showCancel: boolean }) 
         // regardless of whether this succeeds.
         await applySelectedPreset(result.id, [...selected][0])
 
-        // Force full page reload to pick up new cookies and refresh all state
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the session and team cookies are re-read
-        window.location.href = '/'
+        navigateAfterSessionChange('/', {
+          flash: {
+            kind: 'success',
+            title: 'Team created successfully',
+            description: `Welcome to ${result.name}!`,
+          },
+        })
       }
     } catch (error) {
       console.error('Failed to create team:', error)

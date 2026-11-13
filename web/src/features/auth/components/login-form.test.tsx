@@ -136,6 +136,8 @@ describe('LoginForm two-factor step', () => {
         set href(v: string) {
           href(v)
         },
+        // navigateAfterSessionChange loads the page with assign().
+        assign: (v: string) => href(v),
       },
     })
   })
