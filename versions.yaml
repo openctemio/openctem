@@ -81,7 +81,7 @@ connector-tenable:
 # advisory, separated by spaces; a sensor built with one is degraded with a
 # warning. "" = none.
 sdk:
-  latest: v0.50.0
+  latest: v0.51.0
   min: v0.46.0
   advisories: ""
 
