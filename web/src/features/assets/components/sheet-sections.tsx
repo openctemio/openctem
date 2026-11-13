@@ -51,7 +51,7 @@ export function StatCard({
           <Icon className={cn('h-5 w-5', iconColor)} />
         </div>
         <div>
-          <p className="text-2xl font-semibold">{value}</p>
+          <p className="text-figure tabular-nums">{value}</p>
           <p className="text-xs text-muted-foreground">{label}</p>
         </div>
       </div>

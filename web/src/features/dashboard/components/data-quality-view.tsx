@@ -128,9 +128,7 @@ function MetricCard({ metric }: { metric: QualityMetric }) {
         {/* Value and status share a row that wraps, so the pill never squeezes
             (or clips) the title at narrow widths. */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span
-            className={cn('text-2xl font-semibold tabular-nums', stateTextClass(metric.status))}
-          >
+          <span className={cn('text-figure tabular-nums', stateTextClass(metric.status))}>
             {metric.display ?? '—'}
           </span>
           <StatusPill status={metric.status} />

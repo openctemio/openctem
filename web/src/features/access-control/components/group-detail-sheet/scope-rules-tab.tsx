@@ -413,15 +413,17 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
               ) : (
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div className="p-3 rounded-lg bg-muted">
-                    <p className="text-2xl font-semibold">{previewResult.matching_assets}</p>
+                    <p className="text-figure tabular-nums">{previewResult.matching_assets}</p>
                     <p className="text-xs text-muted-foreground">Matching Assets</p>
                   </div>
                   <div className="p-3 rounded-lg bg-muted">
-                    <p className="text-2xl font-semibold">{previewResult.already_assigned}</p>
+                    <p className="text-figure tabular-nums">{previewResult.already_assigned}</p>
                     <p className="text-xs text-muted-foreground">Already Assigned</p>
                   </div>
                   <div className="p-3 rounded-lg bg-success/10">
-                    <p className="text-2xl font-semibold text-success">{previewResult.would_add}</p>
+                    <p className="text-figure tabular-nums text-success">
+                      {previewResult.would_add}
+                    </p>
                     <p className="text-xs text-muted-foreground">Would Add</p>
                   </div>
                 </div>

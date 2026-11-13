@@ -44,7 +44,7 @@ export function PageHeader({
       {/* basis-60: on a phone the title and a couple of icon actions share a
           row; wider actions wrap onto their own line instead of squeezing. */}
       <div className="min-w-0 flex-1 basis-60">
-        <h1 className="text-2xl font-semibold tracking-tight text-balance">{title}</h1>
+        <h1 className="text-page tracking-tight text-balance">{title}</h1>
         {description && (
           <div className="mt-1 max-w-3xl text-sm text-muted-foreground text-pretty">
             {description}

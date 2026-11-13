@@ -172,7 +172,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
         </Button>
         <div className="min-w-0 flex-1 basis-64">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight break-words">{c.name}</h1>
+            <h1 className="text-page tracking-tight break-words">{c.name}</h1>
             <StatusChip domain="remediationCampaign" value={c.status} />
           </div>
           {c.description && (

@@ -330,7 +330,7 @@ function DataFlowSummary({ steps }: { steps: DataFlowLocation[] }) {
       {tiles.map((tile) => (
         <div key={tile.key} className={cn('rounded-lg border p-3', tile.className)}>
           <p className="mb-1 text-xs text-muted-foreground">{tile.label}</p>
-          <p className="text-2xl font-semibold">{tile.value}</p>
+          <p className="text-figure tabular-nums">{tile.value}</p>
         </div>
       ))}
     </div>

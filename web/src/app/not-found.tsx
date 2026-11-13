@@ -7,7 +7,7 @@ export default function NotFound() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <div className="max-w-md space-y-4 text-center">
         <FileQuestion className="text-muted-foreground mx-auto h-16 w-16" />
-        <h1 className="text-4xl font-semibold">404</h1>
+        <h1 className="text-hero tabular-nums">404</h1>
         <h2 className="text-xl font-semibold">Page Not Found</h2>
         <p className="text-muted-foreground">
           The page you are looking for does not exist or has been moved.
