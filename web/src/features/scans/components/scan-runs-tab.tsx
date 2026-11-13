@@ -536,7 +536,7 @@ function ScanRunsTable() {
 
   return (
     // Fragment: the strip and the table are blocks of the page's PageStack,
-    // which owns the 20px between them (research/244).
+    // which owns the 24px between them (research/244).
     <>
       <MetricStrip loading={isLoadingStats} items={metrics} />
       {systemRunCount > 0 && (

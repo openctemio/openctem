@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils'
  *
  * A tab panel or a component that renders several blocks wraps them in its
  * own `PageStack`; nested stacks keep the same rhythm. Inline Radix `Tabs`
- * directly inside a stack get the same 20px between the strip and the panel.
+ * directly inside a stack get the same 24px between the strip and the panel.
  */
 export function PageStack({ className, ...props }: ComponentProps<'div'>) {
   return (

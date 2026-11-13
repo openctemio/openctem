@@ -11,7 +11,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * at 1440px and at 390px from bounding boxes:
  *
  * - the page's blocks sit in a `PageStack`;
- * - page header to its tab strip 16px, every other gap between blocks 20px
+ * - page header to its tab strip 16px, every other gap between blocks 24px (the --sp-section and --sp-page tokens, read from the page)
  *   (nested stacks flattened, so a tab panel's blocks count);
  * - one tab row per page, no segmented control used as a row filter;
  * - tab icons: all tabs of a strip have one or none does, 16px; no tab label
