@@ -711,6 +711,10 @@ func NewWorkers(deps *WorkerDeps) (*Workers, error) {
 		}
 		w.ControllerManager.Register(controller.NewAIAgentSweepController(svc.AIAnalysis, time.Hour,
 			log.With("controller", "ai-agent-sweep")))
+		// Runs on AI workers end by their deadline, or when their analysis
+		// job ended without a result: none waits forever.
+		w.ControllerManager.Register(controller.NewAIWorkerRunSweepController(svc.AIAnalysis, time.Minute,
+			log.With("controller", "ai-worker-run-sweep")))
 	}
 	// AI use cases whose automatic results people keep overriding fall back
 	// from auto-apply to suggest.

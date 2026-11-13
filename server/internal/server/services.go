@@ -3458,6 +3458,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.AIExecutor != nil {
 		s.AIExecutor.SetAIAgents(s.AIAnalysis)
 		s.AIExecutor.SetKnowledge(s.AIKnowledge)
+		// AI agents that run on the organization's AI workers: the same
+		// checks and masked bundle, then an analysis job on the command
+		// queue (docs/architecture/ai-analysis.md).
+		if s.Command != nil {
+			jobs := analysisJobQueue{cmds: s.Command}
+			aianalysis.NewWorkerExecutor(s.AIExecutor, jobs, s.Audit, log)
+			s.AIAnalysis.SetJobCanceler(jobs)
+		}
 	}
 
 	// Wire permission services to tenant service

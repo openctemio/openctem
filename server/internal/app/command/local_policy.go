@@ -227,6 +227,9 @@ func (s *Service) dispatchOptions(ctx context.Context, tenantID shared.ID, cmds 
 // refusal is why the gate withholds c, or nil.
 func (g *dispatchGate) refusal(c *commanddom.Command) *sensordom.DispatchRefusal {
 	if g == nil {
+		if r := g.grantRefusal(c); r != nil {
+			return &sensordom.DispatchRefusal{Layer: RefusalLayerGrant, Rule: r.Dimension, Detail: r.Detail}
+		}
 		return nil
 	}
 	if g.closed {
@@ -246,9 +249,14 @@ func (g *dispatchGate) refusal(c *commanddom.Command) *sensordom.DispatchRefusal
 }
 
 // grantRefusal is the grant's refusal of c, or nil (also without a grant
-// read: enforcement not wired).
+// read: enforcement not wired). An analysis job is the exception: without a
+// grant read it is refused (fail closed), since only an AI worker grant may
+// take one.
 func (g *dispatchGate) grantRefusal(c *commanddom.Command) *sensordom.GrantRefusal {
 	if g == nil || g.grant == nil {
+		if c.Type == commanddom.CommandTypeAnalyze {
+			return &sensordom.GrantRefusal{Dimension: sensordom.DimJobTypes, Detail: "job type analyze needs the ai-worker profile"}
+		}
 		return nil
 	}
 	var contract *sensordom.ToolContract

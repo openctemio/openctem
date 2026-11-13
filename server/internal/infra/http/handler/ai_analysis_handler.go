@@ -80,13 +80,16 @@ type AIAgentListResponse struct {
 
 // AIRunResponse is one run with its provenance.
 type AIRunResponse struct {
-	ID                   string            `json:"id"`
-	AIAgentID            string            `json:"ai_agent_id,omitempty"`
-	UseCase              string            `json:"use_case"`
-	Kind                 string            `json:"kind"`
-	SubjectType          string            `json:"subject_type"`
-	SubjectID            string            `json:"subject_id"`
-	Executor             string            `json:"executor"`
+	ID          string `json:"id"`
+	AIAgentID   string `json:"ai_agent_id,omitempty"`
+	UseCase     string `json:"use_case"`
+	Kind        string `json:"kind"`
+	SubjectType string `json:"subject_type"`
+	SubjectID   string `json:"subject_id"`
+	Executor    string `json:"executor"`
+	// SensorID is the AI worker that took the run's analysis job (runs on
+	// a worker only).
+	SensorID             string            `json:"sensor_id,omitempty"`
 	Status               string            `json:"status"`
 	DataClass            string            `json:"data_class"`
 	FieldsSent           []string          `json:"fields_sent"`
@@ -142,6 +145,13 @@ type SetAIAgentOwnersRequest struct {
 	Owners []aianalysis.OwnerInput `json:"owners" validate:"required,min=1,max=20,dive"`
 }
 
+// SetAIAgentExecutorRequest sets where an AI agent's runs execute.
+type SetAIAgentExecutorRequest struct {
+	// Executor is builtin (the platform calls the model) or tenant_worker
+	// (the organization's AI workers).
+	Executor string `json:"executor" validate:"required,oneof=builtin tenant_worker"`
+}
+
 // SetAIAgentPresetRequest moves an AI agent to another preset.
 type SetAIAgentPresetRequest struct {
 	Preset string `json:"preset" validate:"required,oneof=suggest triage"`
@@ -175,7 +185,7 @@ func toAIRun(run *aidom.Run) AIRunResponse {
 	return AIRunResponse{
 		ID: run.ID.String(), AIAgentID: idStr(run.AIAgentID), UseCase: string(run.UseCase), Kind: run.Kind,
 		SubjectType: string(run.SubjectType), SubjectID: run.SubjectID.String(), Executor: string(run.Executor),
-		Status: string(run.Status), DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent),
+		SensorID: idStr(run.SensorID), Status: string(run.Status), DataClass: string(run.DataClass), FieldsSent: nonNilStrings(run.FieldsSent),
 		FieldsWithheld: nonNilStrings(run.FieldsWithheld), BundleDigest: run.BundleDigest,
 		PromptTemplateID: run.PromptTemplateID, PromptTemplateDigest: run.PromptTemplateDigest,
 		OutputSchema: run.OutputSchema, Provider: run.Provider, Model: run.Model, Actions: run.Actions,
@@ -203,6 +213,8 @@ func (h *AIAnalysisHandler) fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &paused):
 		apierror.New(http.StatusConflict, aiErrPausedCode, "The AI agent is paused: "+string(paused.Reason)+".").WriteJSON(w)
+	case errors.Is(err, aianalysis.ErrNoWorkerExecutor):
+		apierror.ServiceUnavailable("Runs on AI workers are not available").WriteJSON(w)
 	case errors.Is(err, aianalysis.ErrBudget):
 		apierror.New(http.StatusTooManyRequests, aiErrBudgetCode, "The AI agent reached its limit for now.").WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
@@ -388,6 +400,36 @@ func (h *AIAnalysisHandler) SetPreset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, err := h.svc.ChangePreset(r.Context(), id, in.Preset, h.actx(r))
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeAIJSON(w, http.StatusOK, toAIAgent(a))
+}
+
+// ChangeExecutor handles PUT /api/v1/ai/agents/{id}/executor.
+//
+// @Summary      Set where an AI agent runs
+// @Description  builtin: the platform calls the model with the masked bundle. tenant_worker: the organization's AI workers (sensors on the ai-worker profile) take each run as an analysis job carrying the masked bundle; the placeholder mapping stays on the platform. Other executors are not available. Needs a recent sign-in; audited with the executor before and after.
+// @Tags         AI
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "AI agent ID"
+// @Param        request body SetAIAgentExecutorRequest true "Executor"
+// @Success      200  {object}  AIAgentResponse
+// @Failure      400  {object}  apierror.Error
+// @Security     BearerAuth
+// @Router       /ai/agents/{id}/executor [put]
+func (h *AIAnalysisHandler) ChangeExecutor(w http.ResponseWriter, r *http.Request) {
+	id, ok := aiPathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var in SetAIAgentExecutorRequest
+	if !decodeAIBody(w, r, &in) {
+		return
+	}
+	a, err := h.svc.ChangeExecutor(r.Context(), id, in.Executor, h.actx(r))
 	if err != nil {
 		h.fail(w, err)
 		return
@@ -609,7 +651,7 @@ type AIAnalyzeResponse struct {
 // AnalyzeFinding handles POST /api/v1/findings/{id}/ai/analyze.
 //
 // @Summary      Ask an AI agent to analyze a finding
-// @Description  Runs one single-shot kind (triage.v1, remediation.v1, summary.v1) on the built-in executor as an AI agent: the AI agent must be active (an active accountable owner, a fresh attestation) and the finding in its scope and in an owner's. The context bundle is masked and the mapping stays on the platform. The model output becomes the AI agent's own commands: comments, status and severity changes its preset allows, and approval requests for anything that lowers risk, which a person decides. Returns the run with its provenance and the actions taken; a refused or failed run is returned with its fixed error code. Rate-limited.
+// @Description  Runs one single-shot kind (triage.v1, remediation.v1, summary.v1) as an AI agent: the AI agent must be active (an active accountable owner, a fresh attestation) and the finding in its scope and in an owner's. The context bundle is masked and the mapping stays on the platform. The model output becomes the AI agent's own commands: comments, status and severity changes its preset allows, and approval requests for anything that lowers risk, which a person decides. Built in: returns 200 with the run, its provenance and the actions taken. On the organization's AI workers: returns 202 with the queued run; its analysis job is applied when a worker completes it, and the run ends failed (deadline_exceeded) when no worker does by its deadline. A refused or failed run is returned with its fixed error code. Rate-limited.
 // @Tags         AI
 // @Accept       json
 // @Produce      json
@@ -617,6 +659,7 @@ type AIAnalyzeResponse struct {
 // @Param        id path string true "Finding ID"
 // @Param        body body AnalyzeFindingRequest true "Kind and AI agent"
 // @Success      200  {object}  AIAnalyzeResponse
+// @Success      202  {object}  AIAnalyzeResponse
 // @Failure      400  {object}  apierror.Error
 // @Failure      409  {object}  apierror.Error
 // @Router       /findings/{id}/ai/analyze [post]
@@ -677,5 +720,10 @@ func (h *AIAnalysisHandler) AnalyzeFinding(w http.ResponseWriter, r *http.Reques
 	if actions == nil {
 		actions = []aianalysis.Action{}
 	}
-	writeAIJSON(w, http.StatusOK, AIAnalyzeResponse{Run: toAIRun(d.Run), Actions: actions})
+	status := http.StatusOK
+	if d.Run.Status == aidom.RunQueued {
+		// Sent to an AI worker: the result comes later.
+		status = http.StatusAccepted
+	}
+	writeAIJSON(w, status, AIAnalyzeResponse{Run: toAIRun(d.Run), Actions: actions})
 }
