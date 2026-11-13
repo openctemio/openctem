@@ -23,7 +23,11 @@ A value that is not one bare address (a range, a name, text, a number) is ignore
 - kept in step by triggers on `assets` (insert; update of the name, type, `deleted_at` or the three property
   keys), so every write path (the API, ingest, imports, merges) is covered; a deleted asset has no rows; an
   address that leaves the properties leaves the table in the same statement;
-- the foreign key `(tenant_id, asset_id)` cascades on delete, and every read names the tenant.
+- the foreign key `(tenant_id, asset_id)` cascades on delete, and every read names the tenant; the table carries
+  the tenant isolation policy (row level security in shadow mode) and is listed in
+  `tools/lint/tenantsql/tenant_tables.txt`;
+- an asset merge drops the merged assets' rows and recomputes the kept asset's from its row
+  (`mergeAssetAddresses`, `internal/infra/postgres/asset_merge_plan.go`).
 
 ## The range condition
 

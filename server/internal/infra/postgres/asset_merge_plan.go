@@ -258,6 +258,7 @@ var assetMergeSpecialRefs = map[string]string{
 	"asset_ports.asset_id":                     "derived: the merged asset's rows are deleted and the kept asset is queued so the worker recomputes its rows",
 	"asset_ports.port_asset_id":                "derived: rows naming a merged port asset are deleted; the kept asset is queued and recomputed",
 	"asset_port_queue.asset_id":                "the merged asset's queue rows are deleted and the kept asset is queued",
+	"asset_ip_addresses.asset_id":              "derived: the merged asset's addresses are deleted and the kept asset's are recomputed from its row",
 	"asset_attributions.follows_host_id":       "children of a merged host follow the kept asset (the kept asset itself follows nobody it absorbed)",
 }
 
@@ -325,6 +326,9 @@ func mergeAssetReferences(ctx context.Context, tx *sql.Tx, tenantID, reviewID, k
 	if err := mergeAssetPorts(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
 		return err
 	}
+	if err := mergeAssetAddresses(ctx, tx, tenantID, keepID, mergeIDs); err != nil {
+		return err
+	}
 	return mergeDashboardFacts(ctx, tx, tenantID, keepID, mergeIDs)
 }
 
@@ -361,6 +365,25 @@ func mergeAssetPorts(ctx context.Context, tx *sql.Tx, tenantID, keepID string, m
 	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_port_queue (asset_id, tenant_id) VALUES ($1, $2)
 		ON CONFLICT (asset_id) DO NOTHING`, keepID, tenantID); err != nil {
 		return fmt.Errorf("queue kept asset for asset ports: %w", err)
+	}
+	return nil
+}
+
+// mergeAssetAddresses drops the merged assets' addresses (derived from their
+// rows, docs/architecture/asset-addresses.md) and recomputes the kept
+// asset's from its current row; a later change of its properties is kept in
+// step by the trigger on assets.
+func mergeAssetAddresses(ctx context.Context, tx *sql.Tx, tenantID, keepID string, mergeIDs []string) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_ip_addresses WHERE tenant_id = $1 AND (asset_id = ANY($2) OR asset_id = $3)`,
+		tenantID, pq.Array(mergeIDs), keepID); err != nil {
+		return fmt.Errorf("merge asset addresses: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_ip_addresses (tenant_id, asset_id, addr)
+		SELECT a.tenant_id, a.id, r.addr FROM assets a
+		CROSS JOIN LATERAL asset_recorded_addresses(a.asset_type, a.name, a.properties) AS r(addr)
+		WHERE a.tenant_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
+		ON CONFLICT DO NOTHING`, tenantID, keepID); err != nil {
+		return fmt.Errorf("recompute kept asset addresses: %w", err)
 	}
 	return nil
 }
