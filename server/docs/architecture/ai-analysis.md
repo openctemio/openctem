@@ -243,7 +243,7 @@ nothing (fail closed). Shared sensors never see one (it is not a shared job). Si
 same as for every command type.
 
 **Every worker run ends.** `Service.EndStaleWorkerRuns`, run every minute by the `ai-worker-run-sweep`
-controller (index `idx_ai_runs_worker_live`), ends live worker runs that can no longer get a result:
+controller (index `idx_ai_runs_worker_live`; a job of the core `findings` module, so it runs whether `ai_triage` is on or off), ends live worker runs that can no longer get a result:
 
 | Cause | Run |
 |---|---|
