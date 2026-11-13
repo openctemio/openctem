@@ -10,7 +10,7 @@ the two parts that ship together:
 
 | Directory | What | Image |
 |---|---|---|
-| [`server/`](server/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/server`) | `ghcr.io/openctemio/openctem-api` |
+| [`server/`](server/) | Go API server, migrations, admin CLI (module `github.com/openctemio/openctem/server`) | `ghcr.io/openctemio/openctem-server` (`openctem-api` up to v0.22.x) |
 | [`web/`](web/) | Next.js web console, and the platform console for platform administrators (same source, `console` build target) | `ghcr.io/openctemio/openctem-web`, `ghcr.io/openctemio/openctem-console` |
 | [`deploy/allinone/`](deploy/allinone/) | API + web + platform console + gateway in one container (Postgres/Redis external) | `ghcr.io/openctemio/openctem` |
 
@@ -40,8 +40,8 @@ The monorepo was formed on 2026-10-02
   means this repository.
 - **`ui/vX.Y.Z` tags** are the ui repository's tags, imported for history only.
   They release nothing; only `vX.Y.Z` tags do (see [Releases](#releases)).
-- **Images** moved from `ghcr.io/openctemio/api` / `ui` to `openctem-api` /
-  `openctem-web`; the old names are mirrored for a transition window.
+- **Images** moved from `ghcr.io/openctemio/api` / `ui` to `openctem-api` / `openctem-web` at v0.9.0. The server image is `openctem-server` from v0.23.0;
+  `openctem-api` and `api` keep their v0.22.x and earlier tags and receive no new ones.
 - `openctemio/agent` had already become [openctemio/sensor](https://github.com/openctemio/sensor) (RFC-023).
 
 More: [repository map](server/docs/development/repositories.md),
@@ -57,6 +57,23 @@ make check     # what CI runs, both components
 ```
 
 ## Deploying
+
+### Quick start (self-hosting with Docker Compose)
+
+On a Linux host with 4 GB of memory or more, from a checkout of a release tag
+(or the release's verified `openctem-compose-vX.Y.Z.tar.gz` bundle, see
+[the guide](server/docs/deployment/docker.md#one-command-install)):
+
+```bash
+cd server/deploy
+./install.sh
+```
+
+It checks Docker and the host, asks for the host name, the TLS mode, the first
+administrators and the bundled sensor (Enter accepts each default), writes
+`.env` with generated secrets, verifies the image signatures, starts the stack,
+waits until it is healthy and prints the URLs and how to sign in.
+`./install.sh --help` lists the options for unattended installs.
 
 - **Compose, one HTTPS port:** [`server/deploy/docker-compose.yml`](server/deploy/docker-compose.yml)
   runs the gateway ([`server/deploy/gateway`](server/deploy/gateway), Caddy), web, the
@@ -96,7 +113,7 @@ Installation, configuration and operations are documented at
 
 ## Releases
 
-One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-api`,
+One tag, `vX.Y.Z`, releases every image from the same commit: `openctem-server`,
 `openctem-web`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, all
 `openctem-web`, `openctem-console`, `openctem` (all-in-one), `openctem-gateway`, `migrations`, `seed`, `admin-cli`, all
 multi-arch (amd64, arm64), signed with cosign, with a signed SPDX SBOM

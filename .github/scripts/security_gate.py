@@ -27,6 +27,11 @@ when the label changes; the decision never depends on that run existing.
 Labels and the review comment are written only when the token can write (same
 repository pull requests); fork pull requests get the verdict in the job
 summary and the check result.
+A sync pull request (the integration branch merged into a long-lived branch
+named in SYNC_BRANCHES, e.g. develop into next) is judged only on the files
+whose content differs from git's own clean merge of the two branches, computed
+here from the fetched commits (sync_counted): files taken mechanically from the
+integration branch passed this gate when they landed there.
 
 Commands:
   gate                     evaluate the pull request named by the GitHub event
@@ -920,6 +925,7 @@ class Result:
     ack_dropped: bool = False
     ack_commit: str | None = None
     head_sha: str = ""
+    sync_exempt: int = 0  # files of a sync pull request equal to the clean merge, not judged again
     gate_unpinned: bool = False  # touches the gate and no ruleset pins the gate workflow  # the commit the ack was given on, shown so the acker can confirm it
 
     @property
@@ -950,6 +956,9 @@ def verdict_line(r: Result) -> str:
 
 def render(r: Result, repo: str, server: str) -> str:
     out = [COMMENT_MARKER, "## Security gate", "", f"**{verdict_line(r)}**", ""]
+    if r.sync_exempt:
+        out += [f"Sync pull request: {r.sync_exempt} file(s) equal git's clean merge of the integration branch "
+                "and were judged when they landed there; only the other files are judged here.", ""]
     if not r.sensitive:
         out.append("This pull request no longer changes a security-sensitive path.")
         return "\n".join(out) + "\n"
@@ -1043,6 +1052,60 @@ def release_files(gh: GitHub, pr: dict) -> list[ChangedFile] | None:
     return [changed_file(f) for f in files]
 
 
+def sync_branches() -> set[str]:
+    """Long-lived branches that take the integration branch by sync pull
+    requests (SYNC_BRANCHES, comma separated; empty = none)."""
+    return {b.strip() for b in os.environ.get("SYNC_BRANCHES", "").split(",") if b.strip()}
+
+
+def sync_counted(gitdir: str, base_sha: str, head_sha: str, integration_sha: str, files: list[ChangedFile],
+                 env: dict[str, str] | None = None) -> tuple[list[ChangedFile], int] | None:
+    """For a pull request into a sync branch (e.g. develop merged into next):
+    the files the gate still judges, and how many it does not.
+
+    `side` is the sync branch commit the pull request starts from
+    (merge-base(head, base): the diff GitHub shows starts there) and `integ`
+    the newest integration branch commit `head` contains
+    (merge-base(head, integration tip), so it is on the integration branch).
+    `merged` is git's clean merge of the two (merge-tree, computed here from the
+    fetched commits, never read from the pull request). A file whose blob in
+    `head` equals its blob in `merged` is exactly what merging the integration
+    branch produces: content that passed this gate on the integration branch,
+    combined with content that passed it on the sync branch, the same rule
+    covered_by_merges applies to a base merge. Every other file is judged as
+    usual: a conflict resolution, a hand edit in the merge or in a later
+    commit, a file the sync branch changed and the merge dropped.
+
+    None (judge every file) when the head merged nothing new from the
+    integration branch, or on any git error."""
+    try:
+        side = _git_out(gitdir, "merge-base", head_sha, base_sha, env=env).decode().split()[0]
+        integ = _git_out(gitdir, "merge-base", head_sha, integration_sha, env=env).decode().split()[0]
+        anc = _git(gitdir, "merge-base", "--is-ancestor", integ, side, env=env)
+        anc.communicate()
+        if anc.returncode == 0:
+            return None  # nothing from the integration branch that the sync branch lacks
+        p = _git(gitdir, "merge-tree", "--write-tree", "--no-messages", side, integ, env=env)
+        out, _ = p.communicate()
+        if p.returncode not in (0, 1):  # 1 = conflicts; a conflicted file differs from head below
+            return None
+        merged = out.decode().split()[0]
+        names = sorted({f.filename for f in files} | {f.previous_filename for f in files if f.previous_filename})
+        head_b: dict[str, str] = {}
+        merged_b: dict[str, str] = {}
+        for i in range(0, len(names), 500):
+            head_b.update(_blobs(gitdir, head_sha, names[i:i + 500], env))
+            merged_b.update(_blobs(gitdir, merged, names[i:i + 500], env))
+    except (RuntimeError, IndexError, OSError):
+        return None
+
+    def mechanical(f: ChangedFile) -> bool:
+        paths = [f.filename] + ([f.previous_filename] if f.previous_filename else [])
+        return all(head_b.get(n) == merged_b.get(n) for n in paths)
+    counted = [f for f in files if not mechanical(f)]
+    return counted, len(files) - len(counted)
+
+
 def gate_comment(gh: GitHub, number: int) -> dict | None:
     """The gate's comment, updated in place. Display only: nothing in it is
     ever read back as a decision (any workflow token can write as the bot)."""
@@ -1092,7 +1155,22 @@ def cmd_gate() -> int:
     # Writes need a same-repository head and a pull_request event: fork tokens are read-only.
     can_write = event_name == "pull_request" and same_repo
 
-    r = Result(number, head_sha=pr["head"]["sha"])
+    sync_exempt = 0
+    integration = os.environ.get("INTEGRATION_BRANCH", "")
+    if same_repo and integration and pr["base"]["ref"] in sync_branches():
+        gitdir = os.environ.get("GATE_DIR", "base")
+        try:
+            integration_sha = gh.get(f"git/ref/heads/{urllib.parse.quote(integration)}")["object"]["sha"]
+            fetch_pr_commits(gitdir, repo, server, token, pr["base"]["sha"], pr["head"]["sha"], integration_sha)
+            judged = sync_counted(gitdir, pr["base"]["sha"], pr["head"]["sha"], integration_sha, files,
+                                  git_auth_env(server, token))
+        except (RuntimeError, KeyError, TypeError) as e:
+            print(f"::warning::security-gate: sync rule not applied, judging every file: {e}")
+            judged = None
+        if judged is not None:
+            files, sync_exempt = judged
+
+    r = Result(number, head_sha=pr["head"]["sha"], sync_exempt=sync_exempt)
     r.hits = classify(files, config)
     r.findings, r.unreviewed = review(files)
     comment = gate_comment(gh, number) if r.sensitive or can_write else None

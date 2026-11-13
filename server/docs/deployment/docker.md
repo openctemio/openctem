@@ -76,13 +76,14 @@ make allinone
 ```
 
 Release images are built by `.github/workflows/docker-publish.yml` from a
-`vX.Y.Z` tag: `ghcr.io/openctemio/openctem-api`, `openctem-web`,
+`vX.Y.Z` tag: `ghcr.io/openctemio/openctem-server` (published as `openctem-api`
+up to v0.22.x), `openctem-web`,
 `openctem-console` (the platform console), `openctem` (all-in-one),
 `openctem-gateway`, `migrations` and `seed`.
 
 There is no separate admin image: `bootstrap-admin` (first administrator, `storage migrate`,
 `verify-audit`, ...) ships in the API image. With Compose run
-`docker compose run --rm bootstrap-admin ...`; on Kubernetes use a Job with the `openctem-api`
+`docker compose run --rm bootstrap-admin ...`; on Kubernetes use a Job with the `openctem-server`
 image and command `/app/bootstrap-admin`.
 
 ## Production
@@ -91,6 +92,81 @@ The supported deployments are `server/deploy/docker-compose.yml`, the all-in-one
 image and the Helm chart; the API-only and web-only Compose files are removed.
 `make docker-prod` only prints how to start `server/deploy`. Operators follow
 [docs.openctem.io/install](https://docs.openctem.io/install/).
+
+### One-command install
+
+`server/deploy/install.sh` takes a Linux host from nothing to a running,
+healthy stack and prints how to sign in for the first time. It asks at most
+five questions, and Enter accepts each default:
+
+1. the DNS name or IP address browsers and sensors use (default: this host's
+   name);
+2. an e-mail for a Let's Encrypt certificate (DNS names only; Enter keeps the
+   gateway's own CA);
+3. the first platform administrator's e-mail;
+4. a second, break-glass administrator's e-mail (required by
+   `bootstrap-admin`);
+5. the bundled sensor (default yes for a DNS name, no for an IP address).
+
+Everything else keeps its default and is changed later in the console.
+
+From a release that ships the Compose bundle (the first release after this
+change; older releases install with the manual steps below), download it,
+verify it, then run it. Nothing runs before the checksum signature and the
+checksum pass:
+
+```bash
+v=vX.Y.Z u=https://github.com/openctemio/openctem/releases/download/$v
+curl -fsSLO "$u/openctem-compose-$v.tar.gz" -fsSLO "$u/checksums-sha256.txt" -fsSLO "$u/checksums-sha256.txt.sigstore.json" &&
+docker run --rm --read-only --cap-drop=ALL --tmpfs /tmp -e HOME=/tmp -v "$PWD:/w:ro" -w /w \
+  ghcr.io/sigstore/cosign/cosign:v3.1.3@sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8 \
+  verify-blob checksums-sha256.txt --bundle checksums-sha256.txt.sigstore.json \
+  --certificate-identity "https://github.com/openctemio/openctem/.github/workflows/release.yml@refs/tags/$v" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com &&
+sha256sum --ignore-missing -c checksums-sha256.txt &&
+tar -xzf "openctem-compose-$v.tar.gz" && cd "openctem-compose-$v" && ./install.sh
+```
+
+(`cosign verify-blob` with a cosign you installed works the same.) From a git
+checkout of a release tag, `cd server/deploy && ./install.sh` does the same; a
+checkout that is not at a release tag (`develop`, a branch) needs `--version
+vX.Y.Z`, because its `VERSION` file names the last release merged back, not
+that code.
+Never pipe a downloaded script into a shell: the bundle is verified first.
+
+Without a person at a terminal (automation), give every answer as an option
+or a variable (`./install.sh --help`); a missing required answer is an error,
+never a prompt:
+
+```bash
+./install.sh --yes --host ctem.example.com \
+  --admin-email admin@example.com --backup-admin-email breakglass@example.com \
+  --credentials-file /root/openctem-first-admin.txt
+```
+
+What it does, and what it refuses:
+
+| Step | Behaviour |
+|---|---|
+| Docker | Docker Engine 24+ and the Compose plugin 2.24+. If they are missing on Ubuntu it offers Ubuntu's `docker.io` and `docker-compose-v2` packages (asks first; `--install-docker` for automation); elsewhere it links the Docker install guide and stops. |
+| Host checks | Memory (4 GB minimum, 8 GB for regular use), free disk under the Docker root and the install directory (10 GB minimum), the HTTPS and console ports free, the stack's `/24` (`OPENCTEM_NET_PREFIX`) not used by another Docker network, the host name resolving (required for Let's Encrypt), the clock within 2 minutes of `ghcr.io`'s. Every problem is listed, then it stops; `--force` continues past them. |
+| `.env` | Written once by `setup.sh` (generated secrets, mode 0600) and never overwritten: a second run reuses it, and an answer that differs from it (host, release, TLS, console options, a `--set` value) is an error naming the line to change. A rerun without `--sensor`/`--no-sensor` keeps the install's choice. `.env` is read as data, never sourced. A change the installer makes to an existing `.env` (`COMPOSE_FILE`) is backed up first (`.env.bak-<time>`, 0600) and printed. |
+| `COMPOSE_FILE` | The compose file set is recorded in `.env`, so every later `docker compose` command and upgrade in the directory uses the same files. |
+| Running stack | Before anything is written, it stops with the exact `.env` line to add when a stack of the same project name runs from another directory (`COMPOSE_PROJECT_NAME`), or was started with an overlay the file set lacks (`COMPOSE_FILE`). The running bundled sensor is dropped only on an explicit `--no-sensor`. A rerun against a healthy stack recreates nothing whose configuration and image are unchanged; the one-shot jobs (TLS, roles, migrations, grants, sensor enrollment) run again, as on every `up`, and change nothing. |
+| Signatures | Every release image of the file set is verified keyless (`docker-publish.yml` at the image's tag; the bundled sensor against the sensor repository's workflow at its tag) in a cosign container pinned by digest: nothing to install, no volume or Docker socket mounted. After the pull, each image's digest must equal the verified one. A failed check stops the install. An image override (`API_IMAGE` and the like) is refused: the release identity cannot vouch for it. `--no-verify` skips the check, says so in capitals and prints the `cosign verify` command of every image. Postgres and Redis are the official images, pulled by tag and not signed by this project. |
+| Start | `docker compose pull`, `docker compose run --rm --no-deps api -check-config` (skipped while the API runs: it checked the same configuration at its start), `docker compose up -d`, then a deadline (`--timeout`, default 900 s) for the gateway to turn healthy (it waits for the API, web and console). On a failure it names the service and prints the one `docker compose logs` command that shows why. Then it requests `/login` through the gateway. |
+| First administrator | `bootstrap-admin` as before: the administrators' one-time credentials are shown once, on the terminal. Without a terminal it needs `--credentials-file`, a new file written mode 0600 (read it, then delete it); without either it refuses before changing anything. A later run does not repeat it (`.install-state`). `--org-name` and `--org-owner-email` also create the first organization. |
+| Sensor | With the bundled sensor, the summary shows whether it enrolled. |
+| Summary | The app and console URLs, the CA certificate to trust (built-in CA), where `.env` is and the reminder to back up `APP_ENCRYPTION_KEY`, and the day-2 commands. It never prints a secret. |
+
+Every other `.env` setting can be given for a new `.env` with `--set
+NAME=VALUE` (also `./setup.sh --set`), for example a port other than 443:
+`--set GATEWAY_HTTPS_PORT=4443 --set OPENCTEM_PUBLIC_URL=https://ctem.example.com:4443`.
+A typed secret must be safe in a connection URL and in Compose (letters,
+digits, `. _ ~ -`) and long enough; the error never repeats the value.
+
+The steps below are what `install.sh` runs, for operators who prefer to run
+them by hand.
 
 Start order in `server/deploy/docker-compose.yml` (`depends_on`):
 
@@ -118,7 +194,7 @@ The API image runs in production mode unless `APP_ENV` says otherwise: an unset
 `APP_ENV` means `production`. Check a configuration without starting anything:
 
 ```bash
-docker run --rm --env-file api.env ghcr.io/openctemio/openctem-api:vX.Y.Z -check-config
+docker run --rm --env-file api.env ghcr.io/openctemio/openctem-server:vX.Y.Z -check-config
 # or, in server/deploy:
 docker compose run --rm --no-deps api -check-config
 ```

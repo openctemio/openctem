@@ -35,6 +35,10 @@
   --muted-foreground: #525252; /* brand muted */
   --accent: var(--surface-raised); /* the kit's hover surface, not the brand accent */
   --accent-foreground: var(--foreground);
+  /* The highlighted row of a menu, list or command palette: the text colour at
+     4% over whatever surface it sits on. --accent cannot do it in dark, where it
+     equals the popover (1.00:1, an invisible highlight). */
+  --hov: color-mix(in srgb, var(--foreground) 4%, transparent);
   --border: #d8dce3;
   --input: var(--border-strong);
 
@@ -249,6 +253,7 @@
   --fg-dim: #97a2b3;
   --card: #0f1d33; /* ink, lighter, same hue */
   --popover: #15253f;
+  --hov: color-mix(in srgb, var(--foreground) 4%, transparent);
   --primary: #fafaf9;
   --primary-foreground: #0a1628;
   --muted-foreground: #a9b4c4;
@@ -476,6 +481,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-hov: var(--hov);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);

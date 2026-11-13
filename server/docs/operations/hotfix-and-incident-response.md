@@ -318,11 +318,14 @@ Then:
 
 - [ ] **Verify the signature** of the images you will deploy:
 
+  The server image is `openctem-server`; a hotfix of an older line is
+  published as `openctem-api`, the name up to v0.22.x.
+
   ```bash
-  cosign verify ghcr.io/openctemio/openctem-api:vX.Y.Z \
+  cosign verify ghcr.io/openctemio/openctem-server:vX.Y.Z \
     --certificate-identity "https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/vX.Y.Z" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
-  gh attestation verify oci://ghcr.io/openctemio/openctem-api:vX.Y.Z --owner openctemio
+  gh attestation verify oci://ghcr.io/openctemio/openctem-server:vX.Y.Z --owner openctemio
   ```
 
 - [ ] **Release notes.** Edit the GitHub Release: a `Security` section first,
@@ -536,8 +539,8 @@ gh workflow run release-train.yml -R openctemio/openctem --ref develop \
 gh pr list -R openctemio/openctem --base main --head release/vX.Y.Z
 gh run list -R openctemio/openctem -w docker-publish.yml -L 1  # wait for signing
 
-# --- verify the images
-cosign verify ghcr.io/openctemio/openctem-api:vX.Y.Z \
+# --- verify the images (openctem-api for a v0.22.x or earlier hotfix)
+cosign verify ghcr.io/openctemio/openctem-server:vX.Y.Z \
   --certificate-identity "https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/vX.Y.Z" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 make -C server migrations-released                     # changes only for v0.15.x and older

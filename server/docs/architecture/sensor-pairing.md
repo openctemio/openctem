@@ -409,7 +409,7 @@ written, so a refusal creates nothing:
   instance token, not a re-pair; the view says `trust_eligible`), only for
   profiles whose grant has no credentials and no push ingest
   (`sensordom.TrustableAtApproval`: internal-network-scanner, easm-external,
-  scan-connector), and only with `sensors:grant:widen` through
+  scan-connector, ai-worker), and only with `sensors:grant:widen` through
   `sensorgrant.AuthorizeTrust` and the widening approver. The approval's
   verified step-up proof is the recent re-authentication the approver asks
   for (`sensorgrant.Actor.StepUpVerified`). The grant is written Trusted in
@@ -468,7 +468,7 @@ re-paired by an administrator.
 
 | Piece | Where |
 |---|---|
-| Model, profiles, admission, command tier, narrowing comparison, effective grant | `pkg/domain/sensor/grant.go` (tier: the stage catalog's lowest tier for the tool; custom templates and callbacks raise to T2; an unknown tool is T2; a retest takes the tier of the detection it repeats, the finding's tool's scan tier; profiles that may scan also list `validate` and `retest`, migration 001263) |
+| Model, profiles, admission, command tier, narrowing comparison, effective grant | `pkg/domain/sensor/grant.go` (tier: the stage catalog's lowest tier for the tool; custom templates and callbacks raise to T2; an unknown tool is T2; a retest takes the tier of the detection it repeats, the finding's tool's scan tier; profiles that may scan also list `validate` and `retest`, migration 001263; `analyze` is T0, and a grant that lists `analyze` lists nothing else) |
 | Repository | `internal/infra/postgres/sensor_grant_repository.go` (`sensor_grants` keyed on `(tenant_id, sensor_id)`, and the trust level on `sensors.trust_level`; migration 001119: legacy-broad backfill, insert trigger for the narrow default) |
 | Service (narrow/widen, compare-and-swap, audit, notifications, pairing hook) | `internal/app/sensorgrant/service.go` |
 | Claim gate | `internal/app/command/local_policy.go` `dispatchGate.refusal` (poll, claim-N, claim by id). A refused claim by id answers like a lost claim (`command-claimed`) so deployed sensors drop the command; it is audited with the dimension. Claim by id also checks the command's required capabilities now (`ClaimForSensor`). |
@@ -494,6 +494,22 @@ closed). Known gap: the heartbeat's `pending_jobs` count does not apply the
 grant, so a New sensor with only active work waiting polls at the busy
 interval and gets nothing.
 
+### The AI worker profile
+
+An AI worker (RFC-131 §5, RFC-133) is a sensor on the `ai-worker` profile.
+Its grant lists the job type `analyze` only, at T0, with target network
+`none`, no credentials and no push ingest, so it never reaches a target and
+its only write is the result of its job. It may be made Trusted at approval
+(trust adds nothing it could carry off). `Grant.Normalize` refuses a grant
+that lists `analyze` with any other job type, so an edited (`custom`) grant
+cannot make one sensor both an AI worker and a scanner; every scanning
+profile refuses `analyze` by its job types. An `analyze` command names no tool
+and no target; its payload carries `required_capabilities:
+["analyze.<kind>"]`, so the claim gate hands it only to a sensor that
+advertises that kind (`capabilityClaimPredicate`). It belongs to no scan run,
+so the ended-run gate never holds it. Migration 20261113024824 adds the type
+to `commands.chk_command_type`.
+
 ### Leaving the legacy grant
 
 A sensor still on `legacy-broad` (or on any grant) can be moved to the
@@ -501,7 +517,8 @@ narrowest profile that would have admitted what it did in the last 30 days.
 `SuggestGrant` reads the distinct jobs the sensor was given in the window
 (type, payload, scan zone), whether it sent results without a job (v2
 reports with no command, v1 queue reports, held unsolicited results) and its
-assigned zones. It tries the profiles narrowest first (`collector`,
+assigned zones. It tries the profiles narrowest first (`ai-worker`, only for a
+sensor that ran analysis jobs, then `collector`,
 `ci-runner`, `endpoint-agent`, `scan-connector`, `easm-external`,
 `internal-network-scanner`, `authenticated-scanner`) and returns the first that admits every job, at the
 tier the sensor's tool contract gives it (the claim's own `AdmitContract`),

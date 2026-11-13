@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prints `verified=true` (to $GITHUB_OUTPUT when set) when this push to
-# develop is a commit the merge queue already tested with THIS workflow and
+# develop (or to next, the long-lived integration branch with its own merge
+# queue) is a commit the merge queue already tested with THIS workflow and
 # passed; `verified=false` otherwise.
 #
 # The merge queue tests the exact commit it then fast-forwards develop to, so
@@ -31,7 +32,7 @@ out() {
 }
 
 [ "${EVENT:-}" = push ] || out false
-[ "${REF:-}" = refs/heads/develop ] || out false
+case "${REF:-}" in refs/heads/develop | refs/heads/next) ;; *) out false ;; esac
 [ -n "${SHA:-}" ] && [ -n "${REPO:-}" ] && [ -n "${WORKFLOW_REF:-}" ] || out false "missing input"
 case "$SHA" in *[!0-9a-f]*) out false "bad sha" ;; esac
 

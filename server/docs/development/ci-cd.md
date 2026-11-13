@@ -7,6 +7,11 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 
 ## Workflows
 
+Every trigger below that names `develop` names `next` too (pull request, push and
+merge queue; see [The `next` integration branch](#the-next-integration-branch)),
+except the CI image mirror, the S3/R2 integration test and the scheduled runs,
+which stay on `develop`.
+
 | Workflow (file) | Triggers | What it does | Gate check |
 |-----------------|----------|--------------|------------|
 | API CI (`api-ci.yml`) | PR / push to `develop`; merge queue | `API static checks` (one job: migration safety, SQL schema drift, security gates, OpenAPI contract, gateway routing, go vet, staticcheck, golangci-lint), tests against Postgres + Redis as the least-privilege app role, PostgreSQL 18 migrations, release binaries; see [Tiers](#tiers) | **API CI OK** |
@@ -17,7 +22,7 @@ truth: this page describes them as of the merge-queue routing (#730, 2026-10-02)
 | Web E2E (`web-e2e.yml`) | PR (smoke set; more with `run-e2e` or a changed suite; all with the full tier) / push to `develop`; merge queue | Builds the API, web and admin images once, then runs the Playwright suite (`web/e2e`) in 1 to 4 shards, each against its own stack (Postgres, Redis, migrations, seeded tenant). A pull request runs the smoke set (see [E2E tiers](#e2e-tiers)); the merge queue, a push to `develop` and the nightly run (02:41 UTC) run all of them, and a failure there opens or updates the issue labelled `e2e-regression`. The merge queue runs it whenever the queued PR changed `web/`, `server/` or a shared file, so a spec made stale by a layout change fails in the queue, not on `develop`. `Merge reports and list flaky tests` is for people and never fails the gate | **E2E OK** |
 | Web design gate (`web-design-gate.yml`) | PR / merge queue (the gate job when `web/` or a shared CI file changed); on demand | The pages in `web/e2e/design/manifest.ts` against the images exported from their design boards, with the design sample data from a mock API (no stack): 1440 and 390 px, light and dark; `expected: match` entries fail above their threshold (default 2% of pixels), `pending` entries report. A layout pass in Vietnamese with long and empty data fails on sideways scroll, clipped text and overlapping controls. Uploads expected, actual and diff as `design-gate` ([web/docs/ui/design-gate.md](../../../web/docs/ui/design-gate.md)) | `Design gate OK` (always reports; not required yet) |
 | Web visual regression (`web-visual.yml`) | PR with the `run-visual` label; nightly on `develop`; on demand | Screenshots of the key pages (dashboard, findings, assets, scans, remediation tasks, My Work, settings) at 1440 light and dark and 390 light against `web/e2e/visual/__screenshots__` (`playwright.visual.config.ts`, 2% pixel tolerance, volatile values masked). A missing baseline is written, not failed; `workflow_dispatch` with `update` takes new baselines and uploads them as the `visual-baselines` artifact to commit. Diffs are uploaded on failure | none (not required) |
-| All-in-one CI (`allinone-ci.yml`) | Push to `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-api`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
+| All-in-one CI (`allinone-ci.yml`) | Push to `develop`; merge queue; a PR only when it changes `.github/workflows|scripts|actions` (check "All-in-one (PR build)", not required; other PRs get `All-in-one OK` from `pr-hygiene.yml`) | Builds `openctem-server`, `openctem-web` and the all-in-one `openctem` image exactly as a release does, smoke-tests them (arch, ELF, executes) and runs the all-in-one in both gateway modes against Postgres + Redis. Nothing is pushed. Merge queue and pushes only (see [Tiers](#tiers)). | **All-in-one OK** |
 | Build images (`build-images.yml`) | Called by Web E2E and All-in-one CI on push and merge-queue events (`workflow_call`); pull requests call Resolve images (`resolve-images.yml`, read-only) | Builds each CI image once per content key and returns it by digest, or reuses the one already in `ghcr.io/openctemio/ci-images` (see [Build images once](#build-images-once)) | — |
 | Prune CI images (`ci-images-prune.yml`) | Daily 03:37 UTC, manual | Deletes `ci-images` versions older than 14 days, except digests an open release names | — |
 | Repository Security (`repo-security.yml`) | PR / push; merge queue; weekly | Betterleaks (root `.betterleaks.toml`, `.gitleaksignore`): a PR or queued group scans only its own commits (`base..head`); a push to `develop`/`main` and the weekly run scan the full history. Customer identifiers: fixed strings from the `CUSTOMER_DENYLIST` repository secret (never committed; empty = skipped with a notice) and the live LAN range outside tests, over every tracked file, printing only file:line. Commit emails: a PR or queued group fails when one of its commits has an address from the `COMMIT_EMAIL_DENYLIST` repository secret (case-insensitive fixed strings such as a domain; never committed; empty = skipped with a notice) as author, committer or `Co-authored-by` trailer, printing only the commit and the field; outside contributors are covered by the CLA check. **Workflow Lint**: actionlint and zizmor (pinned; suppressions are per line with a reason, inline or in `.github/zizmor.yml`, never per file) over the workflows, action pins, and the self-tests of the CI scripts (change routing, CodeQL alert gate, security gate and its CODEOWNERS mirror), plus the check that `server/` and `web/` depend on no sensor module or SDK. **Dependency Review** (PR only) | **Secret Scanning**, **Workflow Lint** |
@@ -238,6 +243,25 @@ through the API; nothing depends on a run started by the label.
 - Release pull requests (`release/vX.Y.Z` into `main`) are judged only on what
   the release branch adds on top of `develop`, whose commits already passed the
   gate.
+- Sync pull requests into `next` (any same-repository pull request whose base
+  is in `SYNC_BRANCHES`, set in `security-gate.yml`) are judged only on the
+  files that differ from git's clean merge of `develop` into `next`, so the
+  daily develop -> next sync does not ask for a second ack of what was acked on
+  `develop`. The gate computes the merge itself from the fetched commits, never
+  from a label or the branch name: `side` = merge-base(head, base) (where the
+  pull request starts on `next`), `integ` = merge-base(head, `develop`'s tip)
+  (the newest `develop` commit the head contains), `merged` =
+  `git merge-tree side integ`. A file whose blob in the head equals its blob in
+  `merged` is not judged again: it is `develop`'s acked content combined with
+  `next`'s acked content by a clean merge, the same rule that keeps an ack
+  over a base merge (above). Judged as usual: a conflict resolved by hand, an
+  edit hidden in the merge commit or made in a later commit, a `next` change
+  the merge dropped (for example a file taken whole from `develop`), and
+  anything from a branch that is not on `develop`. A pull request that merges
+  nothing new from `develop`, a fork, and any git or API error get every file
+  judged. The gate script runs from the base commit, so the rule applies on
+  `next` from the first sync that carries this version of
+  `.github/scripts/security_gate.py`; that first sync is acked in full.
 - Automation working under the maintainer's account must never add
   `security-ack`: the label is the maintainer's own decision. GitHub cannot
   tell such automation from the maintainer while they share an account; once
@@ -1462,7 +1486,7 @@ can hold `packages: write` without such a guard.
 5. `collect` verifies again and returns `api`, `web`, `console`,
    `allinone` as `ghcr.io/openctemio/ci-images/<image>@sha256:...`, and `push`.
 
-**Callers** pull the digest and tag it as the old local name (`local/openctem-api:e2e`,
+**Callers** pull the digest and tag it as the old local name (`local/openctem-server:e2e`,
 `local/openctem:ci`, ...), so everything after the build is unchanged. When
 `push` is `false` (below) they build locally exactly as before.
 
@@ -1610,18 +1634,20 @@ image, so images without a shell are checked the same way.
 
 | Image | Built from | Contents |
 |-------|-----------|----------|
-| `ghcr.io/openctemio/openctem-api` | `server/Dockerfile` (`production` target) | API server, port 8080 |
+| `ghcr.io/openctemio/openctem-server` | `server/Dockerfile` (`production` target) | The server (API), port 8080. Published as `openctem-api` up to v0.22.x |
 | `ghcr.io/openctemio/openctem-web` | `web/Dockerfile` | Next.js console, port 3000 |
 | `ghcr.io/openctemio/openctem` | `deploy/allinone/` FROM the two above + `server/deploy/gateway` | All-in-one: API + web + Caddy gateway. `GATEWAY=on` (default) serves only 443; `GATEWAY=off` serves 8080 + 3000. Postgres/Redis external. |
 | `ghcr.io/openctemio/migrations` | `server/Dockerfile.migrations` | One-shot migration runner |
 | `ghcr.io/openctemio/seed` | `server/Dockerfile.seed` | Seeding utility |
 
-**Legacy names.** During a transition window (two releases, per the root
-README) `ghcr.io/openctemio/api` and `ghcr.io/openctemio/ui` receive the same
-manifests as `openctem-api` and `openctem-web` (`crane copy`), so existing
-compose files, Helm values and `docker pull` lines keep working. The window
-ends when the `legacy` field of the matrix entry in `docker-publish.yml` is blanked.
-The legacy names are also the only ones that hold v0.8.0 and earlier. The copy
+**Legacy names.** During a transition window `ghcr.io/openctemio/ui` receives
+the same manifests as `openctem-web` (`crane copy`), so existing compose files,
+Helm values and `docker pull` lines keep working. The window ends when the
+`legacy` field of the matrix entry in `docker-publish.yml` is blanked. The
+server image is `openctem-server` from v0.23.0 and has no copy under an old
+name: `openctem-api` (v0.9.0 to v0.22.x) and `api` (v0.8.0 and earlier, plus
+copies of v0.9.0 to v0.22.x) keep the tags they have and receive no new ones.
+`ui` and `api` are also the only names that hold v0.8.0 and earlier. The copy
 is best effort: when it is refused the step warns and the release goes on
 (v0.9.0 has no `ui` copy). The shipped Compose file and Helm values use the
 current names.
@@ -1649,7 +1675,10 @@ dry-runs) for:
   archives for linux/amd64 and linux/arm64 (web and console on a native runner
   per arch: their bundles hold native modules);
 - `bootstrap-admin` for linux, darwin (amd64, arm64) and windows/amd64;
-- `openctem-image-kit` (`deploy/airgap`).
+- `openctem-image-kit` (`deploy/airgap`);
+- `openctem-compose` (`server/deploy`, tracked files only, without tests, with
+  the release's `VERSION`): the one-command Compose install (`install.sh`)
+  without a git checkout.
 
 Go builds are static (CGO off), `-trimpath`, with the commit time as build
 time and as every archive entry's time: the same tag gives byte-identical
@@ -1678,7 +1707,7 @@ make lint        # make -C server lint-ci; web lint + type-check
 make test        # go test (api), vitest (web)
 make build       # go build (api), next build (web)
 make check       # OpenAPI contract + generated web types
-make allinone    # build openctem-api:local, openctem-web:local, openctem:local
+make allinone    # build openctem-server:local, openctem-web:local, openctem:local
 make api-<t>     # any server/Makefile target, e.g. make api-swagger
 make web-<s>     # any web npm script, e.g. make web-format
 ```
@@ -1712,6 +1741,48 @@ develop  integration branch; every PR targets develop
 Dependabot ([`.github/dependabot.yml`](../../../.github/dependabot.yml)) opens PRs
 against `develop`: gomod for `/api` (and monthly for the compat harness), npm for
 `/web`, and one github-actions entry for the root workflows.
+
+### The `next` integration branch
+
+`next` is a long-lived branch for the redesigned web console and the server code
+that exists only for it. It was cut from `develop`; it merges back into `develop`
+once, as a whole, when the redesign is complete.
+
+- **Pull requests into `next`** run exactly the checks a pull request into
+  `develop` runs: every workflow's `pull_request.branches` and `push.branches`
+  list names `next`, and the merge-queue workflows have no branch filter. Change
+  detection, the route JavaScript budget (`Build`, merge queue), the request
+  budget (E2E), the design gate and the release tooling checks work from the
+  pull request's base or the queue's base, so they need no branch name. The
+  required checks and the merge queue for `next` are repository settings the
+  maintainer sets (the same eight checks as `develop`, plus `Design gate OK`).
+- **A push to `next`** runs the same full tier as a push to `develop`. A commit
+  the `next` merge queue already passed skips the heavy jobs
+  (`.github/scripts/queue-verified.sh`), as on `develop`. CodeQL analyses both
+  languages on every push to `next`, which keeps `next`'s code-scanning baseline;
+  until `next` has an analysis of its own, `CodeQL OK` of a pull request into
+  `next` compares with `develop`, which `next` was cut from
+  (`.github/scripts/codeql-new-alerts.sh`). A red full E2E run on `next` opens or
+  updates the issue labelled `e2e-regression-next`.
+- **Nothing is published or deployed from `next`.** Image builds push to the
+  registry only for `develop` and `main` (a push to `next` builds locally); the
+  CI image cache and the Go, lint and Next.js caches are written by `develop`
+  only; releases start from `develop` (Release Train refuses any other ref) and
+  publish from `main` and `v*` tags; the UAT deploy train follows `develop`.
+- **No migrations on `next`.** Schema changes land on `develop`, additive only,
+  so the old console keeps working on them and the final merge changes no
+  schema (rollback is a revert of that merge). `API CI` step `No migrations on
+  next` (`.github/scripts/check-next-no-migrations.sh`) fails a pull request
+  into `next`, or a merge group for it, when a path under `server/migrations/`
+  differs from `develop`'s version of it. Migrations that arrive with the sync
+  pull request equal `develop`'s and pass.
+- **Sync.** `develop` is merged into `next` by a pull request from a branch
+  `sync/develop-into-next-YYYYMMDD` (cut from `next`, `origin/develop` merged in,
+  conflicts resolved), daily while the redesign is active and within a day of
+  every release. It goes through `next`'s merge queue like any pull request.
+  Nobody pushes to `next` directly.
+- **Final merge.** A pull request from `next` into `develop` with a merge commit,
+  through `develop`'s merge queue, after a last sync.
 
 ## Secrets and settings
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # setup.sh: write .env for a first start of the Compose stack: the host name
 # clients use and freshly generated secrets. Nothing else needs editing; every
 # other setting has a default, and e-mail, sign-in providers and the like are
@@ -28,18 +29,29 @@
 #   --admin-public               every network (not recommended: keep it on a
 #                                VPN or behind your access gateway instead)
 #
+# Any other .env setting, written into the new file (repeatable; checked
+# first: a typed secret must be safe in a connection URL and in Compose, and
+# long enough):
+#   --set NAME=VALUE             e.g. --set GATEWAY_HTTPS_PORT=4443
+#
+# install.sh runs this script, then checks the host, verifies the image
+# signatures and starts the stack: the one-command install.
+#
 # It never overwrites an existing .env and never prints a secret. The file is
 # created mode 0600: keep it (and a backup of APP_ENCRYPTION_KEY) safe, the
 # stored credentials cannot be decrypted without that key.
 set -euo pipefail
 
-here="$(cd "$(dirname "$0")" && pwd)"
+here="$(cd "$(dirname "$0")" && pwd -P)"
 env_file="$here/.env"
 example="$here/.env.example"
 
-die() { echo "setup: $*" >&2; exit 1; }
+oc_prog=setup
+# shellcheck source=lib/common.sh
+. "$here/lib/common.sh"
 
 version="${OPENCTEM_VERSION:-}" host="" acme_email="" admin_site="" admin_host="" admin_port="" admin_cidrs="" admin_public=""
+extra=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --version) [[ $# -ge 2 ]] || die "--version needs a release such as v0.15.0"; version="$2"; shift ;;
@@ -49,7 +61,11 @@ while [[ $# -gt 0 ]]; do
     --admin-port) [[ $# -ge 2 ]] || die "--admin-port needs a port number"; admin_port="$2"; shift ;;
     --admin-cidrs) [[ $# -ge 2 ]] || die "--admin-cidrs needs a list of networks"; admin_cidrs="$2"; shift ;;
     --admin-public) admin_public=1 ;;
-    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --set)
+      [[ $# -ge 2 && "$2" == *=* ]] || die "--set needs NAME=VALUE"
+      valid_setting "${2%%=*}" "${2#*=}" || die "--set ${2%%=*}: $oc_reason"
+      extra+=("$2"); shift ;;
+    -h|--help) sed -n '3,/^set -euo/{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [[ -z "$host" ]] || die "one host name only"; host="$1" ;;
   esac
@@ -94,7 +110,7 @@ if [[ -n "$admin_host" ]]; then
   [[ "$admin_host" != "$host" ]] || die "--admin-host must differ from the main host name"
 fi
 if [[ -n "$admin_port" ]]; then
-  [[ "$admin_port" =~ ^[1-9][0-9]{0,4}$ ]] && (( admin_port >= 1 && admin_port <= 65535 )) || die "'$admin_port' is not a port number"
+  if ! [[ "$admin_port" =~ ^[1-9][0-9]{0,4}$ ]] || (( admin_port > 65535 )); then die "'$admin_port' is not a port number"; fi
   [[ "$admin_port" != 443 && "$admin_port" != 80 ]] || die "--admin-port must not be the main site's port"
 fi
 if [[ -n "$admin_cidrs" ]]; then
@@ -166,6 +182,10 @@ set_value METRICS_TOKEN "$(secret 32)"
 # The bundled shared sensor's single-use enrollment token
 # (docker-compose.sensor.yml): octe_ and 49 base62 characters.
 set_value SENSOR_INSTANCE_ENROLLMENT_TOKEN "octe_$(base62 49)"
+# --set values last: they win over the defaults and the generated values.
+for kv in ${extra[@]+"${extra[@]}"}; do
+  env_put "$tmp" "${kv%%=*}" "${kv#*=}"
+done
 
 chmod 600 "$tmp"
 mv "$tmp" "$env_file"

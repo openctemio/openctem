@@ -30,7 +30,7 @@ img_file() {
 elf_of() { local f; f=$(img_file "$1") && od -An -t x1 -j 18 -N 2 "$f" | tr -d ' \n'; }
 
 case "$comp" in
-  openctem-api) bin=/app/server;            run=(/app/bootstrap-admin -h) ;;
+  openctem-server) bin=/app/server;          run=(/app/bootstrap-admin -h) ;;
   migrations)   bin=/usr/local/bin/openctem-migrate; run=(openctem-migrate -version) ;;
   seed)         bin=""; run=(sh -c 'true') ;;
   openctem-web) bin=/usr/local/bin/node;    run=(node -e 'process.exit(0)') ;;
@@ -53,7 +53,7 @@ if [ "$rc" -ge 126 ] || grep -qi 'exec format error' /tmp/smoke.out; then
 fi
 # The API serves its OpenAPI spec from the image (it is generated, not committed).
 case "$comp" in
-  openctem-api) spec=/app/api/openapi/swagger.yaml ;;
+  openctem-server) spec=/app/api/openapi/swagger.yaml ;;
   openctem)     spec=/opt/openctem/api/api/openapi/swagger.yaml ;;
   *)            spec="" ;;
 esac

@@ -67,11 +67,11 @@ on:
     - cron: '41 2 * * *'
   workflow_dispatch:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
     # labeled: adding `run-e2e` to a pull request starts the suite.
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: [develop]
+    branches: [develop, next]
   merge_group:
 
 # A newer push to the same PR cancels the older run. Never a queued group (a
@@ -353,7 +353,7 @@ jobs:
     runs-on: ${{ ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.CI_RUNNER_E2E_BUILD) || (github.event_name == 'merge_group' && (vars.CI_RUNNER_MERGE || needs.changes.outputs.pool || 'ubuntu-latest')) || ((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (vars.CI_RUNNER_HEAVY || needs.changes.outputs.pool)) || 'ubuntu-latest' }}
     timeout-minutes: 25
     env:
-      API_IMAGE: local/openctem-api:e2e
+      API_IMAGE: local/openctem-server:e2e
       WEB_IMAGE: local/openctem-web:e2e
       SHARED: ${{ needs.images.outputs.push == 'true' || needs.images-pr.outputs.push == 'true' }}
     steps:
@@ -448,7 +448,7 @@ jobs:
       # when @budget is selected, id 0 = the request budget check alone.
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
-      API_IMAGE: local/openctem-api:e2e
+      API_IMAGE: local/openctem-server:e2e
       WEB_IMAGE: local/openctem-web:e2e
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -677,7 +677,8 @@ jobs:
 
   # A failure on develop (every push and the nightly run execute the whole
   # suite) opens one issue, or adds a comment to the open one, so a regression
-  # the queue's narrower selection let through is seen and fixed. Not part of
+  # the queue's narrower selection let through is seen and fixed. A push to
+  # next (the integration branch) has its own label and issue. Not part of
   # `E2E OK`.
   regression:
     name: Report an e2e regression
@@ -698,15 +699,18 @@ jobs:
           SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
-          label=e2e-regression
-          gh label create "$label" -R "$REPO" --color D93F0B --description "The full e2e suite failed on develop" 2>/dev/null || true
-          body="The full e2e suite failed on develop (${EVENT}) at ${SHA}. Run: ${RUN_URL}"
+          # The nightly run tests develop; a push names its own branch.
+          branch=develop label=e2e-regression
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/next ]; then branch=next label=e2e-regression-next; fi
+          gh label create "$label" -R "$REPO" --color D93F0B --description "The full e2e suite failed on ${branch}" 2>/dev/null || true
+          body="The full e2e suite failed on ${branch} (${EVENT}) at ${SHA}. Run: ${RUN_URL}"
           n="$(gh issue list -R "$REPO" --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')"
           if [ -n "$n" ]; then
             gh issue comment "$n" -R "$REPO" --body "$body"
           else
-            gh issue create -R "$REPO" --label "$label" --title "e2e regression on develop" \
+            gh issue create -R "$REPO" --label "$label" --title "e2e regression on ${branch}" \
               --body "$body
 
           Fix the spec or the change that broke it. This issue stays open until the suite is green again; a later failure adds a comment here."

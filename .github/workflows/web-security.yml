@@ -11,7 +11,7 @@ name: Web Security
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, next]
     paths:
       - 'web/**'
       - 'Makefile'
@@ -21,7 +21,7 @@ on:
       - 'deploy/**'
       - '!**/*.md'
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
     paths:
       - 'web/**'
       - 'Makefile'
@@ -96,7 +96,7 @@ jobs:
           scanners: 'vuln,secret,misconfig'
       - name: Upload Trivy scan results
         if: ${{ !cancelled() && hashFiles('trivy-web.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         # The merge queue deletes its temporary gh-readonly-queue branch when a group
         # is rebuilt; an upload still in flight then fails with ref not found. The scan
         # result above already ran; only the upload is tolerated in merge_group.
@@ -112,7 +112,7 @@ jobs:
           npx eslint . --format @microsoft/eslint-formatter-sarif --output-file eslint-results.sarif
       - name: Upload ESLint results
         if: ${{ !cancelled() && hashFiles('web/eslint-results.sarif') != '' }}
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: web/eslint-results.sarif
           category: eslint-web
@@ -187,7 +187,7 @@ jobs:
           output: 'trivy-docker-web.sarif'
           severity: 'CRITICAL,HIGH'
       - name: Upload Trivy Docker scan results
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         # The merge queue deletes its temporary gh-readonly-queue branch when a group
         # is rebuilt; an upload still in flight then fails with ref not found. The scan
         # result above already ran; only the upload is tolerated in merge_group.

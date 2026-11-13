@@ -58,3 +58,15 @@ export const STATUS_TONE_FILL: Record<StatusTone, string> = {
   accepted: 'bg-st-accepted-fg',
   closed: 'bg-st-closed-fg',
 }
+
+/**
+ * A tone's three colours as CSS variable references, for a surface that cannot
+ * take Tailwind classes (an inline style or a third-party component's tokens).
+ */
+export function statusToneVars(tone: StatusTone): { bg: string; fg: string; border: string } {
+  return {
+    bg: `var(--st-${tone}-bg)`,
+    fg: `var(--st-${tone}-fg)`,
+    border: `var(--st-${tone}-border)`,
+  }
+}

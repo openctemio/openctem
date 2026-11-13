@@ -3,7 +3,9 @@ name: Release Tooling
 # The release train's scripts and the version manifest (server/docs/rfcs/RFC-037).
 #
 #   Release scripts       shellcheck + the shell tests of .github/scripts/release
-#                         (including the release-note labels and the Upgrade notes block)
+#                         (including the release-note labels and the Upgrade notes block,
+#                         and the Compose bundle), shellcheck of the Compose install
+#                         scripts (server/deploy install.sh, setup.sh, lib/)
 #   Version consistency   every versioned default agrees with versions.yaml
 #                         (the API embeds a copy of it: no Go file holds a
 #                         version),
@@ -45,10 +47,12 @@ on:
       - server/internal/app/sensor/seccomp/**
       - server/deploy/sensor/**
       - server/deploy/docker-compose.sensor.yml
+      - server/deploy/*.sh
+      - server/deploy/lib/**
       - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   push:
-    branches: [develop, main]
+    branches: [develop, main, next]
     paths:
       - versions.yaml
       - .github/scripts/release/**
@@ -68,6 +72,8 @@ on:
       - server/internal/app/sensor/seccomp/**
       - server/deploy/sensor/**
       - server/deploy/docker-compose.sensor.yml
+      - server/deploy/*.sh
+      - server/deploy/lib/**
       - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   workflow_dispatch:
@@ -92,7 +98,10 @@ jobs:
           fetch-depth: 1
           fetch-tags: true
       - name: shellcheck
-        run: shellcheck -x .github/scripts/release/*.sh .github/scripts/release/tests/*.sh
+        run: |
+          shellcheck -x .github/scripts/release/*.sh .github/scripts/release/tests/*.sh
+          # The Compose install scripts (their tests run in API CI too).
+          shellcheck -x server/deploy/install.sh server/deploy/setup.sh server/deploy/lib/common.sh server/deploy/install.test.sh
       - name: Tests
         run: bash .github/scripts/release/tests/run.sh
 

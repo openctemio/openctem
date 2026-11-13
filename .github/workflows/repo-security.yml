@@ -16,9 +16,9 @@ name: Repository Security
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, next]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, next]
   merge_group:
     types: [checks_requested]
   schedule:
@@ -207,7 +207,7 @@ jobs:
             --report-format sarif --report-path betterleaks.sarif "${args[@]}" .
 
       - name: Upload Betterleaks results
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         # The merge queue deletes its temporary gh-readonly-queue branch when a group
         # is rebuilt; an upload still in flight then fails with ref not found. The scan
         # result above already ran; only the upload is tolerated in merge_group.
@@ -320,6 +320,9 @@ jobs:
       # Which develop pushes skip the jobs the merge queue already ran.
       - name: Merge-queue reuse self-test
         run: bash .github/scripts/queue-verified.test.sh
+      # next takes no migrations of its own (api-ci.yml, `No migrations on next`).
+      - name: No migrations on next self-test
+        run: bash .github/scripts/check-next-no-migrations.test.sh
       # Which runs a failed job cancels (merge queue: the group; PR: its own run).
       - name: Fail-fast self-test
         run: bash .github/scripts/fail-fast.test.sh
@@ -373,6 +376,12 @@ jobs:
 
       - name: Backend directory name (no tracked file names the old backend directory or module path)
         run: bash .github/scripts/check-backend-dir-name.sh
+
+      - name: Server image name (self-test)
+        run: bash .github/scripts/check-server-image-name.test.sh
+
+      - name: Server image name (openctem-server from v0.23.0; openctem-api only for older releases)
+        run: bash .github/scripts/check-server-image-name.sh
 
       - name: generate-in-docker paths (self-test)
         run: bash .github/scripts/check-generate-in-docker-paths.test.sh

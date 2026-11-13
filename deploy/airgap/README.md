@@ -17,9 +17,11 @@ signed `checksums-sha256.txt`. Guide: `server/docs/deployment/air-gapped.md`
 | `image-kit/` | Dockerfiles that assemble each image from the release archives (COPY only, no RUN), `unpack.sh` to verify and unpack the archives for them. |
 | `templates/` | Docker Compose `.env`, Helm values and Ansible variables for a private registry; Kyverno signature policy; egress proxy (Squid) and firewall (nftables) allowlists. |
 
-Images of a release: `openctem-api`, `openctem-web`, `openctem-console`,
+Images of a release: `openctem-server` (the server; published as
+`openctem-api` up to v0.22.x), `openctem-web`, `openctem-console`,
 `openctem-gateway`, `migrations`, `seed`, and the all-in-one
-`openctem`. Each is signed keyless by
+`openctem`. `mirror-images.sh server-image <version>` prints the server
+image's name for a release. Each is signed keyless by
 `https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/<version>`
 (issuer `https://token.actions.githubusercontent.com`). Release assets
 (`checksums-sha256.txt`) are signed by `.../release.yml@refs/tags/<version>`.
