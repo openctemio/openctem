@@ -138,7 +138,7 @@ export function InScopeServicesField({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6"
+
                   aria-label={`Remove ${v}`}
                   onClick={() => onChange(value.filter((x) => x !== v))}
                 >

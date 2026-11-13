@@ -607,7 +607,7 @@ export function DashboardHome() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8"
+
                   onClick={dismissHint}
                   aria-label={t('dashboards.layoutHint.dismiss', 'Dismiss')}
                 >

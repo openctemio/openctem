@@ -159,7 +159,7 @@ export function SubStatusLanes({
                           <Button
                             size="icon"
                             variant="ghost"
-                            className="size-7 shrink-0"
+                            className="shrink-0"
                             disabled={busy !== null}
                             aria-label={t(
                               'findingLifecycle.subStatus.actions',

@@ -384,7 +384,7 @@ export function AddAssetsDialog({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+              className="shrink-0 text-muted-foreground hover:text-destructive"
               aria-label={t('confirm.assetGroup.removeAssetLabel', 'Remove {name} from the group', {
                 name: asset.name,
               })}
@@ -614,7 +614,7 @@ export function AddAssetsDialog({
                       !newAssetName.trim() || !validationResult.isValid || isLoadingTypes || isBusy
                     }
                     size="icon-sm"
-                    className="h-9 px-3"
+                    className="px-3"
                   >
                     <Plus className="h-4 w-4" />
                   </Button>
@@ -676,7 +676,7 @@ export function AddAssetsDialog({
                             size="icon"
                             onClick={() => deleteNewAsset(asset.id)}
                             disabled={isBusy}
-                            className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>

@@ -137,7 +137,7 @@ function DetailRow({ label, value }: { label: string; value: unknown }) {
           <Button
             variant="ghost"
             size="icon-sm"
-            className="h-6 w-6 p-0"
+            className="p-0"
             aria-label={t('exposures.details.copy')}
             onClick={handleCopy}
           >

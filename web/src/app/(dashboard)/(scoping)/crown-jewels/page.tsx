@@ -672,7 +672,7 @@ export default function CrownJewelsPage() {
                   iconOnlyBelow="md"
                   variant="outline"
                   size="sm"
-                  className="h-9"
+
                   onClick={handleExport}
                   disabled={crownJewels.length === 0}
                 >

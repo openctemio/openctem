@@ -381,7 +381,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8"
+
           onClick={() => dispatch({ type: 'undo' })}
           disabled={history.past.length === 0}
           aria-label={t('dashboards.editor.undo', 'Undo')}
@@ -391,7 +391,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8"
+
           onClick={() => dispatch({ type: 'redo' })}
           disabled={history.future.length === 0}
           aria-label={t('dashboards.editor.redo', 'Redo')}

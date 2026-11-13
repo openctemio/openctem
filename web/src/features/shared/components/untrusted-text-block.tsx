@@ -103,7 +103,7 @@ export function UntrustedTextBlock({
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="absolute end-1.5 top-1.5 h-7 w-7 p-0"
+          className="absolute end-1.5 top-1.5 p-0"
           onClick={onCopy}
           aria-label={
             copied

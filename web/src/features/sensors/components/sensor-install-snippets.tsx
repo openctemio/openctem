@@ -156,7 +156,7 @@ export function Snippet({ text, label, file }: { text: string; label: string; fi
             type="button"
             variant="outline"
             size="icon-sm"
-            className="h-7 bg-background px-2 text-xs"
+            className="bg-background px-2 text-xs"
             onClick={() => downloadText(text, file)}
             aria-label={t('sensors.snippets.download', undefined, { file })}
           >

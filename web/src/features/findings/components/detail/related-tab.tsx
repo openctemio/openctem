@@ -120,7 +120,7 @@ function RelatedFindingsTable({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="h-7 w-7 p-0"
+            className="p-0"
             aria-label={t('findings.relatedTab.open', 'Open {title}', {
               title: row.original.title,
             })}

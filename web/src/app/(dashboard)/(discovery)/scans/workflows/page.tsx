@@ -411,7 +411,7 @@ export default function ScanWorkflowsPage() {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-8 w-8 p-0"
+                className="p-0"
                 aria-label={t('scans.workflows.actionsFor', undefined, { name: workflow.name })}
                 onClick={(e) => e.stopPropagation()}
               >

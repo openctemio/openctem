@@ -265,7 +265,7 @@ function FieldEditor({ field, labels, onBack, onApply }: FieldEditorProps) {
       <Button
         variant="ghost"
         size="icon"
-        className="size-7"
+
         onClick={onBack}
         aria-label={t('findings.filter.back', 'Back to fields')}
       >

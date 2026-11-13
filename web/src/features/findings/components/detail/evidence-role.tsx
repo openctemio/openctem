@@ -120,7 +120,7 @@ export function EvidenceOrderButtons({
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="h-7 w-7 p-0"
+        className="p-0"
         disabled={disabled || index <= 0}
         onClick={() => onMove('up')}
         aria-label={t('findings.evidenceRole.moveUp', 'Move this evidence up')}
@@ -131,7 +131,7 @@ export function EvidenceOrderButtons({
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="h-7 w-7 p-0"
+        className="p-0"
         disabled={disabled || index >= count - 1}
         onClick={() => onMove('down')}
         aria-label={t('findings.evidenceRole.moveDown', 'Move this evidence down')}

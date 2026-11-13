@@ -388,7 +388,7 @@ export default function ExceptionsPage() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8 p-0"
+                  className="p-0"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -515,7 +515,7 @@ export default function ExceptionsPage() {
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-9 w-9"
+
                     onClick={handleRefresh}
                     disabled={isLoading}
                     aria-label={t('exceptions.page.refresh', 'Refresh')}

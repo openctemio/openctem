@@ -714,7 +714,7 @@ function MatcherEditor({
             type="button"
             variant="ghost"
             size="icon"
-            className="ms-auto h-8 w-8"
+            className="ms-auto"
             aria-label={t('findings.retestCheck.removeMatcher', 'Remove matcher {n}', { n })}
             onClick={onRemove}
           >

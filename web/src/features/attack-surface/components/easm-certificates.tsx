@@ -73,7 +73,7 @@ export function CopyableFingerprint({ value }: { value: string }) {
         type="button"
         variant="ghost"
         size="icon"
-        className="h-6 w-6"
+
         aria-label={t('attackSurface.certificates.copyFingerprint', 'Copy fingerprint')}
         onClick={copy}
       >

@@ -292,7 +292,7 @@ export function ThreatActorsPanel() {
                 <Button
                   iconOnlyBelow="sm"
                   size="sm"
-                  className="h-9"
+
                   onClick={() => setCreateOpen(true)}
                 >
                   <Plus className="h-4 w-4 sm:me-2" />

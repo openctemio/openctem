@@ -99,7 +99,7 @@ function NoteCard({
           <Button
             size="icon"
             variant="ghost"
-            className="text-muted-foreground hover:text-destructive h-8 w-8 shrink-0"
+            className="text-muted-foreground hover:text-destructive shrink-0"
             aria-label={t('findings.manualEvidence.deleteAria', 'Delete evidence note')}
             disabled={isDeleting}
             onClick={() => onDelete(note)}

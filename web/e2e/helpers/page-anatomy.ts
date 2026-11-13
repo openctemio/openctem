@@ -198,7 +198,12 @@ export async function probe(page: Page): Promise<Probe> {
         .filter((b) => {
           const r = b.getBoundingClientRect()
           return (
-            r.width > 0 && r.height > 0 && b.querySelector('svg') && !(b.innerText ?? '').trim()
+            r.width > 0 &&
+            r.height > 0 &&
+            // a select trigger with no value yet is not an icon button
+            b.getAttribute('role') !== 'combobox' &&
+            b.querySelector('svg') &&
+            !(b.innerText ?? '').trim()
           )
         })
         .map((b) => {

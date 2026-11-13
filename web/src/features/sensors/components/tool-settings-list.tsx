@@ -654,7 +654,7 @@ function ToolSettingsItem({
                                 type="button"
                                 size="icon-sm"
                                 variant="ghost"
-                                className="h-7 shrink-0 px-2 text-xs"
+                                className="shrink-0 px-2 text-xs"
                                 disabled={busy}
                                 aria-label={t(resetLabelKey(base), undefined, { option: label })}
                                 onClick={() => setDraft((d) => ({ ...d, [f.key]: undefined }))}
@@ -668,7 +668,7 @@ function ToolSettingsItem({
                                 type="button"
                                 size="icon-sm"
                                 variant="ghost"
-                                className="h-7 shrink-0 px-2 text-xs"
+                                className="shrink-0 px-2 text-xs"
                                 disabled={busy}
                                 aria-label={t('sensors.toolSettings.overrideLabel', undefined, {
                                   option: label,

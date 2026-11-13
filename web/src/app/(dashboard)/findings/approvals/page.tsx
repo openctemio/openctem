@@ -374,7 +374,7 @@ export default function ApprovalsPage() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8 p-0"
+                  className="p-0"
                   disabled={busy}
                   aria-label={t('findings.approvals.actionsFor', 'More actions for {title}', {
                     title: toDisplayText(

@@ -69,7 +69,7 @@ export function FindingRowMenu({
         <Button
           size="icon"
           variant="ghost"
-          className="h-8 w-8 p-0"
+          className="p-0"
           aria-label={t('findings.row.actionsFor', 'Actions for {title}', {
             title: toDisplayText(title, 80),
           })}

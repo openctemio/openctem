@@ -366,7 +366,7 @@ export default function NotificationOutboxPage() {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-8 w-8 p-0"
+                className="p-0"
                 aria-label={t('notificationChannels.outbox.actionsFor', 'Actions for {title}', {
                   title: entry.title,
                 })}

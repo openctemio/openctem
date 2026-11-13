@@ -695,7 +695,7 @@ export default function WorkflowsPage() {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-8 w-8 p-0"
+                className="p-0"
                 aria-label={t('automations.menu.actionsFor', 'Actions for {name}', {
                   name: workflow.name,
                 })}

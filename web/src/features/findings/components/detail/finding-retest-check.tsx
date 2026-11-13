@@ -146,7 +146,7 @@ export function FindingRetestCheckSection({ finding, className }: FindingRetestC
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-7"
+
                 onClick={() => setEditing(true)}
                 aria-label={t('findings.retestCheck.edit', 'Edit check')}
               >
@@ -155,7 +155,7 @@ export function FindingRetestCheckSection({ finding, className }: FindingRetestC
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-7"
+
                 onClick={() => setRemoving(true)}
                 aria-label={t('findings.retestCheck.remove', 'Remove check')}
               >

@@ -135,7 +135,7 @@ export function ConditionEditor({
               type="button"
               size="icon"
               variant="ghost"
-              className="size-8"
+
               disabled={disabled}
               aria-label={t('findingLifecycle.condition.remove', 'Remove condition')}
               onClick={() => onChange(conditions.filter((_, j) => j !== i))}

@@ -230,7 +230,7 @@ export function ReceiptHistory() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-5"
+
                     aria-label={t('findings.receiptHistory.clearFilter', 'Remove filter {name}', {
                       name: c.label,
                     })}

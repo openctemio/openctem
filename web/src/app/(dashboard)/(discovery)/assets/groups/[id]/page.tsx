@@ -384,7 +384,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+
             onClick={() => router.push(groupMemberHref(row.original.id))}
             aria-label={t('assetGroups.detail.openAsset', 'Open {name}', {
               name: row.original.name,
@@ -464,7 +464,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+
             onClick={() => router.push(`/findings/${row.original.id}`)}
             aria-label={t('assetGroups.detail.openAsset', 'Open {name}', {
               name: row.original.title,

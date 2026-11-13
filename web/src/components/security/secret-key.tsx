@@ -17,7 +17,7 @@ export function SecretKey({ secret }: { secret: string }) {
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7"
+
           aria-label="Copy key"
           onClick={async () => {
             try {

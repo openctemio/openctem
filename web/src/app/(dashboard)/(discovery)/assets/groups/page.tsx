@@ -645,7 +645,7 @@ export default function AssetGroupsPage() {
           <Button
             variant="outline"
             size="icon"
-            className="h-9 w-9"
+
             onClick={handleRefresh}
             disabled={isLoading}
             aria-label={t('assetGroups.refresh', 'Refresh')}

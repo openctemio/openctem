@@ -124,6 +124,34 @@ export function findIconButtons(web, { write = false } = {}) {
           const tn = n.openingElement.tagName
           edits.push([tn.getEnd(), tn.getEnd(), ` iconOnlyBelow="${kind}"`])
         }
+        // An icon-only button takes its square from the kit: a fixed height,
+        // width or size on the call site (h-9, w-8, size-11 ...) makes it
+        // oblong at some width, so it goes.
+        if (kind) {
+          const cn = props.find((p) => ts.isJsxAttribute(p) && p.name.getText(sf) === 'className')
+          if (cn?.initializer && ts.isStringLiteral(cn.initializer)) {
+            const before = cn.initializer.text
+            const after = before
+              .split(/\s+/)
+              .filter(
+                (c) =>
+                  c &&
+                  !/^(?:[a-z-]+:)*(?:h|w|size|min-h|min-w)-(?:\d|\[|control|full|auto|fit)/.test(c)
+              )
+              .join(' ')
+              // a toggle placed inside a field keeps its place when it loses h-full
+              .replace(/(^|\s)top-0(?=\s|$)/, (m, p1) =>
+                /(^|\s)absolute(\s|$)/.test(before) && /(^|\s)h-full(\s|$)/.test(before)
+                  ? `${p1}top-1/2 -translate-y-1/2`
+                  : m
+              )
+            if (after !== before.trim().split(/\s+/).join(' ')) {
+              const line = sf.getLineAndCharacterOfPosition(n.getStart(sf)).line + 1
+              report.push(`${f}:${line} fixed size on an icon-only button: "${before}"`)
+              edits.push([cn.getStart(sf), cn.getEnd(), after ? `className="${after}"` : ''])
+            }
+          }
+        }
         if (kind === 'always') {
           const sizeAttr = props.find((p) => ts.isJsxAttribute(p) && p.name.getText(sf) === 'size')
           const spread = props.some((p) => ts.isJsxSpreadAttribute(p))

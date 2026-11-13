@@ -157,7 +157,7 @@ export function LinkedAssetsPanel({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0"
+                  className="shrink-0"
                   aria-label={t('confirm.linkedAsset.unlinkLabel', 'Unlink {name}', {
                     name: item.name,
                   })}

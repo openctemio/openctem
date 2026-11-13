@@ -100,7 +100,7 @@ function FlowControls() {
             type="button"
             variant="ghost"
             size="icon"
-            className="size-8 rounded-none"
+            className="rounded-none"
             aria-label={label}
             title={label}
             onClick={run}

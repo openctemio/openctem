@@ -76,7 +76,7 @@ export function QueryModeToggle({ active, onToggle }: { active: boolean; onToggl
       type="button"
       variant={active ? 'secondary' : 'ghost'}
       size="sm"
-      className="size-7 gap-1 px-0 text-xs sm:w-auto sm:px-2"
+      className="gap-1 px-0 text-xs sm:px-2"
       aria-pressed={active}
       onClick={onToggle}
       title={t('queryInput.mode.toggleHint')}

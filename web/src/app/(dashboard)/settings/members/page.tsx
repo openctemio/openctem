@@ -951,7 +951,7 @@ export default function UsersPage() {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="h-8 w-8 p-0"
+                className="p-0"
                 aria-label={`Actions for ${member.name || member.email}`}
               >
                 <MoreHorizontal className="h-4 w-4" />

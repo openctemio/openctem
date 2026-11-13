@@ -424,7 +424,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="size-8"
+
                           aria-label={t('remediationCampaigns.detail.taskMenu', undefined, {
                             task: task.title,
                           })}

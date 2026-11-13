@@ -410,7 +410,7 @@ export default function AssetChangesPage() {
     <Button
       variant="outline"
       size="icon-sm"
-      className="h-9"
+
       onClick={refresh}
       aria-label={refreshLabel}
     >

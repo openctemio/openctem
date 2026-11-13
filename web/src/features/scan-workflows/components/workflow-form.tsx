@@ -232,7 +232,7 @@ function SortableStepCard(props: StepCardProps) {
             size="icon"
             aria-label={t('scans.workflowForm.removeStep', undefined, { label })}
             onClick={props.onRemove}
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>

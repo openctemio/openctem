@@ -2055,7 +2055,7 @@ function FindingsContent() {
         <Button
           variant="outline"
           size="icon"
-          className="h-9 w-9"
+
           onClick={handleRefresh}
           disabled={statsLoading || findingsLoading}
           aria-label={t('findings.toolbar.refresh', 'Refresh')}
@@ -2122,7 +2122,7 @@ function FindingsContent() {
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9"
+
               aria-label={t('findings.toolbar.moreActions', 'More actions')}
             >
               <MoreHorizontal className="h-4 w-4" aria-hidden />

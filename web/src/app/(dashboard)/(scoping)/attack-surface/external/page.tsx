@@ -648,7 +648,7 @@ export default function ExternalSurfacePage() {
     <Button
       variant="outline"
       size="icon-sm"
-      className="h-9"
+
       onClick={() => void refetchAssets()}
       aria-label={t('attackSurface.external.refresh', 'Refresh')}
     >
