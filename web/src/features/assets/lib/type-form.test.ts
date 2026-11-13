@@ -91,4 +91,23 @@ describe('type form', () => {
     const update = updateInputFromForm(host, { name: 'web-1', ownerRef: '' }, {})
     expect(update.ownerRef).toBe('')
   })
+
+  it('on edit, sends the tags added and removed, never the whole list', () => {
+    const update = updateInputFromForm(
+      host,
+      { name: 'web-1', tags: ['pci', 'prod'] },
+      {},
+      ['team:web', 'pci']
+    )
+    expect(update).toMatchObject({ tagsAdd: ['prod'], tagsRemove: ['team:web'] })
+    expect(update).not.toHaveProperty('tags')
+  })
+
+  it('on edit, sends no tag change when the tags are as shown or not in the form', () => {
+    const same = updateInputFromForm(host, { name: 'web-1', tags: ['b', 'a'] }, {}, ['a', 'b'])
+    expect(same).not.toHaveProperty('tagsAdd')
+    expect(same).not.toHaveProperty('tagsRemove')
+    const absent = updateInputFromForm(host, { name: 'web-1' }, {}, ['a'])
+    expect(absent).not.toHaveProperty('tagsRemove')
+  })
 })

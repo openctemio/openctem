@@ -84,6 +84,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { ACTIONABLE_SEVERITIES } from '@/lib/severity'
 import type { RiskLevelThresholds } from '@/features/shared/types'
+import { tagChange } from '@/features/assets/lib/tag-change'
 import {
   externalSurfaceFilters,
   riskRange,
@@ -436,11 +437,12 @@ export default function ExternalSurfacePage() {
     setScanDialogOpen(true)
   }
 
-  // "+ Add label" on a row: save that asset's tags, then refetch.
+  // "+ Add label" on a row: the added label only (a tag stored since the list
+  // loaded stays), then refetch.
   const saveRowLabels = useCallback(
-    async (id: string, tags: string[]) => {
+    async (id: string, shown: string[], tags: string[]) => {
       try {
-        await updateAsset(id, { tags })
+        await updateAsset(id, tagChange(shown, tags))
         toast.success(t('attackSurface.external.labelAdded', 'Label added.'))
         await refetchAssets()
       } catch (e) {
@@ -543,7 +545,7 @@ export default function ExternalSurfacePage() {
           <LabelChips
             className="max-w-[220px]"
             labels={row.original.tags ?? []}
-            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, tags) : undefined}
+            onSave={canWriteAssets ? (tags) => saveRowLabels(row.original.id, row.original.tags ?? [], tags) : undefined}
           />
         ),
       },

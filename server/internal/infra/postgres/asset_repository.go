@@ -537,6 +537,16 @@ func (r *AssetRepository) selectQuery() string {
 	`
 }
 
+// assetTagChangeSQL is the stored tags with $41 removed and $40 appended
+// (first position wins, no duplicates). In an UPDATE, "tags" is the row's
+// current value: under concurrent writers it is re-read after the row lock.
+// $13 (the copy's list) stands in only for a NULL column.
+const assetTagChangeSQL = `(SELECT COALESCE(array_agg(x.t ORDER BY x.o), '{}'::text[])
+		FROM (SELECT u.t, min(u.o) AS o
+		      FROM unnest(COALESCE(tags, $13::text[]) || COALESCE($40::text[], '{}'::text[])) WITH ORDINALITY AS u(t, o)
+		      WHERE NOT (u.t = ANY(COALESCE($41::text[], '{}'::text[])))
+		      GROUP BY u.t) x)`
+
 // Update updates an existing asset.
 func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 	properties, err := json.Marshal(a.Properties())
@@ -544,11 +554,19 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		return fmt.Errorf("failed to marshal properties: %w", err)
 	}
 
+	// A tag change made with ChangeTags is applied to the stored list in
+	// the statement (the row lock makes concurrent changes queue), so a tag
+	// stored by another writer after this copy was loaded stays.
+	change, hasChange := a.PendingTagChange()
+	tagsSQL := "$13"
+	if hasChange {
+		tagsSQL = assetTagChangeSQL
+	}
 	query := `
 		UPDATE assets
 		SET parent_id = $2, owner_ref = $3, name = $4, asset_type = $5, sub_type = $6, criticality = $7, status = $8,
 		    scope = $9, exposure = $10, risk_score = $11,
-		    description = $12, tags = $13, properties = $14,
+		    description = $12, tags = ` + tagsSQL + `, properties = $14,
 		    provider = $15, external_id = $16, classification = $17, sync_status = $18, last_synced_at = $19, sync_error = $20,
 		    discovery_source = $21, discovery_tool = $22, discovered_at = $23,
 		    compliance_scope = $24, data_classification = $25, pii_data_exposed = $26, phi_data_exposed = $27, regulatory_owner_id = $28,
@@ -560,7 +578,7 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 	`
 
 	updateOwnerRef := sql.NullString{String: a.OwnerRef(), Valid: a.OwnerRef() != ""}
-	result, err := r.db.ExecContext(ctx, query,
+	args := []any{
 		a.ID().String(),
 		nullIDPtr(a.ParentID()),
 		updateOwnerRef,
@@ -600,8 +618,23 @@ func (r *AssetRepository) Update(ctx context.Context, a *asset.Asset) error {
 		nullString(string(a.ImpactConfidentiality())),
 		nullString(string(a.ImpactIntegrity())),
 		nullString(string(a.ImpactAvailability())),
-	)
+	}
 
+	if hasChange {
+		args = append(args, pq.Array(change.Add), pq.Array(change.Remove))
+		var stored []string
+		err := r.db.QueryRowContext(ctx, query+" RETURNING tags", args...).Scan(pq.Array(&stored))
+		if errors.Is(err, sql.ErrNoRows) {
+			return asset.NotFoundError(a.ID())
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update asset: %w", err)
+		}
+		a.SetStoredTags(stored)
+		return nil
+	}
+
+	result, err := r.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update asset: %w", err)
 	}
