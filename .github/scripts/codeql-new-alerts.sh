@@ -18,7 +18,12 @@
 # A release pull request (head release/vX.Y.Z of this repository, into main) is
 # compared with develop instead: its content was already gated there, so what
 # counts is whatever the release adds on top of develop, not the alerts main has
-# not caught up with yet. Any other pull request is compared with its base.
+# not caught up with yet. A pull request into next (the integration branch cut
+# from develop) is compared with develop only until next has an analysis of its
+# own: the first push to next after its cut makes one, and until then next
+# would have no alerts at all, so every alert develop already has would read as
+# new. A failed lookup keeps the base (strict). Any other pull request is
+# compared with its base.
 #
 # Inputs (env): GH_TOKEN (security-events: read), REPO (owner/name), PR_NUMBER,
 # BASE_REF (branch name). Optional: HEAD_REF and HEAD_REPO (the pull request's
@@ -30,6 +35,12 @@ summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
 if [[ "$BASE_REF" == main && "${HEAD_REF:-}" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ && "${HEAD_REPO:-}" == "$REPO" ]]; then
   echo "Release pull request: comparing with develop, where its content was already gated." | tee -a "$summary"
   BASE_REF=develop
+fi
+if [[ "$BASE_REF" == next ]]; then
+  if n="$(gh api "repos/${REPO}/code-scanning/analyses?ref=refs/heads/next&per_page=1" --jq 'length' 2>/dev/null)" && [[ "$n" == 0 ]]; then
+    echo "next has no code-scanning analysis yet: comparing with develop, which next was cut from." | tee -a "$summary"
+    BASE_REF=develop
+  fi
 fi
 sev='map(select((.rule.security_severity_level // "") | IN("medium","high","critical")))'
 

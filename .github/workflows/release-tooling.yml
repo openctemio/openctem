@@ -48,7 +48,7 @@ on:
       - web/src/features/ci-runners/lib/ci.ts
       - web/package.json
   push:
-    branches: [develop, main]
+    branches: [develop, main, next]
     paths:
       - versions.yaml
       - .github/scripts/release/**
