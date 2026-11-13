@@ -2,6 +2,8 @@ import { cookies } from 'next/headers'
 
 import { env } from '@/lib/env'
 
+import { EntryScope } from '@/components/ui/density'
+
 import { InvitationView } from './invitation-view'
 
 /**
@@ -18,5 +20,9 @@ export default async function InvitationPage() {
     cookieStore.get(env.auth.cookieName)?.value ||
     cookieStore.get(env.auth.refreshCookieName)?.value
   )
-  return <InvitationView hasSession={hasSession} />
+  return (
+    <EntryScope>
+      <InvitationView hasSession={hasSession} />
+    </EntryScope>
+  )
 }

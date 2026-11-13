@@ -29,6 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
+import { DENSE_ATTRS } from '@/components/ui/density'
 import { ListToolbar } from '../list-toolbar'
 import { ErrorState } from '../error-state'
 import type { ListSearchProps } from '../list-search'
@@ -1001,7 +1002,7 @@ export function DataTable<TData, TValue>({
         }}
       >
         <TableRefreshBar active={isRefreshing} label={refreshingLabel} />
-        <Table>
+        <Table {...DENSE_ATTRS}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

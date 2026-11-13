@@ -3,6 +3,7 @@ import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from './ui/button'
+import { Input } from './ui/input'
 
 type PasswordInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> & {
   ref?: React.Ref<HTMLInputElement>
@@ -14,16 +15,17 @@ export function PasswordInput({ className, disabled, ref, ...props }: PasswordIn
 
   return (
     <div className={cn('relative rounded-md', className)}>
-      <input
+      {/* The kit field (32px, 36 on entry pages, 44 below 768px); its end
+          padding keeps the toggle's box clear of the text at every size. */}
+      <Input
         type={showPassword ? 'text' : 'password'}
-        className="border-input placeholder:text-muted-foreground focus-visible:ring-ring flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50"
+        className="pe-9 max-md:pe-12"
         ref={ref}
         disabled={disabled}
         {...props}
       />
       <Button
         type="button"
-        size="icon"
         variant="ghost"
         disabled={disabled}
         aria-label={
@@ -31,10 +33,12 @@ export function PasswordInput({ className, disabled, ref, ...props }: PasswordIn
             ? t('auth.password.hide', 'Hide password')
             : t('auth.password.show', 'Show password')
         }
-        className="text-muted-foreground absolute end-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md"
+        // A compact 24px toggle inside the field; a 44px hit area below 768px.
+        size="xs"
+        className="text-muted-foreground absolute end-1 top-1/2 -translate-y-1/2 rounded-md max-md:end-0"
         onClick={() => setShowPassword((prev) => !prev)}
       >
-        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+        {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
       </Button>
     </div>
   )

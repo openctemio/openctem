@@ -118,11 +118,11 @@ describe('ListToolbar slots', () => {
 })
 
 describe('ListSearch', () => {
-  it('is a 36px search box with the icon, a placeholder and its own accessible name', () => {
+  it('is a search box at the field height with the icon, a placeholder and its own accessible name', () => {
     render(<Search />)
     const box = screen.getByRole('searchbox', { name: 'Search sensors' })
     expect(box).toHaveAttribute('placeholder', 'Search name, host or tool…')
-    expect(box).toHaveClass('h-9', 'ps-9')
+    expect(box).toHaveClass('h-control-field', 'ps-9')
     expect(box).toHaveAttribute('aria-keyshortcuts', '/')
     expect(box.parentElement?.querySelector('svg')).not.toBeNull()
   })

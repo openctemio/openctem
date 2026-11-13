@@ -19,7 +19,10 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
       sm:items-center re-enables vertical centering on tablet/desktop
       where the screen is wider/shorter and centering looks balanced.
     */
-    <div className="flex min-h-svh flex-col items-stretch sm:items-center sm:justify-center px-4 py-6 sm:py-12 pt-[max(1.5rem,env(safe-area-inset-top))]">
+    <div
+      data-control-scale="entry"
+      className="flex min-h-svh flex-col items-stretch sm:items-center sm:justify-center px-4 py-6 sm:py-12 pt-[max(1.5rem,env(safe-area-inset-top))]"
+    >
       <div className="mx-auto flex w-full max-w-md flex-col space-y-2 sm:w-[480px]">
         <div className="mb-4 sm:mb-8 flex items-center justify-center text-foreground">
           {/* The lockup (6.5:1) is tight around the ink: h-8 on phones and h-10

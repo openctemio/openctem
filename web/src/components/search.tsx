@@ -26,9 +26,9 @@ export function Search({ className = '', placeholder }: SearchProps) {
     <Button
       variant="outline"
       className={cn(
-        'bg-muted/25 group text-muted-foreground hover:bg-accent relative h-8 rounded-md text-sm font-normal shadow-none',
-        // Mobile: icon only
-        'w-8 justify-center p-0',
+        'bg-muted/25 group text-muted-foreground hover:bg-accent relative rounded-md text-sm font-normal shadow-none',
+        // Phone: an icon, a 44px square like every control below 768px
+        'w-control-touch justify-center p-0',
         // Small screens and up: show full search bar
         'sm:w-40 sm:justify-start sm:px-3 sm:pe-12',
         'md:flex-none lg:w-52 xl:w-64',

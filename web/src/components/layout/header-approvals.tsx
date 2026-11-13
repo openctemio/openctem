@@ -29,7 +29,7 @@ export function HeaderApprovals() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button asChild variant="ghost" size="icon" className="relative size-8" aria-label={label}>
+        <Button asChild variant="ghost" size="icon" className="relative" aria-label={label}>
           <Link href="/findings/approvals" data-slot="header-approvals">
             <ShieldCheck className="size-4.5" aria-hidden />
             {n > 0 && <Counter value={n} emphasis className="absolute -end-1 -top-1" />}

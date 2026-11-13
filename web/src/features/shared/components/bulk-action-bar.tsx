@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { DensityScope } from '@/components/ui/density'
 import { useTranslation } from '@/context/i18n-provider'
 
 /**
@@ -45,17 +46,20 @@ export function BulkActionBar({
           {count} {noun ?? t('common.bulkBar.selected', 'selected')}
         </span>
         <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-border" />
-        {children}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={onClear}
-          aria-label={t('common.bulkBar.clear', 'Clear selection')}
-          title={t('common.bulkBar.clearHint', 'Clear selection (Esc)')}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        {/* The bulk bar is a dense place: its actions are 28px (44 on a phone). */}
+        <DensityScope>
+          {children}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0"
+            onClick={onClear}
+            aria-label={t('common.bulkBar.clear', 'Clear selection')}
+            title={t('common.bulkBar.clearHint', 'Clear selection (Esc)')}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </DensityScope>
       </div>
     </div>
   )
