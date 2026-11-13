@@ -76,5 +76,4 @@ func TestAssetUpdate_TagChangeAppliesToStoredTags(t *testing.T) {
 	if _, ok := second.PendingTagChange(); ok {
 		t.Error("pending tag change kept after the write")
 	}
-
 }
