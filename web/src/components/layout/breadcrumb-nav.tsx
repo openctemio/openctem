@@ -2,7 +2,7 @@
 
 import { usePathname } from 'next/navigation'
 import Link from '@/components/link'
-import { Home } from 'lucide-react'
+import { Home, MoreHorizontal } from 'lucide-react'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,6 +12,12 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { Fragment } from 'react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -23,6 +29,7 @@ import {
 import { breadcrumbHasPage, isIdSegment } from './breadcrumb-routes'
 import { NavPendingHint } from './sidebar-link'
 import { useBreadcrumbTitles } from './breadcrumb-title'
+import { planCrumbs } from './breadcrumb-fold'
 
 interface BreadcrumbNavProps {
   /** Override the auto-generated page title */
@@ -97,13 +104,52 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
     })
   }
 
-  // One line, always: the trail takes the width the header leaves it and each
-  // item truncates. Below lg only the last two items show, behind an ellipsis
-  // (the list used to wrap, and on a tablet it stacked up out of the header).
-  const hiddenBelowLg = Math.max(0, breadcrumbItems.length - 2)
+  // Fold by the design's breakpoints (breadcrumb-fold.ts): middle levels
+  // into the "…" menu below 1280px, the first level too below 1024px; the
+  // parent and the current page always stay. Ancestors truncate before the
+  // current page, which stops at 32 characters with its full name as a tooltip.
+  const current = breadcrumbItems[breadcrumbItems.length - 1]
+  const plan = planCrumbs(breadcrumbItems.slice(0, -1), current)
+  const SHOW_FROM = { always: '', lg: 'hidden lg:inline-flex', xl: 'hidden xl:inline-flex' }
+  const SEP_FROM = { always: '', lg: 'hidden lg:flex', xl: 'hidden xl:flex' }
+  const FOLDED_BELOW = { lg: 'lg:hidden', xl: 'xl:hidden' }
+  // The menu sits where the folded levels were: after the first level (which
+  // itself folds below 1024px, so there the menu follows home).
+  const foldMenu = plan.menuBelow && (
+    <>
+      <BreadcrumbSeparator className={FOLDED_BELOW[plan.menuBelow]} />
+      <BreadcrumbItem className={cn('shrink-0', FOLDED_BELOW[plan.menuBelow])}>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="hover:text-foreground flex size-control-xs items-center justify-center rounded-sm"
+            aria-label={t('nav.breadcrumb.folded', 'Show the hidden levels')}
+            data-testid="breadcrumb-fold"
+          >
+            <MoreHorizontal className="size-4" aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {plan.folded.map(({ item, foldedBelow }) => (
+              <DropdownMenuItem
+                key={item.path}
+                asChild={breadcrumbHasPage(item.path)}
+                disabled={!breadcrumbHasPage(item.path)}
+                className={FOLDED_BELOW[foldedBelow]}
+              >
+                {breadcrumbHasPage(item.path) ? (
+                  <Link href={item.path}>{item.label}</Link>
+                ) : (
+                  item.label
+                )}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </BreadcrumbItem>
+    </>
+  )
 
   return (
-    <Breadcrumb className={cn('min-w-0 flex-1 overflow-hidden', className)}>
+    <Breadcrumb className={cn('min-w-0 flex-[1_1_auto] overflow-hidden', className)}>
       <BreadcrumbList className="flex-nowrap overflow-hidden">
         <BreadcrumbItem className="shrink-0">
           <BreadcrumbLink asChild>
@@ -115,40 +161,39 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
           </BreadcrumbLink>
         </BreadcrumbItem>
 
-        {hiddenBelowLg > 0 && (
-          <>
-            <BreadcrumbSeparator className="lg:hidden" />
-            <BreadcrumbItem className="shrink-0 lg:hidden" aria-hidden>
-              …
-            </BreadcrumbItem>
-          </>
-        )}
-
-        {breadcrumbItems.map((item, i) => {
-          const collapsible = i < hiddenBelowLg
-          return (
-            <Fragment key={item.path}>
-              <BreadcrumbSeparator className={cn(collapsible && 'hidden lg:flex')} />
-              <BreadcrumbItem className={cn('min-w-0', collapsible && 'hidden lg:inline-flex')}>
-                {item.isLast ? (
-                  <BreadcrumbPage className="truncate" aria-current="page">
+        {plan.crumbs.map(({ item, role, showFrom }) => (
+          <Fragment key={item.path}>
+            <BreadcrumbSeparator className={SEP_FROM[showFrom]} />
+            <BreadcrumbItem
+              className={cn(
+                role === 'current'
+                  ? 'min-w-0 shrink max-w-[32ch]'
+                  : // an ancestor shrinks first, but keeps a few letters and its ellipsis
+                    'min-w-8 shrink-[100]',
+                SHOW_FROM[showFrom]
+              )}
+            >
+              {item.isLast ? (
+                <BreadcrumbPage className="truncate" aria-current="page" title={item.label}>
+                  {item.label}
+                </BreadcrumbPage>
+              ) : !breadcrumbHasPage(item.path) ? (
+                // A section folder with no page: a link would lead to the 404.
+                <span className="truncate" title={item.label}>
+                  {item.label}
+                </span>
+              ) : (
+                <BreadcrumbLink asChild>
+                  <Link href={item.path} className="truncate" title={item.label}>
                     {item.label}
-                  </BreadcrumbPage>
-                ) : !breadcrumbHasPage(item.path) ? (
-                  // A section folder with no page: a link would lead to the 404.
-                  <span className="truncate">{item.label}</span>
-                ) : (
-                  <BreadcrumbLink asChild>
-                    <Link href={item.path} className="truncate">
-                      {item.label}
-                      <NavPendingHint quiet />
-                    </Link>
-                  </BreadcrumbLink>
-                )}
-              </BreadcrumbItem>
-            </Fragment>
-          )
-        })}
+                    <NavPendingHint quiet />
+                  </Link>
+                </BreadcrumbLink>
+              )}
+            </BreadcrumbItem>
+            {role === 'first' && foldMenu}
+          </Fragment>
+        ))}
       </BreadcrumbList>
     </Breadcrumb>
   )

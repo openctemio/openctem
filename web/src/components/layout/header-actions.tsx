@@ -50,8 +50,8 @@ export function HeaderActions({
   // account controls at the end.
   return (
     <>
-      <div className="ms-auto flex min-w-0 justify-center sm:mx-auto sm:flex-[0_1_26rem]">
-        {!hideSearch && <Search className="sm:w-full lg:w-full xl:w-full" />}
+      <div className="ms-auto flex min-w-0 justify-center lg:mx-auto lg:min-w-40 lg:flex-[0_4_26rem]">
+        {!hideSearch && <Search className="lg:w-full" />}
       </div>
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         <FullscreenToggle />
