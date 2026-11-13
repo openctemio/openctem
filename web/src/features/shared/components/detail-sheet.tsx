@@ -128,8 +128,18 @@ export function DetailSection({
   const headingId = React.useId()
   return (
     <section id={id} className={cn('min-w-0 space-y-3', className)} aria-labelledby={headingId}>
-      <div className="flex min-h-7 items-center justify-between gap-2">
-        <h3 id={headingId} className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+      {/* The row wraps: in a narrow column the actions drop to their own line
+          (end-aligned) instead of squeezing the title to nothing or running
+          past the section. The title keeps its natural width and truncates
+          only when it alone is wider than the row. */}
+      <div
+        data-slot="detail-section-head"
+        className="flex min-h-7 flex-wrap items-center justify-between gap-x-2 gap-y-1"
+      >
+        <h3
+          id={headingId}
+          className="flex max-w-full min-w-0 items-center gap-2 text-sm font-semibold"
+        >
           {Icon && <Icon className="h-4 w-4 shrink-0" />}
           <span className="truncate">{title}</span>
           {count !== undefined && (
@@ -138,7 +148,14 @@ export function DetailSection({
             </Badge>
           )}
         </h3>
-        {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
+        {actions && (
+          <div
+            data-slot="detail-section-actions"
+            className="ms-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-1"
+          >
+            {actions}
+          </div>
+        )}
       </div>
       {children}
     </section>
