@@ -60,7 +60,7 @@ export const PriorityBadge = React.forwardRef<HTMLSpanElement, PriorityBadgeProp
         role="img"
         aria-label={aria}
         className={cn(
-          'inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-xs font-semibold leading-none tabular-nums',
+          'inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-cap font-semibold leading-none tabular-nums',
           PRIORITY_BOX_CLASS[cls],
           className
         )}

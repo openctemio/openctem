@@ -296,6 +296,11 @@ load.
   rows `h-row` (40, or 32 / 52 under `data-density="compact|comfortable"`).
   `h-control-field` is the text-field height and stays 36 until the field
   kit is settled.
+- `scripts/check-design-tokens.sh` (run by `check-page-anatomy.sh`) refuses
+  added lines with a raw colour, an arbitrary radius, shadow, line height,
+  weight or tracking, `font-bold`, a height on a kit control, and raw
+  `text-xs`/`text-sm`/... in the directories of `scripts/type-migrated.txt`
+  (the list only grows). Escape a real exception with `design-ok: <reason>`.
 - One text face and one mono, self-hosted: Inter (`font-sans`, with the
   single-storey a and open digits) and JetBrains Mono (`font-mono`). The
   files and their OFL licences are in `web/public/fonts`, declared in
