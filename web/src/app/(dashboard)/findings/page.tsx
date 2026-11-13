@@ -1955,6 +1955,7 @@ function FindingsContent() {
     (v) => v.key === 'needs_triage'
   )
   const triageCount = needsTriageView?.count ?? 0
+  const triageKnown = quickViewData != null
   const triageParams = needsTriageView?.params ?? 'status=new'
   const openTriage = () => {
     if (triageCount === 0) {
@@ -2474,7 +2475,9 @@ function FindingsContent() {
             {canChangeStatusOne && (
               <Button
                 size="sm"
-                variant={triageCount > 0 ? 'default' : 'outline'}
+                // Primary until the count says there is nothing to triage, so the
+                // page's main action does not start light and turn ink.
+                variant={triageKnown && triageCount === 0 ? 'outline' : 'default'}
                 onClick={openTriage}
                 aria-keyshortcuts="t"
                 aria-label={
