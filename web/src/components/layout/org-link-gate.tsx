@@ -74,7 +74,8 @@ export function OrgLinkGate({ children }: { children: React.ReactNode }) {
       finish()
       return
     }
-    switchTeam(target.id)
+    // The link names this organization's page: keep the address.
+    switchTeam(target.id, { keepLocation: true })
       .then(() => {
         toast.success(t('org.switched', 'Switched to {name}', { name: target.name }))
       })

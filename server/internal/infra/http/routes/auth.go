@@ -1,0 +1,414 @@
+package routes
+
+import (
+	"context"
+
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// registerAuthRoutes registers authentication endpoints based on provider.
+func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg AuthConfig, authMiddleware, userSyncMiddleware Middleware, log *logger.Logger) {
+	// Create auth-specific rate limiter for brute-force protection
+	// SECURITY: These endpoints are critical attack vectors and need stricter limits
+	authRateLimiter := newAuthRateLimiter("auth")
+	loginRL := authRateLimiter.LoginMiddleware()
+	registerRL := authRateLimiter.RegisterMiddleware()
+	passwordRL := authRateLimiter.PasswordMiddleware()
+	tokenExchangeRL := authRateLimiter.TokenExchangeMiddleware()
+	mfaRL := authRateLimiter.MFAMiddleware()
+
+	// The routes below that run before a session exists set session cookies
+	// and carry no double-submit token: a write a browser sends for another
+	// site is refused (login CSRF), see middleware.RejectCrossSiteBrowser.
+	// Not on the IdP's own cross-site posts (SAML ACS, back-channel logout).
+	crossSite := middleware.RejectCrossSiteBrowser(cfg.CORS.AllowedOrigins, log)
+
+	// Public login-capability snapshot: tells the UI which social buttons (and
+	// the Entra SSO env fallback) are actually usable, so it can hide dead
+	// affordances. Always available, tenant-agnostic, and booleans only —
+	// no secrets. Rate-limited like the other public auth reads.
+	//
+	// oauthRoutesLive is `h.OAuth != nil` — the exact condition that gates the
+	// /oauth/* routes below. Passing it here keeps the advertised login surface
+	// and the registered login surface identical: configuring OAUTH_* creds
+	// without wiring the handler used to make the UI render Google/GitHub
+	// buttons whose authorize call 404s.
+	oauthRoutesLive := h.OAuth != nil
+	authProvidersHandler := handler.NewAuthProvidersHandler(cfg.OAuth, cfg.Auth.EntraSSO, oauthRoutesLive, log).
+		WithTenantCreationMode(tenantCreationModeOf(cfg.Auth)).
+		WithRegistrationEnabled(cfg.Auth.SignupOpen()).
+		WithPasswordPolicy(cfg.Auth)
+	if h.LocalAuth != nil {
+		authProvidersHandler.WithEmailDelivery(h.LocalAuth.EmailDeliveryAvailable)
+	}
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.SocialLogin != nil {
+		authProvidersHandler.WithSocialSource(h.AdminPlatformSettings.SocialLogin.Offered)
+	}
+	if h.SignupPolicy != nil {
+		authProvidersHandler.WithSignupPolicy(h.SignupPolicy)
+	}
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.Captcha != nil {
+		authProvidersHandler.WithCaptchaSiteKey(h.AdminPlatformSettings.Captcha.SiteKey)
+	} else if key := cfg.Auth.CaptchaTurnstileSiteKey; key != "" && cfg.Auth.CaptchaTurnstileSecret != "" {
+		authProvidersHandler.WithCaptchaSiteKey(func(context.Context) string { return key })
+	}
+	if h.AdminPlatformSettings != nil && h.AdminPlatformSettings.Region != nil {
+		authProvidersHandler.WithDeploymentRegion(h.AdminPlatformSettings.Region.Region)
+	} else if region := cfg.App.Region; region != "" {
+		authProvidersHandler.WithDeploymentRegion(func(context.Context) string { return region })
+	}
+
+	// Public auth routes
+	router.Group("/api/v1/auth", func(r Router) {
+		// Login-provider capability snapshot (public, no auth). A cheap,
+		// cacheable config read the UI makes on many screens: it gets the
+		// general API limiter, NOT loginRL (5/min per IP), which it used to
+		// share — reading it spent the caller's login budget, so a user who
+		// opened a few pages got 429 on the login itself.
+		providersHandler := ChainFunc(authProvidersHandler.GetProviders, middleware.RateLimit(&cfg.RateLimit, log))
+		r.GET("/providers", providersHandler.ServeHTTP)
+
+		// Provider info endpoint
+		if authCfg.Provider.SupportsLocal() && h.LocalAuth != nil {
+			r.GET("/info", h.LocalAuth.Info)
+		} else if h.Auth != nil {
+			r.GET("/info", h.Auth.Info)
+		}
+
+		// Local auth endpoints - public (no auth required)
+		// SECURITY: Rate limited to prevent brute-force and credential stuffing attacks
+		if authCfg.Provider.SupportsLocal() && h.LocalAuth != nil {
+			// Request access (sign-up closed, requests allowed): the
+			// registration budget; the service adds per-address and
+			// per-domain limits and the optional CAPTCHA.
+			if h.AccessRequest != nil {
+				r.POST("/access-requests", ChainFunc(h.AccessRequest.Submit, registerRL).ServeHTTP)
+				r.POST("/access-requests/confirm", ChainFunc(h.AccessRequest.Confirm, passwordRL).ServeHTTP)
+			}
+
+			// Registration - strict rate limit (3/min)
+			registerHandler := ChainFunc(h.LocalAuth.Register, crossSite, registerRL)
+			r.POST("/register", registerHandler.ServeHTTP)
+
+			// Login - strict rate limit (5/min)
+			loginHandler := ChainFunc(h.LocalAuth.Login, crossSite, loginRL)
+			r.POST("/login", loginHandler.ServeHTTP)
+
+			// Second login step (2FA). Authorized only by the short-lived
+			// challenge token a password login returns. Its own buckets (per
+			// challenge, and per IP), not the login one: the sign-ins that led
+			// here must not use up the code attempts. Guessing is bounded by
+			// the challenge's attempt cap and the per-user lockout.
+			mfaVerifyHandler := ChainFunc(h.LocalAuth.VerifyMFA, crossSite, mfaRL)
+			r.POST("/mfa/verify", mfaVerifyHandler.ServeHTTP)
+			mfaEnrollStartHandler := ChainFunc(h.LocalAuth.StartMFAEnrollment, crossSite, mfaRL)
+			r.POST("/mfa/enroll/start", mfaEnrollStartHandler.ServeHTTP)
+			mfaEnrollConfirmHandler := ChainFunc(h.LocalAuth.ConfirmMFAEnrollment, crossSite, mfaRL)
+			r.POST("/mfa/enroll/confirm", mfaEnrollConfirmHandler.ServeHTTP)
+
+			// Second-factor challenge for a signed-in session that an
+			// organization's 2FA policy holds back (after accepting an
+			// invitation, or when a token refresh is refused). Authenticated
+			// by the refresh-token session, like accept-with-refresh.
+			mfaSessionHandler := ChainFunc(h.LocalAuth.SessionMFAChallenge, crossSite, mfaRL)
+			r.POST("/mfa/enroll/session", mfaSessionHandler.ServeHTTP)
+
+			// Token operations - separate rate limit (20/min)
+			// Token exchange requires valid refresh token, not brute-forceable
+			// Used for tenant switching which may happen frequently.
+			// This is the only handler of POST /auth/token, in local and
+			// hybrid mode alike: an OIDC access token is verified by the auth
+			// middleware on each request and is never exchanged here.
+			tokenHandler := ChainFunc(h.LocalAuth.ExchangeToken, crossSite, tokenExchangeRL)
+			r.POST("/token", tokenHandler.ServeHTTP)
+
+			refreshHandler := ChainFunc(h.LocalAuth.RefreshToken, crossSite, tokenExchangeRL)
+			r.POST("/refresh", refreshHandler.ServeHTTP)
+
+			// An account with no organization it can open gets an access
+			// token without a tenant, which reaches only the account
+			// allow-list (docs/architecture/tenantless-account-space.md).
+			accountTokenHandler := ChainFunc(h.LocalAuth.AccountToken, crossSite, tokenExchangeRL)
+			r.POST("/account-token", accountTokenHandler.ServeHTTP)
+
+			// Email verification - password rate limit
+			verifyHandler := ChainFunc(h.LocalAuth.VerifyEmail, crossSite, passwordRL)
+			r.POST("/verify-email", verifyHandler.ServeHTTP)
+
+			// New verification link (constant 202; per-IP limit here, one
+			// email per address per 2 minutes in the service).
+			resendVerifyHandler := ChainFunc(h.LocalAuth.ResendVerification, crossSite, passwordRL)
+			r.POST("/resend-verification", resendVerifyHandler.ServeHTTP)
+
+			// Password operations - very strict rate limit (3/min)
+			forgotHandler := ChainFunc(h.LocalAuth.ForgotPassword, crossSite, passwordRL)
+			r.POST("/forgot-password", forgotHandler.ServeHTTP)
+
+			resetHandler := ChainFunc(h.LocalAuth.ResetPassword, crossSite, passwordRL)
+			r.POST("/reset-password", resetHandler.ServeHTTP)
+
+			// First team creation - registration rate limit
+			firstTeamHandler := ChainFunc(h.LocalAuth.CreateFirstTeam, crossSite, registerRL)
+			r.POST("/create-first-team", firstTeamHandler.ServeHTTP)
+
+			// Onboarding of an account without an organization (RFC-104):
+			// refresh-token authenticated like create-first-team.
+			onboardingOptions := ChainFunc(h.LocalAuth.OnboardingOptions, crossSite, tokenExchangeRL)
+			r.POST("/onboarding/options", onboardingOptions.ServeHTTP)
+			onboardingAccept := ChainFunc(h.LocalAuth.OnboardingAccept, crossSite, registerRL)
+			r.POST("/onboarding/accept", onboardingAccept.ServeHTTP)
+			onboardingDecline := ChainFunc(h.LocalAuth.OnboardingDecline, crossSite, registerRL)
+			r.POST("/onboarding/decline", onboardingDecline.ServeHTTP)
+
+			// An owner cancels a scheduled organization deletion: the
+			// organization is closed to tenant tokens while it waits, so
+			// this is refresh-token authenticated too
+			// (docs/architecture/organization-deletion.md).
+			cancelDeletion := ChainFunc(h.LocalAuth.CancelOrganizationDeletion, crossSite, tokenExchangeRL)
+			r.POST("/organization-deletion/cancel", cancelDeletion.ServeHTTP)
+
+			// Sign-out: by the refresh token when the request carries one
+			// (it outlives the access token, so an idle user's sign-out still
+			// ends the server session), else by the access token.
+			logoutByAccess := ChainFunc(h.LocalAuth.Logout, authMiddleware)
+			logoutHandler := ChainFunc(h.LocalAuth.LogoutWithRefreshToken(logoutByAccess), crossSite, tokenExchangeRL)
+			r.POST("/logout", logoutHandler.ServeHTTP)
+
+			// Step-up re-authentication (docs/architecture/step-up-reauth.md):
+			// the signed-in user proves their identity again (TOTP when
+			// enrolled, else the password) to open a 10-minute window on this
+			// session for sensitive routes (requireStepUp). Its own rate-limit
+			// bucket per IP; wrong proofs also count towards the account
+			// lockout. CSRF is enforced by authMiddleware for cookie sessions.
+			// The limit runs after authentication so a refusal can be
+			// audited for the person (reason rate_limited); a request
+			// without a valid session is refused by authMiddleware first.
+			stepUpRL := h.LocalAuth.AuditStepUpRateLimit(newAuthRateLimiter("step-up").LoginMiddleware())
+			r.GET("/step-up", ChainFunc(h.LocalAuth.GetStepUp, authMiddleware).ServeHTTP)
+			r.POST("/step-up", ChainFunc(h.LocalAuth.StepUp, authMiddleware, stepUpRL).ServeHTTP)
+
+		}
+
+		// OAuth endpoints (social login) - login rate limit.
+		// Gated on the same condition reported by /auth/providers above.
+		if oauthRoutesLive {
+			r.GET("/oauth/{provider}/authorize", h.OAuth.Authorize)
+			callbackHandler := ChainFunc(h.OAuth.Callback, crossSite, loginRL)
+			r.POST("/oauth/{provider}/callback", callbackHandler.ServeHTTP)
+		}
+
+		// Per-tenant SSO endpoints (public, rate limited)
+		if h.SSO != nil {
+			// SECURITY: Rate limit all public SSO endpoints to prevent enumeration
+			// Email-first sign-in: where does this email sign in? Its own
+			// budget (20/min per address): it runs on every sign-in, before
+			// the password is typed, and must not spend the login budget.
+			discoverRL := newAuthRateLimiter("discover").TokenExchangeMiddleware()
+			r.POST("/discover", ChainFunc(h.SSO.Discover, crossSite, discoverRL).ServeHTTP)
+			ssoProvidersHandler := ChainFunc(h.SSO.ListTenantProviders, loginRL)
+			r.GET("/sso/providers", ssoProvidersHandler.ServeHTTP)
+			ssoAuthorizeHandler := ChainFunc(h.SSO.Authorize, loginRL)
+			r.GET("/sso/{provider}/authorize", ssoAuthorizeHandler.ServeHTTP)
+			ssoCallbackHandler := ChainFunc(h.SSO.Callback, crossSite, loginRL)
+			r.POST("/sso/{provider}/callback", ssoCallbackHandler.ServeHTTP)
+
+			// OIDC Back-Channel Logout 1.0 (public — authenticated by the signed
+			// logout_token, NOT a user session; no CSRF, rate-limited). The IdP
+			// (e.g. Azure Entra) POSTs form-encoded logout_token here when a user
+			// signs out or is disabled, and we revoke the matching session(s).
+			ssoBackchannelHandler := ChainFunc(h.SSO.BackChannelLogout, loginRL)
+			r.POST("/backchannel-logout", ssoBackchannelHandler.ServeHTTP)
+		}
+
+		// SAML 2.0 SP endpoints (public). Metadata is registered with the IdP;
+		// login starts SP-initiated auth; ACS receives the IdP's signed response.
+		if h.SAML != nil {
+			samlMetadata := ChainFunc(h.SAML.Metadata, loginRL)
+			r.GET("/saml/{org}/metadata", samlMetadata.ServeHTTP)
+			samlLogin := ChainFunc(h.SAML.Login, loginRL)
+			r.GET("/saml/{org}/login", samlLogin.ServeHTTP)
+			// ACS is a cross-site top-level POST from the IdP — it carries the
+			// signed SAML assertion (validated server-side), not a CSRF-token
+			// form, so it must not sit behind the CSRF middleware.
+			samlACS := ChainFunc(h.SAML.ACS, loginRL)
+			r.POST("/saml/{org}/acs", samlACS.ServeHTTP)
+		}
+	})
+}
+
+// registerUserRoutes registers user profile management endpoints.
+func registerUserRoutes(
+	router Router,
+	h *handler.UserHandler,
+	localAuthHandler *handler.LocalAuthHandler,
+	authMiddleware Middleware,
+	userSyncMiddleware Middleware,
+	provider config.AuthProvider,
+) {
+	// Build middleware chain - UserSync for both local and OIDC
+	middlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		middlewares = append(middlewares, userSyncMiddleware)
+	}
+
+	// Self-service account deletion (RFC-104): the account's own sign-in
+	// (not an organization IdP's) and step-up; signing in again within the
+	// grace period cancels it.
+	router.Group("/api/v1/me/account", func(r Router) {
+		r.DELETE("/", h.DeleteMe, requireOwnSignIn(), requireStepUp())
+		r.GET("/deletion", h.GetMyDeletion)
+	}, middlewares...)
+
+	// Ownership invitations addressed to this account
+	// (docs/architecture/organization-ownership-invitations.md). Accepting
+	// makes the caller an organization's owner: step-up.
+	router.Group("/api/v1/me/ownership-invitations", func(r Router) {
+		r.GET("/", h.ListMyOwnerInvitations)
+		r.POST("/{id}/accept", h.AcceptOwnerInvitation, requireStepUp())
+		r.POST("/{id}/decline", h.DeclineOwnerInvitation)
+	}, middlewares...)
+
+	// Moving two-factor to a new authenticator (My account > Security). New
+	// self routes live under /api/v1/me; the older /users/me/2fa calls stay
+	// where they are. Same CSRF check and code rate limits as those.
+	if provider.SupportsLocal() && localAuthHandler != nil {
+		router.Group("/api/v1/me/2fa/replacement", func(r Router) {
+			replaceRL := newAuthRateLimiter("account-2fa-replacement")
+			var csrf []Middleware
+			if csrfProtectionMiddleware != nil {
+				csrf = append(csrf, csrfProtectionMiddleware)
+			}
+			r.POST("/start", localAuthHandler.ReplaceMFA, append(csrf, replaceRL.PasswordMiddleware())...)
+			r.POST("/complete", localAuthHandler.ConfirmReplaceMFA, append(append([]Middleware{}, csrf...), replaceRL.LoginMiddleware())...)
+		}, middlewares...)
+	}
+
+	router.Group("/api/v1/users", func(r Router) {
+		// Current user profile
+		r.GET("/me", h.GetMe)
+		r.PUT("/me", h.UpdateMe)
+		r.GET("/me/preferences", h.GetPreferences)
+		r.PUT("/me/preferences", h.UpdatePreferences)
+
+		// Current user's tenants/teams
+		r.GET("/me/tenants", h.GetMyTenants)
+
+		// Local auth session management
+		if provider.SupportsLocal() && localAuthHandler != nil {
+			// Change-password checks the current password, so it gets the
+			// password rate limiter (settings audit A-M2); wrong passwords
+			// also count against the account lockout in the service.
+			passwordRL := newAuthRateLimiter("account-password")
+			r.POST("/me/change-password", localAuthHandler.ChangePassword, passwordRL.PasswordMiddleware())
+			r.GET("/me/sessions", localAuthHandler.ListSessions)
+			// Signing out everywhere (and optionally revoking API keys) reaches
+			// every organization: the account's own sign-in only.
+			r.DELETE("/me/sessions", localAuthHandler.RevokeAllSessions, requireOwnSignIn())
+			r.DELETE("/me/sessions/{sessionId}", localAuthHandler.RevokeSession)
+
+			// Two-factor authentication for the signed-in user. Code-checking
+			// calls are rate limited like the login and password endpoints;
+			// mutating calls also carry the CSRF check.
+			mfaRL := newAuthRateLimiter("account-2fa")
+			codeRL := mfaRL.LoginMiddleware()
+			sensitiveRL := mfaRL.PasswordMiddleware()
+			withCSRF := func(rl Middleware) []Middleware {
+				if csrfProtectionMiddleware != nil {
+					return []Middleware{csrfProtectionMiddleware, rl}
+				}
+				return []Middleware{rl}
+			}
+			r.GET("/me/2fa", localAuthHandler.GetMFAStatus)
+			r.POST("/me/2fa/setup", localAuthHandler.SetupMFA, withCSRF(codeRL)...)
+			r.POST("/me/2fa/enable", localAuthHandler.EnableMFA, withCSRF(codeRL)...)
+			r.POST("/me/2fa/disable", localAuthHandler.DisableMFA, withCSRF(sensitiveRL)...)
+			r.POST("/me/2fa/recovery-codes", localAuthHandler.RegenerateRecoveryCodes, withCSRF(sensitiveRL)...)
+		}
+	}, middlewares...)
+}
+
+// registerIdentityLinkRoutes mounts Account > Security "Connected sign-in
+// methods" (auth/identity_link.go). Self-scoped: the account is the session's.
+// Linking and unlinking change how the account can be signed into, so each
+// needs the CSRF check and a proof typed for that request (an authenticator
+// code, else the password; auth/link_proof.go), checked by the service. They
+// are deliberately not behind requireStepUp: a recent sign-in or an open
+// step-up window does not count for a sign-in method change. The link
+// callback is the second half of a link already proved: its state is bound to this account and
+// this session, single use, expires, and is accepted only with the browser
+// binding secret the link start gave the starting browser (an HttpOnly
+// cookie); it is called by the web server with the session token.
+func registerIdentityLinkRoutes(router Router, h *handler.OAuthHandler, authMiddleware, userSyncMiddleware Middleware) {
+	middlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		middlewares = append(middlewares, userSyncMiddleware)
+	}
+	linkRL := newAuthRateLimiter("account-identities").PasswordMiddleware()
+	withCSRF := func(mws ...Middleware) []Middleware {
+		if csrfProtectionMiddleware != nil {
+			return append([]Middleware{csrfProtectionMiddleware}, mws...)
+		}
+		return mws
+	}
+	router.Group("/api/v1/me/sign-in-methods", func(r Router) {
+		r.GET("/", h.ListSignInMethods)
+		r.DELETE("/{id}", h.Unlink, withCSRF(linkRL)...)
+	}, middlewares...)
+	router.Group("/api/v1/me/sign-in-method-links", func(r Router) {
+		r.POST("/{provider}/start", h.StartLink, withCSRF(linkRL)...)
+		r.POST("/{provider}/complete", h.CompleteLink, linkRL)
+	}, middlewares...)
+	// A social sign-in refused because its address has an account leaves a
+	// pending link (auth/pending_link.go); the person signs in to that
+	// account and confirms it here. The secret is read from its HttpOnly
+	// cookie only; the record is bound to this account and single use. All
+	// three carry the CSRF check; confirming changes how the account is
+	// signed into and also needs a proof typed for it (the sign-in that just
+	// happened does not count).
+	router.Group("/api/v1/me/pending-sign-in-link", func(r Router) {
+		r.POST("/describe", h.DescribePendingLink, withCSRF(linkRL)...)
+		r.POST("/complete", h.ConfirmPendingLink, withCSRF(linkRL)...)
+		r.POST("/cancel", h.CancelPendingLink, withCSRF(linkRL)...)
+	}, middlewares...)
+}
+
+// registerSSOLinkRoutes registers Account > Security, "Organization sign-in"
+// (auth/sso_link.go): link or unlink an organization's single sign-on on the
+// caller's own account. Start and unlink carry the CSRF check and a proof
+// typed for that request (checked by the service; deliberately not behind
+// requireStepUp, as for the social links). The completion is called by the
+// web server with the session token after the identity provider's redirect:
+// its state is bound to this account and this session, single use, expires,
+// and is accepted only with the browser binding the start gave the starting
+// browser.
+func registerSSOLinkRoutes(router Router, h *handler.SSOHandler, authMiddleware, userSyncMiddleware Middleware) {
+	middlewares := []Middleware{authMiddleware}
+	if userSyncMiddleware != nil {
+		middlewares = append(middlewares, userSyncMiddleware)
+	}
+	linkRL := newAuthRateLimiter("sso-links").PasswordMiddleware()
+	withCSRF := func(mws ...Middleware) []Middleware {
+		if csrfProtectionMiddleware != nil {
+			return append([]Middleware{csrfProtectionMiddleware}, mws...)
+		}
+		return mws
+	}
+	router.Group("/api/v1/me/sso-links", func(r Router) {
+		r.GET("/", h.ListSSOLinks)
+		r.POST("/{provider}/start", h.StartSSOLink, withCSRF(linkRL)...)
+		r.POST("/{provider}/complete", h.CompleteSSOLink, linkRL)
+		r.DELETE("/identities/{identity}", h.UnlinkSSOIdentity, withCSRF(linkRL)...)
+	}, middlewares...)
+}
+
+// tenantCreationModeOf is the organization policy reported when the console
+// sign-up policy is not wired: self_service only under SIGNUP_MODE=open.
+func tenantCreationModeOf(c config.AuthConfig) string {
+	if c.SignupOpen() {
+		return "self_service"
+	}
+	return "admin_only"
+}

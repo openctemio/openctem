@@ -62,7 +62,7 @@ describe('OrgLinkGate', () => {
     // The page must not load (and ask the wrong organization) before the switch.
     expect(screen.queryByText('threat detail')).not.toBeInTheDocument()
     expect(screen.getByTestId('org-link-gate')).toBeInTheDocument()
-    expect(tenantState.switchTeam).toHaveBeenCalledWith(OTHER.id)
+    expect(tenantState.switchTeam).toHaveBeenCalledWith(OTHER.id, { keepLocation: true })
 
     resolveSwitch()
     await waitFor(() => expect(screen.getByText('threat detail')).toBeInTheDocument())
@@ -75,7 +75,7 @@ describe('OrgLinkGate', () => {
     search = 'org=other'
     page()
     await waitFor(() => expect(screen.getByText('threat detail')).toBeInTheDocument())
-    expect(tenantState.switchTeam).toHaveBeenCalledWith(OTHER.id)
+    expect(tenantState.switchTeam).toHaveBeenCalledWith(OTHER.id, { keepLocation: true })
   })
 
   it('does not switch when the link names the selected organization', async () => {
@@ -114,7 +114,7 @@ describe('OrgLinkGate', () => {
       </OrgLinkGate>
     )
     await waitFor(() => expect(screen.getByText('threat detail')).toBeInTheDocument())
-    expect(tenantState.switchTeam).toHaveBeenCalledWith(OTHER.id)
+    expect(tenantState.switchTeam).toHaveBeenCalledWith(OTHER.id, { keepLocation: true })
   })
 
   it('still renders the page (uniform not-found) when the switch is refused', async () => {

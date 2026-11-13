@@ -17,7 +17,7 @@ Next.js server (Node.js)
   src/app/api/v1/[...path]/route.ts   API proxy: session cookie -> Bearer token
         |  BACKEND_API_URL (server-side only)
         v
-OpenCTEM API (Go, api/)
+OpenCTEM API (Go, server/)
   business logic, authorization, PostgreSQL, Redis
 ```
 
@@ -97,6 +97,11 @@ under `src/app/api` (see `src/lib/server-auth-cookies.ts`).
   with `BACKEND_API_URL` and the session cookie.
 - **Server Actions** for form mutations that must run on the server (sign-in,
   sign-out); call `revalidatePath` afterwards.
+- **One cache per organization epoch**: the dashboard's SWR cache is created
+  again on every switch of organization, with the whole tree remounted and the
+  address reset ([organization-switch.md](organization-switch.md)). Code
+  outside a component mutates through `mutate` from `@/lib/swr-mutate`, never
+  SWR's global `mutate`.
 
 ## Design system
 

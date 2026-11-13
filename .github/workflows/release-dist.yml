@@ -1,8 +1,8 @@
 name: Release archives
 
 # The release archives for installs without containers and for private
-# registries (api/docs/deployment/binary-install.md,
-# api/docs/deployment/air-gapped.md), built by
+# registries (server/docs/deployment/binary-install.md,
+# server/docs/deployment/air-gapped.md), built by
 # .github/scripts/release/build-dist.sh.
 #
 # - Called by Release (release.yml) on a tag with `full: true`: every archive,
@@ -35,14 +35,14 @@ on:
       - .github/scripts/release/smoke-dist.sh
       - deploy/binary/**
       - deploy/airgap/**
-      - api/Dockerfile
-      - api/Dockerfile.migrations
-      - api/cmd/openctem-migrate/**
-      - api/internal/migrate/**
-      - api/deploy/gateway/**
-      - api/cmd/server/main.go
-      - api/internal/server/main.go
-      - api/cmd/signer/main.go
+      - server/Dockerfile
+      - server/Dockerfile.migrations
+      - server/cmd/openctem-migrate/**
+      - server/internal/migrate/**
+      - server/deploy/gateway/**
+      - server/cmd/server/main.go
+      - server/internal/server/main.go
+      - server/cmd/signer/main.go
       - web/package.json
       - web/package-lock.json
       - web/.nvmrc
@@ -76,7 +76,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false
       - name: Build server, gateway and bootstrap-admin
         env:
@@ -110,7 +110,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: false
       - name: Build bootstrap-admin
         env:

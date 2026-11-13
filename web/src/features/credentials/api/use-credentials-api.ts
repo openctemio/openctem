@@ -355,7 +355,7 @@ export function useReactivateCredentialApi(credentialId: string | null) {
  * Invalidate credentials cache
  */
 export async function invalidateCredentialsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/credentials'), undefined, {
     revalidate: true,
   })

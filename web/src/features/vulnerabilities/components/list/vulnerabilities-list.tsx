@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The vulnerabilities list `/vulnerabilities` (api/docs/architecture/vulnerability-page.md,
+ * The vulnerabilities list `/vulnerabilities` (server/docs/architecture/vulnerability-page.md,
  * "The list"): one row per CVE across the assets the caller may see, sorted by
  * risk. Every filter lives in the URL (the API's own params), every count on a
  * row opens the findings list that counts it, and a row opens the

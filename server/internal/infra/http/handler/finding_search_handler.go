@@ -1,0 +1,160 @@
+package handler
+
+// POST /findings/search and GET /meta/filters/findings: the FilterDocument
+// encoding of the findings list query contract
+// (docs/rfcs/RFC-048-list-query-contract.md). The document compiles through
+// the same registry and the same caller-bound compiler as GET /findings.
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/openctemio/openctem/server/internal/infra/http/filterquery"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
+)
+
+// FindingSearchRequest documents the FilterDocument body (RFC-048 §3.6). The
+// server parses the raw body with filterspec.ParseDocument; this type exists
+// for the OpenAPI spec.
+type FindingSearchRequest struct {
+	// V is the document version (1).
+	V int `json:"v,omitempty" example:"1"`
+	// Filter is a node ({"all":[...]}, {"any":[...]}, {"not":{...}} or a
+	// {"field","op","value"} leaf) or the flat-name shorthand
+	// ({"severity":["critical"],"epss_score_gte":0.1}).
+	Filter map[string]any `json:"filter,omitempty"`
+	// Q is free text over title, description and file path.
+	Q string `json:"q,omitempty"`
+	// Sort keys, "-" for descending.
+	Sort []string `json:"sort,omitempty"`
+	// Page selects the page: {"page": 1, "per_page": 50}.
+	Page *FindingSearchPage `json:"page,omitempty"`
+}
+
+// FindingSearchPage is the page block of a FindingSearchRequest.
+type FindingSearchPage struct {
+	Page    int `json:"page,omitempty"`
+	PerPage int `json:"per_page,omitempty"`
+}
+
+// SearchFindings handles POST /api/v1/findings/search
+// @Summary      Search findings with a filter document
+// @Description  Lists findings selected by a FilterDocument: all/any/not groups with field/op/value
+// @Description  leaves, for OR, nesting and id lists of up to 500. Same fields, permission, scope and
+// @Description  response as GET /findings. Limits: 50 leaves, depth 3, 32 KB body. A bad document is 400
+// @Description  INVALID_FILTER with the JSON path of each problem. Read-only.
+// @Tags         Findings
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body  FindingSearchRequest  true  "Filter document"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      400  {object}  map[string]interface{}  "INVALID_FILTER with details[].path"
+// @Failure      401  {object}  map[string]string
+// @Router       /findings/search [post]
+func (h *VulnerabilityHandler) SearchFindings(w http.ResponseWriter, r *http.Request) {
+	route := h.findingsListRoute()
+	route.Name = "POST /findings/search"
+	spec, ok := route.ParseBody(w, r)
+	if !ok {
+		return
+	}
+	h.writeFindingList(w, r, spec, false)
+}
+
+// FindingFilterMeta handles GET /api/v1/meta/filters/findings
+// @Summary      Findings filter contract
+// @Description  The machine-readable filter contract of the findings list: fields, types, operators,
+// @Description  flat param names, enums, sortability, old param aliases and limits, plus the FilterDocument
+// @Description  JSON Schema. Fields the caller may not use are left out.
+// @Tags         Findings
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  map[string]interface{}
+// @Router       /meta/filters/findings [get]
+func (h *VulnerabilityHandler) FindingFilterMeta(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	desc := vulnerability.FindingFields.Describe(func(p string) bool { return middleware.HasPermission(ctx, p) })
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"contract":        desc,
+		"document_schema": json.RawMessage(filterspec.DocumentSchema),
+	})
+}
+
+// writeFindingList runs a decoded filter as the caller and writes the list
+// response (shared by GET /findings and POST /findings/search).
+func (h *VulnerabilityHandler) writeFindingList(w http.ResponseWriter, r *http.Request, spec *filterspec.Spec, practiceCounts bool) {
+	result, dupCounts, err := h.service.ListFindingsWithDuplicatesBySpec(r.Context(), filterCaller(r), spec)
+	if err != nil {
+		if h.specTimedOut(w, spec, err) {
+			return
+		}
+		if _, isFilter := filterspec.AsError(err); isFilter {
+			filterquery.WriteError(w, err)
+			return
+		}
+		h.handleServiceError(w, err, "Finding")
+		return
+	}
+
+	data := make([]FindingResponse, len(result.Data))
+	for i, f := range result.Data {
+		data[i] = toFindingResponse(f)
+	}
+	// Show the asset name instead of an opaque UUID.
+	h.enrichFindingsWithAssetInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
+	h.enrichFindingsWithAssigneeInfo(r.Context(), middleware.MustGetTenantID(r.Context()), data)
+	h.enrichFindingsWithKEVRansomware(r.Context(), data)
+	for i, f := range result.Data {
+		data[i].DuplicatesMarked = dupCounts[f.ID()]
+	}
+
+	response := FindingListResponse{ListResponse: ListResponse[FindingResponse]{
+		Data:       data,
+		Total:      result.Total,
+		Page:       result.Page,
+		PerPage:    result.PerPage,
+		TotalPages: result.TotalPages,
+		Links:      NewPaginationLinks(r, result.Page, result.PerPage, result.TotalPages),
+	}}
+	if practiceCounts {
+		response.PracticeCounts = h.listPracticeCounts(r.Context(), r, spec)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// specTimedOut logs a findings read that ran past its statement timeout with
+// the names of the filter's fields (never their values), then answers it
+// like writeFindingQueryTimeout.
+func (h *VulnerabilityHandler) specTimedOut(w http.ResponseWriter, spec *filterspec.Spec, err error) bool {
+	if !errors.Is(err, vulnerability.ErrFindingQueryTimeout) {
+		return false
+	}
+	if h.logger != nil && spec != nil {
+		fields := make([]string, 0, 8)
+		for _, l := range spec.Leaves() {
+			fields = append(fields, l.Field)
+		}
+		h.logger.Warn("findings query timed out", "fields", strings.Join(fields, ","), "search", spec.Q != "")
+	}
+	return writeFindingQueryTimeout(w, err)
+}
+
+// writeFindingQueryTimeout answers a findings read that ran past its
+// statement timeout with 503 QUERY_TIMEOUT and reports whether it did.
+func writeFindingQueryTimeout(w http.ResponseWriter, err error) bool {
+	if !errors.Is(err, vulnerability.ErrFindingQueryTimeout) {
+		return false
+	}
+	apierror.QueryTimeout("The findings query took too long; narrow the search or the filters").WriteJSON(w)
+	return true
+}

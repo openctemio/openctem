@@ -1,0 +1,583 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"time"
+
+	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/pagination"
+	"github.com/openctemio/openctem/server/pkg/validator"
+)
+
+// AuditHandler handles audit log-related HTTP requests.
+type AuditHandler struct {
+	service   *auditsvc.AuditService
+	validator *validator.Validator
+	logger    *logger.Logger
+	scope     DataScopeEnforcer
+}
+
+// SetDataScope wires the data-scope enforcer. The audit trail names assets and
+// findings (resource names, messages, change diffs), so a caller whose data
+// scope is restricted may read only their own activity.
+func (h *AuditHandler) SetDataScope(e DataScopeEnforcer) *AuditHandler {
+	h.scope = e
+	return h
+}
+
+// requireFullData answers 403 and returns false unless the caller is an
+// administrator or holds full data access. Fails closed on a lookup error.
+func (h *AuditHandler) requireFullData(w http.ResponseWriter, r *http.Request) bool {
+	ctx := r.Context()
+	if middleware.IsAdmin(ctx) {
+		return true
+	}
+	if h.scope == nil { // not wired: fail closed, never open
+		apierror.Forbidden("Audit log access requires full data access").
+			WithDetails(map[string]string{"required": "full data access"}).WriteJSON(w)
+		return false
+	}
+	tid, err := shared.IDFromString(middleware.GetTenantID(ctx))
+	if err != nil {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return false
+	}
+	sc, err := h.scope.Resolve(ctx, tid)
+	if err != nil || sc.Restricted() {
+		apierror.Forbidden("Audit log access requires full data access").
+			WithDetails(map[string]string{"required": "full data access"}).WriteJSON(w)
+		return false
+	}
+	return true
+}
+
+// NewAuditHandler creates a new audit handler.
+func NewAuditHandler(svc *auditsvc.AuditService, v *validator.Validator, log *logger.Logger) *AuditHandler {
+	return &AuditHandler{
+		service:   svc,
+		validator: v,
+		logger:    log,
+	}
+}
+
+// VerifyChain walks the tenant's audit hash-chain and reports any
+// tamper evidence. Tenant-admin scoped; returns JSON with OK + breaks.
+//
+// GET /api/v1/audit/verify[?limit=10000]
+func (h *AuditHandler) VerifyChain(w http.ResponseWriter, r *http.Request) {
+	tenantIDStr := middleware.GetTenantID(r.Context())
+	if tenantIDStr == "" {
+		apierror.Unauthorized("tenant required").WriteJSON(w)
+		return
+	}
+	tenantID, err := shared.IDFromString(tenantIDStr)
+	if err != nil {
+		apierror.BadRequest("invalid tenant id").WriteJSON(w)
+		return
+	}
+
+	// Cap at the handler boundary so CodeQL's data-flow analysis sees the
+	// bound at the first sink; service + repo re-cap as defense in depth.
+	const maxVerifyChainLimit = 10_000
+	limit := parseQueryIntBounded(r.URL.Query().Get("limit"), 0, 0, maxVerifyChainLimit)
+
+	result, err := h.service.VerifyChain(r.Context(), tenantID, limit)
+	if err != nil {
+		h.logger.Error("audit chain verify failed",
+			"tenant_id", tenantIDStr, "error", err)
+		apierror.InternalServerError("verify failed").WriteJSON(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if !result.OK {
+		// 409 signals "state is inconsistent"; body carries details.
+		w.WriteHeader(http.StatusConflict)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+// =============================================================================
+// Response Types
+// =============================================================================
+
+// AuditLogResponse represents an audit log in API responses.
+type AuditLogResponse struct {
+	ID           string         `json:"id"`
+	TenantID     string         `json:"tenant_id,omitempty"`
+	ActorID      string         `json:"actor_id,omitempty"`
+	ActorEmail   string         `json:"actor_email"`
+	ActorIP      string         `json:"actor_ip,omitempty"`
+	Action       string         `json:"action"`
+	ResourceType string         `json:"resource_type"`
+	ResourceID   string         `json:"resource_id"`
+	ResourceName string         `json:"resource_name,omitempty"`
+	Changes      *audit.Changes `json:"changes,omitempty"`
+	Result       string         `json:"result"`
+	Severity     string         `json:"severity"`
+	Message      string         `json:"message"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	RequestID    string         `json:"request_id,omitempty"`
+	Timestamp    time.Time      `json:"timestamp"`
+}
+
+// AuditLogListResponse represents a paginated list of audit logs.
+type AuditLogListResponse struct {
+	Data       []AuditLogResponse `json:"data"`
+	Total      int64              `json:"total"`
+	Page       int                `json:"page"`
+	PerPage    int                `json:"per_page"`
+	TotalPages int                `json:"total_pages"`
+}
+
+// =============================================================================
+// Response Converters
+// =============================================================================
+
+func toAuditLogResponse(log *audit.AuditLog) AuditLogResponse {
+	resp := AuditLogResponse{
+		ID:           log.ID().String(),
+		ActorEmail:   log.ActorEmail(),
+		ActorIP:      log.ActorIP(),
+		Action:       log.Action().String(),
+		ResourceType: log.ResourceType().String(),
+		ResourceID:   log.ResourceID(),
+		ResourceName: log.ResourceName(),
+		Changes:      log.Changes(),
+		Result:       log.Result().String(),
+		Severity:     log.Severity().String(),
+		Message:      log.Message(),
+		Metadata:     log.Metadata(),
+		RequestID:    log.RequestID(),
+		Timestamp:    log.Timestamp(),
+	}
+
+	if log.TenantID() != nil {
+		resp.TenantID = log.TenantID().String()
+	}
+	if log.ActorID() != nil {
+		resp.ActorID = log.ActorID().String()
+	}
+
+	// Generate message if empty
+	if resp.Message == "" {
+		resp.Message = log.GenerateMessage()
+	}
+
+	return resp
+}
+
+// =============================================================================
+// Error Handlers
+// =============================================================================
+
+func (h *AuditHandler) handleServiceError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, shared.ErrNotFound):
+		apierror.NotFound("Audit log").WriteJSON(w)
+	case errors.Is(err, shared.ErrValidation):
+		apierror.BadRequest(err.Error()).WriteJSON(w)
+	default:
+		h.logger.Error("audit service error", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+	}
+}
+
+// =============================================================================
+// Handlers
+// =============================================================================
+
+// auditFilterParams are the query parameters that filter the audit log list
+// and its export.
+var auditFilterParams = []string{
+	"actor_id", "action", "resource_type", "resource_id", "result", "severity",
+	"request_id", "since", "until", "search", "exclude_system",
+}
+
+// parseAuditFilters reads the filter parameters shared by the list and the
+// export into input. An unparsable since or until is ignored.
+func parseAuditFilters(query url.Values, input *auditsvc.ListAuditLogsInput) {
+	if actorID := query.Get("actor_id"); actorID != "" {
+		input.ActorID = actorID
+	}
+	if actions := query["action"]; len(actions) > 0 {
+		input.Actions = actions
+	}
+	if resourceTypes := query["resource_type"]; len(resourceTypes) > 0 {
+		input.ResourceTypes = resourceTypes
+	}
+	if resourceID := query.Get("resource_id"); resourceID != "" {
+		input.ResourceID = resourceID
+	}
+	if results := query["result"]; len(results) > 0 {
+		input.Results = results
+	}
+	if severities := query["severity"]; len(severities) > 0 {
+		input.Severities = severities
+	}
+	if requestID := query.Get("request_id"); requestID != "" {
+		input.RequestID = requestID
+	}
+	if since := query.Get("since"); since != "" {
+		if t, err := time.Parse(time.RFC3339, since); err == nil {
+			input.Since = &t
+		}
+	}
+	if until := query.Get("until"); until != "" {
+		if t, err := time.Parse(time.RFC3339, until); err == nil {
+			input.Until = &t
+		}
+	}
+	if search := query.Get("search"); search != "" {
+		input.SearchTerm = search
+	}
+	if query.Get("exclude_system") == queryParamTrue {
+		input.ExcludeSystem = true
+	}
+}
+
+// List handles GET /api/v1/audit-logs
+// @Summary      List audit logs
+// @Description  Returns paginated audit logs for the current tenant
+// @Tags         Audit Logs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page          query     int     false  "Page number (1-based; 0 or missing means 1)"
+// @Param        per_page      query     int     false  "Items per page"  default(20)
+// @Param        actor_id      query     string  false  "Filter by actor ID"
+// @Param        action        query     string  false  "Filter by action"
+// @Param        resource_type query     string  false  "Filter by resource type"
+// @Param        resource_id   query     string  false  "Filter by resource ID"
+// @Param        result        query     string  false  "Filter by result"
+// @Param        severity      query     string  false  "Filter by severity"
+// @Param        since         query     string  false  "Filter since (RFC3339)"
+// @Param        until         query     string  false  "Filter until (RFC3339)"
+// @Param        search        query     string  false  "Search term"
+// @Success      200  {object}  AuditLogListResponse
+// @Failure      400  {object}  map[string]string
+// @Failure      401  {object}  map[string]string
+// @Router       /audit-logs [get]
+func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
+	// Get tenant ID from context (required for tenant-scoped logs)
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	// Parse query parameters
+	query := r.URL.Query()
+
+	input := auditsvc.ListAuditLogsInput{
+		TenantID: tenantID,
+	}
+
+	// Parse pagination
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	input.Page, input.PerPage = paging.Page, paging.PerPage
+
+	// Parse filters
+	parseAuditFilters(query, &input)
+	if sortBy := query.Get("sort_by"); sortBy != "" {
+		input.SortBy = sortBy
+	}
+	if sortOrder := query.Get("sort_order"); sortOrder != "" {
+		input.SortOrder = sortOrder
+	}
+
+	// Execute query
+	result, err := h.service.ListAuditLogs(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Convert to response
+	data := make([]AuditLogResponse, len(result.Data))
+	for i, log := range result.Data {
+		data[i] = toAuditLogResponse(log)
+	}
+
+	response := newAuditLogListResponse(data, result.Total, input.Page, input.PerPage)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// Get handles GET /api/v1/audit-logs/{id}
+// @Summary      Get audit log
+// @Description  Returns a single audit log by ID
+// @Tags         Audit Logs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Audit Log ID"
+// @Success      200  {object}  AuditLogResponse
+// @Failure      400  {object}  map[string]string
+// @Failure      403  {object}  map[string]string
+// @Failure      404  {object}  map[string]string
+// @Router       /audit-logs/{id} [get]
+func (h *AuditHandler) Get(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
+	auditLogID := r.PathValue("id")
+	if auditLogID == "" {
+		apierror.BadRequest("Audit log ID is required").WriteJSON(w)
+		return
+	}
+
+	// This is the tenant-facing getter: it never exposes a system row
+	// (tenant_id IS NULL) or another tenant's row. The lookup is scoped to
+	// the caller's tenant, so either one is a 404. Fail closed on a missing
+	// tenant.
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+	tid, err := shared.IDFromString(tenantID)
+	if err != nil {
+		apierror.Unauthorized("Invalid tenant token").WriteJSON(w)
+		return
+	}
+
+	log, err := h.service.GetAuditLog(r.Context(), tid, auditLogID)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toAuditLogResponse(log))
+}
+
+// GetResourceHistory handles GET /api/v1/audit-logs/resource/{type}/{id}
+// @Summary      Get resource history
+// @Description  Returns audit history for a specific resource
+// @Tags         Audit Logs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        type      path      string  true   "Resource type"
+// @Param        id        path      string  true   "Resource ID"
+// @Param        page      query     int     false  "Page number (1-based; 0 or missing means 1)"
+// @Param        per_page  query     int     false  "Items per page"  default(20)
+// @Success      200  {object}  AuditLogListResponse
+// @Failure      400  {object}  map[string]string
+// @Router       /audit-logs/resource/{type}/{id} [get]
+func (h *AuditHandler) GetResourceHistory(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
+	resourceType := r.PathValue("type")
+	resourceID := r.PathValue("id")
+
+	if resourceType == "" || resourceID == "" {
+		apierror.BadRequest("Resource type and ID are required").WriteJSON(w)
+		return
+	}
+
+	// F-2: tenant scope is mandatory for resource audit history.
+	tenantID, ok := middleware.GetTenantIDFromContext(r.Context())
+	if !ok {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+
+	// Parse pagination
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
+
+	result, err := h.service.GetResourceHistory(r.Context(), tenantID, resourceType, resourceID, page, perPage)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Convert to response
+	data := make([]AuditLogResponse, len(result.Data))
+	for i, log := range result.Data {
+		data[i] = toAuditLogResponse(log)
+	}
+
+	response := newAuditLogListResponse(data, result.Total, page, perPage)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// GetUserActivity handles GET /api/v1/audit-logs/user/{id}
+// @Summary      Get user activity
+// @Description  Returns audit logs for a specific user
+// @Tags         Audit Logs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path      string  true   "User ID"
+// @Param        page      query     int     false  "Page number (1-based; 0 or missing means 1)"
+// @Param        per_page  query     int     false  "Items per page"  default(20)
+// @Success      200  {object}  AuditLogListResponse
+// @Failure      400  {object}  map[string]string
+// @Router       /audit-logs/user/{id} [get]
+func (h *AuditHandler) GetUserActivity(w http.ResponseWriter, r *http.Request) {
+	userID := r.PathValue("id")
+	if userID == "" {
+		apierror.BadRequest("User ID is required").WriteJSON(w)
+		return
+	}
+
+	// Everyone may read their own activity; another user's activity names
+	// objects the caller may not see.
+	if userID != middleware.GetUserID(r.Context()) && !h.requireFullData(w, r) {
+		return
+	}
+
+	// Tenant scope is mandatory: without it ListByActor would return the
+	// actor's activity across every tenant (cross-tenant audit-log read).
+	tenantID, ok := middleware.GetTenantIDFromContext(r.Context())
+	if !ok {
+		apierror.Unauthorized("tenant context required").WriteJSON(w)
+		return
+	}
+
+	// Parse pagination
+	paging, ok := listPage(w, r, 20)
+	if !ok {
+		return
+	}
+	page, perPage := paging.Page, paging.PerPage
+
+	result, err := h.service.GetUserActivity(r.Context(), tenantID, userID, page, perPage)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Convert to response
+	data := make([]AuditLogResponse, len(result.Data))
+	for i, log := range result.Data {
+		data[i] = toAuditLogResponse(log)
+	}
+
+	response := newAuditLogListResponse(data, result.Total, page, perPage)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// newAuditLogListResponse builds a list response that reports the page the
+// query actually used. Pages are 1-based on the wire: pagination.New clamps a
+// missing or zero page to 1 and per_page to [1,100], and the response echoes
+// those values, not the raw query, so a client that trusts "page" cannot
+// drift off by one.
+func newAuditLogListResponse(data []AuditLogResponse, total int64, page, perPage int) AuditLogListResponse {
+	p := pagination.New(page, perPage)
+	totalPages := int(total) / p.PerPage
+	if int(total)%p.PerPage > 0 {
+		totalPages++
+	}
+	return AuditLogListResponse{
+		Data:       data,
+		Total:      total,
+		Page:       p.Page,
+		PerPage:    p.PerPage,
+		TotalPages: totalPages,
+	}
+}
+
+// GetStats handles GET /api/v1/audit-logs/stats
+// Returns audit log statistics.
+type AuditStatsResponse struct {
+	TotalLogs     int64              `json:"total_logs"`
+	LogsByAction  map[string]int64   `json:"logs_by_action"`
+	LogsByResult  map[string]int64   `json:"logs_by_result"`
+	RecentActions []AuditLogResponse `json:"recent_actions"`
+}
+
+// GetStats handles GET /api/v1/audit-logs/stats
+// @Summary      Get audit stats
+// @Description  Returns audit log statistics for the last 7 days
+// @Tags         Audit Logs
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  AuditStatsResponse
+// @Failure      400  {object}  map[string]string
+// @Router       /audit-logs/stats [get]
+func (h *AuditHandler) GetStats(w http.ResponseWriter, r *http.Request) {
+	if !h.requireFullData(w, r) {
+		return
+	}
+	tenantID := middleware.GetTenantID(r.Context())
+	if tenantID == "" {
+		apierror.BadRequest("Tenant context required").WriteJSON(w)
+		return
+	}
+
+	// Get recent logs for stats
+	input := auditsvc.ListAuditLogsInput{
+		TenantID: tenantID,
+		Page:     0,
+		PerPage:  100,
+	}
+
+	// Last 7 days
+	since := time.Now().AddDate(0, 0, -7)
+	input.Since = &since
+
+	result, err := h.service.ListAuditLogs(r.Context(), input)
+	if err != nil {
+		h.handleServiceError(w, err)
+		return
+	}
+
+	// Calculate stats
+	logsByAction := make(map[string]int64)
+	logsByResult := make(map[string]int64)
+
+	for _, log := range result.Data {
+		logsByAction[log.Action().String()]++
+		logsByResult[log.Result().String()]++
+	}
+
+	// Get recent 5 actions for display
+	recentLimit := 5
+	if len(result.Data) < recentLimit {
+		recentLimit = len(result.Data)
+	}
+	recentActions := make([]AuditLogResponse, recentLimit)
+	for i := 0; i < recentLimit; i++ {
+		recentActions[i] = toAuditLogResponse(result.Data[i])
+	}
+
+	response := AuditStatsResponse{
+		TotalLogs:     result.Total,
+		LogsByAction:  logsByAction,
+		LogsByResult:  logsByResult,
+		RecentActions: recentActions,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(response)
+}

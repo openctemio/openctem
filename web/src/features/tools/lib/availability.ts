@@ -1,5 +1,5 @@
 /**
- * Tool availability helpers (api/docs/architecture/tool-availability.md).
+ * Tool availability helpers (server/docs/architecture/tool-availability.md).
  *
  * One reading of GET /api/v1/tools?include=availability for every place that
  * shows or picks a tool: the Tools page, the scan and workflow tool pickers,

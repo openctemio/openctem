@@ -1,0 +1,780 @@
+package integration
+
+import "github.com/openctemio/openctem/server/pkg/notifymsg"
+
+// ============================================================================
+// SEVERITY TYPES
+// ============================================================================
+
+// Severity represents notification severity level.
+// Stored as JSONB array in database for flexibility.
+type Severity string
+
+// Known severity levels.
+// Add new severity here - no database migration required (JSONB array).
+const (
+	SeverityCritical Severity = "critical"
+	SeverityHigh     Severity = "high"
+	SeverityMedium   Severity = "medium"
+	SeverityLow      Severity = "low"
+	SeverityInfo     Severity = "info"
+	SeverityNone     Severity = "none"
+)
+
+// DefaultEnabledSeverities returns the default enabled severities for new integrations.
+func DefaultEnabledSeverities() []Severity {
+	return []Severity{
+		SeverityCritical,
+		SeverityHigh,
+	}
+}
+
+// AllKnownSeverities returns all known severity levels (for UI display).
+func AllKnownSeverities() []Severity {
+	return []Severity{
+		SeverityCritical,
+		SeverityHigh,
+		SeverityMedium,
+		SeverityLow,
+		SeverityInfo,
+		SeverityNone,
+	}
+}
+
+// ============================================================================
+// EVENT TYPES
+// ============================================================================
+
+// EventType represents the type of event that triggers notifications.
+type EventType string
+
+// EventCategory groups event types for UI organization.
+type EventCategory string
+
+// Event categories for UI grouping.
+const (
+	EventCategorySystem   EventCategory = "system"
+	EventCategoryAsset    EventCategory = "asset"
+	EventCategoryScan     EventCategory = "scan"
+	EventCategoryFinding  EventCategory = "finding"
+	EventCategoryExposure EventCategory = "exposure"
+	EventCategoryApproval EventCategory = "approval"
+	EventCategoryWorkflow EventCategory = "workflow"
+	EventCategorySensor   EventCategory = "sensor"
+	// EventCategoryRemediation groups remediation task and suggestion events.
+	EventCategoryRemediation EventCategory = "remediation"
+)
+
+// EventCategoryInfo pairs an event category with its display label.
+type EventCategoryInfo struct {
+	Category EventCategory
+	Label    string
+}
+
+// AllEventCategories returns every event category with its display label, in
+// the order categories should be presented.
+//
+// The labels live here rather than in the UI for the same reason AllEventTypes
+// does: a category added to the constant block above but missing from a
+// client-side label map renders as "undefined" (or crashes a lookup) with
+// nothing failing at build time. Both approval and workflow categories were
+// added without the UI's map learning about them.
+func AllEventCategories() []EventCategoryInfo {
+	return []EventCategoryInfo{
+		{Category: EventCategoryAsset, Label: "Asset Events"},
+		{Category: EventCategoryFinding, Label: "Finding Events"},
+		{Category: EventCategoryApproval, Label: "Approval Events"},
+		{Category: EventCategoryWorkflow, Label: "Workflow Events"},
+		{Category: EventCategoryExposure, Label: "Exposure Events"},
+		{Category: EventCategoryScan, Label: "Scan Events"},
+		{Category: EventCategorySensor, Label: "Sensors and CI pipelines"},
+	}
+}
+
+// Known event types for notification routing.
+// Add new event types here - no database migration required (JSONB array).
+// A type goes into AllEventTypes only together with its producer:
+// tests/unit/event_type_producer_test.go fails on a type nothing emits.
+const (
+	// Asset events
+	EventTypeNewAsset EventType = "new_asset"
+
+	// Finding events
+	EventTypeNewFinding      EventType = "new_finding"
+	EventTypeFindingFixed    EventType = "finding_fixed"
+	EventTypeFindingReopened EventType = "finding_reopened"
+	// EventTypeFindingPriorityEscalated fires when an already-classified
+	// finding is re-classified UP (e.g. P3 -> P0 because its CVE was newly
+	// listed in KEV, or a compensating control was removed). Without it a
+	// priority escalation is a silent dashboard update.
+	EventTypeFindingPriorityEscalated EventType = "finding_priority_escalated"
+	// EventTypeScoringChangeApplied fires once per scoring change (a new
+	// scoring model, or the organization's risk scoring settings, priority
+	// rules or SLA policy) when its recompute has finished: one summary
+	// instead of one priority-escalated event per finding.
+	EventTypeScoringChangeApplied EventType = "scoring_change_applied"
+
+	// EventTypeFindingAssigned fires when an assignment rule routes a finding to
+	// a group AND that rule has its "notify group" option switched on. The
+	// operator has already opted in at the rule; an unregistered event type made
+	// that checkbox inert.
+	EventTypeFindingAssigned EventType = "finding_assigned"
+
+	// EventTypeSLABreach fires when the SLA escalation controller marks a
+	// finding as having missed its remediation deadline.
+	EventTypeSLABreach EventType = "sla_breach"
+
+	// EventTypeSLAWarning fires when the SLA escalation controller flags a
+	// finding as approaching its remediation deadline (the pre-breach warning).
+	// Emitted at severity "medium", which is below the default severity filter
+	// (critical, high), so it is registered as a selectable/opt-in type but NOT
+	// added to DefaultEnabledEventTypes — an operator enables it and widens the
+	// severity filter to receive it.
+	EventTypeSLAWarning EventType = "sla_warning"
+
+	// Approval events (risk-acceptance / status-change approvals on findings)
+	EventTypeApprovalRequested EventType = "approval_requested"
+	EventTypeApprovalApproved  EventType = "approval_approved"
+	EventTypeApprovalRejected  EventType = "approval_rejected"
+
+	// EventTypeWorkflowNotification fires from a workflow notification action
+	// node that has no provider-specific integration bound to it, i.e. the
+	// operator authored a workflow step whose only purpose is to notify.
+	EventTypeWorkflowNotification EventType = "workflow_notification"
+
+	// Exposure events
+	EventTypeNewExposure EventType = "new_exposure"
+
+	// EventTypeAttackSurfaceDigest is the weekly "what changed" digest of the
+	// external attack surface (docs/rfcs/RFC-080-attack-surface-changes-and-digest.md).
+	EventTypeAttackSurfaceDigest EventType = "attack_surface_digest"
+
+	// EventTypeCoverageGap fires when assets go without a capability their
+	// type needs: a coverage gap, a capability that stopped producing its
+	// output, or repeated failures (docs/rfcs/RFC-093-asset-coverage.md).
+	EventTypeCoverageGap EventType = "coverage_gap"
+
+	// EventTypeRemediationSuggestionsDigest is the daily digest of new
+	// remediation suggestions to review (docs/rfcs/RFC-098-remediation-tasks.md):
+	// one message per tenant and day, never one per suggestion.
+	EventTypeRemediationSuggestionsDigest EventType = "remediation_suggestions_digest"
+
+	// EventTypeEmergingThreat is an urgent emerging-threat alert: one message
+	// per alert and level, at most a few per hour per organization
+	// (docs/rfcs/RFC-117-emerging-threat-alerts.md). Matched findings and
+	// KEV additions of an alerted CVE are announced by it, not one by one.
+	EventTypeEmergingThreat EventType = "emerging_threat"
+	// EventTypeEmergingThreatDigest is the daily emerging-threat digest at
+	// the organization's local digest hour, sent only when something changed.
+	EventTypeEmergingThreatDigest EventType = "emerging_threat_digest"
+
+	// EventTypeSensorOffline fires when the sensor-health controller sees a
+	// sensor stop heartbeating (online -> offline). The id keeps the dotted
+	// form of the event_types catalog row it has always had, which is also
+	// what existing subscriptions store (migration 000230 rewrote
+	// agent.offline to it). Emitted once per offline transition, not per tick.
+	EventTypeSensorOffline EventType = "sensor.offline"
+
+	// EventTypeScanScheduleMissed fires once per scheduled occurrence the
+	// scheduler skipped because it was missed by more than one interval
+	// (research/468 D17); the scan keeps the note until a later run starts.
+	EventTypeScanScheduleMissed EventType = "scan.schedule_missed"
+
+	// CI pipeline signals (RFC-051 §10.6), emitted by the CI alert job once
+	// per scan workflow or repository while the condition holds, never per run.
+	EventTypeCIScheduleMissed     EventType = "ci.schedule_missed"
+	EventTypeCICoverageRegression EventType = "ci.coverage_regression"
+	EventTypeCIGateFailing        EventType = "ci.gate_failing"
+	EventTypeCIRunnerOutdated     EventType = "ci.runner_outdated"
+	// CI security signals: a break-glass created or used (every time), and
+	// a burst of refused CI token exchanges (once while it lasts).
+	EventTypeCIBreakGlass    EventType = "ci.break_glass"
+	EventTypeCITokenRefusals EventType = "ci.token_refusals"
+	// EventTypeCIUngatedMerge: a pull request merged into the default branch
+	// without a passing gate verdict (RFC-077).
+	EventTypeCIUngatedMerge EventType = "ci.ungated_merge"
+
+	// Retired types. Nothing ever emitted them, so they are not in
+	// AllEventTypes and a channel cannot subscribe to them (settings plan
+	// P0-08). They stay as constants only because the legacy aliases below
+	// map onto them, and subscriptions stored before the change may still
+	// list them; such entries simply never match.
+	EventTypeSecurityAlert EventType = "security_alert"
+	EventTypeScanCompleted EventType = "scan_completed"
+
+	// Legacy event types (for backward compatibility)
+	EventTypeFindings  EventType = "findings"  // Maps to new_finding
+	EventTypeExposures EventType = "exposures" // Maps to new_exposure
+	EventTypeScans     EventType = "scans"     // Maps to scan_completed
+	EventTypeAlerts    EventType = "alerts"    // Maps to security_alert
+)
+
+// EventTypeInfo contains metadata about an event type.
+type EventTypeInfo struct {
+	Type           EventType
+	Category       EventCategory
+	Label          string
+	Description    string
+	RequiredModule string // Module ID required for this event type (empty = always available)
+}
+
+// Module IDs that map to event types.
+// These must match the module IDs in the modules table.
+const (
+	ModuleAssets   = "assets"
+	ModuleScans    = "scans"
+	ModuleFindings = "findings"
+	ModuleSensors  = "sensors"
+	// ModuleAttackSurface is the EASM module.
+	ModuleAttackSurface = "attack_surface"
+	// ModuleRemediation is the remediation tasks and campaigns module.
+	ModuleRemediation = "remediation"
+	// ModuleThreatIntel is the threat intelligence module.
+	ModuleThreatIntel = "threat_intel"
+)
+
+// AllEventTypes returns all event types with metadata for UI.
+// RequiredModule maps to modules.id in the database.
+// Empty RequiredModule means the event type is always available (system events).
+func AllEventTypes() []EventTypeInfo {
+	return []EventTypeInfo{
+
+		// Asset events - require 'assets' module
+		{Type: EventTypeNewAsset, Category: EventCategoryAsset, Label: "New Asset", Description: "New asset discovered or added", RequiredModule: ModuleAssets},
+
+		// Finding events - require 'findings' module
+		{Type: EventTypeNewFinding, Category: EventCategoryFinding, Label: "New Finding", Description: "New security finding detected", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingFixed, Category: EventCategoryFinding, Label: "Fixed Finding", Description: "Finding has been remediated", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingReopened, Category: EventCategoryFinding, Label: "Reopened Finding", Description: "Finding reopened after fix", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingPriorityEscalated, Category: EventCategoryFinding, Label: "Priority Escalated", Description: "Finding re-classified to a higher priority (e.g. P3 to P0)", RequiredModule: ModuleFindings},
+		{Type: EventTypeScoringChangeApplied, Category: EventCategoryFinding, Label: "Scoring Changed", Description: "One summary when a scoring model or the risk scoring settings, priority rules or SLA policy changed open findings", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingAssigned, Category: EventCategoryFinding, Label: "Finding Assigned", Description: "Finding routed to a group by an assignment rule with group notification enabled", RequiredModule: ModuleFindings},
+		{Type: EventTypeSLABreach, Category: EventCategoryFinding, Label: "SLA Breached", Description: "Finding missed its SLA remediation deadline", RequiredModule: ModuleFindings},
+		{Type: EventTypeSLAWarning, Category: EventCategoryFinding, Label: "SLA Approaching", Description: "Finding is approaching its SLA remediation deadline (pre-breach warning)", RequiredModule: ModuleFindings},
+
+		// Approval events - require 'findings' module (approvals gate finding status changes)
+		{Type: EventTypeApprovalRequested, Category: EventCategoryApproval, Label: "Approval Requested", Description: "Someone requested approval for a finding status change", RequiredModule: ModuleFindings},
+		{Type: EventTypeApprovalApproved, Category: EventCategoryApproval, Label: "Approval Approved", Description: "A requested finding status change was approved", RequiredModule: ModuleFindings},
+		{Type: EventTypeApprovalRejected, Category: EventCategoryApproval, Label: "Approval Rejected", Description: "A requested finding status change was rejected", RequiredModule: ModuleFindings},
+
+		// Workflow events - require 'findings' module ('workflows' is a child of
+		// 'findings' per migration 000162). Deliberately NOT gated on the
+		// 'workflows' module: internal/app/automation never checks module
+		// enablement before enqueuing, so gating the notification on a module
+		// the emitter ignores would recreate the same silent drop this list
+		// exists to prevent.
+		{Type: EventTypeWorkflowNotification, Category: EventCategoryWorkflow, Label: "Workflow Notification", Description: "A workflow notification action fired without a provider-specific integration bound", RequiredModule: ModuleFindings},
+
+		// Exposure events - require 'findings' module (part of findings feature)
+		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
+		{Type: EventTypeCoverageGap, Category: EventCategoryAsset, Label: "Coverage Gap", Description: "Assets went without a capability their type needs (never or not recently scanned), a capability stopped producing its output, or it failed repeatedly", RequiredModule: ModuleAttackSurface},
+		{Type: EventTypeAttackSurfaceDigest, Category: EventCategoryExposure, Label: "Attack Surface Weekly Digest", Description: "Weekly summary of what changed on the external attack surface: new and removed hosts, ports, certificates, DNS, technologies and exposures", RequiredModule: ModuleAttackSurface},
+
+		// Remediation events - require the 'remediation' module
+		{Type: EventTypeRemediationSuggestionsDigest, Category: EventCategoryRemediation, Label: "Remediation Suggestions Digest", Description: "Daily summary of new remediation suggestions to review (findings one fix closes); nothing changes until someone accepts one", RequiredModule: ModuleRemediation},
+
+		// Emerging-threat alerts - require the 'threat_intel' module
+		{Type: EventTypeEmergingThreat, Category: EventCategoryFinding, Label: "Emerging Threat", Description: "A newly urgent vulnerability (new CVE, KEV addition, EPSS jump) affects your assets: one message per alert, at most five an hour", RequiredModule: ModuleThreatIntel},
+		{Type: EventTypeEmergingThreatDigest, Category: EventCategoryFinding, Label: "Emerging Threats Daily Digest", Description: "Daily summary of new and escalated emerging-threat alerts, sent at the organization's digest hour when something changed", RequiredModule: ModuleThreatIntel},
+
+		// Sensor events - require 'sensors' module
+		{Type: EventTypeSensorOffline, Category: EventCategorySensor, Label: "Sensor Offline", Description: "A sensor stopped sending heartbeats and was marked offline", RequiredModule: ModuleSensors},
+
+		// Scheduled scans - require 'scans' module
+		{Type: EventTypeScanScheduleMissed, Category: EventCategoryScan, Label: "Scheduled Scan Missed", Description: "A scheduled scan run was skipped because its time was missed by more than one interval (the platform was unavailable)", RequiredModule: ModuleScans},
+
+		// CI pipeline signals - require 'scans' module (CI runs live there)
+		{Type: EventTypeCIScheduleMissed, Category: EventCategorySensor, Label: "CI Scheduled Scan Missed", Description: "A CI pipeline with a schedule missed two expected runs", RequiredModule: ModuleScans},
+		{Type: EventTypeCICoverageRegression, Category: EventCategorySensor, Label: "CI Coverage Lost", Description: "A repository that had a fresh CI pipeline has none any more", RequiredModule: ModuleScans},
+		{Type: EventTypeCIGateFailing, Category: EventCategorySensor, Label: "CI Default Branch Failing", Description: "The default branch of a repository fails the CI gate (opt-in)", RequiredModule: ModuleScans},
+		{Type: EventTypeCIRunnerOutdated, Category: EventCategorySensor, Label: "CI Runner Outdated", Description: "A CI pipeline runs a sensor older than the minimum supported version", RequiredModule: ModuleScans},
+		{Type: EventTypeCIBreakGlass, Category: EventCategorySensor, Label: "CI Break-glass", Description: "A break-glass was created, or let a failing CI run pass", RequiredModule: ModuleScans},
+		{Type: EventTypeCITokenRefusals, Category: EventCategorySensor, Label: "CI Token Refusals", Description: "Many CI token exchanges were refused in a short time", RequiredModule: ModuleScans},
+		{Type: EventTypeCIUngatedMerge, Category: EventCategorySensor, Label: "CI Ungated Merge", Description: "A pull request was merged into the default branch without a passing CI gate verdict", RequiredModule: ModuleScans},
+	}
+}
+
+// DefaultEnabledEventTypes returns the default enabled event types for new integrations.
+//
+// enabled_event_types is an opt-in whitelist, so anything absent here is not
+// delivered to an integration created with the defaults. The bar for inclusion
+// is therefore not "is this interesting" but "would a reasonable operator be
+// surprised to learn this reached nobody".
+func DefaultEnabledEventTypes() []EventType {
+	return []EventType{
+		EventTypeNewFinding,
+		EventTypeNewExposure,
+
+		// One message a week, sent only when the organization keeps the
+		// digest on (the default) and something changed.
+		EventTypeAttackSurfaceDigest,
+
+		// A broken scanner or an asset class nobody scans must not be
+		// silent; at most one message per capability and kind a day.
+		EventTypeCoverageGap,
+
+		// A missed remediation deadline that notifies nobody defeats the point
+		// of having an SLA. Enqueued at severity "high", so it also clears the
+		// default severity filter (critical, high).
+		EventTypeSLABreach,
+
+		// Emitted only when an assignment rule has its "notify group" option
+		// switched on — the operator opted in at the rule. Leaving it off by
+		// default would keep that switch inert.
+		EventTypeFindingAssigned,
+
+		// Emitted only by a workflow notification action the operator authored,
+		// whose sole purpose is to notify. Same argument as above.
+		EventTypeWorkflowNotification,
+
+		// An approval request is addressed to a human; if it reaches nobody the
+		// finding stays blocked indefinitely. The approved/rejected outcomes are
+		// deliberately NOT default-on: they are FYI traffic for the requester,
+		// already visible in-app, and broadcasting every one of them to a shared
+		// channel is noise.
+		EventTypeApprovalRequested,
+
+		// A finding the operator already triaged as low-urgency silently
+		// becoming P0 is the escalation they cannot afford to miss, so it is
+		// on by default. Migration 000201 backfills existing rows; the
+		// per-integration severity filter still applies (P0 -> critical,
+		// P1 -> high, ...), so this is not a firehose.
+		EventTypeFindingPriorityEscalated,
+		// A scoring change sends one summary instead of the escalations it
+		// caused (docs/architecture/scoring-versions.md), so it is on
+		// wherever escalations are.
+		EventTypeScoringChangeApplied,
+		// An urgent vulnerability on the organization's assets is the
+		// message this channel exists for; the alert replaces the matched
+		// findings' silence and the per-finding KEV escalations. At most
+		// five an hour, digest once a day.
+		EventTypeEmergingThreat,
+		EventTypeEmergingThreatDigest,
+
+		// A scheduled CI scan that silently stopped, a repository that lost
+		// its scanning, or a runner below the supported version are the
+		// failures nobody notices otherwise. A failing default branch is
+		// opt-in: the scan workflow itself already reports it.
+		EventTypeCIScheduleMissed,
+		EventTypeCICoverageRegression,
+		EventTypeCIRunnerOutdated,
+		// A scheduled scan that did not run is the failure nobody notices.
+		EventTypeScanScheduleMissed,
+		// Security signals about the CI gate itself.
+		EventTypeCIBreakGlass,
+		EventTypeCITokenRefusals,
+		EventTypeCIUngatedMerge,
+	}
+}
+
+// SeverityFilterApplies reports whether the per-integration severity filter is
+// meaningful for this event type.
+//
+// EnqueueParams.Severity carries two different things depending on the event:
+//
+//   - For finding-shaped events (new_finding, sla_breach, ...) it IS the
+//     finding's severity. An operator who leaves the filter at its default is
+//     saying "only tell me about critical and high findings", and honoring
+//     that is the whole point of the filter.
+//
+//   - For approval lifecycle events it is a hardcoded constant chosen by the
+//     enqueue site ("medium" for requested/rejected, "low" for approved). It
+//     describes nothing about a finding, and no operator ever asked to
+//     suppress it.
+//
+// Running the second kind through a filter built for the first kind silently
+// defeats it. That is not hypothetical: DefaultEnabledEventTypes deliberately
+// includes EventTypeApprovalRequested, with the comment "if it reaches nobody
+// the finding stays blocked indefinitely" — and then the severity gate dropped
+// it anyway, because "medium" is not in the default critical+high set. The
+// event-type gate was opened on purpose and the severity gate closed it again.
+//
+// Events exempted here remain fully controllable through the event-type filter,
+// which is the switch that actually means "I do not want these".
+func SeverityFilterApplies(eventType EventType) bool {
+	switch MapLegacyEventType(eventType) {
+	case EventTypeApprovalRequested, EventTypeApprovalApproved, EventTypeApprovalRejected:
+		return false
+	// new_asset announces attack-surface growth (a newly discovered
+	// internet-facing asset). Its severity is a fixed label set by the
+	// discovery notifier, not a finding severity, so the default
+	// critical+high filter would silently drop every one of them.
+	case EventTypeNewAsset:
+		return false
+	// sensor.offline is about the platform's own scanners, not a finding: its
+	// severity is a constant chosen by the sensor-health controller. The
+	// operator opts in through the event-type list.
+	case EventTypeSensorOffline:
+		return false
+	// The CI signals carry a constant severity chosen by the CI alert job,
+	// not a finding's severity.
+	case EventTypeScanScheduleMissed, EventTypeCIScheduleMissed, EventTypeCICoverageRegression, EventTypeCIGateFailing, EventTypeCIRunnerOutdated,
+		EventTypeCIBreakGlass, EventTypeCITokenRefusals, EventTypeCIUngatedMerge:
+		return false
+	// sla_warning is stamped "medium" by the SLA warning adapter as the urgency
+	// of an approaching deadline, whatever the finding's severity. It is opt-in
+	// (not default-on), and under the default critical+high filter every one
+	// was dropped, so opting in delivered nothing.
+	case EventTypeSLAWarning:
+		return false
+	// The weekly digest is a summary with a fixed "info" severity.
+	case EventTypeAttackSurfaceDigest:
+		return false
+	// A coverage gap carries a fixed severity chosen by the coverage loop.
+	case EventTypeCoverageGap:
+		return false
+	// The suggestions digest is a summary with a fixed "info" severity.
+	case EventTypeRemediationSuggestionsDigest:
+		return false
+	// Emerging-threat messages carry a constant severity (critical for an
+	// immediate alert, info for the digest): the alert's level decided to
+	// send them, and the event-type list is the switch.
+	case EventTypeEmergingThreat, EventTypeEmergingThreatDigest:
+		return false
+	default:
+		return true
+	}
+}
+
+// AllKnownEventTypes returns all known event types (for backward compatibility API).
+func AllKnownEventTypes() []EventType {
+	types := make([]EventType, 0, len(AllEventTypes()))
+	for _, info := range AllEventTypes() {
+		types = append(types, info.Type)
+	}
+	return types
+}
+
+// MapLegacyEventType maps old event types to new ones for backward compatibility.
+func MapLegacyEventType(eventType EventType) EventType {
+	switch eventType {
+	case EventTypeFindings:
+		return EventTypeNewFinding
+	case EventTypeExposures:
+		return EventTypeNewExposure
+	case EventTypeScans:
+		return EventTypeScanCompleted
+	case EventTypeAlerts:
+		return EventTypeSecurityAlert
+	default:
+		return eventType
+	}
+}
+
+// GetEventTypesByModules returns event types filtered by enabled modules.
+// System events (no required module) are always included.
+func GetEventTypesByModules(enabledModuleIDs []string) []EventTypeInfo {
+	moduleSet := make(map[string]bool, len(enabledModuleIDs))
+	for _, m := range enabledModuleIDs {
+		moduleSet[m] = true
+	}
+
+	allTypes := AllEventTypes()
+	result := make([]EventTypeInfo, 0, len(allTypes))
+	for _, et := range allTypes {
+		// System events (no module required) are always available
+		if et.RequiredModule == "" {
+			result = append(result, et)
+			continue
+		}
+		// Check if required module is enabled
+		if moduleSet[et.RequiredModule] {
+			result = append(result, et)
+		}
+	}
+	return result
+}
+
+// GetDefaultEventTypesByModules returns default event types filtered by enabled modules.
+func GetDefaultEventTypesByModules(enabledModuleIDs []string) []EventType {
+	availableTypes := GetEventTypesByModules(enabledModuleIDs)
+	availableSet := make(map[EventType]bool, len(availableTypes))
+	for _, et := range availableTypes {
+		availableSet[et.Type] = true
+	}
+
+	defaults := DefaultEnabledEventTypes()
+	result := make([]EventType, 0, len(defaults))
+	for _, et := range defaults {
+		if availableSet[et] {
+			result = append(result, et)
+		}
+	}
+	return result
+}
+
+// ValidateEventTypes checks if all event types are available for the given modules.
+// Returns a list of invalid event types that require modules not in enabledModuleIDs.
+func ValidateEventTypes(eventTypes []EventType, enabledModuleIDs []string) (valid bool, invalidTypes []EventType) {
+	availableTypes := GetEventTypesByModules(enabledModuleIDs)
+	availableSet := make(map[EventType]bool, len(availableTypes))
+	for _, et := range availableTypes {
+		availableSet[et.Type] = true
+	}
+
+	invalidTypes = make([]EventType, 0)
+	for _, et := range eventTypes {
+		// Map legacy types first
+		mapped := MapLegacyEventType(et)
+		if !availableSet[mapped] {
+			invalidTypes = append(invalidTypes, et)
+		}
+	}
+	return len(invalidTypes) == 0, invalidTypes
+}
+
+// GetRequiredModuleForEventType returns the module ID required for an event type.
+// Returns empty string if the event type is always available (system events).
+func GetRequiredModuleForEventType(eventType EventType) string {
+	mapped := MapLegacyEventType(eventType)
+	for _, et := range AllEventTypes() {
+		if et.Type == mapped {
+			return et.RequiredModule
+		}
+	}
+	return ""
+}
+
+// NotificationExtension represents notification-specific extension data for an integration.
+// This follows the same pattern as SCM extension.
+// Note: channel_id (for Telegram) and channel_name (for Slack/Teams) are now stored in
+// integrations.metadata instead of this extension table.
+type NotificationExtension struct {
+	integrationID ID
+
+	// Enabled severities (dynamic JSONB array - add new severities without migration)
+	enabledSeverities []Severity
+
+	// Enabled event types (dynamic JSONB array - add new types without migration)
+	enabledEventTypes []EventType
+
+	// Message template (pkg/notifymsg closed variable set; empty: the
+	// default layout) and how much of an event the channel receives.
+	messageTemplate string
+	detailLevel     notifymsg.Level
+
+	// Rate limiting
+	minIntervalMinutes int
+}
+
+// NewNotificationExtension creates a new notification extension with defaults.
+func NewNotificationExtension(integrationID ID) *NotificationExtension {
+	return &NotificationExtension{
+		integrationID:      integrationID,
+		enabledSeverities:  DefaultEnabledSeverities(),
+		enabledEventTypes:  DefaultEnabledEventTypes(),
+		detailLevel:        notifymsg.DefaultLevel,
+		minIntervalMinutes: 5,
+	}
+}
+
+// ReconstructNotificationExtension creates a notification extension from stored data.
+// Note: channelID and channelName parameters are deprecated and ignored.
+// They are now stored in integrations.metadata.
+func ReconstructNotificationExtension(
+	integrationID ID,
+	_ string, // channelID - deprecated, now in integrations.metadata
+	_ string, // channelName - deprecated, now in integrations.metadata
+	enabledSeverities []Severity,
+	enabledEventTypes []EventType,
+	messageTemplate string,
+	detailLevel string,
+	minIntervalMinutes int,
+) *NotificationExtension {
+	level, err := notifymsg.ParseLevel(detailLevel)
+	if err != nil {
+		// An unreadable stored value sends the least.
+		level = notifymsg.LevelMinimal
+	}
+	if minIntervalMinutes <= 0 {
+		minIntervalMinutes = 5
+	}
+	// Use defaults if no severities specified (backward compatibility)
+	if len(enabledSeverities) == 0 {
+		enabledSeverities = DefaultEnabledSeverities()
+	}
+	// Use defaults if no event types specified (backward compatibility)
+	if len(enabledEventTypes) == 0 {
+		enabledEventTypes = DefaultEnabledEventTypes()
+	}
+	return &NotificationExtension{
+		integrationID:      integrationID,
+		enabledSeverities:  enabledSeverities,
+		enabledEventTypes:  enabledEventTypes,
+		messageTemplate:    messageTemplate,
+		detailLevel:        level,
+		minIntervalMinutes: minIntervalMinutes,
+	}
+}
+
+// Getters
+
+func (n *NotificationExtension) IntegrationID() ID { return n.integrationID }
+
+// ChannelID returns empty string - deprecated, now stored in integrations.metadata as chat_id
+func (n *NotificationExtension) ChannelID() string { return "" }
+
+// ChannelName returns empty string - deprecated, now stored in integrations.metadata as channel_name
+func (n *NotificationExtension) ChannelName() string            { return "" }
+func (n *NotificationExtension) EnabledSeverities() []Severity  { return n.enabledSeverities }
+func (n *NotificationExtension) EnabledEventTypes() []EventType { return n.enabledEventTypes }
+func (n *NotificationExtension) MessageTemplate() string        { return n.messageTemplate }
+func (n *NotificationExtension) DetailLevel() notifymsg.Level   { return n.detailLevel }
+func (n *NotificationExtension) MinIntervalMinutes() int        { return n.minIntervalMinutes }
+
+// Backward compatibility getters (derived from enabledSeverities)
+func (n *NotificationExtension) NotifyOnCritical() bool { return n.IsSeverityEnabled(SeverityCritical) }
+func (n *NotificationExtension) NotifyOnHigh() bool     { return n.IsSeverityEnabled(SeverityHigh) }
+func (n *NotificationExtension) NotifyOnMedium() bool   { return n.IsSeverityEnabled(SeverityMedium) }
+func (n *NotificationExtension) NotifyOnLow() bool      { return n.IsSeverityEnabled(SeverityLow) }
+
+// IsSeverityEnabled checks if a specific severity is enabled.
+func (n *NotificationExtension) IsSeverityEnabled(severity Severity) bool {
+	// Empty list means default severities (critical, high)
+	if len(n.enabledSeverities) == 0 {
+		return severity == SeverityCritical || severity == SeverityHigh
+	}
+	for _, s := range n.enabledSeverities {
+		if s == severity {
+			return true
+		}
+	}
+	return false
+}
+
+// ShouldNotify checks if a notification should be sent for the given severity string.
+func (n *NotificationExtension) ShouldNotify(severity string) bool {
+	return n.IsSeverityEnabled(Severity(severity))
+}
+
+// ShouldNotifyEventType checks if a notification should be sent for the given event type.
+func (n *NotificationExtension) ShouldNotifyEventType(eventType EventType) bool {
+	// Empty list means all events are enabled (backward compatibility)
+	if len(n.enabledEventTypes) == 0 {
+		return true
+	}
+	// Check for legacy event types and map them
+	mappedEventType := MapLegacyEventType(eventType)
+	for _, et := range n.enabledEventTypes {
+		if et == eventType || et == mappedEventType {
+			return true
+		}
+	}
+	return false
+}
+
+// IsEventTypeEnabled checks if a specific event type is enabled.
+func (n *NotificationExtension) IsEventTypeEnabled(eventType EventType) bool {
+	return n.ShouldNotifyEventType(eventType)
+}
+
+// Setters
+
+// SetChannel is deprecated - channel info is now stored in integrations.metadata
+// This function is kept for backward compatibility but does nothing.
+func (n *NotificationExtension) SetChannel(_, _ string) {
+	// No-op: channel_id and channel_name are now stored in integrations.metadata
+}
+
+func (n *NotificationExtension) SetEnabledSeverities(severities []Severity) {
+	n.enabledSeverities = severities
+}
+
+func (n *NotificationExtension) SetEnabledEventTypes(types []EventType) {
+	n.enabledEventTypes = types
+}
+
+// SetMessageTemplate stores a template after validating it against the
+// closed variable set (notifymsg.ValidateTemplate); an empty one means the
+// default layout.
+func (n *NotificationExtension) SetMessageTemplate(template string) error {
+	if err := notifymsg.ValidateTemplate(template); err != nil {
+		return err
+	}
+	n.messageTemplate = template
+	return nil
+}
+
+// SetDetailLevel sets how much of an event the channel receives.
+func (n *NotificationExtension) SetDetailLevel(level notifymsg.Level) error {
+	if _, err := notifymsg.ParseLevel(string(level)); err != nil {
+		return err
+	}
+	n.detailLevel = level
+	return nil
+}
+
+func (n *NotificationExtension) SetMinIntervalMinutes(minutes int) {
+	if minutes <= 0 {
+		minutes = 5
+	}
+	n.minIntervalMinutes = minutes
+}
+
+// Backward compatibility setters
+func (n *NotificationExtension) SetNotifyOnCritical(notify bool) {
+	n.updateSeverityEnabled(SeverityCritical, notify)
+}
+
+func (n *NotificationExtension) SetNotifyOnHigh(notify bool) {
+	n.updateSeverityEnabled(SeverityHigh, notify)
+}
+
+func (n *NotificationExtension) SetNotifyOnMedium(notify bool) {
+	n.updateSeverityEnabled(SeverityMedium, notify)
+}
+
+func (n *NotificationExtension) SetNotifyOnLow(notify bool) {
+	n.updateSeverityEnabled(SeverityLow, notify)
+}
+
+// updateSeverityEnabled adds or removes a severity from the enabled list.
+func (n *NotificationExtension) updateSeverityEnabled(severity Severity, enabled bool) {
+	if enabled {
+		// Add if not already present
+		for _, s := range n.enabledSeverities {
+			if s == severity {
+				return
+			}
+		}
+		n.enabledSeverities = append(n.enabledSeverities, severity)
+	} else {
+		// Remove if present
+		newSeverities := make([]Severity, 0, len(n.enabledSeverities))
+		for _, s := range n.enabledSeverities {
+			if s != severity {
+				newSeverities = append(newSeverities, s)
+			}
+		}
+		n.enabledSeverities = newSeverities
+	}
+}
+
+// IntegrationWithNotification combines an Integration with its notification extension.
+type IntegrationWithNotification struct {
+	*Integration
+	Notification *NotificationExtension
+}
+
+// NewIntegrationWithNotification creates a new integration with notification extension.
+func NewIntegrationWithNotification(integration *Integration, notification *NotificationExtension) *IntegrationWithNotification {
+	return &IntegrationWithNotification{
+		Integration:  integration,
+		Notification: notification,
+	}
+}
+
+// eventPayloadVersions holds the payload version of each event type whose
+// outbound payload changed incompatibly since version 1. A receiver routes on
+// (type, version); an incompatible change to what a type sends bumps its
+// version here, and the change is listed in the changelog.
+var eventPayloadVersions = map[EventType]int{}
+
+// EventPayloadVersion is the version of the outbound payload of an event
+// type (1 unless eventPayloadVersions says otherwise).
+func EventPayloadVersion(t EventType) int {
+	if v, ok := eventPayloadVersions[t]; ok && v > 0 {
+		return v
+	}
+	return 1
+}

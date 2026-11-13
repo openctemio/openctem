@@ -2,7 +2,7 @@
 
 This archive installs one OpenCTEM component without containers. The full
 guide (users, directories, systemd, upgrade, rollback, signature checks) is
-`api/docs/deployment/binary-install.md` in the source repository and
+`server/docs/deployment/binary-install.md` in the source repository and
 "Install from binaries" on https://docs.openctem.io.
 
 Before you unpack it, check the archive against the release's signed

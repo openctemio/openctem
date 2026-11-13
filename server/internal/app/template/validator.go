@@ -1,0 +1,821 @@
+// Package template provides template validation for different scanner types.
+package template
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"regexp"
+	"regexp/syntax"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/openctemio/openctem/server/pkg/domain/scannertemplate"
+)
+
+// =============================================================================
+// Regex Safety (ReDoS Prevention)
+// =============================================================================
+
+// regexSafetyConfig defines limits for regex validation.
+type regexSafetyConfig struct {
+	MaxLength          int           // Maximum regex pattern length
+	MaxGroupDepth      int           // Maximum nested group depth
+	MaxQuantifierWidth int           // Maximum width of quantifiers
+	CompileTimeout     time.Duration // Timeout for compile check
+}
+
+var defaultRegexSafetyConfig = regexSafetyConfig{
+	MaxLength:          1000,
+	MaxGroupDepth:      5,
+	MaxQuantifierWidth: 100,
+	CompileTimeout:     100 * time.Millisecond,
+}
+
+// isRegexSafe checks if a regex pattern is safe from ReDoS attacks.
+// Returns (safe, reason) where reason explains why it's unsafe.
+func isRegexSafe(pattern string) (bool, string) {
+	cfg := defaultRegexSafetyConfig
+
+	// Check length
+	if len(pattern) > cfg.MaxLength {
+		return false, fmt.Sprintf("pattern too long (%d > %d)", len(pattern), cfg.MaxLength)
+	}
+
+	// Parse regex syntax tree
+	re, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil {
+		return false, fmt.Sprintf("invalid regex syntax: %v", err)
+	}
+
+	// Check for dangerous patterns
+	if unsafe, reason := checkRegexTree(re, 0, cfg); unsafe {
+		return false, reason
+	}
+
+	// Test compile with timeout (catches catastrophic backtracking at compile time)
+	ctx, cancel := context.WithTimeout(context.Background(), cfg.CompileTimeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := regexp.Compile(pattern)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return false, fmt.Sprintf("regex compile error: %v", err)
+		}
+	case <-ctx.Done():
+		return false, "regex compile timeout (potentially dangerous)"
+	}
+
+	return true, ""
+}
+
+// hasNestedQuantifier recursively checks if any subexpression contains a quantifier.
+func hasNestedQuantifier(subs []*syntax.Regexp) bool {
+	for _, sub := range subs {
+		switch sub.Op {
+		case syntax.OpStar, syntax.OpPlus, syntax.OpQuest, syntax.OpRepeat:
+			return true
+		case syntax.OpCapture, syntax.OpConcat:
+			// Check children of capture groups and concatenations
+			if hasNestedQuantifier(sub.Sub) {
+				return true
+			}
+		case syntax.OpAlternate:
+			// Check all branches of alternation
+			if hasNestedQuantifier(sub.Sub) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// checkRegexTree recursively checks regex AST for dangerous patterns.
+func checkRegexTree(re *syntax.Regexp, depth int, cfg regexSafetyConfig) (bool, string) {
+	// Check depth
+	if depth > cfg.MaxGroupDepth {
+		return true, fmt.Sprintf("group nesting too deep (%d > %d)", depth, cfg.MaxGroupDepth)
+	}
+
+	// Check for dangerous quantifiers
+	switch re.Op {
+	case syntax.OpStar, syntax.OpPlus:
+		// Check for nested quantifiers (e.g., (a+)+ or (a*)*) - classic ReDoS
+		// We need to recursively check if any descendant has a quantifier
+		if hasNestedQuantifier(re.Sub) {
+			return true, "nested quantifiers detected (potential ReDoS)"
+		}
+	case syntax.OpRepeat:
+		// Check repeat bounds
+		if re.Max > cfg.MaxQuantifierWidth || re.Max == -1 {
+			if re.Min > 0 {
+				return true, fmt.Sprintf("quantifier width too large (max %d)", cfg.MaxQuantifierWidth)
+			}
+		}
+		// Check for nested quantifiers in repeat as well
+		if hasNestedQuantifier(re.Sub) {
+			return true, "nested quantifiers in repeat detected (potential ReDoS)"
+		}
+	case syntax.OpAlternate:
+		// Check for overlapping alternations (e.g., (a|ab)+)
+		// This is a heuristic - more sophisticated analysis would be needed for full coverage
+		if len(re.Sub) > 10 {
+			return true, "too many alternations (potential performance issue)"
+		}
+	}
+
+	// Recursively check sub-expressions
+	for _, sub := range re.Sub {
+		if unsafe, reason := checkRegexTree(sub, depth+1, cfg); unsafe {
+			return true, reason
+		}
+	}
+
+	return false, ""
+}
+
+// ValidationResult represents the result of template validation.
+type ValidationResult struct {
+	Valid     bool              `json:"valid"`
+	Errors    []ValidationError `json:"errors,omitempty"`
+	RuleCount int               `json:"rule_count"`
+	Metadata  map[string]any    `json:"metadata,omitempty"`
+}
+
+// ValidationError represents a single validation error.
+type ValidationError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+	Code    string `json:"code"`
+}
+
+// AddError adds an error to the validation result.
+func (r *ValidationResult) AddError(field, message, code string) {
+	r.Errors = append(r.Errors, ValidationError{
+		Field:   field,
+		Message: message,
+		Code:    code,
+	})
+	r.Valid = false
+}
+
+// HasErrors returns true if there are any validation errors.
+func (r *ValidationResult) HasErrors() bool {
+	return len(r.Errors) > 0
+}
+
+// ErrorMessages returns all error messages as a single string.
+func (r *ValidationResult) ErrorMessages() string {
+	if len(r.Errors) == 0 {
+		return ""
+	}
+	msgs := make([]string, 0, len(r.Errors))
+	for _, e := range r.Errors {
+		msgs = append(msgs, fmt.Sprintf("%s: %s", e.Field, e.Message))
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// TemplateValidator defines the interface for scanner-specific validators.
+type TemplateValidator interface {
+	// Validate validates the template content.
+	Validate(content []byte) *ValidationResult
+
+	// CountRules counts the number of rules in the template.
+	CountRules(content []byte) int
+
+	// ExtractMetadata extracts scanner-specific metadata from the template.
+	ExtractMetadata(content []byte) map[string]any
+}
+
+// GetValidator returns the appropriate validator for the template type.
+func GetValidator(templateType scannertemplate.TemplateType) TemplateValidator {
+	switch templateType {
+	case scannertemplate.TemplateTypeNuclei:
+		return &NucleiValidator{}
+	case scannertemplate.TemplateTypeSemgrep:
+		return &SemgrepValidator{}
+	case scannertemplate.TemplateTypeBetterleaks:
+		return &BetterleaksValidator{}
+	default:
+		return nil
+	}
+}
+
+// ValidateTemplate validates template content based on its type.
+func ValidateTemplate(templateType scannertemplate.TemplateType, content []byte) *ValidationResult {
+	validator := GetValidator(templateType)
+	if validator == nil {
+		result := &ValidationResult{Valid: false}
+		result.AddError("template_type", "unsupported template type", "UNSUPPORTED_TYPE")
+		return result
+	}
+	return validator.Validate(content)
+}
+
+// =============================================================================
+// Nuclei Validator
+// =============================================================================
+
+// NucleiValidator validates Nuclei template files (YAML).
+type NucleiValidator struct{}
+
+// NucleiOptions say what a template may reference besides itself.
+type NucleiOptions struct {
+	// Snapshot is set when the template is linted as one file of a content
+	// pack: workflows and payload files may then reference other files of
+	// the same pack (the caller resolves them, see contentpack.Lint). A
+	// single custom template has nothing to reference: the engine would
+	// resolve a workflow's or payload's path against its own template
+	// directory, outside anything the platform reviewed.
+	Snapshot bool
+	// PayloadSizer sizes payload list files of the snapshot (with Snapshot).
+	PayloadSizer PayloadSizer
+}
+
+// Validate validates one custom Nuclei template on its own.
+func (v *NucleiValidator) Validate(content []byte) *ValidationResult {
+	return ValidateNuclei(content, NucleiOptions{})
+}
+
+// ValidateNuclei validates Nuclei template content and records its
+// capability analysis in Metadata["capabilities"] and
+// Metadata["estimated_requests"].
+func ValidateNuclei(content []byte, opts NucleiOptions) *ValidationResult {
+	v := &NucleiValidator{}
+	result := &ValidationResult{
+		Valid:    true,
+		Metadata: make(map[string]any),
+	}
+
+	tpl, err := decodeSingleDocument(content)
+	if err != nil {
+		result.AddError("content", err.Error(), "INVALID_YAML")
+		return result
+	}
+
+	// Required field: id
+	id, ok := tpl["id"]
+	if !ok {
+		result.AddError("id", "missing required field 'id'", "MISSING_FIELD")
+	} else {
+		result.Metadata["id"] = id
+	}
+
+	// Required field: info
+	info, ok := tpl["info"].(map[string]any)
+	if !ok {
+		result.AddError("info", "missing required field 'info'", "MISSING_FIELD")
+	} else {
+		// info.name is required
+		if name, ok := info["name"]; ok {
+			result.Metadata["name"] = name
+		} else {
+			result.AddError("info.name", "missing template name", "MISSING_FIELD")
+		}
+
+		// info.severity is required
+		if severity, ok := info["severity"]; ok {
+			result.Metadata["severity"] = severity
+			// Validate severity value
+			if !v.isValidSeverity(fmt.Sprintf("%v", severity)) {
+				result.AddError("info.severity", "invalid severity level", "INVALID_VALUE")
+			}
+		} else {
+			result.AddError("info.severity", "missing severity", "MISSING_FIELD")
+		}
+
+		// Extract optional metadata
+		if author, ok := info["author"]; ok {
+			result.Metadata["author"] = author
+		}
+		if tags, ok := info["tags"]; ok {
+			result.Metadata["tags"] = tags
+		}
+		if description, ok := info["description"]; ok {
+			result.Metadata["description"] = description
+		}
+	}
+
+	// Must have requests, workflows, or other execution blocks
+	hasExecution := false
+	for _, key := range []string{"requests", "http", "dns", "file", "network", "tcp", "headless", "ssl", "websocket", "whois", "code", "javascript", "workflows"} {
+		if _, ok := tpl[key]; ok {
+			hasExecution = true
+			result.Metadata["execution_type"] = key
+			break
+		}
+	}
+	if !hasExecution {
+		result.AddError("requests", "missing execution block (requests, http, dns, etc.)", "MISSING_EXECUTION")
+	}
+
+	// Protocols that run code on the scanner host, read its files or drive a
+	// browser are refused on the parsed document, so the surface syntax
+	// (block YAML, flow YAML, JSON, escaped or differently-cased keys)
+	// cannot hide them. Sensors refuse them again and never enable them
+	// (no -code, -file or -headless for custom templates).
+	if key, why, found := CodeClass(tpl); found {
+		result.AddError(key, fmt.Sprintf("the %q block %s and is not allowed in custom templates", key, why), "DANGEROUS_PATTERN")
+	} else if key, found := selfContainedKey(tpl); found {
+		result.AddError(key, "self-contained templates are not allowed in custom templates", "DANGEROUS_PATTERN")
+	} else if v.hasDangerousPatterns(content) {
+		// Check for potentially dangerous patterns
+		result.AddError("content", "potentially dangerous patterns detected", "DANGEROUS_PATTERN")
+	}
+
+	// Validate every regex inside matchers for ReDoS (catastrophic
+	// backtracking). A template can declare multiple protocol blocks
+	// (http, dns, network, ...), each with its own matchers[*]. A
+	// single unsafe regex can burn a scanner-worker CPU for minutes,
+	// starving other tenants on the same sensor pool.
+	v.validateMatcherRegexes(tpl, result)
+
+	analysis := AnalyzeNuclei(tpl, opts.PayloadSizer)
+	checkReferences(analysis, opts, result)
+	if analysis.Requests > MaxTemplateRequests {
+		result.AddError("requests", fmt.Sprintf("the template sends about %d requests per target; the limit is %d", analysis.Requests, MaxTemplateRequests), "REQUEST_VOLUME_CAP")
+	}
+	caps := analysis.SortedCaps()
+	names := make([]string, 0, len(caps))
+	for _, c := range caps {
+		names = append(names, string(c))
+	}
+	result.Metadata["capabilities"] = names
+	result.Metadata["estimated_requests"] = analysis.Requests
+
+	result.RuleCount = 1 // Nuclei templates are typically single templates
+	return result
+}
+
+// checkReferences refuses what a template pulls in from outside itself:
+// a single custom template may not reference other templates (workflows)
+// or payload files at all; a pack file may reference only files of its
+// own pack, by a relative path that stays inside it, and may not select
+// templates by tag (a tag selects from whatever is on the scanner's disk).
+func checkReferences(a *NucleiAnalysis, opts NucleiOptions, result *ValidationResult) {
+	if !opts.Snapshot {
+		if len(a.WorkflowRefs) > 0 || a.WorkflowTags != "" {
+			result.AddError("workflows", "a single custom template may not run other templates; publish workflows in a content pack, where every referenced template is reviewed with it", "WORKFLOW_OUTSIDE_SNAPSHOT")
+		}
+		if len(a.PayloadFiles) > 0 {
+			result.AddError("payloads", "a single custom template may not load payload files from the scanner's disk; list the payloads in the template", "PAYLOAD_FILE_OUTSIDE_SNAPSHOT")
+		}
+		return
+	}
+	if a.WorkflowTags != "" {
+		result.AddError(a.WorkflowTags, "a workflow may not select templates by tag; reference each template of the pack by path", "WORKFLOW_TAG_SELECTOR")
+	}
+	for _, r := range a.WorkflowRefs {
+		if _, err := CleanRef(r.Path); err != nil {
+			result.AddError(r.Field, err.Error(), "WORKFLOW_OUTSIDE_SNAPSHOT")
+		}
+	}
+	for _, p := range a.PayloadFiles {
+		if _, err := CleanRef(p); err != nil {
+			result.AddError("payloads", err.Error(), "PAYLOAD_FILE_OUTSIDE_SNAPSHOT")
+		}
+	}
+	for _, p := range a.UnresolvedPayloads {
+		if _, err := CleanRef(p); err == nil {
+			result.AddError("payloads", fmt.Sprintf("payload file %q is not in the pack", p), "PAYLOAD_FILE_OUTSIDE_SNAPSHOT")
+		}
+	}
+}
+
+// decodeSingleDocument parses a template that must be exactly one YAML
+// document. A second document is refused: parsers disagree on which
+// document of a stream counts, and that disagreement is how content hides
+// from a check that reads a different document than the engine.
+func decodeSingleDocument(content []byte) (map[string]any, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	var tpl map[string]any
+	if err := dec.Decode(&tpl); err != nil {
+		return nil, fmt.Errorf("invalid YAML: %w", err)
+	}
+	var extra any
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+	case err != nil:
+		return nil, fmt.Errorf("invalid YAML: %w", err)
+	default:
+		return nil, fmt.Errorf("a template must be one YAML document; found more than one")
+	}
+	if tpl == nil {
+		return nil, fmt.Errorf("invalid YAML: empty document")
+	}
+	return tpl, nil
+}
+
+// selfContainedKey reports a top-level "self-contained" key that is not
+// false: a self-contained template carries its own targets and runs
+// without the scan's, so it would skip target validation.
+func selfContainedKey(tpl map[string]any) (string, bool) {
+	for key, v := range tpl {
+		if strings.EqualFold(strings.TrimSpace(key), "self-contained") {
+			if b, ok := v.(bool); !ok || b {
+				return "self-contained", true
+			}
+		}
+	}
+	return "", false
+}
+
+// validateMatcherRegexes walks every matcher block in a Nuclei
+// template and runs isRegexSafe on regex-type matchers. Rejects both
+// syntactically-invalid regexes and patterns with known ReDoS shapes
+// (nested quantifiers, alternation with overlap, etc.).
+func (v *NucleiValidator) validateMatcherRegexes(tpl map[string]any, result *ValidationResult) {
+	protocols := []string{"http", "requests", "dns", "network", "headless", "ssl", "websocket", "whois", "code", "javascript"}
+	for _, proto := range protocols {
+		blocks, ok := tpl[proto].([]any)
+		if !ok {
+			continue
+		}
+		for i, b := range blocks {
+			block, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
+			matchers, ok := block["matchers"].([]any)
+			if !ok {
+				continue
+			}
+			for j, m := range matchers {
+				matcher, ok := m.(map[string]any)
+				if !ok {
+					continue
+				}
+				if typeVal, _ := matcher["type"].(string); typeVal != "regex" {
+					continue
+				}
+				regexes, ok := matcher["regex"].([]any)
+				if !ok {
+					// `regex:` may also be a single string
+					if s, isStr := matcher["regex"].(string); isStr {
+						regexes = []any{s}
+					} else {
+						continue
+					}
+				}
+				for k, r := range regexes {
+					pat, ok := r.(string)
+					if !ok {
+						continue
+					}
+					if safe, reason := isRegexSafe(pat); !safe {
+						result.AddError(
+							fmt.Sprintf("%s[%d].matchers[%d].regex[%d]", proto, i, j, k),
+							fmt.Sprintf("unsafe regex: %s", reason),
+							"UNSAFE_REGEX",
+						)
+					}
+				}
+			}
+		}
+	}
+}
+
+// CountRules returns 1 for Nuclei (each file is one template).
+func (v *NucleiValidator) CountRules(content []byte) int {
+	return 1
+}
+
+// ExtractMetadata extracts metadata from Nuclei template.
+func (v *NucleiValidator) ExtractMetadata(content []byte) map[string]any {
+	result := v.Validate(content)
+	return result.Metadata
+}
+
+func (v *NucleiValidator) isValidSeverity(severity string) bool {
+	severity = strings.ToLower(severity)
+	switch severity {
+	case "info", "low", "medium", "high", "critical", "unknown":
+		return true
+	}
+	return false
+}
+
+func (v *NucleiValidator) hasDangerousPatterns(content []byte) bool {
+	contentStr := string(content)
+	contentLower := strings.ToLower(contentStr)
+
+	// Exact dangerous strings (case-insensitive)
+	dangerousStrings := []string{
+		"{{shell(",
+		"{{exec(",
+		"rm -rf",
+		">/dev/",
+		"| bash",
+		"| sh",
+		"|bash",
+		"|sh",
+		"; bash",
+		"; sh",
+		"& bash",
+		"& sh",
+		"`bash",
+		"`sh",
+		"$(bash",
+		"$(sh",
+		"mkfifo",      // Named pipe for reverse shells
+		"/etc/passwd", // Sensitive file access
+		"/etc/shadow",
+		"nc -e", // Netcat reverse shell
+		"ncat -e",
+		"python -c", // Python one-liners
+		"python3 -c",
+		"perl -e",   // Perl one-liners
+		"ruby -e",   // Ruby one-liners
+		"php -r",    // PHP one-liners
+		"base64 -d", // Base64 decode (often used to obfuscate)
+		"eval(",
+		"exec(",
+		// Nuclei-specific protocols that execute arbitrary code on the
+		// scanner host. These are YAML top-level keys; we block the
+		// lowercased literal to prevent the payload template being
+		// accepted. Scanners MUST be invoked with `-protocols` allowlist
+		// excluding these as a defense in depth — the blocklist here is
+		// the first line.
+		"\ncode:",        // engine: sh|python|... + source (RCE by design)
+		"\nheadless:",    // browser + chrome JS injection (network pivot)
+		"\njavascript:",  // in-template JS execution
+		"protocol: code", // explicit code protocol declaration
+	}
+
+	for _, pattern := range dangerousStrings {
+		if strings.Contains(contentLower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+
+	// Regex patterns for more sophisticated detection
+	dangerousRegex := []*regexp.Regexp{
+		// Curl/wget piped to shell
+		regexp.MustCompile(`(?i)(curl|wget)\s+[^\n]*\|\s*(ba)?sh`),
+		// Reverse shell patterns
+		regexp.MustCompile(`(?i)/dev/(tcp|udp)/`),
+		// Base64 encoded commands
+		regexp.MustCompile(`(?i)echo\s+[A-Za-z0-9+/=]{20,}\s*\|\s*base64`),
+		// Environment variable exfiltration
+		regexp.MustCompile(`(?i)\$\{?[A-Z_]+\}?\s*[|>]`),
+		// Encoded/obfuscated shell commands
+		regexp.MustCompile(`(?i)\\x[0-9a-f]{2}.*\\x[0-9a-f]{2}`),
+		// Process substitution
+		regexp.MustCompile(`<\(\s*(bash|sh|curl|wget)`),
+	}
+
+	for _, re := range dangerousRegex {
+		if re.MatchString(contentStr) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// =============================================================================
+// Semgrep Validator
+// =============================================================================
+
+// SemgrepValidator validates Semgrep rule files (YAML).
+type SemgrepValidator struct{}
+
+// Validate validates Semgrep rule content.
+func (v *SemgrepValidator) Validate(content []byte) *ValidationResult {
+	result := &ValidationResult{
+		Valid:    true,
+		Metadata: make(map[string]any),
+	}
+
+	var config map[string]any
+	if err := yaml.Unmarshal(content, &config); err != nil {
+		result.AddError("content", fmt.Sprintf("invalid YAML: %v", err), "INVALID_YAML")
+		return result
+	}
+
+	// Must have 'rules' array
+	rulesRaw, ok := config["rules"]
+	if !ok {
+		result.AddError("rules", "missing required 'rules' array", "MISSING_RULES")
+		return result
+	}
+
+	rules, ok := rulesRaw.([]any)
+	if !ok {
+		result.AddError("rules", "'rules' must be an array", "INVALID_TYPE")
+		return result
+	}
+
+	if len(rules) == 0 {
+		result.AddError("rules", "must contain at least one rule", "EMPTY_RULES")
+		return result
+	}
+
+	// Validate each rule
+	var ruleIDs []string
+	for i, r := range rules {
+		rule, ok := r.(map[string]any)
+		if !ok {
+			result.AddError(fmt.Sprintf("rules[%d]", i), "rule must be an object", "INVALID_TYPE")
+			continue
+		}
+
+		// Required: id
+		if id, ok := rule["id"].(string); ok {
+			ruleIDs = append(ruleIDs, id)
+		} else {
+			result.AddError(fmt.Sprintf("rules[%d].id", i), "missing rule id", "MISSING_FIELD")
+		}
+
+		// Required: pattern or patterns or pattern-either, etc.
+		hasPattern := false
+		for _, key := range []string{"pattern", "patterns", "pattern-either", "pattern-regex"} {
+			if _, ok := rule[key]; ok {
+				hasPattern = true
+				break
+			}
+		}
+		if !hasPattern {
+			result.AddError(fmt.Sprintf("rules[%d].pattern", i), "missing pattern", "MISSING_PATTERN")
+		}
+
+		// Required: message
+		if _, ok := rule["message"]; !ok {
+			result.AddError(fmt.Sprintf("rules[%d].message", i), "missing message", "MISSING_FIELD")
+		}
+
+		// Required: languages
+		if _, ok := rule["languages"]; !ok {
+			result.AddError(fmt.Sprintf("rules[%d].languages", i), "missing languages", "MISSING_FIELD")
+		}
+
+		// Required: severity
+		if severity, ok := rule["severity"].(string); ok {
+			if !v.isValidSeverity(severity) {
+				result.AddError(fmt.Sprintf("rules[%d].severity", i), "invalid severity", "INVALID_VALUE")
+			}
+		} else {
+			result.AddError(fmt.Sprintf("rules[%d].severity", i), "missing severity", "MISSING_FIELD")
+		}
+	}
+
+	validateOpengrepRegexes(content, result)
+
+	result.RuleCount = len(rules)
+	result.Metadata["rule_ids"] = ruleIDs
+	result.Metadata["rule_count"] = len(rules)
+
+	return result
+}
+
+// CountRules counts the number of rules in the Semgrep config.
+func (v *SemgrepValidator) CountRules(content []byte) int {
+	var config map[string]any
+	if err := yaml.Unmarshal(content, &config); err != nil {
+		return 0
+	}
+	if rules, ok := config["rules"].([]any); ok {
+		return len(rules)
+	}
+	return 0
+}
+
+// ExtractMetadata extracts metadata from Semgrep rules.
+func (v *SemgrepValidator) ExtractMetadata(content []byte) map[string]any {
+	result := v.Validate(content)
+	return result.Metadata
+}
+
+func (v *SemgrepValidator) isValidSeverity(severity string) bool {
+	severity = strings.ToUpper(severity)
+	switch severity {
+	case "INFO", "WARNING", "ERROR":
+		return true
+	}
+	return false
+}
+
+// =============================================================================
+// Betterleaks Validator
+// =============================================================================
+
+// BetterleaksValidator validates Betterleaks config files (TOML; gitleaks configs are the same format).
+type BetterleaksValidator struct{}
+
+// Validate validates Betterleaks config content.
+func (v *BetterleaksValidator) Validate(content []byte) *ValidationResult {
+	result := &ValidationResult{
+		Valid:    true,
+		Metadata: make(map[string]any),
+	}
+
+	// Parse TOML manually (simplified - in production use a TOML library)
+	contentStr := string(content)
+
+	// Check for [[rules]] sections
+	ruleCount := strings.Count(contentStr, "[[rules]]")
+	if ruleCount == 0 {
+		result.AddError("rules", "must contain at least one [[rules]] section", "MISSING_RULES")
+		return result
+	}
+
+	// Extract and validate rules
+	rules := v.extractRules(contentStr)
+	var ruleIDs []string
+
+	for i, rule := range rules {
+		// Required: id
+		if id, ok := rule["id"]; ok {
+			ruleIDs = append(ruleIDs, id)
+		} else {
+			result.AddError(fmt.Sprintf("rules[%d].id", i), "missing rule id", "MISSING_FIELD")
+		}
+
+		// Required: regex or path
+		hasDetection := false
+		if regex, ok := rule["regex"]; ok {
+			hasDetection = true
+			// Validate regex syntax AND safety (ReDoS prevention)
+			if safe, reason := isRegexSafe(regex); !safe {
+				result.AddError(fmt.Sprintf("rules[%d].regex", i), fmt.Sprintf("unsafe regex: %s", reason), "UNSAFE_REGEX")
+			} else if _, err := regexp.Compile(regex); err != nil {
+				result.AddError(fmt.Sprintf("rules[%d].regex", i), fmt.Sprintf("invalid regex: %v", err), "INVALID_REGEX")
+			}
+		}
+		if _, ok := rule["path"]; ok {
+			hasDetection = true
+		}
+		if !hasDetection {
+			result.AddError(fmt.Sprintf("rules[%d]", i), "missing regex or path", "MISSING_DETECTION")
+		}
+	}
+
+	result.RuleCount = len(rules)
+	result.Metadata["rule_ids"] = ruleIDs
+	result.Metadata["rule_count"] = len(rules)
+
+	return result
+}
+
+// CountRules counts the number of rules in the Betterleaks config.
+func (v *BetterleaksValidator) CountRules(content []byte) int {
+	return strings.Count(string(content), "[[rules]]")
+}
+
+// ExtractMetadata extracts metadata from Betterleaks config.
+func (v *BetterleaksValidator) ExtractMetadata(content []byte) map[string]any {
+	result := v.Validate(content)
+	return result.Metadata
+}
+
+// extractRules extracts rules from TOML content (simplified parser).
+func (v *BetterleaksValidator) extractRules(content string) []map[string]string {
+	var rules []map[string]string
+
+	// Split by [[rules]]
+	parts := strings.Split(content, "[[rules]]")
+	for i, part := range parts {
+		if i == 0 {
+			continue // Skip content before first [[rules]]
+		}
+
+		rule := make(map[string]string)
+
+		// Extract key-value pairs (simplified)
+		lines := strings.Split(part, "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[[") {
+				continue
+			}
+
+			// Parse key = value
+			if idx := strings.Index(line, "="); idx > 0 {
+				key := strings.TrimSpace(line[:idx])
+				value := strings.TrimSpace(line[idx+1:])
+				// Remove quotes
+				value = strings.Trim(value, `"'`)
+				// Handle triple-quoted strings
+				value = strings.Trim(value, "`")
+				rule[key] = value
+			}
+		}
+
+		if len(rule) > 0 {
+			rules = append(rules, rule)
+		}
+	}
+
+	return rules
+}

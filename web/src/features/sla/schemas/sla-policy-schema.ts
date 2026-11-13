@@ -116,7 +116,7 @@ export interface SlaPolicyFormData {
 
 /**
  * The windows a new compliance policy starts from: the platform's compliance
- * windows (api/pkg/domain/sla DefaultCompliancePriorityDays and
+ * windows (server/pkg/domain/sla DefaultCompliancePriorityDays and
  * DefaultComplianceSLADays). A hardening control is fixed in change windows,
  * and a check has no CVE, so the known exploited cap is off.
  */

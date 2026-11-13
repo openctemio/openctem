@@ -1,0 +1,1312 @@
+// Package module implements the application service for the module bounded context — orchestrates pkg/domain/module entities and cross-cutting concerns (audit, notifications, RBAC).
+package module
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// ModuleRepository interface for module operations.
+type ModuleRepository interface {
+	ListAllModules(ctx context.Context) ([]*moduledom.Module, error)
+	ListActiveModules(ctx context.Context) ([]*moduledom.Module, error)
+	GetModuleByID(ctx context.Context, id string) (*moduledom.Module, error)
+	GetSubModules(ctx context.Context, parentModuleID string) ([]*moduledom.Module, error)
+	ListAllSubModules(ctx context.Context) (map[string][]*moduledom.Module, error)
+}
+
+// TenantModuleRepository interface for per-tenant module configuration.
+type TenantModuleRepository interface {
+	ListByTenant(ctx context.Context, tenantID shared.ID) ([]*moduledom.TenantModuleOverride, error)
+	UpsertBatch(ctx context.Context, tenantID shared.ID, updates []moduledom.TenantModuleUpdate, updatedBy *shared.ID) error
+	DeleteByTenant(ctx context.Context, tenantID shared.ID) error
+}
+
+// ModuleService handles module-related business operations.
+//
+// toggleLocks serialises concurrent UpdateTenantModules calls for the
+// same tenant. Without this, two admins flipping related modules at
+// the same time could interleave reads and writes such that the
+// dependency check passes for each request individually but the
+// resulting combined state violates the invariant (TOCTOU). The lock
+// is per-tenant so different tenants don't contend.
+//
+// Caveat: this is an in-process mutex. A multi-replica deployment
+// needs a cross-process lock (Redis SETNX, Postgres advisory lock on
+// a shared connection, etc.). In the CTEM deployment model the API
+// runs as a single replica today; when horizontal scale lands, swap
+// this map for the advisory-lock variant.
+type ModuleService struct {
+	moduleRepo       ModuleRepository
+	tenantModuleRepo TenantModuleRepository
+	auditService     *auditapp.AuditService
+	versionService   *VersionService
+	wsBroadcaster    WSBroadcaster
+	cacheInvalidator ModuleCacheInvalidator
+	entitlements     EntitlementReader
+	platform         PlatformModules
+	logger           *logger.Logger
+
+	toggleLocks   map[string]*sync.Mutex
+	toggleLocksMu sync.Mutex
+}
+
+// EntitlementReader reports the modules an organization may not use (denied
+// by the instance operator or a source; *entitlement.Service). An error means
+// the entitlement could not be read: every non-core module is then
+// unavailable (fail-closed).
+type EntitlementReader interface {
+	// NotEntitled maps each module the organization may not use to the end of
+	// its read-only grace (nil: no access).
+	NotEntitled(ctx context.Context, tenantID string) (map[string]*time.Time, error)
+}
+
+// PlatformModules reports the installation switch of a platform-scoped module
+// (Definition.Scope). An error means the switch could not be read: the module
+// is then off (fail closed).
+type PlatformModules interface {
+	PlatformModuleOff(ctx context.Context, moduleID string) (bool, error)
+}
+
+// SetPlatformModules wires the installation switches. Without it a platform
+// module is off (fail closed): nothing says the platform enabled it.
+func (s *ModuleService) SetPlatformModules(p PlatformModules) { s.platform = p }
+
+// deadlineEntitlementReader is an EntitlementReader that also tells when its
+// answer next changes without a write (*entitlement.Service).
+type deadlineEntitlementReader interface {
+	NotEntitledWithDeadline(ctx context.Context, tenantID string) (map[string]*time.Time, *time.Time, error)
+}
+
+// Reasons a module is off for an organization (MODULE_NOT_ENABLED details).
+const (
+	ReasonDisabledByAdmin = "disabled_by_admin"
+	ReasonNotEntitled     = "not_entitled"
+	ReasonUnavailable     = "unavailable"
+	// ReasonDisabledByPlatform: an installation-wide module the platform
+	// administrator has off (or whose state could not be read): off for
+	// every organization, whatever its plan or preferences say.
+	ReasonDisabledByPlatform = "disabled_by_platform"
+	// ReasonReadOnlyGrace: lost recently; reads and export still work, writes
+	// are refused and the module's jobs are stopped.
+	ReasonReadOnlyGrace = "read_only_grace"
+)
+
+// ModuleCacheInvalidator drops a tenant's cached module-enablement so a toggle
+// takes effect immediately rather than after the gate's TTL. Implemented by
+// *middleware.ModuleGate. Optional — nil relies on the TTL alone.
+type ModuleCacheInvalidator interface {
+	Invalidate(tenantID string)
+}
+
+// allInvalidator also drops every tenant (a plan mapping change).
+type allInvalidator interface {
+	InvalidateAll()
+}
+
+// NotifyEntitlementChange refreshes the module state after a plan, grant or
+// plan mapping change: one organization (its gate cache on every replica, its
+// version and its open consoles), or every organization when tenantID is "".
+func (s *ModuleService) NotifyEntitlementChange(tenantID string) {
+	if tenantID != "" {
+		s.notifyModuleChange(context.Background(), tenantID)
+		return
+	}
+	if a, ok := s.cacheInvalidator.(allInvalidator); ok {
+		a.InvalidateAll()
+	}
+}
+
+// WSBroadcaster is the minimal interface ModuleService needs to fan
+// out "module.updated" events to subscribers on the tenant channel.
+// Defined locally rather than imported from the websocket package to
+// keep the dependency direction app→infra (not the other way) and to
+// allow nil/no-op in tests.
+type WSBroadcaster interface {
+	Broadcast(channel string, event any)
+}
+
+// NewModuleService creates a new ModuleService.
+func NewModuleService(moduleRepo ModuleRepository, log *logger.Logger) *ModuleService {
+	return &ModuleService{
+		moduleRepo:  moduleRepo,
+		logger:      log.With("service", "module"),
+		toggleLocks: make(map[string]*sync.Mutex),
+	}
+}
+
+// tenantToggleLock returns the per-tenant mutex, lazily creating it.
+// Lock map guarded by toggleLocksMu; the returned mutex is the one
+// callers Lock()/Unlock() on.
+func (s *ModuleService) tenantToggleLock(tenantID string) *sync.Mutex {
+	s.toggleLocksMu.Lock()
+	defer s.toggleLocksMu.Unlock()
+	m, ok := s.toggleLocks[tenantID]
+	if !ok {
+		m = &sync.Mutex{}
+		s.toggleLocks[tenantID] = m
+	}
+	return m
+}
+
+// SetTenantModuleRepo sets the tenant module repository.
+func (s *ModuleService) SetTenantModuleRepo(repo TenantModuleRepository) {
+	s.tenantModuleRepo = repo
+}
+
+// SetAuditService sets the audit service for logging module changes.
+func (s *ModuleService) SetAuditService(svc *auditapp.AuditService) {
+	s.auditService = svc
+}
+
+// SetVersionService wires the per-tenant module-version counter used
+// for ETag generation and Redis cache key suffixes. Optional —
+// without it Get returns 1 forever and ETag never matches (acceptable
+// degraded mode, just no caching benefit).
+func (s *ModuleService) SetVersionService(v *VersionService) {
+	s.versionService = v
+}
+
+// SetWSBroadcaster wires the WebSocket fan-out used to push
+// "module.updated" events to clients on the tenant channel. Optional —
+// without it, mutations still succeed but clients have to wait for the
+// next SWR dedup window to see changes.
+func (s *ModuleService) SetWSBroadcaster(b WSBroadcaster) {
+	s.wsBroadcaster = b
+}
+
+// SetModuleCacheInvalidator wires the route-gate cache invalidator so a module
+// toggle is enforced immediately. Optional — without it, gating updates within
+// the gate's TTL.
+func (s *ModuleService) SetModuleCacheInvalidator(inv ModuleCacheInvalidator) {
+	s.cacheInvalidator = inv
+}
+
+// SetEntitlements wires the plan and grant entitlements. Without it every
+// module is entitled.
+func (s *ModuleService) SetEntitlements(e EntitlementReader) {
+	s.entitlements = e
+}
+
+// GetTenantModuleVersion returns the current module-config version for
+// a tenant. Used by HTTP handlers to construct ETag headers; the
+// returned value is opaque to callers (treat as a token, not a count).
+func (s *ModuleService) GetTenantModuleVersion(ctx context.Context, tenantID string) int {
+	if s.versionService == nil {
+		return 0
+	}
+	return s.versionService.Get(ctx, tenantID)
+}
+
+var (
+	registryTagOnce sync.Once
+	registryTag     string
+)
+
+// registryFingerprint hashes the module registry, so a deploy that renames a
+// module or changes what it needs changes every ETag.
+func registryFingerprint() string {
+	registryTagOnce.Do(func() {
+		b, _ := json.Marshal(moduledom.Registry)
+		sum := sha256.Sum256(b)
+		registryTag = hex.EncodeToString(sum[:8])
+	})
+	return registryTag
+}
+
+// ETagToken names the module state of an organization for an ETag: the
+// version counter (every toggle and entitlement write bumps it, on every
+// replica at once), a hash of the effective state of every module (a grace or
+// a timed deny that ended, an entitlement reader that recovered after a
+// failure, and a counter lost to a Redis flush all change the state or the
+// counter, never neither), and the registry fingerprint (a deploy). It carries
+// no module id or reason.
+func (s *ModuleService) ETagToken(ctx context.Context, tenantID string) string {
+	states, _, _ := s.TenantModuleStateSnapshot(ctx, tenantID)
+	ids := make([]string, 0, len(states))
+	for id := range states {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	// A change fingerprint, not a secret and not a password hash: FNV-1a is
+	// enough to tell two states apart.
+	h := fnv.New64a()
+	for _, id := range ids {
+		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", id, states[id])
+	}
+	return fmt.Sprintf("v%d.%s.%s", s.GetTenantModuleVersion(ctx, tenantID),
+		hex.EncodeToString(h.Sum(nil)), registryFingerprint())
+}
+
+// notifyModuleChange increments the version and broadcasts a
+// "module.updated" event to the tenant WebSocket channel. Best-effort
+// — failures are logged but never abort the underlying mutation, since
+// the tenant_modules write is already persisted by the time we get
+// here. Worst case: client sees stale data until next focus / 5-min
+// SWR dedup expires.
+func (s *ModuleService) notifyModuleChange(ctx context.Context, tenantID string) {
+	// Drop the route-gate's cached enablement so the toggle enforces immediately.
+	if s.cacheInvalidator != nil {
+		s.cacheInvalidator.Invalidate(tenantID)
+	}
+	if s.versionService == nil && s.wsBroadcaster == nil {
+		return
+	}
+	newVersion := 0
+	if s.versionService != nil {
+		newVersion = s.versionService.Increment(ctx, tenantID)
+	}
+	if s.wsBroadcaster != nil {
+		// Channel naming follows the existing convention used elsewhere
+		// in the codebase (tenant:{id}). Event payload includes the
+		// fresh version so the client can compare to its cached copy.
+		s.wsBroadcaster.Broadcast("tenant:"+tenantID, map[string]any{
+			"type":      "module.updated",
+			"tenant_id": tenantID,
+			"version":   newVersion,
+		})
+	}
+}
+
+// GetTenantEnabledModulesOutput represents the output for GetTenantEnabledModules.
+type GetTenantEnabledModulesOutput struct {
+	ModuleIDs  []string
+	Modules    []*moduledom.Module
+	SubModules map[string][]*moduledom.Module
+	// NotEntitledModuleIDs are top-level modules not available for the
+	// organization: the console says "not available for this organization"
+	// rather than "turned off".
+	NotEntitledModuleIDs []string
+	// ReadOnlyModules are modules in read-only grace, with its end.
+	ReadOnlyModules map[string]time.Time
+}
+
+// GetTenantEnabledModules returns all enabled modules for a tenant.
+// Filters by tenant module overrides if configured.
+// Optimized: 2 queries (modules + tenant_modules) instead of 3.
+// Sub-modules are extracted from the same ListActiveModules result.
+func (s *ModuleService) GetTenantEnabledModules(ctx context.Context, tenantID string) (*GetTenantEnabledModulesOutput, error) {
+	allModules, err := s.moduleRepo.ListActiveModules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Split into top-level and sub-modules from the same query result
+	topLevel, subModulesByParent := splitModules(allModules)
+
+	// Get tenant-specific state (preferences and entitlements)
+	states := s.moduleStates(ctx, tenantID)
+	disabledModules := make(map[string]bool, len(states))
+	for id, r := range states {
+		// A module in read-only grace stays listed: its pages still read.
+		if r != ReasonReadOnlyGrace {
+			disabledModules[id] = true
+		}
+	}
+	notEntitled := make([]string, 0)
+	for _, m := range topLevel {
+		if r := states[m.ID()]; !m.IsCore() && (r == ReasonNotEntitled || r == ReasonUnavailable || r == ReasonDisabledByPlatform) {
+			notEntitled = append(notEntitled, m.ID())
+		}
+	}
+
+	// Filter modules: exclude disabled (non-core) top-level modules
+	enabledModules := make([]*moduledom.Module, 0, len(topLevel))
+	for _, m := range topLevel {
+		if disabledModules[m.ID()] && !m.IsCore() {
+			continue
+		}
+		enabledModules = append(enabledModules, m)
+	}
+
+	moduleIDs := make([]string, 0, len(enabledModules))
+	enabledSet := make(map[string]bool, len(enabledModules))
+	for _, m := range enabledModules {
+		moduleIDs = append(moduleIDs, m.ID())
+		enabledSet[m.ID()] = true
+	}
+
+	// Include sub-modules for enabled parents, excluding individually disabled sub-modules
+	subModules := make(map[string][]*moduledom.Module, len(subModulesByParent))
+	for parentID, subs := range subModulesByParent {
+		if enabledSet[parentID] {
+			enabledSubs := make([]*moduledom.Module, 0, len(subs))
+			for _, sub := range subs {
+				if !disabledModules[sub.ID()] {
+					enabledSubs = append(enabledSubs, sub)
+					moduleIDs = append(moduleIDs, sub.ID())
+				}
+			}
+			if len(enabledSubs) > 0 {
+				subModules[parentID] = enabledSubs
+			}
+		}
+	}
+
+	var readOnly map[string]time.Time
+	for _, r := range states {
+		if r == ReasonReadOnlyGrace {
+			readOnly = s.readOnlyUntil(ctx, tenantID)
+			break
+		}
+	}
+	for id := range readOnly {
+		if states[id] != ReasonReadOnlyGrace {
+			delete(readOnly, id)
+		}
+	}
+	return &GetTenantEnabledModulesOutput{
+		ModuleIDs:            moduleIDs,
+		Modules:              enabledModules,
+		SubModules:           subModules,
+		NotEntitledModuleIDs: notEntitled,
+		ReadOnlyModules:      readOnly,
+	}, nil
+}
+
+// TenantModuleConfigOutput represents the full module configuration for a tenant.
+type TenantModuleConfigOutput struct {
+	Modules []*TenantModuleInfo
+	Summary TenantModuleSummary
+	// Warnings is a best-effort list of soft-dependency degradations
+	// introduced by the MOST RECENT toggle. On GET the field is empty;
+	// on PATCH it carries the warnings the service decided not to
+	// escalate to a blocker. Handlers render these as toast/banner on
+	// the Settings → Modules page.
+	Warnings []ToggleIssue
+}
+
+// TenantModuleInfo combines module metadata with tenant-specific enabled state.
+type TenantModuleInfo struct {
+	Module    *moduledom.Module
+	IsEnabled bool
+	// Entitled: the module is available for the organization. One that is
+	// not cannot be switched on.
+	Entitled   bool
+	SubModules []*SubModuleInfo
+}
+
+// SubModuleInfo combines sub-module metadata with tenant-specific enabled state.
+type SubModuleInfo struct {
+	Module    *moduledom.Module
+	IsEnabled bool
+}
+
+// TenantModuleSummary provides counts of module states.
+type TenantModuleSummary struct {
+	Total    int
+	Enabled  int
+	Disabled int
+	Core     int
+}
+
+// GetTenantModuleConfig returns the full module configuration for a tenant admin.
+// Optimized: 2 queries (modules + tenant_modules) instead of 3.
+func (s *ModuleService) GetTenantModuleConfig(ctx context.Context, tenantID string) (*TenantModuleConfigOutput, error) {
+	allModules, err := s.moduleRepo.ListActiveModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list modules: %w", err)
+	}
+
+	return s.buildTenantModuleConfig(ctx, tenantID, allModules)
+}
+
+// buildTenantModuleConfig builds the tenant module config from pre-loaded modules.
+// Separated to allow reuse in UpdateTenantModules (avoids redundant ListActiveModules query).
+func (s *ModuleService) buildTenantModuleConfig(ctx context.Context, tenantID string, allModules []*moduledom.Module) (*TenantModuleConfigOutput, error) {
+	return s.buildTenantModuleConfigFromMaps(tenantID, allModules, s.moduleStates(ctx, tenantID))
+}
+
+// buildTenantModuleConfigFromMaps is the pure-map variant used by
+// UpdateTenantModules, which has already queried tenant_modules once
+// for dependency validation. Calling this saves the duplicate
+// `getTenantDisabledModules` trip that the plain
+// buildTenantModuleConfig would issue.
+func (s *ModuleService) buildTenantModuleConfigFromMaps(tenantID string, allModules []*moduledom.Module, states map[string]string) (*TenantModuleConfigOutput, error) {
+	_ = tenantID // retained in the signature for symmetry; may be used for future scoping
+
+	// Split into top-level and sub-modules from the same query result
+	topLevel, subModulesByParent := splitModules(allModules)
+
+	// Build output: only top-level, user-facing modules
+	var summary TenantModuleSummary
+	modules := make([]*TenantModuleInfo, 0, len(topLevel))
+
+	for _, m := range topLevel {
+		// Skip internal/infrastructure modules not shown in sidebar
+		if !moduledom.IsUserFacing(m.ID()) {
+			continue
+		}
+
+		isEnabled := states[m.ID()] == "" || m.IsCore()
+		r := states[m.ID()]
+		entitled := m.IsCore() || entitledState(r)
+
+		// Build sub-module info with INDEPENDENT enabled states.
+		// The admin UI needs the sub-module's OWN state (not combined with parent)
+		// so that when parent is re-enabled, sub-module states are correctly preserved.
+		// The frontend handles parent-off visual override via opacity + pointer-events-none.
+		var subInfos []*SubModuleInfo
+		if subs, ok := subModulesByParent[m.ID()]; ok {
+			subInfos = make([]*SubModuleInfo, 0, len(subs))
+			for _, sub := range subs {
+				subEnabled := states[sub.ID()] == ""
+				subInfos = append(subInfos, &SubModuleInfo{
+					Module:    sub,
+					IsEnabled: subEnabled,
+				})
+			}
+		}
+
+		modules = append(modules, &TenantModuleInfo{
+			Module:     m,
+			IsEnabled:  isEnabled,
+			Entitled:   entitled,
+			SubModules: subInfos,
+		})
+
+		summary.Total++
+		if isEnabled {
+			summary.Enabled++
+		} else {
+			summary.Disabled++
+		}
+		if m.IsCore() {
+			summary.Core++
+		}
+	}
+
+	return &TenantModuleConfigOutput{
+		Modules: modules,
+		Summary: summary,
+	}, nil
+}
+
+// maxModuleUpdatesPerRequest limits the size of a caller-supplied toggle
+// batch so one API request cannot make the server validate and upsert an
+// unbounded list. Presets are not subject to it: their update set is built
+// server-side from the static preset catalog, so it is bounded by the
+// module catalog, and it must be applied as one set for the dependency
+// check to see the preset's target state.
+// A variable so a test can lower it.
+var maxModuleUpdatesPerRequest = 50
+
+// UpdateTenantModules toggles modules for a tenant on behalf of an API caller.
+func (s *ModuleService) UpdateTenantModules(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
+	if len(updates) > maxModuleUpdatesPerRequest {
+		return nil, fmt.Errorf("%w: too many module updates (max %d)", shared.ErrValidation, maxModuleUpdatesPerRequest)
+	}
+	return s.applyTenantModuleUpdates(ctx, tenantID, updates, actx)
+}
+
+// applyTenantModuleUpdates validates the whole update set against the
+// post-update state and persists it in one upsert. Callers bound the size.
+func (s *ModuleService) applyTenantModuleUpdates(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
+	if s.tenantModuleRepo == nil {
+		return nil, fmt.Errorf("%w: tenant module management not configured", shared.ErrInternal)
+	}
+
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	// Serialise concurrent toggles on the SAME tenant so the validate→
+	// upsert window is atomic. Different tenants don't contend.
+	lock := s.tenantToggleLock(tenantID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	// Pre-load all active modules into a map to avoid N individual GetModuleByID queries
+	allModules, loadErr := s.moduleRepo.ListActiveModules(ctx)
+	if loadErr != nil {
+		return nil, fmt.Errorf("failed to load modules for validation: %w", loadErr)
+	}
+	moduleMap := make(map[string]*moduledom.Module, len(allModules))
+	for _, m := range allModules {
+		moduleMap[m.ID()] = m
+	}
+
+	// Build the enabled-module set AFTER the proposed updates, so the
+	// dependency check sees the target state, not the current state. This
+	// matters when a single request both disables X and the modules that
+	// soft/hard depend on X — the request as a whole is valid even though
+	// mid-way the dependent is still in the updates queue.
+	states := s.moduleStates(ctx, tenantID)
+	enabledAfter := make(map[string]bool, len(allModules))
+	for _, m := range allModules {
+		enabledAfter[m.ID()] = m.IsActive() && states[m.ID()] == ""
+	}
+	for _, u := range updates {
+		enabledAfter[u.ModuleID] = u.IsEnabled
+	}
+
+	// Validate all module IDs against pre-loaded map (0 additional queries)
+	var disabledNames, enabledNames []string
+	var collectedWarnings []ToggleIssue
+	for _, u := range updates {
+		m, exists := moduleMap[u.ModuleID]
+		if !exists {
+			return nil, fmt.Errorf("%w: unknown module: %s", shared.ErrValidation, u.ModuleID)
+		}
+
+		if !m.IsActive() {
+			return nil, fmt.Errorf("%w: module '%s' is not available", moduledom.ErrModuleNotAvailable, u.ModuleID)
+		}
+
+		if !u.IsEnabled && m.IsCore() {
+			return nil, fmt.Errorf("%w: '%s' is a core module and cannot be disabled", moduledom.ErrCoreModuleCannotBeDisabled, m.Name())
+		}
+		// Within the entitlement only: a module that is not available for the
+		// organization cannot be switched on by it.
+		if u.IsEnabled && !m.IsCore() {
+			if !entitledState(states[u.ModuleID]) {
+				return nil, fmt.Errorf("%w: '%s' is not available for this organization", moduledom.ErrModuleNotEntitled, m.Name())
+			}
+		}
+
+		// Dependency check — platform-wide static graph in
+		// pkg/domain/module/dependency.go. Reject if any hard-dependent
+		// module remains enabled in the post-update state. Deps that
+		// reference modules NOT present in the registry (e.g.
+		// platform-edition mismatch, or a dep migration that hasn't
+		// run yet) are skipped — we cannot block on something the
+		// deployment doesn't know about. Returns a structured
+		// ToggleError the HTTP handler can serialise as JSON.
+		if !u.IsEnabled {
+			blockers, warnings := moduledom.CanDisable(u.ModuleID, enabledAfter)
+			issues := collectBlockerIssues(blockers, moduleMap)
+			if len(issues) > 0 {
+				return nil, &ToggleError{
+					ModuleID:   u.ModuleID,
+					ModuleName: m.Name(),
+					Action:     "disable",
+					Blockers:   issues,
+				}
+			}
+			// Soft warnings — not fatal, just surface them.
+			collectedWarnings = append(collectedWarnings, collectWarningIssues(warnings, moduleMap)...)
+		} else {
+			// Enabling — verify required hard deps are enabled too.
+			missing := moduledom.RequiredToEnable(u.ModuleID, enabledAfter)
+			issues := collectRequiredIssues(missing, moduleMap)
+			if len(issues) > 0 {
+				return nil, &ToggleError{
+					ModuleID:   u.ModuleID,
+					ModuleName: m.Name(),
+					Action:     "enable",
+					Required:   issues,
+				}
+			}
+		}
+
+		if u.IsEnabled {
+			enabledNames = append(enabledNames, m.Name())
+		} else {
+			disabledNames = append(disabledNames, m.Name())
+		}
+	}
+
+	// Parse updatedBy from audit context
+	var updatedBy *shared.ID
+	if actx.ActorID != "" {
+		uid, uidErr := shared.IDFromString(actx.ActorID)
+		if uidErr == nil {
+			updatedBy = &uid
+		}
+	}
+
+	// Upsert
+	if err := s.tenantModuleRepo.UpsertBatch(ctx, parsedTenantID, updates, updatedBy); err != nil {
+		return nil, fmt.Errorf("failed to update tenant modules: %w", err)
+	}
+
+	// Audit log
+	s.logModuleAudit(ctx, actx, tenantID, enabledNames, disabledNames)
+	// Bump version + WS broadcast so other tabs/clients invalidate
+	// their SWR cache and refetch immediately.
+	s.notifyModuleChange(ctx, tenantID)
+
+	// Read the states again: a module switched on or off changes the state of
+	// the modules that hard-require it (InheritOffFromHardDependencies).
+	states = s.moduleStates(ctx, tenantID)
+	out, buildErr := s.buildTenantModuleConfigFromMaps(tenantID, allModules, states)
+	if buildErr != nil {
+		return nil, buildErr
+	}
+	out.Warnings = collectedWarnings
+	return out, nil
+}
+
+// ValidateToggle runs the same dependency gate as UpdateTenantModules
+// but WITHOUT persisting. The UI calls this from the module-toggle UI
+// to preview blockers/warnings before the user commits. Hit path:
+//
+//	POST /api/v1/tenants/{t}/settings/modules/validate
+func (s *ModuleService) ValidateToggle(ctx context.Context, tenantID string, updates []moduledom.TenantModuleUpdate) (*ValidationIssues, error) {
+	if s.tenantModuleRepo == nil {
+		return nil, fmt.Errorf("%w: tenant module management not configured", shared.ErrInternal)
+	}
+	if len(updates) > maxModuleUpdatesPerRequest {
+		return nil, fmt.Errorf("%w: too many module updates (max %d)", shared.ErrValidation, maxModuleUpdatesPerRequest)
+	}
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	allModules, err := s.moduleRepo.ListActiveModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load modules: %w", err)
+	}
+	moduleMap := make(map[string]*moduledom.Module, len(allModules))
+	for _, m := range allModules {
+		moduleMap[m.ID()] = m
+	}
+	disabled := s.getTenantDisabledModules(ctx, tenantID)
+	enabledAfter := make(map[string]bool, len(allModules))
+	for _, m := range allModules {
+		enabledAfter[m.ID()] = m.IsActive() && !disabled[m.ID()]
+	}
+	for _, u := range updates {
+		enabledAfter[u.ModuleID] = u.IsEnabled
+	}
+
+	issues := &ValidationIssues{}
+	for _, u := range updates {
+		m, ok := moduleMap[u.ModuleID]
+		if !ok || !m.IsActive() {
+			continue
+		}
+		if !u.IsEnabled {
+			if m.IsCore() {
+				// Surface as blocker with an explicit reason so the UI
+				// can render the same dialog.
+				issues.Blockers = append(issues.Blockers, ToggleIssue{
+					ModuleID: u.ModuleID,
+					Name:     m.Name(),
+					Reason:   "core module — cannot be disabled",
+				})
+				continue
+			}
+			blockers, warnings := moduledom.CanDisable(u.ModuleID, enabledAfter)
+			issues.Blockers = append(issues.Blockers, collectBlockerIssues(blockers, moduleMap)...)
+			issues.Warnings = append(issues.Warnings, collectWarningIssues(warnings, moduleMap)...)
+		} else {
+			missing := moduledom.RequiredToEnable(u.ModuleID, enabledAfter)
+			issues.Required = append(issues.Required, collectRequiredIssues(missing, moduleMap)...)
+		}
+	}
+	return issues, nil
+}
+
+func collectBlockerIssues(blockers []moduledom.ToggleBlocker, moduleMap map[string]*moduledom.Module) []ToggleIssue {
+	out := make([]ToggleIssue, 0, len(blockers))
+	seen := make(map[string]bool, len(blockers))
+	for _, b := range blockers {
+		if seen[b.DependentModuleID] {
+			continue
+		}
+		dep, ok := moduleMap[b.DependentModuleID]
+		if !ok {
+			continue
+		}
+		seen[b.DependentModuleID] = true
+		out = append(out, ToggleIssue{
+			ModuleID: b.DependentModuleID,
+			Name:     dep.Name(),
+			Reason:   b.Reason,
+		})
+	}
+	return out
+}
+
+func collectWarningIssues(warnings []moduledom.ToggleWarning, moduleMap map[string]*moduledom.Module) []ToggleIssue {
+	out := make([]ToggleIssue, 0, len(warnings))
+	seen := make(map[string]bool, len(warnings))
+	for _, w := range warnings {
+		if seen[w.DependentModuleID] {
+			continue
+		}
+		dep, ok := moduleMap[w.DependentModuleID]
+		if !ok {
+			continue
+		}
+		seen[w.DependentModuleID] = true
+		out = append(out, ToggleIssue{
+			ModuleID: w.DependentModuleID,
+			Name:     dep.Name(),
+			Reason:   w.Reason,
+		})
+	}
+	return out
+}
+
+func collectRequiredIssues(missing []moduledom.Dependency, moduleMap map[string]*moduledom.Module) []ToggleIssue {
+	out := make([]ToggleIssue, 0, len(missing))
+	for _, d := range missing {
+		dep, ok := moduleMap[d.ModuleID]
+		if !ok {
+			continue
+		}
+		out = append(out, ToggleIssue{
+			ModuleID: d.ModuleID,
+			Name:     dep.Name(),
+			Reason:   d.Reason,
+		})
+	}
+	return out
+}
+
+// ResetTenantModules resets all module overrides for a tenant (all modules enabled).
+func (s *ModuleService) ResetTenantModules(ctx context.Context, tenantID string, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
+	if s.tenantModuleRepo == nil {
+		return nil, fmt.Errorf("%w: tenant module management not configured", shared.ErrInternal)
+	}
+
+	parsedTenantID, err := shared.IDFromString(tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	if err := s.tenantModuleRepo.DeleteByTenant(ctx, parsedTenantID); err != nil {
+		return nil, fmt.Errorf("failed to reset tenant modules: %w", err)
+	}
+
+	// Audit log
+	s.logModuleAudit(ctx, actx, tenantID, nil, nil)
+	s.notifyModuleChange(ctx, tenantID)
+
+	return s.GetTenantModuleConfig(ctx, tenantID)
+}
+
+func (s *ModuleService) logModuleAudit(ctx context.Context, actx auditapp.AuditContext, tenantID string, enabled, disabled []string) {
+	if s.auditService == nil {
+		return
+	}
+
+	actx.TenantID = tenantID
+
+	var msgParts []string
+	if len(enabled) > 0 {
+		msgParts = append(msgParts, "enabled "+strings.Join(enabled, ", "))
+	}
+	if len(disabled) > 0 {
+		msgParts = append(msgParts, "disabled "+strings.Join(disabled, ", "))
+	}
+
+	var msg string
+	if len(msgParts) > 0 {
+		msg = "Modules updated: " + strings.Join(msgParts, "; ")
+	} else {
+		msg = "Modules reset to defaults"
+	}
+
+	event := auditapp.NewSuccessEvent(audit.ActionTenantModulesUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage(msg).
+		WithSeverity(audit.SeverityMedium)
+
+	if len(enabled) > 0 {
+		event = event.WithMetadata("enabled", strings.Join(enabled, ", "))
+	}
+	if len(disabled) > 0 {
+		event = event.WithMetadata("disabled", strings.Join(disabled, ", "))
+	}
+
+	if err := s.auditService.LogEvent(ctx, actx, event); err != nil {
+		s.logger.Error("failed to log module audit event", "error", err)
+	}
+}
+
+// splitModules separates a flat list of modules into top-level modules
+// and sub-modules grouped by parent ID. This avoids a separate DB query
+// since ListActiveModules already returns both.
+func splitModules(allModules []*moduledom.Module) ([]*moduledom.Module, map[string][]*moduledom.Module) {
+	topLevel := make([]*moduledom.Module, 0, len(allModules))
+	subByParent := make(map[string][]*moduledom.Module)
+
+	for _, m := range allModules {
+		if m.IsSubModule() {
+			parentID := *m.ParentModuleID()
+			subByParent[parentID] = append(subByParent[parentID], m)
+		} else {
+			topLevel = append(topLevel, m)
+		}
+	}
+
+	return topLevel, subByParent
+}
+
+// TenantDisabledModules returns the modules that are off for the
+// organization, for whatever reason (TenantModuleStates). Used by the route
+// gate, the background jobs and every module check.
+func (s *ModuleService) TenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
+	return s.getTenantDisabledModules(ctx, tenantID)
+}
+
+func (s *ModuleService) getTenantDisabledModules(ctx context.Context, tenantID string) map[string]bool {
+	states := s.moduleStates(ctx, tenantID)
+	disabled := make(map[string]bool, len(states))
+	for id := range states {
+		disabled[id] = true
+	}
+	return disabled
+}
+
+// TenantModuleStates returns, for every module that is off for the
+// organization, why: not_entitled (denied by the instance operator or a
+// source), unavailable (the entitlement could not be read:
+// fail-closed) or disabled_by_admin (the organization switched it off). An
+// entitlement reason wins over a preference. Core modules are never off.
+func (s *ModuleService) TenantModuleStates(ctx context.Context, tenantID string) map[string]string {
+	return s.moduleStates(ctx, tenantID)
+}
+
+// readOnlyUntil returns the end of the read-only grace of each module in grace.
+func (s *ModuleService) readOnlyUntil(ctx context.Context, tenantID string) map[string]time.Time {
+	out := map[string]time.Time{}
+	if s.entitlements == nil {
+		return out
+	}
+	notEntitled, err := s.entitlements.NotEntitled(ctx, tenantID)
+	if err != nil {
+		return out
+	}
+	now := time.Now()
+	inGrace := map[string]string{}
+	for id, until := range notEntitled {
+		if until != nil && now.Before(*until) {
+			out[id] = *until
+			inGrace[id] = ReasonReadOnlyGrace
+		}
+	}
+	// A dependent of a module in grace is read-only until the same date.
+	for id, src := range moduledom.InheritOffFromHardDependencies(inGrace) {
+		if _, own := notEntitled[id]; !own {
+			out[id] = out[src]
+		}
+	}
+	return out
+}
+
+func (s *ModuleService) moduleStates(ctx context.Context, tenantID string) map[string]string {
+	states, _, _ := s.TenantModuleStateSnapshot(ctx, tenantID)
+	return states
+}
+
+// TenantModuleStateSnapshot is TenantModuleStates plus what a cache of it
+// needs: validUntil, the next moment the state changes by itself (a read-only
+// grace ends, a timed deny runs out; zero: no such moment), and cacheable,
+// false when a read failed (the entitlement could not be read, so every
+// non-core module is reported unavailable, or the organization's preferences
+// could not be read). A caller must not keep an uncacheable answer: it is the
+// failure, not the organization's state.
+func (s *ModuleService) TenantModuleStateSnapshot(ctx context.Context, tenantID string) (states map[string]string, validUntil time.Time, cacheable bool) {
+	states = make(map[string]string)
+	cacheable = true
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return states, validUntil, cacheable
+	}
+
+	// Preference: the organization's explicit-off overrides. A lookup error
+	// fails open (preferences are cosmetic; entitlement is the boundary).
+	if s.tenantModuleRepo != nil {
+		parsedID, _ := shared.IDFromString(tenantID)
+		overrides, err := s.tenantModuleRepo.ListByTenant(ctx, parsedID)
+		if err != nil {
+			s.logger.Warn("failed to get tenant module overrides", "tenant_id", tenantID, "error", err)
+			cacheable = false
+		}
+		for _, o := range overrides {
+			if !o.IsEnabled && isSwitchable(o.ModuleID) {
+				states[o.ModuleID] = ReasonDisabledByAdmin
+			}
+		}
+	}
+
+	// Entitlement: fail-closed.
+	if s.entitlements != nil {
+		var notEntitled map[string]*time.Time
+		var err error
+		if dr, ok := s.entitlements.(deadlineEntitlementReader); ok {
+			var next *time.Time
+			notEntitled, next, err = dr.NotEntitledWithDeadline(ctx, tenantID)
+			if next != nil {
+				validUntil = *next
+			}
+		} else {
+			notEntitled, err = s.entitlements.NotEntitled(ctx, tenantID)
+		}
+		if err != nil {
+			s.logger.Warn("module entitlement unavailable; treating non-core modules as off (fail-closed)",
+				"tenant_id", tenantID, "error", err)
+			for _, d := range moduledom.Registry {
+				if !d.Core {
+					states[d.ID] = ReasonUnavailable
+				}
+			}
+			return states, time.Time{}, false
+		}
+		now := time.Now()
+		for id, until := range notEntitled {
+			if moduledom.IsCoreModule(id) {
+				continue
+			}
+			if until != nil && now.Before(*until) {
+				states[id] = ReasonReadOnlyGrace
+			} else {
+				states[id] = ReasonNotEntitled
+			}
+		}
+	}
+	// An installation-wide module the platform has off is off for every
+	// organization: it wins over the plan and the organization's preference.
+	// A switch that cannot be read is off, and the answer is not cached.
+	for _, id := range moduledom.PlatformModuleIDs() {
+		if s.platform == nil {
+			states[id] = ReasonDisabledByPlatform
+			continue
+		}
+		off, err := s.platform.PlatformModuleOff(ctx, id)
+		if err != nil {
+			s.logger.Warn("platform module switch unavailable; treating the module as off (fail-closed)",
+				"module", id, "error", err)
+			cacheable = false
+		}
+		if err != nil || off {
+			states[id] = ReasonDisabledByPlatform
+		}
+	}
+	// A module cannot be on while a module it hard-requires is off: it takes
+	// that module's reason, so a deny of a dependency reaches its dependents'
+	// routes, jobs and MCP tools too.
+	moduledom.InheritOffFromHardDependencies(states)
+	return states, validUntil, cacheable
+}
+
+// applySubModuleInheritance enables a parent's "<parent>.<sub>" sub-modules in
+// target, but is CURATION-AWARE: if the baseline already names any sub of a
+// parent, the preset is deliberately selecting a subset of that parent's
+// sub-modules, so we respect it and do NOT blanket-enable the siblings. Only
+// when a parent is enabled and NO sub of it is named do we inherit all its
+// sub-modules.
+//
+// Why: presets curate feature sub-modules on purpose — e.g. vm_essentials lists
+// only ai_triage.auto + ai_triage.bulk, while ctem_full adds ai_triage.workflow
+// + custom_prompts. Blanket inheritance would erase that distinction and turn on
+// ai_triage.byok/agent for vm_essentials too. The un-curated case is the
+// asset-type one ("assets" core on ⇒ every assets.* type available), where no
+// preset names individual assets.* children so inheritance still applies.
+func applySubModuleInheritance(target map[string]bool, allModules []*moduledom.Module) {
+	subsByParent := make(map[string][]string)
+	for _, m := range allModules {
+		id := m.ID()
+		if !strings.Contains(id, ".") {
+			continue
+		}
+		parent := strings.SplitN(id, ".", 2)[0]
+		subsByParent[parent] = append(subsByParent[parent], id)
+	}
+	for parent, subs := range subsByParent {
+		if !target[parent] {
+			continue // parent not enabled — nothing to inherit
+		}
+		curated := false
+		for _, sub := range subs {
+			if target[sub] {
+				curated = true
+				break
+			}
+		}
+		if curated {
+			continue // preset selected a specific subset — honor it
+		}
+		for _, sub := range subs {
+			target[sub] = true
+		}
+	}
+}
+
+// ListActiveModules returns all active modules.
+func (s *ModuleService) ListActiveModules(ctx context.Context) ([]*moduledom.Module, error) {
+	return s.moduleRepo.ListActiveModules(ctx)
+}
+
+// GetModule retrieves a module by ID.
+func (s *ModuleService) GetModule(ctx context.Context, moduleID string) (*moduledom.Module, error) {
+	return s.moduleRepo.GetModuleByID(ctx, moduleID)
+}
+
+// DependencyEdgeOutput is the UI-facing shape of one dependency edge.
+type DependencyEdgeOutput struct {
+	From   string `json:"from"`             // Module that depends on the target.
+	To     string `json:"to"`               // Target module required by From.
+	Type   string `json:"type"`             // "hard" or "soft".
+	Reason string `json:"reason,omitempty"` // Human-readable explanation.
+}
+
+// DependencyGraphOutput is returned by GetDependencyGraph. Flat edge list
+// so the UI can render the graph with any layout library without
+// re-shaping the server response.
+type DependencyGraphOutput struct {
+	Edges []DependencyEdgeOutput `json:"edges"`
+}
+
+// GetDependencyGraph returns the static module dependency graph. The
+// graph is read from pkg/domain/module/dependency.go (platform-wide
+// spec, does not change per tenant or at runtime). The UI uses this
+// to render the Settings → Modules page with dependency badges and
+// to show "disabling X will also affect Y, Z" confirmation dialogs.
+func (s *ModuleService) GetDependencyGraph(_ context.Context) *DependencyGraphOutput {
+	out := &DependencyGraphOutput{}
+	for dependent, deps := range moduledom.ModuleDependencies {
+		for _, d := range deps {
+			out.Edges = append(out.Edges, DependencyEdgeOutput{
+				From:   dependent,
+				To:     d.ModuleID,
+				Type:   string(d.Type),
+				Reason: d.Reason,
+			})
+		}
+	}
+	return out
+}
+
+// =============================================================================
+// MODULE PRESETS — bundle curated module sets admins apply instead of
+// toggling ~100 modules one by one. Presets are defined statically in
+// pkg/domain/module/presets.go; this file exposes them via service
+// methods for the HTTP handler.
+// =============================================================================
+
+// ModulePresetOutput is the API-facing shape of one preset.
+type ModulePresetOutput struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	TargetPersona  string   `json:"target_persona"`
+	Icon           string   `json:"icon"`
+	KeyOutcomes    []string `json:"key_outcomes"`
+	RecommendedFor []string `json:"recommended_for"`
+	ModuleCount    int      `json:"module_count"` // resolved count incl. core + transitive
+}
+
+// PresetDiffOutput describes what would change if a preset were applied.
+type PresetDiffOutput struct {
+	PresetID   string            `json:"preset_id"`
+	PresetName string            `json:"preset_name"`
+	ToEnable   []ModuleRefOutput `json:"to_enable"`
+	ToDisable  []ModuleRefOutput `json:"to_disable"`
+	// Unavailable lists modules the preset names that this organization is
+	// not entitled to: the preset leaves them off instead of failing.
+	Unavailable []ModuleRefOutput `json:"unavailable,omitempty"`
+	Unchanged   int               `json:"unchanged"`
+	TotalAfter  int               `json:"total_after"`
+	AuditNotice string            `json:"audit_notice,omitempty"`
+}
+
+// ModuleRefOutput is a thin (id, name) pair used in diff listings.
+type ModuleRefOutput struct {
+	ModuleID string `json:"module_id"`
+	Name     string `json:"name"`
+}
+
+// ListModulePresets returns every preset registered in the domain
+// catalogue, with the module count already resolved so the UI can
+// render "Enables X modules" badges without a second round-trip.
+func (s *ModuleService) ListModulePresets(_ context.Context) []ModulePresetOutput {
+	out := make([]ModulePresetOutput, 0, len(moduledom.ModulePresets))
+	for i := range moduledom.ModulePresets {
+		p := &moduledom.ModulePresets[i]
+		resolved := moduledom.ResolvePresetModules(p)
+		out = append(out, ModulePresetOutput{
+			ID:             p.ID,
+			Name:           p.Name,
+			Description:    p.Description,
+			TargetPersona:  p.TargetPersona,
+			Icon:           p.Icon,
+			KeyOutcomes:    append([]string(nil), p.KeyOutcomes...),
+			RecommendedFor: append([]string(nil), p.RecommendedFor...),
+			ModuleCount:    len(resolved),
+		})
+	}
+	return out
+}
+
+// PreviewPreset computes the diff between the tenant's current module
+// state and the state that would result from applying the preset.
+// Read-only — never mutates tenant_modules.
+func (s *ModuleService) PreviewPreset(ctx context.Context, tenantID, presetID string) (*PresetDiffOutput, error) {
+	preset := moduledom.FindPreset(presetID)
+	if preset == nil {
+		return nil, fmt.Errorf("%w: unknown preset: %s", shared.ErrNotFound, presetID)
+	}
+	return s.buildPresetDiff(ctx, tenantID, preset)
+}
+
+// ApplyPreset materialises the preset into tenant_modules. Diff is
+// computed, then applied as one update set so the
+// dependency-graph validation and audit logging run exactly as if the
+// admin had toggled each module manually. Same locking semantics too.
+//
+// If tenantID is empty or the audit context has no actor, this still
+// works for the initial tenant-creation code path — the caller is
+// expected to have populated actx in that case.
+func (s *ModuleService) ApplyPreset(ctx context.Context, tenantID, presetID string, actx auditapp.AuditContext) (*TenantModuleConfigOutput, error) {
+	preset := moduledom.FindPreset(presetID)
+	if preset == nil {
+		return nil, fmt.Errorf("%w: unknown preset: %s", shared.ErrNotFound, presetID)
+	}
+
+	diff, err := s.buildPresetDiff(ctx, tenantID, preset)
+	if err != nil {
+		return nil, err
+	}
+
+	// No-op when current state already matches — skip the round-trip.
+	if len(diff.ToEnable) == 0 && len(diff.ToDisable) == 0 {
+		return s.GetTenantModuleConfig(ctx, tenantID)
+	}
+
+	// Build the update set. We explicitly set every module the preset
+	// touches, rather than sending only "is_enabled=false" rows, so the
+	// repo stores a positive row for each formerly-disabled module the
+	// preset is re-enabling.
+	updates := make([]moduledom.TenantModuleUpdate, 0, len(diff.ToEnable)+len(diff.ToDisable))
+	for _, r := range diff.ToEnable {
+		updates = append(updates, moduledom.TenantModuleUpdate{ModuleID: r.ModuleID, IsEnabled: true})
+	}
+	for _, r := range diff.ToDisable {
+		updates = append(updates, moduledom.TenantModuleUpdate{ModuleID: r.ModuleID, IsEnabled: false})
+	}
+
+	// The update set comes from the server-side preset catalog, not the
+	// caller, so the per-request cap does not apply (a preset like
+	// "minimal" disables most of the catalog in one go).
+	cfg, err := s.applyTenantModuleUpdates(ctx, tenantID, updates, actx)
+	if err != nil {
+		return nil, err
+	}
+	s.logPresetApplied(ctx, actx, tenantID, preset)
+	return cfg, nil
+}
+
+// buildPresetDiff is shared by PreviewPreset and ApplyPreset. It loads
+// the active module catalogue + the tenant's current disabled set,
+// then classifies every module into enable / disable / unchanged.
+func (s *ModuleService) buildPresetDiff(ctx context.Context, tenantID string, p *moduledom.ModulePreset) (*PresetDiffOutput, error) {
+	if _, err := shared.IDFromString(tenantID); err != nil {
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+	}
+
+	allModules, err := s.moduleRepo.ListActiveModules(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load modules: %w", err)
+	}
+
+	nameOf := make(map[string]string, len(allModules))
+	for _, m := range allModules {
+		nameOf[m.ID()] = m.Name()
+	}
+
+	target := moduledom.ResolvePresetModules(p) // what the preset wants
+	// Sub-module inheritance: a parent enabled in the preset implicitly enables
+	// its "<parent>.<sub>" sub-modules.
+	applySubModuleInheritance(target, allModules)
+	states := s.moduleStates(ctx, tenantID)
+
+	diff := &PresetDiffOutput{
+		PresetID:   p.ID,
+		PresetName: p.Name,
+		// Initialise as empty slices (not nil) so JSON serialises as
+		// [] rather than null. UI iterates these without null-checks.
+		ToEnable:  []ModuleRefOutput{},
+		ToDisable: []ModuleRefOutput{},
+	}
+
+	for _, m := range allModules {
+		id := m.ID()
+		wantEnabled := target[id]
+		currentlyEnabled := m.IsActive() && states[id] == ""
+
+		switch {
+		case !m.IsCore() && !moduledom.IsUserFacing(id):
+			// A module not listed on Settings > Modules keeps its state: a
+			// preset must not switch off what the page cannot switch back on.
+			diff.Unchanged++
+			if currentlyEnabled {
+				diff.TotalAfter++
+			}
+			continue
+		case wantEnabled && !currentlyEnabled && !m.IsCore() && !entitledState(states[id]):
+			// Not entitled (or in its read-only grace): the organization
+			// cannot switch it on, so the preset leaves it off.
+			diff.Unavailable = append(diff.Unavailable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
+			continue
+		case wantEnabled && !currentlyEnabled:
+			diff.ToEnable = append(diff.ToEnable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
+		case !wantEnabled && currentlyEnabled && !m.IsCore():
+			// Never include core modules in ToDisable — they cannot be
+			// turned off by the user anyway. Surfacing them would give
+			// admins the false impression the preset will silence them.
+			diff.ToDisable = append(diff.ToDisable, ModuleRefOutput{ModuleID: id, Name: m.Name()})
+		default:
+			diff.Unchanged++
+		}
+
+		if wantEnabled {
+			diff.TotalAfter++
+		}
+	}
+
+	return diff, nil
+}
+
+// logPresetApplied records the preset choice separately from the
+// underlying toggle audit, so auditors can reconstruct "admin applied
+// VM Essentials" without parsing toggle-level rows.
+// entitledState reports whether an off reason still lets the organization
+// switch the module on (only its own preference turned it off).
+func entitledState(reason string) bool {
+	return reason != ReasonNotEntitled && reason != ReasonUnavailable && reason != ReasonReadOnlyGrace && reason != ReasonDisabledByPlatform
+}
+
+func (s *ModuleService) logPresetApplied(ctx context.Context, actx auditapp.AuditContext, tenantID string, p *moduledom.ModulePreset) {
+	if s.auditService == nil {
+		return
+	}
+	actx.TenantID = tenantID
+	event := auditapp.NewSuccessEvent(audit.ActionTenantModulesUpdated, audit.ResourceTypeTenant, tenantID).
+		WithMessage("Module preset applied: "+p.Name).
+		WithSeverity(audit.SeverityMedium).
+		WithMetadata("preset_id", p.ID).
+		WithMetadata("preset_name", p.Name)
+	auditapp.RecordOrWarn(ctx, nil, s.auditService, actx, event)
+}
+
+// isSwitchable reports whether an organization's own switch can turn the
+// module off: a module Settings > Modules lists. A core module is always on and
+// a module the page does not list has no switch, so an old override row for
+// either is ignored. An id the registry does not declare keeps the row's
+// meaning (sub-module rows come from the catalog, not the registry).
+func isSwitchable(moduleID string) bool {
+	d, ok := moduledom.Lookup(moduleID)
+	if !ok {
+		return true
+	}
+	return !d.Core && d.UserFacing
+}

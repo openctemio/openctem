@@ -1,0 +1,53 @@
+package aitriage
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/openctemio/openctem/server/internal/app/aipolicy"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+)
+
+// The model provider never gets the code line of a secret finding, however
+// well the producer masked it; file and line still go, and other findings keep
+// their snippet.
+func TestTriagePrompt_NoSnippetForASecretFinding(t *testing.T) {
+	s := &AITriageService{promptSanitizer: NewPromptSanitizer()}
+	const line = `db_password = "LINE-MARKER-REDACTED"`
+	build := func(source vulnerability.FindingSource, ftype vulnerability.FindingType) string {
+		f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), source, "tool", vulnerability.SeverityHigh, "msg")
+		require.NoError(t, err)
+		f.SetFindingType(ftype)
+		f.SetLocation("config/app.py", 12, 12, 0, 0)
+		f.SetSnippet(line)
+		f.SetContextSnippet("before()\n" + line + "\nafter()")
+		p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted, nil)
+		return p
+	}
+	for name, p := range map[string]string{
+		"by type":   build(vulnerability.FindingSourceSAST, vulnerability.FindingTypeSecret),
+		"by source": build(vulnerability.FindingSourceSecret, vulnerability.FindingTypeVulnerability),
+	} {
+		require.NotContains(t, p, "LINE-MARKER", name)
+		require.NotContains(t, p, "after()", name)
+		require.True(t, strings.Contains(p, "config/app.py"), name+": the file stays")
+	}
+	require.Contains(t, build(vulnerability.FindingSourceSAST, vulnerability.FindingTypeVulnerability), "LINE-MARKER", "other findings keep their snippet")
+}
+
+// A secret finding's description can quote the credential; the model
+// provider gets it masked.
+func TestTriagePrompt_RedactsSecretFindingDescription(t *testing.T) {
+	s := &AITriageService{promptSanitizer: NewPromptSanitizer()}
+	const tok = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	f, err := vulnerability.NewFinding(shared.NewID(), shared.NewID(), vulnerability.FindingSourceSecret, "tool", vulnerability.SeverityHigh, "GitHub token")
+	require.NoError(t, err)
+	f.SetFindingType(vulnerability.FindingTypeSecret)
+	f.SetDescription("Found token " + tok + " in config")
+	p, _, _ := s.buildTriagePromptSafe(f, aipolicy.ClassRestricted, nil)
+	require.NotContains(t, p, "ghp_")
+	require.Contains(t, p, "Found token")
+}

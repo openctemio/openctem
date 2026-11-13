@@ -5,7 +5,7 @@ import type { E2EConfig } from './env'
 
 /**
  * The API allows 5 sign-ins a minute per client address, counted over a
- * sliding window (api/internal/infra/http/middleware/ratelimit.go); refused
+ * sliding window (server/internal/infra/http/middleware/ratelimit.go); refused
  * attempts do not count. The whole suite signs in from one address: the
  * login spec, every worker's session and the specs that sign in as the
  * limited member already make five sign-ins within seconds, so the next one

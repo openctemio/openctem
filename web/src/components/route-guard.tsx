@@ -40,6 +40,7 @@ import { AccessNotice } from '@/features/shared/components/access-notice'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { activeSettingsItem } from '@/config/settings-nav'
 import { MainRegion } from '@/components/layout/main'
+import { takeSwitchLanding } from '@/components/layout/tenant-epoch-boundary'
 
 interface RouteGuardProps {
   children: React.ReactNode
@@ -141,6 +142,16 @@ export function RouteGuard({ children }: RouteGuardProps) {
     if (!isDataReady) setDecidedOnce(false)
     else if (!loading) setDecidedOnce(true)
   }, [isDataReady, loading])
+
+  // Just switched organization and the new one does not grant this section:
+  // go to the dashboard instead of showing an access notice for a page the
+  // person did not ask for.
+  const router = useRouter()
+  const deniedAfterSwitch = !loading && !accessCheck.hasAccess && !!routeConfig && pathname !== '/'
+  React.useEffect(() => {
+    if (loading) return
+    if (takeSwitchLanding(pathname) && deniedAfterSwitch) router.replace('/')
+  }, [loading, deniedAfterSwitch, pathname, router])
 
   if (loading) {
     if (!routeConfig || (isDataReady && decidedOnce)) return <>{children}</>

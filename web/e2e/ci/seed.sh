@@ -6,6 +6,8 @@
 #   - assets of two types, two sensors, a CTIS report with 15 findings
 #     (enough for the findings picker to scroll; two name CVE-2099-0101) and 10 for the triage
 #     spec, a scan with a run in progress, a remediation task
+#   - an account that owns two organizations, A with 50 findings and B with 3
+#     (the organization switch spec)
 #
 # Requires: docker (also runs psql from PSQL_IMAGE, default postgres:17-alpine), curl, jq. Env: API_IMAGE (runs /app/bootstrap-admin),
 # E2E_OWNER_PASSWORD and E2E_DATABASE_URL (web/e2e/ci/make-env.sh),
@@ -259,9 +261,69 @@ call POST /api/v1/auth/login "{\"email\":\"$MEMBER_EMAIL\",\"password\":\"$MEMBE
 call POST /api/v1/invitations/accept-with-refresh "{\"token\":\"$INVITE_TOKEN\",\"refresh_token\":\"$(jq -r '.refresh_token // empty' <<<"$BODY")\"}"
 call POST /api/v1/auth/logout '{}'
 
+log "an account in two organizations (E2E_SWITCH_*)"
+# 56-organization-switch signs in as an account that belongs to two
+# organizations of its own and switches between them. The main owner keeps
+# one organization (with two, every spec's sign-in would stop at the
+# organization picker). Organization A gets enough findings for a fifth page
+# of ten, B a few: the spec tells them apart by id.
+SWITCH_EMAIL="e2e-switch-$RUN@openctem-test.local"
+SWITCH_PASSWORD="$(openssl rand -hex 10)S$(openssl rand -hex 3)"
+SWITCH_TOKEN=
+for which in A B; do
+  slug="$SLUG-switch-$(tr 'AB' 'ab' <<<"$which")"
+  # The same administrator as above (left unchanged); the second run names
+  # the account the first one created, which then owns both.
+  out=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL \
+    --entrypoint /app/bootstrap-admin "${API_IMAGE:?set API_IMAGE}" \
+    -print-secrets \
+    -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
+    -org-name="E2E Switch $which $RUN" -org-slug="$slug" -org-owner-email="$SWITCH_EMAIL" 2>&1) || {
+    log "bootstrap-admin (switch $which) failed:"
+    echo "$out" >&2
+    exit 1
+  }
+  if [[ "$which" == A ]]; then
+    SWITCH_TOKEN=$({ grep -o 'set-password#token=[^[:space:]]*' <<<"$out" || true; } | head -1 | sed 's/.*token=//')
+    [[ -n "$SWITCH_TOKEN" ]] || { log "no set-password link for $SWITCH_EMAIL:"; echo "$out" >&2; exit 1; }
+  fi
+done
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v a="$SLUG-switch-a" -v b="$SLUG-switch-b" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required_for_admins": false}'::jsonb)
+ WHERE slug IN (:'a', :'b');
+SQL
+ACCESS_TOKEN=
+JAR="$WORK/switch-cookies"
+call POST /api/v1/auth/reset-password "{\"token\":\"$SWITCH_TOKEN\",\"new_password\":\"$SWITCH_PASSWORD\"}"
+call POST /api/v1/auth/login "{\"email\":\"$SWITCH_EMAIL\",\"password\":\"$SWITCH_PASSWORD\"}"
+LOGIN_BODY="$BODY"
+for which in A B; do
+  slug="$SLUG-switch-$(tr 'AB' 'ab' <<<"$which")"
+  tid=$(jq -r --arg s "$slug" '(.tenants // [])[] | select(.slug==$s) | .id' <<<"$LOGIN_BODY")
+  [[ -n "$tid" ]] || { log "login of $SWITCH_EMAIL lists no $slug"; exit 1; }
+  ACCESS_TOKEN=
+  call POST /api/v1/auth/token "{\"tenant_id\":\"$tid\"}"
+  ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+  call POST /api/v1/assets "{\"name\":\"switch-$(tr 'AB' 'ab' <<<"$which").example.com\",\"type\":\"domain\",\"criticality\":\"medium\"}"
+  asset=$(jq -r '.id // .data.id' <<<"$BODY")
+  count=$([[ "$which" == A ]] && echo 50 || echo 3)
+  for i in $(seq 1 "$count"); do
+    call POST /api/v1/findings "$(printf '{"asset_id":"%s","source":"manual","tool_name":"e2e","rule_id":"switch-%s-%02d","message":"Switch %s finding %02d","severity":"high"}' \
+      "$asset" "$which" "$i" "$which" "$i")"
+  done
+done
+call POST /api/v1/auth/logout '{}'
+
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
 echo "E2E_USER_PASSWORD=$OWNER_PASSWORD"
 echo "E2E_TENANT_SLUG=$SLUG"
 echo "E2E_LIMITED_EMAIL=$MEMBER_EMAIL"
 echo "E2E_LIMITED_PASSWORD=$MEMBER_PASSWORD"
+echo "E2E_SWITCH_EMAIL=$SWITCH_EMAIL"
+echo "E2E_SWITCH_PASSWORD=$SWITCH_PASSWORD"
+echo "E2E_SWITCH_ORG_A=E2E Switch A $RUN"
+echo "E2E_SWITCH_ORG_B=E2E Switch B $RUN"

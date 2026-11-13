@@ -9,20 +9,25 @@
 
 'use client'
 
-import { clearFormDrafts } from '@/lib/form-drafts'
-import { clearRecentQueries } from '@/features/query/lib/recent'
 import * as React from 'react'
-// useRouter removed — cache.clear() handles revalidation without router.refresh()
+import { toast } from 'sonner'
 import { useSWRConfig } from 'swr'
-import { devLog } from '@/lib/logger'
 import { clearSwrCache } from '@/lib/swr-config'
+import { devLog } from '@/lib/logger'
 import { useMyTenants, invalidateMyTenantsCache } from '@/lib/api/user-tenant-hooks'
 import type { TenantMembership, TenantRole } from '@/lib/api/user-tenant-types'
 import { getCookie, setCookie, removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
 import { csrfHeaders } from '@/lib/csrf-client'
-import { removeStoredPermissions } from '@/lib/permission-storage'
-import { clearAllLogoCaches, clearTenantLogoCache } from '@/lib/logo-storage'
+import { clearPrimedViews } from '@/lib/api/view-prime'
+import { clearOrgScopedClientState } from '@/lib/org-scoped-storage'
+import {
+  announceTenantSwitch,
+  endTenantEpoch,
+  onTenantChangedElsewhere,
+  setActiveTenantId,
+} from '@/lib/tenant-epoch'
+import { useTranslation } from '@/context/i18n-provider'
 
 // ============================================
 // TYPES
@@ -45,8 +50,18 @@ interface TenantContextValue {
   isLoading: boolean
   /** Error fetching tenants */
   error: Error | null
-  /** Switch to a different team */
-  switchTeam: (tenantId: string) => Promise<void>
+  /**
+   * Switch to another organization. The dashboard then starts a new
+   * organization epoch (TenantEpochBoundary): fresh data cache, every
+   * component remounted, the address reset to the section's list root.
+   * `keepLocation` keeps the address (a link that names the new
+   * organization, OrgLinkGate; the MCP consent page).
+   */
+  switchTeam: (tenantId: string, options?: SwitchTeamOptions) => Promise<void>
+  /** Increases on every change of organization in this tab. */
+  epoch: number
+  /** Whether the current epoch keeps the address it started on. */
+  epochKeepsLocation: boolean
   /** Switching in progress */
   isSwitching: boolean
   /** Refresh tenant list */
@@ -55,6 +70,11 @@ interface TenantContextValue {
   updateCurrentTenant: (updates: Partial<Pick<CurrentTenant, 'name' | 'slug'>>) => void
   /** Trigger eager fetch of tenant list (call when opening dropdown) */
   loadTenants: () => void
+}
+
+export interface SwitchTeamOptions {
+  /** Keep the current address (it already names the new organization's page). */
+  keepLocation?: boolean
 }
 
 // ============================================
@@ -93,11 +113,24 @@ function readTenantFromCookie(): { tenant: CurrentTenant | null; hasCookie: bool
 }
 
 export function TenantProvider({ children }: TenantProviderProps) {
-  // router removed — see switchTeam for explanation
+  const { t } = useTranslation()
+  // The cache this provider sits in (the app's default cache). The dashboard
+  // keeps organization data in a per-epoch cache below it; pages that host a
+  // TenantProvider without the dashboard shell (consent, device sign-in) read
+  // through this one.
   const { mutate: globalMutate } = useSWRConfig()
 
   // Start with null, read from cookie in useLayoutEffect to avoid hydration mismatch
   const [currentTenant, setCurrentTenant] = React.useState<CurrentTenant | null>(null)
+  // The organization epoch of this tab (src/lib/tenant-epoch.ts).
+  const [epochState, setEpochState] = React.useState({ epoch: 0, keepLocation: false })
+  const currentTenantRef = React.useRef<CurrentTenant | null>(null)
+  React.useEffect(() => {
+    currentTenantRef.current = currentTenant
+  }, [currentTenant])
+  // True while this tab's own switch runs: the cookie already names the new
+  // organization before the epoch begins, which is not "another tab".
+  const ownSwitchRef = React.useRef(false)
   const [isSwitching, setIsSwitching] = React.useState(false)
   const [hasTenantCookie, setHasTenantCookie] = React.useState<boolean | null>(null)
   // Track if dropdown has been opened (trigger eager fetch when user wants to switch)
@@ -113,6 +146,7 @@ export function TenantProvider({ children }: TenantProviderProps) {
 
     const { tenant, hasCookie } = readTenantFromCookie()
     devLog.log('[TenantProvider] Initial read:', { tenant: tenant?.id, hasCookie })
+    setActiveTenantId(tenant?.id ?? null)
     setCurrentTenant(tenant)
     setHasTenantCookie(hasCookie)
 
@@ -126,6 +160,9 @@ export function TenantProvider({ children }: TenantProviderProps) {
       }
     }
   }, [])
+
+  // Outside this provider no tab tenant is known: the request guard stands down.
+  React.useEffect(() => () => setActiveTenantId(null), [])
 
   // OPTIMIZATION: Only fetch tenants on page load if:
   // 1. No tenant cookie exists (need to check if user needs onboarding)
@@ -156,9 +193,29 @@ export function TenantProvider({ children }: TenantProviderProps) {
     }
   }, [currentTenant, tenants])
 
+  /**
+   * Ends the previous organization's epoch in this tab and starts the next
+   * one. Order matters: reads in flight are aborted and the tab's tenant is
+   * updated before React renders again, so nothing the old organization
+   * started can write into the new one's view, and no request leaves with
+   * the old organization's state.
+   */
+  const beginEpoch = React.useCallback(
+    (previousId: string | null, next: CurrentTenant, keepLocation: boolean) => {
+      endTenantEpoch()
+      clearPrimedViews()
+      clearOrgScopedClientState(previousId)
+      setActiveTenantId(next.id)
+      setCurrentTenant(next)
+      setEpochState((s) => ({ epoch: s.epoch + 1, keepLocation }))
+      void clearSwrCache(globalMutate)
+    },
+    [globalMutate]
+  )
+
   // Switch to a different team
   const switchTeam = React.useCallback(
-    async (tenantId: string) => {
+    async (tenantId: string, options?: SwitchTeamOptions) => {
       if (isSwitching) return
 
       // Find the target tenant
@@ -174,6 +231,7 @@ export function TenantProvider({ children }: TenantProviderProps) {
       }
 
       setIsSwitching(true)
+      ownSwitchRef.current = true
 
       try {
         // Call the switch team API endpoint
@@ -203,27 +261,12 @@ export function TenantProvider({ children }: TenantProviderProps) {
 
         const data = await response.json()
 
-        // Clear cached data of old tenant from localStorage
-        if (currentTenant?.id) {
-          removeStoredPermissions(currentTenant.id)
-          clearTenantLogoCache(currentTenant.id)
-        }
-
-        // Clear all logo caches to ensure fresh logo for new tenant
-        clearAllLogoCaches()
-        // Drafts belong to the organization they were written in.
-        clearFormDrafts()
-        clearRecentQueries()
-
-        // Update current tenant
         const newTenant: CurrentTenant = {
           id: data.data.tenant_id,
           slug: data.data.tenant_slug,
           name: targetTenant.name,
           role: data.data.role as TenantRole,
         }
-
-        setCurrentTenant(newTenant)
 
         // Update cookie (non-httpOnly for client read)
         setCookie(
@@ -237,22 +280,41 @@ export function TenantProvider({ children }: TenantProviderProps) {
           { path: '/', maxAge: 7 * 24 * 60 * 60 }
         )
 
-        // Every SWR key is the endpoint URL alone (one key per endpoint, shared
-        // by every page that reads it), and the tenant comes from the session
-        // cookie, not the URL. So the switch first DROPS every cached answer
-        // (none of the old organization's data stays on screen or in memory),
-        // then refetches what is mounted under the new session.
-        await clearSwrCache(globalMutate)
+        // A new epoch: the dashboard remounts with a fresh data cache and the
+        // address goes to the section's list root (TenantEpochBoundary).
+        beginEpoch(currentTenant?.id ?? null, newTenant, options?.keepLocation === true)
+        // Other tabs of this browser now hold the new session too.
+        announceTenantSwitch(newTenant.id)
 
         devLog.log('[TenantProvider] Switched to team:', newTenant.name)
       } catch (error) {
         devLog.error('[TenantProvider] Failed to switch team:', error)
         throw error
       } finally {
+        ownSwitchRef.current = false
         setIsSwitching(false)
       }
     },
-    [currentTenant, tenants, isSwitching, globalMutate]
+    [currentTenant, tenants, isSwitching, beginEpoch]
+  )
+
+  // Another tab switched (or the session changed under this tab): adopt the
+  // session's organization the same way, before anything else renders.
+  React.useEffect(
+    () =>
+      onTenantChangedElsewhere(() => {
+        if (ownSwitchRef.current) return
+        const next = getCurrentTenantFromCookie()
+        const previous = currentTenantRef.current
+        if (!next?.id || next.id === previous?.id) return
+        beginEpoch(previous?.id ?? null, next, false)
+        toast.info(
+          t('org.switchedElsewhere', 'Another tab switched to {name}. This tab shows it now.', {
+            name: next.name || next.slug,
+          })
+        )
+      }),
+    [beginEpoch, t]
   )
 
   // Refresh tenants
@@ -302,12 +364,15 @@ export function TenantProvider({ children }: TenantProviderProps) {
       isLoading,
       error: error || null,
       switchTeam,
+      epoch: epochState.epoch,
+      epochKeepsLocation: epochState.keepLocation,
       isSwitching,
       refreshTenants,
       updateCurrentTenant,
       loadTenants,
     }),
     [
+      epochState,
       currentTenant,
       tenants,
       isLoading,

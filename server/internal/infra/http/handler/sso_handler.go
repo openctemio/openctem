@@ -1,0 +1,640 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/url"
+	"strings"
+
+	auditsvc "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/internal/app/auth"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	"github.com/openctemio/openctem/server/pkg/domain/identityprovider"
+	"github.com/openctemio/openctem/server/pkg/domain/limits"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// SSOHandler handles per-tenant SSO authentication requests.
+type SSOHandler struct {
+	ssoService *auth.SSOService
+	audit      *auditsvc.AuditService
+	changes    *auth.SSOChangeService
+	appURL     string
+	logger     *logger.Logger
+}
+
+// SetAppURL sets the public address of the tenant web app (the origin of
+// APP_URL). The provider list returns it so the admin console can show the
+// redirect URI to register at the identity provider.
+func (h *SSOHandler) SetAppURL(u string) {
+	h.appURL = publicOrigin(u)
+}
+
+// publicOrigin reduces a URL to scheme://host[:port]; anything that is not an
+// http(s) URL without credentials gives "".
+func publicOrigin(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// SetChangeApproval routes identity-provider creates and updates made from
+// the platform admin console through an owner's approval (RFC-022).
+func (h *SSOHandler) SetChangeApproval(svc *auth.SSOChangeService) {
+	h.changes = svc
+}
+
+// SetAuditService records identity-provider changes in the organization's
+// audit log.
+func (h *SSOHandler) SetAuditService(svc *auditsvc.AuditService) {
+	h.audit = svc
+}
+
+// providerAuditEvent describes an identity provider for the audit log. The
+// client secret is never included.
+func providerAuditEvent(action audit.Action, ip *identityprovider.IdentityProvider, message string) auditsvc.AuditEvent {
+	return auditsvc.NewSuccessEvent(action, audit.ResourceTypeIdentityProvider, ip.ID()).
+		WithResourceName(ip.DisplayName()).
+		WithMessage(message).
+		WithMetadata("provider", string(ip.Provider())).
+		WithMetadata("client_id", ip.ClientID()).
+		WithMetadata("issuer_url", ip.IssuerURL()).
+		WithMetadata("tenant_identifier", ip.TenantIdentifier()).
+		WithMetadata("allowed_domains", ip.AllowedDomains()).
+		WithMetadata("auto_provision", ip.AutoProvision()).
+		WithMetadata("default_role", ip.DefaultRole()).
+		WithMetadata("is_active", ip.IsActive())
+}
+
+// NewSSOHandler creates a new SSOHandler.
+func NewSSOHandler(ssoService *auth.SSOService, log *logger.Logger) *SSOHandler {
+	return &SSOHandler{
+		ssoService: ssoService,
+		logger:     log.With("handler", "sso"),
+	}
+}
+
+// === Public endpoints (no auth required) ===
+
+// ListTenantProviders returns active SSO providers for a tenant.
+// GET /api/v1/auth/sso/providers?org={slug}
+func (h *SSOHandler) ListTenantProviders(w http.ResponseWriter, r *http.Request) {
+	orgSlug := r.URL.Query().Get("org")
+	if orgSlug == "" {
+		apierror.BadRequest("org parameter is required").WriteJSON(w)
+		return
+	}
+	// A discovery reference stands for the organization; an invalid one
+	// matches nothing (the same empty answer as an unknown slug).
+	orgSlug = h.ssoService.ResolveOrg(r.Context(), orgSlug)
+
+	providers, err := h.ssoService.GetProvidersForTenant(r.Context(), orgSlug)
+	if err != nil {
+		h.handlePublicError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"providers": providers,
+	})
+}
+
+// DiscoverRequest carries the email typed on the sign-in page (in the body,
+// never the URL).
+type DiscoverRequest struct {
+	Email string `json:"email"`
+}
+
+// Discover answers where an email signs in (email-first sign-in).
+// @Summary      Email-first sign-in discovery (public)
+// @Description  Returns {"next":"sso","org":ref} (an opaque, expiring organization reference accepted by the providers and authorize routes) when the email's domain is claimed (DNS-verified, exclusive) by an organization with an active SSO provider, else {"next":"password","org":""}. The same shape for every email; it never says whether the email has an account.
+// @Tags         SSO
+// @Accept       json
+// @Produce      json
+// @Param        request  body  DiscoverRequest  true  "Email"
+// @Success      200  {object}  auth.DiscoverResult
+// @Router       /auth/discover [post]
+func (h *SSOHandler) Discover(w http.ResponseWriter, r *http.Request) {
+	var req DiscoverRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	res := h.ssoService.Discover(r.Context(), strings.TrimSpace(req.Email))
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+// Authorize returns the SSO authorization URL for a tenant's provider.
+// GET /api/v1/auth/sso/{provider}/authorize?org={slug}&redirect_uri={uri}[&reauth=true]
+// reauth=true asks the provider to authenticate the user again (step-up).
+func (h *SSOHandler) Authorize(w http.ResponseWriter, r *http.Request) {
+	provider := r.PathValue("provider")
+	if provider == "" {
+		apierror.BadRequest("provider is required").WriteJSON(w)
+		return
+	}
+
+	orgSlug := r.URL.Query().Get("org")
+	if orgSlug == "" {
+		apierror.BadRequest("org parameter is required").WriteJSON(w)
+		return
+	}
+
+	orgSlug = h.ssoService.ResolveOrg(r.Context(), orgSlug)
+
+	redirectURI := r.URL.Query().Get("redirect_uri")
+	if redirectURI == "" {
+		apierror.BadRequest("redirect_uri parameter is required").WriteJSON(w)
+		return
+	}
+
+	result, err := h.ssoService.GenerateAuthorizeURL(r.Context(), auth.SSOAuthorizeInput{
+		OrgSlug:     orgSlug,
+		Provider:    provider,
+		RedirectURI: redirectURI,
+		ForceReauth: isTrueParam(r.URL.Query().Get("reauth")),
+	})
+	if err != nil {
+		h.handlePublicError(w, err)
+		return
+	}
+
+	// The result carries the browser-binding secret: never cache it.
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(result)
+}
+
+// SSOCallbackRequest is the request body for SSO callback.
+type SSOCallbackRequest struct {
+	Code        string `json:"code" validate:"required"`
+	State       string `json:"state" validate:"required"`
+	RedirectURI string `json:"redirect_uri" validate:"required"`
+	// BrowserBinding is the secret the authorize response gave the browser
+	// that started the flow; without it the state is refused.
+	BrowserBinding string `json:"browser_binding" validate:"required"`
+}
+
+// Callback handles the SSO OAuth callback.
+// POST /api/v1/auth/sso/{provider}/callback
+//
+// A refusal carries a stable `code` from the auth error table
+// (auth_error_codes.go): SSO_AWAITING_APPROVAL, SSO_NOT_A_MEMBER, LIMIT_REACHED,
+// SSO_DOMAIN_NOT_ALLOWED, ACCOUNT_LINK_REQUIRED, SSO_DIFFERENT_METHOD,
+// EMAIL_UNVERIFIED_AT_IDP, USE_ADMIN_CONSOLE and the others. They are 4xx, not
+// server errors.
+func (h *SSOHandler) Callback(w http.ResponseWriter, r *http.Request) {
+	provider := r.PathValue("provider")
+	if provider == "" {
+		apierror.BadRequest("provider is required").WriteJSON(w)
+		return
+	}
+
+	limitBody(w, r)
+	var req SSOCallbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	if req.Code == "" || req.State == "" || req.BrowserBinding == "" {
+		apierror.BadRequest("code, state and browser_binding are required").WriteJSON(w)
+		return
+	}
+
+	result, err := h.ssoService.HandleCallback(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), auth.SSOCallbackInput{
+		Provider:    provider,
+		Code:        req.Code,
+		State:       req.State,
+		RedirectURI: req.RedirectURI,
+
+		BrowserBinding: req.BrowserBinding,
+	})
+	if err != nil {
+		h.handlePublicError(w, err)
+		return
+	}
+
+	resp := map[string]interface{}{
+		"access_token":  result.AccessToken,
+		"refresh_token": result.RefreshToken,
+		"token_type":    result.TokenType,
+		"expires_in":    result.ExpiresIn,
+		"tenant_id":     result.TenantID,
+		"tenant_slug":   result.TenantSlug,
+		"user": UserInfo{
+			ID:    result.User.ID().String(),
+			Email: result.User.Email(),
+			Name:  result.User.Name(),
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// BackChannelLogout handles OIDC Back-Channel Logout 1.0 requests. It is PUBLIC:
+// the request is authenticated by the signed logout_token itself, NOT a user
+// session or CSRF token. The IdP POSTs application/x-www-form-urlencoded with a
+// single `logout_token` field. On ANY validation failure a generic 400 is
+// returned (details are logged server-side) so a caller cannot probe which
+// sids/issuers exist. On success 200 is returned even when zero sessions matched.
+func (h *SSOHandler) BackChannelLogout(w http.ResponseWriter, r *http.Request) {
+	limitBody(w, r)
+	if err := r.ParseForm(); err != nil {
+		apierror.BadRequest("invalid request").WriteJSON(w)
+		return
+	}
+	logoutToken := r.PostFormValue("logout_token")
+	if logoutToken == "" {
+		apierror.BadRequest("invalid request").WriteJSON(w)
+		return
+	}
+
+	revoked, err := h.ssoService.BackChannelLogout(r.Context(), logoutToken)
+	if err != nil {
+		// Generic error only — never reveal which validation step failed.
+		h.logger.Warn("back-channel logout rejected", "error", err.Error())
+		apierror.BadRequest("invalid request").WriteJSON(w)
+		return
+	}
+
+	h.logger.Info("back-channel logout accepted", "revoked_sessions", revoked)
+	// Spec: return 200 with Cache-Control: no-store. Empty body.
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+}
+
+// handlePublicError handles errors for public SSO endpoints with generic messages.
+func (h *SSOHandler) handlePublicError(w http.ResponseWriter, err error) {
+	var lim *limits.ErrLimitReached
+	switch {
+	case errors.As(err, &lim):
+		// Just-in-time sign-up into an organization with no free seat. No
+		// usage numbers: the person is not a member yet.
+		apierror.New(http.StatusForbidden, codeLimitReached, "This organization has no free seat for you. Contact your administrator.").WriteJSON(w)
+	case writeAuthTableError(w, err):
+	default:
+		h.logger.Error("SSO error", "error", err)
+		apierror.InternalError(err).WriteJSON(w)
+	}
+}
+
+// === Admin endpoints (authenticated, tenant-scoped) ===
+
+// CreateProviderRequest is the request body for creating an identity provider.
+type CreateProviderRequest struct {
+	Provider         string   `json:"provider" validate:"required,oneof=entra_id okta google_workspace"`
+	DisplayName      string   `json:"display_name" validate:"required,min=1,max=255"`
+	ClientID         string   `json:"client_id" validate:"required,max=255"`
+	ClientSecret     string   `json:"client_secret" validate:"required,max=1000"`
+	IssuerURL        string   `json:"issuer_url" validate:"omitempty,url,max=500"`
+	TenantIdentifier string   `json:"tenant_identifier" validate:"max=255"`
+	Scopes           []string `json:"scopes" validate:"max=20,dive,max=100"`
+	AllowedDomains   []string `json:"allowed_domains" validate:"max=50,dive,max=255"`
+	AutoProvision    bool     `json:"auto_provision"`
+	DefaultRole      string   `json:"default_role" validate:"omitempty,oneof=member viewer"`
+}
+
+// CreateProvider creates a new identity provider configuration.
+// POST /api/v1/settings/identity-providers
+// @Summary Create an identity provider for an organization
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the provider is stored as a pending change (202, SSOChangeResponse) and is created only after an owner approves it; an organization without an owner yet gets it created directly (201).
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers [post]
+func (h *SSOHandler) CreateProvider(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+	userID := middleware.GetUserID(r.Context())
+
+	limitBody(w, r)
+	var req CreateProviderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	if req.Provider == "" || req.DisplayName == "" || req.ClientID == "" || req.ClientSecret == "" {
+		apierror.BadRequest("provider, display_name, client_id, and client_secret are required").WriteJSON(w)
+		return
+	}
+
+	in := auth.CreateProviderInput{
+		TenantID:         tenantID,
+		Provider:         req.Provider,
+		DisplayName:      req.DisplayName,
+		ClientID:         req.ClientID,
+		ClientSecret:     req.ClientSecret,
+		IssuerURL:        req.IssuerURL,
+		TenantIdentifier: req.TenantIdentifier,
+		Scopes:           req.Scopes,
+		AllowedDomains:   req.AllowedDomains,
+		AutoProvision:    req.AutoProvision,
+		DefaultRole:      req.DefaultRole,
+		CreatedBy:        userID,
+	}
+
+	// From the platform admin console the provider waits for an owner of
+	// the organization, unless it has no owner yet (then it applies now).
+	if by := ssoChangeRequester(r); by != nil {
+		if h.changes == nil {
+			writeSSOChangeApprovalUnavailable(w)
+			return
+		}
+		res, err := h.changes.SubmitCreateProvider(r.Context(), in, *by)
+		if err != nil {
+			h.handleAdminError(w, err)
+			return
+		}
+		if !res.Applied {
+			writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
+			return
+		}
+		ip, err := h.ssoService.GetProviderByType(r.Context(), tenantID, in.Provider)
+		if err != nil {
+			h.handleAdminError(w, err)
+			return
+		}
+		h.writeProviderCreated(w, r, ip)
+		return
+	}
+
+	ip, err := h.ssoService.CreateProvider(r.Context(), in)
+	if err != nil {
+		h.handleAdminError(w, err)
+		return
+	}
+	h.writeProviderCreated(w, r, ip)
+}
+
+func (h *SSOHandler) writeProviderCreated(w http.ResponseWriter, r *http.Request, ip *identityprovider.IdentityProvider) {
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderCreated, ip,
+		"Identity provider '"+ip.DisplayName()+"' created"))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(h.toProviderResponse(ip))
+}
+
+// ListProviders lists all identity provider configurations for the tenant.
+// GET /api/v1/settings/identity-providers
+// @Summary List an organization's identity providers
+// @Description Platform admin console: runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers [get]
+func (h *SSOHandler) ListProviders(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	providers, err := h.ssoService.ListProviders(r.Context(), tenantID)
+	if err != nil {
+		h.handleAdminError(w, err)
+		return
+	}
+
+	result := make([]ProviderDetailResponse, 0, len(providers))
+	for _, ip := range providers {
+		result = append(result, h.toProviderResponse(ip))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"providers": result,
+		"app_url":   h.appURL,
+	})
+}
+
+// GetProvider retrieves a single identity provider configuration.
+// GET /api/v1/settings/identity-providers/{id}
+// @Summary Get an organization's identity provider
+// @Description Platform admin console: runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Identity provider ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers/{id} [get]
+func (h *SSOHandler) GetProvider(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	id := r.PathValue("id")
+	if id == "" {
+		apierror.BadRequest("id is required").WriteJSON(w)
+		return
+	}
+
+	ip, err := h.ssoService.GetProvider(r.Context(), tenantID, id)
+	if err != nil {
+		h.handleAdminError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.toProviderResponse(ip))
+}
+
+// UpdateProviderRequest is the request body for updating an identity provider.
+type UpdateProviderRequest struct {
+	DisplayName      *string  `json:"display_name" validate:"omitempty,min=1,max=255"`
+	ClientID         *string  `json:"client_id" validate:"omitempty,max=255"`
+	ClientSecret     *string  `json:"client_secret" validate:"omitempty,max=1000"`
+	IssuerURL        *string  `json:"issuer_url" validate:"omitempty,url,max=500"`
+	TenantIdentifier *string  `json:"tenant_identifier" validate:"omitempty,max=255"`
+	Scopes           []string `json:"scopes" validate:"max=20,dive,max=100"`
+	AllowedDomains   []string `json:"allowed_domains" validate:"max=50,dive,max=255"`
+	AutoProvision    *bool    `json:"auto_provision"`
+	DefaultRole      *string  `json:"default_role" validate:"omitempty,oneof=member viewer"`
+	IsActive         *bool    `json:"is_active"`
+}
+
+// UpdateProvider updates an identity provider configuration.
+// PUT /api/v1/settings/identity-providers/{id}
+// @Summary Update an organization's identity provider
+// @Description Platform admin console: runs against the organization in the path. When the organization has an owner, the update is stored as a pending change (202, SSOChangeResponse) and is applied only after an owner approves it; an organization without an owner yet gets it applied directly (200).
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Identity provider ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers/{id} [put]
+func (h *SSOHandler) UpdateProvider(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	id := r.PathValue("id")
+	if id == "" {
+		apierror.BadRequest("id is required").WriteJSON(w)
+		return
+	}
+
+	limitBody(w, r)
+	var req UpdateProviderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+
+	in := auth.UpdateProviderInput{
+		ID:               id,
+		TenantID:         tenantID,
+		DisplayName:      req.DisplayName,
+		ClientID:         req.ClientID,
+		ClientSecret:     req.ClientSecret,
+		IssuerURL:        req.IssuerURL,
+		TenantIdentifier: req.TenantIdentifier,
+		Scopes:           req.Scopes,
+		AllowedDomains:   req.AllowedDomains,
+		AutoProvision:    req.AutoProvision,
+		DefaultRole:      req.DefaultRole,
+		IsActive:         req.IsActive,
+	}
+
+	var ip *identityprovider.IdentityProvider
+	var err error
+	if by := ssoChangeRequester(r); by != nil {
+		if h.changes == nil {
+			writeSSOChangeApprovalUnavailable(w)
+			return
+		}
+		res, serr := h.changes.SubmitUpdateProvider(r.Context(), in, *by)
+		if serr != nil {
+			h.handleAdminError(w, serr)
+			return
+		}
+		if !res.Applied {
+			writeSSOChangePending(w, r, h.audit, h.logger, res.Change)
+			return
+		}
+		ip, err = h.ssoService.GetProvider(r.Context(), tenantID, id)
+	} else {
+		ip, err = h.ssoService.UpdateProvider(r.Context(), in)
+	}
+	if err != nil {
+		h.handleAdminError(w, err)
+		return
+	}
+	logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderUpdated, ip,
+		"Identity provider '"+ip.DisplayName()+"' updated").
+		WithMetadata("client_secret_changed", req.ClientSecret != nil && *req.ClientSecret != ""))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.toProviderResponse(ip))
+}
+
+// DeleteProvider deletes an identity provider configuration.
+// DELETE /api/v1/settings/identity-providers/{id}
+// @Summary Delete an organization's identity provider
+// @Description Platform admin console: runs against the organization in the path.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Param id path string true "Identity provider ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/identity-providers/{id} [delete]
+func (h *SSOHandler) DeleteProvider(w http.ResponseWriter, r *http.Request) {
+	tenantID := middleware.GetTenantID(r.Context())
+
+	id := r.PathValue("id")
+	if id == "" {
+		apierror.BadRequest("id is required").WriteJSON(w)
+		return
+	}
+
+	// Read it first so the audit entry can name what was removed.
+	existing, _ := h.ssoService.GetProvider(r.Context(), tenantID, id)
+	if err := h.ssoService.DeleteProvider(r.Context(), tenantID, id); err != nil {
+		h.handleAdminError(w, err)
+		return
+	}
+	if existing != nil {
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, providerAuditEvent(audit.ActionSSOIdentityProviderDeleted, existing,
+			"Identity provider '"+existing.DisplayName()+"' deleted"))
+	} else {
+		logOrgSSOEvent(r.Context(), h.audit, h.logger, r, auditsvc.NewSuccessEvent(audit.ActionSSOIdentityProviderDeleted, audit.ResourceTypeIdentityProvider, id).
+			WithMessage("Identity provider deleted"))
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ProviderDetailResponse is the JSON response for an identity provider.
+type ProviderDetailResponse struct {
+	ID               string   `json:"id"`
+	TenantID         string   `json:"tenant_id"`
+	Provider         string   `json:"provider"`
+	DisplayName      string   `json:"display_name"`
+	ClientID         string   `json:"client_id"`
+	IssuerURL        string   `json:"issuer_url,omitempty"`
+	TenantIdentifier string   `json:"tenant_identifier,omitempty"`
+	Scopes           []string `json:"scopes"`
+	AllowedDomains   []string `json:"allowed_domains"`
+	AutoProvision    bool     `json:"auto_provision"`
+	DefaultRole      string   `json:"default_role"`
+	IsActive         bool     `json:"is_active"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
+	CreatedBy        string   `json:"created_by,omitempty"`
+}
+
+func (h *SSOHandler) toProviderResponse(ip *identityprovider.IdentityProvider) ProviderDetailResponse {
+	scopes := ip.Scopes()
+	if scopes == nil {
+		scopes = []string{}
+	}
+	domains := ip.AllowedDomains()
+	if domains == nil {
+		domains = []string{}
+	}
+
+	return ProviderDetailResponse{
+		ID:               ip.ID(),
+		TenantID:         ip.TenantID(),
+		Provider:         string(ip.Provider()),
+		DisplayName:      ip.DisplayName(),
+		ClientID:         ip.ClientID(),
+		IssuerURL:        ip.IssuerURL(),
+		TenantIdentifier: ip.TenantIdentifier(),
+		Scopes:           scopes,
+		AllowedDomains:   domains,
+		AutoProvision:    ip.AutoProvision(),
+		DefaultRole:      ip.DefaultRole(),
+		IsActive:         ip.IsActive(),
+		CreatedAt:        ip.CreatedAt().Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:        ip.UpdatedAt().Format("2006-01-02T15:04:05Z"),
+		CreatedBy:        ip.CreatedBy(),
+	}
+}
+
+// handleAdminError handles errors for admin SSO endpoints.
+func (h *SSOHandler) handleAdminError(w http.ResponseWriter, err error) {
+	if WriteFeatureDenied(w, err) {
+		return
+	}
+	switch {
+	case errors.Is(err, identityprovider.ErrNotFound):
+		apierror.NotFound("Identity provider not found").WriteJSON(w)
+	case errors.Is(err, identityprovider.ErrAlreadyExists):
+		apierror.Conflict("Identity provider already configured for this tenant and provider type").WriteJSON(w)
+	case errors.Is(err, identityprovider.ErrInvalidProvider):
+		apierror.BadRequest("Invalid identity provider type. Supported: entra_id, okta, google_workspace").WriteJSON(w)
+	case errors.Is(err, identityprovider.ErrInvalidConfig):
+		h.logger.Warn("invalid provider configuration", "error", err)
+		apierror.BadRequest("Invalid identity provider configuration. Please verify all required fields.").WriteJSON(w)
+	case errors.Is(err, auth.ErrSSOInvalidDefaultRole):
+		apierror.BadRequest("Invalid default role. Must be member or viewer").WriteJSON(w)
+	default:
+		h.logger.Error("identity provider error", "error", err)
+		apierror.InternalServerError("An internal error occurred").WriteJSON(w)
+	}
+}

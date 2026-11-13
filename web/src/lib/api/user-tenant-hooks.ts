@@ -156,9 +156,12 @@ export function getMyTenantsKey() {
 }
 
 /**
- * Invalidate user's tenants cache
+ * Invalidate user's tenants cache. The list is the account's, not an
+ * organization's: TenantProvider reads it from the default cache, a page of
+ * the dashboard from the epoch cache; refresh both.
  */
 export async function invalidateMyTenantsCache() {
-  const { mutate } = await import('swr')
-  await mutate(userTenantEndpoints.myTenants())
+  const { mutate, accountMutate } = await import('@/lib/swr-mutate')
+  const key = userTenantEndpoints.myTenants()
+  await Promise.all([accountMutate(key), mutate(key)])
 }

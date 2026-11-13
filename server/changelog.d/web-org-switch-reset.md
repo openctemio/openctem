@@ -1,0 +1,9 @@
+### Security: switching organization leaves nothing of the previous one in the console
+
+- After a switch of organization (the organization card, a link that names another organization, the MCP consent page, or another tab of the same browser), the console no longer keeps the previous organization's address, rows or state. Before, the address kept its page number, filters and record ids (for example page 5 of Findings, or a finding's page), every component kept its state, and the new session was asked for the previous organization's pages and records.
+- The address now goes to the section's list root without a query (the dashboard when the new organization does not grant that section). The whole dashboard mounts again with a fresh data cache, reads still in flight are aborted, and organization data kept in the browser (triage queue, the list a finding was opened from, the last dashboard, drafts) is dropped.
+- Other tabs of the same browser follow the switch and say so. A tab sends no request while the session belongs to another organization than the one it shows, so a bulk action on the previous organization's selection is never sent.
+- The back button no longer reopens the previous organization's page.
+- The server already refused all of these requests: it reads the organization from the access token, and a record of another organization answers like an unknown one. This change makes the console match.
+- **Upgrade note:** no action. After switching organization, users land on the section's list (or the dashboard) instead of the same address, and their other tabs of the console follow the switch.
+- Docs: none (the console now matches what the server already enforced; no setting or workflow changes)

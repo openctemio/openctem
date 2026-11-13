@@ -1,0 +1,990 @@
+# Signed jobs: the job signer
+
+> Design: [RFC-040 §5.6](../rfcs/RFC-040-platform-sensor-mutual-distrust.md)
+> (decision Q11, 2026-10-08). Trust model and remaining gaps:
+> [sensor-platform-trust.md](sensor-platform-trust.md). Code:
+> `cmd/signer`, `internal/signer` (the signer), `pkg/jobsign` (wire format),
+> `internal/infra/signer` (the API's client), `internal/app/command/job_signing.go`
+> (claim time).
+
+Anyone who can write the `commands` table, run code in the API process or
+sit on the path decides what every sensor scans. Signed jobs move that
+authority out of the API: a separate process holds the signing key, checks
+each job against its own rules and signs it. A sensor that verifies the
+signature runs only what the signer signed.
+
+This page describes what is built: the signer process, the statement and
+envelope format, claim-time signing in the API, the key set signed by
+an offline root through which sensors accept signer keys, and the signer's
+scope ledger (RFC-040 P2): the signer signs a job only when its targets lie
+inside the scope people approved, as the signer itself recorded it. Sensors verify
+with sdk-go (`pkg/jobsig`); until a sensor verifies, the envelope protects
+nothing on that sensor.
+
+## Flow
+
+Checked against the code of v0.19.1 and develop (2026-11-05). Two paths feed
+the signer: people approving scope (the ledger), and a sensor claiming a job.
+
+### Scope reaches the ledger
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor A as Approver (scope:approve)
+  participant API as API: scope.Service
+  participant DB as Postgres: scope entries
+  participant SG as Signer: ledger (own process)
+  A->>API: approve a scope entry (ApproveTarget, or owner SelfApproveTarget with TOTP)
+  API->>SG: commitEntry: widening with MaxTier, approver ids, required count
+  alt signer refuses (approval floor not met) or no answer
+    SG-->>API: refused
+    API-->>A: error, nothing saved (fail closed)
+  else accepted
+    SG->>SG: append to ledger.log (hash chain)
+    API->>DB: save the entry
+  end
+  Note over API,SG: A narrowing (exclusion, removal, lower tier) is saved first and sent best effort.<br/>Every 10 min the API syncs the ledger, and a sync can only narrow it.
+```
+
+Other writers of the ledger: bounty programs (`CommitEntries`), tier ceilings
+from scan governance and policy, approved template versions
+(`internal/app/scanner_template_ledger.go`) and instance zones
+(`internal/app/instancezone`). The operator's approval floors (for example a
+second approver for T2) are checked by the signer itself
+(`internal/signer/ledger.go`).
+
+### A job is signed and verified
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as Sensor: CommandPoller and jobsig (sdk-go)
+  participant API as API: command.Service
+  participant SG as Signer: POST /v1/jobs/sign
+  S->>API: claim-N, then claim by id per command
+  API->>API: deliver the payload: HTTP policy, program rules,<br/>settings_layers (tenant, sensor), template signatures
+  API->>API: statement: tenant, sensor, command, type, tool,<br/>payload_sha256, targets, templates, content, limits,<br/>zone, lease_epoch, iat, exp = min(now + 1 h, expires_at)
+  API->>SG: sign (Unix socket, 2 s timeout)
+  SG->>SG: validate, rate limits (tenant 50/s, sensor 20/s),<br/>zone or feed origin, ledger (enforce, audit or off)
+  alt outside the ledger or zone (403)
+    SG-->>API: refused with reason
+    API->>API: unclaim, fail the command with SIGNER_REFUSED
+  else signer down, 5xx or bad envelope
+    API->>API: unclaim this and later commands, retry on a later claim
+  else signed
+    SG->>SG: next seq for the sensor (persisted), nonce, sign,<br/>append to signing.log with fsync (no log, no signature)
+    SG-->>API: DSSE envelope
+    API-->>S: payload, lease_epoch, signed_job
+  end
+  S->>S: verify: key set against the pinned root, signature,<br/>tenant, sensor, command, type, issued within 2 min,<br/>not expired, TTL at most 1 h, lease_epoch, payload digest,<br/>tool, targets, templates, content, limits, nonce new,<br/>seq above the last for this key (persisted)
+  alt verification fails
+    S->>API: fail with a builtin refusal (job_signature or job_keyset)
+    Note over S,API: Not re-routed. The command fails closed.
+  else valid
+    S->>S: resolve settings: tenant, sensor, scan layers,<br/>job limits fitted below, local rate cap
+    S->>S: run within the signed targets and limits
+  end
+```
+
+- The settings layers (`settings_layers`: the organization's tool defaults and
+  the sensor's override) are added to the payload before signing
+  (`withToolSettings`, `internal/app/command/tool_settings.go`), so the
+  payload digest covers them. There is no platform or caps layer and no
+  separate key for settings; a creator-supplied `settings_layers` is replaced
+  or removed. The organization layer is sent only to the organization's own
+  sensors. A value the sensor's current schema refuses fails the command with
+  `TOOL_SETTINGS_INVALID`; an error reading the settings leaves it pending.
+- On the sensor, `resolveScanSettings` (sdk-go `pkg/core/scan_settings.go`)
+  applies tenant, then sensor, then scan values (only keys the tool's schema
+  declares), fits the job's rate and concurrency below the value in force, then
+  applies the local `rate.max_rps` cap. Profile, scan and job layers may only
+  set scan-scoped keys and may only lower narrow-down options
+  (`github.com/openctemio/contract/settings`).
+- Each job is signed twice for a verifying sensor: once in the claim-N answer
+  and again in the claim-by-id replay, whose envelope the sensor verifies (see
+  [job dispatch](job-dispatch.md#the-claim)).
+
+## Process boundary
+
+```
+ sensor ──claim──▶ API (core) ──POST /v1/jobs/sign──▶ openctem-signer
+                     │        (Unix socket, HTTP/1.1)      │
+                     │                                     ├─ key file (0400, own volume)
+                     ◀────────── DSSE envelope ────────────┤─ state/seq/<sensor-id>
+                     │                                     └─ state/signing.log
+ sensor ◀── command + signed_job
+```
+
+- `openctem-signer` is its own binary (`cmd/signer`, in the API image as
+  `/app/openctem-signer`) and runs as its own container and user (uid 1001).
+- It imports nothing from the API's application or infrastructure code: no
+  database, no Redis, no `APP_ENCRYPTION_KEY`. Its key is never derived from
+  an API secret.
+- It listens only on a Unix socket (`SIGNER_SOCKET`, mode 0660, owner the
+  signer, group the API's). There is no TCP listener; the Compose overlay
+  runs it with `network_mode: none`.
+- The API never sees the private key. The key volume is mounted into the
+  signer container only.
+
+## Key custody (K1)
+
+- Ed25519 private key, PEM PKCS#8, in `SIGNER_KEY_FILE`.
+- The signer refuses to start if the file is readable or writable by group
+  or others (`chmod 0400` or `0600`).
+- `openctem-signer keygen -out <file>` creates a key (mode 0400, never
+  overwriting an existing file) and prints its key id and public key.
+  `openctem-signer pubkey` prints them again.
+- **Key id**: `SHA256:` followed by the lower-case hex SHA-256 of the raw
+  32-byte public key (71 characters), for example
+  `SHA256:44f86d4295740d2ffe8e20e00c3999440153fb75b4cd2bdbcad3ec42a0eb049d`.
+  This is not the 16-hex id of template-signing keys.
+
+## Configuration
+
+Signer (`openctem-signer serve`):
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `SIGNER_KEY_FILE` | the private key | required |
+| `SIGNER_SOCKET` | Unix socket path | required |
+| `SIGNER_STATE_DIR` | `seq/` and `signing.log` | required |
+| `SIGNER_KEYSET_FILE` | the key set signed by the offline root, served at `GET /v1/keyset`; read at start and on `SIGHUP` (see "Key sets and the offline root") | unset: no key set |
+| `SIGNER_PUBLISH_DIR` | a directory where the signer writes its public key as `signer.pub` (0644, atomically, at every start) for the bundled sensor to pin ([The bundled sensor's pin](#the-bundled-sensors-pin)); it must exist | unset: nothing published |
+| `SIGNER_TENANT_RATE` / `SIGNER_TENANT_BURST` | signing ceiling per organization (token bucket) | 50/s, 500 |
+| `SIGNER_SENSOR_RATE` / `SIGNER_SENSOR_BURST` | signing ceiling per sensor | 20/s, 200 |
+| `SIGNER_LEDGER` | scope ledger mode: `enforce`, `audit` or `off` ([Scope ledger](#scope-ledger)) | the recorded default: `enforce` on a signer that had never signed, `audit` on one upgraded to the ledger |
+| `SIGNER_FEED_ORIGINS` | comma-separated https origins a [feed relay](#feed-relay) statement may name; `none` signs no feed relay | the official release origins |
+| `SIGNER_LEDGER_MIN_APPROVALS` | the operator's floor under every widening's approval count (0, 1 or 2) | 0 |
+| `SIGNER_LEDGER_T2_MIN_APPROVALS` | the operator's floor for a widening that puts an intrusive (t2) entry into the ledger or turns an organization's tier ceilings off (0, 1 or 2; RFC-073 §7) | 0 |
+
+API:
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `SIGNER_SOCKET` | the signer's socket. Unset: no signing; a production API then refuses to start | set by the default compose file |
+| `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS` | lets a production API start without `SIGNER_SOCKET` (development only; logged as a security warning) | false |
+| `SIGNER_TIMEOUT` | bound of one call to the signer | 2s |
+
+Signer: `SIGNER_GENERATE_KEY=true` creates the signing key on first start
+when the key file does not exist (never replaces one) and logs its id.
+
+### On by default (research/191 A-1)
+
+Signed jobs are the default posture (owner decision D2, Community
+included):
+
+- `deploy/docker-compose.yml` runs the `signer` service (own container,
+  own user, no network, key volume never mounted into the API) and sets
+  `SIGNER_SOCKET` on the API. The key is created on first start; back up the
+  `signer-keys` volume offline. `docker-compose.job-signer.yml` now only
+  repeats it and documents the key set and scope ledger steps.
+- The all-in-one image starts the signer as a separate process with its own
+  key file under `/data/signer` (same container, so weaker separation than
+  the split deployment; `OPENCTEM_SIGNER=off` or an external
+  `SIGNER_SOCKET` replaces it).
+- A production API refuses to start without `SIGNER_SOCKET` unless
+  `SIGNER_DANGEROUS_ALLOW_UNSIGNED_JOBS=true`.
+- **Scope ledger on an existing install:** a new signer enforces the
+  ledger at once, so jobs outside it (an empty ledger: every job) are
+  refused. Run the ledger bootstrap ([Scope ledger](#scope-ledger)) or set
+  `SIGNER_LEDGER=audit` until it is done.
+- Sensors (sdk-go): a newly paired identity records `require_signed_jobs`
+  and requires signed jobs whatever the platform served; with nothing
+  pinned it does not start until `SENSOR_JOB_SIGNING_ROOT` or
+  `SENSOR_JOB_SIGNING_KEYS` is set, and `SENSOR_REQUIRE_SIGNED_JOBS=false`
+  cannot lower it.
+- **Root out of band:** with a key set, the console's pairing command is
+  `SENSOR_JOB_SIGNING_ROOT=<root id> openctemio-sensor pair <code>` (the
+  pairing view's `job_signing_root`). The sensor pins that root only when
+  the key set the platform serves is signed by it, and refuses to pair
+  otherwise. The value comes from the signer's key set, which the database
+  cannot change, but the console receives it from the API: a compromised API
+  can show a root of its own, so the console's value is trust on first use
+  of the API, not out of band. The out-of-band form is the root id the
+  operator recorded at `root keygen`, compared with (or used instead of) the
+  console's value.
+
+Helm is not covered yet.
+
+## Key sets and the offline root (K3)
+
+A sensor that pins one online key must be paired again to change it. With
+a key set it pins the installation's **root** key instead, and accepts job
+signatures from the online keys the current key set lists. Rotating or
+revoking an online key is then a new key set, and a stolen online key is
+useful only until it is dropped from the key set or the key set expires.
+
+**The root key never lives on the platform host.** It is an Ed25519 key
+created and kept offline (an air-gapped machine, a hardware token holding
+the file, a safe); it signs only key sets. The signer, the API and the
+database never see it. The signer checks the key set it is given, but it is
+not the trust anchor: the sensor's pin is.
+
+### Format
+
+A DSSE envelope, payload type `application/vnd.openctem.keyset.v1+json`,
+Ed25519 over the PAE of the exact payload bytes (as for jobs), with one
+signature whose `keyid` is the root's. The payload (one line on the wire):
+
+```json
+{"kind":"openctem.keyset/v1","version":3,"issued_at":"2026-10-09T10:00:00Z","not_after":"2026-11-08T10:00:00Z",
+ "keys":[{"keyid":"SHA256:…","algorithm":"ed25519","public_key":"<std base64 of 32 bytes>"}],
+ "root_keyid":"SHA256:…","root_public_key":"<std base64 of 32 bytes>"}
+```
+
+| Field | Rule |
+|---|---|
+| `kind` | `openctem.keyset/v1` |
+| `version` | integer ≥ 1, strictly increasing across the key sets of one root |
+| `issued_at`, `not_after` | RFC 3339 UTC; `not_after` after `issued_at` and at most 30 days later |
+| `keys` | 1 to 16 online keys, as `GET /v1/keys` lists them; each `keyid` is its key's own; no duplicates; never the root |
+| `root_keyid` | the id of the root key (what a sensor pins) |
+| `root_public_key` | the root's raw key, whose recomputed id must be `root_keyid`, so a sensor that pinned only the id can check the signature |
+
+A verifier (`jobsign.VerifyKeySet` is the reference, and sdk-go's
+`jobsig` follows the same rules) checks, in order: the envelope is at most
+64 KiB and its payload type is the key set's; the payload decodes with no
+unknown field and no trailing data; the fields above; a signature by
+`root_public_key` verifies; `root_keyid` is the **pinned** root;
+`issued_at` is at most 2 minutes ahead of its clock; `not_after` is later
+than its clock minus 2 minutes. A sensor then keeps the highest version it
+accepted (on disk): a lower version is refused (rollback), and the same
+version is accepted only with the same bytes. A job is accepted only from
+a key the current key set lists (or a key pinned explicitly on the
+sensor).
+
+Test vectors: `pkg/jobsign/testdata/keyset_vector.json` (root seed, keys
+`A` and `B`, key sets 1 `[A]`, 2 `[A, B]`, 3 `[B]`, and one signed by
+another root). Key `A` is the key of `testdata/vector.json`, so that
+signed job verifies under key sets 1 and 2 and is refused under 3.
+
+### Ceremony
+
+On the offline machine, with the `openctem-signer` binary (the API image
+carries it as `/app/openctem-signer`):
+
+1. **Root, once:** `openctem-signer root keygen -out root.key` writes the
+   key (0400) and prints `root keyid: SHA256:…`. Back the file up offline.
+   Give the keyid to whoever installs sensors: they pin it with
+   `SENSOR_JOB_SIGNING_ROOT=SHA256:…` (strongest), or a sensor pins the
+   root of the first key set it sees when it pairs.
+2. **First key set:** on the platform host, `openctem-signer pubkey`
+   prints the online key's `public_key`. Offline:
+   `openctem-signer keyset sign -root root.key -version 1 -days 30 -key <public_key> -out keyset-1.json`.
+   `-key` takes the base64 key or a PEM key file and repeats for each key.
+3. **Deploy:** copy the key set (it is public) to the signer's
+   `SIGNER_KEYSET_FILE` and restart the signer or send it `SIGHUP`. The
+   signer refuses a key set that is not signed by its root, has expired,
+   does not list the signer's own key, or is a lower version (or the same
+   version with other bytes) than the one it serves; on `SIGHUP` it then
+   keeps the current one and logs the error. `openctem-signer keyset show
+   -root SHA256:… keyset-1.json` checks a file as a sensor would.
+4. **Renew** before `not_after` (the signer warns from 7 days before, and
+   logs an error once it has expired): sign the same keys with the next
+   version. An expired key set makes sensors that pin the root refuse every
+   job until a new one is deployed (fail closed).
+5. **Rotate an online key:** create the new key
+   (`openctem-signer keygen -out signer-2.pem`); sign version N+1 listing
+   the old and the new key; deploy it to the running signer; switch the
+   signer to the new key (`SIGNER_KEY_FILE`) with the N+1 key set and
+   restart it; once every sensor has seen N+1, sign N+2 without the old
+   key. No sensor is paired again.
+6. **Revoke a key** (stolen or retired): sign the next version without it
+   and deploy it. Sensors refuse jobs signed by it from the moment they
+   accept that version; a sensor that does not see it still refuses at the
+   old version's `not_after`.
+
+The API fetches the key set from the signer (`GET /v1/keyset`, cached 5
+minutes, passed on only when it is signed by the root it names) and
+carries it in hello as `signed_jobs.keyset`. A change of key set changes
+the doorbell's `config_version`, so sensors re-read hello.
+
+At pairing the sensor does not read the hello: the same `signed_jobs`
+block (keys and key set) is part of the pairing grant the platform signs
+with its pairing key, which the administrator's fingerprint check covers
+([signed grant](sensor-pairing.md#signed-grant-what-the-sensor-pins)). The
+sensor pins the root that key set names (or checks it against
+`SENSOR_JOB_SIGNING_ROOT`), so nothing between the sensor and the platform
+can plant a signer during the first pairing. After pairing, a later key set
+from the hello is accepted only when that pinned root signed it and its
+version is not lower than the one accepted.
+
+## The bundled sensor's pin
+
+A sensor that pins nothing trusts the key set or keys the API serves the
+first time it pairs, so a compromised API could plant its own signer for
+it. The default Compose install therefore delivers the pin outside the
+API's reach:
+
+- The signer (`SIGNER_PUBLISH_DIR=/var/lib/openctem-signer-pub`) writes
+  its **public** key to `signer.pub` on the `signer-pub` volume: one line,
+  standard base64 of the 32-byte Ed25519 key, mode 0644, written to a
+  temporary file and renamed. It is rewritten at every start, so a rotated
+  signer key is republished (restart the sensor to read it).
+- `signer-pub` is mounted read-write into the signer only and read-only
+  into the bundled sensor (`docker-compose.sensor.yml`). The API never
+  mounts it, so it cannot change what the sensor pins.
+- The sensor reads it through `SENSOR_JOB_SIGNING_KEYS_FILE` (sdk-go). A pin
+  read from a file is exclusive: the keys and root the sensor took from the
+  platform when it paired are not trusted next to it. The file must not be
+  writable by group or others and must not be a symlink that leaves its
+  directory. Setting both `SENSOR_JOB_SIGNING_KEYS` and the `_FILE` form
+  stops the sensor. `SENSOR_INSTANCE_ENROLLMENT_TOKEN_FILE` and
+  `SENSOR_JOB_SIGNING_ROOT_FILE` follow the same rules.
+- A sensor release older than the one that reads `*_FILE` ignores the new
+  variable and keeps trusting the first key the API serves.
+
+This pins the signer's own key, which is the default for installs that have
+not done the offline-root ceremony. It does not survive a signer key
+change without a sensor restart. Production installs (Helm, regulated
+sites) pin the **offline root** (`SENSOR_JOB_SIGNING_ROOT`, or its `_FILE`
+form) as described above: then a key rotation is a new key set and nothing
+on the sensor changes.
+
+## Signer API
+
+`POST /v1/jobs/sign` with `Content-Type: application/json` and a job
+statement (below) without `seq`, `nonce` and `signer`. The answer is `200`
+with the envelope, or a refusal:
+
+```json
+{"error": "refused", "reason": "bad_expiry", "detail": "..."}
+```
+
+| Status | Reasons |
+|---|---|
+| 400 | `malformed` (not JSON, unknown or mistyped field, trailing data), `bad_kind`, `invalid_id`, `missing_command_type`, `missing_tool`, `bad_payload_digest`, `bad_targets`, `bad_templates`, `bad_content`, `bad_limits`, `bad_lease_epoch`, `clock_skew`, `bad_expiry`, `server_field_set` |
+| 403 | `out_of_ledger`, `tier_exceeds_ledger`, `target_excluded`, `template_not_in_ledger` (the [scope ledger](#scope-ledger) does not authorize the job) |
+| 413 | `body_too_large` |
+| 429 | `tenant_rate_limited`, `sensor_rate_limited` |
+| 500 | `internal` (the sequence number or the signing log could not be written: nothing is signed) |
+
+`GET /v1/keyset`: the key set envelope exactly as deployed, or `404`
+`{"error": "no_keyset"}` when `SIGNER_KEYSET_FILE` is not set.
+
+`GET /v1/keys`:
+
+```json
+{"payload_type": "application/vnd.openctem.job.v1+json",
+ "keys": [{"keyid": "SHA256:…", "algorithm": "ed25519", "public_key": "<std base64 of 32 bytes>"}]}
+```
+
+## What the signer checks
+
+Its own rules; nothing the API sends relaxes them:
+
+- the body is at most 1 MiB, one JSON object, no unknown fields;
+- `kind` is `openctem.job/v1`;
+- `tenant_id`, `sensor_id` and `command_id` are canonical lower-case UUIDs;
+- `command_type` is present (1 to 64 bytes); `tool` is present (an empty
+  string for a command that names no tool, at most 128 bytes);
+- `payload_sha256` is `sha256:` plus 64 lower-case hex characters;
+- `targets` is present (an array, `[]` when there are none), at most 10,000
+  entries, each 1 to 1,024 bytes;
+- `lease_epoch` ≥ 0;
+- `issued_at` within ±2 minutes of the signer's clock;
+- `expires_at` after `issued_at` and at most 1 hour after it;
+- `seq`, `nonce` and `signer` are not set by the caller;
+- `content`, when present, is well formed ([Content](#content));
+- the organization's and the sensor's signing ceilings;
+- every target against the organization's [scope ledger](#scope-ledger), at
+  the tool's tier (in `enforce` mode; `audit` signs and records the miss).
+- for a shared-sensor job (`sensor_scope` = `instance`, [RFC-100](../rfcs/RFC-100-shared-sensors.md)
+  §8.1): `command_type` is `scan`, `validate` or `retest`; no `templates`;
+  every target is public: an address or range is checked against ctis
+  `addrscope` (the list sensors use, including NAT64, 6to4 and Teredo forms
+  of internal IPv4 and any range holding internal space), and a name must not
+  end in `localhost`, `.local`, `.internal`, `.home.arpa` or a reverse-DNS
+  zone. Names are resolved by the API and again by the sensor. Any other
+  `sensor_scope` value is refused (`internal/signer/shared.go`).
+- except inside an **instance scan zone** (RFC-100 §6.1): a shared job's
+  statement may carry `zone` (`id` and canonical, sorted, private `ranges`).
+  The signer then lets internal **addresses and ranges** through only when
+  they lie wholly inside those ranges (internal names never pass), and signs
+  only when its own **zone ledger** holds the zone, the zone is assigned to
+  the statement's `tenant_id`, the claiming `sensor_id` serves it and the
+  statement carries exactly the zone's ranges (reasons `zone_not_in_ledger`,
+  `zone_not_assigned`, `zone_sensor`, `zone_ranges`, `bad_zone`). Zone checks
+  apply in every ledger mode. A `zone` on an organization's statement is
+  refused (`internal/signer/zones.go`).
+
+- for a [feed relay](#feed-relay) statement: the rules of that section
+  instead of the shared-job rules, the zone ledger and the scope ledger.
+
+It does not yet check time windows or per-hour distinct-target ceilings
+(see "Not yet").
+
+### Zone ledger
+
+`POST /v1/ledger/zones` (`jobsign.ZoneChange`: `put` a `LedgerZone` with
+`id`, `ranges`, `tenants`, `sensors`, or `delete_id`, and the `requester`)
+is called by the API's instance scan zone service on every console change,
+**before** the database changes: a narrowing takes effect at the signer
+first, and a change the signer did not record is refused (409). Each change
+is a hash-chained `ledger.log` line (`zone_put`, `zone_delete`) replayed at
+start. A compromised API can record a zone; the organization's scope ledger
+still bounds every target, and the sensor's local policy and private-target
+switch still bound what a shared sensor reaches. Limits: 256 ranges, 10000
+organizations and 1000 sensors per zone, 10000 zones.
+
+## Feed relay
+
+A platform with no outbound access receives its signed feeds through a
+platform-owned sensor with internet access ([RFC-142](../rfcs/RFC-142-feed-relay.md)).
+The API asks that sensor for named files with a statement of
+`command_type` `feed_relay` (`internal/signer/feedrelay.go`):
+
+- `tenant_id` is the platform tenant id, the nil UUID
+  `00000000-0000-0000-0000-000000000000`. Only a feed relay may carry it,
+  and a feed relay carries nothing else (`platform_tenant`);
+- `sensor_scope` is `instance`: never an organization's sensor;
+- `tool` is `""`; no `templates`, `content`, `zone` or `limits`;
+- `targets` are 1 to 8 feed origins, each a canonical https URL (lower-case
+  scheme and host, no user info, query, fragment or trailing slash), and each
+  in the signer's own allowlist `SIGNER_FEED_ORIGINS` (`feed_relay_origin`).
+  The defaults are the official vulnerability feed and release feed origins;
+  a mirror must be added here and on the sensor (`SENSOR_FEED_RELAY_ORIGINS`),
+  never only in the API.
+
+No scope ledger or zone applies (the statement belongs to no organization).
+The files the sensor relays are verified by the platform against the feed's
+own pinned root, so the signature here bounds only where the sensor may
+download from.
+
+## Statement
+
+The signer sets `seq`, `nonce` and `signer`, then serializes the statement
+**once**. Those bytes are the DSSE payload. A verifier hashes and parses the
+payload bytes it received and never re-serializes them.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `kind` | string | `openctem.job/v1` |
+| `tenant_id` | UUID | the organization of the command |
+| `sensor_id` | UUID | the sensor the claim handed it to |
+| `sensor_scope` | string | only for a job of a shared sensor: `instance`. Absent for an organization's sensor |
+| `zone` | object | only for a shared job inside an instance scan zone: `id` and `ranges` (canonical private CIDRs, sorted). The only private ranges the job may reach |
+| `command_id` | UUID | the command |
+| `command_type` | string | `scan`, `collect`, `health_check`, `config_update`, … |
+| `tool` | string | payload `scanner`, else `preferred_tool`; `""` when neither |
+| `payload_sha256` | string | `sha256:` + hex SHA-256 of the command's `payload` JSON value, exactly as the claim response carries it |
+| `targets` | string[] | payload `targets` and `target`, trimmed, de-duplicated, in order |
+| `templates` | string[] | only when the payload carries custom templates: `sha256:` + hex SHA-256 of each `custom_templates[].content`, base64-decoded after trimming, in payload order, duplicates kept ([Custom templates](#custom-templates)) |
+| `content` | object[] | only when the payload pins content packs: `{slot, digest}` of each `content[]` member, in payload order, duplicates kept ([Content](#content)) |
+| `limits` | object[] | only for a sensor that enforces scope limits, when a target is covered only by port- or path-limited entries: `{host, ports, protocol, path_prefix}` per covering entry ([Scope limits](#scope-limits)) |
+| `lease_epoch` | int | the claim's lease epoch (the command's `lease_epoch`) |
+| `issued_at` | RFC 3339 UTC | when the API asked |
+| `expires_at` | RFC 3339 UTC | `issued_at` + 1 h, or the command's own expiry if sooner |
+| `seq` | uint64 | per sensor, strictly increasing, starts at 1; gaps are possible |
+| `nonce` | string | 16 random bytes, base64url without padding |
+| `signer` | object | `{"keyid": "SHA256:…"}` |
+
+Example payload (one line on the wire):
+
+```json
+{"kind":"openctem.job/v1","tenant_id":"…","sensor_id":"…","command_id":"…","command_type":"scan","tool":"semgrep","payload_sha256":"sha256:…","targets":["."],"lease_epoch":1,"issued_at":"2026-10-09T10:00:00Z","expires_at":"2026-10-09T11:00:00Z","seq":18,"nonce":"o7NeeqW0fElC-531MDwnuw","signer":{"keyid":"SHA256:…"}}
+```
+
+## Envelope
+
+[DSSE](https://github.com/secure-systems-lab/dsse) v1:
+
+```json
+{"payloadType": "application/vnd.openctem.job.v1+json",
+ "payload": "<standard base64 of the statement bytes>",
+ "signatures": [{"keyid": "SHA256:…", "sig": "<standard base64 of the 64-byte Ed25519 signature>"}]}
+```
+
+The signature is Ed25519 over the pre-authentication encoding:
+
+```
+"DSSEv1" SP len(payloadType) SP payloadType SP len(payload) SP payload
+```
+
+with lengths in ASCII decimal and `payload` the raw statement bytes
+(the same PAE as template manifests, `scannertemplate.PreAuthEncoding`).
+`jobsign.Verify` is the reference verifier, and `pkg/jobsign/testdata/vector.json`
+(key seed, key id, statement bytes, command payload, envelope) is the test
+vector a sensor-side verifier must accept, and must refuse once a payload
+byte changes.
+
+## On the sensor protocol
+
+- **v2**: every command a claim hands out carries `signed_job` (the
+  envelope as a JSON object) on the command object: the claim-N answer of
+  `GET /api/v2/sensor/commands` (with the `capacity` feature) and
+  `POST /api/v2/sensor/commands/{id}/claim`, including its replay. A listing
+  poll and the other transitions never carry it.
+  The claim by id and its replay hand out and sign the same payload the
+  claim-N answer did: the organization's HTTP policy, the program rules and
+  scan window rate cap, the sensor's `settings_layers` and the template
+  signatures are rebuilt on the stored command, never the stored payload
+  alone, so the statement's `payload_sha256` covers what the sensor runs. A
+  replay reserves nothing: a closed scan window or an unreadable rule refuses it.
+- **v3**: `ClaimCommands` and `TransitionCommand` carry the v2 JSON
+  (`commands_json`, `command_json`) byte for byte, so the field is the same
+  and no proto change is needed.
+- **Hello**: the `signed_jobs` feature, and
+  `"signed_jobs": {"payload_type": "…", "keys": [{"keyid", "algorithm", "public_key"}]}`
+  from the signer's `GET /v1/keys` (cached 5 minutes). `keys` is empty while
+  the signer has not answered. `"keyset"` carries the key set envelope (a
+  JSON object) when the signer serves one; a new key set changes the
+  doorbell's `config_version`.
+- **The payload digest**: the API writes each signed command's `payload` in
+  compact form (what `encoding/json` writes for a raw JSON value, `null`
+  when empty) and hashes those bytes. A JSON decoder that keeps the raw
+  value (Go `json.RawMessage`) gives the sensor the same bytes; hash them,
+  never a re-encoding.
+
+### Every job a sensor runs is signed
+
+A sensor that pinned the signer refuses an unsigned job, so every kind of
+work goes through a signing path. Signing happens when a job is handed out,
+not when it is created, so a producer cannot skip it:
+
+| Work | Created by | Handed out by | Signed |
+|---|---|---|---|
+| `scan` | scan trigger, scan zones, workflow runs, follow-ups of unfinished targets, `POST /api/v1/commands` | claim-N, claim by id (and its replay), shared claim, v3 `ClaimCommands` | yes |
+| `validate`, `retest` | validation dispatcher, retest jobs | same | yes |
+| `refresh_content`, `proxy_test`, `connector_sync`, `connector_scan` | content refresh, proxy pool test, Tenable.sc connector | same | yes |
+| `collect`, `health_check`, `config_update`, `cancel` | `POST /api/v1/commands` | same | yes |
+| feed relay round | feed relay scheduler | `GET /feed-relay-rounds/next` | yes; no rounds without a signer |
+| lookup | lookup jobs | `GET /lookups/next` | yes; no lookups without a signer |
+
+Not jobs, so not signed: a listing poll (it claims nothing; the sensor runs
+only what a claim gives it), the heartbeat's `cancel_command_ids` and
+`stop_command_ids` (they can only stop work), and the manifest policy (it
+only narrows the tools a sensor may run). Content packs carry their own pack
+signatures, and the packs a job pins join its signed payload.
+`TestSignedJobs_EveryCommandTypeIsSigned` claims one command of each type
+from `command.CommandTypes()` both ways and verifies its envelope; a guard
+test fails when a command type is added without joining that list.
+
+## What a sensor must check (sdk-go `pkg/jobsig`)
+
+Before it parses anything else of the command:
+
+1. the envelope's `payloadType` is `application/vnd.openctem.job.v1+json`;
+2. a signature whose `keyid` is a pinned key, or a key of the current
+   verified key set when the sensor pins a root, verifies over the PAE of
+   the payload bytes;
+3. `kind` is `openctem.job/v1`;
+4. `tenant_id` and `sensor_id` are its own; `command_id` is the command's id.
+   A **shared** sensor instead requires `sensor_scope` = `instance` and its
+   own `sensor_id`, accepts any `tenant_id`, and tags every result and
+   outbox entry of the job with that `tenant_id` and `command_id`; an
+   organization's sensor refuses a statement that carries `sensor_scope`.
+   A shared sensor reaches a private address only inside the signed
+   `zone.ranges` (sdk-go `core.WithJobZone`), never inside ranges an
+   unsigned command field names; an organization's sensor refuses a `zone`;
+5. `issued_at` within its clock skew; `expires_at` in the future;
+6. `nonce` not seen before (keep nonces until their `expires_at`);
+7. `seq` greater than the last accepted one (persisted; gaps allowed);
+8. `lease_epoch` equals the command's `lease_epoch`;
+9. `payload_sha256` equals the SHA-256 of the received `payload` bytes;
+10. it runs `tool` against `targets`, and its local policy agrees;
+11. `templates` lists exactly the digests of the payload's custom
+    templates; it then trusts those template bytes through the job
+    ([Custom templates](#custom-templates));
+12. every `limits` entry names the host of one of `targets` and is well
+    formed; the sensor then enforces them ([Scope limits](#scope-limits)).
+    A sensor that predates the field refuses the statement (unknown field);
+13. `content` lists exactly the `{slot, digest}` of the payload's `content`
+    members; it mounts only those packs, each checked against the content
+    keys pinned at pairing ([Content](#content)).
+
+Any failure: refuse the command (fail it with a refusal), never run it.
+
+## Scope limits
+
+A target that only port- or path-limited scope entries cover
+(`api.x.com:8443/tcp`, `https://x.com/api/`) may be scanned only within the
+limit (RFC-065 §16.8). Tools that stay on their target (`naabu` with a port
+list inside the limit, `httpx`) run there on any sensor. A crawler, a
+template scanner or a top-ports scan runs there only on a sensor that
+enforces the limits:
+
+- the sensor reports `scope.limits@1` in its manifest (sdk-go
+  `scopelimit.Capability`). It does so only when its tools run out of
+  process in a sandbox that confines their network to the task's egress
+  forwarder;
+- jobs are signed (the claim re-check treats the capability as absent
+  without a job signer);
+- at claim the command service computes the limits of the job's targets
+  from the tenant's scope (`ActiveGate.StatementLimits`: one limit per
+  covering entry, on the target's host; a host an unlimited entry covers has
+  none) and puts them in the statement. The signer checks each against its
+  ledger (point 5 above).
+
+On the sensor, the limits come from the verified statement only, never from
+the payload. The task's forwarder refuses a connection to a limited host on
+any other port. On a port whose limits name a path prefix it reads every HTTP
+request, terminating TLS with a per-task authority, and refuses with `403`
+(recorded in the task's egress records) a request whose Host is not the
+destination or whose decoded, dot-segment-free path is not under a prefix.
+Tool flags (naabu's port list, katana's crawl scope) are set as well, but
+nothing relies on them.
+
+A sensor that does not report the capability never gets such a job: the
+claim re-check withholds it (it stays pending for an enforcing sensor)
+rather than narrowing or failing it.
+
+## Failure behaviour
+
+- `SIGNER_SOCKET` unset: claims are exactly as before; no envelope, no
+  `signed_jobs` feature.
+- Signer refusing for its ledger (403: `out_of_ledger`,
+  `tier_exceeds_ledger`, `target_excluded`): the claim is taken back and the
+  command **fails** with `SIGNER_REFUSED: the job signer refused to sign this
+  job (<reason>): <detail>`, so it is not offered again; its run step,
+  validation or retest fails with the same code (failure class `scope`).
+- Signer down, slow (over `SIGNER_TIMEOUT`) or refusing for another reason:
+  the command is not handed out. A claim-N answer leaves it out; a claim by id answers `503`
+  `unavailable` with `Retry-After`. The claim is taken back: the command is
+  pending again, still addressed to the sensor only if it was before the
+  claim. A claim replay (the sensor already holds the command) is answered
+  `503` and the command is left as it is. Claims wait; nothing leaves
+  unsigned.
+- Each signing is counted in `sensor_job_signing_total{outcome}` with
+  `outcome` one of `signed`, `refused`, `unavailable`; each refusal in
+  `openctem_signer_refusals_total{reason}` (alerts `SignerOutOfLedger`,
+  RFC-040 §5.11 A10, and `SignerRefusals`), and refusals are logged with the
+  command and sensor ids. The signing log is the record a compromised API
+  cannot rewrite; the metric is the alerting signal the API reports.
+
+## State
+
+- `seq/<sensor-id>`: the last sequence number given to the sensor. Each
+  number is written to a temporary file, fsync'd, renamed over the file and
+  the directory fsync'd **before** the envelope is returned, so a crash can
+  skip numbers but never repeat one. A corrupt file stops signing for that
+  sensor rather than restarting at 1.
+- `signing.log`: append-only JSONL, one line per decision (signed or
+  refused) with the time, decision, reason, ids, command type, tool,
+  payload digest, target count, `seq`, key id and the SHA-256 of the signed
+  statement. Each line carries `prev`, the `sha256:` of the previous line's
+  bytes (the first line's `prev` is `sha256:` + 64 zeros), and is fsync'd
+  before the answer. A signature whose log line cannot be written is not
+  returned. The signer refuses to start on a broken or torn log;
+  `openctem-signer verify-log` checks it. A job signed in `audit` mode that
+  `enforce` would have refused carries `ledger_audit` (the reason).
+- `ledger.log`: the scope ledger, in the same chained JSONL format (lines up
+  to 32 MiB); the ledger is the replay of it. `ledger.lock` is held while the
+  signer runs, so an import cannot write beside it. See
+  [Scope ledger](#scope-ledger).
+
+## Scope ledger
+
+RFC-040 §5.6 points 4 and 5, phase P2. The signer keeps, per organization,
+the scope entries in effect and the target exclusions, in its own state
+directory, and signs a job only inside them. The API's database is not
+consulted: a `scope_targets` row written straight into the database, or an
+API process that asks for anything, gets a refusal.
+
+### What it holds and checks
+
+| Item | Fields | From |
+|---|---|---|
+| entry | `id`, `type` (scope target type), `pattern`, `max_tier` (0, 1, 2), `expires_at`, `ports` and `protocol` (the port limit, canonical form; absent: none) | a scope entry in effect (active, unexpired) |
+| exclusion | `id`, `type` (domain, subdomain, ip_address, ip_range, cidr, url, repository), `pattern`, `expires_at` | a target exclusion in effect (approved, active) |
+| tier ceilings | on (default) or off, per organization (`set_tier_ceilings`, snapshot `tier_ceilings_off`) | the scan approval mode: on only in Strict (RFC-073 §7); off widens and needs the intrusive floor, on narrows; a sync turns them on, never off |
+
+At sign time, for every target of the statement, with the API's matching
+(`pkg/domain/scope`: `*.x` covers `x` and every name below it, CIDR and
+range containment, IDNA forms; the same `AuthorityForms`, `ExclusionForms`
+and `NeedsAuthority` the API's authority check uses):
+
+1. an exclusion in effect that matches the target, its URL host or
+   host:port host: `target_excluded` (whatever the tool's tier);
+2. the tool's tier is `stage.ProbeTier(tool)` from the catalog compiled into
+   the signer (an unknown tool or none is t1). A passive (t0) tool needs no
+   entry, and neither do internal names and private, loopback, link-local or
+   CGNAT addresses (zones gate them), as in RFC-054 §4.2;
+3. otherwise an unexpired entry covering the target with `max_tier` at or
+   above the tier (any covering entry when the organization's tier ceilings
+   are off): covered only below it is `tier_exceeds_ledger`, not at all
+   `out_of_ledger`. Matching is `scope.EntryMatches`: a port-limited entry
+   covers only a target that names an allowed port (`host:port`, or a URL
+   whose port is allowed), a URL entry with a path only URLs under it;
+4. a target covered only by port- or path-limited entries is signed only for
+   a tool that stays on the target it is given
+   (`scope.ConstrainedToolAllowed`), or for any tool when the statement
+   carries `limits` for the target's host; otherwise `out_of_ledger`. The
+   job's port list is checked by the API at claim (the signer does not see
+   the payload);
+5. each statement limit must lie within an entry in effect at the tool's
+   tier that covers one of the statement's targets on that host
+   (`scope.LimitWithin`: ports a subset, the same protocol, a path prefix at
+   or under the entry's path, segment by segment): `out_of_ledger`
+   otherwise. A malformed limit, or one for a host the statement does not
+   target, is `bad_limits` (400).
+
+The port limit is part of an entry like its pattern: dropping or relaxing
+it is a widening (approvals as for a new entry), and a sync from the
+database removes an entry whose limit differs instead of taking the new
+one. A limit that is not in canonical form is malformed.
+
+Expiry is applied with the signer's clock: an expired entry stops
+authorizing without any message from the API.
+
+### How it changes
+
+Three paths, nothing else:
+
+| Path | Who | What the signer allows |
+|---|---|---|
+| `POST /v1/ledger/apply` | the API's scope service, on every committed change to what authorizes probes | narrowing always; widening only with the approvals below |
+| `POST /v1/ledger/sync` | the API, every 10 minutes (`signer-ledger-sync` controller) for every organization the ledger holds | narrowing only |
+| `openctem-signer ledger import` | the operator, signer stopped | the bootstrap, or a restore with `-replace` |
+
+`apply` body (`jobsign.LedgerChange`, unknown fields refused, at most 16 MiB
+and 1,000 operations; an organization holds at most 10,000 entries and
+10,000 exclusions):
+
+```json
+{"tenant_id": "…", "change_id": "<uuid>",
+ "requester": "<user uuid, or empty for a system path>",
+ "approvals": [{"user_id": "<uuid>", "approved_at": "…", "self_approved": false}],
+ "policy_required_approvals": 1,
+ "platform_policy": "",
+ "ops": [{"op": "put_entry", "entry": {"id": "…", "type": "domain", "pattern": "*.example.com", "max_tier": 1}},
+         {"op": "remove_exclusion", "id": "…"}]}
+```
+
+Operations: `put_entry`, `remove_entry`, `put_exclusion`,
+`remove_exclusion`. The **signer** classifies the change; the caller does
+not say which it is. A change widens when any operation widens
+(`jobsign.EntryWidens`, `ExclusionPutWidens`, `ExclusionRemoveWidens`): a
+new entry, a different type or pattern, a higher tier, a later or removed
+expiry; an exclusion removed or shortened while in effect. Everything else
+narrows, and identical puts are a no-op.
+
+A widening needs, counted by the signer: distinct approvers (lower-case
+UUIDs, `approved_at` not in the future), **not the requester**, at least
+`max(policy_required_approvals, SIGNER_LEDGER_MIN_APPROVALS)`, and at least
+`SIGNER_LEDGER_T2_MIN_APPROVALS` when an entry is t2 (the organization's
+policy is 0 in scan approval Off and On, RFC-073 §7). A
+requester's plain approval never counts; a `self_approved` approval (RFC-054
+§12 A2, a sole owner with a fresh second factor) counts once and only for
+the requester. A t2 entry without an expiry is malformed. The approval count
+is the API's scope policy (`scope.Service.loadPolicy`): there is no second
+approver model here.
+
+Refusals: 400 `ledger_malformed`, 413 `ledger_too_large`, 403
+`ledger_not_approved`. The answer is `{"kind": "widen|narrow|noop", "mode": "…"}`.
+
+`sync` body (`jobsign.LedgerSnapshot`): the organization's entries and
+exclusions in effect in the database. Entries the snapshot lacks are
+removed; entries it holds narrower are narrowed (lower tier, earlier
+expiry); exclusions it holds that the ledger lacks are added, and the
+later of two exclusion expiries is kept. Anything the snapshot holds wider
+is left out and counted as `diverged` (the API logs it). `GET /v1/ledger`
+answers the mode and the organizations with anything in the ledger.
+
+### The API side (the hook)
+
+`scope.Service` sends every change through two functions,
+`commitEntry` and `commitExclusion` (`internal/app/scope/ledger.go`): create,
+update, approve, activate, deactivate and delete of entries; approve,
+activate, update, deactivate and delete of exclusions. Writes made outside
+it go through `scope.Service.CommitEntries`, the same rule in batch form:
+bounty programs (RFC-065) send import, re-import and resume as widenings
+(requester the importer, no approval, `platform_policy:
+program_attestation`) and pause, end and dropped entries as narrowings.
+Authorization-letter entries (RFC-065 §13) go through `commitEntry` like
+any entry, and the ledger holds them with the letter's `valid_until` as
+their latest expiry, so they leave it with the letter without a sync; a
+revoked letter narrows the organization's ledger at once
+(`Service.NarrowLetter`, a sync of that organization). Program exclusions
+and the rule that program targets never go to platform sensors stay
+API-side checks; the ledger does not hold them.
+
+No other path may write scope: `internal/app/scope/ledger_guard_test.go`
+fails the build when SQL writing `scope_targets` or `scope_exclusions`
+appears outside the known repository methods, when the scope or programs
+service calls a repository write outside the hook (unless allowlisted with
+the reason it cannot change the ledger: declining a pending entry or
+exclusion, creating a pending exclusion, the time-based expiry sweeps), or
+when a scope repository is constructed or handed out at a new site.
+
+- A **widening is sent before it is saved**. Refused, the request fails with
+  `409 SCOPE_LEDGER_REFUSED`; signer down, `409 SCOPE_LEDGER_UNAVAILABLE`.
+  The database never holds scope the signer did not accept.
+- A **narrowing is saved first** and sent best effort; it is never blocked
+  by the signer. One that did not arrive is applied by the next sync.
+- The approvals sent are the entry's recorded approvals, its requester
+  (`created_by`, or whoever last widened it) and its `approvals_required`;
+  for an exclusion taken out of effect, the reviewer that
+  `Exclusion.AuthorizeReduction` accepted, with one approval required.
+- An exclusion whose window was extended back to review stays in the ledger
+  as it was until it is approved again (the ledger keeps the stricter).
+
+Path, finding-type and scanner exclusions are not target sets and stay out
+of the ledger.
+
+### Modes and defaults
+
+| Mode | Sign time | Ledger changes |
+|---|---|---|
+| `enforce` | a target outside the ledger is refused (403) | validated and recorded |
+| `audit` | signed anyway; the signing log line carries `ledger_audit` and the signer logs a warning | validated and recorded |
+| `off` | not checked | answered `{"mode": "off"}`, not recorded |
+
+`SIGNER_LEDGER` sets the mode. Unset, the default recorded in the ledger's
+first line applies: **`enforce` for a new installation** (the signer had
+never signed when the ledger was created) and **`audit` for an upgraded
+one** (its signing log already had entries), as decided for the sensor-local
+policy (RFC-040 Q3 revised: new installs fail closed). An import sets the
+default to `enforce`.
+
+### Bootstrap and restore (the ceremony)
+
+An upgraded installation starts in `audit` with an empty ledger: every job
+is still signed, and each one outside the ledger is recorded. To enforce:
+
+1. Export the scope in effect from the database (a new file, 0600; never
+   overwritten). Its SHA-256 is printed:
+
+   ```bash
+   docker compose exec api ./server -signer-ledger-export /tmp/ledger.json
+   docker compose cp api:/tmp/ledger.json ./ledger.json
+   ```
+
+2. Review it (`jq` it; a second person compares the organizations and
+   patterns with the Scoping pages).
+3. Stop the signer and import from standard input; the digest printed must
+   equal step 1's:
+
+   ```bash
+   docker compose stop signer
+   docker compose run --rm -T signer ledger import -file /dev/stdin < ledger.json
+   docker compose start signer
+   ```
+
+   The import refuses while the signer runs (it holds `ledger.lock`) and,
+   into a ledger that already holds scope, unless `-replace` is given:
+   `-replace` is for restoring after the signer's state was lost, and it can
+   widen the ledger, so it belongs to the same two-person review.
+4. The default mode is now `enforce` (unless `SIGNER_LEDGER` says
+   otherwise). Watch `openctem_signer_refusals_total` and the
+   `SignerOutOfLedger` alert.
+
+`openctem-signer ledger verify` checks the chain of `ledger.log` and that
+every record replays; `openctem-signer ledger show` prints the ledger as a
+snapshot file (read only, also while the signer runs). A tampered,
+reordered or truncated `ledger.log` stops the signer at start.
+
+### Limits (P2)
+
+- **Approvals are as the API recorded them.** The signer checks the
+  approval rule (count, distinct people, not the requester, the operator
+  floor, t2), but the user ids and the policy count come from the API. An
+  attacker who controls the API process can claim approvals; the ledger
+  then still stops a database writer, a path that bypasses the scope
+  service, and every target outside approved scope, and the chained
+  ledger log records each claimed approval. P3 makes each approval a
+  WebAuthn assertion the signer verifies. `SIGNER_LEDGER_MIN_APPROVALS`
+  raises the floor in the meantime.
+- Internal names and private addresses are not checked against entries
+  (zones gate them, as in the API); the sensor-local policy is their
+  control until zone ranges join the ledger.
+- Tenant approval settings (`widening_approvals`) are read by the API; a
+  lowered setting lowers the count the API reports. The operator floor
+  is the signer-side bound.
+
+## Custom templates
+
+RFC-040 §5.8 and §11.5. A custom template version reaches a sensor only
+when people approved it and the signer recorded its digest in the ledger.
+
+- **Approval.** A template version (its content) is approved for sensors
+  like a scope widening: the organization's approval count from the scope
+  policy (`scope.Service.EffectiveApprovals`), approvers holding
+  `attack_surface:scope:approve`, with step-up, never the author of the
+  version (`content_author_id`: the creator, or whoever changed the
+  content). `POST /api/v1/scanner-templates/{id}/approve` records one
+  approval; once the count is reached the API sends `put_template {id,
+  sha256}` to the signer, a widening checked by the same rule as scope
+  entries, before the version is saved as approved (`ledger_sha256`).
+  With a count of 0 a new version is approved when it is saved. Approvals
+  belong to one version (`sensor_approvals[].sha256`): new content needs
+  new approvals, and the old version leaves the ledger
+  (`remove_template`). Deprecating or deleting a template removes it.
+  Templates synced from a source get no author and need an approval for
+  each new version. Without a job signer nothing changes: no approval is
+  asked.
+- **At claim time** the API lists the digests in the statement
+  (`templates`). The signer refuses a job with a digest no approved
+  version has (`template_not_in_ledger`, 403): the command fails with
+  `SIGNER_REFUSED`. A template whose content does not decode fails the
+  command before the signer is asked.
+- **On the sensor** (sdk-go): a verified statement whose `templates` equal
+  the payload's digests makes the templates trusted without
+  `SENSOR_TEMPLATE_SIGNING_KEYS`; the local `allow_custom_templates` gate
+  and the template protocol checks still apply. A sensor without signed
+  jobs keeps the per-tenant manifest (RFC-038 §6.12), signed with a key
+  the API derives: that path is the fallback and is removed once signed
+  jobs are required everywhere. Older sdk-go verifiers refuse statements
+  carrying `templates` (unknown field): such jobs fail closed on them.
+- **Upgrade.** Migration `001572` marks the current version of every
+  active template as approved (they ran before); the ledger bootstrap
+  exports them for review.
+
+## Content
+
+RFC-061 §3.7. A scan or retest job names the content packs it reads by
+digest, and the platform checks each digest before it asks for a signature.
+
+- **Pinning.** At claim time the platform sets `content` (packs: `slot`,
+  `kind`, `scope`, `pack`, `digest`, `size`, `files`, `max_lines`, the pack's
+  DSSE `signature`) and `inputs` (lists generated for the job) on the copy of
+  the command the sensor receives. They are never on the stored command, and
+  a member a creator wrote is removed. The signature covers them through
+  `payload_sha256`; the statement's `content` repeats each pack's
+  `{slot, digest}`.
+- **Deliverability.** Before the signer is asked, every digest in `content`
+  must be deliverable to the job's organization: a platform pack on the
+  `stable` channel, or an active pack of that organization for a sensor of
+  its own. Another organization's digest, a revoked one, an unknown one and
+  any organization's pack in a job for a shared sensor are refused, and the
+  command fails with `SIGNER_REFUSED` and the reason. A failure to read the
+  packs is transient: the claim is taken back and tried again.
+- **The signer process** validates the statement's `content` (at most 8
+  entries, slot `[a-z][a-z0-9_]{0,31}`, `sha256:` digests, no repeated
+  entry; refusal `bad_content`). It keeps no pack data: the check above runs
+  in the API, and a sensor verifies every pack against the content keys it
+  pinned at pairing (the platform key, and for an organization's own sensor
+  that organization's key), so a pack signed for another organization never
+  verifies on a sensor of this one even if a compromised API listed it.
+- **Older sensors** refuse a statement that carries `content` (unknown
+  field): a job that pins content never runs on a sensor that cannot check
+  the pins.
+
+## Not yet (next steps)
+
+- **Root pin in the sensor's local policy** (RFC-040 §5.7): local policy
+  v1 is frozen, so today the root is pinned by `SENSOR_JOB_SIGNING_ROOT`
+  or at pairing; a later policy version can carry it.
+- **`keyset_version` in the statement** (`signer.keyset_version`, RFC-040
+  §5.6 point 3), once sensors that reject unknown statement fields are
+  gone.
+- **The scope document** (P3): the approved part of the ledger signed by
+  the offline root's delegated scope role and checked by the sensor next to
+  the job (RFC-040 §5.6 point 4, two repositories); time windows and
+  per-hour distinct-target ceilings in the ledger.
+- **WebAuthn approvals** (P3): each approval an assertion over the change
+  digest, verified by the signer against approver credentials enrolled
+  through its own CLI, so a compromised API cannot invent approvals.
+- **Tool settings and egress policy** signed by the signer instead of the
+  API's derived keys (decision Q11); the per-tenant template manifest key
+  removed once signed jobs are required everywhere
+  ([Custom templates](#custom-templates)).
+- **K2** (KMS, Vault Transit, HSM) and a Helm chart for the signer.
+- Exporting the signing log to the SIEM and keyed audit checkpoints.
+- **Shared sensors** ([RFC-100](../rfcs/RFC-100-shared-sensors.md)): the
+  sdk-go verifier side of `sensor_scope` (point 4 of "What a sensor must
+  check"), and the server side of result binding: results of a shared job
+  are accepted only from the sensor that holds the command under its lease
+  epoch, and written into the command's organization, never the sensor's
+  (the shared claim path, S5).

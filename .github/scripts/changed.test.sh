@@ -8,7 +8,7 @@ pass=0 failed=0
 d="$(mktemp -d)"
 git -C "$d" init -q -b main
 git -C "$d" config user.name t; git -C "$d" config user.email t@example.invalid
-mkdir -p "$d/api/docs/configuration" "$d/web/src" "$d/.github"
+mkdir -p "$d/server/docs/configuration" "$d/web/src" "$d/.github"
 echo x > "$d/README.md"; git -C "$d" add -A; git -C "$d" commit -qm base
 base="$(git -C "$d" rev-parse HEAD)"
 
@@ -27,16 +27,16 @@ expect() {
   fi
 }
 
-expect "go change runs api only" true false false api/internal/x.go
+expect "go change runs api only" true false false server/internal/x.go
 expect "web change runs web only" false true false web/src/a.tsx
 expect "shared file runs both" true true false .github/workflows/x.yml
-expect "RFC and changelog fragment run neither" false false true api/docs/rfcs/RFC-999.md api/changelog.d/x.md
+expect "RFC and changelog fragment run neither" false false true server/docs/rfcs/RFC-999.md server/changelog.d/x.md
 expect "markdown anywhere is docs" false false true README.md web/README.md .github/PULL_REQUEST_TEMPLATE.md
 expect "a top-level docs directory is docs" false false true docs/guide/x.png docs/index.html
 expect "agent notes are docs" false false true .claude/skills/x/SKILL.md web/.claude/notes.md
-expect "non-markdown under api/docs is docs" false false true api/docs/rfcs/sim/run.py
-expect "generated env reference is api code" true false false api/docs/configuration/environment-variables.md
-expect "docs plus code runs the code side" true false true api/docs/x.md api/internal/y.go
+expect "non-markdown under server/docs is docs" false false true server/docs/rfcs/sim/run.py
+expect "generated env reference is api code" true false false server/docs/configuration/environment-variables.md
+expect "docs plus code runs the code side" true false true server/docs/x.md server/internal/y.go
 
 # expect_kv <name> <event> <labels> "<k=v ...>" <file>...: every k=v is in the
 # output. pull_request diffs against origin/main (a remote that is this repo).
@@ -58,14 +58,14 @@ expect_kv() {
 }
 
 expect_kv "merge queue is always the full tier" merge_group "" "full=true migrations=false" web/src/a.tsx
-expect_kv "migration change is flagged" merge_group "" "migrations=true api=true" api/migrations/000001_x.up.sql
-expect_kv "migration change runs the schema tests" pull_request "" "schema=true" api/migrations/000001_x.up.sql
-expect_kv "postgres repository change runs the schema tests" pull_request "" "schema=true migrations=false" api/internal/infra/postgres/a.go
-expect_kv "unrelated api change skips the schema tests" pull_request "" "schema=false" api/internal/app/a.go
-expect_kv "role script change is flagged" pull_request "" "migrations=true full=false" api/deploy/postgres/least-privilege-roles.sql
-expect_kv "plain PR is the fast tier" pull_request "" "full=false api=true" api/internal/x.go
-expect_kv "ci:full label runs the full tier" pull_request '["run-e2e","ci:full"]' "full=true" api/internal/x.go
-expect_kv "a similar label does not" pull_request '["ci:fuller"]' "full=false" api/internal/x.go
+expect_kv "migration change is flagged" merge_group "" "migrations=true api=true" server/migrations/000001_x.up.sql
+expect_kv "migration change runs the schema tests" pull_request "" "schema=true" server/migrations/000001_x.up.sql
+expect_kv "postgres repository change runs the schema tests" pull_request "" "schema=true migrations=false" server/internal/infra/postgres/a.go
+expect_kv "unrelated api change skips the schema tests" pull_request "" "schema=false" server/internal/app/a.go
+expect_kv "role script change is flagged" pull_request "" "migrations=true full=false" server/deploy/postgres/least-privilege-roles.sql
+expect_kv "plain PR is the fast tier" pull_request "" "full=false api=true" server/internal/x.go
+expect_kv "ci:full label runs the full tier" pull_request '["run-e2e","ci:full"]' "full=true" server/internal/x.go
+expect_kv "a similar label does not" pull_request '["ci:fuller"]' "full=false" server/internal/x.go
 expect_kv "workflow change runs the full tier" pull_request "" "full=true api=true web=true" .github/workflows/x.yml
 expect_kv "CI script change runs the full tier" pull_request "" "full=true" .github/scripts/x.sh
 expect_kv "other .github files do not" pull_request "" "full=false api=true" .github/dependabot.yml
@@ -106,7 +106,7 @@ inc() { # inc <name> <action> "<k=v ...>"
   if (( ok )); then echo "ok:   $name"; pass=$((pass + 1)); else echo "FAIL: $name (want $want)"; echo "$out"; failed=$((failed + 1)); fi
 }
 rm -f "$fake"/data/*.json
-mkpr api/internal/a.go web/src/b.tsx
+mkpr server/internal/a.go web/src/b.tsx
 green > "$fake/data/$A.json"
 inc "after a green commit only the later change runs" synchronize "api=false web=true incremental=true unchanged since"
 inc "a PR opened is measured against the base" opened "api=true web=true incremental=false"
@@ -114,23 +114,23 @@ rm "$fake/data/$A.json"
 inc "no green commit measures against the base" synchronize "api=true web=true incremental=false"
 green failure > "$fake/data/$A.json"
 inc "a red commit is not a base" synchronize "api=true web=true incremental=false"
-mkpr api/internal/a.go .github/workflows/x.yml
+mkpr server/internal/a.go .github/workflows/x.yml
 green > "$fake/data/$A.json"
 inc "a PR that changes .github is never incremental" synchronize "api=true web=true full=true incremental=false"
 # A CI edit in the green commit, reverted later: that commit's checks ran a CI
 # the PR no longer has, so they vouch for nothing.
 git -C "$d" checkout -q "$base"
-mkdir -p "$d/.github/workflows" "$d/api/internal"
-echo fake > "$d/.github/workflows/fake.yml"; echo "$RANDOM" >> "$d/api/internal/evil.go"
+mkdir -p "$d/.github/workflows" "$d/server/internal"
+echo fake > "$d/.github/workflows/fake.yml"; echo "$RANDOM" >> "$d/server/internal/evil.go"
 git -C "$d" add -A; git -C "$d" commit -qm A; A="$(git -C "$d" rev-parse HEAD)"
 git -C "$d" rm -q .github/workflows/fake.yml; git -C "$d" commit -qm revert
 H="$(git -C "$d" rev-parse HEAD)"; printf '%s\n%s\n' "$A" "$H" >"$fake/data/commits"
 green > "$fake/data/$A.json"
 inc "a green commit with a CI edit reverted since is not a base" synchronize "api=true incremental=false"
-mkpr api/internal/a.go README.md
+mkpr server/internal/a.go README.md
 green > "$fake/data/$A.json"
 inc "only docs since the green commit runs no suite" synchronize "api=false web=false docs=true incremental=true"
-mkpr api/internal/a.go api/migrations/000001_x.up.sql
+mkpr server/internal/a.go server/migrations/000001_x.up.sql
 green > "$fake/data/$A.json"
 inc "a migration since the green commit is flagged" synchronize "migrations=true api=true incremental=true"
 

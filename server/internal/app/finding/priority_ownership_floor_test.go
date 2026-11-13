@@ -1,0 +1,213 @@
+package finding
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// stubOwnerLookup reports owner presence for a fixed set of asset IDs.
+type stubOwnerLookup struct {
+	owned map[shared.ID]bool
+	calls int
+}
+
+func (s *stubOwnerLookup) HasOwnerByAssetIDs(
+	_ context.Context, _ shared.ID, assetIDs []shared.ID,
+) (map[shared.ID]bool, error) {
+	s.calls++
+	out := map[shared.ID]bool{}
+	for _, id := range assetIDs {
+		if s.owned[id] {
+			out[id] = true
+		}
+	}
+	return out, nil
+}
+
+// stubFloorPolicy is a fixed on/off ownership-floor toggle.
+type stubFloorPolicy struct {
+	on    bool
+	calls int
+}
+
+func (s *stubFloorPolicy) FloorUnownedAtP2(_ context.Context, _ shared.ID) bool {
+	s.calls++
+	return s.on
+}
+
+// lowSeverityUnreachableFinding classifies P3 (low severity, unknown exposure →
+// not reachable) so the ownership floor is the only thing that can raise it.
+func lowSeverityUnreachableFinding(t *testing.T, tenantID shared.ID) (*vulnerability.Finding, *asset.Asset) {
+	t.Helper()
+	a, err := asset.NewAssetWithTenant(tenantID, "host-01", asset.AssetTypeHost, asset.CriticalityLow)
+	if err != nil {
+		t.Fatalf("NewAssetWithTenant: %v", err)
+	}
+	f, err := vulnerability.NewFinding(
+		tenantID, a.ID(), vulnerability.FindingSourceSCA, "trivy",
+		vulnerability.SeverityLow, "low dep",
+	)
+	if err != nil {
+		t.Fatalf("NewFinding: %v", err)
+	}
+	return f, a
+}
+
+// With the tenant toggle ON, a P3 finding on an UNOWNED asset floors to P2 and
+// the reason records it.
+func TestClassifyFinding_OwnershipFloor_EnabledUnownedFloorsToP2(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := lowSeverityUnreachableFinding(t, tenantID)
+
+	svc := newControlSvc()
+	owners := &stubOwnerLookup{owned: map[shared.ID]bool{}} // asset absent → unowned
+	policy := &stubFloorPolicy{on: true}
+	svc.SetAssetOwnerLookup(owners)
+	svc.SetOwnershipFloorPolicy(policy)
+
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatalf("ClassifyFinding: %v", err)
+	}
+	if policy.calls == 0 {
+		t.Fatal("ClassifyFinding must consult the ownership-floor policy")
+	}
+	if owners.calls == 0 {
+		t.Fatal("enabled floor must consult the owner-presence lookup")
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP2 {
+		t.Fatalf("unowned P3 must floor to P2 when enabled, got %v (%s)", got, f.PriorityClassReason())
+	}
+	if reason := f.PriorityClassReason(); !strings.Contains(reason, "no assigned owner") {
+		t.Fatalf("reason should record the ownership floor, got %q", reason)
+	}
+}
+
+// With the toggle ON but the asset OWNED, the finding stays P3.
+func TestClassifyFinding_OwnershipFloor_EnabledOwnedStaysP3(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := lowSeverityUnreachableFinding(t, tenantID)
+
+	svc := newControlSvc()
+	svc.SetAssetOwnerLookup(&stubOwnerLookup{owned: map[shared.ID]bool{a.ID(): true}})
+	svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: true})
+
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatalf("ClassifyFinding: %v", err)
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP3 {
+		t.Fatalf("owned P3 must stay P3, got %v (%s)", got, f.PriorityClassReason())
+	}
+	if reason := f.PriorityClassReason(); strings.Contains(reason, "no assigned owner") {
+		t.Fatalf("owned finding must not carry the floor reason, got %q", reason)
+	}
+}
+
+// With the toggle OFF, an unowned asset is NOT floored, and the owner lookup is
+// never even consulted (no cost, no silent re-prioritization).
+func TestClassifyFinding_OwnershipFloor_DisabledLeavesP3AndSkipsLookup(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := lowSeverityUnreachableFinding(t, tenantID)
+
+	svc := newControlSvc()
+	owners := &stubOwnerLookup{owned: map[shared.ID]bool{}} // would report unowned
+	svc.SetAssetOwnerLookup(owners)
+	svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: false})
+
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatalf("ClassifyFinding: %v", err)
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP3 {
+		t.Fatalf("disabled floor must leave P3 unchanged, got %v (%s)", got, f.PriorityClassReason())
+	}
+	if owners.calls != 0 {
+		t.Fatalf("disabled floor must NOT consult the owner lookup, got %d calls", owners.calls)
+	}
+	if reason := f.PriorityClassReason(); strings.Contains(reason, "no assigned owner") {
+		t.Fatalf("disabled floor must add no reason, got %q", reason)
+	}
+}
+
+// Nil owner lookup with the toggle on is fail-safe: no floor, no crash.
+func TestClassifyFinding_OwnershipFloor_NilLookupUnchanged(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := lowSeverityUnreachableFinding(t, tenantID)
+
+	svc := newControlSvc()
+	svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: true}) // enabled, but no lookup wired
+
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatalf("ClassifyFinding: %v", err)
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP3 {
+		t.Fatalf("nil owner lookup must leave P3 unchanged (fail-safe), got %v", got)
+	}
+}
+
+// The batch path (main ingest/sweep) applies the same floor with a single
+// owner-presence lookup for the whole batch.
+func TestEnrichAndClassifyBatch_OwnershipFloor_EnabledUnownedFloorsToP2(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := lowSeverityUnreachableFinding(t, tenantID)
+
+	svc := newControlSvc()
+	owners := &stubOwnerLookup{owned: map[shared.ID]bool{}}
+	svc.SetAssetOwnerLookup(owners)
+	svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: true})
+
+	assets := map[shared.ID]*asset.Asset{a.ID(): a}
+	if err := svc.EnrichAndClassifyBatch(context.Background(), tenantID,
+		[]*vulnerability.Finding{f}, assets); err != nil {
+		t.Fatalf("EnrichAndClassifyBatch: %v", err)
+	}
+	if owners.calls != 1 {
+		t.Fatalf("batch path should call the owner lookup exactly once, got %d", owners.calls)
+	}
+	if got := f.PriorityClass(); got == nil || *got != vulnerability.PriorityP2 {
+		t.Fatalf("batch: unowned P3 must floor to P2, got %v (%s)", got, f.PriorityClassReason())
+	}
+}
+
+// An override rule cannot rank a finding on an unowned asset below P2: the
+// rule result gets the same ownership floor as the built-in classification.
+func TestClassifyFinding_OwnershipFloor_AppliesToRules(t *testing.T) {
+	tenantID := shared.NewID()
+	f, a := lowSeverityUnreachableFinding(t, tenantID)
+	rule, err := vulnerability.NewPriorityOverrideRule(tenantID, "low stays P3", vulnerability.PriorityP3,
+		[]vulnerability.RuleCondition{{Field: "severity", Operator: "eq", Value: "low"}}, shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func(owned bool) *PriorityClassificationService {
+		svc := NewPriorityClassificationService(nil, nil, nil, nil, fixedRuleRepo{rules: []*vulnerability.PriorityOverrideRule{rule}}, stubAuditRepo{}, logger.NewNop())
+		svc.SetAssetOwnerLookup(&stubOwnerLookup{owned: map[shared.ID]bool{a.ID(): owned}})
+		svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: true})
+		return svc
+	}
+	if err := build(false).ClassifyFinding(context.Background(), tenantID, f, a); err != nil {
+		t.Fatal(err)
+	}
+	if got := classOf(t, f); got != vulnerability.PriorityP2 {
+		t.Fatalf("rule result on an unowned asset = %s (%s), want P2", got, f.PriorityClassReason())
+	}
+	if !strings.Contains(f.PriorityClassReason(), "Rule: low stays P3") || !strings.Contains(f.PriorityClassReason(), "no assigned owner") {
+		t.Fatalf("reason = %q", f.PriorityClassReason())
+	}
+
+	// Owned asset: the rule's P3 stands.
+	f2, a2 := lowSeverityUnreachableFinding(t, tenantID)
+	svc := NewPriorityClassificationService(nil, nil, nil, nil, fixedRuleRepo{rules: []*vulnerability.PriorityOverrideRule{rule}}, stubAuditRepo{}, logger.NewNop())
+	svc.SetAssetOwnerLookup(&stubOwnerLookup{owned: map[shared.ID]bool{a2.ID(): true}})
+	svc.SetOwnershipFloorPolicy(&stubFloorPolicy{on: true})
+	if err := svc.ClassifyFinding(context.Background(), tenantID, f2, a2); err != nil {
+		t.Fatal(err)
+	}
+	if got := classOf(t, f2); got != vulnerability.PriorityP3 {
+		t.Fatalf("rule result on an owned asset = %s, want P3", got)
+	}
+}

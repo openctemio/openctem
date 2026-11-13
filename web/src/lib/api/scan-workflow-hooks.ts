@@ -359,7 +359,7 @@ export function useQuickScan() {
  * Invalidate workflows cache
  */
 export async function invalidateScanWorkflowsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/scan-workflows'),
     undefined,
@@ -373,7 +373,7 @@ export async function invalidateScanWorkflowsCache() {
  * Invalidate workflow runs cache
  */
 export async function invalidateScanRunsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.includes('/api/v1/scan-runs'), undefined, {
     revalidate: true,
   })
@@ -383,7 +383,7 @@ export async function invalidateScanRunsCache() {
  * Invalidate scan management stats cache
  */
 export async function invalidateScanManagementStatsCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) => typeof key === 'string' && key.includes('/api/v1/scans/overview-stats'),
     undefined,

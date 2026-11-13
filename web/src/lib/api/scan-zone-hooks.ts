@@ -50,7 +50,7 @@ export function useScanZoneCoverage(enabled = true, config?: SWRConfiguration) {
 
 /** Revalidates every scan zone request (list, coverage, detail). */
 export async function invalidateScanZonesCache() {
-  const { mutate } = await import('swr')
+  const { mutate } = await import('@/lib/swr-mutate')
   await mutate((key) => typeof key === 'string' && key.startsWith(API_BASE.SCAN_ZONES), undefined, {
     revalidate: true,
   })

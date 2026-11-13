@@ -23,7 +23,7 @@ tests:
             exp_annotations:
               summary: The API does not answer its health check
               description: GET /health on the API failed for 2 minutes. Every user and sensor request fails.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apidown
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#apidown
 
   # The gateway's internal CA issues 12-hour certificates: a few hours left is
   # normal, under two hours means renewal stopped.
@@ -47,7 +47,7 @@ tests:
             exp_annotations:
               summary: The gateway's internal-CA certificate expires in 51m 40s
               description: The gateway renews these short-lived certificates itself; check its logs for renewal errors.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#tlscertexpiringsoon
 
   # A public-CA certificate with ten days left: warning, not critical.
   - interval: 1m
@@ -62,7 +62,7 @@ tests:
             exp_annotations:
               summary: The public TLS certificate expires in 9d 22h 0m 0s
               description: Renew the gateway certificate before it expires (automatic renewal may be failing).
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#tlscertexpiringsoon
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#tlscertexpiringsoon
 
   # /metrics fails while /health answers: the token is wrong.
   - interval: 1m
@@ -79,7 +79,7 @@ tests:
             exp_annotations:
               summary: The API is up but its metrics cannot be read
               description: The API answers /health but /metrics fails, so the API alerts are blind. Usually METRICS_TOKEN differs between the API and the monitoring stack.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#apiscrapefailing
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#apiscrapefailing
 
   # 5% of disk left: both levels fire (Alertmanager hides the warning).
   - interval: 1m
@@ -96,12 +96,12 @@ tests:
             exp_annotations:
               summary: '/ has 5% free'
               description: When the disk fills, Postgres stops (PANIC) and the platform goes down.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostdisklow
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#hostdisklow
           - exp_labels: {severity: critical, component: platform, mountpoint: /, fstype: ext4, job: node, instance: 'node-exporter:9100', device: /dev/sda1}
             exp_annotations:
               summary: '/ has only 5% free'
               description: Postgres will PANIC when the disk is full. Free space now.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostdisklow
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#hostdisklow
 
   # A new audit chain break pages at once; the counter standing still does not.
   - interval: 1m
@@ -119,7 +119,7 @@ tests:
             exp_annotations:
               summary: The audit log hash chain has 1 new break(s) (hash_mismatch)
               description: An audit entry was changed or removed outside the API. Treat as a security incident.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#auditchainbreak
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#auditchainbreak
       - eval_time: 45m
         alertname: AuditChainBreak
         exp_alerts: []
@@ -145,7 +145,7 @@ tests:
             exp_annotations:
               summary: The job signer refused 1 job(s) outside its scope ledger (out_of_ledger)
               description: A job for a target nobody approved reached the signer. Treat as a security incident until explained.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signeroutofledger
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#signeroutofledger
       - eval_time: 20m
         alertname: SignerOutOfLedger
         exp_alerts: []
@@ -159,7 +159,7 @@ tests:
             exp_annotations:
               summary: The job signer refused 15 job(s) in 15 minutes (tenant_rate_limited)
               description: Rate ceilings, clock skew or malformed statements. Jobs wait until the signer signs them.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signerrefusals
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#signerrefusals
       - eval_time: 5m
         alertname: SignerLedgerChangeRefused
         exp_alerts:
@@ -167,7 +167,7 @@ tests:
             exp_annotations:
               summary: The job signer refused 1 scope change(s) (widen)
               description: A scope change the API approved did not meet the signer's approval rule. It was not saved.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signerledgerchangerefused
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#signerledgerchangerefused
 
   # The API ships migration 1300 but the database is at 1299.
   - interval: 1m
@@ -184,7 +184,7 @@ tests:
             exp_annotations:
               summary: The database schema is behind the running API
               description: The API ships a newer migration than the database has; queries on new columns fail. Run the migrations.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#schemabehind
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#schemabehind
 
   # A backup more than 26 hours old.
   - interval: 1m
@@ -201,7 +201,7 @@ tests:
           - exp_labels: {severity: critical, component: platform}
             exp_annotations:
               summary: The last successful database backup is 1d 3h 0m 0s old
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#backupstale
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#backupstale
 
   # Unhardened sensors: SensorsUnhardened after a day, not before, one alert
   # per kind with sensors (a kind at 0 never fires).
@@ -222,7 +222,7 @@ tests:
             exp_annotations:
               summary: '2 sensor(s) are unhardened: pin_none'
               description: Sensors run without a local policy (policy_none), without a pinned platform CA (pin_none), with tools outside network confinement (network_unenforced) or with a bearer key instead of a key-bound identity (bearer_key). They keep working; the Sensors page flags them.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#sensorsunhardened
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#sensorsunhardened
 
   # A sign-up burst alert raised by the API pages once, labeled by dimension
   # and kind only.
@@ -241,7 +241,7 @@ tests:
             exp_annotations:
               summary: 'Sign-up burst: account_created from one ip_prefix'
               description: Many sign-ups from one network or email domain. Review Requests > Sign-ups in the platform console.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#signupburst
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#signupburst
 
   # Exporters that are up but cannot log in: pg_up and redis_up are the signal.
   - interval: 1m
@@ -261,7 +261,7 @@ tests:
             exp_annotations:
               summary: The Postgres exporter cannot log in to Postgres
               description: The exporter process is up (its scrape succeeds) but pg_up is 0, so every Postgres alert is blind. The usual cause is that the openctem_monitor role does not exist or its password differs from OBS_PG_MONITOR_PASSWORD. Apply deploy/observability/postgres/monitor-role.sql (the postgres-monitor-role service does it on every `up`).
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#postgresexportercannotconnect
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#postgresexportercannotconnect
       - eval_time: 9m
         alertname: RedisExporterCannotConnect
         exp_alerts: []
@@ -272,7 +272,7 @@ tests:
             exp_annotations:
               summary: The Redis exporter cannot connect to Redis
               description: The exporter process is up but redis_up is 0, so the Redis alerts are blind. Check REDIS_PASSWORD, OBS_REDIS_ADDR and, with the Compose overlay, the TLS CA of the datastore.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#redisexportercannotconnect
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#redisexportercannotconnect
 
   # Healthy exporters do not alert.
   - interval: 1m
@@ -310,7 +310,7 @@ tests:
             exp_annotations:
               summary: The host clock is not synchronised
               description: The kernel reports the clock as unsynchronised. Sensor request signatures allow only 2 minutes of skew, so a drifting clock breaks sensor pairing and requests. Check `chronyc tracking`.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostclockunsynchronised
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#hostclockunsynchronised
       - eval_time: 10m
         alertname: HostClockOffsetLarge
         exp_alerts: []
@@ -321,7 +321,7 @@ tests:
             exp_annotations:
               summary: The host clock is off by 4h 0m 0s
               description: Sensor request signatures allow 2 minutes of skew, so sensors cannot pair or call the API while the clock is off. Fix now with `sudo chronyc makestep`, and set `makestep 1 -1` in chrony.conf so it can step at any time, not only at boot.
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#hostclockoffsetlarge
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#hostclockoffsetlarge
 
   # A synchronised clock with a small offset (either sign) stays quiet.
   - interval: 1m
@@ -354,7 +354,7 @@ tests:
           - exp_labels: {severity: warning, component: api}
             exp_annotations:
               summary: '1 notification(s) gave up in the last hour'
-              runbook_url: https://github.com/openctemio/openctem/blob/develop/api/docs/operations/monitoring.md#outboxdeadletters
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#outboxdeadletters
       - eval_time: 75m
         alertname: OutboxDeadLetters
         exp_alerts: []

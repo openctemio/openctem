@@ -1,6 +1,6 @@
 # Harbor setup for OpenCTEM images (checklist)
 
-Guide: `api/docs/deployment/air-gapped.md`. The API bodies in this folder are
+Guide: `server/docs/deployment/air-gapped.md`. The API bodies in this folder are
 for Harbor 2.x (`/api/v2.0`). Use them with an administrator account once and
 keep that account out of CI.
 

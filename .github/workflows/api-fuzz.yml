@@ -25,7 +25,7 @@ jobs:
       GOWORK: 'off'
     defaults:
       run:
-        working-directory: api
+        working-directory: server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,9 +35,9 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Fuzz the strict CTIS decoder
         run: go test ./internal/app/ingest/ -run '^$' -fuzz '^FuzzStrictCTIS$' -fuzztime 10m
       - name: Upload the failing input
@@ -45,7 +45,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-strict-ctis-crasher
-          path: api/internal/app/ingest/testdata/fuzz/
+          path: server/internal/app/ingest/testdata/fuzz/
           if-no-files-found: ignore
 
   # The list query decoders (RFC-048) read untrusted query strings and JSON
@@ -64,7 +64,7 @@ jobs:
       GOWORK: 'off'
     defaults:
       run:
-        working-directory: api
+        working-directory: server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,9 +74,9 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Fuzz the list filter decoder
         run: go test ./pkg/filterspec/ -run '^$' -fuzz '^Fuzz${{ matrix.target }}$' -fuzztime 5m
       - name: Upload the failing input
@@ -84,7 +84,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-filterspec-${{ matrix.target }}-crasher
-          path: api/pkg/filterspec/testdata/fuzz/
+          path: server/pkg/filterspec/testdata/fuzz/
           if-no-files-found: ignore
 
   querylang:
@@ -97,15 +97,15 @@ jobs:
         include:
           - target: Parse
             pkg: ./pkg/querylang/
-            dir: api/pkg/querylang/testdata/fuzz/
+            dir: server/pkg/querylang/testdata/fuzz/
           - target: Compile
             pkg: ./pkg/querylang/pgsql/
-            dir: api/pkg/querylang/pgsql/testdata/fuzz/
+            dir: server/pkg/querylang/pgsql/testdata/fuzz/
     env:
       GOWORK: 'off'
     defaults:
       run:
-        working-directory: api
+        working-directory: server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -115,9 +115,9 @@ jobs:
           ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: api/go.mod
+          go-version-file: server/go.mod
           cache: true
-          cache-dependency-path: api/go.sum
+          cache-dependency-path: server/go.sum
       - name: Fuzz the custom query language
         run: go test ${{ matrix.pkg }} -run '^$' -fuzz '^Fuzz${{ matrix.target }}$' -fuzztime 5m
       - name: Upload the failing input

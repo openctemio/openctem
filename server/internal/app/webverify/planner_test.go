@@ -1,0 +1,273 @@
+package webverify
+
+import (
+	"context"
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
+	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/domain/stage"
+	"github.com/openctemio/openctem/server/pkg/domain/webendpoint"
+)
+
+type fakeStore struct {
+	cands   []Candidate
+	used    int
+	planned []Planned
+	limit   int
+}
+
+func (f *fakeStore) TenantsWithCandidates(context.Context, []string, int) ([]shared.ID, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) Candidates(_ context.Context, _ shared.ID, _ []string, limit int) ([]Candidate, error) {
+	f.limit = limit
+	return f.cands, nil
+}
+
+func (f *fakeStore) RunPlannedSince(context.Context, shared.ID, time.Time) (int, error) {
+	return f.used, nil
+}
+
+func (f *fakeStore) RecordPlanned(_ context.Context, _ shared.ID, rows []Planned) error {
+	f.planned = append(f.planned, rows...)
+	return nil
+}
+
+type fakeDisp struct {
+	calls []scanapp.WebVerifyInput
+	err   error
+	deny  map[string]bool
+}
+
+func (d *fakeDisp) StartWebVerification(_ context.Context, in scanapp.WebVerifyInput) (*scanapp.WebVerifyResult, error) {
+	d.calls = append(d.calls, in)
+	if d.err != nil {
+		return nil, d.err
+	}
+	run := shared.NewID()
+	res := &scanapp.WebVerifyResult{RunID: &run}
+	for _, u := range in.Targets {
+		if !d.deny[strings.ToLower(u)] {
+			res.Kept = append(res.Kept, u)
+		}
+	}
+	return res, nil
+}
+
+type blocker struct{ prefix string }
+
+func (b blocker) Blocking(_, _, path string) *scopedom.Exclusion {
+	if b.prefix != "" && strings.HasPrefix(path, b.prefix) {
+		return &scopedom.Exclusion{}
+	}
+	return nil
+}
+
+type rules struct {
+	b   Blocker
+	err error
+}
+
+func (r rules) LoadBlocker(context.Context, shared.ID) (Blocker, error) { return r.b, r.err }
+
+func cand(origin, path, key string) Candidate {
+	return Candidate{EndpointID: shared.NewID(), OriginAssetID: shared.NewID(), OriginName: origin, Method: "GET",
+		PathTemplate: path, ExamplePath: path, CatalogKey: key, ResponseSig: "sig-" + path}
+}
+
+func newPlanner(s *fakeStore, d *fakeDisp, r Rules) *Planner {
+	return NewPlanner(s, d, r, Config{DailyBudget: 10, PassCap: 5}, nil)
+}
+
+func TestPlansMappedTemplatesAndRecordsLedger(t *testing.T) {
+	s := &fakeStore{cands: []Candidate{cand("https://a.example.com", "/.git/config", "vcs.git"), cand("https://b.example.com:8443", "/.git/config", "vcs.git")}}
+	d := &fakeDisp{}
+	res, err := newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if err != nil || res.Planned != 2 {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if len(d.calls) != 1 || d.calls[0].TemplateIDs[0] != "git-config" || len(d.calls[0].Targets) != 2 {
+		t.Fatalf("calls = %+v", d.calls)
+	}
+	if d.calls[0].Targets[0] != "https://a.example.com/.git/config" {
+		t.Fatalf("target = %s", d.calls[0].Targets[0])
+	}
+	if len(s.planned) != 2 || s.planned[0].RunID == nil {
+		t.Fatalf("ledger = %+v", s.planned)
+	}
+}
+
+func TestExcludedPathIsNeverDispatched(t *testing.T) {
+	s := &fakeStore{cands: []Candidate{cand("https://a.example.com", "/.git/config", "vcs.git"), cand("https://a.example.com", "/.env", "config.env")}}
+	d := &fakeDisp{}
+	res, err := newPlanner(s, d, rules{b: blocker{prefix: "/.git"}}).RunTenant(context.Background(), shared.NewID())
+	if err != nil || res.Excluded != 1 || res.Planned != 1 {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	for _, c := range d.calls {
+		for _, u := range c.Targets {
+			if strings.Contains(u, ".git") {
+				t.Fatalf("excluded path dispatched: %s", u)
+			}
+		}
+	}
+}
+
+func TestFailsClosedWithoutExclusions(t *testing.T) {
+	s := &fakeStore{cands: []Candidate{cand("https://a.example.com", "/.env", "config.env")}}
+	d := &fakeDisp{}
+	if _, err := newPlanner(s, d, rules{err: errors.New("db down")}).RunTenant(context.Background(), shared.NewID()); err == nil {
+		t.Fatal("a failed exclusion load must stop the pass")
+	}
+	if _, err := newPlanner(s, d, nil).RunTenant(context.Background(), shared.NewID()); err == nil {
+		t.Fatal("no rules wired must stop the pass")
+	}
+	if len(d.calls) != 0 || len(s.planned) != 0 {
+		t.Fatal("something was planned without exclusions")
+	}
+}
+
+func TestBudgetIsRespected(t *testing.T) {
+	s := &fakeStore{used: 10, cands: []Candidate{cand("https://a.example.com", "/.env", "config.env")}}
+	d := &fakeDisp{}
+	res, _ := newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if res.Planned != 0 || len(d.calls) != 0 || s.limit != 0 {
+		t.Fatalf("budget spent but planned: %+v", res)
+	}
+	s = &fakeStore{used: 8}
+	_, _ = newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if s.limit != 2 {
+		t.Fatalf("limit = %d, want the 2 left of the daily budget", s.limit)
+	}
+	s = &fakeStore{}
+	_, _ = newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if s.limit != 5 {
+		t.Fatalf("limit = %d, want the pass cap 5", s.limit)
+	}
+}
+
+func TestRefusedByGateIsLedgeredWithoutRunAndBusyIsNot(t *testing.T) {
+	c1, c2 := cand("https://a.example.com", "/.env", "config.env"), cand("https://b.example.com", "/.env", "config.env")
+	s := &fakeStore{cands: []Candidate{c1, c2}}
+	d := &fakeDisp{deny: map[string]bool{"https://b.example.com/.env": true}}
+	res, _ := newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if res.Planned != 1 || res.Refused != 1 {
+		t.Fatalf("res = %+v", res)
+	}
+	runs := 0
+	for _, p := range s.planned {
+		if p.RunID != nil {
+			runs++
+		}
+	}
+	if runs != 1 || len(s.planned) != 2 {
+		t.Fatalf("ledger = %+v", s.planned)
+	}
+	s = &fakeStore{cands: []Candidate{c1}}
+	d = &fakeDisp{err: scanapp.ErrWebVerifyBusy}
+	res, _ = newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if res.Busy != 1 || len(s.planned) != 0 {
+		t.Fatalf("busy group recorded: %+v %+v", res, s.planned)
+	}
+}
+
+func TestInvalidOriginsAreSkipped(t *testing.T) {
+	s := &fakeStore{cands: []Candidate{
+		cand("javascript:alert(1)", "/.env", "config.env"),
+		cand("https://u:p@a.example.com", "/.env", "config.env"),
+		cand("https://a.example.com/x?y=1", "/.env", "config.env"),
+		cand("https://a.example.com", "/.env", "no.such.key"),
+	}}
+	d := &fakeDisp{}
+	res, _ := newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if res.Invalid != 4 || len(d.calls) != 0 {
+		t.Fatalf("res=%+v calls=%d", res, len(d.calls))
+	}
+}
+
+func TestDepthNeverPlansIntrusive(t *testing.T) {
+	for _, depth := range scanworkflow.Depths() {
+		p := ForDepth(depth)
+		if p.Tier >= scopedom.TierIntrusive {
+			t.Errorf("%s plans tier %v", depth, p.Tier)
+		}
+		if depth == scanworkflow.DepthPassive && p.Enabled {
+			t.Error("a passive depth must not verify")
+		}
+	}
+	st, _ := stage.Lookup(stage.VulnTemplates)
+	if st.Tier >= stage.TierIntrusive {
+		t.Fatal("the verification stage must be below T2")
+	}
+	if dast, _ := stage.Lookup(stage.DASTWeb); dast.Tier != stage.TierIntrusive {
+		t.Fatal("dast.web is expected to be T2, never planned by verification")
+	}
+}
+
+// A guessed backup, archive or dump file (found by path discovery, with an
+// ext label) has no catalog entry and is checked with the sensor's own backup
+// signature template; a guessed page, config or source file is not.
+func TestGuessedBackupIsVerifiedWithTheSensorsOwnCheck(t *testing.T) {
+	if webendpoint.BackupSignatureTemplate != "openctem-backup-file-signature" {
+		t.Fatalf("the template id the sensor carries is openctem-backup-file-signature, not %q", webendpoint.BackupSignatureTemplate)
+	}
+	guessed := func(origin, path string) Candidate {
+		c := cand(origin, path, "")
+		c.Guessed = true
+		return c
+	}
+	s := &fakeStore{cands: []Candidate{
+		guessed("https://a.example.com", "/site.zip"),
+		guessed("https://a.example.com", "/db/dump.sql"),
+		guessed("https://b.example.com", "/index.php.bak"),
+		guessed("https://b.example.com", "/admin.php"),           // not a file class
+		guessed("https://b.example.com", "/settings.yml"),        // config: no archive bytes to check
+		cand("https://c.example.com", "/site.zip", ""),           // crawled, not guessed, no catalog entry
+		cand("https://c.example.com", "/.git/config", "vcs.git"), // a catalog entry keeps its own templates
+	}}
+	d := &fakeDisp{}
+	res, err := newPlanner(s, d, rules{b: blocker{}}).RunTenant(context.Background(), shared.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var backup, catalog []scanapp.WebVerifyInput
+	for _, in := range d.calls {
+		if slices.Equal(in.TemplateIDs, []string{webendpoint.BackupSignatureTemplate}) {
+			backup = append(backup, in)
+		} else {
+			catalog = append(catalog, in)
+		}
+	}
+	if len(backup) == 1 && !slices.Equal(backup[0].Tags, []string{webendpoint.BackupSignatureTag}) {
+		t.Fatalf("tags %v: a sensor that ignores template_ids must load no template", backup[0].Tags)
+	}
+	if len(backup) != 1 || len(backup[0].Targets) != 3 {
+		t.Fatalf("backup calls %+v, want one run of 3 guessed files", d.calls)
+	}
+	for _, u := range backup[0].Targets {
+		if strings.Contains(u, "admin.php") || strings.Contains(u, "settings.yml") || strings.Contains(u, "c.example.com") {
+			t.Errorf("%s is not a guessed backup file", u)
+		}
+	}
+	if len(catalog) != 1 || catalog[0].TemplateIDs[0] != "git-config" || len(catalog[0].Tags) != 0 {
+		t.Fatalf("catalog calls %+v", catalog)
+	}
+	if res.Planned != 4 || res.Invalid != 3 {
+		t.Fatalf("res %+v, want 4 planned and 3 not verifiable", res)
+	}
+	keys := map[string]int{}
+	for _, p := range s.planned {
+		keys[p.CatalogKey]++
+	}
+	if keys[webendpoint.GuessedVerifyKey] != 3 || keys["vcs.git"] != 1 {
+		t.Fatalf("ledger keys %v", keys)
+	}
+}

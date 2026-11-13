@@ -1,4 +1,4 @@
-# versions.yaml: the one compatibility manifest (api/docs/rfcs/RFC-037).
+# versions.yaml: the one compatibility manifest (server/docs/rfcs/RFC-037).
 #
 # Every version default in this repository is read from here. Do not edit a
 # default anywhere else: change it here, then run
@@ -6,16 +6,16 @@
 #   .github/scripts/release/sync-versions.sh          # copy it to its consumers
 #   .github/scripts/release/sync-versions.sh --check  # what CI runs
 #
-# The API embeds a byte-for-byte copy (api/internal/versions/versions.yaml,
+# The API embeds a byte-for-byte copy (server/internal/versions/versions.yaml,
 # written by sync-versions.sh) and reads every default from it, so a version
 # bump changes YAML only, never Go. The other consumers (the bundled sensor's
 # compose default, the console's CI pin) are listed in sync-versions.sh.
 # This file holds no version of the platform itself: that is the git tag.
-# A tag's checkout installs its own version from api/deploy/VERSION, which
+# A tag's checkout installs its own version from server/deploy/VERSION, which
 # cut-release.sh writes on the release branch only (it never reaches develop);
 # the API reports the version it was built with (ldflags from the tag).
 #
-# Compatibility versus availability (api/docs/rfcs/RFC-037 §12): the "min"
+# Compatibility versus availability (server/docs/rfcs/RFC-037 §12): the "min"
 # values and sdk.advisories are this platform's compatibility floor and change
 # only when the platform's contract does. The "latest" of a sensor product, of
 # the SDK and of the CI runner is only the release this platform release was
@@ -30,7 +30,7 @@
 # YAML library, and the API's tests fail on anything else.
 
 # Sensor products: every top-level section other than platform, sdk, ci and
-# chart is one sensor product (api/docs/rfcs/RFC-037 §11). A sensor reports its
+# chart is one sensor product (server/docs/rfcs/RFC-037 §11). A sensor reports its
 # product in its heartbeat (sensor.name, else its User-Agent product token);
 # one that reports none is the scanning sensor, the only product before
 # products were reported. A sensor of a product listed here is judged against
@@ -45,7 +45,7 @@
 #                     unsupported"); "" = no minimum
 #   image             the published image repository, without a tag
 #   install           the install snippet set: the directory
-#                     api/configs/sensor-products/<install>/ of
+#                     server/configs/sensor-products/<install>/ of
 #                     <format>.tmpl files (docker required)
 #   release_identity  the workflow that signs the image (keyless cosign); the
 #                     certificate identity is it + "@refs/tags/<tag>"
@@ -81,7 +81,7 @@ connector-tenable:
 # advisory, separated by spaces; a sensor built with one is degraded with a
 # warning. "" = none.
 sdk:
-  latest: v0.50.0
+  latest: v0.51.0
   min: v0.46.0
   advisories: ""
 

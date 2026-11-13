@@ -25,7 +25,10 @@ import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { orgInitials } from './org-initials'
 import { blockedReasonText, formatShortDate } from '@/features/organization/lib/external-access'
+
+export { orgInitials }
 
 export interface OrgCardOrganization {
   id: string
@@ -65,17 +68,6 @@ export interface OrgCardProps {
   onCreate: () => void
   /** Called when a link inside the card is followed. */
   onNavigate: () => void
-}
-
-/** Up to two initials, e.g. "ORG tenant" -> "OT", "acme" -> "AC". */
-export function orgInitials(name: string): string {
-  const words = name
-    .trim()
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-  if (words.length === 0) return '?'
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
-  return (words[0][0] + words[1][0]).toUpperCase()
 }
 
 function capitalize(value: string): string {

@@ -1,0 +1,440 @@
+package middleware
+
+import (
+	"context"
+	"math"
+	"net/http"
+	"path"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/time/rate"
+
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
+	"github.com/openctemio/openctem/server/pkg/apierror"
+	apikeydom "github.com/openctemio/openctem/server/pkg/domain/apikey"
+	"github.com/openctemio/openctem/server/pkg/domain/scangov"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+// API-key context keys. The authenticated key's id and non-secret prefix are
+// stashed so downstream handlers (e.g. the MCP audit trail) can attribute an
+// action to the specific key without re-reading the raw token.
+const (
+	APIKeyIDKey     logger.ContextKey = "api_key_id"
+	APIKeyPrefixKey logger.ContextKey = "api_key_prefix"
+)
+
+// AuthProviderAPIKey is the AuthProviderKey value for a request authenticated
+// by a tenant `oct_` API key.
+const AuthProviderAPIKey = "api_key"
+
+// GetAPIKeyID returns the authenticated API key's id, or "" if the request was
+// not authenticated by an `oct_` key.
+func GetAPIKeyID(ctx context.Context) string {
+	if v, ok := ctx.Value(APIKeyIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// GetAPIKeyPrefix returns the authenticated API key's non-secret prefix (the
+// first 8 chars), or "" if the request was not API-key authenticated.
+func GetAPIKeyPrefix(ctx context.Context) string {
+	if v, ok := ctx.Value(APIKeyPrefixKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// IsAPIKeyAuthenticated reports whether the request was authenticated by an
+// `oct_` API key.
+func IsAPIKeyAuthenticated(ctx context.Context) bool {
+	return GetAPIKeyID(ctx) != ""
+}
+
+// IsDelegatedCredential reports whether the request acts for a user through
+// a credential that is not the user's own session: an `oct_` API key or an
+// MCP OAuth access token. Such a credential never inherits its holder's
+// full-data role on data-scope paths (datascope.Caller.APIKey); it reads
+// what the user's scope rows allow, and the grant's own scopes still bound
+// the permissions.
+func IsDelegatedCredential(ctx context.Context) bool {
+	switch GetAuthProvider(ctx) {
+	case AuthProviderAPIKey, AuthProviderMCPOAuth:
+		return true
+	}
+	return IsAPIKeyAuthenticated(ctx)
+}
+
+// ReadsOnOwnScope reports whether a request's data reads are confined to the
+// user's scope rows even if the user holds a full-data role: every delegated
+// credential, except an MCP connection its person allowed to read all
+// organization data (RFC-062 MA25) while that person still holds a full-data
+// role (the authorization server decides that on every request, so a role
+// lost since consent is scoped at once). It is only for data-scope paths
+// (datascope.Caller.APIKey); an approval or any other decision that must be a
+// person's own keeps asking IsDelegatedCredential.
+func ReadsOnOwnScope(ctx context.Context) bool {
+	if !IsDelegatedCredential(ctx) {
+		return false
+	}
+	if GetAuthProvider(ctx) == AuthProviderMCPOAuth {
+		if p := GetMCPPrincipal(ctx); p != nil && p.FullData {
+			return false
+		}
+	}
+	return true
+}
+
+// APIKeyAuthenticator is the slice of the apikey service the middleware needs.
+// Declared here (not imported from the app package) so the middleware depends
+// only on the domain type. Satisfied by *apikey.Service.
+//
+// AuthenticateWithPermissions resolves a raw key to its active key and the
+// permissions it may exercise now: its scopes narrowed to what its user still
+// holds. Every failure (unknown, revoked, expired, owner no longer an active
+// member) is one generic error.
+type APIKeyAuthenticator interface {
+	AuthenticateWithPermissions(ctx context.Context, rawKey, ip string) (*apikeydom.APIKey, []string, error)
+}
+
+// APIKeyAuthMiddleware authenticates tenant-scoped `oct_` API keys. One
+// instance serves both the MCP endpoint (Handler) and the REST API (OrJWT), so
+// a key has a single rate-limit budget across the two.
+type APIKeyAuthMiddleware struct {
+	auth    APIKeyAuthenticator
+	log     *logger.Logger
+	limiter *apiKeyRateLimiter
+}
+
+// NewAPIKeyAuth builds the API-key authenticator.
+func NewAPIKeyAuth(auth APIKeyAuthenticator, log *logger.Logger) *APIKeyAuthMiddleware {
+	return &APIKeyAuthMiddleware{auth: auth, log: log, limiter: newAPIKeyRateLimiter()}
+}
+
+// APIKeyAuth authenticates a request by a tenant-scoped `oct_` API key presented
+// as `Authorization: Bearer oct_…` (or `X-API-Key: oct_…`). On success it seeds
+// the same context keys the JWT path uses — tenant, optional user, scopes as
+// permissions, and IsAdmin=false — so downstream handlers and the Require*
+// permission gates work unchanged. Any failure is a generic 401 (the real reason
+// is logged server-side only, to avoid key enumeration).
+//
+// It is the sole authenticator on the routes it guards: a request without a
+// valid `oct_` key — including one bearing a JWT — is rejected with 401 rather
+// than passed through, so a JWT is never mistakenly treated as an API key.
+func APIKeyAuth(auth APIKeyAuthenticator, log *logger.Logger) func(http.Handler) http.Handler {
+	return NewAPIKeyAuth(auth, log).Handler
+}
+
+// Handler is the key-only authenticator (the MCP endpoint). See APIKeyAuth.
+func (m *APIKeyAuthMiddleware) Handler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw := extractAPIKeyToken(r)
+		if raw == "" {
+			apierror.Unauthorized("Invalid credentials").WriteJSON(w)
+			return
+		}
+		ctx, ok := m.authenticate(w, r, raw, scangov.OriginMCP)
+		if !ok {
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// OrJWT returns the authenticator for the tenant REST API: a request that
+// presents an API key (an `Authorization: Bearer oct_…` or any `X-API-Key`
+// header) is authenticated by the key and never by anything else; every other
+// request goes to jwtAuth unchanged.
+//
+// A key request:
+//   - never falls back to the session. A bad key is 401 even if the request
+//     also carries a valid auth_token cookie, and the cookie is not read.
+//   - is refused on the routes APIKeyRouteDenied lists (credential and account
+//     management, the user's own /me surface, the admin console), before the
+//     key is even looked up.
+//   - is read-only: only GET, HEAD and OPTIONS are served. Keys were scoped for
+//     the read-only MCP server, and whether they may write is an open decision.
+//
+// Because the key comes from a header a cross-site page cannot set, a key
+// request is not an ambient-credential request and needs no CSRF token. It is
+// not marked cookie-authenticated, so the CSRF middleware treats it like any
+// header-authenticated request.
+func (m *APIKeyAuthMiddleware) OrJWT(jwtAuth func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		jwtChain := jwtAuth(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !hasAPIKeyCredential(r) {
+				jwtChain.ServeHTTP(w, r)
+				return
+			}
+			raw, ok := restAPIKeyToken(r)
+			if !ok {
+				apierror.Unauthorized("Invalid credentials").WriteJSON(w)
+				return
+			}
+			if APIKeyRouteDenied(r.URL.Path) || (r.URL.RawPath != "" && APIKeyRouteDenied(r.URL.RawPath)) {
+				apierror.Forbidden("API keys cannot be used on this endpoint").WriteJSON(w)
+				return
+			}
+			ctx, ok := m.authenticate(w, r, raw, scangov.OriginAPIKey)
+			if !ok {
+				return
+			}
+			if !isSafeMethod(r.Method) {
+				apierror.Forbidden("API keys are read-only").WriteJSON(w)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// authenticate validates raw, applies the key's rate limit and returns the
+// request context carrying the key's identity and origin (the MCP
+// endpoint or the REST API). On failure it writes the response and returns
+// false.
+func (m *APIKeyAuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, raw string, origin scangov.Origin) (context.Context, bool) {
+	key, perms, err := m.auth.AuthenticateWithPermissions(r.Context(), raw, getClientIP(r))
+	if err != nil {
+		m.log.Debug("api key auth failed", "reason", err.Error())
+		apierror.Unauthorized("Invalid credentials").WriteJSON(w)
+		return nil, false
+	}
+
+	// Enforce the key's own stored rate limit (requests per hour). The
+	// limit is set at mint time and shown on the key, but was never
+	// applied, so a leaked key could be driven at line rate.
+	if d := m.limiter.decide(key.ID().String(), key.RateLimit()); !d.allowed {
+		m.log.Warn("api key rate limit exceeded",
+			"key_id", key.ID().String(), "rate_limit_per_hour", key.RateLimit())
+		writeRateLimited(w, d, "API key rate limit exceeded")
+		return nil, false
+	}
+
+	if perms == nil {
+		perms = []string{}
+	}
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, TenantIDKey, key.TenantID().String())
+	ctx = context.WithValue(ctx, APIKeyIDKey, key.ID().String())
+	ctx = context.WithValue(ctx, APIKeyPrefixKey, key.KeyPrefix())
+	ctx = context.WithValue(ctx, AuthProviderKey, AuthProviderAPIKey)
+	ctx = scangov.WithOrigin(ctx, origin)
+	if uid := key.UserID(); uid != nil {
+		ctx = context.WithValue(ctx, UserIDKey, uid.String())
+	}
+	// The key's effective scopes are its permission set; an API key is never
+	// an admin, so the owner/admin bypass never applies to it.
+	ctx = context.WithValue(ctx, PermissionsKey, perms)
+	ctx = context.WithValue(ctx, IsAdminKey, false)
+	ctx = auditapp.WithAPIKeyActor(ctx, key.ID().String(), key.KeyPrefix())
+	notePrincipal(ctx)
+
+	if ctxLogger := logger.FromContext(ctx); ctxLogger != nil {
+		ctx = logger.ToContext(ctx, ctxLogger.WithContext(ctx))
+	}
+	return ctx, true
+}
+
+// apiKeyDeniedPrefixes are the REST areas an API key may never reach, even
+// with a matching scope. They manage credentials or the account itself, or
+// belong to a person's browser session rather than to automation:
+//
+//   - /api/v1/api-keys, /api/v1/scim-tokens, /api/v1/service-accounts: a key
+//     must not list, mint or revoke credentials (it could otherwise extend
+//     its own life, or mint one for a service account).
+//   - /api/v1/me, /api/v1/notifications, /api/v1/ws: the signed-in user's own
+//     surface (permissions bootstrap, inbox, websocket).
+//   - /api/v1/platform: platform scanning as the signed-in organization sees
+//     it in the console; automation has no use for it.
+//   - /api/v1/users: account management, including /users/{id}/roles.
+//   - /api/v1/oauth: answering an MCP client's consent request is a person's
+//     decision in their browser session, never automation's (RFC-062).
+//   - /api/v1/mcp-access: the organization MCP policy, which decides what
+//     keys and applications may do on the MCP server.
+//   - /api/v1/auth, /api/v1/admin, /api/v1/tenants, /api/v1/invitations:
+//     sign-in, the platform admin console, organization and membership
+//     management. These are not on the key-capable chain at all; listing them
+//     keeps the policy in one place if that ever changes.
+var apiKeyDeniedPrefixes = []string{ //nolint:gochecknoglobals // fixed policy table
+	"/api/v1/api-keys",
+	"/api/v1/scim-tokens",
+	"/api/v1/service-accounts",
+	"/api/v1/me",
+	"/api/v1/notifications",
+	"/api/v1/ws",
+	"/api/v1/platform",
+	"/api/v1/users",
+	"/api/v1/auth",
+	"/api/v1/admin",
+	"/api/v1/tenants",
+	"/api/v1/invitations",
+	"/api/v1/oauth",
+	"/api/v1/mcp-access",
+}
+
+// APIKeyDeniedPrefixes returns the route prefixes an API key may never reach.
+func APIKeyDeniedPrefixes() []string {
+	return append([]string(nil), apiKeyDeniedPrefixes...)
+}
+
+// APIKeyRouteDenied reports whether an API key is refused on urlPath. The path
+// is cleaned first, so "//", "." and ".." segments can't step around a prefix.
+func APIKeyRouteDenied(urlPath string) bool {
+	p := path.Clean("/" + urlPath)
+	for _, prefix := range apiKeyDeniedPrefixes {
+		if p == prefix || strings.HasPrefix(p, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// apiKeyRateLimiter holds one token bucket per `oct_` key, sized from the key's
+// rate_limit column (requests per HOUR): a full hour's budget as burst,
+// refilled continuously. Buckets are rebuilt if the key's limit changes and
+// idle buckets are evicted so revoked/unused keys don't accumulate.
+type apiKeyRateLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*apiKeyBucket
+	sweepAt time.Time
+}
+
+type apiKeyBucket struct {
+	limiter  *rate.Limiter
+	perHour  int
+	lastSeen time.Time
+}
+
+const apiKeyBucketIdle = 2 * time.Hour
+
+// apiKeyBurst caps how many requests a key or an MCP grant may make at once.
+// The hourly rate is unchanged; only the bucket depth is, so a hijacked
+// assistant cannot spend a whole hour's budget in one burst.
+const apiKeyBurst = 60
+
+func newAPIKeyRateLimiter() *apiKeyRateLimiter {
+	return &apiKeyRateLimiter{buckets: make(map[string]*apiKeyBucket)}
+}
+
+// allow reports whether keyID may make another request. perHour <= 0 means
+// the key has no limit configured (unlimited, previous behavior).
+func (l *apiKeyRateLimiter) allow(keyID string, perHour int) bool {
+	return l.decide(keyID, perHour).allowed
+}
+
+// rateDecision is the outcome of one limiter check with the state a client
+// needs to back off: the bucket depth, what is left, when one request is
+// allowed again (denials) and when the bucket is full again.
+type rateDecision struct {
+	allowed    bool
+	limit      int
+	remaining  int
+	retryAfter time.Duration
+	resetAfter time.Duration
+}
+
+// decide is allow with the rate-limit state. A key without a limit is always
+// allowed and reports a zero decision.
+func (l *apiKeyRateLimiter) decide(keyID string, perHour int) rateDecision {
+	if perHour <= 0 {
+		return rateDecision{allowed: true}
+	}
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if now.After(l.sweepAt) {
+		for id, b := range l.buckets {
+			if now.Sub(b.lastSeen) > apiKeyBucketIdle {
+				delete(l.buckets, id)
+			}
+		}
+		l.sweepAt = now.Add(10 * time.Minute)
+	}
+
+	burst := min(perHour, apiKeyBurst)
+	b, ok := l.buckets[keyID]
+	if !ok || b.perHour != perHour {
+		b = &apiKeyBucket{
+			limiter: rate.NewLimiter(rate.Limit(float64(perHour)/3600.0), burst),
+			perHour: perHour,
+		}
+		l.buckets[keyID] = b
+	}
+	b.lastSeen = now
+	allowed := b.limiter.AllowN(now, 1)
+
+	perSecond := float64(perHour) / 3600.0
+	tokens := b.limiter.TokensAt(now)
+	d := rateDecision{allowed: allowed, limit: burst, remaining: max(0, int(math.Floor(tokens)))}
+	if missing := float64(burst) - tokens; missing > 0 {
+		d.resetAfter = time.Duration(missing / perSecond * float64(time.Second))
+	}
+	if !allowed {
+		d.retryAfter = time.Duration(math.Max(0, 1-tokens) / perSecond * float64(time.Second))
+	}
+	return d
+}
+
+// writeRateLimited answers 429 for a refused decision, with Retry-After
+// (whole seconds, at least 1) and the rate-limit headers.
+func writeRateLimited(w http.ResponseWriter, d rateDecision, message string) {
+	setRateLimitHeaders(w, d.limit, d.remaining, time.Now().Add(d.resetAfter))
+	w.Header().Set("Retry-After", strconv.Itoa(max(1, int(math.Ceil(d.retryAfter.Seconds())))))
+	apierror.TooManyRequests(message).WriteJSON(w)
+}
+
+// extractAPIKeyToken pulls an `oct_` key from the Authorization: Bearer header or
+// the X-API-Key header. It deliberately never reads a query parameter (keys in
+// URLs get logged by proxies) and returns "" for any non-`oct_` token so JWT
+// bearer tokens fall through untouched.
+func extractAPIKeyToken(r *http.Request) string {
+	if tok := bearerToken(r); strings.HasPrefix(tok, "oct_") {
+		return tok
+	}
+	if k := strings.TrimSpace(r.Header.Get("X-API-Key")); strings.HasPrefix(k, "oct_") {
+		return k
+	}
+	return ""
+}
+
+// bearerToken returns the token of an `Authorization: Bearer …` header, or "".
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	scheme, rest, ok := strings.Cut(h, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(rest)
+}
+
+// hasAPIKeyCredential reports whether the request presents an API key: an
+// `oct_` bearer token, or an X-API-Key header of any value. Such a request is
+// decided by the key alone.
+func hasAPIKeyCredential(r *http.Request) bool {
+	return strings.HasPrefix(bearerToken(r), "oct_") || strings.TrimSpace(r.Header.Get("X-API-Key")) != ""
+}
+
+// restAPIKeyToken returns the key a REST request presents. It refuses a
+// request whose credentials disagree: an X-API-Key that is not an `oct_` key,
+// or an X-API-Key alongside a different Authorization header, since it is not
+// clear which one the caller meant to act as.
+func restAPIKeyToken(r *http.Request) (string, bool) {
+	header := strings.TrimSpace(r.Header.Get("X-API-Key"))
+	bearer := bearerToken(r)
+	if header == "" {
+		return bearer, strings.HasPrefix(bearer, "oct_")
+	}
+	if !strings.HasPrefix(header, "oct_") {
+		return "", false
+	}
+	if r.Header.Get("Authorization") != "" && bearer != header {
+		return "", false
+	}
+	return header, true
+}

@@ -6,7 +6,8 @@
  * a person inherits from their teams.
  */
 
-import useSWR, { mutate as globalMutate } from 'swr'
+import useSWR from 'swr'
+import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
 import type { SetTeamAccessInput, TeamAccess, TeamPresetTemplate, UserTeamAccess } from '../types'
 import { groupRolesKey } from './use-group-roles'

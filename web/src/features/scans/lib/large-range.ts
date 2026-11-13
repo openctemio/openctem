@@ -4,7 +4,7 @@
  * addresses, how many /16 chunks the platform dispatches, and a rough
  * duration of the host discovery pass. The platform cuts each range at
  * dispatch (to the organization's scope, minus exclusions); the numbers here
- * are the upper bound. Design: api/docs/rfcs/RFC-151-large-range-targets.md.
+ * are the upper bound. Design: server/docs/rfcs/RFC-151-large-range-targets.md.
  */
 
 import { cidrAddressCount, isLargeRange, LARGE_RANGE_HOST_BITS } from './target-format'

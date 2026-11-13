@@ -1,0 +1,1036 @@
+package retest_test
+
+// Continuous retest (RFC-039) end to end against a migrated Postgres: request →
+// two real validate commands → the sensor's results → the finding moves (or,
+// for an unreachable target, does not). DB-gated: needs DATABASE_URL naming a
+// disposable test database (testdb.URL), never the live one.
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	easmapp "github.com/openctemio/openctem/server/internal/app/easm"
+
+	_ "github.com/lib/pq"
+
+	evidenceapp "github.com/openctemio/openctem/server/internal/app/evidence"
+	retestapp "github.com/openctemio/openctem/server/internal/app/retest"
+	scanapp "github.com/openctemio/openctem/server/internal/app/scan"
+	scopeapp "github.com/openctemio/openctem/server/internal/app/scope"
+	tenantapp "github.com/openctemio/openctem/server/internal/app/tenant"
+	"github.com/openctemio/openctem/server/internal/app/validation"
+	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/crypto"
+	retestdom "github.com/openctemio/openctem/server/pkg/domain/retest"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
+)
+
+type sensorsOnline bool
+
+func (s sensorsOnline) HasNucleiValidationSensor(context.Context, shared.ID) (bool, error) {
+	return bool(s), nil
+}
+
+// HasRetestSensor: no tool retest handler online (the validate path).
+func (s sensorsOnline) HasRetestSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
+// HasRetestTemplatesSensor: no sensor runs custom checks.
+func (s sensorsOnline) HasRetestTemplatesSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
+// RetestTools: the template re-verify rung only, when online.
+func (s sensorsOnline) RetestTools(context.Context, shared.ID) ([]string, error) {
+	if !s {
+		return nil, nil
+	}
+	return []string{validation.ReverifyTool}, nil
+}
+
+// onlyToolRetest: one online sensor whose tool has a retest handler; no
+// template re-verify rung.
+type onlyToolRetest string
+
+func (onlyToolRetest) HasNucleiValidationSensor(context.Context, shared.ID) (bool, error) {
+	return false, nil
+}
+
+func (o onlyToolRetest) HasRetestSensor(_ context.Context, _ shared.ID, tool string) (bool, error) {
+	return tool == string(o), nil
+}
+
+func (o onlyToolRetest) HasRetestTemplatesSensor(context.Context, shared.ID, string) (bool, error) {
+	return false, nil
+}
+
+func (o onlyToolRetest) RetestTools(context.Context, shared.ID) ([]string, error) {
+	return validation.RetestToolsOf([]string{validation.RetestCapability(string(o))}), nil
+}
+
+type fixture struct {
+	t      *testing.T
+	db     *sql.DB
+	pg     *postgres.DB
+	repo   *postgres.FindingRetestRepository
+	tenant shared.ID
+	user   shared.ID
+	asset  shared.ID
+}
+
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	url := testdb.URL()
+	if url == "" {
+		t.Skip("DATABASE_URL not set to a test database; skipping retest DB test")
+	}
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		t.Skipf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Ping(); err != nil {
+		t.Skipf("cannot reach test DB: %v", err)
+	}
+	fx := &fixture{t: t, db: db, pg: &postgres.DB{DB: db}, tenant: shared.NewID(), user: shared.NewID()}
+	fx.repo = postgres.NewFindingRetestRepository(fx.pg)
+	// New organizations start in the auto closing mode (tenant.NewTenant).
+	fx.exec(`INSERT INTO tenants (id, name, slug, settings) VALUES ($1, 'retest IT', $2, '{"closure":{"mode":"auto"}}')`, fx.tenant.String(), "retest-"+fx.tenant.String())
+	fx.exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'analyst')`, fx.user.String(), fx.user.String()+"@retest.test")
+	t.Cleanup(func() {
+		bg := context.Background()
+		_, _ = db.ExecContext(bg, `DELETE FROM commands WHERE tenant_id = $1`, fx.tenant.String())
+		_, _ = db.ExecContext(bg, `DELETE FROM tenants WHERE id = $1`, fx.tenant.String())
+		_, _ = db.ExecContext(bg, `DELETE FROM users WHERE id = $1`, fx.user.String())
+	})
+	// The tenant authorizes its own domain for active checks (RFC-036 §6.3):
+	// an asset with no attribution record is probed only inside a scope
+	// target or under a seed.
+	fx.exec(`INSERT INTO scope_targets (tenant_id, target_type, pattern, status) VALUES ($1, 'domain', '*.example.com', 'active')`, fx.tenant.String())
+	fx.asset = fx.newAsset("shop.example.com")
+	return fx
+}
+
+func (fx *fixture) exec(q string, args ...any) {
+	fx.t.Helper()
+	if _, err := fx.db.ExecContext(context.Background(), q, args...); err != nil {
+		fx.t.Fatalf("exec %q: %v", q, err)
+	}
+}
+
+func (fx *fixture) newAsset(name string) shared.ID {
+	id := shared.NewID()
+	fx.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, status) VALUES ($1, $2, $3, 'domain', 'active')`,
+		id.String(), fx.tenant.String(), name)
+	return id
+}
+
+// newFinding inserts a nuclei finding in the given status.
+func (fx *fixture) newFinding(asset shared.ID, status, template string) shared.ID {
+	id := shared.NewID()
+	fx.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, rule_id, file_path, message, severity,
+			fingerprint, status, resolved_at, resolved_by, resolution)
+		VALUES ($1::uuid, $2, $3, 'dast', 'nuclei', $4, 'https://shop.example.com/admin', 'nuclei hit', 'high', $1::text, $5::text,
+			CASE WHEN $5::text = 'resolved' THEN NOW() END, CASE WHEN $5::text = 'resolved' THEN $6::uuid END,
+			CASE WHEN $5::text = 'resolved' THEN 'patched' END)`,
+		id.String(), fx.tenant.String(), asset.String(), template, status, fx.user.String())
+	return id
+}
+
+func (fx *fixture) service() *retestapp.Service {
+	return fx.serviceWith(sensorsOnline(true))
+}
+
+// serviceWith is the service with the given sensor availability.
+func (fx *fixture) serviceWith(sensors retestapp.SensorAvailability) *retestapp.Service {
+	svc := retestapp.NewService(fx.repo, postgres.NewFindingRepository(fx.pg), postgres.NewAssetRepository(fx.pg),
+		postgres.NewCommandRepository(fx.pg), validation.NewCommandDispatcher(postgres.NewCommandRepository(fx.pg), fx.gate(), logger.NewNop()),
+		sensors, logger.NewNop())
+	// The production policy (settings.retest.auto_resolve) and evidence store.
+	svc.SetPolicy(retestapp.TenantPolicy{Tenants: postgres.NewTenantRepository(fx.pg)})
+	svc.SetClosureSettings(tenantapp.NewTenantService(postgres.NewTenantRepository(fx.pg), logger.NewNop()))
+	cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		fx.t.Fatal(err)
+	}
+	svc.SetEvidenceStore(evidenceapp.NewService(postgres.NewFindingEvidenceRepository(fx.pg), cipher, nil, nil, nil, logger.NewNop()))
+	return svc
+}
+
+// gate is the production active-probe gate over the test database.
+func (fx *fixture) gate() *scanapp.Service {
+	log := logger.NewNop()
+	scope := scopeapp.NewService(postgres.NewScopeTargetRepository(fx.pg), postgres.NewScopeExclusionRepository(fx.pg),
+		postgres.NewAssetRepository(fx.pg), log)
+	return scanapp.NewTargetGate(scope, easmapp.NewActiveGate(postgres.NewAttributionRepository(fx.pg), postgres.NewAssetRepository(fx.pg), scope, postgres.NewVerifiedDomainNameRepository(fx.pg)), postgres.NewScanZoneRepository(fx.pg), nil, log)
+}
+
+// finish reports a sensor result for a command: completed with an outcome, or
+// failed when outcome is "".
+func (fx *fixture) finish(cmd *shared.ID, outcome, summary string) {
+	fx.t.Helper()
+	if cmd == nil {
+		fx.t.Fatal("retest has no command")
+	}
+	if outcome == "" {
+		fx.exec(`UPDATE commands SET status = 'failed', error_message = 'sensor crashed', completed_at = NOW() WHERE id = $1`, cmd.String())
+		return
+	}
+	res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": outcome, "summary": summary}})
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
+}
+
+// attemptItems is the proof a re-run reports: one HTTP exchange to url that
+// answered status (0: no response).
+func attemptItems(url string, status int) []map[string]any {
+	ex := map[string]any{"request": map[string]any{"method": "GET", "url": url,
+		"headers": []map[string]string{{"name": "Cookie", "value": "sid=retest-session-value"}}}}
+	if status > 0 {
+		ex["response"] = map[string]any{"status": status, "body": "not found"}
+	}
+	return []map[string]any{{"kind": "http_exchange", "http": ex}}
+}
+
+// finishAttempt completes a template re-run that reports its attempt.
+func (fx *fixture) finishAttempt(cmd *shared.ID, outcome, url string, status int) {
+	fx.t.Helper()
+	res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": outcome, "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": attemptItems(url, status)}}})
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
+}
+
+func (fx *fixture) autoResolve(on bool) {
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{retest}',
+		COALESCE(settings->'retest', '{}'::jsonb) || jsonb_build_object('auto_resolve', $2::boolean)) WHERE id = $1`,
+		fx.tenant.String(), on)
+}
+
+// closingMode sets the organization's closing mode.
+func (fx *fixture) closingMode(mode string) {
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{closure}', jsonb_build_object('mode', $2::text)) WHERE id = $1`,
+		fx.tenant.String(), mode)
+}
+
+func (fx *fixture) findingState(id shared.ID) (status, method, resolvedBy string) {
+	fx.t.Helper()
+	var m, by sql.NullString
+	if err := fx.db.QueryRow(`SELECT status, NULLIF(COALESCE(closure_reason, '') || '/' || COALESCE(verification, ''), '/'), resolved_by::text FROM findings WHERE id = $1`, id.String()).
+		Scan(&status, &m, &by); err != nil {
+		fx.t.Fatal(err)
+	}
+	return status, m.String, by.String
+}
+
+func (fx *fixture) retest(id shared.ID) *retestdom.Retest {
+	fx.t.Helper()
+	rt, err := fx.repo.GetByID(context.Background(), fx.tenant, id)
+	if err != nil {
+		fx.t.Fatal(err)
+	}
+	return rt
+}
+
+func (fx *fixture) request(svc *retestapp.Service, finding shared.ID) *retestdom.Retest {
+	fx.t.Helper()
+	user := fx.user
+	rt, err := svc.Request(context.Background(), retestapp.RequestInput{
+		TenantID: fx.tenant, FindingID: finding, Trigger: retestdom.TriggerManual, RequestedBy: &user,
+	})
+	if err != nil {
+		fx.t.Fatalf("request retest: %v", err)
+	}
+	return rt
+}
+
+// The commands a retest queues are real validate commands: the template re-run
+// routed to validate:nuclei, the probe to validate, both tagged with the retest.
+func TestRetestDB_QueuesTwoScopedValidateCommands(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "confirmed", "CVE-2024-1234")
+	rt := fx.request(svc, f)
+
+	rows, err := fx.db.Query(`SELECT type, payload FROM commands WHERE tenant_id = $1 ORDER BY created_at`, fx.tenant.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	kinds := map[string]validation.ValidateCommandPayload{}
+	for rows.Next() {
+		var typ string
+		var raw []byte
+		if err := rows.Scan(&typ, &raw); err != nil {
+			t.Fatal(err)
+		}
+		var p validation.ValidateCommandPayload
+		_ = json.Unmarshal(raw, &p)
+		if typ != "validate" || p.RetestID != rt.ID.String() || p.FindingID != f.String() {
+			t.Errorf("unexpected command %s %+v", typ, p)
+		}
+		kinds[p.ExecutorKind] = p
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	nuc, ok := kinds["nuclei"]
+	if !ok || nuc.TemplateID != "CVE-2024-1234" || nuc.Target.Address != "https://shop.example.com" ||
+		len(nuc.RequiredCapabilities) != 1 || nuc.RequiredCapabilities[0] != "validate:nuclei" {
+		t.Errorf("template re-run command wrong: %+v", nuc)
+	}
+	if sc, ok := kinds["safe-check"]; !ok || sc.Target.Address != nuc.Target.Address || sc.TemplateID != "" {
+		t.Errorf("reachability probe command wrong: %+v", sc)
+	}
+}
+
+// RFC-057 R2: a bare "not detected" on a host that answers a TCP probe is
+// not reproduced (the finding stays); only an attempt at the finding's own
+// endpoint that got an answer is a confirmed fix, which awaits a person
+// (status kept, validation not_reproducible) unless the tenant auto-resolves.
+func TestRetestDB_NoMatchWithoutEndpointProofIsNotReproduced(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel")
+	rt := fx.request(svc, f)
+
+	fx.finish(rt.CheckCommandID, "not_detected", "detection template did not match")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
+	if got := fx.retest(rt.ID); got.Status != retestdom.StatusPending {
+		t.Fatalf("settled with one check outstanding: %+v", got)
+	}
+	fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeNotReproduced || got.ReasonCode != retestdom.ReasonNoEndpointProof || got.ResultStatus != "confirmed" {
+		t.Fatalf("retest = %+v, want not_reproduced, finding unchanged", got)
+	}
+	if status, _, _ := fx.findingState(f); status != "confirmed" {
+		t.Errorf("finding moved to %s", status)
+	}
+	var actorType, actorName string
+	if err := fx.db.QueryRow(`SELECT actor_type, actor_name FROM finding_activities
+		WHERE finding_id = $1 AND activity_type = 'retest_completed'`, f.String()).Scan(&actorType, &actorName); err != nil {
+		t.Fatalf("retest_completed activity: %v", err)
+	}
+	if actorType != "system" || actorName != "system: retest" {
+		t.Errorf("activity actor = %s/%s, want system/system: retest", actorType, actorName)
+	}
+}
+
+func TestRetestDB_ConfirmedFixAwaitsAPersonUnlessAutoResolve(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	settle := func(f shared.ID, url string, status int) *retestdom.Retest {
+		t.Helper()
+		rt := fx.request(svc, f)
+		fx.finishAttempt(rt.CheckCommandID, "not_detected", url, status)
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+
+	f := fx.newFinding(fx.asset, "confirmed", "exposed-admin-panel")
+	// The sensor that claims the check is recorded on the retest (a run:
+	// finding + command + sensor).
+	sensor := shared.NewID()
+	fx.exec(`INSERT INTO sensors (id, tenant_id, name, api_key_hash, api_key_prefix, status) VALUES ($1, $2, 'retest-runner', $3, 'octs_rt', 'active')`,
+		sensor.String(), fx.tenant.String(), "hash-"+sensor.String())
+	settleClaimed := func(f shared.ID, url string, status int) *retestdom.Retest {
+		t.Helper()
+		rt := fx.request(svc, f)
+		fx.exec(`UPDATE commands SET sensor_id = $2 WHERE id = $1`, rt.CheckCommandID.String(), sensor.String())
+		fx.finishAttempt(rt.CheckCommandID, "not_detected", url, status)
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	got := settleClaimed(f, "https://shop.example.com/admin", 404)
+	if got.SensorID == nil || *got.SensorID != sensor || got.CheckCommandID == nil {
+		t.Fatalf("retest run linkage = sensor %v command %v, want the claiming sensor and the check command", got.SensorID, got.CheckCommandID)
+	}
+	if got.Outcome != retestdom.OutcomeConfirmedFixed || got.ResultStatus != "confirmed" ||
+		!strings.Contains(got.Reason, "https://shop.example.com/admin answered 404") {
+		t.Fatalf("retest = %+v, want confirmed_fixed, status kept", got)
+	}
+	if status, _, _ := fx.findingState(f); status != "confirmed" {
+		t.Errorf("finding = %s, want confirmed (kept)", status)
+	}
+	var validation string
+	if err := fx.db.QueryRow(`SELECT COALESCE(validation_outcome, '') FROM findings WHERE id = $1`, f.String()).Scan(&validation); err != nil ||
+		validation != "not_reproducible" {
+		t.Errorf("validation = %q (%v), want not_reproducible", validation, err)
+	}
+	// The attempt's proof is kept, masked, on the finding.
+	var n int
+	if err := fx.db.QueryRow(`SELECT count(*) FROM finding_evidence WHERE tenant_id = $1 AND finding_id = $2 AND retest_id = $3
+		AND origin = 'retest' AND content::text NOT LIKE '%retest-session-value%'`, fx.tenant.String(), f.String(), got.ID.String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("retest evidence rows = %d, want 1 (masked)", n)
+	}
+
+	// The re-run requested another path (the 2026-10-07 false fix): no conclusion.
+	g := fx.newFinding(fx.newAsset("api.example.com"), "confirmed", "exposed-admin-panel-2")
+	fx.exec(`UPDATE findings SET file_path = 'https://api.example.com/wp-admin/js/theme.js' WHERE id = $1`, g.String())
+	got = settle(g, "https://api.example.com/wp-admin/js/theme.js/wp-admin/js/theme.js", 404)
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEndpointMismatch {
+		t.Fatalf("path-doubled attempt = %+v, want inconclusive endpoint_mismatch", got)
+	}
+
+	// A refused attempt is not a fix.
+	b := fx.newFinding(fx.newAsset("waf.example.com"), "confirmed", "exposed-admin-panel-3")
+	fx.exec(`UPDATE findings SET file_path = 'https://waf.example.com/admin' WHERE id = $1`, b.String())
+	if got = settle(b, "https://waf.example.com/admin", 403); got.ReasonCode != retestdom.ReasonAccessDenied {
+		t.Fatalf("403 attempt = %+v, want access_denied", got)
+	}
+
+	// With auto_resolve the confirmed fix resolves, by the requester.
+	fx.autoResolve(true)
+	h := fx.newFinding(fx.newAsset("auto.example.com"), "confirmed", "exposed-admin-panel-4")
+	fx.exec(`UPDATE findings SET file_path = 'https://auto.example.com/admin' WHERE id = $1`, h.String())
+	if got = settle(h, "https://auto.example.com/admin", 200); got.ResultStatus != "resolved" {
+		t.Fatalf("auto-resolve retest = %+v", got)
+	}
+	if status, method, by := fx.findingState(h); status != "resolved" || method != "fixed/retest" || by != fx.user.String() {
+		t.Errorf("finding = %s/%s/%s, want resolved/fixed/retest/<requester>", status, method, by)
+	}
+}
+
+// An unreachable target is unknown, never fixed: nuclei prints nothing for a
+// host that does not answer, which the sensor reports as not_detected.
+func TestRetestDB_UnreachableTargetIsUnknownNotFixed(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+
+	refused := fx.newFinding(fx.asset, "confirmed", "tpl-refused")
+	rt := fx.request(svc, refused)
+	fx.finish(rt.CheckCommandID, "not_detected", "")
+	fx.finish(rt.ReachCommandID, "not_detected", "target is no longer reachable (connection refused)")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeInconclusive || !strings.HasPrefix(got.Reason, "target unreachable") {
+		t.Fatalf("retest = %+v, want unknown / target unreachable", got)
+	}
+	if status, _, _ := fx.findingState(refused); status != "confirmed" {
+		t.Errorf("unreachable target moved the finding to %s", status)
+	}
+
+	// The probe itself failing (sensor error) is unknown too.
+	failed := fx.newFinding(fx.newAsset("api.example.com"), "fix_applied", "tpl-failed")
+	rt2 := fx.request(svc, failed)
+	fx.finish(rt2.CheckCommandID, "not_detected", "")
+	fx.finish(rt2.ReachCommandID, "", "")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt2.ReachCommandID)
+	if got := fx.retest(rt2.ID); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("retest with a failed probe = %+v, want unknown", got)
+	}
+	if status, _, _ := fx.findingState(failed); status != "fix_applied" {
+		t.Errorf("failed probe moved the finding to %s", status)
+	}
+}
+
+// A retest that sees a resolved finding again reopens it as a regression, with
+// the system: retest actor.
+func TestRetestDB_StillPresentReopensResolvedFinding(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "resolved", "tpl-regress")
+	rt := fx.request(svc, f)
+	fx.finish(rt.CheckCommandID, "detected", "exposure still reproducible")
+	fx.finish(rt.ReachCommandID, "detected", "")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
+
+	if got := fx.retest(rt.ID); got.Outcome != retestdom.OutcomeStillVulnerable || got.ResultStatus != "confirmed" {
+		t.Fatalf("retest = %+v, want still_present → confirmed", got)
+	}
+	status, _, by := fx.findingState(f)
+	if status != "confirmed" || by != "" {
+		t.Errorf("finding = %s (resolved_by %q), want confirmed and the resolution cleared", status, by)
+	}
+	var isRegression bool
+	var changes []byte
+	if err := fx.db.QueryRow(`SELECT COALESCE(is_regression, false) FROM findings WHERE id = $1`, f.String()).Scan(&isRegression); err != nil {
+		t.Fatal(err)
+	}
+	if !isRegression {
+		t.Error("retest reopen not counted as a regression")
+	}
+	if err := fx.db.QueryRow(`SELECT changes FROM finding_activities WHERE finding_id = $1 AND activity_type = 'retest_completed'`,
+		f.String()).Scan(&changes); err != nil {
+		t.Fatal(err)
+	}
+	var c map[string]any
+	_ = json.Unmarshal(changes, &c)
+	if c["regression"] != true || c["old_status"] != "resolved" || c["new_status"] != "confirmed" || c["actor"] != "system: retest" {
+		t.Errorf("activity changes = %v", c)
+	}
+}
+
+func TestRetestDB_OneInFlightPerFindingThenCooldown(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "confirmed", "tpl-once")
+	rt := fx.request(svc, f)
+	user := fx.user
+	_, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
+	if !errors.Is(err, retestdom.ErrRateLimited) && !errors.Is(err, retestdom.ErrInFlight) {
+		t.Fatalf("second request while one is pending: err = %v, want in-flight or rate-limited", err)
+	}
+	fx.finish(rt.CheckCommandID, "detected", "")
+	fx.finish(rt.ReachCommandID, "detected", "")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.CheckCommandID)
+	_, err = svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
+	if !errors.Is(err, retestdom.ErrRateLimited) {
+		t.Fatalf("request inside the cooldown: err = %v, want rate-limited", err)
+	}
+}
+
+// A retest whose sensor never answers is settled unknown by the sweep once its
+// deadline passes; the finding is not touched.
+func TestRetestDB_SweepSettlesPastDeadlineAsUnknown(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	f := fx.newFinding(fx.asset, "in_progress", "tpl-silent")
+	rt := fx.request(svc, f)
+
+	svc.SetClock(func() time.Time { return time.Now().Add(retestapp.Deadline + time.Minute) })
+	if _, err := svc.Sweep(context.Background(), 1000); err != nil {
+		t.Fatal(err)
+	}
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeInconclusive || got.Reason != "no sensor result before the deadline" {
+		t.Fatalf("retest = %+v, want unknown / no result before the deadline", got)
+	}
+	if status, _, _ := fx.findingState(f); status != "in_progress" {
+		t.Errorf("silent sensor moved the finding to %s", status)
+	}
+}
+
+// Ineligible findings are refused before anything is queued.
+func TestRetestDB_IneligibleFindingsAreRefused(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	user := fx.user
+	fp := fx.newFinding(fx.asset, "false_positive", "tpl-fp")
+	notNuclei := fx.newFinding(fx.asset, "confirmed", "tpl-x")
+	fx.exec(`UPDATE findings SET tool_name = 'trivy' WHERE id = $1`, notNuclei.String())
+	destructive := fx.newFinding(fx.asset, "confirmed", "apache-dos-check")
+	// A leaked secret is never verified by a re-check that stops matching it,
+	// by type or by source, even for an otherwise retestable nuclei finding.
+	secretByType := fx.newFinding(fx.asset, "confirmed", "tpl-secret-type")
+	fx.exec(`UPDATE findings SET finding_type = 'secret' WHERE id = $1`, secretByType.String())
+	secretBySource := fx.newFinding(fx.asset, "confirmed", "tpl-secret-source")
+	fx.exec(`UPDATE findings SET source = 'secret' WHERE id = $1`, secretBySource.String())
+	for name, f := range map[string]shared.ID{"false positive": fp, "destructive template": destructive,
+		"secret by type": secretByType, "secret by source": secretBySource} {
+		_, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: f, Trigger: retestdom.TriggerManual, RequestedBy: &user})
+		if !errors.Is(err, retestdom.ErrNotEligible) {
+			t.Errorf("%s: err = %v, want not eligible", name, err)
+		}
+	}
+	// A finding of another tool is retested only by that tool's retest
+	// handler: with none online the request is refused.
+	if _, err := svc.Request(context.Background(), retestapp.RequestInput{TenantID: fx.tenant, FindingID: notNuclei, Trigger: retestdom.TriggerManual, RequestedBy: &user}); !errors.Is(err, retestdom.ErrNoSensor) {
+		t.Errorf("not a nuclei finding, no retest sensor: err = %v, want no sensor", err)
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM commands WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Errorf("%d commands queued for ineligible findings", n)
+	}
+}
+
+// --- no double-fire ---
+
+// rendezvousAuto makes every replica list the due tenants and then wait until
+// all of them have, so their claims race for the same tick.
+type rendezvousAuto struct {
+	*postgres.FindingRetestRepository
+	want    int32
+	arrived atomic.Int32
+	all     chan struct{}
+	once    sync.Once
+}
+
+func (r *rendezvousAuto) ListDueAutoTenants(ctx context.Context, now time.Time, limit int) ([]retestdom.AutoTenant, error) {
+	list, err := r.FindingRetestRepository.ListDueAutoTenants(ctx, now, limit)
+	if r.arrived.Add(1) >= r.want {
+		r.once.Do(func() { close(r.all) })
+	}
+	select {
+	case <-r.all:
+	case <-time.After(3 * time.Second):
+	}
+	return list, err
+}
+
+// Two API replicas run the scheduler at the same moment. The tenant's tick must
+// be served once: with a daily cap of 2 and 4 eligible findings, exactly 2
+// retests are queued. Without the claim each replica reads "0 queued today" and
+// queues its own 2.
+func TestRetestDB_TwoSchedulerReplicasDoNotDoubleFire(t *testing.T) {
+	fx := newFixture(t)
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{retest}', '{"auto_enabled": true, "daily_cap": 2}') WHERE id = $1`,
+		fx.tenant.String())
+	other := fx.newAsset("api.example.com")
+	for i, a := range []shared.ID{fx.asset, fx.asset, other, other} {
+		fx.newFinding(a, "confirmed", "tpl-auto-"+string(rune('a'+i)))
+	}
+
+	auto := &rendezvousAuto{FindingRetestRepository: fx.repo, want: 2, all: make(chan struct{})}
+	replicas := []*retestapp.Service{fx.service(), fx.service()}
+	results := make([]retestapp.TickResult, len(replicas))
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i, svc := range replicas {
+		wg.Add(1)
+		go func(i int, svc *retestapp.Service) {
+			defer wg.Done()
+			<-start
+			res, err := svc.RunAutoTick(context.Background(), auto)
+			if err != nil {
+				t.Errorf("replica %d: %v", i, err)
+			}
+			results[i] = res
+		}(i, svc)
+	}
+	close(start)
+	wg.Wait()
+
+	claimed := results[0].TenantsClaimed + results[1].TenantsClaimed
+	if claimed != 1 {
+		t.Errorf("tenant tick served by %d replicas, want exactly 1 (%+v)", claimed, results)
+	}
+	var n, distinct int
+	if err := fx.db.QueryRow(`SELECT COUNT(*), COUNT(DISTINCT finding_id) FROM finding_retests WHERE tenant_id = $1 AND trigger = 'auto'`,
+		fx.tenant.String()).Scan(&n, &distinct); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || distinct != 2 {
+		t.Fatalf("auto retests queued = %d (%d findings), want exactly the daily cap of 2", n, distinct)
+	}
+
+	// The next tick is not due yet: running again queues nothing.
+	auto2 := &rendezvousAuto{FindingRetestRepository: fx.repo, want: 1, all: make(chan struct{})}
+	res, err := replicas[0].RunAutoTick(context.Background(), auto2)
+	if err != nil || res.TenantsClaimed != 0 {
+		t.Errorf("a tick that is not due was served again: %+v %v", res, err)
+	}
+}
+
+// Auto-retest is off unless the tenant turned it on.
+func TestRetestDB_AutoRetestOffByDefault(t *testing.T) {
+	fx := newFixture(t)
+	fx.newFinding(fx.asset, "confirmed", "tpl-default-off")
+	res, err := fx.service().RunAutoTick(context.Background(), fx.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM finding_retests WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Errorf("auto-retest queued %d retests for a tenant that never enabled it (%+v)", n, res)
+	}
+}
+
+// The auto-retest picks findings of the tools an online sensor reports it
+// can re-check, whatever the tool is called: here only a trivy retest
+// handler is online, so the trivy finding is retested and the nuclei one is
+// not (before, only nuclei findings were ever candidates). With nothing
+// online, nothing is queued.
+func TestRetestDB_AutoRetestFollowsReportedRetestTools(t *testing.T) {
+	fx := newFixture(t)
+	fx.exec(`UPDATE tenants SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{retest}', '{"auto_enabled": true, "daily_cap": 5}') WHERE id = $1`,
+		fx.tenant.String())
+	nuclei := fx.newFinding(fx.asset, "confirmed", "tpl-auto-nuclei")
+	trivy := fx.newFinding(fx.newAsset("api.example.com"), "confirmed", "CVE-2026-0001")
+	fx.exec(`UPDATE findings SET tool_name = 'Trivy' WHERE id = $1`, trivy.String())
+
+	if _, err := fx.serviceWith(sensorsOnline(false)).RunAutoTick(context.Background(), fx.repo); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM finding_retests WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Fatalf("no sensor online: %d retests queued", n)
+	}
+
+	fx.exec(`UPDATE finding_retest_cursors SET next_run_at = NOW() - INTERVAL '1 minute' WHERE tenant_id = $1`, fx.tenant.String())
+	if _, err := fx.serviceWith(onlyToolRetest("trivy")).RunAutoTick(context.Background(), fx.repo); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	rows, err := fx.db.Query(`SELECT finding_id FROM finding_retests WHERE tenant_id = $1 AND trigger = 'auto'`, fx.tenant.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		got[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !got[trivy.String()] || got[nuclei.String()] || len(got) != 1 {
+		t.Fatalf("auto retests = %v, want only the trivy finding %s", got, trivy)
+	}
+}
+
+// CanRetest answers what the console offers: the same checks as a request,
+// nothing recorded.
+func TestRetestDB_CanRetest(t *testing.T) {
+	fx := newFixture(t)
+	nuclei := fx.newFinding(fx.asset, "confirmed", "tpl-can")
+	fp := fx.newFinding(fx.asset, "false_positive", "tpl-can-fp")
+	ctx := context.Background()
+	if ok, err := fx.service().CanRetest(ctx, fx.tenant, nuclei); err != nil || !ok {
+		t.Fatalf("eligible finding with the re-verify rung online: %v %v", ok, err)
+	}
+	if ok, err := fx.serviceWith(sensorsOnline(false)).CanRetest(ctx, fx.tenant, nuclei); err != nil || ok {
+		t.Fatalf("no sensor online: %v %v", ok, err)
+	}
+	if ok, err := fx.service().CanRetest(ctx, fx.tenant, fp); err != nil || ok {
+		t.Fatalf("false positive: %v %v", ok, err)
+	}
+	// Another tenant's finding is not found.
+	if ok, err := fx.service().CanRetest(ctx, shared.NewID(), nuclei); ok || err == nil {
+		t.Fatalf("cross-tenant: %v %v", ok, err)
+	}
+	var n int
+	_ = fx.db.QueryRow(`SELECT COUNT(*) FROM finding_retests WHERE tenant_id = $1`, fx.tenant.String()).Scan(&n)
+	if n != 0 {
+		t.Fatalf("CanRetest recorded %d retests", n)
+	}
+}
+
+// Availability names why a retest would be refused, so the verification plan
+// can say it instead of hiding the button.
+func TestRetestDB_AvailabilityReasons(t *testing.T) {
+	fx := newFixture(t)
+	ctx := context.Background()
+	nuclei := fx.newFinding(fx.asset, "confirmed", "tpl-avail")
+	fp := fx.newFinding(fx.asset, "false_positive", "tpl-avail-fp")
+	secret := fx.newFinding(fx.asset, "confirmed", "tpl-avail-secret")
+	fx.exec(`UPDATE findings SET finding_type = 'secret' WHERE id = $1`, secret.String())
+	noRule := fx.newFinding(fx.asset, "confirmed", "tpl-avail-norule")
+	fx.exec(`UPDATE findings SET rule_id = '' WHERE id = $1`, noRule.String())
+	destructive := fx.newFinding(fx.asset, "confirmed", "apache-dos-check")
+
+	cases := []struct {
+		name   string
+		svc    *retestapp.Service
+		id     shared.ID
+		ok     bool
+		reason string
+	}{
+		{"retestable", fx.service(), nuclei, true, ""},
+		{"no sensor online", fx.serviceWith(sensorsOnline(false)), nuclei, false, retestapp.ReasonNoSensor},
+		{"false positive", fx.service(), fp, false, retestapp.ReasonStatusNotEligible},
+		{"secret", fx.service(), secret, false, retestapp.ReasonSecretNeedsRotation},
+		{"no rule", fx.service(), noRule, false, retestapp.ReasonNoToolRule},
+		{"destructive template", fx.service(), destructive, false, retestapp.ReasonTemplateNotRerun},
+	}
+	for _, c := range cases {
+		ok, reason, err := c.svc.Availability(ctx, fx.tenant, c.id)
+		if err != nil || ok != c.ok || reason != c.reason {
+			t.Errorf("%s: Availability = %v %q %v, want %v %q", c.name, ok, reason, err, c.ok, c.reason)
+		}
+	}
+	if _, _, err := fx.service().Availability(ctx, shared.NewID(), nuclei); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("cross-tenant: err = %v, want not found", err)
+	}
+}
+
+// finishRequests completes a template re-run that reports its per-request
+// results (a template that probes several paths), keeping one exchange as
+// evidence like the sensor does.
+func (fx *fixture) finishRequests(cmd *shared.ID, outcome string, kept string, status int, requests []map[string]any) {
+	fx.t.Helper()
+	res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": outcome, "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": attemptItems(kept, status), "requests": requests}}})
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, cmd.String(), res)
+}
+
+// The finding's own endpoint decides, not whichever exchange the sensor kept
+// as evidence: the owner's swagger case settled "another endpoint was checked"
+// although the endpoint had been requested.
+func TestRetestDB_MultiPathTemplateSettlesOnTheOriginalEndpoint(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	orig := "https://shop.example.com/admin"
+	other := "https://shop.example.com/developers/documentation"
+	run := func(outcome string, status int, requests []map[string]any) (*retestdom.Retest, string) {
+		t.Helper()
+		f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+		rt := fx.request(svc, f)
+		fx.finishRequests(rt.CheckCommandID, outcome, other, status, requests)
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		st, _, _ := fx.findingState(f)
+		return fx.retest(rt.ID), st
+	}
+
+	// The original answered 404 and did not match; the kept exchange is another path: fixed.
+	got, _ := run("not_detected", 200, []map[string]any{
+		{"url": other, "status": 200}, {"url": orig, "status": 404}})
+	if got.Outcome != retestdom.OutcomeConfirmedFixed {
+		t.Fatalf("original answered 404: %s/%s (%s)", got.Outcome, got.ReasonCode, got.Reason)
+	}
+
+	// Another path matched, the original did not: exposed elsewhere, the finding stays open.
+	got, st := run("detected", 200, []map[string]any{
+		{"url": orig, "status": 404}, {"url": other, "status": 200, "matched": true}})
+	if got.Outcome != retestdom.OutcomeStillExposedElsewhere || got.ReasonCode != retestdom.ReasonMatchedElsewhere ||
+		!strings.Contains(got.Reason, "developers/documentation") || st != "confirmed" {
+		t.Fatalf("exposed elsewhere: %s/%s (%s), finding %s, status %s", got.Outcome, got.ReasonCode, got.Reason, st, got.Status)
+	}
+
+	// The original was never requested and nothing matched: inconclusive.
+	got, _ = run("not_detected", 200, []map[string]any{{"url": other, "status": 200}})
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEndpointMismatch {
+		t.Fatalf("original not requested: %s/%s", got.Outcome, got.ReasonCode)
+	}
+
+	// The original matched: still vulnerable.
+	got, _ = run("detected", 200, []map[string]any{{"url": orig, "status": 200, "matched": true}})
+	if got.Outcome != retestdom.OutcomeStillVulnerable {
+		t.Fatalf("original matched: %s", got.Outcome)
+	}
+
+	// An older sensor (no requests): today's reading, the kept exchange is another path.
+	got, _ = run("not_detected", 200, nil)
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEndpointMismatch {
+		t.Fatalf("older sensor: %s/%s", got.Outcome, got.ReasonCode)
+	}
+}
+
+// An exposed page the server now refuses (401 or 403, no edge marker) is a fix
+// only when seen on two retests at least an hour apart; the first is
+// inconclusive. The class comes from the template tags the scanner recorded,
+// never from the finding's editable tags. An edge answer resets the count.
+func TestRetestDB_OriginAccessDeniedOfExposureNeedsTwoRetests(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	const at = "https://shop.example.com/admin"
+	origin := []map[string]string{{"name": "Server", "value": "nginx"}}
+	cloudflare := []map[string]string{{"name": "Server", "value": "cloudflare"}}
+	const cfBody = "<title>Attention Required! | Cloudflare</title> Sorry, you have been blocked. Cloudflare Ray ID"
+
+	settle := func(f shared.ID, status int, headers []map[string]string, body string) *retestdom.Retest {
+		rt := fx.request(svc, f)
+		ex := map[string]any{"request": map[string]any{"method": "GET", "url": at},
+			"response": map[string]any{"status": status, "headers": headers, "body": body}}
+		res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+			"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}}}}})
+		fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, rt.CheckCommandID.String(), res)
+		fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	age := func(f shared.ID, d string) {
+		fx.exec(`UPDATE finding_retests SET created_at = created_at - $3::interval, completed_at = completed_at - $3::interval
+			WHERE tenant_id = $1 AND finding_id = $2`, fx.tenant.String(), f.String(), d)
+		fx.exec(`UPDATE findings SET last_seen_at = last_seen_at - $3::interval, last_reopened_at = last_reopened_at - $3::interval
+			WHERE tenant_id = $1 AND id = $2`, fx.tenant.String(), f.String(), d)
+	}
+	exposure := func(f shared.ID) {
+		fx.exec(`UPDATE findings SET template_exposure = true WHERE id = $1`, f.String())
+	}
+
+	// The scanner's template class: two answers an hour apart close it.
+	f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+	exposure(f)
+	if first := settle(f, 403, origin, "Forbidden"); first.Outcome != retestdom.OutcomeInconclusive || first.ReasonCode != retestdom.ReasonAccessDenied {
+		t.Fatalf("first retest = %s/%s (%s)", first.Outcome, first.ReasonCode, first.Reason)
+	}
+	age(f, "2 hours")
+	second := settle(f, 403, origin, "Forbidden")
+	if second.Outcome != retestdom.OutcomeConfirmedFixed || second.ReasonCode != retestdom.ReasonAccessDenied ||
+		!strings.Contains(second.Reason, "access now denied by the server") {
+		t.Fatalf("second retest = %s/%s (%s)", second.Outcome, second.ReasonCode, second.Reason)
+	}
+
+	// A user-added tag does not make a finding an exposure class.
+	u := fx.newFinding(fx.newAsset("tags.example.com"), "confirmed", "some-rce")
+	fx.exec(`UPDATE findings SET tags = ARRAY['exposure','swagger'] WHERE id = $1`, u.String())
+	settle(u, 403, origin, "Forbidden")
+	age(u, "2 hours")
+	if got := settle(u, 403, origin, "Forbidden"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("user tag closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+
+	// Two answers less than an hour apart do not close it.
+	q := fx.newFinding(fx.newAsset("quick.example.com"), "confirmed", "swagger-api")
+	exposure(q)
+	settle(q, 403, origin, "Forbidden")
+	age(q, "20 minutes")
+	if got := settle(q, 403, origin, "Forbidden"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("answers 20 minutes apart closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+
+	// An edge-marked answer in between resets the count.
+	e := fx.newFinding(fx.newAsset("edge.example.com"), "confirmed", "swagger-api")
+	exposure(e)
+	settle(e, 403, origin, "Forbidden")
+	age(e, "3 hours")
+	if got := settle(e, 403, cloudflare, cfBody); got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEdgeBlocked {
+		t.Fatalf("edge answer = %s/%s (%s)", got.Outcome, got.ReasonCode, got.Reason)
+	}
+	age(e, "3 hours")
+	if got := settle(e, 403, origin, "Forbidden"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("an origin answer after an edge answer closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+}
+
+// A prior refusal pairs with a new one only while it is recent (14 days) and
+// the finding was not seen or reopened since: a sighting after it shows the
+// page was reachable.
+func TestRetestDB_StaleAccessDeniedDoesNotPair(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	origin := []map[string]string{{"name": "Server", "value": "nginx"}}
+	settle := func(f shared.ID) *retestdom.Retest {
+		rt := fx.request(svc, f)
+		ex := map[string]any{"request": map[string]any{"method": "GET", "url": "https://shop.example.com/admin"},
+			"response": map[string]any{"status": 403, "headers": origin, "body": "Forbidden"}}
+		res, _ := json.Marshal(map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+			"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}}}}})
+		fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() WHERE id = $1`, rt.CheckCommandID.String(), res)
+		fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	age := func(f shared.ID, d string) {
+		fx.exec(`UPDATE finding_retests SET created_at = created_at - $3::interval, completed_at = completed_at - $3::interval
+			WHERE tenant_id = $1 AND finding_id = $2`, fx.tenant.String(), f.String(), d)
+		fx.exec(`UPDATE findings SET last_seen_at = last_seen_at - $3::interval, last_reopened_at = last_reopened_at - $3::interval
+			WHERE tenant_id = $1 AND id = $2`, fx.tenant.String(), f.String(), d)
+	}
+	for name, c := range map[string]struct{ ageBy, sql string }{
+		"sighted after the denial":  {"2 hours", `UPDATE findings SET last_seen_at = NOW() WHERE id = $1`},
+		"reopened after the denial": {"2 hours", `UPDATE findings SET last_reopened_at = NOW() WHERE id = $1`},
+		"denial older than 14 days": {"15 days", `SELECT $1::text`},
+	} {
+		f := fx.newFinding(fx.newAsset(strings.ReplaceAll(name, " ", "-")+".example.com"), "confirmed", "swagger-api")
+		fx.exec(`UPDATE findings SET template_exposure = true WHERE id = $1`, f.String())
+		settle(f)
+		age(f, c.ageBy)
+		fx.exec(c.sql, f.String())
+		if got := settle(f); got.Outcome != retestdom.OutcomeInconclusive {
+			t.Errorf("%s: closed the finding: %s (%s)", name, got.Outcome, got.Reason)
+		}
+	}
+}
+
+// finishAt completes a command with a result and a completion time.
+func (fx *fixture) finishAt(cmd *shared.ID, res map[string]any, ago string) {
+	fx.t.Helper()
+	b, _ := json.Marshal(res)
+	fx.exec(`UPDATE commands SET status = 'completed', result = $2, completed_at = NOW() - $3::interval WHERE id = $1`, cmd.String(), b, ago)
+}
+
+// A CDN block recorded in the evidence is an edge block even when the sensor
+// sends request lines without an edge state: it is never a fix.
+func TestRetestDB_EdgeBlockInEvidenceIsNotHiddenByRequestLines(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	fx.autoResolve(true)
+	const at = "https://shop.example.com/admin"
+	f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+	rt := fx.request(svc, f)
+	ex := map[string]any{"request": map[string]any{"method": "GET", "url": at},
+		"response": map[string]any{"status": 403, "headers": []map[string]string{{"name": "Server", "value": "cloudflare"}, {"name": "cf-mitigated", "value": "challenge"}},
+			"body": "<title>Attention Required! | Cloudflare</title> Sorry, you have been blocked. Cloudflare Ray ID"}}
+	fx.finishAt(rt.CheckCommandID, map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}},
+			"requests": []map[string]any{{"url": at, "status": 403}}}}}, "0 seconds")
+	fx.finish(rt.ReachCommandID, "detected", "target answered")
+	svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+	got := fx.retest(rt.ID)
+	if got.Outcome != retestdom.OutcomeInconclusive || got.ReasonCode != retestdom.ReasonEdgeBlocked {
+		t.Fatalf("retest = %s/%s (%s), want inconclusive edge_blocked", got.Outcome, got.ReasonCode, got.Reason)
+	}
+	if status, _, _ := fx.findingState(f); status != "confirmed" {
+		t.Errorf("finding = %s, want confirmed", status)
+	}
+}
+
+// A scan that sighted the finding after the check ran outranks the check's
+// no-match: the fix is recorded inconclusive and the finding is not resolved.
+func TestRetestDB_SightingAfterCheckBlocksResolve(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	fx.autoResolve(true)
+	run := func(host, sighted string) (shared.ID, *retestdom.Retest) {
+		f := fx.newFinding(fx.newAsset(host), "confirmed", "swagger-api")
+		rt := fx.request(svc, f)
+		fx.finishAt(rt.CheckCommandID, map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+			"evidence": map[string]any{"evidence_items": attemptItems("https://shop.example.com/admin", 404)}}}, "10 minutes")
+		if sighted != "" {
+			fx.exec(`UPDATE findings SET last_seen_at = NOW() - $2::interval WHERE id = $1`, f.String(), sighted)
+		}
+		fx.finish(rt.ReachCommandID, "detected", "target answered")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return f, fx.retest(rt.ID)
+	}
+	// Control: no sighting since the check: it resolves.
+	f, got := run("a.example.com", "20 minutes")
+	if st, _, _ := fx.findingState(f); got.Outcome != retestdom.OutcomeConfirmedFixed || st != "resolved" {
+		t.Fatalf("control = %s, finding %s", got.Outcome, st)
+	}
+	// Sighted 5 minutes ago, after the check completed 10 minutes ago.
+	f, got = run("b.example.com", "5 minutes")
+	if st, _, _ := fx.findingState(f); got.Outcome != retestdom.OutcomeInconclusive || st != "confirmed" ||
+		got.ReasonCode != retestdom.ReasonSeenAfterCheck || !strings.Contains(got.Reason, "sighted again") {
+		t.Fatalf("sighted since = %s (%s), finding %s, want inconclusive and confirmed", got.Outcome, got.Reason, st)
+	}
+	var vo string
+	if err := fx.db.QueryRow(`SELECT COALESCE(validation_outcome, '') FROM findings WHERE id = $1`, f.String()).Scan(&vo); err != nil || vo != "" {
+		t.Errorf("validation_outcome = %q (%v), want none", vo, err)
+	}
+}
+
+// The two origin refusals are an hour apart by when the checks ran, not by
+// when the second was settled: a late settlement does not widen the gap.
+func TestRetestDB_DenialGapIsMeasuredAtCheckTime(t *testing.T) {
+	fx := newFixture(t)
+	svc := fx.service()
+	origin := []map[string]string{{"name": "Server", "value": "nginx"}}
+	ex := map[string]any{"request": map[string]any{"method": "GET", "url": "https://shop.example.com/admin"},
+		"response": map[string]any{"status": 403, "headers": origin, "body": "Forbidden"}}
+	result := map[string]any{"metadata": map[string]any{"outcome": "not_detected", "summary": "re-run",
+		"evidence": map[string]any{"evidence_items": []map[string]any{{"kind": "http_exchange", "http": ex}}}}}
+	settle := func(f shared.ID, checkAgo string) *retestdom.Retest {
+		rt := fx.request(svc, f)
+		fx.finishAt(rt.CheckCommandID, result, checkAgo)
+		fx.finish(rt.ReachCommandID, "detected", "target is still reachable")
+		svc.OnCommandFinished(context.Background(), fx.tenant, *rt.ReachCommandID)
+		return fx.retest(rt.ID)
+	}
+	f := fx.newFinding(fx.asset, "confirmed", "swagger-api")
+	fx.exec(`UPDATE findings SET template_exposure = true WHERE id = $1`, f.String())
+	settle(f, "0 seconds")
+	// The first retest completed 90 minutes ago; the second check ran 30
+	// minutes after it and is settled only now.
+	fx.exec(`UPDATE finding_retests SET created_at = created_at - interval '95 minutes', completed_at = NOW() - interval '90 minutes'
+		WHERE tenant_id = $1 AND finding_id = $2`, fx.tenant.String(), f.String())
+	fx.exec(`UPDATE findings SET last_seen_at = NOW() - interval '2 hours', last_reopened_at = NULL WHERE id = $1`, f.String())
+	if got := settle(f, "60 minutes"); got.Outcome != retestdom.OutcomeInconclusive {
+		t.Fatalf("checks 30 minutes apart closed the finding: %s (%s)", got.Outcome, got.Reason)
+	}
+}

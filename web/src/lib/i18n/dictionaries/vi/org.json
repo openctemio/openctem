@@ -835,6 +835,8 @@
   "org.switch": "Chuyển tổ chức",
   "org.switchFailed": "Không thể chuyển tổ chức",
   "org.switched": "Đã chuyển sang {name}",
+  "org.switchedElsewhere": "Một thẻ khác đã chuyển sang {name}. Thẻ này cũng hiển thị tổ chức đó.",
+  "org.switching": "Đang chuyển tổ chức…",
   "org.teamAccess.allAssets": "Mọi tài sản",
   "org.teamAccess.allAssetsHint": "Mọi tài sản trong tổ chức. Người ngoài tổ chức và tài khoản dịch vụ không thể tham gia nhóm này.",
   "org.teamAccess.allAssetsOwnerOnly": "Mọi tài sản trong tổ chức. Chỉ chủ sở hữu mới chọn được.",

@@ -1,6 +1,6 @@
 /**
  * Issue type per kind of issue on a ticketing integration
- * (config.ticketing.issue_types; api/docs/architecture/ticketing-integration.md,
+ * (config.ticketing.issue_types; server/docs/architecture/ticketing-integration.md,
  * "Issue types").
  */
 

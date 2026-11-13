@@ -1,0 +1,111 @@
+package server
+
+// The content catalog (docs/rfcs/RFC-099-content-packages.md): trusted
+// roots, the publisher verifier, and an admin audit row whenever an
+// operator changes the trust anchors through the environment.
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"strings"
+	"time"
+
+	catalogapp "github.com/openctemio/openctem/server/internal/app/contentcatalog"
+	contentpackapp "github.com/openctemio/openctem/server/internal/app/contentpack"
+	"github.com/openctemio/openctem/server/internal/config"
+	"github.com/openctemio/openctem/server/internal/versions"
+	"github.com/openctemio/openctem/server/pkg/contentpkg"
+	cpsigstore "github.com/openctemio/openctem/server/pkg/contentpkg/sigstore"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
+	"github.com/openctemio/openctem/server/pkg/domain/contentcatalog"
+	contentpackdom "github.com/openctemio/openctem/server/pkg/domain/contentpack"
+	"github.com/openctemio/openctem/server/pkg/logger"
+	"github.com/openctemio/openctem/server/pkg/releasefeed"
+)
+
+// AdminActionContentTrustOverride records that the operator added catalog
+// roots or replaced the Sigstore trusted root at startup.
+const AdminActionContentTrustOverride = "content_catalog.trust_override"
+
+func initContentCatalog(cfg *config.Config, repo contentcatalog.Repository, audit catalogapp.AuditLogger,
+	adminAudit admin.AuditLogRepository, log *logger.Logger) *catalogapp.Service {
+	roots := append([]string(nil), contentpkg.PinnedRoots...)
+	var extra []string
+	for _, r := range cfg.Encryption.ContentTrustRootKeyIDs {
+		if r = strings.TrimSpace(r); r != "" {
+			extra = append(extra, r)
+		}
+	}
+	roots = append(roots, extra...)
+	path := cfg.Encryption.ContentSigstoreTrustedRoot
+	verifier, err := cpsigstore.New(path)
+	if err != nil {
+		// Fail closed: without a verifier every package with a publisher
+		// signature is refused.
+		log.Error("content catalog: the Sigstore trusted root does not load; imports are refused", "error", err)
+		verifier = nil
+	}
+	if len(extra) > 0 || path != "" {
+		recordTrustOverride(adminAudit, extra, path, log)
+	}
+	if len(roots) == 0 {
+		log.Warn("content catalog: no catalog root is trusted; bundle imports are refused until one is configured")
+	}
+	var pv contentpkg.PublisherVerifier
+	if verifier != nil {
+		pv = contentpkg.PublisherVerifierFunc(verifier.Verify)
+	}
+	return catalogapp.NewService(repo, roots, pv, versions.PlatformRelease, audit, log)
+}
+
+// contentPublishing is the private publishing wiring, nil (publishing
+// refused) without a content signing key.
+func contentPublishing(tenants *contentpackapp.Service, platform *contentpackapp.PlatformService,
+	signer *contentpackdom.Signer, slug catalogapp.TenantSlug) *catalogapp.Publishing {
+	if signer == nil {
+		return nil
+	}
+	return &catalogapp.Publishing{TenantPacks: tenants, PlatformPacks: platform, Signer: signer, Slug: slug}
+}
+
+// recordTrustOverride logs and audits (high) an operator change of the
+// catalog trust anchors: extra roots and a replaced Sigstore trusted root,
+// named by its SHA-256.
+func recordTrustOverride(adminAudit admin.AuditLogRepository, roots []string, path string, log *logger.Logger) {
+	body := map[string]any{"extra_roots": roots}
+	if path != "" {
+		body["sigstore_trusted_root"] = path
+		if b, err := os.ReadFile(path); err == nil { // #nosec G304 -- operator-configured trust file
+			sum := sha256.Sum256(b)
+			body["sigstore_trusted_root_sha256"] = hex.EncodeToString(sum[:])
+		}
+	}
+	log.Warn("content catalog: trust anchors overridden by the environment", "extra_roots", roots, "sigstore_trusted_root", path)
+	if adminAudit == nil {
+		return
+	}
+	entry := admin.NewAuditLogBuilder(nil, AdminActionContentTrustOverride).
+		Resource("content_catalog", nil, "instance").
+		Request("STARTUP", "CONTENT_TRUST_ROOT_KEY_IDS,CONTENT_SIGSTORE_TRUSTED_ROOT", body).
+		High()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := adminAudit.Create(ctx, entry.Build()); err != nil {
+		log.Error("write admin audit for the content trust override", "error", err)
+	}
+}
+
+// releaseFeedVerifier verifies the release feed's keyless Sigstore signature
+// offline with the same trusted root as the content catalog (the embedded one,
+// or CONTENT_SIGSTORE_TRUSTED_ROOT). Nil when the root does not load: the
+// version check then refuses every feed (fail closed).
+func releaseFeedVerifier(cfg *config.Config, log *logger.Logger) releasefeed.SignatureVerifier {
+	v, err := cpsigstore.New(cfg.Encryption.ContentSigstoreTrustedRoot)
+	if err != nil {
+		log.Error("release feed: the Sigstore trusted root does not load; feeds are refused", "error", err)
+		return nil
+	}
+	return v
+}

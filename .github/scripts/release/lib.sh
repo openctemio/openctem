@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib.sh: helpers shared by the release scripts (api/docs/rfcs/RFC-037).
+# lib.sh: helpers shared by the release scripts (server/docs/rfcs/RFC-037).
 # Source it; it defines functions only.
 #
 #   semver   rel_is_version, rel_version_gt, rel_latest_tag, rel_next_version
@@ -112,6 +112,6 @@ rel_yaml_set() {
 }
 
 # The install version of a tag's checkout: written by cut-release.sh on the
-# release branch only, read by api/deploy/setup.sh.
+# release branch only, read by server/deploy/setup.sh.
 # shellcheck disable=SC2034 # read by the scripts that source this file
-VERSION_FILE="api/deploy/VERSION"
+VERSION_FILE="server/deploy/VERSION"

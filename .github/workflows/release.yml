@@ -15,14 +15,14 @@ on:
       - "v*"
   # Release Publish (release-publish.yml) dispatches this on the tag
   # (`--ref vX.Y.Z`) when it had to push the tag with GITHUB_TOKEN, whose
-  # pushes start no workflow (api/docs/rfcs/RFC-037 §7).
+  # pushes start no workflow (server/docs/rfcs/RFC-037 §7).
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Go version: setup-go reads api/go.mod (its `toolchain` directive), the same
-# version api/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
+# Go version: setup-go reads server/go.mod (its `toolchain` directive), the same
+# version server/Dockerfile builds with. setup-go also sets GOTOOLCHAIN=local, so a
 # separate pin here would silently test and govulncheck an OLDER Go than ships.
 env:
   GOWORK: "off"
@@ -123,12 +123,12 @@ jobs:
 
           The archives below install every component as programs with systemd
           units (linux amd64/arm64; \`bootstrap-admin\` also for macOS and
-          Windows): api/docs/deployment/binary-install.md. For sites whose
+          Windows): server/docs/deployment/binary-install.md. For sites whose
           clusters cannot reach the internet, each image is also attached as an
           OCI archive with its signatures (\`openctem-image-*.oci.tar\`, listed
           and signed in \`openctem-images-${TAG}.txt\`), and the image kit builds
           the images from the archives without source code:
-          api/docs/deployment/air-gapped.md.
+          server/docs/deployment/air-gapped.md.
 
           Verify before use:
 
@@ -140,15 +140,24 @@ jobs:
           gh attestation verify openctem-server-${TAG}-linux-amd64.tar.gz --owner openctemio
           \`\`\`
 
-          ## Upgrading (Compose deployment, api/deploy)
+          ## Upgrading (Compose deployment, server/deploy)
 
           Read the upgrade notes below first. Then set \`OPENCTEM_VERSION=${TAG}\` in
-          \`api/deploy/.env\` and run \`docker compose pull && docker compose up -d\`:
+          \`server/deploy/.env\` and run \`docker compose pull && docker compose up -d\`:
           the one-shot \`migrate\` service applies the database migrations before the
           API starts (the API refuses to start on an older schema). Back up the
           database and the \`api-data\` volume before upgrading.
           EOF
           sed -i 's/^          //' /tmp/release-header.md
+          # This release's changelog: the fragments in the tag's tree that the
+          # previous release's tree lacks (server/scripts/changelog.py), with
+          # the Upgrade notes block first. The checkout is the tag.
+          {
+            echo
+            echo "## Changes in ${TAG}"
+            echo
+            python3 server/scripts/changelog.py notes --ref "$TAG" --since-previous "$TAG"
+          } >> /tmp/release-header.md
       - name: Create the release (retried on GitHub API errors)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -177,3 +186,6 @@ jobs:
       contents: write
       id-token: write
     uses: ./.github/workflows/release-feed.yml
+    # Only the rebuild request for the docs and the website (notify job).
+    secrets:
+      DOCS_DISPATCH_TOKEN: ${{ secrets.DOCS_DISPATCH_TOKEN }}

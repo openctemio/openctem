@@ -4,13 +4,13 @@
  * Defines relationships between assets for attack surface management, following CMDB conventions.
  *
  * The relationship type IDs, labels, descriptions and constraints are
- * GENERATED from `api/configs/relationship-types.yaml` by the codegen
- * tool at `api/cmd/gen-relationships`. This file re-exports the
+ * GENERATED from `server/configs/relationship-types.yaml` by the codegen
+ * tool at `server/cmd/gen-relationships`. This file re-exports the
  * generated symbols under their existing public names so the rest of
  * the UI code doesn't need to change.
  *
  * To add a new relationship type:
- *   1. Edit `api/configs/relationship-types.yaml`
+ *   1. Edit `server/configs/relationship-types.yaml`
  *   2. Run `make generate-relationships` from the api directory
  *   3. Commit YAML + the two generated files
  *

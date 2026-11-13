@@ -477,7 +477,6 @@
   "admin.config.group.storage": "Storage",
   "admin.config.group.updates": "Software updates",
   "admin.config.item.ADMIN_ALLOWED_CIDRS": "Networks allowed to reach the console",
-  "admin.config.item.ADMIN_AUDIT_SINK": "Admin audit stream",
   "admin.config.item.ADMIN_ELEVATION": "Time-boxed elevation",
   "admin.config.item.ADMIN_PUBLIC_URL": "Console address",
   "admin.config.item.APP_URL": "Public address",

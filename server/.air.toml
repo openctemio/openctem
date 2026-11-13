@@ -1,0 +1,97 @@
+# Air configuration for hot reloading
+# Documentation: https://github.com/air-verse/air
+
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  # Binary output
+  bin = "./tmp/openctem"
+
+  full_bin = "sh -lc 'while true; do ./tmp/openctem; code=$?; echo \"[air] app exited ($code) - restarting\"; sleep 1; done'"
+
+  # Build command. Stamps the build identity GET /api/v1/version reports
+  # (server/docs/rfcs/RFC-037 §3.3): version "<highest vX.Y.Z tag>-dev+<short HEAD>"
+  # (the tag by version sort, never git describe; v0.0.0 before the first tag),
+  # commit the short HEAD, channel dev. The checkout is mounted from the host,
+  # so git needs safe.directory. When git cannot read HEAD the version is left
+  # unset and the binary reads .git itself (pkg/version), which gives the same
+  # answer without a git binary; the build never fails over it. Air reads this
+  # file once at start: a running container keeps its old command until it
+  # restarts.
+  cmd = '''V=$(git -c safe.directory="$PWD" tag -l 'v[0-9]*' --sort=-v:refname 2>/dev/null | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1); C=$(git -c safe.directory="$PWD" rev-parse --short=8 HEAD 2>/dev/null); X=github.com/openctemio/openctem/server/pkg/version; LD="-X $X.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; if [ -n "$C" ]; then LD="$LD -X $X.Version=${V:-v0.0.0}-dev+$C -X $X.Commit=$C"; fi; go build -buildvcs=false -ldflags "$LD" -o ./tmp/openctem ./cmd/server'''
+
+  # Build delay after file change (milliseconds)
+  delay = 1000
+
+  # Exclude directories
+  exclude_dir = ["assets", "tmp", "vendor", "testdata", "node_modules", ".git", "docs"]
+
+  # Exclude files
+  exclude_file = []
+
+  # Exclude specific file patterns
+  exclude_regex = ["_test.go", ".*_mock.go"]
+
+  # Exclude unchanged files
+  exclude_unchanged = false
+
+  # Follow symlinks
+  follow_symlink = false
+
+  # Include extensions
+  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml", "toml", "json"]
+
+  # Include specific directories
+  include_dir = []
+
+  # Kill delay (nanoseconds)
+  kill_delay = "0s"
+
+  # Log output
+  log = "build-errors.log"
+
+  # Poll for changes (required for Docker on macOS/Windows)
+  poll = true
+
+  # Poll interval (milliseconds)
+  poll_interval = 500
+
+  # Rerun the command after rebuild
+  rerun = false
+
+  # Rerun delay (milliseconds)
+  rerun_delay = 500
+
+  # Send SIGINT before killing
+  send_interrupt = false
+
+  # Stop on error
+  stop_on_error = false
+
+[color]
+  # Customize colors
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  # Log main process output
+  main_only = false
+
+  # Show log time
+  time = false
+
+[misc]
+  # Delete tmp directory on exit
+  clean_on_exit = true
+
+[screen]
+  # Clear screen on rebuild
+  clear_on_rebuild = true
+
+  # Keep scroll position
+  keep_scroll = true

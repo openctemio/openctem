@@ -1,6 +1,0 @@
-### Behaviour change: a Nessus import closes what the scan proves gone
-
-- A `.nessus` upload closes, without any declaration, the open Nessus findings of its own hosts that it no longer reports, only where the file proves it: the host's scan finished, the check (plugin or family) ran, and a local check only where the scan logged in. Critical and known-exploited findings, leaked secrets, human sources, branch occurrences and findings last seen by a platform sensor never close; the uploader needs `findings:verify`; nothing closes when any file or row of the upload failed; the mass-close guard holds.
-- A `PASSED` compliance result resolves the open `FAILED` finding of the same host and check; `WARNING` and `ERROR` never do. A passed check is no longer stored as an open finding.
-- A finding's last seen time is the scan's time from the file, and only moves forward; a file reopens a closed finding only when it saw it after the close, and a close is dated at the host's scan end, so files uploaded out of order give the same result.
-- The import result counts what closed by reason and why the rest stayed open (host not finished, local checks not run, check not run, seen later, file incomplete, verify permission, guard), and says on how many hosts authentication failed.

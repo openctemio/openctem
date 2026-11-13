@@ -13,7 +13,7 @@ import { parseInventoryFilters, serializeInventoryFilters } from '../inventory-u
 
 function apiStates(): string[] {
   const src = readFileSync(
-    resolve(__dirname, '../../../../../../api/pkg/domain/asset/monitoring_state.go'),
+    resolve(__dirname, '../../../../../../server/pkg/domain/asset/monitoring_state.go'),
     'utf8'
   )
   const consts = new Map(
