@@ -5,6 +5,7 @@ import { devLog } from '@/lib/logger'
 import { useRouter } from 'next/navigation'
 import { Building2, Check, Loader2, LogOut, Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -78,8 +79,7 @@ export default function SelectTenantPage() {
   useEffect(() => {
     const tenantCookie = getCookie(env.cookies.tenant)
     if (tenantCookie) {
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the dashboard bootstraps with the newly set session cookies
-      window.location.href = '/'
+      navigateAfterSessionChange('/')
     }
   }, [])
 
@@ -103,13 +103,13 @@ export default function SelectTenantPage() {
       const result = await selectTenantAction(tenantId)
 
       if (result.success) {
-        toast.success(t('auth.selectTenant.selected', 'Team selected'))
         // Brief delay to ensure Set-Cookie headers are fully processed by browser
         // before hard redirect. Without this, dashboard bootstrap may race with
         // cookie initialization and flash a 401 error before auto-recovering.
         await new Promise((resolve) => setTimeout(resolve, 100))
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required so the dashboard bootstraps with the newly set session cookies
-        window.location.href = '/'
+        navigateAfterSessionChange('/', {
+          flash: { kind: 'success', title: t('auth.selectTenant.selected', 'Team selected') },
+        })
       } else {
         setSelectedId(null)
         toast.error(

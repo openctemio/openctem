@@ -506,6 +506,16 @@ Tags are free labels or `key:value` pairs stored in `assets.tags`. One validator
 - Reserved namespaces only the platform writes: `sys:`, `system:`, `program:`, `source:`, `platform:`, `bug-bounty`, `dangling_cname`.
 - A person gets a validation error; an import drops the tag and counts it in `openctem_ingest_asset_tags_dropped_total{reason}`. A tag an asset already carries is never re-checked, so it cannot make the asset unsavable.
 
+### Editing tags never drops another writer's tags
+
+An edit of an asset's tags is a change, never a new list:
+
+- `PUT /api/v1/assets/{id}` takes `tags_add` and `tags_remove`. Every tag the asset carries that `tags_remove` does not name stays, whoever set it (a sensor, an import, a rule, another person) and whenever, including after the editor loaded the asset. A tag the asset lacks in `tags_remove` is ignored; a tag in both lists, or `tags` together with either list, is a 400.
+- `POST /api/v1/assets/bulk/tags` (`assets:write`) takes `asset_ids` (at most 100), `add` and `remove`, and applies the same change to each asset; no other tag and no other field changes. Assets outside the caller's data scope, of another organization or missing are not changed and count as `failed`; assets that already match count as `unchanged`. The change of governing tags is checked once for the whole request. One `asset.bulk_tags_changed` audit entry names the tags and the changed assets.
+- The change is applied to the stored list inside the `UPDATE` (`asset.ChangeTags`, `AssetRepository.Update`), so two people editing at the same moment both keep their change.
+- `tags` (the whole list) is kept for API clients and still replaces the list: send it only with the list just read. The console never sends it on an edit: the edit form, the detail sheet, the row's "+ Add label" and the bulk actions send the change from the tags they showed (`web/src/features/assets/lib/tag-change.ts`).
+- `asset.updated` audit entries name the tags added and removed (`tags_added`, `tags_removed`): tags are labels every reader of the asset sees, never secrets, and the asset row does not record who set a tag.
+
 ### Governing tags
 
 A tag is governing when an enabled team access rule (tag match), scan approval rule, scan window or assignment rule names it. A governing `key:value` tag governs its whole key (`env:staging` is a change when a rule reads `env:prod`). Changing a governing tag changes who sees an asset, whether a scan needs approval, when it may run or who receives findings, so:

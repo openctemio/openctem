@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/openctemio/openctem/server/internal/config"
 	"github.com/openctemio/openctem/server/internal/infra/controller"
@@ -85,20 +86,21 @@ func (s *Set) Info() []version.Extension {
 	return out
 }
 
-// Declares reports whether an extension of the build declared config key.
-func (s *Set) Declares(key string) bool {
+// ConfigKeys returns every config key the build's extensions declared (nil
+// for Community). The environment check at start counts them as read.
+func (s *Set) ConfigKeys() []string {
 	if s == nil {
-		return false
+		return nil
 	}
+	var out []string
 	for _, e := range s.exts {
-		for _, k := range e.ConfigKeys {
-			if k == key {
-				return true
-			}
-		}
+		out = append(out, e.ConfigKeys...)
 	}
-	return false
+	return out
 }
+
+// Declares reports whether an extension of the build declared config key.
+func (s *Set) Declares(key string) bool { return slices.Contains(s.ConfigKeys(), key) }
 
 // DepsFor builds the Deps the core would hand extension e (also used by
 // pkg/extension/extensiontest, so an extension's tests run against the

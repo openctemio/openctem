@@ -184,15 +184,26 @@ All auth operations use Server Actions for security:
 
 ## Important: Full Page Reload After Auth Changes
 
-After Server Actions set cookies, use `window.location.href` instead of `router.push()`:
+After the session changes (sign-in, an organization joined, created, selected,
+left or deleted, a second factor completed), leave the page with
+`navigateAfterSessionChange` from `src/lib/session-navigation.ts`, never
+`router.push()`:
 
 ```typescript
-// ❌ BAD - Cookies may not be picked up
+// BAD - this document keeps the previous session's organization and caches
 router.push('/')
 
-// ✅ GOOD - Full reload ensures cookies are available
-window.location.href = '/'
+// GOOD - a full page load reads the new cookies; same-origin paths only;
+// the message is shown once on the page that loads
+navigateAfterSessionChange('/', {
+  replace: true,
+  flash: { kind: 'success', title: t('org.acceptInvite.joinedOrg', undefined, { org }) },
+})
 ```
+
+Joining is not selecting: accepting an invitation only adds the membership.
+Make the joined organization the active one first (`selectTenantAction(id)`,
+which the API checks against the membership), then navigate.
 
 ## File Structure
 
@@ -311,7 +322,7 @@ export default async function ProtectedPage() {
 ### User sees login page after logging in
 
 1. Check if cookies are being set (DevTools → Application → Cookies)
-2. Ensure `window.location.href` is used instead of `router.push()`
+2. Ensure the page leaves with `navigateAfterSessionChange` (a full page load), not `router.push()`
 3. Check cookie domain/path settings
 
 ### User stuck on "Create Team" page

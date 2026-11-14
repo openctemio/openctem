@@ -179,7 +179,7 @@ image; `npm run dev:console`, port 3001). The tenant app has no console route,
 never imports console code (ESLint `no-restricted-imports`, `console/src/__tests__/app-split.test.ts`)
 and refuses to proxy `/api/v1/admin`.
 
-After auth changes, use `window.location.href` (not `router.push`) to pick up cookies.
+After auth changes, leave the page with `navigateAfterSessionChange` (`src/lib/session-navigation.ts`: a full page load, same-origin paths, one-time message), not `router.push`, to pick up cookies.
 See [auth.md](.claude/auth.md) for details.
 
 ### CSRF (double-submit cookie)

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from 'react'
 import { Building2, Clock, Loader2, Mail } from 'lucide-react'
 import { toast } from 'sonner'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { safeText } from '@/lib/api/error-message'
 
 import { Badge } from '@/components/ui/badge'
@@ -57,9 +58,13 @@ export function OnboardingFork({ createSlot, emptySlot }: OnboardingForkProps) {
       const res = await onboardingAcceptAction(ref)
       setBusyRef(null)
       if (res.success && res.status === 'joined') {
-        toast.success(t('org.onboarding.joined', undefined, { name: res.organizationName }))
-        // Fresh tenant cookies: reload into the organization.
-        window.location.href = '/'
+        // Fresh tenant cookies: load the organization, then say so.
+        navigateAfterSessionChange('/', {
+          flash: {
+            kind: 'success',
+            title: t('org.onboarding.joined', undefined, { name: res.organizationName }),
+          },
+        })
         return
       }
       if (res.success) {

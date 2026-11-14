@@ -7,6 +7,12 @@ const push = vi.fn()
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh: vi.fn() }) }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+// A full page load in the browser; here, what the page asks for.
+const navigate = vi.fn()
+vi.mock('@/lib/session-navigation', () => ({
+  navigateAfterSessionChange: (...a: unknown[]) => navigate(...a),
+}))
+
 const startSessionMfaAction = vi.fn()
 const selectTenantAction = vi.fn()
 vi.mock('@/features/auth/actions/local-auth-actions', () => ({
@@ -78,6 +84,9 @@ describe('InvitationView', () => {
     fetchFn = fetchMock()
     vi.stubGlobal('fetch', fetchFn)
     push.mockReset()
+    navigate.mockReset()
+    selectTenantAction.mockReset()
+    selectTenantAction.mockResolvedValue({ success: true })
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -130,7 +139,7 @@ describe('InvitationView', () => {
   it('accepts with the token in the body and forgets it', async () => {
     render(<InvitationView hasSession />)
     fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
 
     const accept = (fetchFn.mock.calls as FetchCall[]).find(([u]) => String(u).endsWith('/accept'))
     expect(accept).toBeDefined()
@@ -292,7 +301,8 @@ describe('InvitationView', () => {
       expect(push).not.toHaveBeenCalled()
 
       fireEvent.click(screen.getByRole('button', { name: 'finish step' }))
-      await waitFor(() => expect(push).toHaveBeenCalledWith('/'))
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', expect.anything()))
+      expect(push).not.toHaveBeenCalled()
       // Several organizations: the invited one is selected explicitly.
       expect(selectTenantAction).toHaveBeenCalledWith('t1')
       expect(window.sessionStorage.length).toBe(0)
@@ -320,6 +330,179 @@ describe('InvitationView', () => {
       fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
       await waitFor(() => expect(push).toHaveBeenCalledTimes(1))
       expect(String(push.mock.calls[0][0])).toContain('/login?returnTo=')
+    })
+  })
+  describe('after accepting, the person lands in the organization they joined', () => {
+    const LANDED = {
+      replace: true,
+      flash: { kind: 'success', title: 'You joined Acme.' },
+    }
+
+    function answers(map: Record<string, () => Response>) {
+      fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/lookup')) return new Response(JSON.stringify(preview), { status: 200 })
+        for (const [suffix, answer] of Object.entries(map)) {
+          if (url.endsWith(suffix)) return answer()
+        }
+        return new Response(null, { status: 500 })
+      })
+      vi.stubGlobal('fetch', fetchFn)
+    }
+
+    it('signed in with another organization: selects the joined one, then a full page load', async () => {
+      answers({
+        '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+      })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
+      // The session is moved to the invited organization (the API checks membership).
+      expect(selectTenantAction).toHaveBeenCalledWith('t1')
+      expect(selectTenantAction.mock.invocationCallOrder[0]).toBeLessThan(
+        navigate.mock.invocationCallOrder[0]
+      )
+      // Never a client-side push to the home page with the previous session.
+      expect(push).not.toHaveBeenCalled()
+      expect(window.sessionStorage.length).toBe(0)
+    })
+
+    it('signed in without an organization (refresh path): lands in the joined one', async () => {
+      answers({
+        '/accept': () => new Response(JSON.stringify({ code: 'UNAUTHORIZED' }), { status: 401 }),
+        '/accept-with-refresh': () =>
+          new Response(JSON.stringify({ tenant_id: 't1' }), { status: 200 }),
+      })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
+      expect(selectTenantAction).toHaveBeenCalledWith('t1')
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('organization requires two-factor at selection: the step, not an error or a redirect', async () => {
+      answers({
+        '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+      })
+      selectTenantAction.mockResolvedValue({ success: false, code: 'MFA_ENROLLMENT_REQUIRED' })
+      startSessionMfaAction.mockResolvedValue({ success: true, purpose: 'enroll', orgs: ['Acme'] })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      expect(await screen.findByText('You have joined Acme')).toBeInTheDocument()
+      expect(navigate).not.toHaveBeenCalled()
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('selection failed: shows it accepted, says so, and offers "Open Acme", which retries', async () => {
+      answers({
+        '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+      })
+      selectTenantAction.mockResolvedValueOnce({ success: false, error: 'boom' })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      expect(await screen.findByText(/Could not open Acme/)).toBeInTheDocument()
+      expect(navigate).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Open Acme' }))
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
+      expect(selectTenantAction).toHaveBeenCalledTimes(2)
+    })
+
+    it('session gone at selection: sign in again (the membership exists)', async () => {
+      answers({
+        '/accept': () => new Response(JSON.stringify({ role: 'member' }), { status: 200 }),
+      })
+      selectTenantAction.mockResolvedValue({ success: false, code: 'SESSION_EXPIRED' })
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login', { replace: true }))
+    })
+
+    it('accepted meanwhile in a second tab: shows it accepted with "Open Acme", no error', async () => {
+      let accepted = false
+      fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/lookup')) {
+          const body = accepted
+            ? { ...preview, invitation: { ...preview.invitation, pending: false } }
+            : preview
+          return new Response(JSON.stringify(body), { status: 200 })
+        }
+        accepted = true
+        return new Response(
+          JSON.stringify({ code: 'VALIDATION', message: 'no longer available' }),
+          { status: 400 }
+        )
+      })
+      vi.stubGlobal('fetch', fetchFn)
+      render(<InvitationView hasSession />)
+      fireEvent.click(await screen.findByRole('button', { name: /accept invitation/i }))
+
+      expect(await screen.findByText('Invitation already accepted')).toBeInTheDocument()
+      expect(screen.queryByText(/cannot accept/i)).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Open Acme' }))
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/', LANDED))
+    })
+  })
+
+  describe('an invitation already accepted', () => {
+    beforeEach(() => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ ...preview, invitation: { ...preview.invitation, pending: false } }),
+              { status: 200 }
+            )
+        )
+      )
+    })
+
+    it('signed in: offers "Open Acme" and lands there', async () => {
+      render(<InvitationView hasSession />)
+      expect(await screen.findByText('Invitation already accepted')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /go to sign in/i })).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Open Acme' }))
+      await waitFor(() => expect(selectTenantAction).toHaveBeenCalledWith('t1'))
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith('/', {
+          replace: true,
+          flash: { kind: 'success', title: 'You joined Acme.' },
+        })
+      )
+    })
+
+    it('signed out: offers sign in, not "Open"', async () => {
+      render(<InvitationView hasSession={false} />)
+      expect(await screen.findByRole('button', { name: /go to sign in/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^open /i })).toBeNull()
+    })
+
+    it('expired: no "Open"', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                ...preview,
+                invitation: {
+                  ...preview.invitation,
+                  pending: false,
+                  expires_at: new Date(Date.now() - 86400000).toISOString(),
+                },
+              }),
+              { status: 200 }
+            )
+        )
+      )
+      render(<InvitationView hasSession />)
+      expect(await screen.findByText('Invitation expired')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^open /i })).toBeNull()
     })
   })
 })

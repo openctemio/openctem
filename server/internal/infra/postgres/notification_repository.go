@@ -28,7 +28,7 @@ func NewNotificationRepository(db *DB) *NotificationRepository {
 func (r *NotificationRepository) Create(ctx context.Context, n *notification.Notification) error {
 	query := `
 		INSERT INTO notifications (id, tenant_id, audience, audience_id, notification_type, title, body, severity, resource_type, resource_id, url, actor_id, created_at, reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NULLIF($14, ''))`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, LEAST($13::timestamptz, NOW()), NULLIF($14, ''))`
 
 	var audienceID, resourceID, actorID *string
 	if n.AudienceID() != nil {
@@ -85,13 +85,13 @@ func (r *NotificationRepository) CreateCoalesced(ctx context.Context, n *notific
 	var mergedID string
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE notifications SET title = $5, body = $6, severity = $7, actor_id = $8, url = $9,
-		       reason = COALESCE(NULLIF($10, ''), reason), created_at = $11, coalesced_count = coalesced_count + 1
+		       reason = COALESCE(NULLIF($10, ''), reason), created_at = LEAST($11::timestamptz, NOW()), coalesced_count = coalesced_count + 1
 		WHERE id = (
 			SELECT x.id FROM notifications x
 			LEFT JOIN notification_state ns ON ns.tenant_id = x.tenant_id AND ns.user_id = $2
 			WHERE x.tenant_id = $1 AND x.audience = 'user' AND x.audience_id = $2
 			  AND x.notification_type = $3 AND x.resource_type = $12 AND x.resource_id = $4
-			  AND x.created_at > $11::timestamptz - $13::interval
+			  AND x.created_at > LEAST($11::timestamptz, NOW()) - $13::interval
 			  AND x.created_at > COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)
 			  AND NOT EXISTS (SELECT 1 FROM notification_reads nr WHERE nr.notification_id = x.id AND nr.user_id = $2)
 			ORDER BY x.created_at DESC LIMIT 1
@@ -344,13 +344,20 @@ func (r *NotificationRepository) MarkAsRead(ctx context.Context, tenantID shared
 	return nil
 }
 
-// MarkAllAsRead updates the watermark for a user.
+// MarkAllAsRead updates the watermark for a user. The watermark is the later
+// of now and the newest notification time in the organization, so a row whose
+// time is ahead of the database clock (written before the insert clamp
+// existed, or by a skewed writer) is read too and never stays unread.
 func (r *NotificationRepository) MarkAllAsRead(ctx context.Context, tenantID, userID shared.ID) error {
 	query := `
+		WITH mark AS (
+			SELECT GREATEST(NOW(), COALESCE(MAX(created_at), NOW())) AS at
+			FROM notifications WHERE tenant_id = $1
+		)
 		INSERT INTO notification_state (tenant_id, user_id, last_read_all_at)
-		VALUES ($1, $2, NOW())
+		SELECT $1, $2, mark.at FROM mark
 		ON CONFLICT (tenant_id, user_id)
-		DO UPDATE SET last_read_all_at = NOW()`
+		DO UPDATE SET last_read_all_at = GREATEST(notification_state.last_read_all_at, EXCLUDED.last_read_all_at)`
 
 	_, err := r.db.ExecContext(ctx, query, tenantID, userID)
 	if err != nil {

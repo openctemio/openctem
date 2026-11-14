@@ -11,7 +11,8 @@ import (
 //
 //   - reading AI agents: ai_triage:read (every member who uses AI may see who
 //     the AI agents are and who answers for them);
-//   - creating, deleting, changing owners or the preset, and resuming:
+//   - creating, deleting, changing owners, the preset or where it runs
+//     (built in or on the organization's AI workers), and resuming:
 //     service_accounts:manage plus a recent sign-in (an AI agent is a service
 //     account); the role grant ceiling and the owners' ceiling apply in the
 //     service;
@@ -38,6 +39,7 @@ func registerAIAnalysisRoutes(router Router, h *handler.AIAnalysisHandler, authM
 		r.DELETE("/{id}", h.DeleteAIAgent, manage, requireStepUpSensitive())
 		r.PUT("/{id}/owners", h.SetOwners, manage, requireStepUpSensitive())
 		r.PUT("/{id}/preset", h.SetPreset, manage, requireStepUpSensitive())
+		r.PUT("/{id}/executor", h.ChangeExecutor, manage, requireStepUpSensitive())
 		r.POST("/{id}/reactivate", h.Resume, manage, requireStepUpSensitive())
 		r.POST("/{id}/disable", h.Disable, manage)
 		r.POST("/{id}/suspend", h.Pause, middleware.Require(permission.AITriageRead))

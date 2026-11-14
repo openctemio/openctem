@@ -2,8 +2,9 @@
 
 import * as React from 'react'
 import { useTheme } from 'next-themes'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { statusToneVars } from '@/lib/status-colors'
+import { takeSessionFlash } from '@/lib/session-navigation'
 
 /** Under Tailwind's `sm`: where dialogs are bottom sheets with a pinned footer. */
 const PHONE_QUERY = '(max-width: 639px)'
@@ -60,8 +61,32 @@ export function AppToaster() {
   // Sonner defaults to its light theme; follow the app's resolved theme.
   const { resolvedTheme } = useTheme()
   return (
+    <>
+      <ToasterFrame phone={phone} dark={resolvedTheme === 'dark'} />
+      <SessionFlashToast />
+    </>
+  )
+}
+
+/**
+ * Shows, once, the message a page kept before it reloaded into a new session
+ * (src/lib/session-navigation.ts). Rendered after the Toaster, so the
+ * Toaster is listening when the toast is raised.
+ */
+function SessionFlashToast() {
+  React.useEffect(() => {
+    const flash = takeSessionFlash()
+    if (!flash) return
+    const show = flash.kind === 'success' ? toast.success : toast.info
+    show(flash.title, flash.description ? { description: flash.description } : undefined)
+  }, [])
+  return null
+}
+
+function ToasterFrame({ phone, dark }: { phone: boolean; dark: boolean }) {
+  return (
     <Toaster
-      theme={resolvedTheme === 'dark' ? 'dark' : 'light'}
+      theme={dark ? 'dark' : 'light'}
       style={TOAST_TOKENS}
       richColors
       position={phone ? 'top-center' : 'bottom-right'}
