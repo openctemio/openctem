@@ -1,0 +1,16 @@
+-- Copies the addresses of the assets that existed before the triggers of
+-- 20261113075346_asset_ip_addresses into asset_ip_addresses
+-- (docs/architecture/asset-addresses.md).
+--
+-- The CALL is the only statement of this file, so the runner sends it
+-- outside a transaction block and the procedure commits after every batch
+-- of 2000 assets: there is no long transaction and no table lock.
+--
+-- Live impact: reads every asset once, in id order, in batches. A batch
+-- holds a FOR SHARE lock on its own rows for the batch (about a tenth of a
+-- second): a write to one of those assets waits for it, a write to any
+-- other asset never waits. Rows a writer holds are skipped and copied at
+-- the end, after that writer. Running it again changes nothing. Until it
+-- ends, a range filter may miss an asset that existed before the upgrade
+-- and was not written since.
+CALL public.asset_ip_addresses_backfill(2000);

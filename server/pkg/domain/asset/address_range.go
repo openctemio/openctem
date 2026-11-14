@@ -33,9 +33,14 @@ func AssetIDsInRangesSQL(tenant string, ranges ...string) string {
 }
 
 // AssetInRangesSQL is "the asset id in column col has an address inside one
-// of the ranges". The ids are read once (an ARRAY subquery, an init plan),
-// so several values ORed by the filter compiler stay index lookups on col
-// instead of a filter over every row of the tenant.
+// of the ranges": a semi join the planner sizes from the address table's
+// statistics. A wide range walks the list's sort index and probes the
+// primary key (tenant_id, asset_id, addr) per row, stopping at the page; a
+// narrow one reads its few ids from the range index first. Several values
+// ORed by the filter compiler become hashed subplans. An array of ids
+// (= ANY(ARRAY(...))) is not used: the planner cannot size it, and on a wide
+// range it built every matching row before the page was cut
+// (docs/architecture/asset-addresses.md, "Query shape").
 func AssetInRangesSQL(col, tenant string, ranges ...string) string {
-	return col + " = ANY(ARRAY(" + AssetIDsInRangesSQL(tenant, ranges...) + "))"
+	return col + " IN (" + AssetIDsInRangesSQL(tenant, ranges...) + ")"
 }

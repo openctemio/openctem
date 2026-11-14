@@ -181,7 +181,7 @@ func TestAddressRange_NameOrRecordedAddress_DB(t *testing.T) {
 	}
 }
 
-// One index serves the range on a tenant with many assets: no sequential
+// An index serves the range on a tenant with many assets: no sequential
 // scan of assets, findings or the address table. The plan is logged.
 func TestAddressRange_ExplainUsesIndex_DB(t *testing.T) {
 	db := openSensorDB(t)
@@ -232,8 +232,11 @@ func TestAddressRange_ExplainUsesIndex_DB(t *testing.T) {
 		}
 		plan := planText(t, raw)
 		t.Logf("%s plan: %s", name, plan)
-		if !strings.Contains(plan, "idx_asset_ip_addresses_range") {
-			t.Errorf("%s: idx_asset_ip_addresses_range not used: %s", name, plan)
+		// The semi join reads the range from idx_asset_ip_addresses_range or
+		// probes pk_asset_ip_addresses (tenant_id, asset_id, addr) per row,
+		// whichever the planner sizes cheaper; both are index reads.
+		if !strings.Contains(plan, "idx_asset_ip_addresses_range") && !strings.Contains(plan, "pk_asset_ip_addresses") {
+			t.Errorf("%s: no index of asset_ip_addresses used: %s", name, plan)
 		}
 		for _, tbl := range []string{"assets", "findings", "asset_ip_addresses"} {
 			if strings.Contains(plan, "Seq Scan on "+tbl+" ") {
