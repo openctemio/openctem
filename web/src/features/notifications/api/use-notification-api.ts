@@ -248,6 +248,19 @@ export async function invalidateNotificationsCache() {
 }
 
 /**
+ * Show a zero badge at once (after "mark all read"); the revalidation that
+ * follows replaces it with the server's answer.
+ */
+export async function setUnreadCountZero() {
+  const { mutate } = await import('@/lib/swr-mutate')
+  await mutate(
+    (key) => typeof key === 'string' && key.includes('/notifications/unread-count'),
+    { count: 0 } satisfies UnreadCountResponse,
+    { revalidate: false }
+  )
+}
+
+/**
  * Invalidate unread count cache only
  */
 export async function invalidateUnreadCountCache() {
