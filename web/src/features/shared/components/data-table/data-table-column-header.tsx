@@ -3,7 +3,7 @@
 import { Column } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { columnLayout } from './column-meta'
+import { columnLayout, type DataTableColumnMeta } from './column-meta'
 
 interface DataTableColumnHeaderProps<TData, TValue> extends React.HTMLAttributes<HTMLDivElement> {
   column: Column<TData, TValue>
@@ -22,7 +22,7 @@ export function DataTableColumnHeader<TData, TValue>({
   title,
   className,
 }: DataTableColumnHeaderProps<TData, TValue>) {
-  const layout = columnLayout(column.id, column.columnDef.meta)
+  const layout = columnLayout(column.id, column.columnDef.meta as DataTableColumnMeta | undefined)
   const end = layout.align === 'end'
   if (!column.getCanSort()) {
     return (
