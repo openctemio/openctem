@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 export function ThemeSwitch() {
-  const { theme, setTheme, systemTheme } = useTheme()
+  const { theme, setTheme, resolvedTheme } = useTheme()
   const { t } = useTranslation()
   const names: Record<string, string> = {
     light: t('nav.header.themeLight', 'Light'),
@@ -23,19 +23,15 @@ export function ThemeSwitch() {
     system: t('nav.header.themeSystem', 'System'),
   }
 
+  // The browser bar takes the page background token (theme.css `--background`,
+  // drawn by body), read after the theme class has been applied.
   useEffect(() => {
-    const current =
-      theme === 'system'
-        ? systemTheme === 'dark'
-          ? '#0a1628'
-          : '#fafaf9'
-        : theme === 'dark'
-          ? '#0a1628'
-          : '#fafaf9'
-
-    const meta = document.querySelector("meta[name='theme-color']")
-    if (meta) meta.setAttribute('content', current)
-  }, [theme, systemTheme])
+    const frame = requestAnimationFrame(() => {
+      const meta = document.querySelector("meta[name='theme-color']")
+      if (meta) meta.setAttribute('content', getComputedStyle(document.body).backgroundColor)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [resolvedTheme])
 
   return (
     <DropdownMenu modal={false}>

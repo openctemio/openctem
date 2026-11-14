@@ -48,8 +48,10 @@ export function ShortcutKeys({
     <span className="flex shrink-0 items-center gap-1" dir="ltr">
       {keys.map((k, i) => (
         <Fragment key={k}>
-          {i > 0 && sequence && <span className="text-xs text-muted-foreground">{thenLabel}</span>}
-          {i > 0 && !sequence && !apple && <span className="text-xs text-muted-foreground">+</span>}
+          {i > 0 && sequence && <span className="text-cap text-muted-foreground">{thenLabel}</span>}
+          {i > 0 && !sequence && !apple && (
+            <span className="text-cap text-muted-foreground">+</span>
+          )}
           <Kbd>{keyLabel(k, apple)}</Kbd>
         </Fragment>
       ))}

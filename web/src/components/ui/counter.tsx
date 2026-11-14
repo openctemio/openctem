@@ -36,7 +36,7 @@ export function Counter({ value, emphasis, max = 99, size = 'default', className
       aria-label={t('labels.counter.aria', '{count} items', { count: n })}
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-full font-semibold leading-none tabular-nums',
-        size === 'badge' ? 'h-4 min-w-4 px-1 text-cap' : 'h-[18px] min-w-5 px-1.5 text-xs',
+        size === 'badge' ? 'h-4 min-w-4 px-1 text-cap' : 'h-4.5 min-w-5 px-1.5 text-cap',
         emphasis ? 'bg-ctr-em-bg text-ctr-em-fg' : 'bg-ctr-bg text-ctr-fg',
         className
       )}
