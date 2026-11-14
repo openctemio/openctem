@@ -532,7 +532,7 @@ func (r *AssetRepository) selectQuery() string {
 				COUNT(*) FILTER (WHERE f.severity = 'medium' AND ` + exploitSignalClause + `) as finding_medium_x,
 				COUNT(*) FILTER (WHERE f.severity = 'low' AND ` + exploitSignalClause + `) as finding_low_x
 			FROM findings f
-			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND NOT f.branch_only
+			WHERE f.asset_id = a.id AND f.tenant_id = a.tenant_id AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + ` AND NOT f.branch_only
 		) fc ON true
 	`
 }
@@ -2668,7 +2668,7 @@ finding_counts AS (
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
   WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
-    AND `+vulnerability.OpenStatusSQL("f.status")+`
+    AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
   GROUP BY f.asset_id
 )
 SELECT category, key, value FROM (
@@ -3144,7 +3144,7 @@ func (r *AssetRepository) ListAllNodes(ctx context.Context, tenantID shared.ID) 
 			SELECT f.asset_id, COUNT(*) AS finding_count
 			FROM findings f
 			WHERE f.tenant_id = $1 AND f.asset_id IS NOT NULL AND NOT f.branch_only
-				AND ` + vulnerability.OpenStatusSQL("f.status") + `
+				AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 			GROUP BY f.asset_id
 		) fc ON fc.asset_id = a.id
 		WHERE a.deleted_at IS NULL AND a.tenant_id = $1

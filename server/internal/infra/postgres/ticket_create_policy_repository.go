@@ -129,14 +129,14 @@ func (r *TicketCreatePolicyRepository) Preview(ctx context.Context, tenantID, in
 	var out ticketpolicy.Preview
 	sev, cls := pq.Array(p.AllowedSeverities()), pq.Array(nonNil(p.AllowedClasses()))
 	err := r.db.QueryRowContext(ctx, `
-		SELECT count(*), count(*) FILTER (WHERE `+passSQL(2, 3, 4)+`)
+		SELECT count(*), count(*) FILTER (WHERE `+passSQL(2, 3, 4)+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`)
 		FROM findings f WHERE f.tenant_id = $1 AND f.created_at >= now() - interval '30 days'`,
 		tenantID.String(), sev, cls, p.AlwaysKEV).Scan(&out.Last30DaysTotal, &out.Last30DaysPass)
 	if err != nil {
 		return out, fmt.Errorf("preview ticket policy: %w", err)
 	}
 	err = r.db.QueryRowContext(ctx, `
-		SELECT count(*), count(*) FILTER (WHERE `+passSQL(3, 4, 5)+` AND `+vulnerability.OpenStatusSQL("f.status")+`)
+		SELECT count(*), count(*) FILTER (WHERE `+passSQL(3, 4, 5)+` AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`)
 		FROM ticket_create_holds h
 		JOIN findings f ON f.tenant_id = h.tenant_id AND f.id = h.finding_id
 		WHERE h.tenant_id = $1 AND h.integration_id = $2`,
@@ -223,6 +223,7 @@ func (r *TicketCreatePolicyRepository) DueHolds(ctx context.Context, limit int, 
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT h.tenant_id, h.integration_id, h.finding_id, h.reason, h.detail, h.held_at, h.checked_at,
 			f.severity, COALESCE(f.priority_class, ''), f.is_in_kev, (`+vulnerability.OpenStatusSQL("f.status")+`),
+			(f.verification_state = 'held'),
 			EXISTS (SELECT 1 FROM ticket_links l WHERE l.tenant_id = h.tenant_id AND l.integration_id = h.integration_id
 				AND l.finding_id = h.finding_id AND l.state = 'active'),
 			p.min_severity, p.min_priority_class, p.always_kev, p.daily_cap, p.updated_at
@@ -251,7 +252,7 @@ func (r *TicketCreatePolicyRepository) DueHolds(ctx context.Context, limit int, 
 			pAt           sql.NullTime
 		)
 		if err := rows.Scan(&tid, &iid, &fid, &c.Reason, &c.Detail, &c.HeldAt, &c.CheckedAt,
-			&c.Signals.Severity, &c.Signals.PriorityClass, &c.Signals.InKEV, &c.Signals.Open, &c.Linked,
+			&c.Signals.Severity, &c.Signals.PriorityClass, &c.Signals.InKEV, &c.Signals.Open, &c.Signals.Held, &c.Linked,
 			&pSev, &pCls, &pKEV, &pCap, &pAt); err != nil {
 			return nil, fmt.Errorf("scan due ticket hold: %w", err)
 		}

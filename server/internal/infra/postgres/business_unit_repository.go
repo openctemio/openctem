@@ -209,13 +209,13 @@ func (r *BusinessUnitRepository) RecalculateCounts(ctx context.Context, tenantID
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
 				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only
-				  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+				  AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 			), 0),
 			critical_finding_count = COALESCE((
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id
 				WHERE bua.business_unit_id = $2 AND bua.tenant_id = $1 AND f.tenant_id = $1 AND NOT f.branch_only AND f.severity = 'critical'
-				  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+				  AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 			), 0),
 			avg_risk_score = COALESCE((
 				SELECT AVG(a.risk_score) FROM business_unit_assets bua
@@ -258,7 +258,7 @@ func (r *BusinessUnitRepository) ScopedStats(ctx context.Context, tenantID share
 		               COUNT(*) FILTER (WHERE f.severity = 'critical') AS critical_count
 		          FROM findings f
 		         WHERE f.asset_id = bua.asset_id AND f.tenant_id = $1 AND NOT f.branch_only
-		           AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		           AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 		  ) fc ON TRUE
 		 WHERE bua.tenant_id = $1 AND bua.business_unit_id = ANY($2::uuid[]) AND ` + cond + `
 		 GROUP BY bua.business_unit_id`
