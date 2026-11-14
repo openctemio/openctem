@@ -75,11 +75,15 @@ type FindingExportRow struct {
 	AssignedTo       string     `json:"assigned_to"`
 	Observation      string     `json:"observation"`
 	Validation       string     `json:"validation"`
-	FirstDetectedAt  time.Time  `json:"first_detected_at"`
-	LastSeenAt       time.Time  `json:"last_seen_at"`
-	ResolvedAt       *time.Time `json:"resolved_at"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	// VerificationState and HoldReasons show which findings are held and
+	// why (docs/architecture/held-findings.md): an export never loses that.
+	VerificationState string     `json:"verification_state"`
+	HoldReasons       []string   `json:"hold_reasons"`
+	FirstDetectedAt   time.Time  `json:"first_detected_at"`
+	LastSeenAt        time.Time  `json:"last_seen_at"`
+	ResolvedAt        *time.Time `json:"resolved_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // findingExportColumns are FindingExportRow's json names in field order: the
@@ -120,6 +124,7 @@ func toFindingExportRow(f FindingResponse) FindingExportRow {
 		FilePath: f.FilePath, StartLine: f.StartLine, EndLine: f.EndLine,
 		NetworkPort: f.NetworkPort, NetworkTransport: f.NetworkTransport, NetworkService: f.NetworkService,
 		Family: f.Family, AssignedTo: deref(f.AssignedTo), Observation: f.Observation, Validation: f.Validation,
+		VerificationState: f.VerificationState, HoldReasons: f.HoldReasons,
 		FirstDetectedAt: f.FirstDetectedAt, LastSeenAt: f.LastSeenAt, ResolvedAt: f.ResolvedAt,
 		CreatedAt: f.CreatedAt, UpdatedAt: f.UpdatedAt,
 	}
@@ -171,6 +176,7 @@ func (row FindingExportRow) csvCells() []string {
 		row.SLAStatus, tsp(row.SLADeadline), row.AssetID, row.AssetName, row.AssetType, row.FilePath,
 		intOrEmpty(row.StartLine), intOrEmpty(row.EndLine), intOrEmpty(row.NetworkPort), row.NetworkTransport,
 		row.NetworkService, row.Family, row.AssignedTo, row.Observation, row.Validation,
+		row.VerificationState, strings.Join(row.HoldReasons, ";"),
 		ts(row.FirstDetectedAt), ts(row.LastSeenAt), tsp(row.ResolvedAt), ts(row.CreatedAt), ts(row.UpdatedAt),
 	}
 	for i := range cells {
@@ -250,6 +256,8 @@ func (h *VulnerabilityHandler) ExportFindingsDocument(w http.ResponseWriter, r *
 // @Param  finding_type_not  query  []string  false  "finding type: none of (comma list)"  collectionFormat(csv)  Enums(vulnerability, secret, misconfiguration, compliance, web3, license)
 // @Param  practice  query  []string  false  "practice: any of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
 // @Param  practice_not  query  []string  false  "practice: none of (comma list)"  collectionFormat(csv)  Enums(aspm, infra, external, cloud, compliance, offensive, identity, runtime, other)
+// @Param  verification_state  query  []string  false  "verification state: any of (comma list)"  collectionFormat(csv)  Enums(unchecked, held, verified, not_reproduced)
+// @Param  verification_state_not  query  []string  false  "verification state: none of (comma list)"  collectionFormat(csv)  Enums(unchecked, held, verified, not_reproduced)
 // @Param  compliance_result  query  []string  false  "compliance result: any of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
 // @Param  compliance_result_not  query  []string  false  "compliance result: none of (comma list)"  collectionFormat(csv)  Enums(pass, fail, manual, not_applicable, error, unknown)
 // @Param  compliance_level  query  []integer  false  "compliance level: any of (comma list)"  collectionFormat(csv)
