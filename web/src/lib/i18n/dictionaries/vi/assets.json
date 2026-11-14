@@ -489,6 +489,7 @@
   "assets.form.scope.shadow": "Shadow IT",
   "assets.form.scope.vendor": "Nhà cung cấp",
   "assets.form.selectField": "Chọn {field}",
+  "assets.form.tagsPlaceholder": "Nhập thẻ rồi nhấn Enter",
   "assets.formsHost.addDesc": "Các trường để trống sẽ ở trạng thái chưa biết; các lần quét sẽ điền vào.",
   "assets.formsHost.addFailed": "Không thêm được {type}",
   "assets.formsHost.addTitle": "Thêm {type}",

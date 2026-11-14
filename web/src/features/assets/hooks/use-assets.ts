@@ -921,7 +921,10 @@ export async function updateAsset(assetId: string, input: UpdateAssetInput): Pro
     impact_integrity: input.impactIntegrity,
     impact_availability: input.impactAvailability,
     owner_ref: input.ownerRef,
-    tags: input.tags,
+    // A change, never the whole list: tags stored since this copy was
+    // loaded (a sensor's, an import's, another person's) stay.
+    tags_add: input.tagsAdd?.length ? input.tagsAdd : undefined,
+    tags_remove: input.tagsRemove?.length ? input.tagsRemove : undefined,
     risk_change_reason: input.riskChangeReason,
     // Per-type form fields live in `metadata`; backend merges them into
     // `properties` (preserving the keys it does not send). API-owned keys are
@@ -929,6 +932,44 @@ export async function updateAsset(assetId: string, input: UpdateAssetInput): Pro
     properties: editableProperties(input.metadata),
   })
   return transformAsset(response)
+}
+
+/** At most this many assets per bulk tag request (the API's limit). */
+export const BULK_TAGS_BATCH = 100
+
+export interface BulkTagsResult {
+  updated: number
+  unchanged: number
+  failed: number
+}
+
+/**
+ * Add and remove tags on many assets (any number: sent 100 at a time). The
+ * API applies the change to each asset's stored tags; no other tag and no
+ * other field changes. A batch the API refuses as a whole counts as failed.
+ */
+export async function bulkChangeAssetTags(
+  assetIds: string[],
+  change: { add?: string[]; remove?: string[] }
+): Promise<BulkTagsResult> {
+  const total: BulkTagsResult = { updated: 0, unchanged: 0, failed: 0 }
+  for (let i = 0; i < assetIds.length; i += BULK_TAGS_BATCH) {
+    const batch = assetIds.slice(i, i + BULK_TAGS_BATCH)
+    try {
+      const r = await post<BulkTagsResult>(endpoints.assets.bulkTags(), {
+        asset_ids: batch,
+        add: change.add ?? [],
+        remove: change.remove ?? [],
+      })
+      total.updated += r.updated
+      total.unchanged += r.unchanged
+      total.failed += r.failed
+    } catch (err) {
+      if (i === 0) throw err
+      total.failed += batch.length
+    }
+  }
+  return total
 }
 
 /**
