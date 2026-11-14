@@ -102,9 +102,13 @@ export type ThreatIntelSource = 'epss' | 'kev'
  * Sync status for a data source
  */
 export interface SyncStatus {
-  source: ThreatIntelSource
+  /** epss and kev are the ones this console can switch; the API may list more feeds. */
+  source: ThreatIntelSource | (string & {})
   enabled: boolean
   last_sync_at?: string
+  // The last import that worked. A failing feed keeps the time of its last
+  // success here, so the console can say how old the data is.
+  last_success_at?: string
   // 'running' is persisted by the backend (MarkSyncStarted) BEFORE the slow
   // external feed download begins, so it is the value the UI sees for the whole
   // duration of a sync — the exact moment a user is watching this panel.

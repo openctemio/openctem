@@ -88,6 +88,14 @@ sequenceDiagram
 
 The success time, the failure start and the error code live in the row's `metadata` (no schema change).
 
+### Monitoring a feed that stops
+
+The success time above is also exported for alerting: `openctem_feed_last_success_timestamp_seconds{source}` and
+`openctem_feed_failing{source}` (enabled feeds only, read from the status rows by the operator metrics collector, `internal/infra/opsmetrics`).
+The `FeedStale` Prometheus rule fires when a feed's last success is older than its window (bundle 36 hours, KEV 12 hours, EPSS 72 hours); see
+[monitoring](../operations/monitoring.md#feedstale). The bundle import controller judges staleness by the last successful import, not by whether the
+current run was clean, and returns an import failure so the controller error counter counts it. Shipped.
+
 ### States
 
 | State | Rule |

@@ -150,3 +150,43 @@ func TestFindingExportRow_NDJSONKeysAndNoEvidence(t *testing.T) {
 		t.Error("csv row leaked a snippet")
 	}
 }
+
+// A held finding's export says it is held and why, in NDJSON and CSV, in
+// the header's column order (never lose information).
+func TestFindingExportRow_HeldStateAndReasons(t *testing.T) {
+	f := FindingResponse{ID: "f1", Title: "t", Severity: "critical", Status: "new",
+		VerificationState: "held", HoldReasons: []string{"target_throttled", "edge_block_page"}}
+	row := toFindingExportRow(f)
+	if row.VerificationState != "held" || !reflect.DeepEqual(row.HoldReasons, f.HoldReasons) {
+		t.Fatalf("row %+v", row)
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(row); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["verification_state"] != "held" || !reflect.DeepEqual(got["hold_reasons"], []any{"target_throttled", "edge_block_page"}) {
+		t.Fatalf("NDJSON %v", got)
+	}
+	cells := row.csvCells()
+	at := func(col string) string {
+		for i, c := range findingExportColumns {
+			if c == col {
+				return cells[i]
+			}
+		}
+		t.Fatalf("no column %s", col)
+		return ""
+	}
+	if at("verification_state") != "held" || at("hold_reasons") != "target_throttled;edge_block_page" {
+		t.Fatalf("csv state %q reasons %q", at("verification_state"), at("hold_reasons"))
+	}
+	// An unchecked finding exports its state and no reasons.
+	cells = toFindingExportRow(FindingResponse{ID: "f2", VerificationState: "unchecked"}).csvCells()
+	if at("verification_state") != "unchecked" || at("hold_reasons") != "" {
+		t.Fatalf("unchecked csv state %q reasons %q", at("verification_state"), at("hold_reasons"))
+	}
+}
