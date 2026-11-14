@@ -53,6 +53,7 @@ import {
   EmptyState,
   ErrorState,
   MetricStrip,
+  PageStack,
   type MetricStripItem,
   RelativeTime,
   RiskScoreBadge,
@@ -145,11 +146,13 @@ export function ComponentDetailView({ id }: { id: string }) {
   const metrics: MetricStripItem[] = [
     {
       key: 'versions',
+      onClick: () => setTabParam('versions'),
       label: t('components.col.versions', 'Versions'),
       value: pkg?.versions_in_use ?? 0,
     },
     {
       key: 'assets',
+      onClick: () => setTabParam('assets'),
       label: t('components.col.assets', 'Assets'),
       value: pkg?.assets ?? 0,
       hint: t('components.col.assetsHint', '{direct} direct, {transitive} transitive uses', {
@@ -159,6 +162,7 @@ export function ComponentDetailView({ id }: { id: string }) {
     },
     {
       key: 'vulns',
+      onClick: () => setTabParam('vulnerabilities'),
       label: t('components.col.vulnerabilities', 'Open vulnerabilities'),
       value: total,
       tone: total ? 'warning' : 'default',
@@ -166,6 +170,7 @@ export function ComponentDetailView({ id }: { id: string }) {
     },
     {
       key: 'kev',
+      onClick: () => setTabParam('vulnerabilities'),
       label: t('components.kpi.kev', 'Known exploited'),
       value: pkg?.kev ?? 0,
       tone: pkg?.kev ? 'danger' : 'default',
@@ -175,6 +180,7 @@ export function ComponentDetailView({ id }: { id: string }) {
   if (pkg?.health?.latest_version) {
     metrics.push({
       key: 'latest',
+      onClick: () => setTabParam('versions'),
       label: t('components.detail.latest', 'Latest version'),
       value: pkg.health.latest_version,
     })
@@ -182,96 +188,98 @@ export function ComponentDetailView({ id }: { id: string }) {
 
   return (
     <Main>
-      <div className="mb-2">
-        <Link
-          href="/components"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          {t('components.detail.back', 'All components')}
-        </Link>
-      </div>
-      <header className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1.5">
-          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-            <span className="break-all">{pkg?.name ?? '…'}</span>
-            {pkg && <EcosystemBadge ecosystem={pkg.ecosystem} />}
-            {pkg && (
-              <Badge variant="secondary" className="font-normal">
-                {pkg.global
-                  ? t('components.detail.public', 'Public package')
-                  : t('components.detail.private', 'Seen in your inventory')}
-              </Badge>
-            )}
-          </h1>
-          {pkg && (
-            <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <code className="break-all font-mono text-xs">{pkg.purl}</code>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="px-2"
-                onClick={copyPurl}
-                aria-label={t('components.detail.copy', 'Copy the package URL')}
-              >
-                <Copy className="h-3.5 w-3.5" aria-hidden />
-              </Button>
-              <LicenseList licenses={pkg.licenses} max={3} />
-              <KevPill count={pkg.kev} />
-              <FixPill available={pkg.fix_available} />
+      <PageStack>
+        <div className="flex flex-col gap-2">
+          <Link
+            href="/components"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            {t('components.detail.back', 'All components')}
+          </Link>
+          <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1.5">
+              <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+                <span className="break-all">{pkg?.name ?? '…'}</span>
+                {pkg && <EcosystemBadge ecosystem={pkg.ecosystem} />}
+                {pkg && (
+                  <Badge variant="secondary" className="font-normal">
+                    {pkg.global
+                      ? t('components.detail.public', 'Public package')
+                      : t('components.detail.private', 'Seen in your inventory')}
+                  </Badge>
+                )}
+              </h1>
+              {pkg && (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <code className="break-all font-mono text-xs">{pkg.purl}</code>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="px-2"
+                    onClick={copyPurl}
+                    aria-label={t('components.detail.copy', 'Copy the package URL')}
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden />
+                  </Button>
+                  <LicenseList licenses={pkg.licenses} max={3} />
+                  <KevPill count={pkg.kev} />
+                  <FixPill available={pkg.fix_available} />
+                </div>
+              )}
+              {pkg?.description && (
+                <p className="max-w-3xl text-sm text-muted-foreground">{pkg.description}</p>
+              )}
             </div>
-          )}
-          {pkg?.description && (
-            <p className="max-w-3xl text-sm text-muted-foreground">{pkg.description}</p>
-          )}
+            {pkg && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {t('components.col.risk', 'Risk')}
+                </span>
+                <RiskScoreBadge score={pkg.risk_score} />
+              </div>
+            )}
+          </header>
         </div>
-        {pkg && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              {t('components.col.risk', 'Risk')}
-            </span>
-            <RiskScoreBadge score={pkg.risk_score} />
-          </div>
-        )}
-      </header>
 
-      <MetricStrip loading={isLoading && !pkg} items={metrics} />
+        <MetricStrip loading={isLoading && !pkg} items={metrics} />
 
-      <Tabs value={tab} onValueChange={setTabParam} className="mt-5">
-        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
-          <TabsTrigger value="versions">{t('components.tab.versions', 'Versions')}</TabsTrigger>
-          <TabsTrigger value="assets">{t('components.tab.assets', 'Where used')}</TabsTrigger>
-          <TabsTrigger value="vulnerabilities">
-            {t('components.tab.vulnerabilities', 'Vulnerabilities')}
-          </TabsTrigger>
-          <TabsTrigger value="vex">{t('components.tab.vex', 'VEX')}</TabsTrigger>
-        </TabsList>
-        <TabsContent value="versions" className="mt-4">
-          <VersionsTable
-            id={id}
-            onShowUsages={(v) => {
-              setVersionParam(v.id)
-              setTabParam('assets')
-            }}
-          />
-        </TabsContent>
-        <TabsContent value="assets" className="mt-4">
-          <UsagesTable
-            // Remount on a new version so the page starts again at 1.
-            key={versionParam || 'all'}
-            id={id}
-            versionId={versionParam || undefined}
-            versionLabel={versionFilter?.version}
-            onClearVersion={() => setVersionParam('')}
-          />
-        </TabsContent>
-        <TabsContent value="vulnerabilities" className="mt-4">
-          <VulnerabilitiesTable id={id} />
-        </TabsContent>
-        <TabsContent value="vex" className="mt-4">
-          <VexStatementsPanel productId={id} />
-        </TabsContent>
-      </Tabs>
+        <Tabs value={tab} onValueChange={setTabParam}>
+          <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
+            <TabsTrigger value="versions">{t('components.tab.versions', 'Versions')}</TabsTrigger>
+            <TabsTrigger value="assets">{t('components.tab.assets', 'Where used')}</TabsTrigger>
+            <TabsTrigger value="vulnerabilities">
+              {t('components.tab.vulnerabilities', 'Vulnerabilities')}
+            </TabsTrigger>
+            <TabsTrigger value="vex">{t('components.tab.vex', 'VEX')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="versions" className="mt-4">
+            <VersionsTable
+              id={id}
+              onShowUsages={(v) => {
+                setVersionParam(v.id)
+                setTabParam('assets')
+              }}
+            />
+          </TabsContent>
+          <TabsContent value="assets" className="mt-4">
+            <UsagesTable
+              // Remount on a new version so the page starts again at 1.
+              key={versionParam || 'all'}
+              id={id}
+              versionId={versionParam || undefined}
+              versionLabel={versionFilter?.version}
+              onClearVersion={() => setVersionParam('')}
+            />
+          </TabsContent>
+          <TabsContent value="vulnerabilities" className="mt-4">
+            <VulnerabilitiesTable id={id} />
+          </TabsContent>
+          <TabsContent value="vex" className="mt-4">
+            <VexStatementsPanel productId={id} />
+          </TabsContent>
+        </Tabs>
+      </PageStack>
     </Main>
   )
 }
