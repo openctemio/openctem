@@ -304,7 +304,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: ghcr.io/openctemio/mirror/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+        image: ghcr.io/openctemio/mirror/postgres:17-alpine@sha256:d3244e8ce3f165ee3c93d9c4a4b1d0fe48b3a89e2287b717fdcbbde92d405065
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
