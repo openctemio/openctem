@@ -18,6 +18,8 @@ import { useLayout } from '@/context/layout-provider'
 import { Separator } from '@/components/ui/separator'
 import { BreadcrumbNav } from './breadcrumb-nav'
 import { HeaderActions } from './header-actions'
+import { HEADER_ICON_BUTTON } from './header-controls'
+import { PhoneBarTitle } from './phone-bar-title'
 
 interface HeaderProps extends HTMLAttributes<HTMLElement> {
   /**
@@ -74,9 +76,10 @@ export function Header({
       )}
       {...props}
     >
+      {/* Below 768 px the phone bar: padding 0 8, controls 8 apart. */}
       <div
         className={cn(
-          'relative flex h-full items-center gap-3 px-4',
+          'relative flex h-full items-center gap-3 px-4 max-md:gap-2 max-md:px-2',
           offset > 10 &&
             fixed &&
             'after:absolute after:inset-0 after:-z-10 after:bg-background/40 md:after:backdrop-blur-md'
@@ -84,10 +87,11 @@ export function Header({
       >
         {showTrigger && (
           <>
-            <SidebarTrigger variant="outline" />
+            <SidebarTrigger className={HEADER_ICON_BUTTON} />
             <Separator orientation="vertical" className="h-6" />
           </>
         )}
+        {isMobile && <PhoneBarTitle />}
         {/* From 768px; it folds by width (breadcrumb-fold.ts). A phone shows no
             trail: the page title says where you are. */}
         {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 flex-1 basis-0 md:flex" />}

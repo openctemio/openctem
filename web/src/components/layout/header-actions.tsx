@@ -6,7 +6,8 @@
  * Centralized header actions for dashboard pages.
  * Search, then the right group in the shell package's order: Create, Full
  * screen, Approvals, Notifications, Theme, Account (32 px controls, 4 apart,
- * 8 before the avatar)
+ * 8 before the avatar; on a phone 36 px, 8 apart, without Create, Full screen
+ * and Theme)
  *
  * Usage:
  * ```tsx
@@ -50,19 +51,21 @@ export function HeaderActions({
   hideProfile = false,
 }: HeaderActionsProps) {
   // The breadcrumb takes the free room (app-header.tsx); the search sits next
-  // to the right group, which never shrinks.
+  // to the right group, which never shrinks. Below 768 px (the phone bar):
+  // Search, Approvals, Notifications, Account, 36 px and 8 apart; Create, Full
+  // screen and Theme leave the bar (Theme moves into the account menu).
   return (
     <>
       {!hideSearch && <Search className="ms-auto shrink-0" />}
       <div
-        className="flex flex-none items-center gap-1 [&>:last-child]:ms-1"
+        className="flex flex-none items-center gap-1 max-md:gap-2 [&>:last-child]:ms-1 max-md:[&>:last-child]:ms-0"
         data-slot="header-actions"
       >
         <HeaderCreateMenu />
         <FullscreenToggle />
         <HeaderApprovals />
         {!hideNotifications && <NotificationBell />}
-        {!hideThemeSwitch && <ThemeSwitch />}
+        {!hideThemeSwitch && <ThemeSwitch className="max-md:hidden" />}
         {!hideProfile && <ProfileDropdown />}
       </div>
     </>
