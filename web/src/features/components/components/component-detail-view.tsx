@@ -53,6 +53,7 @@ import {
   EmptyState,
   ErrorState,
   MetricStrip,
+  PageHeader,
   PageStack,
   type MetricStripItem,
   RelativeTime,
@@ -197,40 +198,36 @@ export function ComponentDetailView({ id }: { id: string }) {
             <ArrowLeft className="h-4 w-4" aria-hidden />
             {t('components.detail.back', 'All components')}
           </Link>
-          <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-1.5">
-              <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-                <span className="break-all">{pkg?.name ?? '…'}</span>
-                {pkg && <EcosystemBadge ecosystem={pkg.ecosystem} />}
-                {pkg && (
-                  <Badge variant="secondary" className="font-normal">
-                    {pkg.global
-                      ? t('components.detail.public', 'Public package')
-                      : t('components.detail.private', 'Seen in your inventory')}
-                  </Badge>
-                )}
-              </h1>
-              {pkg && (
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <code className="break-all font-mono text-xs">{pkg.purl}</code>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="px-2"
-                    onClick={copyPurl}
-                    aria-label={t('components.detail.copy', 'Copy the package URL')}
-                  >
-                    <Copy className="h-3.5 w-3.5" aria-hidden />
-                  </Button>
-                  <LicenseList licenses={pkg.licenses} max={3} />
-                  <KevPill count={pkg.kev} />
-                  <FixPill available={pkg.fix_available} />
+          <PageHeader
+            title={pkg?.name ?? '…'}
+            description={
+              pkg && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <EcosystemBadge ecosystem={pkg.ecosystem} />
+                    <Badge variant="secondary">
+                      {pkg.global
+                        ? t('components.detail.public', 'Public package')
+                        : t('components.detail.private', 'Seen in your inventory')}
+                    </Badge>
+                    <code className="break-all font-mono text-xs">{pkg.purl}</code>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={copyPurl}
+                      aria-label={t('components.detail.copy', 'Copy the package URL')}
+                    >
+                      <Copy className="h-3.5 w-3.5" aria-hidden />
+                    </Button>
+                    <LicenseList licenses={pkg.licenses} max={3} />
+                    <KevPill count={pkg.kev} />
+                    <FixPill available={pkg.fix_available} />
+                  </div>
+                  {pkg.description && <p>{pkg.description}</p>}
                 </div>
-              )}
-              {pkg?.description && (
-                <p className="max-w-3xl text-sm text-muted-foreground">{pkg.description}</p>
-              )}
-            </div>
+              )
+            }
+          >
             {pkg && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">
@@ -239,7 +236,7 @@ export function ComponentDetailView({ id }: { id: string }) {
                 <RiskScoreBadge score={pkg.risk_score} />
               </div>
             )}
-          </header>
+          </PageHeader>
         </div>
 
         <MetricStrip loading={isLoading && !pkg} items={metrics} />
