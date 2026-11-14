@@ -89,7 +89,7 @@ func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 		SELECT COUNT(f.id) AS finding_count
 		FROM asset_group_members agm
 		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
-			AND ` + vulnerability.OpenStatusSQL("f.status") + `
+			AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 		WHERE agm.asset_group_id = ag.id
 	) fc ON TRUE`, args
 	}
@@ -134,7 +134,7 @@ func groupReadSource(scope *shared.DataScope, args []any) (string, []any) {
 		SELECT COUNT(f.id) AS finding_count
 		FROM asset_group_members agm
 		INNER JOIN findings f ON f.asset_id = agm.asset_id AND f.tenant_id = ag.tenant_id AND NOT f.branch_only
-			AND ` + vulnerability.OpenStatusSQL("f.status") + `
+			AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 		WHERE agm.asset_group_id = ag.id AND ` + findingCond + `
 	) fc ON TRUE`
 	return src, append(args, scopeArgs...)

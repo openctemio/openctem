@@ -111,7 +111,8 @@ func (p *FindingProcessor) promoteBranchOnly(ctx context.Context, tenantID share
 		p.logger.Warn("failed to load promoted findings for workflows", "error", err, "count", len(promoted))
 		return
 	}
-	if len(findings) > 0 {
+	// A held finding sends no created event until it is checked (held.go).
+	if findings = withoutHeld(findings); len(findings) > 0 {
 		p.findingCreatedCallback(ctx, tenantID, findings)
 	}
 }

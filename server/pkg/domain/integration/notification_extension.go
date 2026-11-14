@@ -154,6 +154,12 @@ const (
 	// output, or repeated failures (docs/rfcs/RFC-093-asset-coverage.md).
 	EventTypeCoverageGap EventType = "coverage_gap"
 
+	// EventTypeFindingHeldCritical fires once per hold when a critical
+	// finding is held because its target throttled or blocked the scan
+	// (docs/architecture/held-findings.md): the finding itself sends no
+	// new-finding message until it is checked, so this is the one notice.
+	EventTypeFindingHeldCritical EventType = "finding_held_critical"
+
 	// EventTypeRemediationSuggestionsDigest is the daily digest of new
 	// remediation suggestions to review (docs/rfcs/RFC-098-remediation-tasks.md):
 	// one message per tenant and day, never one per suggestion.
@@ -267,6 +273,7 @@ func AllEventTypes() []EventTypeInfo {
 
 		// Exposure events - require 'findings' module (part of findings feature)
 		{Type: EventTypeNewExposure, Category: EventCategoryExposure, Label: "New Exposure", Description: "New credential/data exposure detected", RequiredModule: ModuleFindings},
+		{Type: EventTypeFindingHeldCritical, Category: EventCategoryFinding, Label: "Critical Finding Held", Description: "A critical finding was matched while its target throttled or blocked the scan; it is held out of scores, SLA and tickets until it is checked", RequiredModule: ModuleFindings},
 		{Type: EventTypeCoverageGap, Category: EventCategoryAsset, Label: "Coverage Gap", Description: "Assets went without a capability their type needs (never or not recently scanned), a capability stopped producing its output, or it failed repeatedly", RequiredModule: ModuleAttackSurface},
 		{Type: EventTypeAttackSurfaceDigest, Category: EventCategoryExposure, Label: "Attack Surface Weekly Digest", Description: "Weekly summary of what changed on the external attack surface: new and removed hosts, ports, certificates, DNS, technologies and exposures", RequiredModule: ModuleAttackSurface},
 
@@ -312,6 +319,10 @@ func DefaultEnabledEventTypes() []EventType {
 		// A broken scanner or an asset class nobody scans must not be
 		// silent; at most one message per capability and kind a day.
 		EventTypeCoverageGap,
+
+		// A held critical finding sends no new-finding message; this one
+		// notice must reach someone.
+		EventTypeFindingHeldCritical,
 
 		// A missed remediation deadline that notifies nobody defeats the point
 		// of having an SLA. Enqueued at severity "high", so it also clears the
