@@ -3,6 +3,7 @@ package opsmetrics
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -211,5 +212,27 @@ func TestCollectorReadsTheLatestSDKPerScrape(t *testing.T) {
 	latest = "v0.15.0"
 	if m := gather(t, c, "openctem_sensors_sdk"); m[`kind="tenant",status="outdated"`] != 3 {
 		t.Fatalf("sdk statuses after a newer SDK = %v", m)
+	}
+}
+
+func TestCollectorReportsFeedLastSuccess(t *testing.T) {
+	at := time.Date(2026, 11, 11, 6, 15, 40, 0, time.UTC)
+	snap := snapshot()
+	snap.Feeds = []postgres.OpsFeed{
+		{Source: "vulnfeed", LastSuccess: at, Failing: true},
+		{Source: "kev"},
+		{Source: "tenant-secret", LastSuccess: at},
+	}
+	c := New(func(context.Context) (postgres.OpsSnapshot, error) { return snap, nil }, Config{}, nil)
+	if err := testutil.CollectAndCompare(c, strings.NewReader(`
+# HELP openctem_feed_last_success_timestamp_seconds Unix time of the last successful import of an enabled intelligence feed (epss, kev, vulnfeed); absent until the first success
+# TYPE openctem_feed_last_success_timestamp_seconds gauge
+openctem_feed_last_success_timestamp_seconds{source="vulnfeed"} `+strconv.FormatInt(at.Unix(), 10)+`
+# HELP openctem_feed_failing 1 when the last run of an enabled intelligence feed failed
+# TYPE openctem_feed_failing gauge
+openctem_feed_failing{source="kev"} 0
+openctem_feed_failing{source="vulnfeed"} 1
+`), "openctem_feed_last_success_timestamp_seconds", "openctem_feed_failing"); err != nil {
+		t.Fatal(err)
 	}
 }
