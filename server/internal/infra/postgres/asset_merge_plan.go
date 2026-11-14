@@ -380,7 +380,7 @@ func mergeAssetAddresses(ctx context.Context, tx *sql.Tx, tenantID, keepID strin
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO asset_ip_addresses (tenant_id, asset_id, addr)
 		SELECT a.tenant_id, a.id, r.addr FROM assets a
-		CROSS JOIN LATERAL asset_recorded_addresses(a.asset_type, a.name, a.properties) AS r(addr)
+		CROSS JOIN LATERAL public.asset_recorded_addresses(a.asset_type, a.name, a.properties) AS r(addr)
 		WHERE a.tenant_id = $1 AND a.id = $2 AND a.deleted_at IS NULL
 		ON CONFLICT DO NOTHING`, tenantID, keepID); err != nil {
 		return fmt.Errorf("recompute kept asset addresses: %w", err)

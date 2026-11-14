@@ -24,6 +24,28 @@ var errUncompiledAssetFilter = errors.New("asset filter was not compiled for the
 // a page (or its allocation) from input.
 const maxAssetPageRows = 100
 
+// findingCountSortSQL is the alias of the list's open-findings join; a sort
+// on it needs that join for every candidate row.
+const findingCountSortSQL = "fc."
+
+// buildAssetPageQuery is one list page: the page's ids first, from assets
+// alone (where, order, limit, offset), then the full rows of those ids
+// (selectList, with its per-asset joins) in the same order. The per-asset
+// joins then run for the page's rows only, whatever the planner makes of
+// the filter: a filter that is a join (a range, a domain) under a data scope
+// otherwise had the open-findings count computed for every row in scope
+// before the page was cut. A sort on the open-findings count needs that
+// count for every row, so it keeps the one-statement form.
+func buildAssetPageQuery(selectList, where, order string, limit, offset int) string {
+	page := fmt.Sprintf(" LIMIT %d OFFSET %d", limit, offset)
+	//nolint:gosec // G202: where and order are compiled from registry constants; every value is bound
+	if strings.Contains(order, findingCountSortSQL) {
+		return selectList + " WHERE " + where + " ORDER BY " + order + page
+	}
+	//nolint:gosec // G202: as above
+	return selectList + " WHERE a.id IN (SELECT a.id FROM assets a WHERE " + where + " ORDER BY " + order + page + ") ORDER BY " + order
+}
+
 // assetTimeout maps a statement timeout to asset.ErrQueryTimeout. The
 // sentinel replaces the driver text: the timeout is all the caller learns.
 func assetTimeout(err error) error {
@@ -93,8 +115,7 @@ func (r *AssetRepository) ListWhere(ctx context.Context, q asset.WhereQuery) (as
 			listArgs = append(listArgs, q.After.LastSeen, q.After.ID.String())
 		}
 	}
-	//nolint:gosec // G202: as above
-	query := r.selectQuery() + " WHERE " + listWhere + " ORDER BY " + order + fmt.Sprintf(" LIMIT %d OFFSET %d", perPage, offset)
+	query := buildAssetPageQuery(r.selectQuery(), listWhere, order, perPage, offset)
 	rows, err := tx.QueryContext(ctx, query, listArgs...)
 	if err != nil {
 		return asset.WhereResult{}, assetTimeout(fmt.Errorf("list assets: %w", err))
