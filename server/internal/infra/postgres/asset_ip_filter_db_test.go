@@ -2,8 +2,9 @@ package postgres
 
 // The address filter (findings asset_ip, the query language's asset.ip and
 // assets ip): a range compiles to one btree range scan per value on
-// idx_assets_ip_addr, pinned to the tenant, and matches exactly the
-// ip_address assets inside the range.
+// idx_asset_ip_addresses_range, pinned to the tenant, and matches exactly the
+// assets with an address inside the range (asset_address_range_db_test.go
+// covers hosts named by a DNS name).
 
 import (
 	"context"
@@ -45,7 +46,7 @@ func TestAssetIPFilter_IndexAndExactRange(t *testing.T) {
 	// autovacuum last saw, estimates one row for the tenant and picks the
 	// tenant primary-key index, which made the plan check flaky in a group.
 	owner := testdb.OpenMigrator(t)
-	for _, tbl := range []string{"assets", "findings"} {
+	for _, tbl := range []string{"assets", "findings", "asset_ip_addresses"} {
 		if _, err := owner.ExecContext(ctx, `ANALYZE `+tbl); err != nil {
 			t.Fatal(err)
 		}
@@ -88,15 +89,15 @@ func TestAssetIPFilter_IndexAndExactRange(t *testing.T) {
 	}
 
 	// Exact: one address, a /24 boundary, IPv6; never a range-named asset, a
-	// host asset or the other tenant.
+	// DNS name or the other tenant. A host named by an address is one.
 	if got := names("10.77.3.17"); !slices.Equal(got, []string{"10.77.3.17"}) {
 		t.Errorf("one address = %v", got)
 	}
 	if got := names("10.77.5.0/24"); len(got) != 250 || got[0] != "10.77.5.0" {
 		t.Errorf("/24 = %d rows, first %v", len(got), got[:min(1, len(got))])
 	}
-	if got := names("10.77.0.0/16"); len(got) != 1500 {
-		t.Errorf("/16 = %d rows, want the 1500 addresses of this tenant only", len(got))
+	if got := names("10.77.0.0/16"); len(got) != 1501 {
+		t.Errorf("/16 = %d rows, want the 1500 addresses and the host of this tenant only", len(got))
 	}
 	if got := names("2001:db8::/32"); !slices.Equal(got, []string{"2001:db8::7"}) {
 		t.Errorf("v6 = %v", got)
@@ -137,8 +138,8 @@ func TestAssetIPFilter_IndexAndExactRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := pb.String()
-	if !strings.Contains(plan, "idx_assets_ip_addr") {
-		t.Fatalf("plan does not use idx_assets_ip_addr:\n%s", plan)
+	if !strings.Contains(plan, "idx_asset_ip_addresses_range") {
+		t.Fatalf("plan does not use idx_asset_ip_addresses_range:\n%s", plan)
 	}
 	if strings.Contains(plan, "Seq Scan on assets") {
 		t.Fatalf("plan reads every asset:\n%s", plan)

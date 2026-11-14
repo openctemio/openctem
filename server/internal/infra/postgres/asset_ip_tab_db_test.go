@@ -156,7 +156,7 @@ func TestAssetIPTab_ExplainUsesIndexes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := owner.ExecContext(ctx, `ANALYZE assets; ANALYZE asset_ports`); err != nil {
+	if _, err := owner.ExecContext(ctx, `ANALYZE assets; ANALYZE asset_ports; ANALYZE asset_ip_addresses`); err != nil {
 		t.Fatal(err)
 	}
 	sys := filterspec.SystemActor(tenant, "explain test")
@@ -166,14 +166,27 @@ func TestAssetIPTab_ExplainUsesIndexes(t *testing.T) {
 		index string
 	}{
 		{"network", leafDoc("network", "in", []any{"10.0.7.0/24"}), "idx_assets_ip_network"},
-		{"ip", leafDoc("ip", "in", []any{"10.0.7.0/24"}), "idx_assets_ip_addr"},
+		{"ip", leafDoc("ip", "in", []any{"10.0.7.0/24"}), "idx_asset_ip_addresses_range"},
 		{"port", leafDoc("port", "in", []any{1443}), "idx_asset_ports_port"},
 	} {
 		w := compileAssets(t, sys, c.doc)
 		//nolint:gosec // G202: compiled from registry constants
 		q := "EXPLAIN (FORMAT JSON) SELECT a.id FROM assets a WHERE a.deleted_at IS NULL AND " + w.SQL
+		// Sequential scans are off for this transaction only: the plan then
+		// proves the index path exists and is usable, whatever the planner
+		// would prefer on statistics other tests can change.
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+			_ = tx.Rollback()
+			t.Fatal(err)
+		}
 		var raw []byte
-		if err := db.QueryRowContext(ctx, q, w.Args...).Scan(&raw); err != nil {
+		err = tx.QueryRowContext(ctx, q, w.Args...).Scan(&raw)
+		_ = tx.Rollback()
+		if err != nil {
 			t.Fatalf("%s: explain: %v", c.name, err)
 		}
 		plan := planText(t, raw)
