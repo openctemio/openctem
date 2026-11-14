@@ -13,6 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -149,7 +150,7 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
           tried = true
         }
         if (!tried) {
-          window.location.replace('/')
+          navigateAfterSessionChange('/', { replace: true })
           return
         }
       }
@@ -170,9 +171,14 @@ export function WelcomeHub({ needsSession }: WelcomeHubProps) {
       const res = await onboardingAcceptAction(ref)
       setBusyRef(null)
       if (res.success && res.status === 'joined') {
-        toast.success(t('org.onboarding.joined', undefined, { name: res.organizationName }))
-        // The organization is selected: reload into it.
-        window.location.replace('/')
+        // The organization is selected: load it, then say so.
+        navigateAfterSessionChange('/', {
+          replace: true,
+          flash: {
+            kind: 'success',
+            title: t('org.onboarding.joined', undefined, { name: res.organizationName }),
+          },
+        })
         return
       }
       if (res.success) {

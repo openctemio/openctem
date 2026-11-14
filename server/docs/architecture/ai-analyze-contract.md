@@ -50,6 +50,22 @@ carry it inline:
   without it is still valid (the built-in executor reads the bundle in the
   platform).
 
+## The job on the command queue
+
+A job for an AI worker travels as an `analyze` command. Its payload is the
+job as `analyze.MarshalJob` validated it (stored as JSON, so key order and spacing may change, never the content), next to the
+platform's routing key:
+
+```json
+{"job": {"contract": "openctem.analyze/v1", "job_id": "<run id>", "...": "..."},
+ "required_capabilities": ["analyze.triage.v1"]}
+```
+
+The job schema is closed, so nothing the platform routes on goes inside the
+job. `job_id` is the run id; the platform reads it back from its own stored
+payload, never from a worker's result. See
+[ai-analysis.md](ai-analysis.md), "Runs on an AI worker".
+
 ## Rules every output meets
 
 - closed objects: no field outside the schema, so a model cannot add a

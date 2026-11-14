@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Building2, Check, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -37,7 +38,7 @@ export function OwnershipInvitationsCard({ hideWhenEmpty = false }: { hideWhenEm
     if (!openNext || !tenants.some((m) => m.id === openNext)) return
     setOpenNext(null)
     void switchTeam(openNext).then(
-      () => window.location.replace('/'),
+      () => navigateAfterSessionChange('/', { replace: true }),
       () => window.location.reload()
     )
   }, [openNext, tenants, switchTeam])

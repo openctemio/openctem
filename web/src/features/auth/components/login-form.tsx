@@ -15,6 +15,7 @@ import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KeyRound, Loader2, LogIn } from 'lucide-react'
 import { toast } from 'sonner'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -108,10 +109,14 @@ const socialProviders: {
 
 /**
  * Full page navigation after login, so the cookies set by the Server Action
- * are picked up (router.push would keep the old auth state).
+ * are picked up (router.push would keep the old auth state). A message is
+ * shown on the page that loads.
  */
-function hardNavigate(url: string) {
-  window.location.href = url
+function hardNavigate(url: string, signedIn?: string) {
+  navigateAfterSessionChange(
+    url,
+    signedIn ? { flash: { kind: 'success', title: signedIn } } : undefined
+  )
 }
 
 // ============================================
@@ -282,23 +287,20 @@ export function LoginForm({
       if (result.tenants && result.tenants.length === 0) {
         // If returnTo is an invitation page, go there first (user can accept and get a tenant)
         if (isInvitationReturnTo(safeRedirectTo)) {
-          toast.success(t('auth.login.success', 'Signed in'))
-          hardNavigate(safeRedirectTo)
+          hardNavigate(safeRedirectTo, t('auth.login.success', 'Signed in'))
           return
         }
         // Otherwise the account space: invitations, the account pages, and
         // creating an organization where the installation allows it. The page
         // decides, so this toast stays neutral.
-        toast.success(t('auth.login.success', 'Signed in'))
-        hardNavigate('/welcome')
+        hardNavigate('/welcome', t('auth.login.success', 'Signed in'))
         return
       }
 
       // Case 3: Single tenant - proceed to dashboard
-      // IMPORTANT: Use window.location.href for full page navigation
-      // to ensure cookies set by Server Action are picked up properly
-      toast.success(t('auth.login.success', 'Signed in'))
-      hardNavigate(safeRedirectTo)
+      // A full page navigation (hardNavigate), so the cookies set by the
+      // Server Action are picked up properly.
+      hardNavigate(safeRedirectTo, t('auth.login.success', 'Signed in'))
     } else if (result.code === 'ORGANIZATION_SUSPENDED') {
       toast.error(
         t('auth.organizationSuspended.message', 'This organization is suspended. Contact support.')

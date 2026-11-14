@@ -489,6 +489,7 @@
   "assets.form.scope.shadow": "Shadow IT",
   "assets.form.scope.vendor": "Vendor",
   "assets.form.selectField": "Select {field}",
+  "assets.form.tagsPlaceholder": "Type a tag and press Enter",
   "assets.formsHost.addDesc": "Fields left empty stay unknown; scans fill them in.",
   "assets.formsHost.addFailed": "Failed to add the {type}",
   "assets.formsHost.addTitle": "Add {type}",

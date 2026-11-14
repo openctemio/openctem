@@ -16,18 +16,27 @@ const (
 	ActionAIAgentPaused   Action = "ai_agent.paused"
 	ActionAIAgentResumed  Action = "ai_agent.resumed"
 	ActionAIAgentDisabled Action = "ai_agent.disabled"
+	// ActionAIAgentExecutorChanged records where an AI agent's runs execute
+	// (built in, or on the organization's AI workers): it changes where
+	// finding data goes.
+	ActionAIAgentExecutorChanged Action = "ai_agent.executor_changed"
+	// ActionAIAnalysisJobQueued records an analysis job sent to the
+	// organization's AI workers for a run (never the bundle text).
+	ActionAIAnalysisJobQueued Action = "ai_agent.analysis_job_queued"
 )
 
 // ResourceTypeAIAnalysis is the resource of AI agent audit rows.
 const ResourceTypeAIAnalysis ResourceType = "ai_analysis"
 
 var _ = registerActions("ai_analysis", map[Action]Severity{
-	ActionAIAgentCreated:       SeverityHigh,
-	ActionAIAgentDeleted:       SeverityHigh,
-	ActionAIAgentOwnersChanged: SeverityHigh,
-	ActionAIAgentRoleChanged:   SeverityCritical,
-	ActionAIAgentAttested:      SeverityMedium,
-	ActionAIAgentPaused:        SeverityHigh,
-	ActionAIAgentResumed:       SeverityHigh,
-	ActionAIAgentDisabled:      SeverityCritical,
+	ActionAIAgentCreated:         SeverityHigh,
+	ActionAIAgentDeleted:         SeverityHigh,
+	ActionAIAgentOwnersChanged:   SeverityHigh,
+	ActionAIAgentRoleChanged:     SeverityCritical,
+	ActionAIAgentAttested:        SeverityMedium,
+	ActionAIAgentPaused:          SeverityHigh,
+	ActionAIAgentResumed:         SeverityHigh,
+	ActionAIAgentDisabled:        SeverityCritical,
+	ActionAIAgentExecutorChanged: SeverityCritical,
+	ActionAIAnalysisJobQueued:    SeverityMedium,
 })

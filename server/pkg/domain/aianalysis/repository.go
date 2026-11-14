@@ -29,6 +29,8 @@ type AIAgentRepository interface {
 	// stored status was not one of them.
 	SetStatus(ctx context.Context, tenantID, id shared.ID, from []Status, to Status, reason PauseReason) (bool, error)
 	SetPreset(ctx context.Context, tenantID, id shared.ID, p Preset) error
+	// SetExecutor sets where the AI agent's runs execute.
+	SetExecutor(ctx context.Context, tenantID, id shared.ID, e Executor) error
 	Attest(ctx context.Context, tenantID, id, by shared.ID, at, due time.Time) error
 	// PeopleOf lists the people who answer for an owner list now: person
 	// owners who are active members, and active person members of active
@@ -55,4 +57,21 @@ type RunRepository interface {
 	ListRunsBySubject(ctx context.Context, tenantID shared.ID, subjectType SubjectType, subjectID shared.ID, limit int) ([]*Run, error)
 	// Usage is what an AI agent used since: runs started and tokens.
 	Usage(ctx context.Context, tenantID, aiAgentID shared.ID, since time.Time) (runs, tokens int, err error)
+	// BindRunCommand records the analysis job a queued worker run sent;
+	// false when the run is no longer a queued worker run without a job.
+	BindRunCommand(ctx context.Context, tenantID, runID, commandID shared.ID) (bool, error)
+	// SettleWorkerRuns ends, across organizations (a system job), up to
+	// limit live worker runs that can no longer get a result: past their
+	// deadline, or whose analysis job failed, expired, was canceled or is
+	// gone. Each ends failed (canceled for a canceled job) with a fixed code.
+	SettleWorkerRuns(ctx context.Context, limit int) ([]SettledRun, error)
+}
+
+// SettledRun is a worker run the platform ended without a result.
+type SettledRun struct {
+	ID        shared.ID
+	TenantID  shared.ID
+	CommandID *shared.ID
+	Status    RunStatus
+	ErrorCode string
 }

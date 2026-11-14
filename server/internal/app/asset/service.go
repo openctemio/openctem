@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -995,13 +994,21 @@ func (s *AssetService) GetAssetWithScope(ctx context.Context, tenantID, assetID,
 
 // UpdateAssetInput represents the input for updating an asset.
 type UpdateAssetInput struct {
-	Name        *string  `validate:"omitempty,min=1,max=255"`
-	Criticality *string  `validate:"omitempty,criticality"`
-	Scope       *string  `validate:"omitempty,scope"`
-	Exposure    *string  `validate:"omitempty,exposure"`
-	Description *string  `validate:"omitempty,max=1000"`
-	OwnerRef    *string  `validate:"omitempty,max=500"` // Free-text owner reference
-	Tags        []string `validate:"omitempty,max=20,dive,max=50"`
+	Name        *string `validate:"omitempty,min=1,max=255"`
+	Criticality *string `validate:"omitempty,criticality"`
+	Scope       *string `validate:"omitempty,scope"`
+	Exposure    *string `validate:"omitempty,exposure"`
+	Description *string `validate:"omitempty,max=1000"`
+	OwnerRef    *string `validate:"omitempty,max=500"` // Free-text owner reference
+	// Tags replaces the whole list (the API's "tags"; kept for API clients
+	// that send the list they just read). Applied as the difference from the
+	// stored list, so a concurrent writer's tag survives the write itself.
+	Tags []string `validate:"omitempty,max=20,dive,max=50"`
+	// TagsAdd and TagsRemove are an edit of the tags: every tag they do not
+	// name stays, whoever set it and whenever. They cannot be combined with
+	// Tags.
+	TagsAdd    []string
+	TagsRemove []string
 	// SubType changes the kind within the asset's type (closed list, or a
 	// legacy input of the same type). "" clears it. Nil = leave unchanged.
 	SubType *string `validate:"omitempty,max=50"`
@@ -1169,28 +1176,19 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 		}
 	}
 
-	// Capture old tags before replacement (for scope rule evaluation)
+	// Capture old tags before the change (for scope rule evaluation)
 	var oldTags []string
-	if input.Tags != nil {
-		oldTags = make([]string, len(a.Tags()))
-		copy(oldTags, a.Tags())
-
-		// Only the tags a person adds are checked: a tag the asset already
-		// carries (a scanner's, an older limit's) never blocks a save.
-		next, tagErr := tagdom.ValidateNew(oldTags, input.Tags)
+	tagsTouched := input.Tags != nil || len(input.TagsAdd)+len(input.TagsRemove) > 0
+	if tagsTouched {
+		oldTags = a.Tags()
+		next, tagErr := nextTags(oldTags, input)
 		if tagErr != nil {
-			return nil, nil, tagdom.Refusal(tagErr)
+			return nil, nil, tagErr
 		}
-		for _, tag := range oldTags {
-			if !slices.Contains(next, tag) {
-				a.RemoveTag(tag)
-			}
-		}
-		for _, tag := range next {
-			if !slices.Contains(oldTags, tag) {
-				a.AddTag(tag)
-			}
-		}
+		// Written as a change against the stored list (repository): a tag
+		// another writer stored since this copy was loaded stays.
+		added, removed := tagdom.Diff(oldTags, next)
+		a.ChangeTags(added, removed)
 	}
 
 	// Patch per-type metadata. Merge into existing properties (don't replace)
@@ -1248,7 +1246,7 @@ func (s *AssetService) updateAsset(ctx context.Context, assetID string, tenantID
 	}
 
 	// Evaluate scope rules if tags changed (async — don't block response)
-	if s.scopeRuleEvaluator != nil && input.Tags != nil && !tagsEqual(oldTags, a.Tags()) {
+	if s.scopeRuleEvaluator != nil && tagsTouched && !tagsEqual(oldTags, a.Tags()) {
 		assetID := a.ID()
 		tid := parsedTenantID
 		tags := make([]string, len(a.Tags()))
@@ -2847,6 +2845,31 @@ func (s *AssetService) updateExistingRepositoryAsset(
 	)
 
 	return existingAsset, repoExt, nil
+}
+
+// nextTags is the tag list an edit asks for: the replacement list, or the
+// stored list with the change applied. Only the tags a person adds are
+// checked: a tag the asset already carries (a scanner's, an older limit's)
+// never blocks a save.
+func nextTags(current []string, input UpdateAssetInput) ([]string, error) {
+	change := tagdom.Change{Add: input.TagsAdd, Remove: input.TagsRemove}
+	proposed := input.Tags
+	if input.Tags != nil {
+		if !change.Empty() {
+			return nil, shared.NewDomainError(tagdom.CodeTagChangeConflict,
+				"send either tags (the whole list) or tags_add and tags_remove, not both", shared.ErrValidation)
+		}
+	} else {
+		if err := change.Check(); err != nil {
+			return nil, err
+		}
+		proposed = tagdom.Apply(current, change)
+	}
+	next, err := tagdom.ValidateNew(current, proposed)
+	if err != nil {
+		return nil, tagdom.Refusal(err)
+	}
+	return next, nil
 }
 
 // tagsEqual compares two string slices for equality (order-insensitive).

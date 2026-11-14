@@ -179,6 +179,10 @@ type CreateInput struct {
 	// DispatchGate is what the caller gated the targets with; the claim
 	// re-checks them with it (scope_recheck.go). Server-side only.
 	DispatchGate *commanddom.DispatchGate `json:"-"`
+	// ID is the command id a caller chose (zero: a new one). Server-side
+	// only: a caller that records the id before the command exists (an AI
+	// run binds its analysis job) needs it fixed.
+	ID shared.ID `json:"-"`
 }
 
 // Create creates a new command.
@@ -199,6 +203,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*commanddom.Co
 	cmd, err := commanddom.NewCommand(tenantID, cmdType, priority, input.Payload)
 	if err != nil {
 		return nil, err
+	}
+	if !input.ID.IsZero() {
+		cmd.ID = input.ID
 	}
 
 	if input.SensorID != "" {
@@ -362,6 +369,9 @@ func (s *Service) Poll(ctx context.Context, input PollInput) ([]*commanddom.Comm
 		// A sensor tool the organization retired as a source
 		// (retired_source.go) never gets its scan jobs.
 		cmds = s.retiredHold(ctx, *sensorID, cmds)
+	} else {
+		// No sensor identity, no grant: never an analysis job.
+		cmds = withoutAnalysis(cmds)
 	}
 	if len(cmds) > limit {
 		cmds = cmds[:limit]

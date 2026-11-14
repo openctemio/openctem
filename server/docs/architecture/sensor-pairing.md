@@ -510,6 +510,15 @@ advertises that kind (`capabilityClaimPredicate`). It belongs to no scan run,
 so the ended-run gate never holds it. Migration 20261113024824 adds the type
 to `commands.chk_command_type`.
 
+Only an explicit AI worker grant takes an analysis job
+(`Grant.ServesAnalysis`: job types exactly `[analyze]`, the profile or its
+narrowed `custom` form). The `legacy-broad` grant, which lists no job types
+and so admits every other type, refuses `analyze` whatever capability the
+sensor advertises, and a claim that reads no grant (no sensor identity, grant
+enforcement not wired) withholds it (fail closed). The platform alone creates
+`analyze` commands, for runs of AI agents that run on the organization's AI
+workers ([ai-analysis.md](ai-analysis.md), "Runs on an AI worker").
+
 ### Leaving the legacy grant
 
 A sensor still on `legacy-broad` (or on any grant) can be moved to the
