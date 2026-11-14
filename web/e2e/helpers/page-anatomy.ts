@@ -54,6 +54,7 @@ const ROW_MIX_DEBT: Record<string, number> = {
   '/attack-surface/web@1440': 1,
   '/business-services@1440': 1,
   '/business-units@1440': 1,
+  '/components@1440': 1,
   '/credentials@1440': 1,
   '/crown-jewels@1440': 1,
   '/exceptions@1440': 1,
@@ -61,6 +62,7 @@ const ROW_MIX_DEBT: Record<string, number> = {
   '/findings@1440': 2,
   '/findings/approvals@1440': 1,
   '/my-work@1440': 1,
+  '/pentest/campaigns@1440': 1,
   '/priority-rules@1440': 1,
   '/scans@1440': 1,
   '/scans/workflows@1440': 1,
@@ -349,8 +351,18 @@ export async function probeRowMix(page: Page): Promise<MixedRow[]> {
         return false
       if (el.closest('[data-slot=checkbox],[data-slot=switch],[data-slot=radio-group-item]'))
         return false
-      // A link-styled button is a text link.
+      // A link-styled button is a text link, and so is a bare button around
+      // text (no kit slot, no border, no fill: a list row's title).
       if (el.getAttribute('data-variant') === 'link') return false
+      const cs = getComputedStyle(el)
+      if (
+        el.tagName === 'BUTTON' &&
+        !el.hasAttribute('data-slot') &&
+        (el.innerText ?? '').trim() !== '' &&
+        parseFloat(cs.borderTopWidth) === 0 &&
+        /rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)
+      )
+        return false
       // Inside a chip (its remove button) or over a field (a clear button).
       if (
         el.closest(
