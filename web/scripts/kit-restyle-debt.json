@@ -8,7 +8,6 @@
   "console/src/features/admin-console/components/self-service-limits-form.tsx": 1,
   "console/src/features/admin-console/components/social-login-settings-form.tsx": 1,
   "console/src/features/admin-console/components/support-access-panel.tsx": 1,
-  "console/src/features/admin-console/components/version-check-banner.tsx": 1,
   "console/src/features/sso/components/identity-providers-panel.tsx": 2,
   "src/app/(auth)/select-tenant/page.tsx": 1,
   "src/app/(dashboard)/(discovery)/assets/[id]/page.tsx": 1,
