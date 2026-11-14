@@ -193,8 +193,8 @@ func (r *DashboardRepository) GetAllStats(ctx context.Context, tenantID shared.I
 		WITH finding_agg AS (
 			SELECT GROUPING(severity) AS g_sev, GROUPING(status) AS g_status,
 				severity, status, COUNT(*) AS cnt,
-				COUNT(*) FILTER (WHERE `+vulnerability.OpenStatusSQL("status")+`) AS open_cnt,
-				COUNT(*) FILTER (WHERE `+vulnerability.OpenStatusSQL("status")+` AND sla_status IN ('exceeded','overdue')) AS overdue_cnt
+				COUNT(*) FILTER (WHERE `+vulnerability.OpenStatusSQL("status")+` AND `+vulnerability.NotHeldSQL("verification_state")+`) AS open_cnt,
+				COUNT(*) FILTER (WHERE `+vulnerability.OpenStatusSQL("status")+` AND `+vulnerability.NotHeldSQL("verification_state")+` AND sla_status IN ('exceeded','overdue')) AS overdue_cnt
 			FROM findings
 			WHERE tenant_id = $1 AND status NOT IN ('draft', 'in_review') AND NOT branch_only`+findingExcl(ctx, "asset_id")+` AND `+findingIn+`
 			GROUP BY GROUPING SETS ((severity), (status), ())
@@ -751,7 +751,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 				COUNT(*) FILTER (WHERE sla_status IN ('exceeded','overdue')) AS sla_breached,
 				COUNT(*) FILTER (WHERE sla_status IS NOT NULL AND sla_status <> 'not_applicable') AS sla_tracked
 			FROM findings
-			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + `
+			WHERE tenant_id = $1 AND NOT branch_only` + findingExcl(ctx, "asset_id") + ` AND ` + inScope("asset_id") + ` AND ` + vulnerability.OpenStatusSQL("status") + ` AND ` + vulnerability.NotHeldSQL("verification_state") + `
 		),
 		resolved_in_period AS (
 			SELECT severity, priority_class, resolved_at, first_detected_at
@@ -794,7 +794,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			SELECT COUNT(DISTINCT a.id) AS cnt
 			FROM assets a
 			INNER JOIN findings f ON f.asset_id = a.id AND f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + ` AND ` + inScope("f.asset_id") + `
-				AND ` + vulnerability.OpenStatusSQL("f.status") + `
+				AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 			WHERE a.deleted_at IS NULL AND a.tenant_id = $1 AND a.is_crown_jewel
 		),
 		mttr_hours AS (
@@ -890,7 +890,7 @@ func (r *DashboardRepository) GetExecutiveSummary(ctx context.Context, tenantID 
 			COALESCE(a.name, '') AS asset_name, f.epss_score, COALESCE(f.is_in_kev, FALSE)
 		FROM findings f
 		LEFT JOIN assets a ON a.id = f.asset_id AND a.tenant_id = $1
-		WHERE f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + ` AND ` + topIn("f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		WHERE f.tenant_id = $1 AND NOT f.branch_only` + findingExcl(ctx, "f.asset_id") + ` AND ` + topIn("f.asset_id") + ` AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 		ORDER BY f.priority_class ASC NULLS LAST, f.epss_score DESC NULLS LAST
 		LIMIT 5
 	`

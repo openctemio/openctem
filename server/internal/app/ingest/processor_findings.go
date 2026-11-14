@@ -2810,8 +2810,12 @@ func (p *FindingProcessor) afterCreate(
 	// Trigger workflow events (notifications, ticket rules) for newly
 	// created findings. A branch-only finding is not exposure yet: its
 	// workflows run when a counting branch sees it (promoteBranchOnly).
+	//
+	// The findings of a throttled run are held first (held.go): a held
+	// finding sends no created event until it is checked.
+	applyRunHold(ctx, tenantID, created)
 	if p.findingCreatedCallback != nil || p.sideEffects != nil {
-		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutDecided(withoutOutsideTargets(created, output)))); len(counting) > 0 {
+		if counting := p.withoutReported(ctx, tenantID, p.withoutBranchOnly(ctx, tenantID, withoutHeld(withoutDecided(withoutOutsideTargets(created, output))))); len(counting) > 0 {
 			switch {
 			case p.sideEffects != nil:
 				p.enqueueCreated(ctx, tenantID, counting)

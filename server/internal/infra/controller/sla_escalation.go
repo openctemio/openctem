@@ -105,6 +105,8 @@ const slaClockStartSQL = `COALESCE(f.sla_started_at, GREATEST(f.first_detected_a
 //
 // The status always changes; whether anyone is told is the governing policy's
 // escalation_enabled (column `notify`). The timeline row is written either way.
+// A held finding (docs/architecture/held-findings.md) is not escalated until
+// it is checked.
 var breachSelectUpdateQuery = `
 	WITH due AS (
 		SELECT f.id, COALESCE(pol.escalation_enabled, TRUE) AS notify
@@ -114,6 +116,7 @@ var breachSelectUpdateQuery = `
 		  AND f.sla_deadline < NOW()
 		  AND NOT f.branch_only
 		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		  AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 		ORDER BY f.sla_deadline
 		LIMIT $1
 		FOR UPDATE OF f SKIP LOCKED
@@ -154,6 +157,7 @@ var warningSelectUpdateQuery = `
 		  AND f.sla_deadline > NOW()
 		  AND NOT f.branch_only
 		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		  AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 		  AND NOW() >= ` + slaClockStartSQL + `
 		      + (f.sla_deadline - ` + slaClockStartSQL + `)
 		        * (COALESCE(pol.warning_threshold_percent, 80)::float8 / 100.0)

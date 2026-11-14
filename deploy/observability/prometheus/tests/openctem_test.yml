@@ -358,3 +358,50 @@ tests:
       - eval_time: 75m
         alertname: OutboxDeadLetters
         exp_alerts: []
+
+  # The bundle feed last imported at t=0 and never again: FeedStale after 36h
+  # plus the 10 minute hold, not before. (Series are sampled every minute: a
+  # sample is only visible for the five minutes before it goes stale.)
+  - interval: 1m
+    input_series:
+      - series: 'openctem_feed_last_success_timestamp_seconds{source="vulnfeed"}'
+        values: '0x2400'
+    alert_rule_test:
+      - eval_time: 36h
+        alertname: FeedStale
+        exp_alerts: []
+      - eval_time: 38h
+        alertname: FeedStale
+        exp_alerts:
+          - exp_labels: {severity: warning, component: api, source: vulnfeed}
+            exp_annotations:
+              summary: The vulnfeed intelligence feed has not imported successfully for 1d 14h 0m 0s
+              description: Vulnerability, exploit and priority data goes stale. Threat intel, Sync status shows the last error; for the bundle feed check that the publisher's newest release is current.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedstale
+
+  # A feed that keeps importing (its timestamp follows the clock) never fires.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_feed_last_success_timestamp_seconds{source="vulnfeed"}'
+        values: '0+60x2500'
+      - series: 'openctem_feed_last_success_timestamp_seconds{source="kev"}'
+        values: '0+60x2500'
+    alert_rule_test:
+      - eval_time: 40h
+        alertname: FeedStale
+        exp_alerts: []
+
+  # KEV has its own, shorter window: 12h.
+  - interval: 1m
+    input_series:
+      - series: 'openctem_feed_last_success_timestamp_seconds{source="kev"}'
+        values: '0x1000'
+    alert_rule_test:
+      - eval_time: 14h
+        alertname: FeedStale
+        exp_alerts:
+          - exp_labels: {severity: warning, component: api, source: kev}
+            exp_annotations:
+              summary: The kev intelligence feed has not imported successfully for 14h 0m 0s
+              description: Vulnerability, exploit and priority data goes stale. Threat intel, Sync status shows the last error; for the bundle feed check that the publisher's newest release is current.
+              runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedstale

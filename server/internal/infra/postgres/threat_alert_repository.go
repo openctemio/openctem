@@ -110,7 +110,7 @@ func (r *ThreatAlertRepository) TenantsAffectedBy(ctx context.Context, vulnIDs [
 		WITH ids AS (SELECT DISTINCT unnest($1::text[]) AS vuln_id)
 		SELECT f.cve_id, f.tenant_id FROM findings f
 		JOIN ids ON ids.vuln_id = f.cve_id
-		WHERE `+vulnerability.OpenStatusSQL("f.status")+`
+		WHERE `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
 		UNION
 		SELECT va.cve_id, s.tenant_id FROM ids
 		JOIN vulnerability_affected va ON va.cve_id = ids.vuln_id
@@ -247,7 +247,7 @@ func (r *ThreatAlertRepository) AffectedAssets(ctx context.Context, tenantID sha
 		), conf AS (
 			SELECT DISTINCT ON (f.asset_id) f.asset_id, f.id AS finding_id, COALESCE(f.confidence, 100) AS confidence
 			FROM findings f
-			WHERE f.tenant_id = $1 AND f.cve_id = $2 AND f.asset_id IS NOT NULL AND `+vulnerability.OpenStatusSQL("f.status")+`
+			WHERE f.tenant_id = $1 AND f.cve_id = $2 AND f.asset_id IS NOT NULL AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
 			ORDER BY f.asset_id, COALESCE(f.confidence, 100) DESC, f.id
 		), poss AS (
 			SELECT DISTINCT ON (s.asset_id) s.asset_id, p.name AS product, v.raw AS version, s.confidence
@@ -605,7 +605,7 @@ func (r *ThreatAlertRepository) ActiveWindowVulns(ctx context.Context, tenantID 
 			SELECT cve_id FROM kev_catalog WHERE date_added >= $3::date
 		)
 		SELECT DISTINCT f.cve_id FROM findings f JOIN win ON win.vuln_id = f.cve_id
-		WHERE f.tenant_id = $1 AND `+vulnerability.OpenStatusSQL("f.status")+`
+		WHERE f.tenant_id = $1 AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
 		UNION
 		SELECT DISTINCT va.cve_id FROM asset_software s
 		JOIN software_versions v ON v.id = s.software_version_id
