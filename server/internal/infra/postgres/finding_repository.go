@@ -246,7 +246,8 @@ var findingCreateSQL = `
 			` + findingIdentityColumnsSQL + `,
 			` + findingSLAKEVColumnsSQL + `,
 			` + findingObservedColumnsSQL + `,
-			` + findingPracticeColumnsSQL + `
+			` + findingPracticeColumnsSQL + `,
+			` + findingVerificationColumnsSQL + `
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34,
 			$35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
@@ -259,7 +260,8 @@ var findingCreateSQL = `
 	findingIdentityPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount) +
 	findingSLAKEVPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount) +
 	findingObservedPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount+findingSLAKEVColumnCount) +
-	findingPracticePlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount+findingSLAKEVColumnCount+findingObservedColumnCount) + `)
+	findingPracticePlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount+findingSLAKEVColumnCount+findingObservedColumnCount) +
+	findingVerificationPlaceholders(95+findingTypeColumnCount+findingNetworkColumnCount+findingScannerColumnCount+findingIdentityColumnCount+findingSLAKEVColumnCount+findingObservedColumnCount+findingPracticeColumnCount) + `)
 	`
 
 // findingCreateArgs is the argument list for findingCreateSQL. metadata is
@@ -391,6 +393,7 @@ func findingCreateArgs(finding *vulnerability.Finding, metadata []byte) ([]any, 
 	args = append(args, findingSLAKEVArgs(finding)...)
 	args = append(args, findingObservedArgs(finding)...)
 	args = append(args, findingPracticeArgs(finding)...)
+	args = append(args, findingVerificationArgs(finding)...)
 	return args, nil
 }
 
@@ -811,7 +814,8 @@ func findingInsertColumnsSQL() string {
 			` + findingIdentityColumnsSQL + `,
 			` + findingSLAKEVColumnsSQL + `,
 			` + findingObservedColumnsSQL + `,
-			` + findingPracticeColumnsSQL + `
+			` + findingPracticeColumnsSQL + `,
+			` + findingVerificationColumnsSQL + `
 		)`
 }
 
@@ -950,7 +954,7 @@ func findingUpsertConflictSQL() string {
 			tags = ` + findingTagsMergeSQL("findings.tags", "EXCLUDED.tags") + `,
 			-- Rule name: first non-empty one wins, as in EnrichFrom.
 			rule_name = COALESCE(NULLIF(findings.rule_name, ''), EXCLUDED.rule_name)` +
-		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + findingSLAKEVConflictSQL() + findingPracticeConflictSQL() + "\n\t"
+		findingTypeConflictSQL() + findingNetworkConflictSQL() + findingScannerConflictSQL() + findingIdentityConflictSQL() + findingSLAKEVConflictSQL() + findingPracticeConflictSQL() + findingVerificationConflictSQL() + "\n\t"
 }
 
 // primaryToolSQL is true when the incoming row comes from the stored
@@ -1002,7 +1006,7 @@ func (r *FindingRepository) execFindingInsert(ctx context.Context, stmt *sql.Stm
 // findingInsertColumnCount is the number of columns in the findings INSERT.
 // It MUST stay in sync with findingInsertColumnsSQL and findingInsertArgs.
 const findingInsertColumnCount = 94 + findingTypeColumnCount + findingNetworkColumnCount + findingScannerColumnCount + findingIdentityColumnCount + findingSLAKEVColumnCount +
-	findingObservedColumnCount + findingPracticeColumnCount
+	findingObservedColumnCount + findingPracticeColumnCount + findingVerificationColumnCount
 
 // findingInsertArgs returns the ordered argument list for a single findings
 // INSERT row. Shared by the single-row prepared-statement path and the
@@ -1137,7 +1141,7 @@ func findingInsertArgs(finding *vulnerability.Finding) ([]any, error) {
 		// Identity recipe version and tuple (RFC-043 §6).
 		finding.FingerprintVersion(),
 		nullJSON(finding.IdentityKey()),
-	}, append(append(append(append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...), findingSLAKEVArgs(finding)...), findingObservedArgs(finding)...), findingPracticeArgs(finding)...)...), nil
+	}, append(append(append(append(append(append(findingTypeArgs(finding), findingNetworkArgs(finding)...), findingScannerArgs(finding)...), findingIdentityArgs(finding)...), findingSLAKEVArgs(finding)...), findingObservedArgs(finding)...), append(findingPracticeArgs(finding), findingVerificationArgs(finding)...)...)...), nil
 }
 
 // PentestCampaignRole returns the user's role in a pentest campaign of the
@@ -1310,6 +1314,10 @@ func (r *FindingRepository) Update(ctx context.Context, finding *vulnerability.F
 	args = append(args, findingPracticeArgs(finding)...)
 	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
 		fmt.Sprintf(",\n\t\t\tpractice = $%d, practice_reason = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)-1, len(args)), 1)
+	// The verification state travels with the row (a hold, a release).
+	args = append(args, findingVerificationArgs(finding)...)
+	query = strings.Replace(query, "\n\t\tWHERE id = $1 AND tenant_id = $20",
+		fmt.Sprintf(",\n\t\t\tverification_state = $%d, hold_reasons = $%d\n\t\tWHERE id = $1 AND tenant_id = $20", len(args)-1, len(args)), 1)
 	if !strings.Contains(query, "sub_status_id = $") {
 		return errors.New("finding update: the sub-status column was not bound")
 	}
@@ -2400,6 +2408,7 @@ func (r *FindingRepository) selectQuery() string {
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
 			branch_only, row_version, sla_kev_capped, ` + findingPracticeColumnsSQL + `,
+			` + findingVerificationColumnsSQL + `,
 			EXISTS(SELECT 1 FROM finding_data_flows df WHERE df.finding_id = findings.id) AS has_data_flow
 		FROM findings
 	`
@@ -2579,7 +2588,9 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	dests = append(dests, sevCols.dests()...)
 	var practice string
 	var practiceReason sql.NullString
-	dests = append(dests, &branchOnly, &rowVersion, &slaKEVCapped, &practice, &practiceReason, &hasDataFlow)
+	var verificationState string
+	var holdReasons pq.StringArray
+	dests = append(dests, &branchOnly, &rowVersion, &slaKEVCapped, &practice, &practiceReason, &verificationState, &holdReasons, &hasDataFlow)
 	if err := scan(dests...); err != nil {
 		return nil, err
 	}
@@ -2630,6 +2641,7 @@ func (r *FindingRepository) doScan(scan func(dest ...any) error) (*vulnerability
 	f.RestoreBranchOnly(branchOnly)
 	f.RestoreSLAKEVCapped(slaKEVCapped)
 	f.RestorePractice(vulnerability.Practice(practice), practiceReason.String)
+	f.RestoreVerification(vulnerability.VerificationState(verificationState), holdReasons)
 	f.RestoreRowVersion(rowVersion)
 	return f, nil
 }
@@ -3091,7 +3103,7 @@ func (r *FindingRepository) KEVCriticalCountsByAsset(ctx context.Context, tenant
 			-- The open set (OpenStatuses): includes fix_applied, which is
 			-- "fix marked, NOT yet verified" — such a KEV/critical finding is
 			-- still a live exposure and must stay on the attack path.
-			AND ` + vulnerability.OpenStatusSQL("status") + `
+			AND ` + vulnerability.OpenStatusSQL("status") + ` AND ` + vulnerability.NotHeldSQL("verification_state") + `
 			-- A version-based match below the likely threshold is a
 			-- potential vulnerability, not an attack-path hop.
 			AND NOT (tool_name = 'version-match' AND COALESCE(last_seen_tool, tool_name) = 'version-match'
@@ -4071,6 +4083,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 			` + findingScannerColumnsSQL + `,
 			` + findingSeverityColumnsSQL + `,
 			branch_only, row_version, sla_kev_capped, ` + findingPracticeColumnsSQL + `,
+			` + findingVerificationColumnsSQL + `,
 			FALSE AS has_data_flow
 		FROM findings
 	`

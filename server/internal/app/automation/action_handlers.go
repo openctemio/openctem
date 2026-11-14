@@ -370,8 +370,19 @@ type TicketActionHandler struct {
 	integrationService *integration.IntegrationService
 	jira               JiraTicketService
 	github             GitHubTicketService
+	held               HeldChecker
 	logger             *logger.Logger
 }
+
+// HeldChecker tells whether a finding is held until it is checked
+// (docs/architecture/held-findings.md): an automation never files a ticket
+// for a held finding.
+type HeldChecker interface {
+	IsHeld(ctx context.Context, tenantID, findingID shared.ID) (bool, error)
+}
+
+// SetHeldChecker wires the held-finding check of create_ticket.
+func (h *TicketActionHandler) SetHeldChecker(c HeldChecker) { h.held = c }
 
 // NewTicketActionHandler creates a new TicketActionHandler. jiraSvc and
 // githubSvc are optional: when a provider's service is nil, create/update for
@@ -410,6 +421,20 @@ func (h *TicketActionHandler) createTicket(ctx context.Context, input *ActionInp
 	}
 	tenantID := input.TenantID.String()
 	provider, _ := config["provider"].(string)
+
+	// A held finding gets no ticket until it is checked; the run records
+	// why instead of failing.
+	if h.held != nil {
+		if fid, err := shared.IDFromString(findingID); err == nil {
+			held, err := h.held.IsHeld(ctx, input.TenantID, fid)
+			if err != nil {
+				return nil, fmt.Errorf("create_ticket: %w", err)
+			}
+			if held {
+				return map[string]any{"skipped": true, "reason": "finding_held", "finding_id": findingID}, nil
+			}
+		}
+	}
 
 	if strings.EqualFold(provider, "github") {
 		if h.github == nil {
@@ -710,6 +735,9 @@ func RegisterAllActionHandlersWithAI(
 	// than an "unsupported action type".
 	if integrationSvc != nil || jiraSvc != nil || githubSvc != nil {
 		ticketHandler := NewTicketActionHandler(integrationSvc, jiraSvc, githubSvc, log)
+		if vulnSvc != nil {
+			ticketHandler.SetHeldChecker(vulnSvc)
+		}
 		executor.RegisterActionHandler(automationdom.ActionTypeCreateTicket, ticketHandler)
 		executor.RegisterActionHandler(automationdom.ActionTypeUpdateTicket, ticketHandler)
 	}
