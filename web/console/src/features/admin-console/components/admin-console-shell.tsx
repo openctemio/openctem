@@ -5,10 +5,14 @@ import dynamic from 'next/dynamic'
 import { Siren } from 'lucide-react'
 import { usePathname, useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Search } from '@/components/search'
+import { FullscreenToggle } from '@/components/fullscreen-toggle'
+import { SkipToMain } from '@/components/skip-to-main'
+import { Header } from '@/components/layout/app-header'
+import { HEADER_ACTIONS_GROUP } from '@/components/layout/header-controls'
 import { SearchProvider } from '@/context/search-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -23,6 +27,8 @@ import { ElevationRequestContext } from './elevation-request'
 import { adminLogout, useAdminSession } from '../api/use-admin-session'
 import { setAdminEnrollmentListener } from '@console/lib/admin-api/client'
 import { adminCanElevate, type AdminIdentity } from '../types'
+import { visibleAdminNav } from '../lib/admin-nav-visibility'
+import { consoleCrumbLevels } from '../lib/console-crumbs'
 
 const AdminContext = createContext<AdminIdentity | null>(null)
 
@@ -126,29 +132,47 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
   const canElevate = adminCanElevate(admin)
   const requestElevation = canElevate ? () => setElevateOpen(true) : null
 
+  // The breadcrumb names pages as the sidebar does (the same visible items).
+  const visible = visibleAdminNav(admin)
+  const overview = visible.flatMap((s) => s.items).find((i) => i.url === '/')
+  const crumbs = {
+    homeLabel: overview ? t(overview.i18nKey, overview.title) : t('admin.crumb.home', 'Overview'),
+    levels: consoleCrumbLevels(
+      pathname,
+      visible,
+      (item) => t(item.i18nKey, item.title),
+      (listUrl) =>
+        listUrl === '/organizations'
+          ? t('admin.crumb.organization', 'Organization')
+          : listUrl === '/users'
+            ? t('admin.crumb.user', 'User')
+            : t('admin.crumb.record', 'Details')
+    ),
+  }
+
   return (
     <AdminContext.Provider value={admin}>
       <ElevationRequestContext.Provider value={requestElevation}>
         <SearchProvider menu={AdminCommandMenu}>
           <SidebarProvider>
-            {/* First focusable element: keyboard users skip the navigation. */}
-            <a
-              href="#content"
-              className="sr-only z-50 rounded-md bg-background px-3 py-2 text-sm font-medium shadow focus:not-sr-only focus:fixed focus:start-2 focus:top-2"
-            >
-              {t('admin.shell.skipToContent', 'Skip to content')}
-            </a>
+            {/* First focusable element: keyboard users skip the navigation
+                (the tenant app's skip link, to #content below). */}
+            <SkipToMain />
             <AdminConsoleSidebar admin={admin} onSignOut={signOut} />
             <SidebarInset>
-              {/* One header for every width: the sidebar trigger only on small
-              screens, then the elevation control, the console search
-              (Cmd/Ctrl+K) and the theme. */}
-              <header className="flex h-14 shrink-0 items-center gap-2 px-4">
-                <SidebarTrigger variant="outline" className="md:hidden" />
-                <span className="hidden min-w-0 truncate text-sm font-medium sm:inline md:hidden">
-                  {t('admin.shell.title', 'Platform administration')}
-                </span>
-                <div className="ms-auto flex items-center gap-2">
+              {/* The tenant app's top bar (shell package 0.2, console variant): the
+                  breadcrumb from the console navigation, the console search
+                  (Ctrl/Cmd+K), then Full screen, Theme and the elevation control.
+                  Below 768 px the phone bar: sidebar toggle, title, search, theme,
+                  elevation. */}
+              <Header showHeaderActions={false} crumbs={crumbs}>
+                <Search
+                  className="ms-auto shrink-0"
+                  placeholder={t('admin.shell.search', 'Search the console')}
+                />
+                <div className={HEADER_ACTIONS_GROUP} data-slot="header-actions">
+                  <FullscreenToggle />
+                  <ThemeSwitch />
                   {/* Read-only or elevated, always in view, one line high. */}
                   <AdminElevationBar
                     admin={admin}
@@ -156,10 +180,8 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                     open={elevateOpen}
                     onOpenChange={setElevateOpen}
                   />
-                  <Search placeholder={t('admin.shell.search', 'Search the console')} />
-                  <ThemeSwitch />
                 </div>
-              </header>
+              </Header>
               {/* A div, not <main>: every page renders <Main>, which is the landmark. */}
               {/* The page scrolls inside this box, so it takes keyboard focus: a page with
                   nothing interactive (a read-only list on a phone) still scrolls with the

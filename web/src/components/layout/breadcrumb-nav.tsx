@@ -31,7 +31,20 @@ import { NavPendingHint } from './sidebar-link'
 import { useBreadcrumbTitles } from './breadcrumb-title'
 import { planCrumbs } from './breadcrumb-fold'
 
+/**
+ * A breadcrumb given by its shell instead of built from the URL (the platform
+ * console names its pages from its own navigation). The last level is the
+ * current page; an empty list shows no trail (the home page).
+ */
+export interface CrumbTrail {
+  /** Accessible name of the home icon link. */
+  homeLabel: string
+  levels: { path: string; label: string; hasPage: boolean }[]
+}
+
 interface BreadcrumbNavProps {
+  /** The levels after home, when the shell names them itself (default: from the URL). */
+  trail?: CrumbTrail
   /** Override the auto-generated page title */
   pageTitle?: string
   /** Custom className for the breadcrumb container */
@@ -40,28 +53,28 @@ interface BreadcrumbNavProps {
   hideIdSegment?: boolean
 }
 
-export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: BreadcrumbNavProps) {
-  const pathname = usePathname()
-  const { t } = useTranslation()
-  const crumb = (path: string, segment: string) => {
-    const key = breadcrumbLabelKey(path, segment)
-    const label = breadcrumbLabel(path, segment)
-    return key ? t(key, label) : label
-  }
-  const record = (parent: string | undefined) => t(recordLabelKey(parent), recordLabel(parent))
-  // Names pages gave the records in the URL; an id with no name yet shows
-  // what kind of record it is ("Scan"), never the id.
-  const titles = useBreadcrumbTitles()
+interface CrumbItem {
+  path: string
+  label: string
+  isLast: boolean
+  hasPage: boolean
+}
 
-  // Split pathname and filter empty strings
+/** The tenant app's trail, built from the URL (empty on the home page). */
+function crumbsFromUrl(
+  pathname: string,
+  opts: {
+    hideIdSegment: boolean
+    pageTitle?: string
+    titles: ReadonlyMap<string, string>
+    crumb: (path: string, segment: string) => string
+    record: (parent: string | undefined) => string
+  }
+): CrumbItem[] {
+  const { hideIdSegment, pageTitle, titles, crumb, record } = opts
   const segments = pathname.split('/').filter(Boolean)
+  if (segments.length === 0) return []
 
-  // If we're on the home page, don't show breadcrumb
-  if (segments.length === 0) {
-    return null
-  }
-
-  // Build breadcrumb items with accumulated paths.
   // For detail pages (trailing id), keep the parent as a link and add the
   // record's name as the current page.
   const filteredSegments = [...segments]
@@ -78,31 +91,51 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
         pageTitle || titles.get(pathname) || record(filteredSegments[filteredSegments.length - 1])
     }
   }
+  // All segments were ids: home only.
+  if (filteredSegments.length === 0) return []
 
-  // If all segments were IDs, show at least home
-  if (filteredSegments.length === 0) {
-    return null
-  }
-
-  const breadcrumbItems = filteredSegments.map((segment, index) => {
+  const items: CrumbItem[] = filteredSegments.map((segment, index) => {
     const path = '/' + filteredSegments.slice(0, index + 1).join('/')
     const label = isIdSegment(segment)
       ? (titles.get(path) ?? record(filteredSegments[index - 1]))
       : crumb(path, segment)
-    // When on a detail page, the parent (e.g., "Findings") becomes a link, not current page
+    // On a detail page the parent (e.g. "Findings") is a link, not the current page.
     const isLast = index === filteredSegments.length - 1 && detailPageLabel === null
-
-    return { path, label, isLast }
+    return { path, label, isLast, hasPage: breadcrumbHasPage(path) }
   })
-
-  // Append the detail page label as the current (non-link) segment
   if (detailPageLabel) {
-    breadcrumbItems.push({
-      path: pathname,
-      label: detailPageLabel,
-      isLast: true,
-    })
+    items.push({ path: pathname, label: detailPageLabel, isLast: true, hasPage: true })
   }
+  return items
+}
+
+export function BreadcrumbNav({
+  trail,
+  pageTitle,
+  className,
+  hideIdSegment = true,
+}: BreadcrumbNavProps) {
+  const pathname = usePathname()
+  const { t } = useTranslation()
+  // Names pages gave the records in the URL; an id with no name yet shows
+  // what kind of record it is ("Scan"), never the id.
+  const titles = useBreadcrumbTitles()
+
+  const breadcrumbItems = trail
+    ? trail.levels.map((level, i) => ({ ...level, isLast: i === trail.levels.length - 1 }))
+    : crumbsFromUrl(pathname, {
+        hideIdSegment,
+        pageTitle,
+        titles,
+        crumb: (path, segment) => {
+          const key = breadcrumbLabelKey(path, segment)
+          const label = breadcrumbLabel(path, segment)
+          return key ? t(key, label) : label
+        },
+        record: (parent) => t(recordLabelKey(parent), recordLabel(parent)),
+      })
+  if (breadcrumbItems.length === 0) return null
+  const homeLabel = trail ? trail.homeLabel : t('nav.item.dashboard', 'Dashboard')
 
   // Fold by the design's breakpoints (breadcrumb-fold.ts): middle levels
   // into the "…" menu below 1280px, the first level too below 1024px; the
@@ -131,15 +164,11 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
             {plan.folded.map(({ item, foldedBelow }) => (
               <DropdownMenuItem
                 key={item.path}
-                asChild={breadcrumbHasPage(item.path)}
-                disabled={!breadcrumbHasPage(item.path)}
+                asChild={item.hasPage}
+                disabled={!item.hasPage}
                 className={FOLDED_BELOW[foldedBelow]}
               >
-                {breadcrumbHasPage(item.path) ? (
-                  <Link href={item.path}>{item.label}</Link>
-                ) : (
-                  item.label
-                )}
+                {item.hasPage ? <Link href={item.path}>{item.label}</Link> : item.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -155,7 +184,7 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
           <BreadcrumbLink asChild>
             <Link href="/" className="flex items-center gap-1">
               <Home className="h-4 w-4" />
-              <span className="sr-only">{t('nav.item.dashboard', 'Dashboard')}</span>
+              <span className="sr-only">{homeLabel}</span>
               <NavPendingHint quiet />
             </Link>
           </BreadcrumbLink>
@@ -177,7 +206,7 @@ export function BreadcrumbNav({ pageTitle, className, hideIdSegment = true }: Br
                 <BreadcrumbPage className="truncate" aria-current="page" title={item.label}>
                   {item.label}
                 </BreadcrumbPage>
-              ) : !breadcrumbHasPage(item.path) ? (
+              ) : !item.hasPage ? (
                 // A section folder with no page: a link would lead to the 404.
                 <span className="truncate" title={item.label}>
                   {item.label}
