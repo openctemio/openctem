@@ -66,6 +66,23 @@ scripts/kit-restyle.mjs --files`); the count may only go down.
   phone bar and drawer, and the skip link. Its right group is Full screen,
   Theme and the elevation control (`HEADER_ACTIONS_GROUP`).
 
+### Top bar icons
+
+| Context                                     | Class                    | px  |
+| ------------------------------------------- | ------------------------ | --- |
+| Header icon (32 px button), from 768 px     | `[&_svg]:size-4`         | 16  |
+| Phone bar icon (36 px button), below 768 px | `max-md:[&_svg]:size-5!` | 20  |
+
+- Classes from `HEADER_ICON_SIZE` in `components/layout/header-controls.ts`
+  (the search trigger matches them); stroke 1.75; the avatar stays 32 / 36.
+- At rest the header and phone bar icons are ink (`text-foreground`,
+  `HEADER_ICON_COLOUR`) in both themes, not the muted colour; hover and an
+  open menu add the hover background.
+- Every icon-only control of the shell (header, phone bar, sidebar toggle,
+  drawer close, sidebar and rail row icons) has a contrast of at least 4.5:1
+  against its background at rest in both themes
+  (`e2e/specs/57-header-right-group.spec.ts`, `e2e/specs/58-phone-bar.spec.ts`).
+
 ### Type roles
 
 | Role                              | Class              | Size/line | Weight | Below 768 px |

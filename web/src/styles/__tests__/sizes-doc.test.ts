@@ -90,6 +90,25 @@ describe('the Sizes section of the UI style contract', () => {
     })
   }
 
+  it('"Top bar icons" matches header-controls.ts', () => {
+    const controls = readFileSync(
+      path.resolve(__dirname, '../../components/layout/header-controls.ts'),
+      'utf8'
+    )
+    const constant = (name: string) =>
+      new RegExp(`export const ${name} = '([^']+)'`).exec(controls)?.[1] ?? ''
+    const sizes = constant('HEADER_ICON_SIZE').split(' ')
+    const rows = table('Top bar icons')
+    expect(rows.length).toBe(2)
+    for (const [label, classCell, value] of rows) {
+      const cls = code(classCell)[0]
+      expect(sizes, label).toContain(cls)
+      expect(Number(/size-(\d+)!?$/.exec(cls)![1]) * 4, label).toBe(Number(value))
+    }
+    expect(constant('HEADER_ICON_COLOUR')).toBe('text-foreground')
+    expect(doc).toContain('ink (`text-foreground`')
+  })
+
   it('"Type roles" matches theme.css, phone column included', () => {
     const rows = table('Type roles')
     expect(rows.length).toBe(13)
