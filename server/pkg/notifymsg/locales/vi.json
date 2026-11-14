@@ -46,6 +46,7 @@
   "event.emerging_threat": "Mối đe dọa mới nổi",
   "event.emerging_threat_digest": "Tổng hợp mối đe dọa mới nổi hằng ngày",
   "event.finding_assigned": "Phát hiện được giao",
+  "event.finding_held_critical": "Phát hiện nghiêm trọng đang tạm giữ",
   "event.finding_fixed": "Phát hiện đã được khắc phục",
   "event.finding_priority_escalated": "Phát hiện được nâng mức ưu tiên",
   "event.finding_reopened": "Phát hiện được mở lại",

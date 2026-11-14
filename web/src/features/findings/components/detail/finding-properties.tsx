@@ -144,7 +144,8 @@ export function FindingProperties({
   const canAssign = useCanMutate('POST /api/v1/findings/{id}/assign')
   const asset = finding.assets[0]
   const crit = asset?.criticality
-  const assetCaption = asset
+  // Type, criticality and exposure as separate muted pieces (no middot join).
+  const assetCaptionParts: string[] = asset
     ? [
         findingAssetTypeLabel(asset.type),
         crit === 'critical'
@@ -159,10 +160,8 @@ export function FindingProperties({
         asset.exposure && asset.exposure !== 'unknown'
           ? asset.exposure.charAt(0).toUpperCase() + asset.exposure.slice(1)
           : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : ''
+      ].filter((part): part is string => Boolean(part))
+    : []
   const closed = CLOSED.has(triage.status)
   // People's labels only; scanner artefacts (tool, file, type) are noise here.
   const tags = userTags(finding)
@@ -321,8 +320,15 @@ export function FindingProperties({
                 ) : (
                   <span className="font-medium">{asset.name}</span>
                 )}
-                {assetCaption && (
-                  <span className="block text-xs text-muted-foreground">{assetCaption}</span>
+                {assetCaptionParts.length > 0 && (
+                  <span
+                    data-slot="asset-caption"
+                    className="flex flex-wrap gap-x-2 text-xs text-muted-foreground"
+                  >
+                    {assetCaptionParts.map((part) => (
+                      <span key={part}>{part}</span>
+                    ))}
+                  </span>
                 )}
                 {finding.assets.length > 1 && (
                   <span className="block text-xs text-muted-foreground">

@@ -2343,6 +2343,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	// that point. The publisher itself filters to escalations only (see its
 	// doc comment) so ingest does not double-notify alongside "new_finding".
 	priorityPublisher := finding.NewOutboxPriorityChangePublisher(s.Outbox, log)
+	priorityPublisher.SetHeldReader(repos.Finding)
 	if repos.ThreatAlert != nil {
 		// A KEV addition on an alerted CVE is announced once, by the alert.
 		priorityPublisher.SetAlertCoverage(repos.ThreatAlert)
@@ -2672,6 +2673,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	)
 	s.Ingest = ingest.NewService(ingAsset, ingFinding, ingVuln, ingComp, repos.Sensor, ingBranch, repos.Tenant, repos.Audit, log)
 	s.Ingest.SetTagGovernor(s.TagGovernor)
+	// One notice about held critical findings (a held finding sends no
+	// new-finding message until it is checked).
+	s.Ingest.SetHeldNoticeOutbox(s.Outbox)
 	s.Tenant.SetTagRulesInvalidator(s.TagGovernor)
 	// Policies are applied from a per-tenant snapshot, reloaded when their
 	// version changes.
@@ -3458,6 +3462,14 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	if s.AIExecutor != nil {
 		s.AIExecutor.SetAIAgents(s.AIAnalysis)
 		s.AIExecutor.SetKnowledge(s.AIKnowledge)
+		// AI agents that run on the organization's AI workers: the same
+		// checks and masked bundle, then an analysis job on the command
+		// queue (docs/architecture/ai-analysis.md).
+		if s.Command != nil {
+			jobs := analysisJobQueue{cmds: s.Command}
+			aianalysis.NewWorkerExecutor(s.AIExecutor, jobs, s.Audit, log)
+			s.AIAnalysis.SetJobCanceler(jobs)
+		}
 	}
 
 	// Wire permission services to tenant service

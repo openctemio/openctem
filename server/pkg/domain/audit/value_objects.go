@@ -160,6 +160,10 @@ const (
 	ActionAssetDeleted           Action = "asset.deleted"
 	ActionAssetStatusChanged     Action = "asset.status_changed"
 	ActionAssetBulkStatusChanged Action = "asset.bulk_status_changed"
+	// ActionAssetBulkTagsChanged: tags added to or removed from many assets
+	// at once. Metadata: the tags added and removed, the changed asset ids
+	// and the counts.
+	ActionAssetBulkTagsChanged   Action = "asset.bulk_tags_changed"
 	ActionAssetCrownJewelChanged Action = "asset.crown_jewel_changed"
 	ActionAssetImported          Action = "asset.imported"
 	// ActionAssetRenamed: a repository asset took its code host's current
@@ -936,7 +940,7 @@ func (a Action) IsValid() bool {
 		ActionScopeTargetAttested, ActionScopeTargetAttestationRequested, ActionScopeTargetT2Downgraded,
 		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged,
 		ActionAssetCreated, ActionAssetUpdated, ActionAssetDeleted, ActionAssetStatusChanged,
-		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
+		ActionAssetBulkStatusChanged, ActionAssetBulkTagsChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionMemberRemoved, ActionMemberRoleChanged, ActionOwnerRoleDriftRemoved,
 		ActionMemberSuspended, ActionMemberReactivated, ActionMemberOffboarded, ActionMemberDataErased,
 		ActionAccountDeletionRequested, ActionAccountDeletionCanceled, ActionAccountErased, ActionMemberLeft,
@@ -1447,7 +1451,7 @@ func SeverityForAction(a Action) Severity {
 		ActionAssetLifecycleSnoozed, ActionAssetLifecycleUnsnoozed, ActionAssetAttributionDecided,
 		ActionAssetAttributionAutoConfirmed, ActionAssetAttributionChildrenLinked,
 		ActionAssetCreateMerged, ActionAssetGovernedTagsChanged, ActionFindingsRefingerprinted, ActionFindingsReclassified, ActionAssetsMerged,
-		ActionAssetBulkStatusChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
+		ActionAssetBulkStatusChanged, ActionAssetBulkTagsChanged, ActionAssetCrownJewelChanged, ActionAssetImported, ActionAssetRenamed,
 		ActionMemberAdded, ActionInvitationAccepted,
 		ActionCampaignCreated, ActionCampaignUpdated, ActionCampaignStatusChanged,
 		ActionCampaignMemberAdded,

@@ -249,7 +249,7 @@ func (r *AssetRiskQueueRepository) TopContributors(ctx context.Context, tenantID
 		       COALESCE(f.is_in_kev, false), f.exploit_available
 		FROM findings f
 		WHERE f.tenant_id = $1 AND f.asset_id = $2 AND NOT f.branch_only
-		  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+		  AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 		ORDER BY CASE f.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
 		         COALESCE(f.is_in_kev, false) DESC, f.exploit_available DESC,
 		         COALESCE(f.epss_score, 0) DESC, f.id
@@ -303,13 +303,13 @@ func (r *AssetRiskQueueRepository) RefreshRollups(ctx context.Context, tenantID 
 			finding_count = COALESCE((
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id AND bua.tenant_id = f.tenant_id
-				WHERE bua.business_unit_id = bu.id AND bua.tenant_id = $1 AND NOT f.branch_only AND ` + vulnerability.OpenStatusSQL("f.status") + `
+				WHERE bua.business_unit_id = bu.id AND bua.tenant_id = $1 AND NOT f.branch_only AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 			), 0),
 			critical_finding_count = COALESCE((
 				SELECT COUNT(*) FROM findings f
 				JOIN business_unit_assets bua ON bua.asset_id = f.asset_id AND bua.tenant_id = f.tenant_id
 				WHERE bua.business_unit_id = bu.id AND bua.tenant_id = $1 AND NOT f.branch_only AND f.severity = 'critical'
-				  AND ` + vulnerability.OpenStatusSQL("f.status") + `
+				  AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
 			), 0),
 			avg_risk_score = COALESCE((
 				SELECT AVG(a.risk_score) FROM business_unit_assets bua

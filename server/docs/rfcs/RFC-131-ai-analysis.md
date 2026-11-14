@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Accepted (2026-10-28). In review: governance core (AI suggestions with provenance, per-use-case mode, apply rules, undo, automatic downgrade), reversible masking of AI context, the `openctem.analyze/v1` contract. In review: the built-in executor writing runs through the contract. Implemented (in review): the `analyze` command type and the `ai-worker` grant profile. Designed: the worker executor and the completion of analysis jobs, third-party analysts |
+| Status | Accepted (2026-10-28). In review: governance core (AI suggestions with provenance, per-use-case mode, apply rules, undo, automatic downgrade), reversible masking of AI context, the `openctem.analyze/v1` contract. In review: the built-in executor writing runs through the contract. Implemented (in review): the `analyze` command type and the `ai-worker` grant profile. In review: the worker executor (an AI agent runs built in or on the organization's AI workers; analysis jobs and their deadline). Designed: the completion of analysis jobs, third-party analysts |
 | Scope | api (governance, masking, contract, built-in executor), web (Settings > AI use cases and masking, shared AI badge, suggestion card), sdk-go (analyst harness, conformance cases), sensor (analyst image), docs |
 | Architecture | [ai-analyze-contract.md](../architecture/ai-analyze-contract.md), [ai-triage.md](../architecture/ai-triage.md), `ai-analysis.md` (governance) |
 | Related | RFC-040 (mutual distrust, signed jobs), RFC-016 and RFC-062 (MCP, AI egress policy), RFC-094 (the platform depends on contracts only), RFC-030 (scan distribution) |
@@ -95,6 +95,18 @@ returned (migration 20261113024824). Architecture:
 [sensor-pairing.md](../architecture/sensor-pairing.md), "The AI worker
 profile".
 
+In review: the worker executor. An AI agent runs built in or on the
+organization's AI workers (`PUT /api/v1/ai/agents/{id}/executor`). For a
+worker run the platform makes the same checks and the same masked bundle,
+fitted to the job's size by its encoded size, records the run as queued and
+bound to its job, and queues one `analyze` command whose payload is the
+validated job next to its `required_capabilities`. Only an explicit AI
+worker grant of the organization takes it (never a legacy-broad grant). A
+run whose job ends without a result, or that passes its deadline, ends
+`failed` (`deadline_exceeded`, `worker_error`, `worker_unavailable`) or
+`canceled`, so none waits forever. Architecture:
+[ai-analysis.md](../architecture/ai-analysis.md), "Runs on an AI worker".
+
 ## 6. Decisions
 
 | # | Decision |
@@ -134,4 +146,5 @@ profile".
 | Built-in executor for `triage.v1`, `remediation.v1`, `summary.v1` through the contract, with bundle builder, masking and provenance | in review |
 | Web: Settings > AI use cases and masking, shared AI badge, suggestion card and "why" drawer | in review |
 | `analyze` command type, `ai-worker` grant profile, run ledger rule for worker runs and `result_digest` | in review |
-| Worker executor, completion of analysis jobs, harness, conformance cases | designed |
+| Worker executor: "runs on" setting, analysis jobs on the command queue, claim only by an explicit AI worker grant, deadline sweep | in review |
+| Completion of analysis jobs, harness, conformance cases | designed |

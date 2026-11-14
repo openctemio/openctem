@@ -177,6 +177,7 @@ tests that cover the console's most user-visible flows.
 | `52-team-outside-members.spec.ts`           | A team with outside members turns full-data roles off up front and names them (390px too)                  |
 | `72-attack-surface-page-changes.spec.ts`    | Page changes: change list, diff sheet with hostile text, watches; desktop and phone                        |
 | `56-organization-switch.spec.ts`            | Organization switch: list root without query, no row or id of the old org, second tab, back button         |
+| `57-invitation-accept.spec.ts`              | Accept lands in the joined organization (own one, none, 390px); accepted link offers Open                  |
 | `45-sensor-repair-dialog.spec.ts`           | Re-pair a sensor: reason, revoke-now offer, code in the command, 1440/390px, axe                           |
 | Spec file (`specs/`)                        | What it covers                                                                                             |
 | ------------------------------------------- | ----------------------------------------------------------------------------------------                   |

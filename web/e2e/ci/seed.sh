@@ -315,7 +315,52 @@ for which in A B; do
       "$asset" "$which" "$i" "$which" "$i")"
   done
 done
+
+# 57-invitation-accept: two pending invitations into organization B, one for
+# an account with an organization of its own (E2E_INVITEE_*), one for an
+# account with none yet (E2E_INVITEE_NEW_*). Not into the main organization:
+# its members page would then read the roles of pending invitations, past
+# that page's request budget (16-request-budget).
+call GET /api/v1/roles
+INVITE_ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_downcase) == "member")][0].id' <<<"$BODY")
+[[ -n "$INVITE_ROLE_ID" && "$INVITE_ROLE_ID" != null ]] || { log "no member role in $SLUG-switch-b"; exit 1; }
+INVITEE_EMAIL="e2e-invitee-$RUN@openctem-test.local"
+INVITEE_PASSWORD="$(openssl rand -hex 10)I$(openssl rand -hex 3)"
+call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$INVITEE_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
+INVITEE_TOKEN=$(jq -r .token <<<"$BODY")
+INVITEE_NEW_EMAIL="e2e-invitee-new-$RUN@openctem-test.local"
+INVITEE_NEW_PASSWORD="$(openssl rand -hex 10)N$(openssl rand -hex 3)"
+call POST "/api/v1/tenants/$SLUG-switch-b/invitations" "{\"email\":\"$INVITEE_NEW_EMAIL\",\"role_ids\":[\"$INVITE_ROLE_ID\"]}"
+INVITEE_NEW_TOKEN=$(jq -r .token <<<"$BODY")
 call POST /api/v1/auth/logout '{}'
+
+log "invitees (E2E_INVITEE_*)"
+# The first invitee owns an organization of its own (its home); the second
+# registers with its invitation token and has no organization. Neither
+# accepts here: 57-invitation-accept does, in the browser.
+out=$(DATABASE_URL="$DATABASE_URL" docker run --rm --network "$NETWORK" -e DATABASE_URL \
+  --entrypoint /app/bootstrap-admin "${API_IMAGE:?set API_IMAGE}" \
+  -print-secrets \
+  -email="e2e-admin-$RUN@openctem-test.local" -no-backup \
+  -org-name="E2E Invitee Home $RUN" -org-slug="$SLUG-invitee-home" -org-owner-email="$INVITEE_EMAIL" 2>&1) || {
+  log "bootstrap-admin (invitee) failed:"
+  echo "$out" >&2
+  exit 1
+}
+INVITEE_SET_TOKEN=$({ grep -o 'set-password#token=[^[:space:]]*' <<<"$out" || true; } | head -1 | sed 's/.*token=//')
+[[ -n "$INVITEE_SET_TOKEN" ]] || { log "no set-password link for $INVITEE_EMAIL:"; echo "$out" >&2; exit 1; }
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v slug="$SLUG-invitee-home" >/dev/null <<'SQL'
+UPDATE tenants
+   SET settings = settings || jsonb_build_object('security',
+         COALESCE(settings->'security', '{}'::jsonb) || '{"mfa_required_for_admins": false}'::jsonb)
+ WHERE slug = :'slug';
+SQL
+ACCESS_TOKEN=
+JAR="$WORK/invitee-cookies"
+call POST /api/v1/auth/reset-password "{\"token\":\"$INVITEE_SET_TOKEN\",\"new_password\":\"$INVITEE_PASSWORD\"}"
+JAR="$WORK/invitee-new-cookies"
+call POST /api/v1/auth/register "{\"email\":\"$INVITEE_NEW_EMAIL\",\"password\":\"$INVITEE_NEW_PASSWORD\",\"name\":\"E2E Invitee\",\"invitation_token\":\"$INVITEE_NEW_TOKEN\"}"
 
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"
@@ -327,3 +372,12 @@ echo "E2E_SWITCH_EMAIL=$SWITCH_EMAIL"
 echo "E2E_SWITCH_PASSWORD=$SWITCH_PASSWORD"
 echo "E2E_SWITCH_ORG_A=E2E Switch A $RUN"
 echo "E2E_SWITCH_ORG_B=E2E Switch B $RUN"
+echo "E2E_INVITE_ORG=E2E Switch B $RUN"
+echo "E2E_INVITE_ORG_SLUG=$SLUG-switch-b"
+echo "E2E_INVITEE_EMAIL=$INVITEE_EMAIL"
+echo "E2E_INVITEE_PASSWORD=$INVITEE_PASSWORD"
+echo "E2E_INVITEE_TOKEN=$INVITEE_TOKEN"
+echo "E2E_INVITEE_HOME_ORG=E2E Invitee Home $RUN"
+echo "E2E_INVITEE_NEW_EMAIL=$INVITEE_NEW_EMAIL"
+echo "E2E_INVITEE_NEW_PASSWORD=$INVITEE_NEW_PASSWORD"
+echo "E2E_INVITEE_NEW_TOKEN=$INVITEE_NEW_TOKEN"

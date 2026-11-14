@@ -109,7 +109,7 @@ export function useInventoryAssetForms(
       try {
         const saved = await updateAsset(
           editing.asset.id,
-          updateInputFromForm(editing.view, data, editing.asset.metadata)
+          updateInputFromForm(editing.view, data, editing.asset.metadata, editing.asset.tags ?? [])
         )
         if (saved.pendingRiskRequest) {
           // The lowered exposure or criticality waits for a second person; the

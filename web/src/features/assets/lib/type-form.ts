@@ -12,6 +12,7 @@
 import type { TypeAttribute, TypeView } from '@/features/asset-types/lib/type-view'
 import { propertyLabel, type AssetPropertyKey } from '@/features/asset-types/lib/property-schema'
 import type { FormFieldConfig } from '../types/form-field.types'
+import { isEmptyTagChange, tagChange } from './tag-change'
 import type {
   AssetMetadata,
   AssetScope,
@@ -178,13 +179,19 @@ export function createInputFromForm(
   } as CreateAssetInput
 }
 
-/** PUT /assets/{id} for a type's edit form. */
+/**
+ * PUT /assets/{id} for a type's edit form. `shownTags` are the tags the form
+ * showed: only the tags the person added or removed are sent, so a tag
+ * stored since the form opened stays.
+ */
 export function updateInputFromForm(
   view: TypeView,
   data: Record<string, unknown>,
-  previous: AssetMetadata
+  previous: AssetMetadata,
+  shownTags: readonly string[] = []
 ): UpdateAssetInput {
   const c = common(data)
+  const tags = Array.isArray(data.tags) ? tagChange(shownTags, c.tags) : undefined
   const metadata = propertiesFromForm(view, data, previous)
   return {
     name: c.name,
@@ -199,7 +206,7 @@ export function updateInputFromForm(
       : {}),
     ...(c.impactIntegrity !== undefined ? { impactIntegrity: c.impactIntegrity } : {}),
     ...(c.impactAvailability !== undefined ? { impactAvailability: c.impactAvailability } : {}),
-    tags: c.tags,
+    ...(tags && !isEmptyTagChange(tags) ? tags : {}),
     ...(typeof data.riskChangeReason === 'string' && data.riskChangeReason
       ? { riskChangeReason: data.riskChangeReason }
       : {}),

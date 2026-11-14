@@ -48,3 +48,37 @@ func TestRemovedSettingsAreNotCoreSettings(t *testing.T) {
 		}
 	}
 }
+
+// The keys the server hands the start-up environment check (counted as read)
+// are exactly the ones CheckRemovedSettings accepts as provided: one source.
+// A removed setting no extension declares is in neither, so it is still
+// refused at start.
+func TestConfigKeysMatchDeclares(t *testing.T) {
+	var none *Set
+	if none.ConfigKeys() != nil || build(t).ConfigKeys() != nil {
+		t.Fatal("Community has no extension config keys")
+	}
+	s := build(t,
+		ext.Extension{Name: "one", ConfigKeys: []string{"ADMIN_AUDIT_SINK"}},
+		ext.Extension{Name: "two", ConfigKeys: []string{"TWO_ENDPOINT"}})
+	keys := s.ConfigKeys()
+	if len(keys) != 2 {
+		t.Fatalf("ConfigKeys = %v, want both extensions' keys", keys)
+	}
+	for _, k := range keys {
+		if !s.Declares(k) {
+			t.Errorf("ConfigKeys lists %s but Declares says no", k)
+		}
+	}
+	if s.Declares("ADMIN_AUDIT_SINK_SECRET") {
+		t.Fatal("an undeclared key is declared")
+	}
+	if err := s.CheckRemovedSettings(func(k string) string {
+		if k == "ADMIN_AUDIT_SINK_SECRET" {
+			return "x"
+		}
+		return ""
+	}); err == nil {
+		t.Fatal("an undeclared removed setting must still refuse the start")
+	}
+}

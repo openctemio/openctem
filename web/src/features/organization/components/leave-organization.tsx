@@ -13,6 +13,7 @@ import { post } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { removeCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { usePermissions } from '@/lib/permissions'
 import { useMemberStats } from '../api/use-members'
 
@@ -47,7 +48,7 @@ export function LeaveOrganization() {
       setOpen(false)
       return
     }
-    toast.success(t('org.leave.done', undefined, { name: name ?? '' }))
+    const done = t('org.leave.done', undefined, { name: name ?? '' })
     const next = tenants.find((x) => x.id !== currentTenant.id)
     let target = '/'
     if (next) {
@@ -60,7 +61,7 @@ export function LeaveOrganization() {
       removeCookie(env.cookies.tenant)
       target = '/welcome'
     }
-    window.location.replace(target)
+    navigateAfterSessionChange(target, { replace: true, flash: { kind: 'success', title: done } })
   }
 
   return (

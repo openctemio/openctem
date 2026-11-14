@@ -2065,7 +2065,7 @@ a personal address, or be a work domain nobody has verified.
 | `/remediation/moves*`, `/remediation/tasks/{id}/splits|merges` (RFC-098) | — | every task involved must have all its findings in the caller's scope, and every named finding too (404 otherwise); another tenant's task is 404 |
 | `POST /remediation/tasks/{id}/resolve` (RFC-098) | — | `RequireAll(findings:remediation:write, findings:fix_apply)`; every finding of the task in the caller's scope; each finding moves only through the bulk path's legal steps and owner check |
 | `/remediation/tasks*` (new, RFC-098) | — | a task is listed and read through its in-scope findings only (counters, deadline and risk over those; `hidden_members` counts the rest; none visible = 404); a change needs every finding in scope; named findings must be in scope (404 otherwise) |
-| `POST /assets/bulk/status`, `/assets/bulk/sync` | bypass | out-of-scope ids skipped |
+| `POST /assets/bulk/status`, `/assets/bulk/sync`, `/assets/bulk/tags` | bypass | out-of-scope ids skipped (counted as failed) |
 | `POST /approvals/{id}/{approve,reject,cancel}`; `GET /approvals` | bypass | 404 / list, total and status counts filtered in SQL |
 | `POST /findings/ai-triage/bulk`; `GET /findings/{id}/ai-triage/{triageId}` | bypass | out-of-scope ids reported as not found; a result is checked against its own finding |
 | `GET /exploration/leads`, `/{id}`, open, approve, reject | new | a lead is seen and changed only when its subject asset is in scope (list filtered in SQL; by id 404; per-lead `not_found` in bulk results) |

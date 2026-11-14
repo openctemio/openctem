@@ -108,3 +108,39 @@ func TestSuggestGrant_AIWorkerOnlyForAnalysisUsage(t *testing.T) {
 		t.Fatal("a sensor that only ran health checks was suggested the AI worker profile")
 	}
 }
+
+// Only an explicit AI worker grant takes an analysis job: a sensor on the
+// legacy-broad grant (no job type list) that advertises analyze.<kind> is
+// refused, at every trust level, and so is a grant edited to list no job
+// type.
+func TestAnalyze_OnlyAnExplicitAIWorkerGrant(t *testing.T) {
+	an := analyzePayload(t)
+	legacy := *LegacyBroadGrant(shared.NewID(), shared.NewID())
+	for _, g := range []Grant{legacy, func() Grant { g := legacy; g.TrustLevel = TrustNew; return g }()} {
+		if g.ServesAnalysis() {
+			t.Fatal("legacy-broad serves analysis jobs")
+		}
+		if r := g.Admit("analyze", an, nil); r == nil || r.Dimension != DimJobTypes {
+			t.Fatalf("legacy-broad (trust %s) admitted an analysis job: %v", g.TrustLevel, r)
+		}
+	}
+	// It still takes the work it always took.
+	if r := legacy.Admit("collect", payload(t, map[string]any{"collector": "inventory"}), nil); r != nil {
+		t.Fatalf("legacy-broad refused a collect: %v", r)
+	}
+	custom := mustProfile(t, ProfileInternalScanner)
+	custom.Profile, custom.JobTypes = ProfileCustom, nil
+	if custom.ServesAnalysis() || custom.Admit("analyze", an, nil) == nil {
+		t.Fatal("a custom grant without a job type list admitted an analysis job")
+	}
+	// The ai-worker profile narrowed by an administrator (custom, still
+	// analyze only) keeps taking analysis jobs.
+	narrowed := mustProfile(t, ProfileAIWorker)
+	narrowed.Profile, narrowed.Capabilities = ProfileCustom, []string{"analyze.triage.v1"}
+	if err := narrowed.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if !narrowed.ServesAnalysis() || narrowed.Admit("analyze", an, nil) != nil {
+		t.Fatal("a narrowed AI worker grant refused its analysis job")
+	}
+}

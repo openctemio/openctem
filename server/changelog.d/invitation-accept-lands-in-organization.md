@@ -1,0 +1,6 @@
+### Fixed: accepting an invitation opens the organization just joined
+
+- Accepting an invitation added the membership but left the session on the previous organization, or on none: an account with its own organization landed back in it, and an account without one was sent to its account space ("not in an organization yet"). Opening the link again showed "Invitation already accepted" with only "Go to sign in". Accept now makes the joined organization the active one (the API checks the membership) and loads its home, where "You joined <organization>." is shown; an organization that requires two-factor authentication walks through it first.
+- An accepted invitation offers "Open <organization>" to a signed-in person; accepting in a second tab shows the invitation as accepted with the same button instead of an error.
+- Every page that changes the session (sign-in, selecting, creating, leaving or deleting an organization, joining from the account space, two-factor set-up) now leaves through one helper: a full page load to a same-origin path, with its message shown on the page that loads instead of being lost with the old one.
+- Docs: web/.claude/auth.md ("Full Page Reload After Auth Changes"); the public docs site needs no change (no step the person takes changes)
