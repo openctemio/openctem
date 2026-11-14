@@ -176,11 +176,12 @@ test.describe('on a phone', () => {
             break
           }
         }
-        // The inventory opens the sheet from a table row; the panel is then
-        // checked at phone width.
-        await page.setViewportSize({ width: 390, height: 844 })
+        // The inventory opens the sheet from a table row. On a phone the
+        // Relations tab sits under the tab strip's "More" menu, so it is
+        // chosen first; the graph then opens (and fits) at phone width.
         const sheet = page.getByRole('dialog')
         await sheet.getByRole('tab', { name: /Relations/ }).click()
+        await page.setViewportSize({ width: 390, height: 844 })
         await sheet.getByRole('button', { name: 'Graph' }).click()
         const canvas = sheet.getByRole('application', { name: 'Related assets graph' })
         await expect(canvas.getByText(name, { exact: true })).toBeVisible({ timeout: 30_000 })
