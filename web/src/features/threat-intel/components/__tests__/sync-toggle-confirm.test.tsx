@@ -46,3 +46,27 @@ describe('feed sync switch', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 })
+
+describe('a feed the console has no entry for', () => {
+  // Owner report 2026-11-14: the API listed a third feed ("vulnfeed") and the
+  // Sync status tab threw "reading 'icon'" into the route's error boundary.
+  const feed = (source: string) =>
+    ({
+      ...status(true),
+      source,
+      last_sync_status: 'failed',
+      last_error: 'bundle expired',
+    }) as unknown as SyncStatus
+
+  it('shows a known extra feed under its own name', () => {
+    render(<SyncStatusManager statuses={[status(true), feed('vulnfeed')]} />)
+    expect(screen.getByText('Vulnerability feed')).toBeInTheDocument()
+    expect(screen.getByText('CISA KEV')).toBeInTheDocument()
+  })
+
+  it('shows an unknown feed under its id with a generic description, without throwing', () => {
+    render(<SyncStatusManager statuses={[feed('future-feed')]} />)
+    expect(screen.getByText('future-feed')).toBeInTheDocument()
+    expect(screen.getByText('Threat intelligence feed')).toBeInTheDocument()
+  })
+})
