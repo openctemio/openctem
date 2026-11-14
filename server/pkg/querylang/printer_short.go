@@ -305,7 +305,13 @@ func isNodeDoc(m map[string]any) bool {
 // rawNode converts a checked document node, keeping values as written.
 func rawNode(ent *Entity, m map[string]any) Expr {
 	if x, ok := m[docNot].(map[string]any); ok {
-		return &Not{X: rawNode(ent, x)}
+		inner := rawNode(ent, x)
+		if c, ok := inner.(*Compare); ok && c.Op == OpEq && !c.Implicit && enumSet(ent, c.Path.Name) {
+			// not (state = closed) is the single condition state!=closed.
+			c.Op = OpNe
+			return c
+		}
+		return &Not{X: inner}
 	}
 	kind, kids := And, m[docAll]
 	if a, ok := m[docAny]; ok {
@@ -342,4 +348,11 @@ func rawNode(ent *Entity, m map[string]any) Expr {
 		}
 	}
 	return fromLeaf(ent, &filterspec.Leaf{Field: field, Op: filterspec.Op(op), Values: vals})
+}
+
+// enumSet reports whether the path is a named-set field (EnumTemplates:
+// the state lens), which has no "not equal" of its own in a document.
+func enumSet(ent *Entity, path string) bool {
+	f, ok := ent.Registry.Field(ent.fieldName(ent.Canonical(path)))
+	return ok && f.EnumTemplates != nil
 }
