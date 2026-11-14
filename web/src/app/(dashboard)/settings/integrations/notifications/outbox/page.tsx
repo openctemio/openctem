@@ -482,7 +482,7 @@ export default function NotificationOutboxPage() {
                       }}
                     >
                       <SelectTrigger
-                        className="h-9 w-[160px]"
+                        className="w-[160px]"
                         aria-label={t(
                           'notificationChannels.outbox.filterByStatus',
                           'Filter by status'

@@ -776,7 +776,7 @@ export default function AssetGroupsPage() {
           <BulkActionBar count={selectedIds.length} onClear={clearSelection} noun="selected">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8">
+                <Button variant="ghost" size="sm">
                   <Tags className="me-2 h-4 w-4" />
                   {t('assetGroups.bulk.criticality', 'Criticality')}
                 </Button>
@@ -800,7 +800,7 @@ export default function AssetGroupsPage() {
             </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8">
+                <Button variant="ghost" size="sm">
                   <SlidersHorizontal className="me-2 h-4 w-4" />
                   {t('assetGroups.bulk.environment', 'Environment')}
                 </Button>
@@ -824,12 +824,7 @@ export default function AssetGroupsPage() {
             </DropdownMenu>
             <Can permission={Permission.AssetGroupsDelete}>
               <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-border" />
-              <Button
-                variant="destructive"
-                size="sm"
-                className="h-8"
-                onClick={() => setBulkDeleteConfirm(true)}
-              >
+              <Button variant="destructive" size="sm" onClick={() => setBulkDeleteConfirm(true)}>
                 <Trash2 className="me-2 h-4 w-4" />
                 {t('assetGroups.action.delete', 'Delete')}
               </Button>

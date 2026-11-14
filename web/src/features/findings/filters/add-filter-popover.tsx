@@ -289,7 +289,7 @@ function FieldEditor({ field, labels, onBack, onApply }: FieldEditorProps) {
             setText('')
           }}
         >
-          <SelectTrigger id="filter-op" className="h-8">
+          <SelectTrigger id="filter-op">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -382,7 +382,6 @@ function FieldEditor({ field, labels, onBack, onApply }: FieldEditorProps) {
           <Input
             id="filter-date"
             type="date"
-            className="h-8"
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
@@ -428,7 +427,6 @@ function FieldEditor({ field, labels, onBack, onApply }: FieldEditorProps) {
           </Label>
           <Input
             id="filter-value"
-            className="h-8"
             inputMode={numeric ? 'decimal' : undefined}
             maxLength={200}
             value={text}

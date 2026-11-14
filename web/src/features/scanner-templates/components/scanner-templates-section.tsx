@@ -407,7 +407,7 @@ export function ScannerTemplatesSection() {
   const toolbarStart = (
     <>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
-        <SelectTrigger className="h-9 w-[140px]" aria-label="Template type">
+        <SelectTrigger className="w-[140px]" aria-label="Template type">
           <SelectValue placeholder="All types" />
         </SelectTrigger>
         <SelectContent>
@@ -420,7 +420,7 @@ export function ScannerTemplatesSection() {
         </SelectContent>
       </Select>
       <Select value={statusFilter} onValueChange={setStatusFilter}>
-        <SelectTrigger className="h-9 w-[150px]" aria-label="Status">
+        <SelectTrigger className="w-[150px]" aria-label="Status">
           <SelectValue placeholder="All statuses" />
         </SelectTrigger>
         <SelectContent>

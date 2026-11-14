@@ -300,7 +300,7 @@ export function EASMNetworkSeedsPanel() {
             void add(kind, value)
           }}
         >
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             <Label htmlFor="network-seed-kind">{t('networkSeeds.kind', 'Kind')}</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as SeedKind)}>
               <SelectTrigger id="network-seed-kind" className="w-44">

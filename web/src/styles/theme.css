@@ -212,6 +212,7 @@
   --control-h-touch: 2.25rem;
   --control-h-touch-sm: 2rem;
   --control-h-touch-lg: 2.5rem;
+  --control-h-touch-seg: 1.875rem;
   --touch-target: 2.75rem;
   /* Text fields and selects share the row's height (freeze item 1, decided
      2026-11-13): 32 in the app, 36 on entry pages and below 768px. */
@@ -219,6 +220,10 @@
   /* The small sizes (Button sm and icon-sm, SelectTrigger sm): 28 only in a
      dense place (data-control-density="dense"), 32 anywhere else. */
   --control-h-dense: var(--control-h);
+  /* Below 768px the same rule: the small sizes are 32 only in a dense place,
+     36 (the default) anywhere else, so a small button never sits 4px short
+     beside a default one. */
+  --control-h-touch-dense: var(--control-h-touch);
 
   /* Row density: 40 default, 32 compact, 52 comfortable, chosen by
      data-density on any ancestor. Class: h-row. */
@@ -472,6 +477,7 @@
 /* A dense place (components/ui/density.tsx): table rows, the bulk bar. */
 [data-control-density='dense'] {
   --control-h-dense: var(--control-h-sm);
+  --control-h-touch-dense: var(--control-h-touch-sm);
 }
 
 /* Entry pages without the app sidebar (sign-in, onboarding, invitations):
@@ -615,9 +621,11 @@
   --spacing-control-touch: var(--control-h-touch);
   --spacing-control-touch-sm: var(--control-h-touch-sm);
   --spacing-control-touch-lg: var(--control-h-touch-lg);
+  --spacing-control-touch-seg: var(--control-h-touch-seg);
   --spacing-touch-target: var(--touch-target);
   --spacing-control-field: var(--control-h-field);
   --spacing-control-dense: var(--control-h-dense);
+  --spacing-control-touch-dense: var(--control-h-touch-dense);
   --spacing-row: var(--row-h);
 
   --color-sel: var(--sel);

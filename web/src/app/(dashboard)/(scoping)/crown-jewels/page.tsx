@@ -628,7 +628,7 @@ export default function CrownJewelsPage() {
                 <>
                   <Select value={filterExposure} onValueChange={setFilterExposure}>
                     <SelectTrigger
-                      className="h-9 w-auto min-w-36"
+                      className="w-auto min-w-36"
                       aria-label={t('crownJewels.filter.exposure.aria', 'Filter by exposure')}
                     >
                       <SelectValue />
@@ -648,7 +648,7 @@ export default function CrownJewelsPage() {
                   {assetTypes.length > 1 && (
                     <Select value={filterType} onValueChange={setFilterType}>
                       <SelectTrigger
-                        className="h-9 w-auto min-w-32"
+                        className="w-auto min-w-32"
                         aria-label={t('crownJewels.filter.type.aria', 'Filter by asset type')}
                       >
                         <SelectValue />

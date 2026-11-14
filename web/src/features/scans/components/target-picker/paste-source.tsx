@@ -97,11 +97,11 @@ function InvalidRow({
             }
           }}
           aria-label={t('scans.paste.edit', undefined, { name: entry.input })}
-          className="h-9 min-w-0 flex-1 font-mono text-sm"
+          className="min-w-0 flex-1 font-mono text-sm"
           autoCapitalize="none"
           spellCheck={false}
         />
-        <Button type="submit" size="sm" className="h-9">
+        <Button type="submit" size="sm">
           {t('scans.paste.save')}
         </Button>
       </form>
@@ -220,7 +220,7 @@ export function PasteSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-9 px-2 text-xs max-sm:min-h-11"
+              className="px-2 text-xs max-sm:min-h-11"
               onClick={() => onChange([...parsed.targets, ...parsed.invalid.map((i) => i.input)])}
             >
               <Sparkles className="me-1 h-3 w-3" aria-hidden />
@@ -231,7 +231,7 @@ export function PasteSource({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 max-sm:min-h-11"
+            className="max-sm:min-h-11"
             onClick={() => fileRef.current?.click()}
             aria-describedby={fileHintId}
           >
@@ -312,7 +312,7 @@ export function PasteSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-xs max-sm:min-h-11"
+              className="px-2 text-xs max-sm:min-h-11"
               onClick={() =>
                 onChange(
                   withoutTargets(

@@ -498,7 +498,7 @@ export default function CredentialsPage() {
   const statusSelect = (
     <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
       <SelectTrigger
-        className="h-9 w-auto min-w-36"
+        className="w-auto min-w-36"
         aria-label={t('credentials.filter.status', 'Filter by status')}
       >
         <SelectValue />
@@ -515,7 +515,7 @@ export default function CredentialsPage() {
   const sourceSelect = (
     <Select value={sourceFilter} onValueChange={setSourceFilter}>
       <SelectTrigger
-        className="h-9 w-auto min-w-36"
+        className="w-auto min-w-36"
         aria-label={t('credentials.filter.source', 'Filter by source')}
       >
         <SelectValue />
@@ -536,7 +536,7 @@ export default function CredentialsPage() {
       onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}
     >
       <SelectTrigger
-        className="h-9 w-auto gap-2 sm:min-w-36"
+        className="w-auto gap-2 sm:min-w-36"
         aria-label={t('credentials.group.aria', 'Group credential leaks')}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />

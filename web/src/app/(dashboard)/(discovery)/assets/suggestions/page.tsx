@@ -435,7 +435,6 @@ export default function RelationshipSuggestionsPage() {
           <Button
             variant="ghost"
             size="sm"
-            className="h-8"
             disabled={isBatchApproving}
             onClick={() => setConfirmSelected(true)}
           >

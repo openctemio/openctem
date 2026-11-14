@@ -62,7 +62,7 @@ export function SCMConnectionsSection({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <div className="flex items-center justify-between mb-3">
           <CollapsibleTrigger asChild>
-            <Button variant="ghost" className="gap-2 -ms-2 h-8">
+            <Button variant="ghost" className="gap-2 -ms-2">
               <ChevronRight
                 className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
               />

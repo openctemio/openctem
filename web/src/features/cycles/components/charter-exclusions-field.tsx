@@ -116,7 +116,7 @@ export function CharterExclusionsField({
                 {picked && (
                   <Input
                     aria-label={`Reason for excluding ${pattern}`}
-                    className="ms-6 h-8 w-[calc(100%-1.5rem)]"
+                    className="ms-6 w-[calc(100%-1.5rem)]"
                     placeholder="Why it is out of scope"
                     value={picked.reason}
                     onChange={(e) => setReason(pattern, e.target.value)}

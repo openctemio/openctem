@@ -196,9 +196,7 @@ export function AssigneeSelect({
           variant={variant}
           size={size}
           className={
-            field
-              ? 'h-9 w-full justify-start gap-2 font-normal'
-              : `${size === 'sm' ? 'h-7 px-1.5 gap-1 text-xs' : 'h-9 sm:h-8 gap-2'} min-h-[32px]`
+            field ? 'w-full justify-start gap-2 font-normal' : size === 'sm' ? 'gap-1' : 'gap-2'
           }
           disabled={disabled || loading}
         >
