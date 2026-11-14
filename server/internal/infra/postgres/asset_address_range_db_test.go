@@ -181,8 +181,9 @@ func TestAddressRange_NameOrRecordedAddress_DB(t *testing.T) {
 	}
 }
 
-// An index serves the range on a tenant with many assets: no sequential
-// scan of assets, findings or the address table. The plan is logged.
+// An index serves the range on a tenant with many assets: with sequential
+// scans disabled the plan still reads the address range index and never
+// needs a sequential scan. The plan is logged.
 func TestAddressRange_ExplainUsesIndex_DB(t *testing.T) {
 	db := openSensorDB(t)
 	owner := testdb.OpenMigrator(t)
@@ -226,8 +227,22 @@ func TestAddressRange_ExplainUsesIndex_DB(t *testing.T) {
 		//nolint:gosec // G202: compiled from registry constants
 		"findings asset_ip": {"EXPLAIN (FORMAT JSON) SELECT findings.id FROM findings WHERE findings.tenant_id = '" + mine.String() + "' AND " + fw.SQL, fw.Args},
 	} {
+		// Planner choice depends on statistics other tests in the same
+		// database can change. Turn off the sequential scan for this
+		// transaction only, so the plan proves an index path exists and is
+		// usable, not that the planner prefers it on a given dataset.
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+			_ = tx.Rollback()
+			t.Fatal(err)
+		}
 		var raw []byte
-		if err := db.QueryRowContext(ctx, q.sql, q.args...).Scan(&raw); err != nil {
+		err = tx.QueryRowContext(ctx, q.sql, q.args...).Scan(&raw)
+		_ = tx.Rollback()
+		if err != nil {
 			t.Fatalf("%s: explain: %v", name, err)
 		}
 		plan := planText(t, raw)
