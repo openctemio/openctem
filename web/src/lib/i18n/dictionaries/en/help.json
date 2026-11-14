@@ -36,6 +36,11 @@
   "help.shortcut.add-filter": "Add a filter (findings and assets lists)",
   "help.shortcut.clear-selection": "Clear the selected rows",
   "help.shortcut.command-palette": "Search pages and settings",
+  "help.shortcut.create-asset": "Add asset",
+  "help.shortcut.create-finding": "New finding",
+  "help.shortcut.create-import": "Import results",
+  "help.shortcut.create-scan": "New scan",
+  "help.shortcut.create-task": "Remediation task",
   "help.shortcut.focus-search": "Search the list",
   "help.shortcut.next-finding": "Open the next finding in the list",
   "help.shortcut.open-activity": "Open activity and write a comment",
@@ -45,9 +50,11 @@
   "help.shortcut.switch-organization": "Switch to organization 1-9",
   "help.shortcut.toggle-sidebar": "Show or hide the sidebar",
   "help.shortcut.triage": "Open the findings to triage",
+  "help.shortcutGroup.create": "Create",
   "help.shortcutGroup.findings": "Finding details",
   "help.shortcutGroup.general": "General",
   "help.shortcutGroup.lists": "Lists",
+  "help.shortcutThen": "then",
   "help.shortcuts": "Keyboard shortcuts",
   "help.shortcuts.description": "Work faster without leaving the keyboard."
 }

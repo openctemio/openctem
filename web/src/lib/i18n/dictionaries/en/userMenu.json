@@ -1,5 +1,7 @@
 {
   "userMenu.allSettings": "All settings",
+  "userMenu.fallbackName": "User",
   "userMenu.open": "Open user menu",
+  "userMenu.openFor": "Open user menu for {name}",
   "userMenu.signOut": "Sign out"
 }

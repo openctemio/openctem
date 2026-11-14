@@ -61,7 +61,7 @@ describe('type roles', () => {
     code: [12, 20, 400],
     dense: [13, 20, 400],
     body: [14, 20, 400],
-    card: [14, 20, 600],
+    'card-title': [14, 20, 600],
     section: [16, 24, 600],
     dialog: [20, 28, 600],
     page: [24, 32, 600],
@@ -96,6 +96,21 @@ describe('type roles', () => {
       .map(([, v]) => Number(v))
     expect(weights.every((w) => w === 500 || w === 600)).toBe(true)
     expect(css).not.toMatch(/font-weight:\s*(700|bold)/)
+  })
+
+  it('a type role never shares its name with a colour (text-<name> would set both)', () => {
+    // text-card once meant 14/20 600 AND the white card colour: a "title" in
+    // white on white. Tailwind reads text-<name> as every theme key it matches.
+    const colours = new Set(
+      Object.keys(theme)
+        .filter((k) => k.startsWith('--color-'))
+        .map((k) => k.slice('--color-'.length))
+    )
+    const roles = Object.keys(theme)
+      .filter((k) => /^--text-[a-z0-9-]+$/.test(k))
+      .map((k) => k.slice('--text-'.length))
+    expect(roles.length).toBeGreaterThan(10)
+    expect(roles.filter((r) => colours.has(r))).toEqual([])
   })
 
   it('nothing under 12px', () => {

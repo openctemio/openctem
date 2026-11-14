@@ -126,6 +126,7 @@ import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, usePermissions, useCanMutate } from '@/lib/permissions'
+import { useOpenForm } from '@/hooks/use-open-form'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 import { MemberBadges } from '@/features/organization/components/member-badges'
 import { MemberAccessDialog } from '@/features/organization/components/member-access-dialog'
@@ -757,6 +758,10 @@ export default function UsersPage() {
   // UI State
   const [selectedMember, setSelectedMember] = useState<MemberWithUser | null>(null)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
+  // "Invite people" from the Create menu: the same gate as the Invite button.
+  const canInvite = useCanMutate('POST /api/v1/tenants/{tenant}/invitations')
+  const openInviteForm = useCallback(() => setInviteDialogOpen(true), [setInviteDialogOpen])
+  useOpenForm('invite', canInvite, openInviteForm)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [setupLinkTarget, setSetupLinkTarget] = useState<SetupLinkTarget | null>(null)
   const [editRolesMember, setEditRolesMember] = useState<MemberWithUser | null>(null)

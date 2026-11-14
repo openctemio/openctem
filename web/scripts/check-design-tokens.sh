@@ -25,7 +25,7 @@
 #   5. The type ratchet: in a directory listed in scripts/type-migrated.txt, a
 #      raw Tailwind text size (text-xs, text-sm, text-base, text-lg, text-xl,
 #      text-2xl ...). Use the type roles: text-cap, text-cap-m, text-code,
-#      text-dense, text-body, text-card, text-section, text-dialog, text-page,
+#      text-dense, text-body, text-card-title, text-section, text-dialog, text-page,
 #      text-figure. The list only grows, one directory per migrated page.
 #
 # Literal screen text is guarded separately, file by file, by
@@ -82,7 +82,7 @@ hits="$(printf '%s\n' "$added" \
 
 hits="$(printf '%s\n' "$added" | grep -E '\b(rounded(-[a-z]+)?|shadow|leading|font|tracking)-\[' || true)"
 [[ -n "$hits" ]] && report "An arbitrary radius, shadow, line height, weight or tracking:" "$hits" \
-  "Radius by role: rounded-sm 4, rounded-md 6 (controls, chips), rounded-lg 8 (cards, menus), rounded-dialog. One overlay shadow: shadow-overlay. Line height and weight come with the type role (text-dense, text-body, text-card, ...)."
+  "Radius by role: rounded-sm 4, rounded-md 6 (controls, chips), rounded-lg 8 (cards, menus), rounded-dialog. One overlay shadow: shadow-overlay. Line height and weight come with the type role (text-dense, text-body, text-card-title, ...)."
 
 hits="$(printf '%s\n' "$added" | grep -E '\bfont-(bold|extrabold|black)\b' || true)"
 [[ -n "$hits" ]] && report "Weight 700 or more:" "$hits" \
@@ -101,7 +101,7 @@ if [[ -f "$migrated" ]]; then
     hits="$(printf '%s\n' "$added" | grep -E "^(${dirs//./\\.})" \
       | grep -E "(^|[\"'\` {:])text-(xs|sm|base|lg|[2-9]?xl)\b" || true)"
     [[ -n "$hits" ]] && report "A raw text size in a migrated directory (scripts/type-migrated.txt):" "$hits" \
-      "Use the type roles: text-cap / text-cap-m 12, text-code 12 mono, text-dense 13, text-body 14, text-card 14 600, text-section 16, text-dialog 20, text-page 24, text-figure 24."
+      "Use the type roles: text-cap / text-cap-m 12, text-code 12 mono, text-dense 13, text-body 14, text-card-title 14 600, text-section 16, text-dialog 20, text-page 24, text-figure 24."
   fi
 fi
 

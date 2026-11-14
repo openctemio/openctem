@@ -99,7 +99,7 @@ hits="$(printf '%s\n' "$added" | grep -Ev "^(web/)?src/${OWNERS}" \
 
 hits="$(printf '%s\n' "$added" | grep -E '\btext-\[[0-9.]+(px|rem|em)\]' || true)"
 [[ -n "$hits" ]] && report "Arbitrary text size:" "$hits" \
-  "Use the type roles: text-cap 12, text-dense 13, text-body 14, text-card 14 600, text-section 16, text-dialog 20, text-page 24, text-figure 24 (src/styles/theme.css). Nothing under 12px."
+  "Use the type roles: text-cap 12, text-dense 13, text-body 14, text-card-title 14 600, text-section 16, text-dialog 20, text-page 24, text-figure 24 (src/styles/theme.css). Nothing under 12px."
 
 # Unprefixed size utilities only: a space, quote, backtick or brace before them.
 hits="$(printf '%s\n' "$added" | while IFS= read -r line; do
