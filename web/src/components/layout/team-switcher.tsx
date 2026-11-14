@@ -254,7 +254,7 @@ export function TeamSwitcher() {
                 />
               )}
 
-              <span className="min-w-0 flex-1 truncate text-start text-sm font-semibold group-data-[collapsible=icon]:hidden">
+              <span className="min-w-0 flex-1 truncate text-start text-body font-semibold group-data-[collapsible=icon]:hidden">
                 {currentName}
               </span>
               {hasActions && (

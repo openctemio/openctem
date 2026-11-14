@@ -299,7 +299,7 @@
   --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-accent: var(--accent);
   --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
+  --sidebar-border: var(--border-subtle); /* the sidebar edge, its dividers and the indent guide */
   --sidebar-ring: var(--ring);
 }
 

@@ -21,7 +21,7 @@ import {
 import { useNavPins, type NavPin } from '@/features/nav-pins/api/use-nav-pins'
 import { PinAction } from '@/features/nav-pins/components/pin-action'
 import type { NavGroup, NavItem } from '../types'
-import { NavClusterLabel } from './nav-group'
+import { NAV_BUTTON_CLASS, NavClusterLabel } from './nav-group'
 import { NavCount } from './nav-count'
 import { SidebarLink } from './sidebar-link'
 
@@ -113,6 +113,7 @@ export function NavPinned({ groups }: { groups: NavGroup[] }) {
                   isActive={filled}
                   data-current={active && !filled ? true : undefined}
                   tooltip={r.label}
+                  className={NAV_BUTTON_CLASS}
                 >
                   <SidebarLink
                     href={r.href}
@@ -134,7 +135,6 @@ export function NavPinned({ groups }: { groups: NavGroup[] }) {
           })}
         </SidebarMenu>
       </SidebarGroup>
-      <NavClusterLabel />
     </>
   )
 }
