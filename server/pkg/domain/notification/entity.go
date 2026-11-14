@@ -179,7 +179,7 @@ func NewNotification(params NotificationParams) *Notification {
 		resourceID:       params.ResourceID,
 		url:              params.URL,
 		actorID:          params.ActorID,
-		createdAt:        time.Now(),
+		createdAt:        time.Now().UTC(), // the server's emission time; the store clamps it to the database clock
 		reason:           params.Reason,
 		count:            1,
 		coalesce:         params.Coalesce && params.Audience == AudienceUser,
