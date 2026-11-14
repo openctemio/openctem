@@ -49,14 +49,35 @@ func (c *VulnFeedImportController) ReconcileTimeout() time.Duration { return Fee
 // Exclusive: one replica imports.
 func (c *VulnFeedImportController) Exclusive() bool { return true }
 
-// Reconcile imports and checks staleness.
+// FeedFailingWarnAfter is how long a feed may go without a successful import
+// before every run warns, whatever the reason: bundles are hourly, so six
+// hours is several missed ones.
+const FeedFailingWarnAfter = 6 * time.Hour
+
+// feedNeedsWarning decides whether the corpus deserves the "stale" warning.
+// It looks at the last SUCCESSFUL import, not at whether this run was clean:
+// a run that errors must still warn (it once did not, and a feed sat three
+// days on an expired pointer). stale is the importer's verdict on the age of
+// the newest bundle; lastSuccess is the zero time when none ever worked.
+func feedNeedsWarning(stale bool, lastSuccess, now time.Time) bool {
+	if stale {
+		return true
+	}
+	return !lastSuccess.IsZero() && now.Sub(lastSuccess) > FeedFailingWarnAfter
+}
+
+// Reconcile imports and checks staleness. A failed import is returned, so
+// the controller's error counter sees it.
 func (c *VulnFeedImportController) Reconcile(ctx context.Context) (int, error) {
 	res, err := c.importer.Run(ctx)
 	if err != nil {
 		c.logger.Warn("vulnerability bundle not imported", "error", err)
 	}
-	if stale, serr := c.importer.CheckStale(ctx); serr == nil && stale && err == nil && !res.Ran {
-		c.logger.Warn("vulnerability corpus is stale: no new bundle for more than three days")
+	stale, serr := c.importer.CheckStale(ctx)
+	last, lerr := c.importer.LastSuccess(ctx)
+	if serr == nil && lerr == nil && feedNeedsWarning(stale, last, time.Now()) {
+		c.logger.Warn("vulnerability corpus is stale: no successful import recently",
+			"last_success_at", last, "import_failed", err != nil)
 	}
 	// After the import, in the same run: the emitter reads the records the
 	// import wrote (also those of a run that failed half way) by their
@@ -69,5 +90,5 @@ func (c *VulnFeedImportController) Reconcile(ctx context.Context) (int, error) {
 			c.logger.Warn("vulnerability events not pruned", "error", perr)
 		}
 	}
-	return res.CVEs, nil
+	return res.CVEs, err
 }
