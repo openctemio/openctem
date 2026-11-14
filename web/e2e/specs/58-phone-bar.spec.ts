@@ -1,10 +1,12 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
+import { ICON_CONTRAST_FLOOR, iconContrast } from '../helpers/icon-contrast'
 
 /**
  * The phone bar and drawer to the shell package (C2, 0.3, D19), below 768 px:
  *   - bar 48 tall, padding 0 8; toggle | separator 1 x 24 | Search, Approvals,
- *     Notifications, Account: every control 36 x 36, icon 16, 8 apart;
+ *     Notifications, Account: every control 36 x 36, icon 20 (stroke 1.75) in
+ *     the ink colour, contrast >= 4.5:1 in light and dark, 8 apart;
  *   - every control answers touches in a 44 x 44 square around it, and no two
  *     of those squares overlap;
  *   - Create, Full screen and Theme are not in the bar; Theme is in the account
@@ -108,7 +110,7 @@ for (const width of [360, 390, 414, 767]) {
         expect(`${Math.round(c.box.w)}x${Math.round(c.box.h)}`, c.name).toBe('36x36')
         expect(`${Math.round(c.touch.w)}x${Math.round(c.touch.h)}`, c.name).toBe('44x44')
         expect(c.edges, `${c.name}: touches at its 44 square's edges reach it`).toBe(true)
-        if (c.icon !== null) expect(c.icon, c.name).toBe(16)
+        if (c.icon !== null && !/^Open user menu/.test(c.name)) expect(c.icon, c.name).toBe(20)
         expect(c.touch.x, `${c.name} touch area on screen`).toBeGreaterThanOrEqual(0)
         expect(c.touch.x + c.touch.w, `${c.name} touch area on screen`).toBeLessThanOrEqual(width)
       }
@@ -123,6 +125,19 @@ for (const width of [360, 390, 414, 767]) {
             overlap(m.controls[i].touch, m.controls[j].touch),
             `${m.controls[i].name} / ${m.controls[j].name}`
           ).toBe(0)
+      // Icons at rest (no hover): 20 px, contrast >= 4.5:1 on the bar.
+      await page.mouse.move(width / 2, 700)
+      const icons = await iconContrast(
+        page,
+        'header [data-sidebar=trigger], header button[aria-keyshortcuts], header [data-slot=header-actions] button:not([aria-label^="Open user menu"]), header [data-slot=header-actions] a'
+      )
+      expect(icons.length).toBeGreaterThanOrEqual(3)
+      for (const i of icons) {
+        expect(i.size, i.name).toBe(20)
+        expect(i.ratio, `${i.name}: ${i.icon} on ${i.background}`).toBeGreaterThanOrEqual(
+          ICON_CONTRAST_FLOOR
+        )
+      }
     })
   }
 }
@@ -229,6 +244,33 @@ test(
     await expect(drawer).toBeHidden()
   }
 )
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(
+    `phone drawer icons are clearly visible in ${scheme}`,
+    { tag: ['@shell', '@phone'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 800 })
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+      await page.goto('/findings')
+      await page.getByRole('button', { name: 'Open sidebar' }).click()
+      const drawer = page.locator('[data-mobile="true"]')
+      await expect(drawer).toBeVisible()
+      await page.waitForTimeout(400)
+      await page.mouse.move(380, 790)
+      // Close sidebar and every row icon, at rest, against the drawer.
+      const icons = await iconContrast(
+        page,
+        '[data-mobile="true"] [data-sidebar=trigger], [data-mobile="true"] [data-sidebar=menu-button], [data-mobile="true"] [data-sidebar=menu-sub-button]'
+      )
+      expect(icons.length).toBeGreaterThan(5)
+      for (const i of icons)
+        expect(i.ratio, `${i.name}: ${i.icon} on ${i.background}`).toBeGreaterThanOrEqual(
+          ICON_CONTRAST_FLOOR
+        )
+    }
+  )
+}
 
 test('desktop bar is back at 768', { tag: ['@shell'] }, async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 800 })
