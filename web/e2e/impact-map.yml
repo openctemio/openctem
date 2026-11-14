@@ -28,6 +28,7 @@ tags:
   - '@findings'
   - '@my-work'
   - '@pentest'
+  - '@prioritization'
   - '@remediation'
   - '@scans'
   - '@sensors'
@@ -220,6 +221,13 @@ areas:
     - server/internal/app/easm*/**
     - server/internal/infra/http/handler/easm_*
     - server/internal/infra/http/handler/attack_surface_*
+  '@prioritization':
+    - web/src/app/(dashboard)/(prioritization)/**
+    - web/src/features/threat-intel/**
+    - web/src/features/emerging-threats/**
+    - web/src/lib/i18n/dictionaries/en/prioritization.json
+    - web/src/lib/i18n/dictionaries/en/threatIntel.json
+    - web/src/lib/i18n/dictionaries/en/emergingThreats.json
   '@pentest':
     - web/src/features/pentest/**
     - web/src/app/(dashboard)/(validation)/pentest/**
