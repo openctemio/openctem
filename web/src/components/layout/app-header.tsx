@@ -88,9 +88,9 @@ export function Header({
             <Separator orientation="vertical" className="h-6" />
           </>
         )}
-        {/* From lg: at tablet width the sidebar and header actions leave no room for
-            a readable trail, and the page title already says where you are. */}
-        {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 shrink lg:flex" />}
+        {/* From 768px; it folds by width (breadcrumb-fold.ts). A phone shows no
+            trail: the page title says where you are. */}
+        {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 shrink md:flex" />}
         {children}
         {showHeaderActions && <HeaderActions />}
       </div>
