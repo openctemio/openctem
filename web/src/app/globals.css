@@ -6,6 +6,17 @@
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
+  /* Links in rendered prose (markdown previews) follow the inline link rule
+     of TextLink: signal colour, underlined at 45%, 3px under the text. */
+  :is(.prose, .wmde-markdown) a {
+    color: var(--signal-text);
+    text-decoration-line: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+    text-underline-offset: 3px;
+  }
+  :is(.prose, .wmde-markdown) a:is(:hover, :focus-visible) {
+    text-decoration-color: currentColor;
+  }
   * {
     @apply border-border outline-ring/50;
     scrollbar-width: thin;
