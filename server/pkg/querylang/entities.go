@@ -121,7 +121,7 @@ var Findings = MustEntity(EntityDef{
 		"severity", "status", "source", "sla_status", "priority_class", "finding_type", "observation", "validation",
 		"tool_name", "family", fieldCVEID, "rule_id", "is_in_kev", "is_reachable", "network_transport", "network_service",
 		"asset.type", "asset.criticality", "asset.environment", "asset.exposure", "asset.internet_facing", "asset.crown_jewel",
-		"practice", "compliance_result",
+		"practice", "compliance_result", "verification_state",
 	},
 	Measures: []string{"cvss_score", "epss_score"},
 	Times:    []string{"first_detected_at", "last_seen_at", "resolved_at", "created_at"},

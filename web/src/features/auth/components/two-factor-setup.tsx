@@ -3,6 +3,7 @@
 import { useCallback } from 'react'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { getCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
 import { validateRedirectUrl } from '@/lib/redirect'
@@ -32,7 +33,7 @@ export function TwoFactorSetup({ next }: { next?: string }) {
   const target = validateRedirectUrl(next, '/')
 
   const onComplete = useCallback(() => {
-    window.location.href = target
+    navigateAfterSessionChange(target)
   }, [target])
 
   const onSessionExpired = useCallback(() => {

@@ -673,6 +673,8 @@ export const assetEndpoints = {
    * Update asset
    */
   update: (assetId: string) => `${API_BASE.ASSETS}/${assetId}`,
+  /** POST: add and remove tags on many assets (at most 100 per request). */
+  bulkTags: () => `${API_BASE.ASSETS}/bulk/tags`,
 
   /**
    * Delete asset

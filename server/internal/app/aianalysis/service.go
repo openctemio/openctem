@@ -64,8 +64,10 @@ type Service struct {
 	consent  ConsentReader
 	audit    *auditapp.AuditService
 	modules  ModuleGuard
-	now      func() time.Time
-	logger   *logger.Logger
+	// jobs cancels the analysis jobs of overdue worker runs (nil: none).
+	jobs   JobCanceler
+	now    func() time.Time
+	logger *logger.Logger
 }
 
 // ModuleGuard reports the modules a tenant has off (*module.ModuleService).

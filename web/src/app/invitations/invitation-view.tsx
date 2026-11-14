@@ -22,6 +22,8 @@ import { registerHref } from '@/features/auth/lib/self-register'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
+import { selectTenantAction } from '@/features/auth/actions/local-auth-actions'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   InvitationGrantsNotice,
@@ -103,6 +105,10 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   // The invitation is accepted but the organization needs a second factor:
   // the page walks the person through it instead of showing an error.
   const [joinedNeedsMfa, setJoinedNeedsMfa] = useState(false)
+  // Accepted here, but the organization could not be opened yet: the page
+  // shows the accepted card with "Open <organization>".
+  const [joined, setJoined] = useState(false)
+  const [openError, setOpenError] = useState<string | null>(null)
 
   // The token never goes back into a URL: sign-in and sign-up return to the
   // bare invitation page, which finds the token kept for this tab.
@@ -144,12 +150,73 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Accepting sets fresh auth/tenant cookies: navigate client-side, then refresh
-  // so server components and the session are re-read with them.
-  function navigateWithFreshSession(path: string) {
+  // Lands in the organization: a full page load, so every part of the
+  // console reads the session the selection just set (a client-side push
+  // kept the previous organization, or none).
+  function landInOrganization(name: string) {
     clearInvitationToken()
-    router.push(path)
-    router.refresh()
+    navigateAfterSessionChange('/', {
+      replace: true,
+      flash: { kind: 'success', title: t('org.acceptInvite.joinedOrg', undefined, { org: name }) },
+    })
+  }
+
+  /**
+   * Makes the invited organization the session's active one. Accepting only
+   * adds the membership: the session still names the previous organization
+   * (or none, for an account without one), so `/` would open that instead.
+   * The API checks the membership on the exchange; the id is never trusted
+   * on its own.
+   */
+  async function openInvitedOrganization(data: InvitationData): Promise<void> {
+    const selected = await selectTenantAction(data.tenant.id)
+    if (selected.success) {
+      landInOrganization(data.tenant.name)
+      return
+    }
+    if (selected.code === 'MFA_ENROLLMENT_REQUIRED') {
+      // Joined; the organization requires two-factor authentication.
+      setJoinedNeedsMfa(true)
+      return
+    }
+    if (selected.code === 'SESSION_EXPIRED') {
+      // The membership exists: signing in again opens it.
+      navigateAfterSessionChange('/login', { replace: true })
+      return
+    }
+    setJoined(true)
+    setOpenError(t('org.acceptInvite.openFailed', undefined, { org: data.tenant.name }))
+  }
+
+  function handleOpenOrganization() {
+    if (!invitation) return
+    setOpenError(null)
+    startTransition(async () => {
+      try {
+        await openInvitedOrganization(invitation)
+      } catch {
+        setOpenError(t('org.acceptInvite.openFailed', undefined, { org: invitation.tenant.name }))
+      }
+    })
+  }
+
+  /**
+   * A refused accept. When the invitation was accepted meanwhile (in another
+   * tab, or by an earlier click), the page shows it as accepted with
+   * "Open <organization>" instead of an error.
+   */
+  async function acceptRefused(response: Response, tok: string) {
+    const message = await errorMessage(response, t('org.acceptInvite.acceptFailed'), t)
+    const fresh = await postToken(endpoints.invitations.lookup(), tok)
+      .then((r) => (r.ok ? (r.json() as Promise<InvitationData>) : null))
+      .catch(() => null)
+    if (fresh && !fresh.invitation.pending) {
+      clearInvitationToken()
+      setInvitation(fresh)
+      return
+    }
+    setAcceptError(message)
+    toast.error(message)
   }
 
   // Accept invitation - tries access token first, then refresh token
@@ -162,8 +229,8 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
         const response = await postToken(endpoints.invitations.accept(), token)
 
         if (response.ok) {
-          toast.success(t('org.acceptInvite.joined'))
-          navigateWithFreshSession('/')
+          clearInvitationToken()
+          if (invitation) await openInvitedOrganization(invitation)
           return
         }
 
@@ -172,8 +239,8 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           const refreshResponse = await postToken(endpoints.invitations.acceptWithRefresh(), token)
 
           if (refreshResponse.ok) {
-            toast.success(t('org.acceptInvite.joined'))
-            navigateWithFreshSession('/')
+            clearInvitationToken()
+            if (invitation) await openInvitedOrganization(invitation)
             return
           }
 
@@ -190,19 +257,11 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
             return
           }
 
-          const errorMsg = await errorMessage(
-            refreshResponse,
-            t('org.acceptInvite.acceptFailed'),
-            t
-          )
-          setAcceptError(errorMsg)
-          toast.error(errorMsg)
+          await acceptRefused(refreshResponse, token)
           return
         }
 
-        const errorMsg = await errorMessage(response, t('org.acceptInvite.acceptFailed'), t)
-        setAcceptError(errorMsg)
-        toast.error(errorMsg)
+        await acceptRefused(response, token)
       } catch {
         const message = t('org.acceptInvite.acceptFailed')
         setAcceptError(message)
@@ -335,7 +394,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           <CardContent>
             <MfaSessionStep
               tenantId={invitation.tenant.id}
-              onComplete={() => navigateWithFreshSession('/')}
+              onComplete={() => landInOrganization(invitation.tenant.name)}
               onSessionExpired={() => router.push(invitationLoginHref)}
               onReauthRequired={() =>
                 router.push(
@@ -349,9 +408,12 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
     )
   }
 
-  // Invitation expired or already accepted
-  if (invitation && !invitation.invitation.pending) {
-    const isExpired = new Date(invitation.invitation.expires_at) < new Date()
+  // Invitation expired or already accepted (here, or earlier)
+  if (invitation && (joined || !invitation.invitation.pending)) {
+    const isExpired = !joined && new Date(invitation.invitation.expires_at) < new Date()
+    // A signed-in person who accepted can open the organization from here
+    // (the API refuses the selection to anyone who is not a member).
+    const canOpen = hasSession && !isExpired
     const StatusIcon = isExpired ? Clock : Check
 
     return (
@@ -378,11 +440,31 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
               <p className="font-medium">{invitation.tenant.name}</p>
             </div>
 
+            {openError && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>{openError}</AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex flex-col gap-2">
-              <Button className="w-full" onClick={() => router.push('/login')}>
-                <LogIn className="me-2 h-4 w-4" />
-                {t('org.acceptInvite.goToLogin')}
-              </Button>
+              {canOpen ? (
+                <Button className="w-full" onClick={handleOpenOrganization} disabled={isPending}>
+                  {isPending ? (
+                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Building2 className="me-2 h-4 w-4" />
+                  )}
+                  {t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
+                </Button>
+              ) : (
+                !hasSession && (
+                  <Button className="w-full" onClick={() => router.push('/login')}>
+                    <LogIn className="me-2 h-4 w-4" />
+                    {t('org.acceptInvite.goToLogin')}
+                  </Button>
+                )
+              )}
               <Button variant="ghost" className="w-full" onClick={() => router.push('/')}>
                 {t('org.acceptInvite.goHome')}
               </Button>

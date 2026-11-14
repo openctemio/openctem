@@ -102,11 +102,14 @@ type Signals struct {
 	PriorityClass string
 	InKEV         bool
 	Open          bool
+	// Held: the finding is held until it is checked
+	// (docs/architecture/held-findings.md); no ticket is created for it.
+	Held bool
 }
 
 // SignalsOf reads the signals of a finding.
 func SignalsOf(f *vulnerability.Finding) Signals {
-	s := Signals{Severity: string(f.Severity()), InKEV: f.IsInKEV(), Open: f.Status().IsOpen()}
+	s := Signals{Severity: string(f.Severity()), InKEV: f.IsInKEV(), Open: f.Status().IsOpen(), Held: f.IsHeld()}
 	if c := f.PriorityClass(); c != nil {
 		s.PriorityClass = string(*c)
 	}
@@ -126,6 +129,11 @@ func (p Policy) Evaluate(s Signals) Verdict {
 	if !s.Open {
 		return Verdict{Reason: "not_open"}
 	}
+	// A held finding waits (a hold re-checked when the finding changes): it
+	// is ticketed once it is checked, if it passes then.
+	if s.Held {
+		return Verdict{Reason: VerdictHeld}
+	}
 	sev := strings.ToLower(strings.TrimSpace(s.Severity))
 	if slices.Contains(p.AllowedSeverities(), sev) {
 		return Verdict{Pass: true, Reason: "severity"}
@@ -138,6 +146,10 @@ func (p Policy) Evaluate(s Signals) Verdict {
 	}
 	return Verdict{Reason: ReasonBelowThreshold}
 }
+
+// VerdictHeld is the verdict reason of a held finding; its ticket hold is
+// stored as below_threshold with this detail.
+const VerdictHeld = "held"
 
 // Hold reasons (the DB check agrees).
 const (

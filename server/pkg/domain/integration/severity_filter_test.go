@@ -142,6 +142,8 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeSLABreach:            true,
 		EventTypeWorkflowNotification: true,
 		EventTypeNewExposure:          true,
+		// Its severity is the held findings' own (critical).
+		EventTypeFindingHeldCritical: true,
 	}
 
 	for _, info := range AllEventTypes() {

@@ -184,8 +184,15 @@ func TestFindingsExport_SortStrictSlotAndAllowlist(t *testing.T) {
 	if _, ok := row["snippet"]; ok || strings.Contains(body, "EVIDENCE-SNIPPET") || strings.Contains(body, "META-VALUE") {
 		t.Errorf("ndjson row carries evidence or metadata: %s", body)
 	}
-	if _, ok := row["asset_name"]; !ok || len(row) != 42 {
+	if _, ok := row["asset_name"]; !ok || len(row) != 44 {
 		t.Errorf("ndjson keys (%d) = %v", len(row), row)
+	}
+	// The held state travels with every row (an unchecked finding here).
+	if row["verification_state"] != "unchecked" {
+		t.Errorf("ndjson verification_state = %v", row["verification_state"])
+	}
+	if _, ok := row["hold_reasons"]; !ok {
+		t.Errorf("ndjson row has no hold_reasons key: %v", row)
 	}
 
 	// Unknown param: 400 INVALID_FILTER, not a wider export.
