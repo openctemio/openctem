@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { normalizeAssetName } from '@/features/assets/lib/normalize'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { TagInput } from '@/components/ui/tag-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
@@ -79,6 +80,25 @@ const CIA_FIELDS = [
   { name: 'impactAvailability' as const, label: 'Availability Impact' },
 ]
 
+/** The asset's own tags (not a list property, which stays comma-separated text). */
+function isAssetTags(field: FormFieldConfig): boolean {
+  return field.type === 'tags' && field.name === 'tags' && !field.isMetadata
+}
+
+/** The asset's tags, as the form shows them. */
+function initialTagLists(
+  fields: FormFieldConfig[],
+  asset?: Asset | null
+): Record<string, string[]> {
+  const lists: Record<string, string[]> = {}
+  for (const field of fields) {
+    if (!isAssetTags(field)) continue
+    const raw = asset?.tags
+    lists[field.name] = Array.isArray(raw) ? raw.map(String) : []
+  }
+  return lists
+}
+
 function getInitialValues(
   fields: FormFieldConfig[],
   asset?: Asset | null
@@ -91,6 +111,10 @@ function getInitialValues(
         : (asset[field.name as keyof typeof asset] as unknown)
       if (field.type === 'boolean') {
         values[field.name] = raw === true
+      } else if (isAssetTags(field)) {
+        // The asset's tags are edited as chips (initialTagLists): a tag is
+        // never split or cut by a text field.
+        values[field.name] = ''
       } else if (field.type === 'tags' && Array.isArray(raw)) {
         values[field.name] = raw.join(', ')
       } else {
@@ -132,6 +156,9 @@ export function AssetFormDialogShared({
   const [formData, setFormData] = useState<Record<string, string | boolean | number>>(() =>
     getInitialValues(fields, asset)
   )
+  const [tagLists, setTagLists] = useState<Record<string, string[]>>(() =>
+    initialTagLists(fields, asset)
+  )
   const [groupId, setGroupId] = useState(asset?.groupId || '')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [riskReason, setRiskReason] = useState('')
@@ -144,6 +171,7 @@ export function AssetFormDialogShared({
     if (open) {
       setRiskReason('')
       setFormData(getInitialValues(fields, asset))
+      setTagLists(initialTagLists(fields, asset))
       setGroupId(asset?.groupId || '')
       setErrors({})
     }
@@ -170,14 +198,12 @@ export function AssetFormDialogShared({
     return Object.keys(newErrors).length === 0
   }, [fields, formData, t])
 
-  // Tags dedup and length validation
-  const sanitizeTags = useCallback((raw: string): string[] => {
+  // List properties (comma-separated): dedup and length validation
+  const sanitizeList = useCallback((raw: string): string[] => {
     return [
       ...new Set(
         raw
           .split(',')
-          // Backend caps each tag at 50 chars (CreateAssetRequest dive,max=50);
-          // truncate to match so valid-looking input isn't rejected with a 400.
           .map((s) => s.trim().slice(0, 50))
           .filter(Boolean)
       ),
@@ -191,8 +217,10 @@ export function AssetFormDialogShared({
 
     for (const field of fields) {
       const raw = formData[field.name]
-      if (field.type === 'tags' && typeof raw === 'string') {
-        data[field.name] = sanitizeTags(raw)
+      if (isAssetTags(field)) {
+        data[field.name] = tagLists[field.name] ?? []
+      } else if (field.type === 'tags' && typeof raw === 'string') {
+        data[field.name] = sanitizeList(raw)
       } else if (field.type === 'number' && typeof raw === 'string') {
         data[field.name] = raw ? Number(raw) : undefined
       } else {
@@ -308,15 +336,26 @@ export function AssetFormDialogShared({
         )
 
       case 'tags':
+        if (!isAssetTags(field)) {
+          return (
+            <Input
+              id={field.name}
+              value={String(value ?? '')}
+              onChange={(e) => handleChange(field.name, e.target.value)}
+              placeholder={
+                field.placeholder || t('assets.form.csvPlaceholder', 'Comma-separated values')
+              }
+              maxLength={500}
+            />
+          )
+        }
         return (
-          <Input
+          <TagInput
             id={field.name}
-            value={String(value ?? '')}
-            onChange={(e) => handleChange(field.name, e.target.value)}
-            placeholder={
-              field.placeholder || t('assets.form.csvPlaceholder', 'Comma-separated values')
-            }
-            maxLength={500}
+            value={tagLists[field.name] ?? []}
+            onChange={(tags) => setTagLists((prev) => ({ ...prev, [field.name]: tags }))}
+            placeholder={t('assets.form.tagsPlaceholder', 'Type a tag and press Enter')}
+            maxTags={50}
           />
         )
 

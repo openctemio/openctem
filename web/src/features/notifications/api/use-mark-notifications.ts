@@ -7,6 +7,7 @@ import {
   invalidateNotificationsCache,
   markAllNotificationsAsRead,
   markNotificationAsRead,
+  setUnreadCountZero,
 } from './use-notification-api'
 
 /**
@@ -40,6 +41,7 @@ export function useMarkNotifications() {
   const markAllRead = useCallback(async (): Promise<void> => {
     try {
       await markAllNotificationsAsRead()
+      await setUnreadCountZero()
       await invalidateNotificationsCache()
     } catch {
       toast.error(t('notifications.markAllFailed', "Couldn't mark the notifications as read."))

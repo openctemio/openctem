@@ -92,6 +92,10 @@ test(
       const group = canvas.getByTestId('flow-node').filter({ hasText: '9 assets' })
       await expect(group).toBeVisible()
       await group.click()
+      // The card names the group's first members at once, the rest counted.
+      const members = sheet.getByRole('list', { name: 'Assets in this group' })
+      await expect(members.getByRole('button')).toHaveCount(5)
+      await expect(sheet.getByText('and 4 more')).toBeVisible()
       await sheet.getByRole('button', { name: 'Show all' }).click()
       await expect(canvas.getByText(ips[9], { exact: true })).toBeVisible()
       await expect(canvas.getByTestId('flow-node').filter({ hasText: '9 assets' })).toHaveCount(0)
@@ -133,3 +137,98 @@ test(
     }
   }
 )
+
+type Box = { x: number; y: number; width: number; height: number }
+const overlaps = (a: Box, b: Box) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+
+test.describe('on a phone', () => {
+  test(
+    'a group of 22 names its members and the controls cover no node',
+    { tag: ['@assets'] },
+    async ({ page }) => {
+      test.setTimeout(180_000)
+      const stamp = Date.now().toString(36)
+      const name = `nbp-${stamp}.example.com`
+      const octet = (Date.now() % 250) + 1
+      const ips = [...Array(23)].map((_, i) => `198.19.${octet}.${i + 1}`)
+
+      await page.goto('/assets')
+      const nameId = await createAsset(page, name, 'subdomain')
+      const ipIds: string[] = []
+      try {
+        for (const ip of ips) ipIds.push(await createAsset(page, ip, 'ip_address'))
+        const first = await link(page, nameId, ipIds[0], 'resolves_to')
+        test.skip(first === 403 || first === 404, 'relationships module is off')
+        for (const id of ipIds.slice(1)) {
+          const s = await link(page, nameId, id, 'resolves_to')
+          expect(s === 409 || s < 300, `resolves_to: ${s}`).toBe(true)
+        }
+
+        await page.goto(`/assets?q=${encodeURIComponent(ips[0])}`)
+        const row = page.getByRole('row').filter({ hasText: ips[0] }).first()
+        await expect(row).toBeVisible({ timeout: 30_000 })
+        const cells = row.getByRole('cell')
+        for (let i = 0; i < (await cells.count()); i++) {
+          const cell = cells.nth(i)
+          if ((await cell.locator('a, button, input, [role="checkbox"]').count()) === 0) {
+            await cell.click()
+            break
+          }
+        }
+        // The inventory opens the sheet from a table row. On a phone the
+        // Relations tab sits under the tab strip's "More" menu, so it is
+        // chosen first; the graph then opens (and fits) at phone width.
+        const sheet = page.getByRole('dialog')
+        await sheet.getByRole('tab', { name: /Relations/ }).click()
+        await page.setViewportSize({ width: 390, height: 844 })
+        await sheet.getByRole('button', { name: 'Graph' }).click()
+        const canvas = sheet.getByRole('application', { name: 'Related assets graph' })
+        await expect(canvas.getByText(name, { exact: true })).toBeVisible({ timeout: 30_000 })
+
+        // No zoom or full-screen control covers a node of the fitted view.
+        await page.waitForTimeout(500)
+        const controls = [
+          canvas.getByRole('button', { name: 'Zoom in' }),
+          canvas.getByRole('button', { name: 'Zoom out' }),
+          canvas.getByRole('button', { name: 'Fit view' }),
+          canvas.getByTestId('flow-fullscreen-toggle'),
+        ]
+        const nodes = canvas.getByTestId('flow-node')
+        for (let i = 0; i < (await nodes.count()); i++) {
+          const nb = await nodes.nth(i).boundingBox()
+          for (const c of controls) {
+            const cb = await c.boundingBox()
+            if (nb && cb) expect(overlaps(nb, cb), `control over node ${i}`).toBe(false)
+          }
+        }
+
+        const group = canvas.getByTestId('flow-node').filter({ hasText: '22 assets' })
+        await group.click()
+        const members = sheet.getByRole('list', { name: 'Assets in this group' })
+        const rows = members.getByRole('button')
+        await expect(rows).toHaveCount(5)
+        await expect(sheet.getByText('and 17 more')).toBeVisible()
+        for (let i = 0; i < 5; i++) {
+          const b = await rows.nth(i).boundingBox()
+          expect(b && b.height >= 44, `row ${i} touch target`).toBe(true)
+          expect(b && b.x >= 0 && b.x + b.width <= 390, `row ${i} inside the screen`).toBe(true)
+        }
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+        ).toBe(true)
+
+        // A member opens its asset; Show all draws the whole group.
+        const firstName = (await rows.first().innerText()).split('\n')[0]
+        expect(ips).toContain(firstName)
+        await sheet.getByRole('button', { name: 'Show all' }).click()
+        await expect(canvas.getByTestId('flow-node').filter({ hasText: '22 assets' })).toHaveCount(
+          0
+        )
+        await expect(canvas.getByText(ips[22], { exact: true })).toBeAttached()
+      } finally {
+        for (const id of [...ipIds, nameId]) await api(page, 'DELETE', `/api/v1/assets/${id}`)
+      }
+    }
+  )
+})

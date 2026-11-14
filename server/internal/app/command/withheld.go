@@ -77,9 +77,9 @@ func (n *withheldNotes) take(sensorID string, refused map[shared.ID]string, now 
 
 // keepAccepted keeps the commands gate does not withhold, in order, and
 // records and logs the ones it withholds from sensorID (rate-limited).
-// tenantID owns cmds; a nil gate withholds nothing.
+// tenantID owns cmds; a nil gate withholds analysis jobs only.
 func (s *Service) keepAccepted(ctx context.Context, tenantID, sensorID shared.ID, gate *dispatchGate, cmds []*commanddom.Command) []*commanddom.Command {
-	if gate == nil {
+	if gate == nil && !anyAnalysis(cmds) {
 		return cmds
 	}
 	out := cmds[:0:0]
@@ -122,4 +122,30 @@ func (s *Service) noteWithheld(ctx context.Context, tenantID, sensorID shared.ID
 	if err := rec.RecordWithheld(ctx, tenantID, record); err != nil {
 		s.logger.Warn("cannot record withheld commands", "tenant_id", tenantID.String(), "error", err)
 	}
+}
+
+// withoutAnalysis is cmds without analysis jobs (a poll with no sensor
+// identity: no grant to admit one).
+func withoutAnalysis(cmds []*commanddom.Command) []*commanddom.Command {
+	if !anyAnalysis(cmds) {
+		return cmds
+	}
+	out := make([]*commanddom.Command, 0, len(cmds))
+	for _, c := range cmds {
+		if c.Type != commanddom.CommandTypeAnalyze {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// anyAnalysis reports whether cmds hold an analysis job, which a nil gate
+// still withholds (grantRefusal).
+func anyAnalysis(cmds []*commanddom.Command) bool {
+	for _, c := range cmds {
+		if c.Type == commanddom.CommandTypeAnalyze {
+			return true
+		}
+	}
+	return false
 }
