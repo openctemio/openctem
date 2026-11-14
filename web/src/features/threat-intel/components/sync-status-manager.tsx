@@ -182,6 +182,18 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
               </span>
             </div>
           )}
+          {status.last_sync_status === 'failed' && (
+            <span>
+              {status.last_success_at
+                ? t('threatIntel.sync.lastSuccess', undefined, {
+                    time: formatDistanceToNow(new Date(status.last_success_at), {
+                      addSuffix: true,
+                      locale: dateLocale,
+                    }),
+                  })
+                : t('threatIntel.sync.neverSucceeded')}
+            </span>
+          )}
           {status.records_synced > 0 && (
             <span>
               {t('threatIntel.sync.records', undefined, {

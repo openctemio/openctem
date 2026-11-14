@@ -46,3 +46,23 @@ describe('feed sync switch', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 })
+
+describe('failed feed', () => {
+  it('shows when the last import succeeded', () => {
+    const failed = {
+      ...status(true),
+      last_sync_status: 'failed',
+      last_sync_at: new Date().toISOString(),
+      last_success_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+      last_error: 'expired',
+    } as unknown as SyncStatus
+    render(<SyncStatusManager statuses={[failed]} />)
+    expect(screen.getByText(/Last successful import:/)).toBeTruthy()
+  })
+
+  it('says so when no import ever succeeded', () => {
+    const failed = { ...status(true), last_sync_status: 'failed' } as unknown as SyncStatus
+    render(<SyncStatusManager statuses={[failed]} />)
+    expect(screen.getByText('No import has succeeded yet')).toBeTruthy()
+  })
+})
