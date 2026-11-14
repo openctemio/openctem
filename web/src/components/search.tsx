@@ -5,7 +5,7 @@ import { useSearch } from '@/context/search-provider'
 import { Button } from './ui/button'
 import { DecorativeText } from './ui/decorative-text'
 import { useTranslation } from '@/context/i18n-provider'
-import { PHONE_TOUCH_SQUARE } from '@/components/layout/header-controls'
+import { HEADER_ICON_COLOUR, PHONE_TOUCH_SQUARE } from '@/components/layout/header-controls'
 
 type SearchProps = {
   className?: string
@@ -27,9 +27,13 @@ export function Search({ className = '', placeholder }: SearchProps) {
     <Button
       variant="ghost"
       className={cn(
-        'group text-fg-dim hover:bg-hov hover:text-foreground relative rounded-md font-normal shadow-none',
-        // Below 1024px an icon-only ghost square (32; 36 below 768px with a
-        // 44 x 44 touch area, as every phone-bar control)
+        'group hover:bg-hov hover:text-foreground relative rounded-md font-normal shadow-none',
+        // Below 1024px an icon-only ghost square in the ink colour as the other
+        // top-bar icons (32; 36 below 768px with a 20 px icon and a 44 x 44
+        // touch area, as every phone-bar control); from 1024 a field whose
+        // placeholder text and icon are dim.
+        HEADER_ICON_COLOUR,
+        'lg:text-fg-dim',
         'size-control max-md:size-control-touch justify-center p-0',
         PHONE_TOUCH_SQUARE,
         // 1024-1279: 200 wide with the label; from 1280: 420 with the Ctrl K hint.
@@ -43,7 +47,7 @@ export function Search({ className = '', placeholder }: SearchProps) {
       title={label}
       aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}
     >
-      <SearchIcon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.75} />
+      <SearchIcon aria-hidden="true" className="size-4 shrink-0 max-md:size-5" strokeWidth={1.75} />
       {/* 1024-1279 (200 wide): the short label, so it fits in every language;
           the full label from 1280 and always as the accessible name. */}
       <span className="hidden min-w-0 flex-1 truncate text-start lg:inline xl:hidden">
