@@ -92,7 +92,7 @@ describe('ClusterMembers', () => {
     expect(url).toContain('direction=incoming')
     expect(url).toContain(`limit=${CLUSTER_PREVIEW}`)
 
-    await userEvent.click(within(list).getByRole('button', { name: /host-2\.example\.com/ }))
+    await userEvent.click(within(list).getByText('host-2.example.com'))
     expect(onNavigate).toHaveBeenCalledWith('a1', 'host-2.example.com')
   })
 
