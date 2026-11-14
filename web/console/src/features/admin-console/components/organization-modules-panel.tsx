@@ -132,7 +132,7 @@ export function OrganizationModulesPanel({ tenantId, canManage }: OrganizationMo
                           m.state === 'grace' ? (
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon-sm"
                             onClick={() => setAction({ module: m, kind: 'allow' })}
                             aria-label={t('admin.modules.allowAria', 'Allow {name} again', {
                               name: m.name ?? '',

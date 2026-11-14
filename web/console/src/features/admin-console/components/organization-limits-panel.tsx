@@ -161,7 +161,7 @@ export function OrganizationLimitsPanel({ tenantId, canManage }: OrganizationLim
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon-sm"
                         onClick={() => setEditing(row.key)}
                         aria-label={t('limits.console.org.editAria', 'Set the {limit} limit', {
                           limit: keyLabel(row.key),
@@ -172,7 +172,7 @@ export function OrganizationLimitsPanel({ tenantId, canManage }: OrganizationLim
                       {row.origin === 'operator' && (
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon-sm"
                           onClick={() => setPendingRemove(row.key)}
                           aria-label={t(
                             'limits.console.org.removeAria',
