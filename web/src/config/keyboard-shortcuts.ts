@@ -21,13 +21,16 @@ export interface KeyboardShortcut {
   /** English description, sentence case. */
   label: string
   keys: ShortcutKey[]
+  /** The keys are pressed one after the other ("C then S"), not together. */
+  sequence?: boolean
   /** i18n key: `help.shortcutGroup.<group>`. */
-  group: 'general' | 'findings' | 'lists'
+  group: 'general' | 'create' | 'findings' | 'lists'
   shells: ShortcutShell[]
 }
 
 export const KEYBOARD_SHORTCUT_GROUPS: Record<KeyboardShortcut['group'], string> = {
   general: 'General',
+  create: 'Create',
   findings: 'Finding details',
   lists: 'Lists',
 }
@@ -52,6 +55,46 @@ export const KEYBOARD_SHORTCUTS: KeyboardShortcut[] = [
     label: 'Switch to organization 1-9',
     keys: ['mod', 'shift', '1-9'],
     group: 'general',
+    shells: ['app'],
+  },
+  {
+    id: 'create-scan',
+    label: 'New scan',
+    keys: ['N', 'S'],
+    sequence: true,
+    group: 'create',
+    shells: ['app'],
+  },
+  {
+    id: 'create-import',
+    label: 'Import results',
+    keys: ['N', 'I'],
+    sequence: true,
+    group: 'create',
+    shells: ['app'],
+  },
+  {
+    id: 'create-asset',
+    label: 'Add asset',
+    keys: ['N', 'A'],
+    sequence: true,
+    group: 'create',
+    shells: ['app'],
+  },
+  {
+    id: 'create-finding',
+    label: 'New finding',
+    keys: ['N', 'F'],
+    sequence: true,
+    group: 'create',
+    shells: ['app'],
+  },
+  {
+    id: 'create-task',
+    label: 'Remediation task',
+    keys: ['N', 'T'],
+    sequence: true,
+    group: 'create',
     shells: ['app'],
   },
   {

@@ -48,7 +48,7 @@ disagree. Change both together.
 | Mono (ids, code)                  | `text-code`        | 12/20     | 400    | 12/20        |
 | Cells, rows, sidebar, breadcrumbs | `text-dense`       | 13/20     | 400    | 13/20        |
 | Body, forms, buttons              | `text-body`        | 14/20     | 400    | 14/20        |
-| Card title                        | `text-card`        | 14/20     | 600    | 14/20        |
+| Card title                        | `text-card-title`  | 14/20     | 600    | 14/20        |
 | Section title                     | `text-section`     | 16/24     | 600    | 16/24        |
 | Dialog title                      | `text-dialog`      | 20/28     | 600    | 20/28        |
 | Page title                        | `text-page`        | 24/32     | 600    | 20/28        |
@@ -371,7 +371,7 @@ load.
   line height and weight): `text-cap` 12/16 and `text-cap-m` 12/16 500
   (captions, chips, table headers, counts), `text-code` 12/20 with
   `font-mono`, `text-dense` 13/20 (cells, rows, sidebar, breadcrumbs, property
-  values), `text-body` 14/20, `text-card` 14/20 600, `text-section` 16/24 600,
+  values), `text-body` 14/20, `text-card-title` 14/20 600, `text-section` 16/24 600,
   `text-dialog` 20/28 600, `text-page` 24/32 600 (20/28 below 768px),
   `text-figure` 24/32 and `text-figure-lead` 32/40 (one step down on a phone),
   `text-hero` 48/56, `text-wall` 56/64. `text-title`, `text-meta`,

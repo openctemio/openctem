@@ -19,6 +19,8 @@ import { SignOutDialog } from '@/components/sign-out-dialog'
 import { LanguageSwitcher } from '@/components/language-switcher'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
+import { cn } from '@/lib/utils'
+import { HEADER_MENU } from '@/components/layout/header-controls'
 
 /**
  * The user menu (header avatar). The only one: the sidebar no longer has its
@@ -50,19 +52,27 @@ export function ProfileDropdown() {
           <Button
             variant="ghost"
             size="icon"
-            className="relative rounded-full"
-            aria-label={t('userMenu.open', 'Open user menu')}
+            className="relative rounded-full p-0"
+            aria-label={
+              user?.name
+                ? t('userMenu.openFor', 'Open user menu for {name}', { name: user.name })
+                : t('userMenu.open', 'Open user menu')
+            }
           >
-            <Avatar className="h-8 w-8">
-              <AvatarFallback>{initials}</AvatarFallback>
+            <Avatar className="size-full">
+              <AvatarFallback className="bg-surface-sunken text-cap-m text-foreground">
+                {initials}
+              </AvatarFallback>
             </Avatar>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-64" align="end" forceMount>
+        <DropdownMenuContent className={cn(HEADER_MENU, 'w-64')} align="end" forceMount>
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col gap-1.5">
-              <p className="text-sm leading-none font-medium">{user?.name || 'User'}</p>
-              <p className="text-muted-foreground text-xs leading-none">{user?.email || ''}</p>
+              <p className="text-dense truncate font-medium">
+                {user?.name || t('userMenu.fallbackName', 'User')}
+              </p>
+              <p className="text-cap text-muted-foreground truncate">{user?.email || ''}</p>
             </div>
           </DropdownMenuLabel>
 
@@ -70,14 +80,14 @@ export function ProfileDropdown() {
 
           {account && (
             <>
-              <DropdownMenuLabel className="text-muted-foreground text-xs font-medium">
+              <DropdownMenuLabel className="text-cap-m text-fg-dim">
                 {account.label}
               </DropdownMenuLabel>
               <DropdownMenuGroup>
                 {account.items.map((item) => (
                   <DropdownMenuItem key={item.id} asChild>
-                    <Link href={item.url} className="flex items-center gap-2">
-                      <item.icon className="h-4 w-4" />
+                    <Link href={item.url}>
+                      <item.icon aria-hidden />
                       {item.label}
                     </Link>
                   </DropdownMenuItem>
@@ -88,8 +98,8 @@ export function ProfileDropdown() {
           )}
 
           <DropdownMenuItem asChild>
-            <Link href="/settings" className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
+            <Link href="/settings">
+              <Settings aria-hidden />
               {t('userMenu.allSettings', 'All settings')}
             </Link>
           </DropdownMenuItem>
@@ -98,7 +108,7 @@ export function ProfileDropdown() {
           <DropdownMenuSeparator />
 
           <DropdownMenuItem variant="destructive" onClick={() => setOpen(true)}>
-            <LogOut className="me-2 h-4 w-4" />
+            <LogOut aria-hidden />
             {t('userMenu.signOut', 'Sign out')}
           </DropdownMenuItem>
         </DropdownMenuContent>

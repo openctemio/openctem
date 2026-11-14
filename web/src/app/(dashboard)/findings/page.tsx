@@ -749,6 +749,9 @@ function FindingsContent() {
     hasPermission('assets:import')
   const openImportForm = useCallback(() => setImportDialogOpen(true), [])
   useOpenForm('import', canImport, openImportForm)
+  // "New finding" from the Create menu or its "c f" chord.
+  const openCreateForm = useCallback(() => setCreateDialogOpen(true), [])
+  useOpenForm('finding', hasPermission('findings:write'), openCreateForm)
   // Both are Phase-3 gated modules embedded in this (findings) page: the "Create
   // Jira Ticket" action hits the integrations module, and "Add to remediation"
   // hits the remediation module. Hide + skip-fetch when disabled (fail-open on

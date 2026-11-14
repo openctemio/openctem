@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { Maximize, Minimize } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { HEADER_ICON_BUTTON } from '@/components/layout/header-controls'
+import { cn } from '@/lib/utils'
 
 /**
  * Header button that toggles browser full-screen via the Fullscreen API.
@@ -46,13 +48,12 @@ export function FullscreenToggle() {
       size="icon"
       // Not on a phone: the top bar is full there, and a phone browser either
       // has no Fullscreen API for pages or hides its chrome on scroll anyway.
-      className="relative hidden scale-95 rounded-full md:inline-flex"
+      className={cn(HEADER_ICON_BUTTON, 'hidden md:inline-flex')}
       onClick={toggle}
       aria-label={label}
       title={label}
     >
-      <Icon className="size-[1.2rem]" />
-      <span className="sr-only">{label}</span>
+      <Icon aria-hidden />
     </Button>
   )
 }

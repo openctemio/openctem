@@ -60,14 +60,14 @@ export function NotificationRow({
         )}
         aria-hidden
       />
-      <div className="min-w-0 flex-1 space-y-1">
+      <div className={cn('min-w-0 flex-1', compact ? 'space-y-0.5' : 'space-y-1')}>
         <div className="flex items-start justify-between gap-2">
           <p
             dir="auto"
             className={cn(
-              'break-words text-sm leading-snug [unicode-bidi:isolate]',
-              compact && 'line-clamp-2',
-              unread && 'font-medium'
+              'break-words [unicode-bidi:isolate]',
+              compact ? 'text-dense line-clamp-2 font-medium' : 'text-sm leading-snug',
+              !compact && unread && 'font-medium'
             )}
           >
             {title}
@@ -77,28 +77,35 @@ export function NotificationRow({
         {body && (
           <p
             dir="auto"
-            className="line-clamp-2 break-words text-xs text-muted-foreground [unicode-bidi:isolate]"
+            className={cn(
+              'line-clamp-2 break-words text-muted-foreground [unicode-bidi:isolate]',
+              compact ? 'text-cap' : 'text-xs'
+            )}
           >
             {body}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
+        <p className={cn(compact ? 'text-cap text-fg-dim' : 'text-xs text-muted-foreground')}>
           {typeLabel}, {formatRelativeTime(notification.created_at, locale)}
         </p>
       </div>
-      {unread && (
-        <span className="mt-1.5 flex-shrink-0">
-          <span className="block h-2 w-2 rounded-full bg-primary" aria-hidden />
-          <span className="sr-only">{t('notifications.unread', 'Unread')}</span>
-        </span>
-      )}
+      {/* One unread dot in a fixed end column, so read and unread rows keep
+          the same text width and nothing wraps differently. */}
+      <span className="mt-1.5 w-2 flex-none" data-slot="notification-unread">
+        {unread && (
+          <>
+            <span className="bg-signal block size-2 rounded-full" aria-hidden />
+            <span className="sr-only">{t('notifications.unread', 'Unread')}</span>
+          </>
+        )}
+      </span>
     </>
   )
 
   const rowClassName = cn(
     'flex items-start gap-3 transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none',
-    compact ? 'p-3' : 'p-4',
-    unread && 'bg-primary/5'
+    compact ? 'px-4 py-3' : 'p-4',
+    !compact && unread && 'bg-primary/5'
   )
 
   const href = safeInternalHref(notification.url)

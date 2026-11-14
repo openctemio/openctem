@@ -9,6 +9,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { usePendingApprovalCount } from '@/hooks/use-dynamic-badges'
 import { Permission } from '@/lib/permissions'
+import { HEADER_BADGE, HEADER_ICON_BUTTON } from './header-controls'
 
 /**
  * The top bar's approvals button: the finding approval requests waiting for
@@ -29,16 +30,20 @@ export function HeaderApprovals() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button asChild variant="ghost" size="icon" className="relative" aria-label={label}>
+        <Button
+          asChild
+          variant="ghost"
+          size="icon"
+          className={HEADER_ICON_BUTTON}
+          aria-label={label}
+        >
           <Link href="/findings/approvals" data-slot="header-approvals">
-            <ShieldCheck className="size-4.5" aria-hidden />
-            {n > 0 && <Counter value={n} emphasis className="absolute -end-1 -top-1" />}
+            <ShieldCheck aria-hidden />
+            {n > 0 && <Counter value={n} emphasis size="badge" className={HEADER_BADGE} />}
           </Link>
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
-        {label}
-      </TooltipContent>
+      <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
   )
 }

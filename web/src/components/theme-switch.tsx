@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { HEADER_ICON_BUTTON, HEADER_MENU } from '@/components/layout/header-controls'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,11 +27,11 @@ export function ThemeSwitch() {
     const current =
       theme === 'system'
         ? systemTheme === 'dark'
-          ? '#020817'
-          : '#ffffff'
+          ? '#0a1628'
+          : '#fafaf9'
         : theme === 'dark'
-          ? '#020817'
-          : '#ffffff'
+          ? '#0a1628'
+          : '#fafaf9'
 
     const meta = document.querySelector("meta[name='theme-color']")
     if (meta) meta.setAttribute('content', current)
@@ -39,18 +40,23 @@ export function ThemeSwitch() {
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative scale-95 rounded-full">
-          <Sun className="size-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute size-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">{t('nav.header.theme', 'Theme')}</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={HEADER_ICON_BUTTON}
+          aria-label={t('nav.header.theme', 'Theme')}
+          title={t('nav.header.theme', 'Theme')}
+        >
+          <Sun aria-hidden className="dark:hidden" />
+          <Moon aria-hidden className="hidden dark:block" />
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="min-w-[8rem]">
+      <DropdownMenuContent align="end" className={cn(HEADER_MENU, 'w-40')}>
         {['light', 'dark', 'system'].map((mode) => (
           <DropdownMenuItem key={mode} onClick={() => setTheme(mode)}>
             {names[mode]}
-            <Check size={14} className={cn('ms-auto', theme !== mode && 'hidden')} />
+            <Check aria-hidden className={cn('ms-auto', theme !== mode && 'invisible')} />
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
