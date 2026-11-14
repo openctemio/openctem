@@ -233,7 +233,7 @@ function DomainCard({
                 onValueChange={(v) => set('join_role', v as JoinRole)}
                 disabled={disabled}
               >
-                <SelectTrigger className="h-8 w-32" aria-label={t('settings.domains.joinRole')}>
+                <SelectTrigger className="w-32" aria-label={t('settings.domains.joinRole')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

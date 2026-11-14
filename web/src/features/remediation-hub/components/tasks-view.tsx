@@ -241,7 +241,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
         end={
           <>
             <Select value={sort} onValueChange={(v) => setSort(v as TaskListFilters['sort'])}>
-              <SelectTrigger className="h-9 w-40" aria-label={t('remediationHub.tasks.sort')}>
+              <SelectTrigger className="w-40" aria-label={t('remediationHub.tasks.sort')}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -261,7 +261,7 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
               onChange={(v) => setParam('layout', v)}
             />
             {canQueryCreate && (
-              <Button size="sm" className="h-9" onClick={() => setQueryOpen(true)}>
+              <Button size="sm" onClick={() => setQueryOpen(true)}>
                 <SquareCode className="size-4" aria-hidden />
                 {t('remediationQuery.create.entry')}
               </Button>

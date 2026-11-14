@@ -436,13 +436,7 @@ function GroupSection({
                 permission={Permission.ScanZonesWrite}
                 fallback={
                   zonesHref ? (
-                    <Button
-                      asChild
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 max-sm:min-h-11"
-                    >
+                    <Button asChild type="button" size="sm" variant="outline">
                       <Link href={zonesHref}>
                         {t('scans.groups.setUpZone', 'Set up a scan zone')}
                       </Link>
@@ -454,7 +448,7 @@ function GroupSection({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-8 max-sm:min-h-11"
+
                   onClick={() => setZoneOpen(true)}
                 >
                   {t('scans.groups.addZone', 'Add scan zone')}
@@ -462,13 +456,7 @@ function GroupSection({
               </Can>
             )}
             {group.kind === 'scope' && scopeHref && (
-              <Button
-                asChild
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 max-sm:min-h-11"
-              >
+              <Button asChild type="button" size="sm" variant="outline">
                 <Link href={scopeHref}>{t('scans.groups.openScope', 'Open Scoping')}</Link>
               </Button>
             )}

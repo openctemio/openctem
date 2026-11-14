@@ -17,7 +17,7 @@ const toggleVariants = cva(
       },
       size: {
         default: 'h-control px-2 min-w-control max-md:h-control-touch max-md:min-w-control-touch',
-        sm: 'h-control-dense px-1.5 min-w-control-dense max-md:h-control-touch-sm max-md:min-w-control-touch-sm',
+        sm: 'h-control-dense px-1.5 min-w-control-dense max-md:h-control-touch-dense max-md:min-w-control-touch-dense',
         lg: 'h-control-entry px-2.5 min-w-control-entry max-md:h-control-touch-lg max-md:min-w-control-touch-lg',
       },
     },

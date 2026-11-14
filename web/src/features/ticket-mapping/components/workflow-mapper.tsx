@@ -265,7 +265,7 @@ export function WorkflowMapper({
 
   const intentSelect = (value: Intent, onValue: (i: Intent) => void, id: string) => (
     <Select value={value} onValueChange={(v) => onValue(v as Intent)} disabled={readOnly}>
-      <SelectTrigger id={id} className="h-8 w-64">
+      <SelectTrigger id={id} className="w-64">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -337,7 +337,6 @@ export function WorkflowMapper({
                     }}
                   >
                     <SelectTrigger
-                      className="h-8"
                       aria-label={t('ticketMapping.status.target', 'Jira status for {state}', {
                         state,
                       })}
@@ -362,10 +361,7 @@ export function WorkflowMapper({
                       target && setTarget(state, { ...target, resolution: v === NONE ? '' : v })
                     }
                   >
-                    <SelectTrigger
-                      className="h-8"
-                      aria-label={t('ticketMapping.status.resolution', 'Resolution')}
-                    >
+                    <SelectTrigger aria-label={t('ticketMapping.status.resolution', 'Resolution')}>
                       <SelectValue
                         placeholder={t('ticketMapping.status.resolution', 'Resolution')}
                       />
@@ -438,7 +434,7 @@ export function WorkflowMapper({
                   setStatus({ ...status, regression: v as StatusMap['regression'] })
                 }
               >
-                <SelectTrigger id="tm-regression" className="h-9">
+                <SelectTrigger id="tm-regression">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -583,7 +579,7 @@ export function WorkflowMapper({
               <div className="grid gap-1">
                 <Label htmlFor="tm-sim-state">{t('ticketMapping.status.simState', 'State')}</Label>
                 <Select value={selectedState} onValueChange={setSelectedState}>
-                  <SelectTrigger id="tm-sim-state" className="h-9 w-48">
+                  <SelectTrigger id="tm-sim-state" className="w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -603,7 +599,7 @@ export function WorkflowMapper({
                   value={simFrom || NONE}
                   onValueChange={(v) => setSimFrom(v === NONE ? '' : v)}
                 >
-                  <SelectTrigger id="tm-sim-from" className="h-9 w-48">
+                  <SelectTrigger id="tm-sim-from" className="w-48">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -668,7 +664,7 @@ export function WorkflowMapper({
                     {t('ticketMapping.status.simStatus', 'Jira status')}
                   </Label>
                   <Select value={simStatus} onValueChange={setSimStatus}>
-                    <SelectTrigger id="tm-sim-status" className="h-9 w-44">
+                    <SelectTrigger id="tm-sim-status" className="w-44">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -688,7 +684,7 @@ export function WorkflowMapper({
                     value={simResolution || NONE}
                     onValueChange={(v) => setSimResolution(v === NONE ? '' : v)}
                   >
-                    <SelectTrigger id="tm-sim-res" className="h-9 w-40">
+                    <SelectTrigger id="tm-sim-res" className="w-40">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -708,7 +704,7 @@ export function WorkflowMapper({
                     {t('ticketMapping.status.simCurrent', 'Finding is')}
                   </Label>
                   <Select value={simCurrent} onValueChange={setSimCurrent}>
-                    <SelectTrigger id="tm-sim-cur" className="h-9 w-40">
+                    <SelectTrigger id="tm-sim-cur" className="w-40">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

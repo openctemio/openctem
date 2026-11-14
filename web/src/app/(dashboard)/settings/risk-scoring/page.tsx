@@ -248,7 +248,7 @@ function NumberInput({
         min={min}
         max={max}
         step={step}
-        className="h-8 text-sm"
+        className="text-sm"
       />
     </div>
   )
@@ -826,10 +826,7 @@ export default function ScoringConfigurationPage() {
                     }))
                   }
                 >
-                  <SelectTrigger
-                    className="h-8"
-                    aria-label={t('riskScore.model.label', 'Score composition')}
-                  >
+                  <SelectTrigger aria-label={t('riskScore.model.label', 'Score composition')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1077,7 +1074,7 @@ export default function ScoringConfigurationPage() {
                           }))
                         }
                       >
-                        <SelectTrigger className="h-8">
+                        <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

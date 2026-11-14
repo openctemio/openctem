@@ -80,7 +80,7 @@ export function ConditionEditor({
           <div key={i} className="flex flex-wrap items-center gap-2">
             <Select value={c.field} onValueChange={(v) => set(i, { field: v })} disabled={disabled}>
               <SelectTrigger
-                className="h-8 w-40"
+                className="w-40"
                 aria-label={t('findingLifecycle.condition.field', 'Field')}
               >
                 <SelectValue />
@@ -95,7 +95,7 @@ export function ConditionEditor({
             </Select>
             <Select value={c.op} onValueChange={(v) => set(i, { op: v })} disabled={disabled}>
               <SelectTrigger
-                className="h-8 w-36"
+                className="w-36"
                 aria-label={t('findingLifecycle.condition.op', 'Operator')}
               >
                 <SelectValue />
@@ -111,7 +111,7 @@ export function ConditionEditor({
             {c.op !== 'exists' && (
               <Input
                 id={`${idPrefix}-value-${i}`}
-                className="h-8 min-w-0 flex-1"
+                className="min-w-0 flex-1"
                 value={conditionValueText(c)}
                 disabled={disabled}
                 list={def?.values ? `${idPrefix}-values-${c.field}` : undefined}

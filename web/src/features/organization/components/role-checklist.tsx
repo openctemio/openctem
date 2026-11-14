@@ -285,7 +285,7 @@ export function RolePicker({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 px-2 text-xs"
+            className="px-2 text-xs"
             aria-expanded={showMore}
             onClick={() => setShowMore((v) => !v)}
           >

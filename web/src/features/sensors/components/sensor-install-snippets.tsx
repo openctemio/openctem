@@ -253,7 +253,7 @@ export function SensorInstallSnippets({
         {t('sensors.snippets.product', 'Product')}
       </Label>
       <Select value={picked || data.product} onValueChange={setPicked}>
-        <SelectTrigger id={`snippet-product-${sensorId}`} className="h-8 w-full sm:w-72">
+        <SelectTrigger id={`snippet-product-${sensorId}`} className="w-full sm:w-72">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

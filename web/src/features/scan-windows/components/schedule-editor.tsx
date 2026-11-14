@@ -61,7 +61,7 @@ export function SlotsEditor({ slots, onChange, errors, disabled }: SlotsEditorPr
                     type="button"
                     size="sm"
                     variant={on ? 'default' : 'outline'}
-                    className="h-8 px-2.5"
+                    className="px-2.5"
                     aria-pressed={on}
                     aria-label={dayLong(d.iso, t)}
                     onClick={() =>

@@ -243,7 +243,7 @@ export function ThreatActorsPanel() {
   // tab of the Threat intelligence page, whose header is the page's only one.
   const typeSelect = (
     <Select value={typeFilter} onValueChange={setTypeFilter}>
-      <SelectTrigger className="h-9 w-40" aria-label={t('threatIntel.actors.filterType')}>
+      <SelectTrigger className="w-40" aria-label={t('threatIntel.actors.filterType')}>
         <SelectValue placeholder={t('threatIntel.actors.allTypes')} />
       </SelectTrigger>
       <SelectContent>

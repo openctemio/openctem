@@ -771,7 +771,7 @@ function PageControls({
       <div className="flex items-center gap-2">
         <Select value={String(perPage)} onValueChange={(v) => onPerPage(Number(v))}>
           <SelectTrigger
-            className="h-8 w-auto min-w-16"
+            className="w-auto min-w-16"
             aria-label={t('components.pager.perPage', 'Rows per page')}
           >
             <SelectValue />

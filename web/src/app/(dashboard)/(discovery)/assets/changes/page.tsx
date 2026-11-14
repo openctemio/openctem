@@ -369,7 +369,7 @@ export default function AssetChangesPage() {
       }}
     >
       <SelectTrigger
-        className="h-9 w-[150px]"
+        className="w-[150px]"
         aria-label={t('assetTimeline.activity.period.label', 'Period')}
       >
         <SelectValue />

@@ -159,7 +159,7 @@ function Filters({
         onValueChange={(v) => onChange({ ...filters, attribute: v === ALL ? undefined : v })}
       >
         <SelectTrigger
-          className="h-8 w-48"
+          className="w-48"
           aria-label={t('assetTimeline.filterAttribute', 'Attribute')}
         >
           <SelectValue />
@@ -177,7 +177,7 @@ function Filters({
         value={filters.sourceKind || ALL}
         onValueChange={(v) => onChange({ ...filters, sourceKind: v === ALL ? undefined : v })}
       >
-        <SelectTrigger className="h-8 w-44" aria-label={t('assetTimeline.filterSource', 'Source')}>
+        <SelectTrigger className="w-44" aria-label={t('assetTimeline.filterSource', 'Source')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -191,7 +191,7 @@ function Filters({
       </Select>
       {withTag && (
         <Input
-          className="h-8 w-48"
+          className="w-48"
           value={filters.tag ?? ''}
           maxLength={100}
           onChange={(e) => onChange({ ...filters, tag: e.target.value })}

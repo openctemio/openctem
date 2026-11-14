@@ -289,7 +289,7 @@ export function ManageWatchersDialog({
         </DialogBody>
         <DialogFooter>
           <DialogClose asChild>
-            <Button type="button" variant="outline" className="h-11 md:h-9">
+            <Button type="button" variant="outline">
               {t('findings.people.done', 'Done')}
             </Button>
           </DialogClose>

@@ -380,7 +380,7 @@ export function MappingTable({ draft, onChange, fields, readOnly }: MappingTable
                   }}
                 >
                   <SelectTrigger
-                    className="h-8 w-36"
+                    className="w-36"
                     aria-label={t('importMappings.table.ruleKind', 'What rule {n} creates', {
                       n: i + 1,
                     })}

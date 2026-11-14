@@ -582,7 +582,7 @@ export function AddAssetsDialog({
                     onValueChange={setNewAssetType}
                     disabled={isLoadingTypes || isBusy}
                   >
-                    <SelectTrigger className="w-[140px] h-9">
+                    <SelectTrigger className="w-[140px]">
                       <SelectValue placeholder={isLoadingTypes ? 'Loading...' : 'Select type'} />
                     </SelectTrigger>
                     <SelectContent>
@@ -603,7 +603,7 @@ export function AddAssetsDialog({
                     onKeyDown={handleKeyDown}
                     disabled={isBusy}
                     className={cn(
-                      'flex-1 h-9',
+                      'flex-1',
                       validationResult.error && 'border-destructive focus-visible:ring-destructive'
                     )}
                   />

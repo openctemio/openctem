@@ -19,9 +19,10 @@ for (const width of [390, 1440]) {
         const title = await page.getByRole('heading', { level: 1, name: 'Assets' }).boundingBox()
         const box = await switcher.boundingBox()
         expect(box && title).toBeTruthy()
-        // Same row as the title, at the right edge, at least 36px tall.
+        // Same row as the title, at the right edge, at the row's control
+        // height ("Sizes" in docs/ui-style-contract.md): 32, 36 below 768px.
         expect(Math.abs(box!.y - title!.y)).toBeLessThan(16)
-        expect(box!.height).toBeGreaterThanOrEqual(35.5)
+        expect(Math.abs(box!.height - (width < 768 ? 36 : 32))).toBeLessThanOrEqual(0.5)
         expect(box!.x + box!.width).toBeGreaterThan(width - 80)
         boxes.push(box!)
         await testInfo.attach(`assets-${view}-${width}.png`, {

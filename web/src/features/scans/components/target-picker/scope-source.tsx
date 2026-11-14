@@ -184,7 +184,7 @@ export function ScopeSource({ present, onChange }: ScopeSourceProps) {
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 max-sm:min-h-11"
+              className="max-sm:min-h-11"
               onClick={() => void addAll()}
               disabled={adding}
               data-testid="scope-add-all"

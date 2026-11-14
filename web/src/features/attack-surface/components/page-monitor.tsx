@@ -534,7 +534,7 @@ function AddWatch({ onAdded }: { onAdded: () => void }) {
           onChange={(e) => setUrl(e.target.value)}
         />
       </div>
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <Label htmlFor="page-watch-mode">{t('pageMonitor.mode.label', 'What to follow')}</Label>
         <Select value={mode} onValueChange={(v) => setMode(v as PageWatchMode)}>
           <SelectTrigger id="page-watch-mode" className="w-full sm:w-40">

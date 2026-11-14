@@ -264,7 +264,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
             aria-label={t('workflowStages.palette.search')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 ps-8 text-xs"
+            className="ps-8 text-xs"
           />
         </div>
         <p className="text-[10px] text-muted-foreground mt-2">

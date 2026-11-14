@@ -72,7 +72,6 @@ export function FindingListCrumb({ findingId }: { findingId: string }) {
           asChild={!!prevHref}
           variant="ghost"
           size="icon"
-          className="size-8"
           disabled={!prevHref}
           aria-label={t('findings.detail.listNav.prev', 'Previous finding (k)')}
         >
@@ -94,7 +93,6 @@ export function FindingListCrumb({ findingId }: { findingId: string }) {
           asChild={!!nextHref}
           variant="ghost"
           size="icon"
-          className="size-8"
           disabled={!nextHref}
           aria-label={t('findings.detail.listNav.next', 'Next finding (j)')}
         >

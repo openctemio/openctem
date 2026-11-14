@@ -347,7 +347,6 @@ function SortableStepCard(props: StepCardProps) {
               <SelectTrigger
                 id={`${step.id}-tool`}
                 aria-label={t('scans.workflowForm.toolAria', undefined, { n: index + 1 })}
-                className="h-9"
               >
                 <SelectValue
                   placeholder={
@@ -434,7 +433,6 @@ function SortableStepCard(props: StepCardProps) {
                 onChange={(e) =>
                   props.onChange({ ...step, timeout_seconds: parseInt(e.target.value) || 3600 })
                 }
-                className="h-9"
               />
             </div>
           </div>

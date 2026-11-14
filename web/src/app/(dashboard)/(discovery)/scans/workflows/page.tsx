@@ -480,7 +480,7 @@ export default function ScanWorkflowsPage() {
     <div className="flex flex-wrap items-center gap-3">
       <Select value={owner} onValueChange={setOwner}>
         <SelectTrigger
-          className="h-9 w-auto min-w-36"
+          className="w-auto min-w-36"
           aria-label={t('scans.workflows.ownerFilter', 'Workflow owner')}
         >
           <SelectValue />

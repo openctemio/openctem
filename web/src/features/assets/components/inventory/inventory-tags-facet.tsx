@@ -113,7 +113,7 @@ export function InventoryTagsFacet({
           placeholder={t('assets.tagFilter.search', 'Search tags…')}
           aria-label={t('assets.tagFilter.search', 'Search tags…')}
           maxLength={50}
-          className="h-8 ps-7 text-xs"
+          className="ps-7 text-xs"
         />
       </div>
       {empty ? (

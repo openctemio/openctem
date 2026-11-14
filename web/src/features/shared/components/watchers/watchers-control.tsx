@@ -99,7 +99,7 @@ export function WatchersControl({
             ref={summaryRef}
             type="button"
             variant="ghost"
-            className="-ms-2 h-11 min-w-0 gap-2 px-2 font-normal md:h-8"
+            className="-ms-2 h-11 min-w-0 gap-2 px-2 font-normal"
             onClick={() => setOpen(true)}
             aria-haspopup="dialog"
             data-testid="watchers-summary"
@@ -118,7 +118,7 @@ export function WatchersControl({
             type="button"
             variant={watching ? 'secondary' : 'outline'}
             size="sm"
-            className="h-11 gap-1.5 px-3 md:h-8"
+            className="h-11 gap-1.5 px-3"
             disabled={busy}
             aria-label={toggleLabel}
             onClick={() => void setWatching(!watching)}

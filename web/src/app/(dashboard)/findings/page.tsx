@@ -2034,7 +2034,7 @@ function FindingsContent() {
       }}
     >
       <SelectTrigger
-        className="h-9 w-auto gap-2 @2xl/toolbar:min-w-36"
+        className="w-auto gap-2 @2xl/toolbar:min-w-36"
         aria-label={t('findings.toolbar.groupLabel', 'Group findings')}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />
@@ -2086,7 +2086,7 @@ function FindingsContent() {
   const exportMenu = canExport ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9" disabled={exporting}>
+        <Button variant="outline" size="sm" disabled={exporting}>
           {exporting ? (
             <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
           ) : (
@@ -2102,12 +2102,7 @@ function FindingsContent() {
   const taskFromFiltersButton = canQueryTask ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9"
-          onClick={() => void openTaskFromFilters()}
-        >
+        <Button variant="outline" size="sm" onClick={() => void openTaskFromFilters()}>
           <SquareCode className="me-2 h-4 w-4" aria-hidden />
           {t('remediationQuery.findings.fromFiltersShort')}
         </Button>
@@ -2274,7 +2269,7 @@ function FindingsContent() {
           <Button
             variant="outline"
             size="sm"
-            className="h-9 shrink-0"
+            className="shrink-0"
             onClick={() => setViewParam('verify')}
           >
             {/* A short label on a narrow row, so the view title keeps its room
@@ -2293,12 +2288,7 @@ function FindingsContent() {
       </div>
       <div className="ms-auto flex shrink-0 items-center gap-2">
         {groupBy === 'owner_id' && hasUnassignedGroup && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9"
-            onClick={() => setAutoAssignOpen(true)}
-          >
+          <Button variant="outline" size="sm" onClick={() => setAutoAssignOpen(true)}>
             <UserPlus className="h-4 w-4 @2xl/actions:me-2" />
             <span className="sr-only @2xl/actions:not-sr-only">
               {t('findings.toolbar.assignOwners', 'Assign to asset owners')}

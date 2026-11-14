@@ -127,7 +127,7 @@ export function StatusSelect({
                 <Button
                   variant="outline"
                   size={size}
-                  className={`${size === 'sm' ? 'h-7 px-2 text-xs' : 'h-9 sm:h-8'} min-h-[32px] ${STATUS_TONE_CLASS[currentConfig.tone]} hover:opacity-80`}
+                  className={`${size === 'sm' ? 'h-7 px-2 text-xs' : ''} min-h-[32px] ${STATUS_TONE_CLASS[currentConfig.tone]} hover:opacity-80`}
                   disabled={disabled || loading}
                 >
                   {loading && <Loader2 className="me-1 h-3 w-3 animate-spin" />}

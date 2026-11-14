@@ -490,7 +490,7 @@ export function TargetsStep({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 max-sm:min-h-11"
+            className="max-sm:min-h-11"
             onClick={() => setBulkOpen((o) => !o)}
             aria-expanded={bulkOpen}
             aria-controls={`${fieldId}-bulk`}
@@ -503,7 +503,7 @@ export function TargetsStep({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 max-sm:min-h-11"
+            className="max-sm:min-h-11"
             onClick={() =>
               openPicker(
                 targets.assetGroupIds.length > 0 && targets.assetIds.length === 0
@@ -520,7 +520,7 @@ export function TargetsStep({
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 max-sm:min-h-11"
+              className="max-sm:min-h-11"
               onClick={() => openPicker('scope')}
               data-testid="from-scope"
             >

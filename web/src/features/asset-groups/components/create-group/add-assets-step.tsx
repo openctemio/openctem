@@ -214,7 +214,7 @@ export function AddAssetsStep({
                   setSearchQuery(e.target.value)
                   onSearchChange?.(e.target.value)
                 }}
-                className="ps-9 h-9"
+                className="ps-9"
               />
             </div>
             <Select
@@ -222,7 +222,7 @@ export function AddAssetsStep({
               onValueChange={(v) => setTypeFilter(v as AssetType | 'all')}
               disabled={isLoadingTypes}
             >
-              <SelectTrigger className="w-[130px] h-9">
+              <SelectTrigger className="w-[130px]">
                 <SelectValue placeholder={isLoadingTypes ? 'Loading...' : 'All types'} />
               </SelectTrigger>
               <SelectContent>
@@ -337,7 +337,7 @@ export function AddAssetsStep({
                 onValueChange={(v) => setNewAssetType(v as AssetType)}
                 disabled={isLoadingTypes}
               >
-                <SelectTrigger className="w-[140px] h-9">
+                <SelectTrigger className="w-[140px]">
                   <SelectValue placeholder={isLoadingTypes ? 'Loading...' : 'Select type'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -357,7 +357,7 @@ export function AddAssetsStep({
                 onChange={(e) => setNewAssetName(e.target.value)}
                 onKeyDown={handleKeyDown}
                 className={cn(
-                  'flex-1 h-9',
+                  'flex-1',
                   validationResult.error && 'border-destructive focus-visible:ring-destructive'
                 )}
               />

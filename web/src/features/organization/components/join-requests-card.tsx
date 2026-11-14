@@ -94,7 +94,7 @@ export function JoinRequestsCard({
                 value={roles[r.id] ?? r.requested_role}
                 onValueChange={(v) => setRoles((cur) => ({ ...cur, [r.id]: v as JoinRole }))}
               >
-                <SelectTrigger className="h-8 w-28" aria-label={t('org.joinRequests.role')}>
+                <SelectTrigger className="w-28" aria-label={t('org.joinRequests.role')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

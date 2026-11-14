@@ -131,7 +131,7 @@ export function IssueTypeMapping({ integrationId, projectKey, value, onChange, h
               }
               disabled={isLoading}
             >
-              <SelectTrigger id={selectId} className="h-8">
+              <SelectTrigger id={selectId}>
                 <SelectValue
                   placeholder={t('ticketingIntegration.issueTypes.loading', 'Loading issue types…')}
                 />
