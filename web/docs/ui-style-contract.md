@@ -34,6 +34,11 @@ disagree. Change both together.
   10 px (8 beside an icon), icon 16, gap 6. Fields keep 16 px text (`text-base`),
   so phones never zoom into a focused field; the viewport is never locked. The
   touch target is as wide as the button, so neighbours never share one.
+  Icon-only buttons that stand alone in a row (the phone top bar, the drawer's
+  Close sidebar, the organization panel's copy button) widen it to a 44 x 44
+  square (`PHONE_TOUCH_SQUARE` in `components/layout/header-controls.ts`); in
+  the phone bar they are 36 wide and 8 apart, so the squares meet but never
+  overlap (`e2e/specs/58-phone-bar.spec.ts`).
 - Icon-only buttons are squares at every size (`icon`, `icon-sm`, `xs`, or
   `iconOnlyBelow` when the label shows only from a width up);
   `src/components/ui/__tests__/icon-button-guard.test.ts` and the page-rhythm
