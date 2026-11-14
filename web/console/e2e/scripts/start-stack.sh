@@ -79,11 +79,29 @@ log "console"
 ) >"$STACK_DIR/console.log" 2>&1 &
 echo $! >>"$STACK_DIR/pids"
 
+# Ready means the console can SERVE /login (200 and the whole HTML document),
+# not merely that the port answers. The answer must hold three times in a row
+# (a server that is still starting, or restarting, fails one of them); then the
+# page's own assets are requested once, so the browser's first navigation meets
+# a server that has already done its first-request work.
+login_ok() {
+  curl -fsS --max-time 10 "$CONSOLE_URL/login" 2>/dev/null | grep -q '</html>'
+}
+streak=0
 for _ in $(seq 1 90); do
-  if curl -fsS "http://127.0.0.1:${ADMIN_PORT}/health" >/dev/null 2>&1 && curl -fsS -o /dev/null "$CONSOLE_URL/login"; then ready=1; break; fi
-  sleep 2
+  if curl -fsS "http://127.0.0.1:${ADMIN_PORT}/health" >/dev/null 2>&1 && login_ok; then
+    streak=$((streak + 1))
+    if [[ $streak -ge 3 ]]; then ready=1; break; fi
+    sleep 1
+  else
+    streak=0
+    sleep 2
+  fi
 done
 [[ "${ready:-}" == 1 ]] || { log "the stack did not become ready"; tail -n 30 "$STACK_DIR"/*.log >&2; exit 1; }
+curl -fsS --max-time 20 "$CONSOLE_URL/login" 2>/dev/null \
+  | grep -oE '/_next/static/[^"]+\.(js|css)' | sort -u | head -20 \
+  | while read -r asset; do curl -fsS --max-time 20 -o /dev/null "$CONSOLE_URL$asset" || true; done
 
 umask 077
 cat >"$STACK_DIR/env" <<ENV
