@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/lib/pq"
@@ -67,6 +68,97 @@ func (r *FindingRepository) HoldGapFindings(ctx context.Context, tenantID, comma
 		return nil, fmt.Errorf("hold findings of a throttled run: %w", err)
 	}
 	return out, nil
+}
+
+// releaseRunFindingsSQL releases the held findings a command's reports
+// sighted (scan_id: the last report that saw the finding, written by every
+// sighting path: insert, enrichment, sighting-only update) on assets whose
+// host is NOT in $3, the hosts the command's result names as throttled.
+// Only holds whose every reason is in $4 (the run-level reasons) are
+// released: a hold that came from the matched response itself stays until
+// that response is checked. Tenant-pinned on every table. Returns the rows
+// it changed.
+var releaseRunFindingsSQL = `
+	UPDATE findings f
+	SET verification_state = 'unchecked', hold_reasons = '{}', updated_at = NOW()
+	FROM ingest_reports ir, assets a
+	WHERE ir.tenant_id = $1 AND ir.command_id = $2
+		AND f.tenant_id = $1 AND f.scan_id = ir.report_id::text
+		AND f.verification_state = 'held'
+		AND f.hold_reasons <@ $4::text[]
+		AND f.branch_id IS NULL
+		AND a.tenant_id = $1 AND a.id = f.asset_id
+		AND (` + assetHostSQL("a") + ` = ANY($3::text[])) IS NOT TRUE
+	RETURNING f.id`
+
+// ReleaseRunFindings releases, for one command of the tenant, the held
+// findings its reports sighted on hosts other than gapHosts (none: every
+// host), when every hold reason is one of reasons. It returns the ids it
+// changed (a second call changes nothing).
+func (r *FindingRepository) ReleaseRunFindings(ctx context.Context, tenantID, commandID shared.ID, gapHosts []string, reasons []string) ([]shared.ID, error) {
+	if tenantID.IsZero() || commandID.IsZero() || len(reasons) == 0 {
+		return nil, nil
+	}
+	if gapHosts == nil {
+		gapHosts = []string{}
+	}
+	rows, err := r.db.QueryContext(ctx, releaseRunFindingsSQL,
+		tenantID.String(), commandID.String(), pq.Array(gapHosts), pq.Array(reasons))
+	if err != nil {
+		return nil, fmt.Errorf("release held findings of a run: %w", err)
+	}
+	defer rows.Close()
+	var out []shared.ID
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan released finding: %w", err)
+		}
+		if fid, err := shared.IDFromString(id); err == nil {
+			out = append(out, fid)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("release held findings of a run: %w", err)
+	}
+	return out, nil
+}
+
+// OnceHeldNotice runs send in a transaction, unless the tenant's command
+// already has a notice of eventType (notification_outbox, aggregate scan,
+// aggregate id the command). A transaction-scoped advisory lock on the
+// tenant, command and event type serializes concurrent callers (the reports
+// of one command are ingested in parallel), so exactly one of them sends. It
+// reports whether send ran.
+func (r *FindingRepository) OnceHeldNotice(ctx context.Context, tenantID, commandID shared.ID, eventType string, send func(tx *sql.Tx) error) (bool, error) {
+	if tenantID.IsZero() || commandID.IsZero() || eventType == "" || send == nil {
+		return false, nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("held notice: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"held-notice:"+tenantID.String()+":"+commandID.String()+":"+eventType); err != nil {
+		return false, fmt.Errorf("held notice: lock: %w", err)
+	}
+	var sent bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM notification_outbox
+		WHERE aggregate_type = 'scan' AND aggregate_id = $2 AND tenant_id = $1 AND event_type = $3)`,
+		tenantID.String(), commandID.String(), eventType).Scan(&sent); err != nil {
+		return false, fmt.Errorf("held notice: look up: %w", err)
+	}
+	if sent {
+		return false, nil
+	}
+	if err := send(tx); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("held notice: commit: %w", err)
+	}
+	return true, nil
 }
 
 // IsHeld reports whether the tenant's finding is held (false for a finding

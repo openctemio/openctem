@@ -44,8 +44,28 @@ Only findings the command's reports sighted **first** (`first_detected_at` at or
 on a gap host, still `unchecked`, are held. A finding that was there before keeps its state; a verified one is
 never held. The update returns the rows it changed, so a second call holds nothing and announces nothing.
 
-A later sighting of a held finding without a hold releases it (`unchecked`); a held sighting of a finding that
-was not held changes nothing (`finding_verification_columns.go`).
+A held sighting of a finding that was not held changes nothing (`finding_verification_columns.go`).
+
+## When a hold is released
+
+A later run that sights a held finding again releases it (`unchecked`, `hold_reasons` empty):
+
+- **When a later command's coverage is evaluated** (`releaseRunFindings`, repository `ReleaseRunFindings`). Every
+  sighting path (new-finding insert, enrichment `EnrichBatchByFingerprints`, sighting-only
+  `UpdateScanIDBatchByFingerprints`) writes the report into `scan_id`; the held findings whose `scan_id` is a
+  report of the command, on an asset whose host the command's result does **not** name in a holding gap, are
+  released. A result without gaps releases every such finding. Only holds whose every reason is `target_throttled`
+  are released this way: a hold from the matched response itself stays until that response is checked.
+- Nothing is released when the command did not complete, when its result says the run stopped, or when its gap
+  list is missing, unreadable or cut (`coverage_gaps_total` above what it lists, or an entry with an unknown
+  reason): a throttled host may be missing from it.
+- **On the insert path's conflict**, a clean sighting releases a held finding
+  (`findingVerificationConflictSQL`).
+
+A released finding sends its created side effects then, once: notifications, automation rules and automatic
+tickets (`announceReleased`, through the same side-effect queue as new findings; a finding decided, closed,
+branch-only or already reported meanwhile sends none). The release re-enters it in risk inputs and SLA escalation
+(the queries filter on the state), and the asset risk trigger queues its asset for a rescore.
 
 ## What a held finding is kept out of
 
@@ -65,12 +85,26 @@ triage, assign or ticket a held finding by hand.
 
 ## Notice
 
-One `finding_held_critical` notice per hold that held at least one critical finding (default on for new
-integrations), with the count and the reason. It is the only message a held critical finding sends until it is
-checked.
+At most one `finding_held_critical` notice per scan command that held at least one critical finding (default on
+for new integrations), with the count of the first hold and the reason. A command's reports are held one by one
+and its evaluation runs from both ends, so the notice is keyed on the command (`aggregate_type` `scan`,
+`aggregate_id` the command) and written under a transaction-scoped advisory lock only when the command has none
+yet (`OnceHeldNotice`). It is the only message a held critical finding sends until it is checked or released.
+
+## Asset rescore
+
+Holding and releasing change an asset's risk inputs, so the findings update trigger of the asset risk queue
+(`trg_findings_asset_risk_update`) also watches `verification_state` (migration
+`finding_verification_state_risk_trigger`).
 
 ## Live impact
 
-The migration adds two columns with constant defaults (a catalog change, no rewrite, no backfill) and validates
-two CHECKs under SHARE UPDATE EXCLUSIVE; the index is built concurrently. Measured on a synthetic dataset (one
-tenant with 1M findings, 1 % held): see the pull request that shipped it.
+- `finding_verification_state` adds two columns with constant defaults (a catalog change, no rewrite, no
+  backfill) and two CHECKs NOT VALID (no scan): its ACCESS EXCLUSIVE lock lasts only for the catalog change.
+- `finding_verification_state_index` builds the partial index concurrently.
+- `finding_verification_state_validate` validates both CHECKs in a migration of its own (the runner applies one
+  file per transaction, so validating in the ALTER's file would scan under the ALTER's lock): SHARE UPDATE
+  EXCLUSIVE, reads and writes go on.
+- `finding_verification_state_risk_trigger` recreates the asset risk trigger (short lock, no scan).
+
+Measured on a synthetic dataset (one tenant with 1M findings, 1 % held): see the pull request that shipped it.

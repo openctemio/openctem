@@ -200,3 +200,169 @@ func TestHeldFindingOutOfAssetRisk_DB(t *testing.T) {
 		t.Fatalf("released finding not counted: %d", n)
 	}
 }
+
+// A held finding sighted again by a later run goes through the enrichment
+// (or sighting-only) path, which never touches its state; the later run's
+// evaluation releases it when its result does not name the host as
+// throttled. It then re-enters the asset's risk inputs (and the asset is
+// queued for a rescore). Nothing else is released: a host the later run
+// names as throttled, a hold that came from the matched response, a
+// finding the later run did not see, another tenant.
+func TestReleaseRunFindings_EnrichPath_DB(t *testing.T) {
+	ctx := context.Background()
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	host := asset.HostOf(assetName(t, f.db, f.host))
+	otherHost := asset.HostOf(assetName(t, f.db, f.otherHost))
+
+	cmd1, r1 := f.run(t, f.scan, "completed", f.host, f.otherHost)
+	enriched := f.finding(t, f.host, "nuclei", r1, nil)
+	f.exec(t, `UPDATE findings SET severity = 'critical' WHERE id = $1`, enriched)
+	sighted := f.finding(t, f.host, "nuclei", r1, nil)
+	gapped := f.finding(t, f.otherHost, "nuclei", r1, nil)
+	unseen := f.finding(t, f.host, "nuclei", r1, nil)
+	if got, err := repo.HoldGapFindings(ctx, f.tenant, cmd1, "", []string{host, otherHost}, []string{vulnerability.HoldTargetThrottled}); err != nil || len(got) != 4 {
+		t.Fatalf("hold: %v (%v)", got, err)
+	}
+	response := f.finding(t, f.host, "nuclei", r1, nil)
+	f.exec(t, `UPDATE findings SET verification_state = 'held', hold_reasons = '{edge_block_page}' WHERE id = $1`, response)
+
+	// The later run sights them again: enrichment for three, the
+	// sighting-only update for one.
+	cmd2, r2 := f.run(t, f.scan, "completed", f.host, f.otherHost)
+	loaded, err := repo.GetByIDs(ctx, f.tenant, []shared.ID{enriched, gapped, response})
+	if err != nil || len(loaded) != 3 {
+		t.Fatalf("load: %v (%v)", loaded, err)
+	}
+	for _, x := range loaded {
+		x.SetScanID(r2)
+	}
+	if _, err := repo.EnrichBatchByFingerprints(ctx, f.tenant, loaded, r2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.UpdateScanIDBatchByFingerprints(ctx, f.tenant, []string{"fp-" + sighted.String()}, r2, "nuclei"); err != nil {
+		t.Fatal(err)
+	}
+	// The sighting paths alone leave the hold in place (the defect).
+	for _, id := range []shared.ID{enriched, sighted} {
+		if s, _ := verification(t, f.db, id); s != "held" {
+			t.Fatalf("sighting changed the state to %s", s)
+		}
+	}
+
+	// SECURITY: another tenant asking for this command releases nothing.
+	g := newCoverageFixture(t)
+	if got, err := repo.ReleaseRunFindings(ctx, g.tenant, cmd2, nil, []string{vulnerability.HoldTargetThrottled}); err != nil || len(got) != 0 {
+		t.Fatalf("released across tenants: %v (%v)", got, err)
+	}
+	// The earlier, throttled command's own reports no longer hold the
+	// sighting (scan_id moved on): evaluating it again releases nothing.
+	if got, err := repo.ReleaseRunFindings(ctx, f.tenant, cmd1, []string{host, otherHost}, []string{vulnerability.HoldTargetThrottled}); err != nil || len(got) != 0 {
+		t.Fatalf("throttled run released %v (%v)", got, err)
+	}
+
+	clearQueue := func() { f.exec(t, `DELETE FROM asset_risk_queue WHERE tenant_id = $1`, f.tenant) }
+	queued := func() bool {
+		var q bool
+		if err := f.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM asset_risk_queue WHERE asset_id = $1)`, f.host.String()).Scan(&q); err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
+	clearQueue()
+	got, err := repo.ReleaseRunFindings(ctx, f.tenant, cmd2, []string{otherHost}, []string{vulnerability.HoldTargetThrottled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameIDs(got, []shared.ID{enriched, sighted}) {
+		t.Fatalf("released %v, want the two findings seen again on the clean host", got)
+	}
+	for _, id := range []shared.ID{enriched, sighted} {
+		if s, r := verification(t, f.db, id); s != "unchecked" || len(r) != 0 {
+			t.Errorf("released: %s %v", s, r)
+		}
+	}
+	for name, id := range map[string]shared.ID{"gapped host": gapped, "response hold": response, "not seen again": unseen} {
+		if s, _ := verification(t, f.db, id); s != "held" {
+			t.Errorf("%s: %s, want held", name, s)
+		}
+	}
+	// Back in the risk inputs, and the asset is queued for a rescore.
+	if _, crit, err := repo.KEVCriticalCountsByAsset(ctx, f.tenant); err != nil || crit[f.host.String()] != 1 {
+		t.Fatalf("released critical not counted: %v (%v)", crit, err)
+	}
+	if !queued() {
+		t.Fatal("asset not queued for a rescore after the release")
+	}
+	// Idempotent.
+	if again, err := repo.ReleaseRunFindings(ctx, f.tenant, cmd2, []string{otherHost}, []string{vulnerability.HoldTargetThrottled}); err != nil || len(again) != 0 {
+		t.Fatalf("second release %v (%v)", again, err)
+	}
+	// Holding queues the asset too.
+	clearQueue()
+	f.exec(t, `UPDATE findings SET verification_state = 'held', hold_reasons = '{target_throttled}' WHERE id = $1`, enriched)
+	if !queued() {
+		t.Fatal("asset not queued for a rescore after a hold")
+	}
+}
+
+// One command sends the held-critical notice once, however many callers.
+func TestOnceHeldNotice_DB(t *testing.T) {
+	ctx := context.Background()
+	f := newCoverageFixture(t)
+	repo := NewFindingRepository(&DB{DB: f.db})
+	cmd := shared.NewID()
+	clean := func(tenant shared.ID) {
+		t.Cleanup(func() {
+			_, _ = f.db.ExecContext(context.Background(), `DELETE FROM notification_outbox WHERE tenant_id = $1`, tenant.String())
+		})
+	}
+	clean(f.tenant)
+	send := func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO notification_outbox (tenant_id, event_type, aggregate_type, aggregate_id, title)
+			VALUES ($1, 'finding_held_critical', 'scan', $2, 't')`, f.tenant.String(), cmd.String())
+		return err
+	}
+	results := make(chan bool, 8)
+	for range 8 {
+		go func() {
+			ok, err := repo.OnceHeldNotice(ctx, f.tenant, cmd, "finding_held_critical", send)
+			if err != nil {
+				t.Error(err)
+			}
+			results <- ok
+		}()
+	}
+	sent := 0
+	for range 8 {
+		if <-results {
+			sent++
+		}
+	}
+	var n int
+	if err := f.db.QueryRowContext(ctx, `SELECT count(*) FROM notification_outbox WHERE tenant_id = $1`, f.tenant.String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if sent != 1 || n != 1 {
+		t.Fatalf("sent %d, rows %d, want one", sent, n)
+	}
+	// SECURITY: another tenant's command with the same id is its own.
+	g := newCoverageFixture(t)
+	clean(g.tenant)
+	ok, err := repo.OnceHeldNotice(ctx, g.tenant, cmd, "finding_held_critical", func(*sql.Tx) error { return nil })
+	if err != nil || !ok {
+		t.Fatalf("another tenant's notice suppressed: %v (%v)", ok, err)
+	}
+}
+
+func sameIDs(a, b []shared.ID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, x := range a {
+		if !slices.Contains(b, x) {
+			return false
+		}
+	}
+	return true
+}
