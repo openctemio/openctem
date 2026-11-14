@@ -314,7 +314,7 @@ export function LifecycleDraftEditor({
                         }
                       >
                         <SelectTrigger
-                          className="h-8 w-full"
+                          className="w-full"
                           aria-label={t('findingLifecycle.draft.defaultOf', 'Default of {status}', {
                             status: t(`findings.status.${st}`, st),
                           })}

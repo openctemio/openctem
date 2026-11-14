@@ -259,7 +259,7 @@ export function ToolsSection() {
   const toolbarStart = (
     <>
       <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-        <SelectTrigger className="h-9 w-[150px]" aria-label="Category">
+        <SelectTrigger className="w-[150px]" aria-label="Category">
           <SelectValue placeholder="All categories" />
         </SelectTrigger>
         <SelectContent>
@@ -272,7 +272,7 @@ export function ToolsSection() {
         </SelectContent>
       </Select>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
-        <SelectTrigger className="h-9 w-[130px]" aria-label="Type">
+        <SelectTrigger className="w-[130px]" aria-label="Type">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

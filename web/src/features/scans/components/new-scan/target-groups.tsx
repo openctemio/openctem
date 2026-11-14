@@ -134,7 +134,7 @@ function Group({
           type="button"
           variant="ghost"
           size="sm"
-          className="-ms-2 h-8 max-sm:min-h-11"
+          className="-ms-2 max-sm:min-h-11"
           onClick={() => setAll((v) => !v)}
         >
           {all

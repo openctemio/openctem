@@ -1095,7 +1095,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-9"
                         onClick={() => setRemoveAssetsDialogOpen(true)}
                       >
                         <X className="me-2 h-4 w-4" />
@@ -1104,7 +1103,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                         })}
                       </Button>
                     )}
-                    <Button size="sm" className="h-9" onClick={() => setAddAssetsDialogOpen(true)}>
+                    <Button size="sm" onClick={() => setAddAssetsDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
                       {t('assetGroups.detail.addAssets', 'Add assets')}
                     </Button>

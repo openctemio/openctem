@@ -442,7 +442,7 @@ function ScanRunsTable() {
         onChange={(v) => setFilter('origin', v || DEFAULT_RUN_ORIGIN)}
       />
       <Select value={statusFilter} onValueChange={(v) => setStatus(v as RunStatusFilterValue)}>
-        <SelectTrigger className="h-9 w-auto min-w-36" aria-label={t('scans.runs.filterStatus')}>
+        <SelectTrigger className="w-auto min-w-36" aria-label={t('scans.runs.filterStatus')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -454,7 +454,7 @@ function ScanRunsTable() {
         </SelectContent>
       </Select>
       <Select value={kindFilter} onValueChange={(v) => setFilter('kind', v)}>
-        <SelectTrigger className="h-9 w-auto min-w-32" aria-label={t('scans.runs.filterKind')}>
+        <SelectTrigger className="w-auto min-w-32" aria-label={t('scans.runs.filterKind')}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -469,7 +469,6 @@ function ScanRunsTable() {
         <Button
           variant="secondary"
           size="sm"
-          className="h-9"
           onClick={() => list.setFilter('scan_id', '')}
           aria-label={t('scans.runs.showAllScans')}
         >

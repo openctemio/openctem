@@ -96,7 +96,7 @@ export function ParamField({
           disabled={readOnly}
           onValueChange={(v) => set(v)}
         >
-          <SelectTrigger id={id} className="h-8 text-xs">
+          <SelectTrigger id={id} className="text-xs">
             <SelectValue placeholder={t('workflowStages.inspector.default')} />
           </SelectTrigger>
           <SelectContent>
@@ -132,7 +132,7 @@ export function ParamField({
         }
         aria-invalid={!!error}
         aria-describedby={`${id}-help`}
-        className="h-8 text-xs"
+        className="text-xs"
         onBlur={(e) => set(e.target.value)}
       />
       <p

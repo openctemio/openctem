@@ -297,10 +297,7 @@ function DepthOverlays({
             onChange(withDepthParam(step, depth, name, start ?? defaultOverlayValue(param)))
           }}
         >
-          <SelectTrigger
-            className="h-8 text-xs"
-            aria-label={t('workflowStages.inspector.depthAdd')}
-          >
+          <SelectTrigger className="text-xs" aria-label={t('workflowStages.inspector.depthAdd')}>
             <SelectValue placeholder={t('workflowStages.inspector.depthAdd')} />
           </SelectTrigger>
           <SelectContent>
@@ -374,7 +371,7 @@ function NumberField({
         max={max}
         defaultValue={value}
         disabled={readOnly}
-        className="h-8 text-xs"
+        className="text-xs"
         aria-invalid={!!error}
         onBlur={(e) => {
           const n = Number(e.target.value)

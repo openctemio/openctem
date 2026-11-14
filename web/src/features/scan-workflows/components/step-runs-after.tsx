@@ -44,7 +44,7 @@ export function StepRunsAfter({
           type="button"
           variant="outline"
           size="sm"
-          className="h-9 w-full justify-between font-normal"
+          className="w-full justify-between font-normal"
           aria-label={t('scans.workflowForm.runsAfter.aria', undefined, {
             name: step.name || step.step_key,
           })}

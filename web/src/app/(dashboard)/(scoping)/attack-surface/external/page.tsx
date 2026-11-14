@@ -611,7 +611,7 @@ export default function ExternalSurfacePage() {
         }}
       >
         <SelectTrigger
-          className="h-9 w-36"
+          className="w-36"
           aria-label={t('attackSurface.external.filterType', 'Filter by type')}
         >
           <SelectValue />
@@ -633,7 +633,7 @@ export default function ExternalSurfacePage() {
         }}
       >
         <SelectTrigger
-          className="h-9 w-32"
+          className="w-32"
           aria-label={t('attackSurface.external.filterRisk', 'Filter by risk')}
         >
           <SelectValue />

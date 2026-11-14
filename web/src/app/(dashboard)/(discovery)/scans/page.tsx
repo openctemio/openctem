@@ -878,7 +878,7 @@ function ConfigurationsTab() {
             aria-label="Filter by tag"
             value={tagFilter}
             onChange={(e) => setTagFilter(e.target.value)}
-            className="h-8 ps-8 text-sm"
+            className="ps-8 text-sm"
           />
         </div>
       </FacetSection>
