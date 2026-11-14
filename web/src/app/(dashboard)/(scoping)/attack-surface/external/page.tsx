@@ -194,7 +194,7 @@ export default function ExternalSurfacePage() {
   const [typeParam, setTypeParam] = useUrlFilter('type', 'all')
   const [riskParam, setRiskParam] = useUrlFilter('risk', 'all')
   const [findingsParam, setFindingsParam] = useUrlFilter('findings', 'all')
-  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
 
   const [searchInput, setSearchInput] = useState(qParam)

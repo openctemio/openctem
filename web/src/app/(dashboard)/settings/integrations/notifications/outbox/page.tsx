@@ -147,7 +147,7 @@ export default function NotificationOutboxPage() {
     t(`notificationChannels.outbox.status.${s}`, OUTBOX_HEALTH[s as OutboxStatus]?.label ?? s)
   // State
   // The list lives in the URL (one list convention): page, per_page, status.
-  const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
+  const list = useListParams({ filters: { status: 'all' } })
   const statusFilter = list.filters.status as OutboxStatus | 'all'
   const setStatusFilter = (value: OutboxStatus | 'all') => list.setFilter('status', value)
   const { pagination, setPagination, setPage } = list

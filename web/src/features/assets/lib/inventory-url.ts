@@ -18,6 +18,7 @@ import type { AssetSearchFilters } from '../hooks/use-assets'
 import { isCoverageCause } from './coverage-cause'
 import { TABS_LENS, tabById, tabFromTypes } from './inventory-tabs'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
+import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
 
 /** The subset of AssetSearchFilters the inventory page drives + syncs to the URL. */
 export type InventoryFilters = Pick<
@@ -481,8 +482,8 @@ export function attributionQuery(f: InventoryFilters): string[] {
   return f.attribution?.length ? f.attribution : DEFAULT_ATTRIBUTION
 }
 
-/** Same default as the other server-paginated lists (Findings). */
-export const DEFAULT_PAGE_SIZE = 20
+/** The default every list shares (25). */
+export const DEFAULT_PAGE_SIZE = DEFAULT_TABLE_PAGE_SIZE
 
 /** True when no filter (other than pagination/sort) is active. */
 export function isInventoryFilterEmpty(f: InventoryFilters): boolean {

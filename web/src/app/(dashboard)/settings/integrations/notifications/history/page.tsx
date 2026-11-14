@@ -39,6 +39,7 @@ import { safeHref } from '@/lib/safe-href'
 import { useTranslation } from '@/context/i18n-provider'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { RelativeTime } from '@/features/shared/components/relative-time'
+import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
 
 /** The channel's own delivery result wins over the event-wide status. */
 function deliveryStatus(entry: NotificationEventEntry): string {
@@ -145,7 +146,7 @@ function HistoryList({ integrationId }: { integrationId: string }) {
   const { t } = useTranslation()
   const columns = useMemo(() => buildColumns(t), [t])
   // Server pagination over the channel's events (page / per_page).
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: DEFAULT_TABLE_PAGE_SIZE })
   useEffect(() => {
     setPagination((p) => ({ ...p, pageIndex: 0 }))
   }, [integrationId])
