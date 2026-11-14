@@ -154,8 +154,9 @@ const (
 	// output, or repeated failures (docs/rfcs/RFC-093-asset-coverage.md).
 	EventTypeCoverageGap EventType = "coverage_gap"
 
-	// EventTypeFindingHeldCritical fires once per hold when a critical
-	// finding is held because its target throttled or blocked the scan
+	// EventTypeFindingHeldCritical fires at most once per scan command when
+	// critical findings are held because their target throttled or blocked
+	// the scan
 	// (docs/architecture/held-findings.md): the finding itself sends no
 	// new-finding message until it is checked, so this is the one notice.
 	EventTypeFindingHeldCritical EventType = "finding_held_critical"

@@ -19,25 +19,29 @@ blocked or unresponsive.
 
 - A finding has a verification state: `unchecked` (default), `held`, `verified`, `not_reproduced`, and, when
   held, the codes behind it. Nothing is dropped: a held finding is kept with its evidence and listed.
-- A held finding stays out of risk scores, SLA escalation, notifications and tickets until it is checked. One
-  notice per hold names the held critical findings, so a real critical finding is never silent.
+- A held finding stays out of risk scores, SLA escalation, notifications and tickets until it is checked or a
+  later run sights it again on a host that did not throttle. At most one notice per scan command names the held
+  critical findings, so a real critical finding is never silent.
 - A scan command whose result names a host in a throttling coverage gap (`throttled`, `blocked`,
   `edge_protected`, `rate_floor`, `catch_all`) holds the findings its reports sighted first on that host
   (`target_throttled`).
 - A held sighting never downgrades a finding that existed before or was verified. A clean sighting releases a
-  held finding.
+  held finding: when a later completed command whose gap list is complete is evaluated, the held findings its
+  reports sighted again (on every sighting path) on hosts it does not name as throttled are released, and their
+  notifications, automations and tickets run then, once.
 - `not_reproduced` is never an automatic false positive.
 
 ## 3. Security
 
-- Every hold query is pinned to the tenant on every table it reads (findings, reports, assets); a command or
-  report id of another tenant holds nothing (tested).
+- Every hold and release query is pinned to the tenant on every table it reads (findings, reports, assets); a
+  command or report id of another tenant holds or releases nothing (tested). The notice lock and its look-up are
+  per tenant and command.
 - Holding is reversible and audited by the finding's state; a target cannot hide a real finding by serving block
   pages: the finding is kept, a critical one is announced, and automatic re-checks (planned) release it.
 - The hold reasons are fixed codes (database CHECK), never target content.
 
 ## 4. Plan
 
-Shipped: the state, holds from coverage gaps, the exclusions, the notice. Planned: the sensor's per-finding screen
+Shipped: the state, holds from coverage gaps, their release by a later clean run, the exclusions, the notice. Planned: the sensor's per-finding screen
 (block pages, 429/503, timing and out-of-band checks) carried in CTIS, automatic gentle re-checks that set
 `verified` or `not_reproduced`, and the console's held filter and counts.

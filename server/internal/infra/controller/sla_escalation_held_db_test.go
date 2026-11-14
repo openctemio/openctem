@@ -94,4 +94,21 @@ func TestSLAEscalation_HeldFindingNotEscalated_DB(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `SELECT sla_status FROM findings WHERE id = $1`, heldID.String()).Scan(&st); err != nil || st == "overdue" {
 		t.Errorf("held finding sla_status %q (%v), want unchanged", st, err)
 	}
+
+	// Released (a later clean run sighted it again): escalated on the next
+	// pass like any other finding past its deadline.
+	if _, err := db.ExecContext(ctx, `UPDATE findings SET verification_state = 'unchecked', hold_reasons = '{}' WHERE id = $1`, heldID.String()); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	pub.events = nil
+	if _, err := c.Reconcile(ctx); err != nil {
+		t.Fatalf("reconcile after release: %v", err)
+	}
+	released := false
+	for _, ev := range pub.events {
+		released = released || ev.FindingID.String() == heldID.String()
+	}
+	if !released {
+		t.Error("the released finding past its deadline was not escalated")
+	}
 }
