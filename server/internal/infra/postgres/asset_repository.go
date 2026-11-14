@@ -1216,6 +1216,31 @@ func (r *AssetRepository) reconstructAsset(
 	return result, nil
 }
 
+// appendInCIDRs adds the range condition of buildWhereClause for a filter
+// that has a tenant, bound as $1 (its first condition): each range is bound
+// as an inet, one address is the range of itself (as in the ip filter), and
+// values that do not parse are skipped; none left matches nothing.
+func appendInCIDRs(conditions []string, args []any, argIndex int, cidrs []string) ([]string, []any, int) {
+	ranges := make([]string, 0, len(cidrs))
+	for _, c := range cidrs {
+		p, err := netip.ParsePrefix(strings.TrimSpace(c))
+		if err != nil {
+			addr, aerr := netip.ParseAddr(strings.TrimSpace(c))
+			if aerr != nil {
+				continue
+			}
+			p = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		ranges = append(ranges, fmt.Sprintf("$%d::inet", argIndex))
+		args = append(args, p.Masked().String())
+		argIndex++
+	}
+	if len(ranges) == 0 {
+		return append(conditions, "FALSE"), args, argIndex
+	}
+	return append(conditions, asset.AssetInRangesSQL("a.id", "$1::uuid", ranges...)), args, argIndex
+}
+
 func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) {
 	// A soft-deleted asset is invisible to every list, count and facet.
 	conditions := []string{liveAssetSQL("a")}
@@ -1525,23 +1550,18 @@ func (r *AssetRepository) buildWhereClause(filter asset.Filter) (string, []any) 
 		conditions = append(conditions, "("+strings.Join(parts, " OR ")+")")
 	}
 
-	// Address assets inside these ranges. The address is the asset's name
-	// (text); a name that is not an address is never cast.
+	// Assets with their name or a recorded address inside these ranges: the
+	// same condition as the assets ip filter and the findings asset_ip
+	// filter (asset.AssetIDsInRangesSQL), so a smart group rule and the
+	// list agree. A range that does not parse matches nothing, and so does a
+	// filter without a tenant: the address lookup is per tenant ($1), and a
+	// caller that names no tenant gets no assets by range (fail closed)
+	// instead of a lookup correlated to every row of every tenant.
 	if len(filter.InCIDRs) > 0 {
-		cidrs := make([]string, 0, len(filter.InCIDRs))
-		for _, c := range filter.InCIDRs {
-			if p, err := netip.ParsePrefix(strings.TrimSpace(c)); err == nil {
-				cidrs = append(cidrs, p.Masked().String())
-			}
-		}
-		if len(cidrs) == 0 {
+		if filter.TenantID == nil || *filter.TenantID == "" {
 			conditions = append(conditions, "FALSE")
 		} else {
-			conditions = append(conditions, fmt.Sprintf(
-				`(a.asset_type IN ('ip_address', 'host') AND position('/' IN a.name) = 0
-				  AND pg_input_is_valid(a.name, 'inet') AND a.name::inet <<= ANY($%d::inet[]))`, argIndex))
-			args = append(args, pq.Array(cidrs))
-			argIndex++
+			conditions, args, argIndex = appendInCIDRs(conditions, args, argIndex, filter.InCIDRs)
 		}
 	}
 

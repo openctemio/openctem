@@ -74,8 +74,9 @@ func TestAssetRefTenantFKs_Schema(t *testing.T) {
 	// the port asset; asset_port_queue).
 	// 2 from exploration leads and their typed links (exploration_leads.subject_asset_id,
 	// exploration_links.asset_id).
-	if n != 67 || !allValid.Bool {
-		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 67 validated", n, allValid.Bool)
+	// 1 from the addresses of assets (asset_ip_addresses).
+	if n != 68 || !allValid.Bool {
+		t.Fatalf("composite asset foreign keys: %d (all validated: %v), want 68 validated", n, allValid.Bool)
 	}
 	// Every single-column reference to assets(id) from a table that has a
 	// tenant_id is covered by a composite key: a new table referencing
