@@ -24,6 +24,7 @@ import { NotificationBell } from '@/components/notification-bell'
 import { FullscreenToggle } from '@/components/fullscreen-toggle'
 import { HeaderApprovals } from './header-approvals'
 import { HeaderCreateMenu } from './header-create-menu'
+import { HEADER_ACTIONS_GROUP } from './header-controls'
 
 interface HeaderActionsProps {
   /**
@@ -57,10 +58,7 @@ export function HeaderActions({
   return (
     <>
       {!hideSearch && <Search className="ms-auto shrink-0" />}
-      <div
-        className="flex flex-none items-center gap-1 max-md:gap-2 [&>:last-child]:ms-1 max-md:[&>:last-child]:ms-0"
-        data-slot="header-actions"
-      >
+      <div className={HEADER_ACTIONS_GROUP} data-slot="header-actions">
         <HeaderCreateMenu />
         <FullscreenToggle />
         <HeaderApprovals />

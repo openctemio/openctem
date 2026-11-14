@@ -14,7 +14,7 @@ import {
   SidebarRail,
   useSidebarActions,
 } from '@/components/ui/sidebar'
-import { Separator } from '@/components/ui/separator'
+import { Badge } from '@/components/ui/badge'
 import {
   SidebarBrand,
   SIDEBAR_CHIP_CLASS,
@@ -133,18 +133,29 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="gap-3">
-        <SidebarBrand href="/" />
+      {/* As the tenant app's header: the brand row (with the Admin chip), then
+          the context row where the app has its organization switcher. */}
+      <SidebarHeader>
+        <SidebarBrand
+          href="/"
+          badge={
+            <Badge variant="secondary" className="shrink-0">
+              {t('admin.shell.badge', 'Admin')}
+            </Badge>
+          }
+        />
         <SidebarMenu>
           <SidebarMenuItem>
+            {/* The org trigger's 36 px row (44 in the phone drawer): the label
+                14/20 (16/24 in the drawer) over the acting role 12/16. */}
             <SidebarMenuButton
-              className={cn(SIDEBAR_CONTEXT_ROW_CLASS, 'pointer-events-none h-10')}
+              className={cn(SIDEBAR_CONTEXT_ROW_CLASS, 'pointer-events-none py-0')}
               tooltip={t('admin.shell.contextRow', 'Platform administration')}
             >
               <div className={SIDEBAR_CHIP_CLASS}>
                 <ShieldCheck className="size-4" />
               </div>
-              <div className="grid flex-1 text-start text-sm leading-tight">
+              <div className="grid min-w-0 flex-1 text-start">
                 <span className="truncate font-semibold">
                   {t('admin.shell.contextRow', 'Platform administration')}
                 </span>
@@ -155,7 +166,6 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
-        <Separator orientation="horizontal" className="mt-1" />
       </SidebarHeader>
 
       <SidebarContent>

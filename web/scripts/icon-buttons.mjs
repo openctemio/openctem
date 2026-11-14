@@ -2,7 +2,7 @@
 // "Sizes"). Finds, and with --write fixes, a <Button> whose content is only an
 // icon but has a text size (default, sm, lg), and a button that is icon-only
 // below a breakpoint without iconOnlyBelow.
-// Scope: the tenant app (src/); the platform console joins with its shell PR.
+// Scope: the tenant app (src/) and the platform console (console/src/).
 // usage: node scripts/icon-buttons.mjs [--write]   (from web/)
 // src/components/ui/__tests__/icon-button-guard.test.ts runs findIconButtons().
 // Icon-only: every child (ignoring whitespace) is an icon element (a component
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 export function findIconButtons(web, { write = false } = {}) {
-  const files = execSync("git ls-files 'src/*.tsx'", {
+  const files = execSync("git ls-files 'src/*.tsx' 'console/src/*.tsx'", {
     cwd: web,
     encoding: 'utf8',
   })

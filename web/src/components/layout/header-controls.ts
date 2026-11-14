@@ -28,5 +28,13 @@ export const HEADER_MENU =
  */
 export const PHONE_BAR_MENU = 'max-md:w-[calc(100vw-1rem)]'
 
+/**
+ * The top bar's right group (app and platform console): 4 between controls,
+ * 8 before the last one (the avatar; the console's elevation control); 8
+ * apart below 768 px. It never shrinks.
+ */
+export const HEADER_ACTIONS_GROUP =
+  'flex flex-none items-center gap-1 max-md:gap-2 [&>:last-child]:ms-1 max-md:[&>:last-child]:ms-0'
+
 /** A count on the corner of a top-bar button (Counter `size="badge"`, ink). */
 export const HEADER_BADGE = 'pointer-events-none absolute -end-1 -top-1'

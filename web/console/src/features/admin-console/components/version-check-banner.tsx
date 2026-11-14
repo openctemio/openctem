@@ -107,7 +107,7 @@ export function VersionCheckBanner() {
         <Button
           variant="ghost"
           size="icon"
-          className="absolute end-2 top-2 size-7"
+          className="absolute end-2 top-2"
           aria-label={t('admin.versionCheck.banner.dismiss', 'Hide until the next release')}
           onClick={() => {
             writeDismissed(latest)

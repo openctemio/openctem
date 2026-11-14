@@ -40,9 +40,15 @@ disagree. Change both together.
   the phone bar they are 36 wide and 8 apart, so the squares meet but never
   overlap (`e2e/specs/58-phone-bar.spec.ts`).
 - Icon-only buttons are squares at every size (`icon`, `icon-sm`, `xs`, or
-  `iconOnlyBelow` when the label shows only from a width up);
+  `iconOnlyBelow` when the label shows only from a width up), in the tenant
+  app and the platform console (`console/src`);
   `src/components/ui/__tests__/icon-button-guard.test.ts` and the page-rhythm
   probe enforce it.
+- The platform console renders the same shell parts as the app: the top bar
+  (`components/layout/app-header.tsx`, breadcrumb levels from its own
+  navigation), the sidebar brand row, context row, nav rows and footer, the
+  phone bar and drawer, and the skip link. Its right group is Full screen,
+  Theme and the elevation control (`HEADER_ACTIONS_GROUP`).
 
 ### Type roles
 

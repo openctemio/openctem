@@ -105,8 +105,10 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
         className="flex min-w-0 items-center gap-2 rounded-md text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
       >
         {usesBuiltInLogo(brand) ? (
-          // Our own brand: the outlined lockup (symbol and Sora wordmark) at 22px.
-          <LogoFull className="h-[22px] w-auto shrink-0" />
+          // Our own brand: the outlined lockup (symbol and Sora wordmark) at
+          // 22px; 18px next to a badge, so lockup, badge and the 32px toggle fit
+          // the 239px row in every language (the console's "Admin").
+          <LogoFull className={cn('w-auto shrink-0', badge ? 'h-[18px]' : 'h-[22px]')} />
         ) : (
           <>
             <BrandMark size={28} className="size-7 shrink-0" />
