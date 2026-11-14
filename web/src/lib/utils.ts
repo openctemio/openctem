@@ -49,6 +49,7 @@ export const SPACING_NAMES = [
   'control-field',
   'control-dense',
   'row',
+  'th',
   'page',
   'page-tight',
   'section',
