@@ -466,6 +466,12 @@ func (b *docBuilder) compare(n *Compare, path string) map[string]any {
 				return nil
 			}
 			op, v = filterspec.OpEq, !bv
+		case f.EnumTemplates != nil && allows(f, filterspec.OpEq):
+			// A named set (the state lens) has no "not equal" of its own: the
+			// negation wraps the same equality leaf, so it compiles to the
+			// same constant predicate under NOT.
+			leaf := b.leaf(path+".not", f, filterspec.OpEq, v, n, n.Path, n.OpPos, []Value{n.Value})
+			return map[string]any{"not": leaf}
 		case allows(f, filterspec.OpNe):
 			op = filterspec.OpNe
 		case allows(f, filterspec.OpNotIn):

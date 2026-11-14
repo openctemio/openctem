@@ -108,6 +108,7 @@ op     := "=" | "!=" | ">" | ">=" | "<" | "<=" | "~"
 | `severity=critical`, `severity:critical` | equal | `in` |
 | `severity:critical,high` | any of | `in` |
 | `-status:accepted`, `status!=accepted` | not | `not_in` (`ne`, or `eq` with the opposite value on a boolean) |
+| `state:open`, `state=closed`, `-state:closed`, `state:all` | the findings state lens: `open`, `fixed`, `dispositioned`, `closed` or `all` (no condition); one value, a negation is `not` of the same condition | `state eq` (`not` of it for `-state:`); compiles to the constant status set of `vulnerability.FindingLensStatuses`, the one the list's State chip uses |
 | `severity>=high` | ordered values: at least high | `in ["critical","high"]` (fields marked `Ordered`: severity, priority class, asset criticality) |
 | `file_path~"src/main"` | contains, case-insensitive, at least 3 characters | `contains` |
 | `asset.name=api-*`, `domain=*.example.com` | name patterns (`*`, `?`) on fields marked `Glob` | the field's pattern or membership keys |
