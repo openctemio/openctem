@@ -102,7 +102,8 @@ export type ThreatIntelSource = 'epss' | 'kev'
  * Sync status for a data source
  */
 export interface SyncStatus {
-  source: ThreatIntelSource
+  /** epss and kev are the ones this console can switch; the API may list more feeds. */
+  source: ThreatIntelSource | (string & {})
   enabled: boolean
   last_sync_at?: string
   // 'running' is persisted by the backend (MarkSyncStarted) BEFORE the slow
