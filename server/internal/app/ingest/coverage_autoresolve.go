@@ -450,6 +450,12 @@ func (s *Service) EvaluateCommandCoverage(ctx context.Context, tenantID, command
 		out.Reason = coverageError
 		return out
 	}
+	// The held findings its reports sighted again on a host its result does
+	// not name as throttled are released, and the findings its reports
+	// sighted first on a host it names are held (held.go), whatever the
+	// coverage mode.
+	s.releaseRunFindings(ctx, tenantID, commandID, cov)
+	s.holdRunFindings(ctx, tenantID, commandID, cov.Result, "")
 	// A finished filtered resolution marks the names it did not report
 	// (wildcard_dns.go), whatever the coverage mode.
 	s.evaluateWildcardDNS(ctx, tenantID, commandID, cov)

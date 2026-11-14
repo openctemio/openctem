@@ -132,7 +132,8 @@ func (p *FindingProcessor) correlateFindings(ctx context.Context, tenantID share
 	// new-finding path (notifications, tickets).
 	if len(released) > 0 && p.findingCreatedCallback != nil {
 		if loader, ok := p.repo.(ReleasedLoader); ok {
-			if fs, err := loader.GetByIDs(ctx, tenantID, released); err == nil && len(fs) > 0 {
+			if fs, err := loader.GetByIDs(ctx, tenantID, released); err == nil && len(withoutHeld(fs)) > 0 {
+				fs = withoutHeld(fs)
 				p.findingCreatedCallback(ctx, tenantID, fs)
 			}
 		}
