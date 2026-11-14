@@ -383,7 +383,7 @@ export function CreateTaskFromQueryDialog({
                         min={1}
                         max={MAX_QUERY_TASK_FINDINGS}
                         value={cap}
-                        className="h-8 w-28"
+                        className="w-28"
                         aria-invalid={!capValid}
                         onChange={(e) => setCap(e.target.value)}
                       />

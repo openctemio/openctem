@@ -186,7 +186,6 @@ function AddLabelButton({
               setError(null)
             }}
             onKeyDown={(e) => e.stopPropagation()}
-            className="h-8"
           />
           {error && (
             <p id={errorId} role="alert" className="text-xs text-destructive">

@@ -260,7 +260,7 @@ export function ThreatModelTable({
         onValueChange={(v) => setFilter({ status: v as ThreatFilters['status'] })}
       >
         <SelectTrigger
-          className="h-9 w-auto max-w-52"
+          className="w-auto max-w-52"
           aria-label={t('threatModel.filter.byStatus', 'Filter by status')}
         >
           <SelectValue placeholder={t('threatModel.table.status', 'Status')} />
@@ -277,7 +277,7 @@ export function ThreatModelTable({
 
       <Select value={filters.tactic} onValueChange={(v) => setFilter({ tactic: v })}>
         <SelectTrigger
-          className="h-9 w-auto max-w-52"
+          className="w-auto max-w-52"
           aria-label={t('threatModel.filter.byTactic', 'Filter by tactic')}
         >
           <SelectValue placeholder={t('threatModel.table.tactic', 'Tactic')} />
@@ -294,7 +294,7 @@ export function ThreatModelTable({
 
       <Select value={filters.attacker} onValueChange={(v) => setFilter({ attacker: v })}>
         <SelectTrigger
-          className="h-9 w-auto max-w-52"
+          className="w-auto max-w-52"
           aria-label={t('threatModel.filter.byAttacker', 'Filter by attacker')}
         >
           <SelectValue placeholder={t('threatModel.table.attacker', 'Attacker')} />
@@ -313,7 +313,7 @@ export function ThreatModelTable({
 
       <Select value={filters.technique} onValueChange={(v) => setFilter({ technique: v })}>
         <SelectTrigger
-          className="h-9 w-auto max-w-52"
+          className="w-auto max-w-52"
           aria-label={t('threatModel.filter.byTechnique', 'Filter by technique')}
         >
           <SelectValue placeholder={t('threatModel.table.technique', 'Technique')} />
@@ -334,7 +334,6 @@ export function ThreatModelTable({
         <Button
           variant="ghost"
           size="sm"
-          className="h-9"
           onClick={() =>
             onFiltersChange({ status: ALL, tactic: ALL, attacker: ALL, technique: ALL })
           }

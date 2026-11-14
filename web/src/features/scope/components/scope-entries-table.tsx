@@ -424,7 +424,7 @@ export function ScopeEntriesTable({
       />
       <Select value={query.status} onValueChange={onStatusChange}>
         <SelectTrigger
-          className="h-9 w-auto min-w-36"
+          className="w-auto min-w-36"
           aria-label={t('scope.filter.status', 'Filter by status')}
         >
           <SelectValue />

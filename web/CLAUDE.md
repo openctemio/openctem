@@ -126,6 +126,12 @@ checklist: the `web-change` skill in the repository root `.claude/skills/`.
 
 - Sizes (control heights, type roles, spacing, density, radii) are listed once, in
   "Sizes" at the top of [docs/ui-style-contract.md](docs/ui-style-contract.md); a test keeps it equal to the theme.
+- Pages do not restyle kit controls: add a variant to the kit instead. Sizes and
+  colours come from the tokens in `src/styles/theme.css` through
+  `src/components/ui`; page and feature code never passes a height, padding,
+  text size or colour to `Button`, `Input`, `SelectTrigger`, `ListSearch`,
+  `TabsTrigger` or `Badge` (`kit-restyle-ratchet.test.ts`, baseline only goes
+  down). Every control in a row has one height (page-rhythm `probeRowMix`).
 - `cn()` for conditional classes, shadcn/ui variants, Tailwind utilities
 - Mobile-first, CSS variables for theming
 - **NO emoji in code/JSX** — use text or icon components (lucide-react)

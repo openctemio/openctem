@@ -118,7 +118,7 @@ export default function NotificationsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <Select value={severityFilter} onValueChange={handleSeverityChange}>
             <SelectTrigger
-              className="h-8 w-auto min-w-[8rem] text-xs"
+              className="w-auto min-w-[8rem] text-xs"
               aria-label={t('notifications.filters.severity', 'Filter by severity')}
             >
               <SelectValue
@@ -138,7 +138,7 @@ export default function NotificationsPage() {
           </Select>
           <Select value={readFilter} onValueChange={handleReadFilterChange}>
             <SelectTrigger
-              className="h-8 w-auto min-w-[8rem] text-xs"
+              className="w-auto min-w-[8rem] text-xs"
               aria-label={t('notifications.filters.status', 'Filter by read status')}
             >
               <SelectValue placeholder={t('notifications.filters.statusPlaceholder', 'Status')} />

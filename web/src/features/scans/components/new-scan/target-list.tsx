@@ -180,11 +180,11 @@ export function TargetList({
                     }
                   }}
                   aria-label={t('scans.paste.edit', undefined, { name: entry.input })}
-                  className="h-9 min-w-0 flex-1 font-mono text-sm"
+                  className="min-w-0 flex-1 font-mono text-sm"
                   autoCapitalize="none"
                   spellCheck={false}
                 />
-                <Button type="submit" size="sm" className="h-9">
+                <Button type="submit" size="sm">
                   {t('scans.paste.save')}
                 </Button>
               </form>

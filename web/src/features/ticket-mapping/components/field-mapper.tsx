@@ -168,7 +168,7 @@ export function FieldMapper({
               onChange={(e) => setAttrQuery(e.target.value)}
               placeholder={t('ticketMapping.common.search', 'Search')}
               aria-label={t('ticketMapping.fields.searchAttrs', 'Search attributes')}
-              className="h-8 w-full sm:w-48"
+              className="w-full sm:w-48"
             />
           </div>
           <ul
@@ -230,7 +230,7 @@ export function FieldMapper({
               onChange={(e) => setFieldQuery(e.target.value)}
               placeholder={t('ticketMapping.common.search', 'Search')}
               aria-label={t('ticketMapping.fields.searchFields', 'Search Jira fields')}
-              className="h-8 w-full sm:w-48"
+              className="w-full sm:w-48"
             />
           </div>
           {pickedAttr && (
@@ -439,7 +439,7 @@ function MappingRowCard({
             disabled={readOnly}
           >
             <SelectTrigger
-              className="h-8 w-28 shrink-0"
+              className="w-28 shrink-0"
               aria-label={t('ticketMapping.fields.sourceKind', 'Source kind')}
             >
               <SelectValue />
@@ -459,7 +459,7 @@ function MappingRowCard({
               disabled={readOnly}
             >
               <SelectTrigger
-                className="h-8 min-w-0 font-mono text-xs"
+                className="min-w-0 font-mono text-xs"
                 aria-label={t('ticketMapping.fields.attribute', 'Attribute')}
               >
                 <SelectValue />
@@ -475,7 +475,6 @@ function MappingRowCard({
           )}
           {row.source.kind === 'const' && (
             <Input
-              className="h-8"
               value={row.source.value ?? ''}
               maxLength={1000}
               disabled={readOnly}
@@ -549,7 +548,7 @@ function MappingRowCard({
           }}
         >
           <SelectTrigger
-            className="h-8 min-w-0"
+            className="min-w-0"
             aria-label={t('ticketMapping.fields.target', 'Jira field')}
           >
             <span className="flex min-w-0 items-center gap-2">
@@ -741,7 +740,7 @@ export function MappingSettingsBar({
           }
           disabled={readOnly}
         >
-          <SelectTrigger className="h-8 w-auto">
+          <SelectTrigger className="w-auto">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

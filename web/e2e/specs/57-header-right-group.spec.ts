@@ -1,9 +1,11 @@
 import { test, expect } from '../fixtures/authenticated-page'
+import { ICON_CONTRAST_FLOOR, iconContrast } from '../helpers/icon-contrast'
 
 /**
  * The top bar to the shell package (0.2, 0.4): the right group in order
  * Create, Full screen, Approvals, Notifications, Theme, Account, every control
- * 32 x 32 with a 16 px icon, 4 px between them and 8 before the avatar; the
+ * 32 x 32 with a 16 px icon in the ink colour (contrast >= 4.5:1 in light and
+ * dark, as every icon-only control of the shell, sidebar and rail included), 4 px between them and 8 before the avatar; the
  * search trigger 420 wide from 1280 px, 200 from 1024 px and an icon-only
  * 32 px square below; the Create menu 232 wide with one-line 32 px rows, and
  * its "n" chords, which open the form once (Back and Forward do not reopen it).
@@ -61,6 +63,39 @@ for (const [width, search] of SEARCH) {
       expect(m.names.at(-1)).toMatch(/^Open user menu/)
       expect(m.names.indexOf('Theme')).toBe(m.names.length - 2)
       expect(m.search).toBe(search)
+      // Icons at rest (no hover): contrast >= 4.5:1 on the bar.
+      await page.mouse.move(width / 2, 880)
+      const icons = await iconContrast(
+        page,
+        'header [data-sidebar=trigger], header button[aria-keyshortcuts], header [data-slot=header-actions] button:not([aria-label^="Open user menu"]), header [data-slot=header-actions] a'
+      )
+      expect(icons.length).toBeGreaterThanOrEqual(4)
+      for (const i of icons)
+        expect(i.ratio, `${i.name}: ${i.icon} on ${i.background}`).toBeGreaterThanOrEqual(
+          ICON_CONTRAST_FLOOR
+        )
+    })
+  }
+}
+
+// The sidebar (1440) and the icon rail (900): toggle and row icons at rest.
+for (const width of [1440, 900]) {
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`sidebar icons at ${width} in ${scheme}`, { tag: ['@shell'] }, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+      await page.goto('/findings')
+      await expect(page.locator('header [data-slot=header-actions]')).toBeVisible()
+      await page.mouse.move(width - 10, 890)
+      const icons = await iconContrast(
+        page,
+        '[data-sidebar=sidebar] [data-sidebar=trigger], [data-sidebar=sidebar] [data-sidebar=menu-button], [data-sidebar=sidebar] [data-sidebar=menu-sub-button]'
+      )
+      expect(icons.length).toBeGreaterThan(5)
+      for (const i of icons)
+        expect(i.ratio, `${i.name}: ${i.icon} on ${i.background}`).toBeGreaterThanOrEqual(
+          ICON_CONTRAST_FLOOR
+        )
     })
   }
 }

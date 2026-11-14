@@ -813,7 +813,7 @@ export default function BusinessUnitsPage() {
                 <>
                   <Select value={filterCriticality} onValueChange={setFilterCriticality}>
                     <SelectTrigger
-                      className="h-9 w-auto min-w-36"
+                      className="w-auto min-w-36"
                       aria-label={t(
                         'businessContext.units.filter.criticality.aria',
                         'Filter by criticality'
@@ -834,7 +834,7 @@ export default function BusinessUnitsPage() {
                   </Select>
                   <Select value={filterRiskTolerance} onValueChange={setFilterRiskTolerance}>
                     <SelectTrigger
-                      className="h-9 w-auto min-w-36"
+                      className="w-auto min-w-36"
                       aria-label={t(
                         'businessContext.units.filter.tolerance.aria',
                         'Filter by risk tolerance'

@@ -32,8 +32,12 @@ export function ViewSwitcher<T extends string>({
   return (
     <div
       role="group"
+      data-slot="view-switcher"
       aria-label={t('common.viewSwitcher.label', 'View')}
-      className={cn('flex h-9 shrink-0 items-center rounded-md border p-0.5', className)}
+      className={cn(
+        'flex h-control shrink-0 items-center gap-0.5 rounded-md border p-0.5 max-md:h-control-touch',
+        className
+      )}
     >
       {options.map(({ value: v, label, icon: Icon }) => (
         <Tooltip key={v}>
@@ -41,7 +45,7 @@ export function ViewSwitcher<T extends string>({
             <Button
               type="button"
               variant={value === v ? 'secondary' : 'ghost'}
-              size="icon"
+              size="icon-seg"
 
               aria-label={label}
               aria-pressed={value === v}
