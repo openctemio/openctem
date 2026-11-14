@@ -240,14 +240,14 @@ describe('footer states', () => {
 })
 
 describe('scroll mode', () => {
-  it('without stickyHeader the frame scrolls as before and the header does not stick', () => {
-    render(<DataTable columns={columns} data={rows} />)
+  it('stickyHeader={false}: the frame scrolls sideways and the header does not stick', () => {
+    render(<DataTable columns={columns} data={rows} stickyHeader={false} />)
     expect(screen.getByRole('region', { name: 'Table, scrollable' })).toBeInTheDocument()
     expect(header('Count')).not.toHaveClass('sticky')
     expect(header('Name')).not.toHaveClass('top-0')
   })
 
-  it('stickyHeader: fits: clip, no scroll region; wider than the frame: the frame scrolls as a region', () => {
+  it('sticky by default: fits: clip, no scroll region; wider than the frame: the frame scrolls as a region', () => {
     let tableWidth = 800
     vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (
       this: HTMLElement
@@ -259,13 +259,16 @@ describe('scroll mode', () => {
     ) {
       return this.dataset.slot === 'table-container' ? 1000 : 0
     })
-    const { container, rerender } = render(<DataTable columns={columns} data={rows} stickyHeader />)
+    const { container, rerender } = render(<DataTable columns={columns} data={rows} />)
     const frame = () => container.querySelector('[data-scroll-mode]') as HTMLElement
     expect(frame()).toHaveAttribute('data-scroll-mode', 'clip')
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
+    // Mode A: the header sticks to the page's scroller, filled with the surface.
+    expect(header('Name')).toHaveClass('sticky', 'top-0')
+    expect(header('Name').className).toContain('var(--dt-surface,var(--background))')
     tableWidth = 1400
     act(() => {
-      rerender(<DataTable columns={columns} data={[...rows]} stickyHeader />)
+      rerender(<DataTable columns={columns} data={[...rows]} />)
     })
     expect(frame()).toHaveAttribute('data-scroll-mode', 'scroll')
     expect(screen.getByRole('region', { name: 'Table, scrollable' })).toBeInTheDocument()

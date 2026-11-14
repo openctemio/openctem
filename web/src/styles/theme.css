@@ -797,3 +797,9 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 }
+
+/* The surface a table sits on: sticky header cells and pinned columns are
+   filled with it, so they match the page (default) or a card's white. */
+[data-slot='card'] {
+  --dt-surface: var(--card);
+}
