@@ -79,7 +79,26 @@ export interface FlowCanvasProps<N extends Node, E extends Edge> {
 
 const defaultEdgeTypes: EdgeTypes = { flow: FlowEdge }
 
-function FlowControls() {
+/**
+ * How the view fits the graph. The padding keeps the drawn nodes clear of the
+ * canvas controls: the zoom stack at the bottom left (12 px margin, 32 px
+ * buttons) and, inside a FlowFullscreen, the full-screen button at the top
+ * right. Fitting is the only automatic placement, so a fitted view never puts
+ * a node under a control.
+ */
+export function flowFitOptions(withFullscreen: boolean) {
+  return {
+    padding: {
+      top: withFullscreen ? '56px' : '12px',
+      right: '12px',
+      bottom: '12px',
+      left: '56px',
+    },
+    maxZoom: 1,
+  } as const
+}
+
+function FlowControls({ withFullscreen }: { withFullscreen: boolean }) {
   const { t } = useTranslation()
   const rf = useReactFlow()
   const items = [
@@ -88,7 +107,7 @@ function FlowControls() {
     {
       label: t('common.flow.fit', 'Fit view'),
       icon: Maximize2,
-      run: () => void rf.fitView({ padding: 0.03, maxZoom: 1 }),
+      run: () => void rf.fitView(flowFitOptions(withFullscreen)),
     },
   ]
   return (
@@ -177,11 +196,11 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
       return
     }
     const id = window.setTimeout(
-      () => void rf.fitView({ padding: 0.03, maxZoom: 1, duration: 200 }),
+      () => void rf.fitView({ ...flowFitOptions(fullscreen), duration: 200 }),
       50
     )
     return () => window.clearTimeout(id)
-  }, [fitKey, rf])
+  }, [fitKey, rf, fullscreen])
 
   const keyNodes = React.useMemo(
     () => focusable.map((n) => ({ id: n.id, x: n.position.x, y: n.position.y })),
@@ -274,12 +293,12 @@ function FlowCanvasInner<N extends Node, E extends Edge>({
           minZoom={0.3}
           maxZoom={1.5}
           fitView
-          fitViewOptions={{ padding: 0.03, maxZoom: 1 }}
+          fitViewOptions={flowFitOptions(fullscreen)}
           proOptions={{ hideAttribution: true }}
           className="bg-transparent"
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
-          <FlowControls />
+          <FlowControls withFullscreen={fullscreen} />
           {fullscreen && (
             <Panel position="top-right" className="!m-3">
               <FlowFullscreenButton />

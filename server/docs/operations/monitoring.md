@@ -310,6 +310,22 @@ request spikes; raise the pool size only once the cause is known.
 A background controller (named in the alert) fails repeatedly. The API log
 lines with `controller=<name>` say why.
 
+### FeedStale
+
+An enabled intelligence feed (`vulnfeed`, `kev` or `epss`, named in the alert)
+has not imported successfully for longer than its window: 36 hours for the
+vulnerability bundle (published hourly), 12 hours for CISA KEV (checked
+hourly), 72 hours for EPSS (daily). The alert reads
+`openctem_feed_last_success_timestamp_seconds{source}`, which moves only on a
+successful import (a run that found nothing newer counts), never on a failed
+one; `openctem_feed_failing{source}` is 1 while the last run failed. Open
+Threat intel, Sync status: it shows the last error and "Last successful
+import". For the bundle feed the usual causes are a publisher release that
+expired or a refused signature; `releases/latest` of the bundle repository
+must name a current release. The import controller also returns its failure,
+so `controller=vuln-feed-import` appears in [ControllerErrors](#controllererrors)
+counts and the API log warns "vulnerability corpus is stale".
+
 ### SensorsOffline
 
 Active sensors stopped sending heartbeats. The Sensors page lists them. Check

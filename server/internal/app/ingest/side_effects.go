@@ -58,7 +58,7 @@ func (p *FindingProcessor) enqueueCreated(ctx context.Context, tenantID shared.I
 		if err != nil {
 			p.logger.Warn("side effects not queued; running them now", "tenant_id", tenantID.String(), "error", err)
 			if p.findingCreatedCallback != nil {
-				p.findingCreatedCallback(ctx, tenantID, created[start:])
+				p.findingCreatedCallback(ctx, tenantID, withoutHeld(created[start:]))
 			}
 			return false
 		}
@@ -111,7 +111,12 @@ func (p *SideEffectProcessor) Process(ctx context.Context, job *ingestjob.Job) (
 		return nil, fmt.Errorf("load the findings: %w", err)
 	}
 	// A finding deleted meanwhile is simply gone; one of another tenant is
-	// never returned (the read is tenant-scoped).
+	// never returned (the read is tenant-scoped). A finding held meanwhile
+	// (its run's result named its host throttled) sends no created event.
+	findings = withoutHeld(findings)
+	if len(findings) == 0 {
+		return []byte(`{"findings":0}`), nil
+	}
 	if err := p.run(ctx, job.TenantID(), findings); err != nil {
 		return nil, err
 	}

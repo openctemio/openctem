@@ -68,8 +68,10 @@ type Service struct {
 	cveProcessor       *CVEProcessor
 	validator          *Validator
 
-	assetRepo    asset.Repository
-	findingRepo  vulnerability.FindingRepository
+	assetRepo   asset.Repository
+	findingRepo vulnerability.FindingRepository
+	// heldOutbox carries the notice about held critical findings (held.go).
+	heldOutbox   heldNoticeEnqueuer
 	vulnRepo     vulnerability.VulnerabilityRepository
 	compRepo     software.PackageWriter
 	webEndpoints webendpoint.Repository
@@ -516,6 +518,11 @@ func (s *Service) Ingest(ctx context.Context, agt *sensor.Sensor, input Input) (
 	if binding.Kind == BindingCommand && binding.Tool != "" &&
 		(report.Tool == nil || !tooldom.SameTool(binding.Tool, report.Tool.Name)) {
 		return nil, ErrToolNotPermitted
+	}
+	// A command's report: its findings on a host the command's result names
+	// as throttled are held (held.go).
+	if binding.Kind == BindingCommand && binding.CommandID != nil {
+		ctx = s.withRunHold(ctx, *binding.CommandID)
 	}
 	unsolicitedWarned := false
 	if binding.Kind == BindingUnsolicited && !opts.Admitted {
