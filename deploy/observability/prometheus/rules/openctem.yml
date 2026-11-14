@@ -183,6 +183,23 @@ groups:
           summary: Background controller {{ $labels.controller }} failed {{ $value | humanize }} times in 15 minutes
           runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#controllererrors
 
+      # The last successful import, per feed (the import controller returns its
+      # failures, but one run per 20 minutes can never reach the
+      # ControllerErrors threshold, so a feed stuck on an expired or refused
+      # bundle needs its own alert). Windows: the bundle feed publishes hourly
+      # (36h), CISA KEV is checked hourly (12h), EPSS is daily (72h).
+      - alert: FeedStale
+        expr: |
+          (time() - max by (source) (openctem_feed_last_success_timestamp_seconds{source="vulnfeed"}) > 36 * 3600)
+          or (time() - max by (source) (openctem_feed_last_success_timestamp_seconds{source="kev"}) > 12 * 3600)
+          or (time() - max by (source) (openctem_feed_last_success_timestamp_seconds{source="epss"}) > 72 * 3600)
+        for: 10m
+        labels: {severity: warning, component: api}
+        annotations:
+          summary: The {{ $labels.source }} intelligence feed has not imported successfully for {{ $value | humanizeDuration }}
+          description: Vulnerability, exploit and priority data goes stale. Threat intel, Sync status shows the last error; for the bundle feed check that the publisher's newest release is current.
+          runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedstale
+
   - name: openctem-work
     rules:
       - alert: SensorsOffline

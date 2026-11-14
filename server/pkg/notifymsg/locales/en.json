@@ -46,6 +46,7 @@
   "event.emerging_threat": "Emerging threat",
   "event.emerging_threat_digest": "Emerging threats daily digest",
   "event.finding_assigned": "Finding assigned",
+  "event.finding_held_critical": "Critical finding held",
   "event.finding_fixed": "Finding fixed",
   "event.finding_priority_escalated": "Finding priority raised",
   "event.finding_reopened": "Finding reopened",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/openctemio/openctem/server/internal/migrate"
 	"github.com/openctemio/openctem/server/pkg/domain/sensor"
@@ -70,6 +71,20 @@ type OpsSnapshot struct {
 	SchemaVersion int64
 	SchemaDirty   bool
 	SchemaKnown   bool
+
+	// Feeds is one row per enabled platform-wide intelligence feed (epss,
+	// kev, vulnfeed): when it last imported successfully and whether its
+	// last run failed. No tenant data.
+	Feeds []OpsFeed
+}
+
+// OpsFeed is the progress of one platform-wide intelligence feed.
+type OpsFeed struct {
+	Source string
+	// LastSuccess is the zero time when the feed never succeeded.
+	LastSuccess time.Time
+	// Failing: the last run failed.
+	Failing bool
 }
 
 // OpsQueueDepth is the count of pending commands of one queue key.
@@ -170,6 +185,12 @@ func ReadOpsSnapshot(ctx context.Context, db opsQuerier) (OpsSnapshot, error) {
 	).Scan(&s.OutboxPending, &s.OutboxFailed, &s.OutboxDead, &s.OutboxOldestPendingSec); err != nil {
 		return s, fmt.Errorf("outbox: %w", err)
 	}
+
+	feeds, err := readOpsFeeds(ctx, db)
+	if err != nil {
+		return s, fmt.Errorf("feeds: %w", err)
+	}
+	s.Feeds = feeds
 
 	s.SchemaVersion, s.SchemaDirty, s.SchemaKnown, err = migrate.AppliedVersion(ctx, db)
 	if err != nil {
@@ -290,6 +311,36 @@ func readOpsUnhardened(ctx context.Context, db opsQuerier) (map[string]int64, er
 		for _, reason := range sensor.DerivePosture(in).Unhardened {
 			out[reason] += n
 		}
+	}
+	return out, rows.Err()
+}
+
+// readOpsFeeds reads the progress of the enabled intelligence feeds. The
+// success time is the feed's own last_success_at (written by a successful or
+// unchanged run only), so a failing import does not move it.
+func readOpsFeeds(ctx context.Context, db opsQuerier) ([]OpsFeed, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT source_name, last_sync_status = 'failed', metadata->>'last_success_at'
+		FROM threat_intel_sync_status
+		WHERE is_enabled AND source_name IN ('epss', 'kev', 'vulnfeed')
+		ORDER BY source_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OpsFeed
+	for rows.Next() {
+		var f OpsFeed
+		var failing sql.NullBool
+		var at sql.NullString
+		if err := rows.Scan(&f.Source, &failing, &at); err != nil {
+			return nil, err
+		}
+		f.Failing = failing.Valid && failing.Bool
+		if at.Valid {
+			f.LastSuccess, _ = time.Parse(time.RFC3339, at.String)
+		}
+		out = append(out, f)
 	}
 	return out, rows.Err()
 }

@@ -46,6 +46,7 @@ type OutboxEnqueuer interface {
 type OutboxPriorityChangePublisher struct {
 	outbox OutboxEnqueuer
 	alerts AlertCoverage
+	held   HeldReader
 	logger *logger.Logger
 }
 
@@ -60,6 +61,11 @@ type AlertCoverage interface {
 // SetAlertCoverage wires the emerging-threat alert check (nil: every
 // escalation is sent).
 func (p *OutboxPriorityChangePublisher) SetAlertCoverage(a AlertCoverage) { p.alerts = a }
+
+// SetHeldReader wires the held-finding check: a held finding
+// (docs/architecture/held-findings.md) announces no escalation until it is
+// checked.
+func (p *OutboxPriorityChangePublisher) SetHeldReader(h HeldReader) { p.held = h }
 
 // NewOutboxPriorityChangePublisher wires the publisher to the notification
 // outbox. A nil enqueuer yields a publisher whose Publish is a no-op, so the
@@ -81,6 +87,11 @@ func (p *OutboxPriorityChangePublisher) Publish(ctx context.Context, ev Priority
 	}
 	if !isEscalation(ev.PreviousClass, ev.NewClass) {
 		return nil
+	}
+	if p.held != nil {
+		if held, err := p.held.IsHeld(ctx, ev.TenantID, ev.FindingID); err == nil && held {
+			return nil
+		}
 	}
 
 	if p.alerts != nil {

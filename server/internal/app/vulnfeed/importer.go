@@ -536,6 +536,19 @@ func (im *Importer) CheckStale(ctx context.Context) (bool, error) {
 	return created.IsZero() || im.now().Sub(created) > staleAfter, nil
 }
 
+// LastSuccess is when the feed last imported without error (a run that found
+// nothing newer counts: the pointer was fetched and verified). The zero time
+// means never. An import that errors does not move it, so a failing feed is
+// judged by how long ago it last worked, not by the last run.
+func (im *Importer) LastSuccess(ctx context.Context) (time.Time, error) {
+	st, err := im.status.GetBySource(ctx, SourceName)
+	if err != nil || !st.IsEnabled() {
+		return time.Time{}, err
+	}
+	t, _ := time.Parse(time.RFC3339, fmt.Sprint(st.Metadata()[threatintel.MetaLastSuccessAt]))
+	return t, nil
+}
+
 // SetClockForTest replaces the importer's clock (tests that import a fixed
 // bundle need its own time).
 func SetClockForTest(im *Importer, now func() time.Time) { im.now = now }
