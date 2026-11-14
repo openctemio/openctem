@@ -33,6 +33,7 @@ asset_group_member_history
 asset_groups
 asset_identifiers
 asset_identity_backfill
+asset_ip_addresses
 asset_liveness
 asset_merge_log
 asset_port_queue
