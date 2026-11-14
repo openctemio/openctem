@@ -640,7 +640,7 @@ export default function ScanDetailPage() {
               emptyDescription={t('scanDetail.runs.emptyDesc')}
               toolbarEnd={
                 <>
-                  <Button variant="outline" size="sm" className="h-9" asChild>
+                  <Button variant="outline" size="sm" asChild>
                     <Link
                       href={seenByFindingsHref('seen_by_scan_id', scanId)}
                       data-testid="scan-reported-findings"
@@ -648,7 +648,7 @@ export default function ScanDetailPage() {
                       {t('scanDetail.runs.reportedFindings', 'Findings this scan reported')}
                     </Link>
                   </Button>
-                  <Button variant="outline" size="sm" className="h-9" asChild>
+                  <Button variant="outline" size="sm" asChild>
                     <Link href={`/scans/runs?scan_id=${encodeURIComponent(scanId)}`}>
                       {t('scanDetail.runs.viewAll')}
                     </Link>

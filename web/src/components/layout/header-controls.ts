@@ -1,7 +1,9 @@
 /**
  * The classes every top-bar control shares (shell package 0.2): ghost icon
- * buttons 32 x 32 (36 below 768 px, from the Button `icon` size) with a 16 px
- * icon at stroke 1.75 in the muted colour, ink on hover; the menus they open
+ * buttons 32 x 32 with a 16 px icon (36 x 36 with a 20 px icon below 768 px,
+ * the phone bar) at stroke 1.75, in the ink colour at rest in both themes
+ * (the muted colour read as faint on the dark theme); hover and an open menu
+ * add the hover background. The menus they open
  * with 32 px rows of 13/20 text (44 px rows below 768 px); the 16 px ink
  * count badge on a button's corner.
  */
@@ -15,8 +17,18 @@
  */
 export const PHONE_TOUCH_SQUARE = 'max-md:before:-inset-x-1'
 
+/** A top-bar icon's colour at rest: ink (contrast >= 4.5:1 in both themes, e2e 57 and 58). */
+export const HEADER_ICON_COLOUR = 'text-foreground'
+
+/**
+ * A top-bar icon's size: 16 px, 20 px in the phone bar (below 768 px). The
+ * `!` beats the Button's own `[&_svg:not([class*='size-'])]:size-4`, which is
+ * more specific.
+ */
+export const HEADER_ICON_SIZE = '[&_svg]:size-4 max-md:[&_svg]:size-5!'
+
 /** A top-bar icon button: `<Button variant="ghost" size="icon" className={HEADER_ICON_BUTTON}>`. */
-export const HEADER_ICON_BUTTON = `relative text-muted-foreground hover:bg-hov hover:text-foreground aria-expanded:bg-hov aria-expanded:text-foreground [&_svg]:size-4 [&_svg]:stroke-[1.75] ${PHONE_TOUCH_SQUARE}`
+export const HEADER_ICON_BUTTON = `relative ${HEADER_ICON_COLOUR} hover:bg-hov aria-expanded:bg-hov ${HEADER_ICON_SIZE} [&_svg]:stroke-[1.75] ${PHONE_TOUCH_SQUARE}`
 
 /** A menu or popover opened from the top bar: rows 32 (44 below 768 px), 13/20 text. */
 export const HEADER_MENU =

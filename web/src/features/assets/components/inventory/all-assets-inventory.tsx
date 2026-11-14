@@ -828,7 +828,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                       <Button
                         variant={groupedByNetwork ? 'secondary' : 'outline'}
                         size="sm"
-                        className="h-9"
                         aria-pressed={groupedByNetwork}
                         disabled={Boolean(filters.advanced)}
                         title={

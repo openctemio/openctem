@@ -80,7 +80,7 @@ function AddSourceRow({
       }}
     >
       <SelectTrigger
-        className="mt-2 h-8 w-full sm:w-72"
+        className="mt-2 w-full sm:w-72"
         aria-label={t('assetSources.addSource', 'Rank a source separately')}
       >
         <SelectValue placeholder={t('assetSources.addSource', 'Rank a source separately')} />
@@ -128,7 +128,7 @@ function AssetPicker({ onPick }: { onPick: (a: AssetHit | null) => void }) {
   return (
     <div className="space-y-1">
       <Input
-        className="h-8 w-full sm:w-72"
+        className="w-full sm:w-72"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder={t('assetSources.preview.searchAsset', 'Search an asset by name')}
@@ -197,7 +197,7 @@ function PreviewPanel({
         <div className="space-y-1">
           <Label htmlFor="preview-mode">{t('assetSources.preview.on', 'Preview on')}</Label>
           <Select value={mode} onValueChange={(v) => setMode(v as 'sample' | 'asset')}>
-            <SelectTrigger id="preview-mode" className="h-8 w-56">
+            <SelectTrigger id="preview-mode" className="w-56">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

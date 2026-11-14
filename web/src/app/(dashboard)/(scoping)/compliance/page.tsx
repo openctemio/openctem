@@ -473,7 +473,7 @@ export default function CompliancePage() {
   const filterSelects = (
     <>
       <Select value={selectedFrameworkId} onValueChange={setSelectedFrameworkId}>
-        <SelectTrigger className="h-9 w-44" aria-label="Framework">
+        <SelectTrigger className="w-44" aria-label="Framework">
           <SelectValue placeholder="Framework" />
         </SelectTrigger>
         <SelectContent>
@@ -486,7 +486,7 @@ export default function CompliancePage() {
         </SelectContent>
       </Select>
       <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-        <SelectTrigger className="h-9 w-40" aria-label="Status">
+        <SelectTrigger className="w-40" aria-label="Status">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

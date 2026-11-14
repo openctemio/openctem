@@ -386,7 +386,7 @@ export function GroupDetailSheet({
                   aria-label={t('org.teamSheet.name', 'Team name')}
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  className="h-8 text-base font-semibold"
+                  className="text-base font-semibold"
                   placeholder={t('org.teamSheet.name', 'Team name')}
                 />
               ) : (

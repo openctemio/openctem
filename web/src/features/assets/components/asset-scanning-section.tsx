@@ -171,7 +171,7 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
         {(canAddScope || canConfirm || canExclude || canScan || tenableType) && (
           <div className="flex flex-wrap items-center gap-2">
             {canScan && (
-              <Button size="sm" className="h-8" onClick={() => setScanOpen(true)}>
+              <Button size="sm" onClick={() => setScanOpen(true)}>
                 <Play className="me-1.5 h-3.5 w-3.5" aria-hidden />
                 {t('assets.scanning.scanNow', 'Scan now')}
               </Button>
@@ -191,7 +191,6 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8"
                 onClick={() =>
                   setDraft(
                     scopeDraftForAsset(
@@ -205,13 +204,7 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
               </Button>
             )}
             {canConfirm && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={saving}
-                onClick={confirm}
-              >
+              <Button size="sm" variant="outline" disabled={saving} onClick={confirm}>
                 {saving && <Loader2 className="me-1 h-3 w-3 animate-spin" />}
                 {t('assets.scanning.allowWildcard', 'Confirm and allow scanning')}
               </Button>

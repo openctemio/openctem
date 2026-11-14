@@ -469,7 +469,7 @@ export function AssignmentRulesSection({ header }: SectionProps) {
                       onValueChange={(v) => setTypeFilter(v as FilterType)}
                     >
                       <SelectTrigger
-                        className="h-9 w-[140px]"
+                        className="w-[140px]"
                         aria-label={t('org.assignmentRules.statusLabel', 'Filter by status')}
                       >
                         <SelectValue />

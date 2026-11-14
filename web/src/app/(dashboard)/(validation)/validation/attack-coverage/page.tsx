@@ -506,7 +506,7 @@ export default function MitreCoveragePage() {
             {simulationEnabled && (
               <Select value={source} onValueChange={setSourceParam}>
                 <SelectTrigger
-                  className="h-9 w-40"
+                  className="w-40"
                   aria-label={t('validation.attackCoverage.sourceAria', 'Coverage source')}
                 >
                   <SelectValue />

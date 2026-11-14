@@ -376,7 +376,7 @@ export function SuggestionsInbox() {
               }}
             >
               <SelectTrigger
-                className="h-9 w-auto min-w-36"
+                className="w-auto min-w-36"
                 aria-label={t('remediationHub.suggestions.kindFilter')}
               >
                 <SelectValue />
@@ -398,7 +398,7 @@ export function SuggestionsInbox() {
               }}
             >
               <SelectTrigger
-                className="h-9 w-auto min-w-36"
+                className="w-auto min-w-36"
                 aria-label={t('remediationHub.suggestions.keyKindFilter')}
               >
                 <SelectValue />

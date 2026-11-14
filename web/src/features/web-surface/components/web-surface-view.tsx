@@ -420,7 +420,7 @@ export function WebSurfaceView() {
       {tab === 'endpoints' && (
         <>
           <Select value={method || 'all'} onValueChange={(v) => setMethod(v === 'all' ? '' : v)}>
-            <SelectTrigger className="h-9 w-[120px]" aria-label="Method">
+            <SelectTrigger className="w-[120px]" aria-label="Method">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -433,7 +433,7 @@ export function WebSurfaceView() {
             </SelectContent>
           </Select>
           <Select value={kind || 'all'} onValueChange={(v) => setKind(v === 'all' ? '' : v)}>
-            <SelectTrigger className="h-9 w-[120px]" aria-label="Kind">
+            <SelectTrigger className="w-[120px]" aria-label="Kind">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -452,7 +452,7 @@ export function WebSurfaceView() {
           value={eventKind || 'all'}
           onValueChange={(v) => setEventKind(v === 'all' ? '' : v)}
         >
-          <SelectTrigger className="h-9 w-[160px]" aria-label="Change">
+          <SelectTrigger className="w-[160px]" aria-label="Change">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

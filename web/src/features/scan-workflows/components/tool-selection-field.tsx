@@ -109,7 +109,7 @@ export function ToolSelectionField({
           disabled={readOnly}
           onValueChange={(t) => onChange(withSelection(step, capability, 'pin', [t]))}
         >
-          <SelectTrigger aria-label={t('workflowStages.toolSelect.pinned')} className="h-8 text-xs">
+          <SelectTrigger aria-label={t('workflowStages.toolSelect.pinned')} className="text-xs">
             <SelectValue placeholder={t('workflowStages.toolSelect.choose')} />
           </SelectTrigger>
           <SelectContent>

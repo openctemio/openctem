@@ -77,7 +77,7 @@ export function FilterSelect<V extends string>({
       data-slot="filter-select"
       data-filtered={filtered ? 'true' : 'false'}
       className={cn(
-        'inline-flex h-9 max-w-full items-center rounded-md border bg-background text-sm',
+        'inline-flex h-control-field max-w-full items-center rounded-md border bg-background text-body max-md:h-control-touch max-md:text-dense',
         filtered && 'bg-muted/50',
         className
       )}

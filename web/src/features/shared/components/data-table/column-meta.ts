@@ -6,7 +6,6 @@
  */
 
 import type { ReactNode } from 'react'
-import type { RowData } from '@tanstack/react-table'
 
 export type ColumnKind =
   | 'name'
@@ -47,11 +46,6 @@ export interface DataTableColumnMeta {
   headerHint?: ReactNode
   /** The row's name when it is not the first column (gets the name floor). */
   primary?: boolean
-}
-
-declare module '@tanstack/react-table' {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-object-type
-  interface ColumnMeta<TData extends RowData, TValue> extends DataTableColumnMeta {}
 }
 
 interface KindLayout {

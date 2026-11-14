@@ -70,7 +70,7 @@ import {
   type DataTableRowGroups,
 } from './data-table-groups'
 import { TABLE_DENSITIES, useTableDensity, type TableDensity } from './use-table-density'
-import { ariaSort, columnLayout, type ColumnLayout } from './column-meta'
+import { ariaSort, columnLayout, type ColumnLayout, type DataTableColumnMeta } from './column-meta'
 import { RelativeTime } from '../relative-time'
 import { PAGE_TITLE_ID } from '../page-header'
 import { TableRefreshBar } from './table-refresh-bar'
@@ -900,7 +900,10 @@ export function DataTable<TData, TValue>({
 
   // Column kinds: alignment and widths of a column's header and cells.
   const layoutOf = (columnId: string) =>
-    columnLayout(columnId, table.getColumn(columnId)?.columnDef.meta)
+    columnLayout(
+      columnId,
+      table.getColumn(columnId)?.columnDef.meta as DataTableColumnMeta | undefined
+    )
   const cellProps = (columnId: string, head: boolean) => {
     const pin = pinnedProps(columnId)
     const layout = layoutOf(columnId)

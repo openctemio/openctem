@@ -460,7 +460,7 @@ export default function ExposuresPage() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9">
+          <Button variant="outline" size="sm">
             {t('exposures.filter.severity', 'Severity')}
             {selectedSeverities.length > 0 && (
               <Badge variant="secondary" className="ms-2 px-1.5 tabular-nums">
@@ -494,7 +494,7 @@ export default function ExposuresPage() {
       </DropdownMenu>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9">
+          <Button variant="outline" size="sm">
             {t('exposures.category.filter', 'Category')}
             {selectedCategories.length > 0 && (
               <Badge variant="secondary" className="ms-2 px-1.5 tabular-nums">
@@ -531,7 +531,7 @@ export default function ExposuresPage() {
       </DropdownMenu>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="h-9">
+          <Button variant="outline" size="sm">
             {(() => {
               const view = STATE_VIEWS.find((v) => v.value === activeView)
               return view ? t(view.labelKey, view.fallback) : null
@@ -551,7 +551,7 @@ export default function ExposuresPage() {
         </DropdownMenuContent>
       </DropdownMenu>
       {hasActiveFilters && (
-        <Button variant="ghost" size="sm" className="h-9" onClick={clearFilters}>
+        <Button variant="ghost" size="sm" onClick={clearFilters}>
           <X className="me-1 h-4 w-4" />
           {t('exposures.filter.clear', 'Clear')}
         </Button>
@@ -588,7 +588,6 @@ export default function ExposuresPage() {
       <Button
         variant="outline"
         size="sm"
-        className="h-9"
         onClick={handleExport}
         disabled={isExporting || exposuresLoading || total === 0}
       >

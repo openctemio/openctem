@@ -26,18 +26,20 @@ const buttonVariants = cva(
       // Control scale ("Sizes" in web/docs/ui-style-contract.md): 32 default;
       // sm and icon-sm 28 in a dense place (density.tsx), 32 elsewhere; lg 36
       // (entry pages); xs 24 (the info icon). Below 768px the live UI's
-      // heights (36, sm 32, lg 40) with compact content (13px text, 10px
+      // heights (36; sm 32 in a dense place, 36 elsewhere; lg 40) with compact content (13px text, 10px
       // padding, 8 beside an icon) and an invisible touch target (::before):
       // 44px tall, the button's own width, so neighbours never share a hit
       // area and nothing reaches past the button's sides.
       size: {
         default:
           'h-control px-3 has-[>svg]:px-2.5 max-md:h-control-touch max-md:px-2.5 max-md:has-[>svg]:px-2',
-        sm: 'h-control-dense px-2.5 has-[>svg]:px-2 max-md:h-control-touch-sm',
+        sm: 'h-control-dense px-2.5 has-[>svg]:px-2 max-md:h-control-touch-dense',
         lg: 'h-control-entry px-4 has-[>svg]:px-3 max-md:h-control-touch-lg max-md:px-2.5 max-md:has-[>svg]:px-2',
         icon: 'size-control max-md:size-control-touch',
-        'icon-sm': 'size-control-dense max-md:size-control-touch-sm',
+        'icon-sm': 'size-control-dense max-md:size-control-touch-dense',
         xs: 'size-control-xs',
+        // A segment inside a bordered 32 track (36 below 768): ViewSwitcher.
+        'icon-seg': 'size-control-seg max-md:size-control-touch-seg',
       },
     },
     defaultVariants: {
@@ -81,6 +83,7 @@ function Button({
     <Comp
       data-slot="button"
       data-size={size ?? 'default'}
+      data-variant={variant ?? 'default'}
       className={cn(
         buttonVariants({ variant, size }),
         iconOnlyBelow && ICON_ONLY_BELOW[iconOnlyBelow],
