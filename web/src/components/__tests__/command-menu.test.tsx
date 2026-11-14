@@ -21,11 +21,15 @@ vi.mock('@/context/brand-provider', async (orig) => ({
 }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
+  useCanMutate: () => false,
   useFilteredSidebarData: () => ({
     data: { navGroups: [{ title: 'Overview', items: sidebarItems }] },
   }),
 }))
 vi.mock('@/hooks/use-settings-nav', () => ({ useSettingsNav: () => [] }))
+vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
+  useModuleEnabled: () => true,
+}))
 let perms = new Set<string>()
 let sidebarItems: { title: string; url: string }[] = [{ title: 'Dashboard', url: '/' }]
 vi.mock('@/context/permission-provider', () => ({

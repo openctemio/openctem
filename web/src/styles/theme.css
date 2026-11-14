@@ -540,7 +540,7 @@
   /* Role names (UI v2): text-cap 12/16, text-cap-m 12/16 500 (chips, table
      headers, counts), text-code 12/20 (with font-mono: the one mono role),
      text-dense 13/20 (cells, rows, sidebar, breadcrumbs, property values),
-     text-body 14/20, text-card 14/20 600, text-section 16/24 600,
+     text-body 14/20, text-card-title 14/20 600, text-section 16/24 600,
      text-dialog 20/28 600, text-page 24/32 600 (20/28 below 768px),
      text-figure 24/32 (20/28), text-figure-lead 32/40 (24/32), text-hero
      48/56, text-wall 56/64. Weights 400/500/600 only. */
@@ -553,9 +553,9 @@
   --text-code--line-height: 1.25rem;
   --text-dense: 0.8125rem;
   --text-dense--line-height: 1.25rem;
-  --text-card: 0.875rem;
-  --text-card--line-height: 1.25rem;
-  --text-card--font-weight: 600;
+  --text-card-title: 0.875rem;
+  --text-card-title--line-height: 1.25rem;
+  --text-card-title--font-weight: 600;
   --text-dialog: 1.25rem;
   --text-dialog--line-height: 1.75rem;
   --text-dialog--font-weight: 600;

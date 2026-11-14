@@ -122,6 +122,8 @@ const REVIEWED = new Set([
   'components/layout/sidebar-nav-view.tsx|SidebarLink|href={href}',
   'components/layout/sidebar-brand.tsx|Link|href={href}',
   'components/layout/module-gate.tsx|Link|href={backUrl}',
+  // Create menu: openFormHref() of the constant CREATE_ACTION_DEFS paths.
+  'components/layout/header-create-menu.tsx|Link|href={a.href}',
   'components/layout/org-card.tsx|Link|href={membersLink.url}',
   'components/layout/org-card.tsx|Link|href={apiKeysLink.url}',
   'features/shared/components/section-tabs.tsx|Link|href={tab.href}',

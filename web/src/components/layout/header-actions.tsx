@@ -4,7 +4,9 @@
  * Header Actions Component
  *
  * Centralized header actions for dashboard pages.
- * Includes: Search, NotificationBell, ThemeSwitch, ProfileDropdown
+ * Search, then the right group in the shell package's order: Create, Full
+ * screen, Approvals, Notifications, Theme, Account (32 px controls, 4 apart,
+ * 8 before the avatar)
  *
  * Usage:
  * ```tsx
@@ -20,6 +22,7 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { NotificationBell } from '@/components/notification-bell'
 import { FullscreenToggle } from '@/components/fullscreen-toggle'
 import { HeaderApprovals } from './header-approvals'
+import { HeaderCreateMenu } from './header-create-menu'
 
 interface HeaderActionsProps {
   /**
@@ -46,14 +49,16 @@ export function HeaderActions({
   hideThemeSwitch = false,
   hideProfile = false,
 }: HeaderActionsProps) {
-  // The search (the command palette) sits in the middle of the bar; the
-  // account controls at the end.
+  // The breadcrumb takes the free room (app-header.tsx); the search sits next
+  // to the right group, which never shrinks.
   return (
     <>
-      <div className="ms-auto flex min-w-0 justify-center lg:mx-auto lg:min-w-40 lg:flex-[0_4_26rem]">
-        {!hideSearch && <Search className="lg:w-full" />}
-      </div>
-      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+      {!hideSearch && <Search className="ms-auto shrink-0" />}
+      <div
+        className="flex flex-none items-center gap-1 [&>:last-child]:ms-1"
+        data-slot="header-actions"
+      >
+        <HeaderCreateMenu />
         <FullscreenToggle />
         <HeaderApprovals />
         {!hideNotifications && <NotificationBell />}

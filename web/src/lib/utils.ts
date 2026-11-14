@@ -22,7 +22,7 @@ export const TYPE_SCALE = [
   'code',
   'dense',
   'body',
-  'card',
+  'card-title',
   'section',
   'dialog',
   'page',

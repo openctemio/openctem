@@ -10,14 +10,14 @@ const { SkipToMain } = await import('../skip-to-main')
 describe('header controls', () => {
   it('gives the search button an accessible name even when only its icon shows', () => {
     render(<Search />)
-    expect(screen.getByRole('button', { name: 'Search or go to' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Search or run a command' })).toBeInTheDocument()
   })
 
   it('keeps the shortcut hint out of the name and states the shortcut instead', () => {
     // The visible label must be inside the accessible name (WCAG 2.5.3): the
     // kbd hint is hidden from it, the shortcut is announced as a shortcut.
     render(<Search />)
-    const button = screen.getByRole('button', { name: 'Search or go to' })
+    const button = screen.getByRole('button', { name: 'Search or run a command' })
     expect(button.getAttribute('aria-keyshortcuts')).toMatch(/^(Control|Meta)\+K$/)
     expect(button.querySelector('kbd')?.getAttribute('aria-hidden')).toBe('true')
   })
@@ -29,7 +29,7 @@ describe('header controls', () => {
         <SkipToMain />
       </I18nProvider>
     )
-    expect(screen.getByRole('button', { name: 'Tìm kiếm hoặc đi tới' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tìm kiếm hoặc chạy lệnh' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Chuyển tới nội dung chính' })).toBeInTheDocument()
   })
 })

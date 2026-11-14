@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { Badge } from '@/components/ui/badge'
+import { Counter } from '@/components/ui/counter'
+import { DensityScope } from '@/components/ui/density'
+import { HEADER_BADGE, HEADER_ICON_BUTTON } from '@/components/layout/header-controls'
 import {
   useNotificationsApi,
   useUnreadCountApi,
@@ -66,22 +68,17 @@ export function NotificationBell() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative"
+          className={HEADER_ICON_BUTTON}
           aria-label={
             unreadCount > 0
               ? t('notifications.bell.label', 'Notifications, {n} unread', { n: unreadCount })
               : t('notifications.bell.labelNone', 'Notifications')
           }
         >
-          <Bell className="h-5 w-5" />
+          <Bell aria-hidden />
+          {/* Ink, not red: a count is not an error (shell package D4). */}
           {unreadCount > 0 && (
-            <Badge
-              variant="destructive"
-              className="absolute -top-1 -right-1 h-5 min-w-5 rounded-full px-1 text-xs flex items-center justify-center"
-              aria-hidden
-            >
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </Badge>
+            <Counter value={unreadCount} emphasis size="badge" className={HEADER_BADGE} />
           )}
         </Button>
       </PopoverTrigger>
@@ -109,23 +106,28 @@ export function NotificationBell() {
         sideOffset={8}
         collisionPadding={8}
       >
-        <div className="flex items-center justify-between px-3 py-3 sm:px-4">
-          <h4 className="text-sm font-semibold sm:text-base">
+        <div className="flex min-h-14 items-center justify-between gap-2 px-4 py-2">
+          <h4 className="text-section truncate">
             {t('notifications.bell.labelNone', 'Notifications')}
           </h4>
           {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-auto px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => void markAllRead()}
-            >
-              <CheckCheck className="h-3 w-3 me-1 sm:me-1" />
-              <span className="hidden sm:inline">
-                {t('notifications.markAllRead', 'Mark all as read')}
-              </span>
-              <span className="sm:hidden">{t('notifications.bell.markAllShort', 'Mark read')}</span>
-            </Button>
+            // 28 on a desktop (a dense place), 32 on a phone (shell package 0.2).
+            <DensityScope>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-dense text-muted-foreground hover:text-foreground shrink-0 whitespace-nowrap"
+                onClick={() => void markAllRead()}
+              >
+                <CheckCheck aria-hidden />
+                <span className="hidden sm:inline">
+                  {t('notifications.markAllRead', 'Mark all as read')}
+                </span>
+                <span className="sm:hidden">
+                  {t('notifications.bell.markAllShort', 'Mark read')}
+                </span>
+              </Button>
+            </DensityScope>
           )}
         </div>
 
@@ -187,11 +189,11 @@ export function NotificationBell() {
 
         <Separator />
 
-        <div className="p-1.5 sm:p-2">
+        <div className="p-1">
           <Button
             variant="ghost"
-            className="w-full justify-center text-xs text-muted-foreground hover:text-foreground sm:text-sm"
-            size="sm"
+            size="lg"
+            className="text-dense text-muted-foreground hover:text-foreground w-full justify-center"
             asChild
           >
             <Link href="/notifications" onClick={() => setOpen(false)}>
