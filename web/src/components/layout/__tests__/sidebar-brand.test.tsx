@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
+vi.mock('@/hooks/use-mobile', async (orig) => ({
+  ...(await orig<typeof import('@/hooks/use-mobile')>()),
+  useIsMobile: () => false,
+}))
 
 // Radix tooltips measure with ResizeObserver, which jsdom does not have.
 globalThis.ResizeObserver ??= class {

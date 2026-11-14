@@ -10,18 +10,19 @@ import { ShortcutKeys } from '@/components/layout/shortcut-keys'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { KEYBOARD_SHORTCUTS } from '@/config/keyboard-shortcuts'
+import { useTranslation } from '@/context/i18n-provider'
 
 /** The toggle-sidebar keys, from the one shortcut list (Help > Keyboard shortcuts). */
 const TOGGLE_SIDEBAR_KEYS = KEYBOARD_SHORTCUTS.find((s) => s.id === 'toggle-sidebar')?.keys
 
 /**
  * The header's context row (organization switcher, or the admin console's
- * fixed label): a 32px row whose 28px chip sits on the same vertical axis as
- * the logo and the nav icons, collapsed and expanded. Use with
- * `SidebarMenuButton` (default size).
+ * fixed label): a 36px row (44 in the phone drawer) whose 28px chip starts at
+ * the nav icons' x; on the rail the chip sits in a 32px box, the row keeps its
+ * 36px so nothing below moves. Use with `SidebarMenuButton` (default size).
  */
 export const SIDEBAR_CONTEXT_ROW_CLASS =
-  'ps-0.5 group-data-[collapsible=icon]:p-0.5! in-data-[mobile=true]:h-11 in-data-[mobile=true]:text-base'
+  'h-9 text-sidebar-foreground group-data-[collapsible=icon]:h-9! group-data-[collapsible=icon]:p-0.5! in-data-[mobile=true]:h-11 in-data-[mobile=true]:text-base' // design-ok: drawer 16/24
 
 /**
  * The 28px context chip (organization initials, the admin shield): a soft
@@ -29,7 +30,7 @@ export const SIDEBAR_CONTEXT_ROW_CLASS =
  * it. The hairline keeps it visible on the row's own hover fill.
  */
 export const SIDEBAR_CHIP_CLASS =
-  'flex aspect-square size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-cap font-semibold text-sidebar-accent-foreground ring-1 ring-sidebar-border'
+  'flex aspect-square size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-cap font-semibold text-sidebar-accent-foreground ring-1 ring-border'
 
 interface SidebarBrandProps {
   /** Where the logo links to when the sidebar is expanded. */
@@ -57,6 +58,7 @@ interface SidebarBrandProps {
 export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
   const { state, toggleSidebar, isMobile } = useSidebar()
   const brand = useBrand()
+  const { t } = useTranslation()
   const collapsed = state === 'collapsed' && !isMobile
 
   if (collapsed) {
@@ -66,14 +68,14 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
           <button
             type="button"
             onClick={toggleSidebar}
-            className="group/brand relative flex size-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
-            aria-label="Expand sidebar"
+            className="group/brand relative flex size-8 items-center justify-center rounded-md text-sidebar-foreground transition-colors hover:bg-hov focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
+            aria-label={t('nav.sidebar.expand', 'Expand sidebar')}
           >
             <BrandMark
               aria-hidden
-              size={28}
+              size={24}
               data-slot="brand-mark"
-              className="size-7 transition-opacity duration-150 group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0 motion-reduce:transition-none"
+              className="size-6 transition-opacity duration-150 group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0 motion-reduce:transition-none"
             />
             <PanelLeftIcon
               aria-hidden
@@ -83,7 +85,7 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
           </button>
         </TooltipTrigger>
         <TooltipContent side="right" className="flex items-center gap-2">
-          Expand sidebar
+          {t('nav.sidebar.expand', 'Expand sidebar')}
           {TOGGLE_SIDEBAR_KEYS && <ShortcutKeys keys={TOGGLE_SIDEBAR_KEYS} />}
         </TooltipContent>
       </Tooltip>
@@ -91,7 +93,11 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
   }
 
   return (
-    <div className="flex h-8 items-center gap-2 ps-0.5 in-data-[mobile=true]:h-11">
+    // 36px row, 6px before the logo and 4px after the 32px toggle.
+    <div
+      data-slot="sidebar-brand-row"
+      className="flex h-9 items-center gap-2 ps-1.5 pe-1 in-data-[mobile=true]:h-11"
+    >
       <Link
         href={href}
         className="flex min-w-0 items-center gap-2 rounded-md text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:outline-none"
@@ -110,7 +116,17 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
       </Link>
       {badge}
       {/* On phones the sidebar is a sheet with its own close button. */}
-      {!isMobile && <SidebarTrigger className="ms-auto text-muted-foreground" />}
+      {!isMobile && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <SidebarTrigger className="ms-auto text-muted-foreground" />
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="flex items-center gap-2">
+            {t('nav.sidebar.collapse', 'Collapse sidebar')}
+            {TOGGLE_SIDEBAR_KEYS && <ShortcutKeys keys={TOGGLE_SIDEBAR_KEYS} />}
+          </TooltipContent>
+        </Tooltip>
+      )}
     </div>
   )
 }

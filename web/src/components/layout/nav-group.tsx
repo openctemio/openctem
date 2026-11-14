@@ -40,6 +40,17 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { NavCount } from './nav-count'
+import {
+  NAV_BUTTON_CLASS,
+  NAV_SECTION_HEADER_CLASS,
+  SUB_BUTTON_CLASS,
+  SUB_LABEL_CLASS,
+  SUB_MENU_CLASS,
+} from './nav-classes'
+
+// Shared row classes live in nav-classes.ts (the quick views use them too,
+// and they import nothing from here); re-exported for existing callers.
+export { MOBILE_ROW_CLASS, NAV_BUTTON_CLASS, NAV_COLUMN_CLASS } from './nav-classes'
 import { PinAction } from '@/features/nav-pins/components/pin-action'
 import { subModuleStatus } from '@/lib/permissions/sub-modules'
 import { activeSubItemUrl, checkIsActive, sectionHasActiveRoute } from './nav-active'
@@ -66,76 +77,6 @@ function NavLabel({ title }: { title: string }) {
   const { t } = useTranslation()
   return <>{t(navItemKey(title), title)}</>
 }
-
-/**
- * Geometry shared by every top-level nav row so the leading icon sits at one size
- * and one position whether the sidebar is expanded or collapsed to the icon rail:
- * a 20px glyph with a 6px inset inside a 32px row. The collapsed button is 32px
- * wide, so 6 + 20 + 6 fills it exactly and the icon is centred on the rail; the
- * expanded row keeps the same inset, so toggling only hides the labels and the
- * icons do not move or resize.
- *
- * The menus deliberately do NOT centre their buttons in the rail (`items-center`):
- * the column padding already makes the collapsed menu exactly 32px wide, and
- * centring inside a menu that is still shrinking made the icons slide during the
- * collapse animation (and the rail's freshly-mounted section triggers start from
- * the middle of the wide menu).
- */
-/**
- * In the phone sheet (the sidebar's mobile Sheet carries data-mobile="true"):
- * 44px touch rows and 16px text, the same size as the filter input (16px also
- * keeps iOS from zooming into the input). Desktop keeps the 32px rows.
- */
-export const MOBILE_ROW_CLASS = 'in-data-[mobile=true]:h-11 in-data-[mobile=true]:text-base'
-
-export const NAV_BUTTON_CLASS = cn(
-  MOBILE_ROW_CLASS,
-  // relative: anchors the row's NavPendingHint.
-  'relative px-1.5 group-data-[collapsible=icon]:p-1.5! [&>svg:first-child]:size-5 [&>svg]:stroke-[1.75]',
-  // Quiet at rest, full ink on hover and for the current page / the section
-  // that owns it (`data-current`), so where you are reads at a glance even with
-  // the section folded.
-  'text-sidebar-foreground/80 [&>svg:first-child]:text-muted-foreground',
-  'hover:[&>svg:first-child]:text-sidebar-accent-foreground',
-  'data-[active=true]:[&>svg:first-child]:text-sidebar-accent-foreground',
-  'data-[current=true]:font-medium data-[current=true]:text-sidebar-foreground data-[current=true]:[&>svg:first-child]:text-sidebar-foreground',
-  // Rail: everything but the icon (label, badge, chevron) goes at once, so a
-  // label is never half-clipped while the sidebar animates.
-  'group-data-[collapsible=icon]:[&>:not(svg:first-child)]:opacity-0'
-)
-
-/**
- * The sidebar's one content column: the same 8px inset in both states (so rail
- * icons line up with the expanded ones) and an even gap between sections.
- * Shared by the main nav, the settings rail and the admin console.
- */
-export const NAV_COLUMN_CLASS = 'flex flex-col gap-1 px-2 py-2'
-
-/** Second-level rows: smaller and lighter than their section header. */
-const SUB_BUTTON_CLASS = cn(
-  'relative h-auto min-h-7 w-full py-1 text-[13px] text-sidebar-foreground/80 [&>svg]:stroke-[1.75]',
-  'in-data-[mobile=true]:min-h-11 in-data-[mobile=true]:text-base',
-  '[&>svg:first-child]:text-muted-foreground hover:[&>svg:first-child]:text-sidebar-accent-foreground',
-  'data-[active=true]:font-medium data-[active=true]:[&>svg:first-child]:text-sidebar-accent-foreground',
-  // Stay laid out while the parent collapse animates shut on the rail.
-  'group-data-[collapsible=icon]:flex'
-)
-
-/**
- * The guide rail under a section: its 1px line sits under the parent icon's
- * centre (6px inset + 10px half-icon), and its rows start where the parent's
- * label starts. No end margin or padding, so every level runs to the same right
- * edge instead of losing ~24px of label room per level of nesting.
- */
-const SUB_MENU_CLASS =
-  'ms-[15px] me-0 pe-0 translate-x-0 gap-0.5 py-1 group-data-[collapsible=icon]:flex'
-
-/**
- * Sub-row label: wraps to a second line rather than truncating, so a long name
- * ("Assignment rules", "SCIM provisioning") stays readable in the narrow rail.
- * `!` beats the sub-button's own `[&>span:last-child]:truncate`.
- */
-const SUB_LABEL_CLASS = 'flex-1 whitespace-normal! text-start leading-snug text-pretty'
 
 /**
  * Height-animated disclosure (grid-rows 0fr↔1fr). The content stays mounted so
@@ -168,30 +109,17 @@ function AnimatedCollapse({
 }
 
 /**
- * A quiet label (or a plain divider when unlabelled) between clusters of nav
- * rows. It keeps the same height in both sidebar states — on the rail the text
- * fades out and a hairline shows instead — so nothing below it moves.
+ * A section label between clusters of nav rows ("Pinned", "CTEM cycle"):
+ * 12/16 500 dim, 16px above and 4px below. On the icon rail it folds to
+ * nothing, so the icons stand in one even column.
  */
-export function NavClusterLabel({ label }: { label?: string }) {
+export function NavClusterLabel({ label }: { label: string }) {
   return (
     <div
-      role={label ? undefined : 'separator'}
-      // Labelled: 16px from the row above to the label, the same as the
-      // spacing around the header separator. Unlabelled dividers stay h-7.
-      className={cn('relative flex shrink-0 items-end px-1.5 pb-1', label ? 'h-8' : 'h-7')}
+      data-slot="nav-cluster-label"
+      className="flex h-9 shrink-0 items-end overflow-hidden px-2 pb-1 transition-[height,opacity] duration-250 ease-sidebar motion-reduce:transition-none group-data-[collapsible=icon]:h-0 group-data-[collapsible=icon]:pb-0 group-data-[collapsible=icon]:opacity-0"
     >
-      {label ? (
-        <span className="truncate text-xs font-medium text-muted-foreground transition-opacity group-data-[collapsible=icon]:opacity-0">
-          {label}
-        </span>
-      ) : null}
-      <span
-        aria-hidden
-        className={cn(
-          'absolute inset-x-1.5 top-1/2 h-px bg-sidebar-border transition-opacity',
-          label && 'opacity-0 group-data-[collapsible=icon]:opacity-100'
-        )}
-      />
+      <span className="truncate text-cap-m text-fg-dim">{label}</span>
     </div>
   )
 }
@@ -333,6 +261,9 @@ const SidebarMenuLink = memo(function SidebarMenuLink({
 }) {
   const pathname = usePathname()
   const { setOpenMobile } = useSidebarActions()
+  const { t } = useTranslation()
+  // The rail tooltip names the row in the reader's language.
+  const title = t(navItemKey(item.title), item.title)
   const badge = getBadgeValue(dynamicBadges, item.url as string, item.badge)
   const releaseStatusBadge = getReleaseStatusBadge(item.releaseStatus)
   const isComingSoon = item.releaseStatus === 'coming_soon'
@@ -342,7 +273,7 @@ const SidebarMenuLink = memo(function SidebarMenuLink({
     return (
       <SidebarMenuItem>
         <SidebarMenuButton
-          tooltip={`${item.title} (Coming Soon)`}
+          tooltip={t('nav.comingSoonTooltip', '{title} (coming soon)', { title })}
           className={cn(NAV_BUTTON_CLASS, 'cursor-not-allowed opacity-60')}
         >
           {item.icon && <item.icon />}
@@ -357,15 +288,17 @@ const SidebarMenuLink = memo(function SidebarMenuLink({
     )
   }
 
+  const isActive = active ?? checkIsActive(pathname, item)
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        asChild
-        isActive={active ?? checkIsActive(pathname, item)}
-        tooltip={item.title}
-        className={NAV_BUTTON_CLASS}
-      >
-        <SidebarLink href={item.url} onClick={() => setOpenMobile(false)}>
+      <SidebarMenuButton asChild isActive={isActive} tooltip={title} className={NAV_BUTTON_CLASS}>
+        <SidebarLink
+          href={item.url}
+          // A list with quick views hands "current page" to its active view
+          // (one current row per sidebar, as the fill).
+          aria-current={isActive && !item.quickViews ? 'page' : undefined}
+          onClick={() => setOpenMobile(false)}
+        >
           {item.icon && <item.icon />}
           <span>
             <NavLabel title={item.title} />
@@ -455,13 +388,13 @@ const NavSection = memo(function NavSection({
           aria-controls={contentId}
           data-current={sectionActive}
           onClick={() => setOpen((o) => !o)}
-          className={NAV_BUTTON_CLASS}
+          className={NAV_SECTION_HEADER_CLASS}
         >
           {SectionIcon && <SectionIcon />}
           <span>{label}</span>
           <ChevronRight
             className={cn(
-              'ms-auto size-4 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none rtl:rotate-180',
+              'ms-auto size-3.5! transition-transform duration-200 motion-reduce:transition-none rtl:rotate-180',
               open && 'rotate-90 rtl:rotate-90'
             )}
           />
@@ -537,14 +470,15 @@ const NavSubLeaf = memo(function NavSubLeaf({
     )
   }
 
+  const isActive = active ?? checkIsActive(pathname, item)
   return (
     <SidebarMenuSubItem>
-      <SidebarMenuSubButton
-        asChild
-        isActive={active ?? checkIsActive(pathname, item)}
-        className={SUB_BUTTON_CLASS}
-      >
-        <SidebarLink href={item.url} onClick={() => setOpenMobile(false)}>
+      <SidebarMenuSubButton asChild isActive={isActive} className={SUB_BUTTON_CLASS}>
+        <SidebarLink
+          href={item.url}
+          aria-current={isActive ? 'page' : undefined}
+          onClick={() => setOpenMobile(false)}
+        >
           {!nested && item.icon && <item.icon className="shrink-0" />}
           <span className={SUB_LABEL_CLASS}>
             <NavLabel title={item.title} />
@@ -679,17 +613,16 @@ const NavSectionRailMenu = memo(function NavSectionRailMenu({
           {SectionIcon && <SectionIcon />}
         </SidebarMenuButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="start" sideOffset={8} className="min-w-52">
+      {/* 200 wide, 8 px right of the rail button; a long label wraps. */}
+      <DropdownMenuContent side="right" align="start" sideOffset={8} className="w-50">
         {url ? (
           // The flyout's heading opens the section overview (a menu item, so
           // navigating is expected here; the expanded header only toggles).
-          <DropdownMenuItem asChild className="text-xs font-medium text-muted-foreground">
+          <DropdownMenuItem asChild className="text-cap-m text-fg-dim">
             <SidebarLink href={url}>{label}</SidebarLink>
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
-            {label}
-          </DropdownMenuLabel>
+          <DropdownMenuLabel className="text-cap-m text-fg-dim">{label}</DropdownMenuLabel>
         )}
         <DropdownMenuSeparator />
         {items.map((item) =>
@@ -734,10 +667,12 @@ function CollapsedDropdownSubsection({
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
         {item.icon && <item.icon />}
-        <span className="max-w-52 text-wrap">{item.title}</span>
+        <span className="min-w-0 text-wrap">
+          <NavLabel title={item.title} />
+        </span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuSubContent className="min-w-44">
+        <DropdownMenuSubContent className="w-50">
           {filteredItems.map((sub) => (
             <CollapsedDropdownLeaf
               key={`${sub.title}-${String(sub.url)}`}
@@ -770,26 +705,30 @@ function CollapsedDropdownLeaf({
     return (
       <DropdownMenuItem disabled className="cursor-not-allowed opacity-60">
         {item.icon && <item.icon />}
-        <span className="max-w-52 text-wrap">{item.title}</span>
-        {releaseStatusBadge && (
-          <span className="ms-auto text-xs text-muted-foreground">{releaseStatusBadge.text}</span>
-        )}
+        <span className="min-w-0 text-wrap">
+          <NavLabel title={item.title} />
+        </span>
+        {releaseStatusBadge && <NavCount>{releaseStatusBadge.text}</NavCount>}
       </DropdownMenuItem>
     )
   }
 
   return (
     <DropdownMenuItem asChild>
-      <SidebarLink href={item.url} className={cn(active && 'bg-accent font-medium')}>
+      <SidebarLink
+        href={item.url}
+        aria-current={active ? 'page' : undefined}
+        className={cn(active && 'bg-sidebar-accent font-medium')}
+      >
         {item.icon && <item.icon />}
-        <span className="max-w-52 text-wrap">
-          {item.title}
+        <span className="min-w-0 text-wrap">
+          <NavLabel title={item.title} />
           <NavPendingHint />
         </span>
         {releaseStatusBadge ? (
-          <span className="ms-auto text-xs">{releaseStatusBadge.text}</span>
+          <NavCount>{releaseStatusBadge.text}</NavCount>
         ) : (
-          badge && <span className="ms-auto text-xs">{badge}</span>
+          badge && <NavCount>{badge}</NavCount>
         )}
       </SidebarLink>
     </DropdownMenuItem>
