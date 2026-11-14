@@ -360,11 +360,12 @@ tests:
         exp_alerts: []
 
   # The bundle feed last imported at t=0 and never again: FeedStale after 36h
-  # plus the 10 minute hold, not before.
-  - interval: 1h
+  # plus the 10 minute hold, not before. (Series are sampled every minute: a
+  # sample is only visible for the five minutes before it goes stale.)
+  - interval: 1m
     input_series:
       - series: 'openctem_feed_last_success_timestamp_seconds{source="vulnfeed"}'
-        values: '0x40'
+        values: '0x2400'
     alert_rule_test:
       - eval_time: 36h
         alertname: FeedStale
@@ -379,22 +380,22 @@ tests:
               runbook_url: https://github.com/openctemio/openctem/blob/develop/server/docs/operations/monitoring.md#feedstale
 
   # A feed that keeps importing (its timestamp follows the clock) never fires.
-  - interval: 1h
+  - interval: 1m
     input_series:
       - series: 'openctem_feed_last_success_timestamp_seconds{source="vulnfeed"}'
-        values: '0 3600 7200 10800 14400 18000 21600 25200 28800 32400 36000 39600 43200 46800 50400 54000 57600 61200 64800 68400 72000 75600 79200 82800 86400 90000 93600 97200 100800 104400 108000 111600 115200 118800 122400 126000 129600 133200 136800 140400 144000 147600 151200'
+        values: '0+60x2500'
       - series: 'openctem_feed_last_success_timestamp_seconds{source="kev"}'
-        values: '0 3600 7200 10800 14400 18000 21600 25200 28800 32400 36000 39600 43200 46800 50400 54000 57600 61200 64800 68400 72000 75600 79200 82800 86400 90000 93600 97200 100800 104400 108000 111600 115200 118800 122400 126000 129600 133200 136800 140400 144000 147600 151200'
+        values: '0+60x2500'
     alert_rule_test:
       - eval_time: 40h
         alertname: FeedStale
         exp_alerts: []
 
   # KEV has its own, shorter window: 12h.
-  - interval: 1h
+  - interval: 1m
     input_series:
       - series: 'openctem_feed_last_success_timestamp_seconds{source="kev"}'
-        values: '0x30'
+        values: '0x1000'
     alert_rule_test:
       - eval_time: 14h
         alertname: FeedStale
