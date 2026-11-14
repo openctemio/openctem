@@ -6,9 +6,9 @@ import {
   SidebarMenuSubItem,
   useSidebarActions,
 } from '@/components/ui/sidebar'
-import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-href'
 import { NavCount } from './nav-count'
+import { SUB_BUTTON_CLASS, SUB_LABEL_CLASS } from './nav-classes'
 import { SidebarLink } from './sidebar-link'
 import type { NavPin } from '@/features/nav-pins/api/use-nav-pins'
 import { PinAction } from '@/features/nav-pins/components/pin-action'
@@ -50,25 +50,16 @@ export function NavQuickViewList({
   const { setOpenMobile } = useSidebarActions()
   if (views.length === 0) return null
   return (
-    <SidebarMenuSub
-      aria-label={label}
-      className={cn('ms-[15px] me-0 gap-0.5 py-1 pe-0 translate-x-0', className)}
-    >
+    <SidebarMenuSub aria-label={label} className={className}>
       {views.map((v) => (
         <SidebarMenuSubItem key={v.key}>
-          <SidebarMenuSubButton
-            asChild
-            isActive={v.active}
-            className="relative h-auto min-h-7 w-full py-1 text-[13px] text-sidebar-foreground/80 data-[active=true]:font-medium in-data-[mobile=true]:min-h-11 in-data-[mobile=true]:text-base"
-          >
+          <SidebarMenuSubButton asChild isActive={v.active} className={SUB_BUTTON_CLASS}>
             <SidebarLink
               href={safeHref(v.href) ?? safeHref(fallbackHref) ?? '/'}
               aria-current={v.active ? 'page' : undefined}
               onClick={() => setOpenMobile(false)}
             >
-              <span className="flex-1 whitespace-normal! text-start leading-snug text-pretty">
-                {v.label}
-              </span>
+              <span className={SUB_LABEL_CLASS}>{v.label}</span>
               {v.count > 0 && (
                 <NavCount tone={v.danger ? 'danger' : 'muted'}>{v.count.toLocaleString()}</NavCount>
               )}

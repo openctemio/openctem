@@ -81,7 +81,7 @@ const navView = () => screen.getByTestId('nav-view').textContent
 
 async function openDrawer(user: ReturnType<typeof userEvent.setup>) {
   // hidden: while the modal drawer is up, the page behind is aria-hidden.
-  await user.click(screen.getByRole('button', { name: /toggle sidebar/i, hidden: true }))
+  await user.click(screen.getByRole('button', { name: /open sidebar/i, hidden: true }))
   expect(drawer()).toBeTruthy()
 }
 
