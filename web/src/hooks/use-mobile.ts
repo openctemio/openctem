@@ -23,6 +23,31 @@ export function useIsMobile() {
   return React.useSyncExternalStore(subscribe, isMobileNow, isMobileOnServer)
 }
 
+/** From here up the app sidebar shows expanded; below it (down to 768) it is the icon rail. */
+export const RAIL_BREAKPOINT = 1024
+
+function subscribeTablet(onChange: () => void) {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const mql = window.matchMedia(
+    `(min-width: ${MOBILE_BREAKPOINT}px) and (max-width: ${RAIL_BREAKPOINT - 1}px)`
+  )
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+
+/**
+ * Whether the viewport is between the phone and the full desktop shell
+ * (768-1023 px), where the app sidebar is the 48 px icon rail and opens as a
+ * sheet over the page. The server and hydration render say `false`.
+ */
+export function useIsTablet() {
+  return React.useSyncExternalStore(
+    subscribeTablet,
+    () => window.innerWidth >= MOBILE_BREAKPOINT && window.innerWidth < RAIL_BREAKPOINT,
+    () => false
+  )
+}
+
 const WIDE_BREAKPOINT = 1280
 
 function subscribeWide(onChange: () => void) {

@@ -19,10 +19,10 @@ export function NavCount({
     <span
       data-slot="nav-count"
       className={cn(
-        'ms-auto shrink-0 text-xs tabular-nums',
+        'ms-auto shrink-0 text-cap tabular-nums',
         tone === 'action' && 'font-semibold text-signal-text',
         tone === 'danger' && 'font-medium text-destructive',
-        tone === 'muted' && 'text-muted-foreground'
+        tone === 'muted' && 'text-fg-dim'
       )}
     >
       {children}
