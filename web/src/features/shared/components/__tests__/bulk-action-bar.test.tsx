@@ -19,7 +19,8 @@ describe('BulkActionBar', () => {
       </BulkActionBar>
     )
     expect(screen.getByRole('toolbar')).toBeInTheDocument()
-    expect(screen.getByText('3 findings selected')).toBeInTheDocument()
+    expect(screen.getByRole('toolbar')).toHaveTextContent(/^3 findings selected/)
+    expect(screen.getByText('findings selected')).toHaveClass('sr-only', 'sm:not-sr-only')
     expect(screen.getByRole('button', { name: 'Assign' })).toBeInTheDocument()
   })
 
