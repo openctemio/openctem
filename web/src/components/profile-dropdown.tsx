@@ -20,7 +20,13 @@ import { LanguageSwitcher } from '@/components/language-switcher'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { cn } from '@/lib/utils'
-import { HEADER_MENU } from '@/components/layout/header-controls'
+import {
+  HEADER_MENU,
+  PHONE_BAR_MENU,
+  PHONE_TOUCH_SQUARE,
+} from '@/components/layout/header-controls'
+import { ThemeMenuItems } from '@/components/theme-switch'
+import { useIsMobile } from '@/hooks/use-mobile'
 
 /**
  * The user menu (header avatar). The only one: the sidebar no longer has its
@@ -34,6 +40,7 @@ export function ProfileDropdown() {
   const user = useDisplayUser()
   const { t } = useTranslation()
   const account = useSettingsNav().find((g) => g.id === 'account')
+  const isMobile = useIsMobile()
 
   // Generate initials from name or email
   const initials = user?.name
@@ -52,7 +59,7 @@ export function ProfileDropdown() {
           <Button
             variant="ghost"
             size="icon"
-            className="relative rounded-full p-0"
+            className={cn('relative rounded-full p-0', PHONE_TOUCH_SQUARE)}
             aria-label={
               user?.name
                 ? t('userMenu.openFor', 'Open user menu for {name}', { name: user.name })
@@ -66,7 +73,12 @@ export function ProfileDropdown() {
             </Avatar>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className={cn(HEADER_MENU, 'w-64')} align="end" forceMount>
+        <DropdownMenuContent
+          className={cn(HEADER_MENU, 'w-64', PHONE_BAR_MENU)}
+          align="end"
+          collisionPadding={8}
+          forceMount
+        >
           <DropdownMenuLabel className="font-normal">
             <div className="flex flex-col gap-1.5">
               <p className="text-dense truncate font-medium">
@@ -104,6 +116,19 @@ export function ProfileDropdown() {
             </Link>
           </DropdownMenuItem>
           <LanguageSwitcher />
+
+          {/* The phone bar has no theme button: Theme lives here, above Sign out. */}
+          {isMobile && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-cap-m text-fg-dim">
+                {t('nav.header.theme', 'Theme')}
+              </DropdownMenuLabel>
+              <DropdownMenuGroup>
+                <ThemeMenuItems />
+              </DropdownMenuGroup>
+            </>
+          )}
 
           <DropdownMenuSeparator />
 

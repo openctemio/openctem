@@ -1,7 +1,8 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
+import { usePhoneBarTitle } from '@/components/layout/phone-bar-title'
 
 interface PageHeaderProps {
   title: string
@@ -33,6 +34,9 @@ export function PageHeader({
   actionsClassName,
   viewSwitcher,
 }: PageHeaderProps) {
+  // Below 768 px the phone bar repeats the title once it has scrolled away.
+  const titleRef = useRef<HTMLHeadingElement>(null)
+  usePhoneBarTitle(titleRef, title)
   return (
     <div
       data-slot="page-header"
@@ -44,7 +48,9 @@ export function PageHeader({
       {/* basis-60: on a phone the title and a couple of icon actions share a
           row; wider actions wrap onto their own line instead of squeezing. */}
       <div className="min-w-0 flex-1 basis-60">
-        <h1 className="text-page tracking-tight text-balance">{title}</h1>
+        <h1 ref={titleRef} className="text-page tracking-tight text-balance">
+          {title}
+        </h1>
         {description && (
           <div className="mt-1 max-w-3xl text-sm text-muted-foreground text-pretty">
             {description}

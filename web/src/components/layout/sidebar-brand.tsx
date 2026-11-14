@@ -11,6 +11,8 @@ import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { KEYBOARD_SHORTCUTS } from '@/config/keyboard-shortcuts'
 import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
+import { PHONE_TOUCH_SQUARE } from './header-controls'
 
 /** The toggle-sidebar keys, from the one shortcut list (Help > Keyboard shortcuts). */
 const TOGGLE_SIDEBAR_KEYS = KEYBOARD_SHORTCUTS.find((s) => s.id === 'toggle-sidebar')?.keys
@@ -115,8 +117,11 @@ export function SidebarBrand({ href = '/', badge }: SidebarBrandProps) {
         )}
       </Link>
       {badge}
-      {/* On phones the sidebar is a sheet with its own close button. */}
-      {!isMobile && (
+      {/* In the phone drawer the toggle closes it ("Close sidebar"): 36 px
+          with a 44 x 44 touch area, no tooltip (touch has no hover). */}
+      {isMobile ? (
+        <SidebarTrigger className={cn('ms-auto text-muted-foreground', PHONE_TOUCH_SQUARE)} />
+      ) : (
         <Tooltip>
           <TooltipTrigger asChild>
             <SidebarTrigger className="ms-auto text-muted-foreground" />

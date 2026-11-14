@@ -26,6 +26,7 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { orgInitials } from './org-initials'
+import { PHONE_TOUCH_SQUARE } from './header-controls'
 import { blockedReasonText, formatShortDate } from '@/features/organization/lib/external-access'
 
 export { orgInitials }
@@ -105,7 +106,8 @@ function OrgAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) 
 
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-h-7 items-center justify-between gap-3 text-sm">
+    // 44 on the phone: the row holds its link's 44 px touch area.
+    <div className="flex min-h-7 items-center justify-between gap-3 text-body max-md:min-h-11">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-end">{children}</dd>
     </div>
@@ -128,7 +130,13 @@ function CopyIdButton({ value }: { value: string }) {
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 shrink-0 gap-1.5 px-2 text-xs"
+        // Phone: a 36 px square (icon 16, the check mark says "copied") with
+        // a 44 x 44 touch area.
+        className={cn(
+          'h-7 shrink-0 gap-1.5 px-2 text-cap',
+          'max-md:size-control-touch max-md:px-0 max-md:[&_svg]:size-4',
+          PHONE_TOUCH_SQUARE
+        )}
         aria-label={t('org.copyId', 'Copy organization ID')}
         onClick={async () => setState((await copyToClipboard(value)) ? 'copied' : 'failed')}
       >
@@ -137,7 +145,9 @@ function CopyIdButton({ value }: { value: string }) {
         ) : (
           <Copy className="size-3.5" aria-hidden />
         )}
-        <span aria-hidden>{state === 'copied' ? t('org.copied', 'Copied') : null}</span>
+        <span aria-hidden className="max-md:hidden">
+          {state === 'copied' ? t('org.copied', 'Copied') : null}
+        </span>
       </Button>
       <span role="status" aria-live="polite" className="sr-only">
         {state === 'copied'
@@ -166,8 +176,9 @@ function focusSibling(event: React.KeyboardEvent<HTMLUListElement>) {
   buttons[next]?.focus()
 }
 
+/** Menu rows of the panel: 32 px, 44 on the phone (shell package D12). */
 const ROW_LINK_CLASS =
-  'flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50'
+  'flex h-8 max-md:h-11 w-full items-center gap-2 rounded-md px-2 text-body outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50'
 
 export function OrgCard({
   current,
@@ -224,7 +235,8 @@ export function OrgCard({
                 href={membersLink.url}
                 prefetch={false}
                 onClick={onNavigate}
-                className="tabular-nums underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-hidden"
+                // Phone: the text keeps its size; an invisible 44 px touch area.
+                className="relative tabular-nums underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-hidden max-md:after:absolute max-md:after:inset-x-0 max-md:after:top-1/2 max-md:after:h-touch-target max-md:after:min-w-touch-target max-md:after:-translate-y-1/2"
                 data-testid="org-card-members"
               >
                 {memberCountText}
@@ -284,7 +296,6 @@ export function OrgCard({
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={t('org.search', 'Find an organization')}
                   aria-label={t('org.search', 'Find an organization')}
-                  className="h-8 text-sm"
                   data-testid="org-card-search"
                 />
               </div>
@@ -315,7 +326,7 @@ export function OrgCard({
                       type="button"
                       className={cn(
                         ROW_LINK_CLASS,
-                        'h-auto min-h-9 py-1',
+                        'h-auto min-h-9 py-1 max-md:h-auto max-md:min-h-11',
                         active && 'bg-accent/60'
                       )}
                       aria-current={active ? 'true' : undefined}

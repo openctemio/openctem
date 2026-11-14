@@ -254,7 +254,12 @@ export function TeamSwitcher() {
                 />
               )}
 
-              <span className="min-w-0 flex-1 truncate text-start text-body font-semibold group-data-[collapsible=icon]:hidden">
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate text-start text-body font-semibold group-data-[collapsible=icon]:hidden',
+                  'in-data-[mobile=true]:text-base' // design-ok: drawer 16/24 600
+                )}
+              >
                 {currentName}
               </span>
               {hasActions && (
