@@ -19,6 +19,9 @@
     - list_remediation_groups
   jobs:
     - ApprovalExpirationController
+    # Ends AI worker runs past their deadline whatever the ai_triage
+    # setting: a run on findings never waits forever.
+    - AIWorkerRunSweepController
     - SourceRetirementController
     - ApprovalMaterialChangeController
     - VEXRequestNoticeController

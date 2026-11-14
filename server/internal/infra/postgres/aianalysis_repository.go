@@ -243,6 +243,19 @@ func (r *AIAnalysisRepository) SetPreset(ctx context.Context, tenantID, id share
 	return nil
 }
 
+// SetExecutor sets where the AI agent's runs execute.
+func (r *AIAnalysisRepository) SetExecutor(ctx context.Context, tenantID, id shared.ID, e aianalysis.Executor) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE ai_agents SET executor = $3, updated_at = now() WHERE tenant_id = $1 AND user_id = $2`, tenantID, id, e)
+	if err != nil {
+		return fmt.Errorf("set ai agent executor: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return aianalysis.ErrAIAgentNotFound
+	}
+	return nil
+}
+
 // Attest records an owner's attestation.
 func (r *AIAnalysisRepository) Attest(ctx context.Context, tenantID, id, by shared.ID, at, due time.Time) error {
 	res, err := r.db.ExecContext(ctx, `
@@ -331,7 +344,8 @@ const aiRunColumns = `id, tenant_id, ai_agent_id, use_case, kind, subject_type, 
 	fields_sent, fields_withheld, COALESCE(bundle_digest, ''), COALESCE(prompt_template_id, ''),
 	COALESCE(prompt_template_digest, ''), COALESCE(output_schema, ''), COALESCE(provider, ''), COALESCE(model, ''),
 	steps, tool_calls, actions, tokens_in, tokens_out, cost_micro_usd, duration_ms, COALESCE(error_code, ''),
-	triggered_by, trigger, accountable, legacy_output, deadline_at, started_at, completed_at, created_at`
+	triggered_by, trigger, accountable, legacy_output, deadline_at, started_at, completed_at, created_at,
+	sensor_id, command_id, COALESCE(result_digest, ''), injection_suspected`
 
 // CreateRun inserts a run. A second live run for the same use case and
 // subject is ErrRunInFlight.
@@ -384,14 +398,16 @@ func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Ru
 			bundle_digest = $7, prompt_template_id = $8, prompt_template_digest = $9, output_schema = $10,
 			provider = $11, model = $12, steps = $13, tool_calls = $14, actions = $15, tokens_in = $16,
 			tokens_out = $17, cost_micro_usd = $18, duration_ms = $19, error_code = $20,
-			started_at = $21, completed_at = $22, updated_at = now()
+			started_at = $21, completed_at = $22, sensor_id = $23, result_digest = $24,
+			injection_suspected = $25, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`,
 		run.TenantID, run.ID, run.Status, run.DataClass, pq.Array(nonNil(run.FieldsSent)),
 		pq.Array(nonNil(run.FieldsWithheld)), nullStr(run.BundleDigest), nullStr(run.PromptTemplateID),
 		nullStr(run.PromptTemplateDigest), nullStr(run.OutputSchema), nullStr(run.Provider), nullStr(run.Model),
 		run.Steps, run.ToolCalls, run.Actions, run.TokensIn, run.TokensOut, run.CostMicroUSD,
 		nullIntPtr(run.DurationMS), nullStr(run.ErrorCode),
-		nullTime(run.StartedAt), nullTime(run.CompletedAt))
+		nullTime(run.StartedAt), nullTime(run.CompletedAt), nullID(run.SensorID), nullStr(run.ResultDigest),
+		run.InjectionSuspected)
 	if err != nil {
 		return fmt.Errorf("update ai run: %w", err)
 	}
@@ -399,6 +415,71 @@ func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Ru
 		return aianalysis.ErrRunNotFound
 	}
 	return nil
+}
+
+// BindRunCommand records the analysis job of a queued worker run.
+func (r *AIAnalysisRepository) BindRunCommand(ctx context.Context, tenantID, runID, commandID shared.ID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE ai_runs SET command_id = $3, updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND status = 'queued' AND command_id IS NULL
+		  AND executor IN ('platform_worker', 'tenant_worker')`, tenantID, runID, commandID)
+	if err != nil {
+		return false, fmt.Errorf("bind ai run command: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+// SettleWorkerRuns ends live worker runs that can no longer get a result:
+// past their deadline, or whose analysis job (same tenant) failed, expired,
+// was canceled or is gone. A system job across organizations; each run is
+// matched on its own tenant and id, and a run a worker completed in the
+// meantime is left alone (the status is checked again in the update).
+func (r *AIAnalysisRepository) SettleWorkerRuns(ctx context.Context, limit int) ([]aianalysis.SettledRun, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		WITH due AS (
+		    SELECT r.id, r.tenant_id,
+		           CASE WHEN c.status = 'canceled' AND (r.deadline_at IS NULL OR r.deadline_at >= now()) THEN 'canceled' ELSE 'failed' END AS status,
+		           CASE WHEN r.deadline_at < now() OR c.status = 'expired' THEN '`+aianalysis.ErrorDeadlineExceeded+`'
+		                WHEN c.status = 'failed' THEN '`+aianalysis.ErrorWorkerError+`'
+		                WHEN c.status = 'canceled' THEN '`+aianalysis.ErrorJobCanceled+`'
+		                ELSE '`+aianalysis.ErrorWorkerUnavailable+`' END AS code
+		    FROM ai_runs r
+		    LEFT JOIN commands c ON c.tenant_id = r.tenant_id AND c.id = r.command_id
+		    WHERE r.executor IN ('platform_worker', 'tenant_worker')
+		      AND r.status IN ('queued', 'running', 'waiting_tool', 'waiting_approval')
+		      AND (r.deadline_at < now()
+		           OR c.status IN ('failed', 'expired', 'canceled')
+		           OR (r.command_id IS NOT NULL AND c.id IS NULL))
+		    ORDER BY r.deadline_at NULLS FIRST
+		    LIMIT $1
+		    FOR UPDATE OF r SKIP LOCKED
+		)
+		UPDATE ai_runs r SET status = due.status, error_code = due.code, completed_at = now(), updated_at = now()
+		FROM due
+		WHERE r.tenant_id = due.tenant_id AND r.id = due.id
+		  AND r.status IN ('queued', 'running', 'waiting_tool', 'waiting_approval')
+		RETURNING r.id, r.tenant_id, r.command_id, r.status, r.error_code`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("settle worker runs: %w", err)
+	}
+	defer rows.Close()
+	var out []aianalysis.SettledRun
+	for rows.Next() {
+		var (
+			s   aianalysis.SettledRun
+			cmd sql.NullString
+		)
+		if err := rows.Scan(&s.ID, &s.TenantID, &cmd, &s.Status, &s.ErrorCode); err != nil {
+			return nil, fmt.Errorf("scan settled worker run: %w", err)
+		}
+		s.CommandID = nullIDFromString(cmd)
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // GetRun reads one run of the tenant.
@@ -461,15 +542,19 @@ func scanAIRun(row rowScanner) (*aianalysis.Run, error) {
 		withheld    pq.StringArray
 		acc         []byte
 		legacy      []byte
+		sensor      sql.NullString
+		command     sql.NullString
 	)
 	if err := row.Scan(&run.ID, &run.TenantID, &aiAgent, &run.UseCase, &run.Kind, &run.SubjectType, &run.SubjectID,
 		&run.Executor, &run.Status, &run.DataClass, &sent, &withheld, &run.BundleDigest, &run.PromptTemplateID,
 		&run.PromptTemplateDigest, &run.OutputSchema, &run.Provider, &run.Model, &run.Steps, &run.ToolCalls,
 		&run.Actions, &run.TokensIn, &run.TokensOut, &run.CostMicroUSD, &duration, &run.ErrorCode, &triggeredBy,
-		&run.Trigger, &acc, &legacy, &deadline, &started, &completed, &run.CreatedAt); err != nil {
+		&run.Trigger, &acc, &legacy, &deadline, &started, &completed, &run.CreatedAt,
+		&sensor, &command, &run.ResultDigest, &run.InjectionSuspected); err != nil {
 		return nil, err
 	}
 	run.AIAgentID = nullIDFromString(aiAgent)
+	run.SensorID, run.CommandID = nullIDFromString(sensor), nullIDFromString(command)
 	run.FieldsSent, run.FieldsWithheld = sent, withheld
 	if duration.Valid {
 		d := int(duration.Int64)
