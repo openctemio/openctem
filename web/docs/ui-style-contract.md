@@ -88,6 +88,8 @@ disagree. Change both together.
 | Default                                    | `--row-h`                                   | 40  |
 | Compact (`data-density="compact"`)         | `--row-h` in `[data-density='compact']`     | 32  |
 | Comfortable (`data-density="comfortable"`) | `--row-h` in `[data-density='comfortable']` | 52  |
+| Table header                               | `--th-h`                                    | 36  |
+| Table header, compact                      | `--th-h` in `[data-density='compact']`      | 32  |
 
 ### Radii
 
