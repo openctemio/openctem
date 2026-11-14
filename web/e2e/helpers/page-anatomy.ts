@@ -56,6 +56,10 @@ type Probe = {
   middotChips: string[]
   emptyPagination: boolean
   nameColumns: { header: string; width: number }[]
+  /** Header rows of the shared tables: height and whether the header is tinted. */
+  tableHeads: { height: number; tinted: boolean }[]
+  /** Raw `{{placeholder}}` text anywhere in main. */
+  rawTemplates: boolean
   pageOverflowX: boolean
   restingSave: string[]
   handDenied: boolean
@@ -189,7 +193,23 @@ export async function probe(page: Page): Promise<Probe> {
         width: Math.round(th.getBoundingClientRect().width),
       }))
 
+    // Shared tables: header row 36 (32 compact), never tinted.
+    const pageBg = getComputedStyle(document.body).backgroundColor
+    const tableHeads = Array.from(main.querySelectorAll('[data-scroll-mode] table thead tr'))
+      .filter((tr) => shown(tr))
+      .map((tr) => {
+        const th = tr.querySelector('th') as HTMLElement | null
+        const bg = th ? getComputedStyle(th).backgroundColor : ''
+        return {
+          height: Math.round(tr.getBoundingClientRect().height),
+          tinted: bg !== '' && bg !== 'rgba(0, 0, 0, 0)' && bg !== pageBg,
+        }
+      })
+    const rawTemplates = /\{\{[^}]*\}\}/.test(main.textContent ?? '')
+
     return {
+      tableHeads,
+      rawTemplates,
       oblongIconButtons: Array.from(
         document.querySelectorAll<HTMLElement>(
           'header button, main button, header a[data-slot=button], main a[data-slot=button]'
@@ -289,6 +309,13 @@ export async function checkAt(
     }
   }
   expect.soft(r.pageOverflowX, `${at}: no horizontal page scroll`).toBe(false)
+  for (const h of r.tableHeads) {
+    expect
+      .soft([32, 33, 36, 37], `${at}: a table header row is 36 (32 compact) + 1`)
+      .toContain(h.height)
+    expect.soft(h.tinted, `${at}: a table header row has no background tint`).toBe(false)
+  }
+  expect.soft(r.rawTemplates, `${at}: no raw {{placeholder}} text`).toBe(false)
   const path = route.split('?')[0]
   if (/^\/(settings|account)(\/|$)/.test(path) && !SAVE_EXCEPTIONS.has(path)) {
     expect.soft(r.restingSave, `${at}: a settings form saves through SettingsSaveBar`).toEqual([])

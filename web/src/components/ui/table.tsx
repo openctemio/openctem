@@ -6,22 +6,43 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 
 /**
- * The scroller is a named region in the tab order: a table wider than its
- * container (a phone) must be scrollable with the keyboard (WCAG 2.1.1).
+ * Two ways to hold a table (docs/ui-style-contract.md, "Tables"):
+ * - `scroll` (default): the container scrolls; it is a named region in the
+ *   tab order, so a table wider than its container (a phone) can be scrolled
+ *   with the keyboard (WCAG 2.1.1).
+ * - `clip`: the table fits its frame and the page scrolls, so the header can
+ *   stick under the app header. The container is no scroller (overflow clip
+ *   creates none) and no region.
  */
-function Table({ className, ...props }: React.ComponentProps<'table'>) {
+function Table({
+  className,
+  scroll = 'scroll',
+  containerStyle,
+  ...props
+}: React.ComponentProps<'table'> & {
+  scroll?: 'scroll' | 'clip'
+  containerStyle?: React.CSSProperties
+}) {
   const { t } = useTranslation()
+  const scrolls = scroll === 'scroll'
   return (
     <div
       data-slot="table-container"
-      role="region"
-      tabIndex={0}
-      aria-label={t('common.table.scrollRegion', 'Table, scrollable')}
-      className="relative w-full overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      data-scroll={scroll}
+      role={scrolls ? 'region' : undefined}
+      tabIndex={scrolls ? 0 : undefined}
+      aria-label={scrolls ? t('common.table.scrollRegion', 'Table, scrollable') : undefined}
+      style={containerStyle}
+      className={cn(
+        'relative w-full',
+        scrolls
+          ? 'overflow-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+          : 'overflow-x-clip'
+      )}
     >
       <table
         data-slot="table"
-        className={cn('w-full caption-bottom text-sm', className)}
+        className={cn('w-full caption-bottom text-dense', className)}
         {...props}
       />
     </div>
@@ -29,7 +50,18 @@ function Table({ className, ...props }: React.ComponentProps<'table'>) {
 }
 
 function TableHeader({ className, ...props }: React.ComponentProps<'thead'>) {
-  return <thead data-slot="table-header" className={cn('[&_tr]:border-b', className)} {...props} />
+  // The header/body edge is the one structural line (--border); rows are
+  // divided by the lighter --border-subtle. The header row never tints.
+  return (
+    <thead
+      data-slot="table-header"
+      className={cn(
+        '[&_tr]:border-b [&_tr]:border-border [&_tr]:hover:bg-transparent [&_tr]:focus-within:bg-transparent',
+        className
+      )}
+      {...props}
+    />
+  )
 }
 
 function TableBody({ className, ...props }: React.ComponentProps<'tbody'>) {
@@ -57,7 +89,7 @@ function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
     <tr
       data-slot="table-row"
       className={cn(
-        'hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors',
+        'border-b border-border-subtle transition-colors hover:bg-hov focus-within:bg-hov data-[state=selected]:bg-sel',
         className
       )}
       {...props}
@@ -71,7 +103,7 @@ function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
       data-slot="table-head"
       scope="col"
       className={cn(
-        'text-muted-foreground h-10 px-2 text-start align-middle font-medium [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
+        'h-th px-1.5 text-start align-middle text-cap-m whitespace-nowrap text-muted-foreground first:ps-3 last:pe-3 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
         className
       )}
       {...props}
@@ -84,7 +116,7 @@ function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
     <td
       data-slot="table-cell"
       className={cn(
-        'p-2 align-middle [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
+        'h-row px-1.5 py-1 align-middle first:ps-3 last:pe-3 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
         className
       )}
       {...props}
@@ -96,7 +128,7 @@ function TableCaption({ className, ...props }: React.ComponentProps<'caption'>) 
   return (
     <caption
       data-slot="table-caption"
-      className={cn('text-muted-foreground mt-4 text-sm', className)}
+      className={cn('text-muted-foreground mt-4 text-body', className)}
       {...props}
     />
   )

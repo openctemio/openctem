@@ -59,6 +59,7 @@ import {
   ChevronsRight,
   SlidersHorizontal,
   Inbox,
+  RefreshCw,
 } from 'lucide-react'
 import {
   GroupHeaderContent,
@@ -68,7 +69,10 @@ import {
   useGroupExpansion,
   type DataTableRowGroups,
 } from './data-table-groups'
-import { useTableDensity, type TableDensity } from './use-table-density'
+import { TABLE_DENSITIES, useTableDensity, type TableDensity } from './use-table-density'
+import { ariaSort, columnLayout, type ColumnLayout } from './column-meta'
+import { RelativeTime } from '../relative-time'
+import { PAGE_TITLE_ID } from '../page-header'
 import { TableRefreshBar } from './table-refresh-bar'
 import { pageSizeChoices } from '@/lib/page-size-options'
 
@@ -104,10 +108,40 @@ interface DataTableProps<TData, TValue> {
   emptyMessage?: string
   emptyDescription?: string
   /**
-   * Replaces the default "nothing here" block when there are no rows, so a
-   * page can say which kind of empty it is and offer the next action.
+   * What an empty list shows. Either one block for every empty case, or the
+   * two kinds: `nothingYet` (the list has no records at all: say so and offer
+   * the first action) and `noMatch` (a search or filter left no row; defaults
+   * to "No results found" with a Clear filters action when `onClearFilters`
+   * is given). Which one shows follows `isFiltered`.
    */
-  emptyState?: React.ReactNode
+  emptyState?: React.ReactNode | DataTableEmptyStates
+  /**
+   * A search or filter is applied, so an empty list is "no match" rather than
+   * "nothing yet". Defaults to the table's own search being non-empty.
+   */
+  isFiltered?: boolean
+  /** Clears the page's search and filters (the default no-match action). */
+  onClearFilters?: () => void
+  /**
+   * The accessible name of the table (a visually hidden caption). Without it
+   * the table is named by the page title (the PageHeader h1); a page holding
+   * several tables names each one.
+   */
+  caption?: string
+  /**
+   * When the rows on screen were read. Older than the list's freshness budget,
+   * the footer says "Updated 12 min ago" with a refresh button (`onRefresh`):
+   * never a silent old list.
+   */
+  staleAt?: Date
+  onRefresh?: () => void
+  /**
+   * The total could not be counted (the count failed or timed out): the
+   * footer shows the rows on screen without a total, "Could not count" with
+   * Retry (`onRetryCount`), and no Last page.
+   */
+  countUnavailable?: boolean
+  onRetryCount?: () => void
   /**
    * Shown in place of the rows when the read failed. The toolbar, filters and
    * chips stay; the error does not replace the page.
@@ -267,24 +301,62 @@ interface DataTableProps<TData, TValue> {
   /** Label of the page-size select. Default "Rows per page". */
   pageSizeLabel?: string
   /**
-   * Row density until the user picks one in the table's View menu (style
-   * contract D14): `compact` (32px) for single-line lists, `comfortable`
-   * (40px, the default) for multi-line rows. The user's choice is a per-user
-   * preference that every table follows.
+   * Row density until the user picks one in the table's Display menu:
+   * `compact` 32, `default` 40, `comfortable` 52 (a second line). The user's
+   * choice is a per-user preference that every table follows.
    */
   defaultDensity?: TableDensity
+  /**
+   * Sticky column header with the two scroll modes (the table fits: the page
+   * scrolls and the header sticks; wider than its frame: the frame scrolls on
+   * both axes). Off by default until it is proven on every page; off, the
+   * frame scrolls sideways as before.
+   */
+  stickyHeader?: boolean
+}
+
+/** The two kinds of empty list (`emptyState`). */
+export interface DataTableEmptyStates {
+  nothingYet: React.ReactNode
+  noMatch?: React.ReactNode
+}
+
+function isEmptyStates(v: unknown): v is DataTableEmptyStates {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    !React.isValidElement(v) &&
+    !Array.isArray(v) &&
+    'nothingYet' in v
+  )
+}
+
+/** Text, number and date columns: where the content of a header and its cells sits. */
+const ALIGN_CLASS: Record<ColumnLayout['align'], string | undefined> = {
+  start: undefined,
+  end: 'text-end',
+  center: 'text-center',
 }
 
 /** Skeleton rows shown in an empty body while `isLoading`. */
 const LOADING_ROWS = 5
 
-/** Cell and header classes for compact rows (32px instead of 40px). */
-const COMPACT_CELL_CLASS = 'py-1'
-const COMPACT_HEAD_CLASS = 'h-8'
+/** Cell padding of compact rows (the row height itself is --row-h). */
+const COMPACT_CELL_CLASS = 'py-0.5'
 
 const DENSITY_LABEL_KEYS: Record<TableDensity, [string, string]> = {
   compact: ['common.table.densityCompact', 'Compact'],
+  default: ['common.table.densityDefault', 'Default'],
   comfortable: ['common.table.densityComfortable', 'Comfortable'],
+}
+
+/**
+ * Mode B (the table is wider than its frame): the frame scrolls on both axes,
+ * at most the viewport under the app header less the toolbar and footer, and
+ * never below 320 px.
+ */
+const SCROLL_FRAME_STYLE: React.CSSProperties = {
+  maxHeight: 'max(20rem, calc(100dvh - var(--app-header-h) - 6rem))',
 }
 
 /** The narrowest a row's name column may get: other columns scroll instead. */
@@ -295,11 +367,15 @@ const SELECT_COL_WIDTH = 40
 
 /**
  * Pinned cells must be opaque (content scrolls underneath), so they repeat the
- * row's state colours as solid equivalents: the row hover is muted at 50% over
- * the page background.
+ * row's state colours as solid equivalents over the page background: hover
+ * (and a focused control in the row) 4% ink, selected 7% ink.
  */
 const PINNED_CELL_CLASS =
-  'sticky z-[1] bg-background group-hover/row:bg-[color-mix(in_oklab,var(--muted)_50%,var(--background))] group-data-[state=selected]/row:bg-muted'
+  'sticky z-[1] bg-background group-hover/row:bg-[color-mix(in_srgb,var(--foreground)_4%,var(--background))] group-focus-within/row:bg-[color-mix(in_srgb,var(--foreground)_4%,var(--background))] group-data-[state=selected]/row:bg-[color-mix(in_srgb,var(--foreground)_7%,var(--background))]'
+
+/** The header row sticks: at the top of the page's scroller (under the app header) or of the frame (Mode B). */
+const STICKY_HEAD_CLASS = 'sticky z-[2] bg-background'
+const STICKY_HEAD_PINNED_CLASS = 'z-[3]'
 
 /** Soft edge after the start-pinned columns, shown while content is hidden under them. */
 const PINNED_START_EDGE_CLASS =
@@ -452,6 +528,13 @@ export function DataTable<TData, TValue>({
   emptyMessage,
   emptyDescription,
   emptyState,
+  isFiltered,
+  onClearFilters,
+  caption,
+  staleAt,
+  onRefresh,
+  countUnavailable = false,
+  onRetryCount,
   errorState: errorStateProp,
   error,
   onRetry,
@@ -489,7 +572,8 @@ export function DataTable<TData, TValue>({
   rowGroups,
   paginationNoun,
   pageSizeLabel,
-  defaultDensity = 'comfortable',
+  defaultDensity = 'default',
+  stickyHeader = false,
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
   const errorState =
@@ -518,9 +602,19 @@ export function DataTable<TData, TValue>({
   // the pinned columns — drives the edge shadows.
   const tableWrapRef = React.useRef<HTMLDivElement>(null)
   const [hiddenEdges, setHiddenEdges] = React.useState({ start: false, end: false })
+  // Mode A (`clip`): the table fits, the page scrolls, the header sticks under
+  // the app header. Mode B (`scroll`): the table is wider than its frame (the
+  // viewer turned on many columns), the frame scrolls on both axes and the
+  // header sticks to its top. Chosen from the measurement, never by the page.
+  const [scrollMode, setScrollMode] = React.useState<'clip' | 'scroll'>('clip')
   const measureEdges = React.useCallback(() => {
     const el = tableWrapRef.current?.querySelector<HTMLElement>('[data-slot="table-container"]')
     if (!el) return
+    const tableEl = el.querySelector<HTMLElement>('table')
+    if (tableEl) {
+      const wider = tableEl.offsetWidth > el.clientWidth + 1
+      setScrollMode((prev) => (wider ? 'scroll' : prev === 'scroll' ? 'clip' : prev))
+    }
     // Group headers span the visible frame, not the scrolling table, so their
     // name and actions stay in view while the rows scroll sideways.
     tableWrapRef.current?.style.setProperty('--dt-frame', `${el.clientWidth}px`)
@@ -572,11 +666,19 @@ export function DataTable<TData, TValue>({
     [columnVisibilityProp, onColumnVisibilityChange]
   )
   const [rowSelection, setRowSelection] = React.useState({})
+  // Named by the page title when no caption is given (found after mount: the
+  // PageHeader is a sibling of the table, not an ancestor).
+  const [labelledBy, setLabelledBy] = React.useState<string | undefined>(undefined)
+  React.useEffect(() => {
+    if (caption) return
+    setLabelledBy(document.getElementById(PAGE_TITLE_ID) ? PAGE_TITLE_ID : undefined)
+  }, [caption])
   const [globalFilter, setGlobalFilter] = React.useState('')
   // "Try adjusting your search" only makes sense while one is applied: an
   // empty list with no search or filter says just what is empty.
   const filterActive =
-    Boolean(globalFilter) || Boolean(serverSearch?.value) || columnFilters.length > 0
+    isFiltered ??
+    (Boolean(globalFilter) || Boolean(serverSearch?.value) || columnFilters.length > 0)
   const emptyHint =
     emptyDescription ??
     (filterActive
@@ -597,7 +699,8 @@ export function DataTable<TData, TValue>({
     onSortingChange: serverSorting
       ? (updater) => onSortingChange(typeof updater === 'function' ? updater(sorting) : updater)
       : setInternalSorting,
-    enableSorting: !manualPagination || serverSorting,
+    // An empty list has nothing to order: its headers are plain labels.
+    enableSorting: (!manualPagination || serverSorting) && data.length > 0,
     enableMultiSort: false,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
@@ -621,7 +724,11 @@ export function DataTable<TData, TValue>({
     globalFilterFn: 'includesString',
     manualPagination,
     // Prefer rowCount (tanstack derives pageCount); fall back to explicit pageCount.
-    ...(manualPagination ? (rowCount != null ? { rowCount } : { pageCount: pageCount ?? -1 }) : {}),
+    ...(manualPagination
+      ? rowCount != null && !countUnavailable
+        ? { rowCount }
+        : { pageCount: countUnavailable ? -1 : (pageCount ?? -1) }
+      : {}),
     // Only under manual pagination. Passing `onPaginationChange: undefined`
     // otherwise overrides tanstack's own state updater (options are spread over
     // its defaults), which left every client-paginated table stuck on page 1:
@@ -785,6 +892,99 @@ export function DataTable<TData, TValue>({
     ? (rowCount ?? data.length)
     : table.getFilteredRowModel().rows.length
 
+  // Column kinds: alignment and widths of a column's header and cells.
+  const layoutOf = (columnId: string) =>
+    columnLayout(columnId, table.getColumn(columnId)?.columnDef.meta)
+  const cellProps = (columnId: string, head: boolean) => {
+    const pin = pinnedProps(columnId)
+    const layout = layoutOf(columnId)
+    return {
+      className: cn(
+        pin.className,
+        ALIGN_CLASS[layout.align],
+        head && stickyHeader && STICKY_HEAD_CLASS,
+        head &&
+          stickyHeader &&
+          (pin.className || columnId === 'actions') &&
+          STICKY_HEAD_PINNED_CLASS,
+        // The page's scroller is <main>, under the app header: top 0 sticks the
+        // header there (Mode A) or at the frame's top (Mode B, the frame scrolls).
+        head && stickyHeader && 'top-0',
+        !head && compact && COMPACT_CELL_CLASS
+      ),
+      style: layout.style || pin.style ? { ...layout.style, ...pin.style } : undefined,
+    }
+  }
+
+  // One polite live region per table: sort, page and refresh results.
+  const sortKey = sorting.map((s) => `${s.id}:${s.desc ? 'd' : 'a'}`).join(',')
+  const pageIndex = table.getState().pagination.pageIndex
+  const announce = useTableAnnouncements({
+    sortKey,
+    sortMessage: () => {
+      const s = sorting[0]
+      if (!s) return ''
+      const header = table.getFlatHeaders().find((h) => h.column.id === s.id)
+      const label = header ? columnLabel(header as Header<TData, unknown>) : s.id
+      return t('common.table.sortedBy', 'Sorted by {column}, {direction}', {
+        column: label,
+        direction: s.desc
+          ? t('common.table.descending', 'descending')
+          : t('common.table.ascending', 'ascending'),
+      })
+    },
+    pageIndex,
+    pageMessage: () =>
+      countUnavailable
+        ? t('common.table.pageOnly', 'Page {page}', { page: pageIndex + 1 })
+        : t('common.table.pageOf', 'Page {page} of {pages}', {
+            page: pageIndex + 1,
+            pages: Math.max(1, table.getPageCount()),
+          }),
+    refreshing: isRefreshing,
+    refreshedMessage: () =>
+      t('common.table.resultsCount', '{count} {noun}', {
+        count: paginationTotal.toLocaleString(),
+        noun: paginationNoun,
+      }),
+  })
+
+  // The empty body: one block, or the two kinds of empty list.
+  const emptyBody = isEmptyStates(emptyState)
+    ? filterActive
+      ? (emptyState.noMatch ?? (
+          <DefaultEmpty
+            message={t('common.table.noResults', 'No results found')}
+            hint={t('common.table.adjustSearch', 'Try adjusting your search or filters')}
+            action={
+              onClearFilters ? (
+                <Button variant="outline" size="sm" onClick={onClearFilters}>
+                  {t('common.table.clearFilters', 'Clear filters')}
+                </Button>
+              ) : undefined
+            }
+          />
+        ))
+      : emptyState.nothingYet
+    : (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
+
+  // A stale read says so in the footer, with a refresh.
+  const staleNote = staleAt ? (
+    <span data-slot="table-stale" className="inline-flex items-center gap-1">
+      {t('common.table.updated', 'Updated')} <RelativeTime date={staleAt} />
+      {onRefresh && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t('common.table.refreshNow', 'Refresh now')}
+          onClick={onRefresh}
+        >
+          <RefreshCw className="size-4" />
+        </Button>
+      )}
+    </span>
+  ) : null
+
   return (
     <div className="space-y-4">
       {/* Toolbar: the shared ListToolbar row (order and wrapping rules live
@@ -847,7 +1047,7 @@ export function DataTable<TData, TValue>({
                   value={density}
                   onValueChange={(v) => setDensity(v as TableDensity)}
                 >
-                  {(['compact', 'comfortable'] as const).map((d) => (
+                  {TABLE_DENSITIES.map((d) => (
                     <DropdownMenuRadioItem key={d} value={d}>
                       {t(DENSITY_LABEL_KEYS[d][0], DENSITY_LABEL_KEYS[d][1])}
                     </DropdownMenuRadioItem>
@@ -974,13 +1174,11 @@ export function DataTable<TData, TValue>({
             </div>
           ) : (
             (errorState ??
-            emptyState ?? (
-              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-                <Inbox className="h-10 w-10 text-muted-foreground/50" />
-                <p className="text-sm font-medium">{emptyMessage}</p>
-                {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
-              </div>
-            ))
+            (emptyState === undefined || isEmptyStates(emptyState) ? (
+              <div className="py-12">{emptyBody}</div>
+            ) : (
+              emptyBody
+            )))
           )}
         </div>
       )}
@@ -989,10 +1187,11 @@ export function DataTable<TData, TValue>({
       <div
         ref={tableWrapRef}
         className={cn(
-          'group/table relative rounded-md border overflow-x-auto',
+          'group/table relative overflow-clip rounded-md border',
           phoneCards && 'hidden'
         )}
         data-density={density}
+        data-scroll-mode={scrollMode}
         data-hidden-start={hiddenEdges.start}
         data-hidden-end={hiddenEdges.end}
         // scroll does not bubble, but a capture listener on an ancestor sees the
@@ -1002,7 +1201,14 @@ export function DataTable<TData, TValue>({
         }}
       >
         <TableRefreshBar active={isRefreshing} label={refreshingLabel} />
-        <Table {...DENSE_ATTRS}>
+        <Table
+          {...DENSE_ATTRS}
+          scroll={stickyHeader ? scrollMode : 'scroll'}
+          containerStyle={stickyHeader && scrollMode === 'scroll' ? SCROLL_FRAME_STYLE : undefined}
+          aria-labelledby={caption ? undefined : labelledBy}
+          aria-busy={isLoading && !hasBody ? true : undefined}
+        >
+          {caption && <caption className="sr-only">{caption}</caption>}
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -1010,11 +1216,12 @@ export function DataTable<TData, TValue>({
                   return (
                     <TableHead
                       key={header.id}
-                      {...pinnedProps(header.column.id)}
-                      className={cn(
-                        pinnedProps(header.column.id).className,
-                        compact && COMPACT_HEAD_CLASS
-                      )}
+                      {...cellProps(header.column.id, true)}
+                      aria-sort={
+                        header.column.getCanSort()
+                          ? ariaSort(header.column.getIsSorted())
+                          : undefined
+                      }
                     >
                       {header.isPlaceholder ? null : !isHeaderless(table, header.column) ? (
                         flexRender(header.column.columnDef.header, header.getContext())
@@ -1103,14 +1310,7 @@ export function DataTable<TData, TValue>({
                         }}
                       >
                         {row.getVisibleCells().map((cell) => (
-                          <TableCell
-                            key={cell.id}
-                            {...pinnedProps(cell.column.id)}
-                            className={cn(
-                              pinnedProps(cell.column.id).className,
-                              compact && COMPACT_CELL_CLASS
-                            )}
-                          >
+                          <TableCell key={cell.id} {...cellProps(cell.column.id, false)}>
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </TableCell>
                         ))}
@@ -1168,13 +1368,7 @@ export function DataTable<TData, TValue>({
               ) : (
                 <TableRow>
                   <TableCell colSpan={columns.length} className="h-48 text-center">
-                    {errorState ?? emptyState ?? (
-                      <div className="flex flex-col items-center justify-center gap-2">
-                        <Inbox className="h-10 w-10 text-muted-foreground/50" />
-                        <p className="text-sm font-medium">{emptyMessage}</p>
-                        {emptyHint && <p className="text-xs text-muted-foreground">{emptyHint}</p>}
-                      </div>
-                    )}
+                    {errorState ?? emptyBody}
                   </TableCell>
                 </TableRow>
               )}
@@ -1182,6 +1376,16 @@ export function DataTable<TData, TValue>({
           )}
         </Table>
       </div>
+
+      {/* The table's polite live region: sort, page and refresh results. */}
+      <div role="status" aria-live="polite" className="sr-only" data-slot="table-announcer">
+        {announce}
+      </div>
+
+      {/* A stale read with no pager (an empty list) still says how old it is. */}
+      {staleNote && !(showPagination && !errorState && paginationTotal > 0) && (
+        <div className="text-cap text-muted-foreground">{staleNote}</div>
+      )}
 
       {/* Pagination. Hidden while there is no row to page through (an empty
           list, or the first load): never "Showing 0 - 0 of 0" or
@@ -1196,17 +1400,46 @@ export function DataTable<TData, TValue>({
               ? (rowCount ?? data.length)
               : table.getFilteredRowModel().rows.length
             const start = total === 0 ? 0 : pageIndex * ps + 1
-            const end = Math.min((pageIndex + 1) * ps, total)
+            const end = countUnavailable
+              ? pageIndex * ps + data.length
+              : Math.min((pageIndex + 1) * ps, total)
             return (
-              <div className="text-sm text-muted-foreground text-center sm:text-start">
-                {t('common.table.showing', 'Showing {start} - {end} of {total} {noun}', {
-                  start,
-                  end,
-                  total: rowCountCapped
-                    ? t('common.table.cappedCount', '{count}+', { count: total.toLocaleString() })
-                    : total,
-                  noun: paginationNoun,
-                })}
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted-foreground sm:justify-start">
+                {staleNote}
+                {countUnavailable ? (
+                  <>
+                    <span>
+                      {t('common.table.showingNoTotal', 'Showing {start} - {end}', {
+                        start,
+                        end,
+                      })}
+                    </span>
+                    <span
+                      data-slot="table-count-unavailable"
+                      className="inline-flex items-center gap-1"
+                    >
+                      {t('common.table.countUnavailable', 'Could not count')}
+                      {onRetryCount && (
+                        <Button variant="ghost" size="sm" onClick={onRetryCount}>
+                          {t('common.retry', 'Retry')}
+                        </Button>
+                      )}
+                    </span>
+                  </>
+                ) : (
+                  <span>
+                    {t('common.table.showing', 'Showing {start} - {end} of {total} {noun}', {
+                      start,
+                      end,
+                      total: rowCountCapped
+                        ? t('common.table.cappedCount', '{count}+', {
+                            count: total.toLocaleString(),
+                          })
+                        : total,
+                      noun: paginationNoun,
+                    })}
+                  </span>
+                )}
               </div>
             )
           })()}
@@ -1265,10 +1498,14 @@ export function DataTable<TData, TValue>({
 
               {/* Page indicator */}
               <span className="text-sm text-muted-foreground">
-                {t('common.table.pageOf', 'Page {page} of {pages}', {
-                  page: table.getState().pagination.pageIndex + 1,
-                  pages: Math.max(1, table.getPageCount()),
-                })}
+                {countUnavailable
+                  ? t('common.table.pageOnly', 'Page {page}', {
+                      page: table.getState().pagination.pageIndex + 1,
+                    })
+                  : t('common.table.pageOf', 'Page {page} of {pages}', {
+                      page: table.getState().pagination.pageIndex + 1,
+                      pages: Math.max(1, table.getPageCount()),
+                    })}
               </span>
 
               <Button
@@ -1287,7 +1524,8 @@ export function DataTable<TData, TValue>({
 
                 aria-label={t('common.table.lastPage', 'Last page')}
                 onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
+                // Without a known total there is no last page to go to.
+                disabled={countUnavailable || !table.getCanNextPage()}
               >
                 <ChevronsRight className="h-4 w-4" />
               </Button>
@@ -1297,4 +1535,60 @@ export function DataTable<TData, TValue>({
       )}
     </div>
   )
+}
+
+/** The default empty block: icon, one line, an optional hint and action. */
+function DefaultEmpty({
+  message,
+  hint,
+  action,
+}: {
+  message: React.ReactNode
+  hint?: React.ReactNode
+  action?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 text-center">
+      <Inbox className="size-10 text-muted-foreground/50" />
+      <p className="text-body font-medium">{message}</p>
+      {hint && <p className="text-cap text-muted-foreground">{hint}</p>}
+      {action}
+    </div>
+  )
+}
+
+/**
+ * What the table's live region says: the new sort, the new page, and the
+ * result count when a refresh ends. Nothing on the first render (the page
+ * title and the table already say what is on screen).
+ */
+function useTableAnnouncements({
+  sortKey,
+  sortMessage,
+  pageIndex,
+  pageMessage,
+  refreshing,
+  refreshedMessage,
+}: {
+  sortKey: string
+  sortMessage: () => string
+  pageIndex: number
+  pageMessage: () => string
+  refreshing: boolean
+  refreshedMessage: () => string
+}): string {
+  const [message, setMessage] = React.useState('')
+  const messages = React.useRef({ sortMessage, pageMessage, refreshedMessage })
+  React.useLayoutEffect(() => {
+    messages.current = { sortMessage, pageMessage, refreshedMessage }
+  })
+  const last = React.useRef({ sortKey, pageIndex, refreshing })
+  React.useEffect(() => {
+    const prev = last.current
+    last.current = { sortKey, pageIndex, refreshing }
+    if (prev.sortKey !== sortKey) setMessage(messages.current.sortMessage())
+    else if (prev.pageIndex !== pageIndex) setMessage(messages.current.pageMessage())
+    else if (prev.refreshing && !refreshing) setMessage(messages.current.refreshedMessage())
+  }, [sortKey, pageIndex, refreshing])
+  return message
 }

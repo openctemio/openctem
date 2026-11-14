@@ -2,6 +2,11 @@
 
 import { CveLink } from '@/features/vulnerabilities/components/cve-link'
 import { MetaLine } from '@/features/shared/components/text-layout'
+import {
+  decodeDensity,
+  encodeDensity,
+  type TableDensity,
+} from '@/features/shared/components/data-table'
 import { evaluateFindingTransitions } from '@/features/findings/api/use-finding-transitions'
 import { summarizeDryRun } from '@/features/findings/lib/transition-reasons'
 import { FindingSubStatus } from '@/features/findings/components/lifecycle/finding-sub-status'
@@ -855,14 +860,21 @@ function FindingsContent() {
     [baselineColumns]
   )
   const densityParam = useUrlParam('density')
+  // The URL and the saved view hold the stored word of a density
+  // (decodeDensity / encodeDensity); the table gets the level.
   const urlDensity =
-    densityParam === 'compact' || densityParam === 'comfortable' ? densityParam : undefined
+    densityParam === 'compact' || densityParam === 'comfortable' || densityParam === 'spacious'
+      ? densityParam
+      : undefined
   const viewDensity =
-    openView?.density === 'compact' || openView?.density === 'comfortable'
+    openView?.density === 'compact' ||
+    openView?.density === 'comfortable' ||
+    openView?.density === 'spacious'
       ? openView.density
       : undefined
   const onDensityChange = useCallback(
-    (next: 'compact' | 'comfortable') => {
+    (level: TableDensity) => {
+      const next = encodeDensity(level)
       const params = new URLSearchParams(window.location.search)
       if (next === viewDensity) params.delete('density')
       else params.set('density', next)
@@ -2650,7 +2662,7 @@ function FindingsContent() {
                     mobileRow={mobileRow}
                     columnVisibility={columnVisibility}
                     onColumnVisibilityChange={onColumnVisibilityChange}
-                    density={savedId ? (urlDensity ?? viewDensity) : undefined}
+                    density={savedId ? decodeDensity(urlDensity ?? viewDensity) : undefined}
                     onDensityChange={savedId ? onDensityChange : undefined}
                     showSelectionCount={false}
                     emptyState={

@@ -223,6 +223,10 @@
   /* Row density: 40 default, 32 compact, 52 comfortable, chosen by
      data-density on any ancestor. Class: h-row. */
   --row-h: 2.5rem;
+  /* Column header row of a table: 36, 32 at compact density. Class: h-th. */
+  --th-h: 2.25rem;
+  /* The app header (sticky table headers stop under it). */
+  --app-header-h: 3rem;
 
   /* Spacing names (Tailwind's 4px steps give gap-1..8): a section's own gap
      and the gap between the blocks of a page. */
@@ -486,6 +490,7 @@
 /* Row density per person or per list: data-density on any ancestor. */
 [data-density='compact'] {
   --row-h: 2rem;
+  --th-h: 2rem;
 }
 [data-density='comfortable'] {
   --row-h: 3.25rem;
@@ -619,6 +624,7 @@
   --spacing-control-field: var(--control-h-field);
   --spacing-control-dense: var(--control-h-dense);
   --spacing-row: var(--row-h);
+  --spacing-th: var(--th-h);
 
   --color-sel: var(--sel);
   --color-border-strong-hover: var(--border-strong-hover);
