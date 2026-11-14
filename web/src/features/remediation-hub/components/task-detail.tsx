@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
+import { PageStack } from '@/features/shared/components/page-stack'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { cn } from '@/lib/utils'
@@ -424,7 +425,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
   const targets = (siblings?.data ?? []).filter((x) => x.id !== task.id)
 
   return (
-    <div className="space-y-6">
+    <PageStack>
       <div className="flex flex-wrap items-start gap-3">
         <Button asChild variant="ghost" size="icon" aria-label={t('remediationHub.detail.back')}>
           <Link href="/remediation/tasks">
@@ -737,7 +738,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         onConfirm={(note) => void setHold(null, note)}
         busy={busy}
       />
-    </div>
+    </PageStack>
   )
 }
 
