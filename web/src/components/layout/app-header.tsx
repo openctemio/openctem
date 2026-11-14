@@ -65,7 +65,7 @@ export function Header({
   return (
     <header
       className={cn(
-        'border-border z-50 h-12 border-b',
+        'border-border-subtle bg-background z-50 h-12 border-b',
         // Phones: an opaque bar, no backdrop blur. A blur is re-rasterised
         // whenever anything moves under or over it (a sheet sliding up, its
         // backdrop fading), which is where phone animations dropped frames.
@@ -90,7 +90,7 @@ export function Header({
         )}
         {/* From 768px; it folds by width (breadcrumb-fold.ts). A phone shows no
             trail: the page title says where you are. */}
-        {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 shrink md:flex" />}
+        {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 flex-1 basis-0 md:flex" />}
         {children}
         {showHeaderActions && <HeaderActions />}
       </div>

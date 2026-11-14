@@ -1,5 +1,7 @@
 {
   "userMenu.allSettings": "Tất cả cài đặt",
+  "userMenu.fallbackName": "Người dùng",
   "userMenu.open": "Mở menu người dùng",
+  "userMenu.openFor": "Mở menu người dùng của {name}",
   "userMenu.signOut": "Đăng xuất"
 }

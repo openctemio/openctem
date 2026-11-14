@@ -23,6 +23,7 @@
  * included), picked from the sidebar's quick views; a type is a filter.
  */
 
+import { useOpenForm } from '@/hooks/use-open-form'
 import { ScopingDecisionCards } from '../attention/attention-reasons'
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
@@ -545,6 +546,14 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
   }, [mutate, statsMutate, typeStatsMutate, lensStatsMutate, networksMutate])
 
   const forms = useInventoryAssetForms(registry, refresh)
+  // "Add asset" from the Create menu or its "c a" chord: this list's own type,
+  // else the type menu of the Add button.
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const openAddForm = useCallback(() => {
+    if (typeView) forms.openCreate(typeView)
+    else setAddMenuOpen(true)
+  }, [typeView, forms])
+  useOpenForm('asset', canWrite && !!registry?.types?.length, openAddForm)
   const [exporting, setExporting] = useState(false)
   const handleExport = useCallback(async () => {
     if (exporting) return
@@ -718,7 +727,13 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
               : t('assets.inventoryPage.export', 'Export')}
           </Button>
           {canWrite && (
-            <InventoryAddButton registry={registry} view={typeView} onAdd={forms.openCreate} />
+            <InventoryAddButton
+              registry={registry}
+              view={typeView}
+              onAdd={forms.openCreate}
+              open={addMenuOpen}
+              onOpenChange={setAddMenuOpen}
+            />
           )}
         </PageHeader>
         <AssetsSectionTabs />

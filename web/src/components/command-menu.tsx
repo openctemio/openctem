@@ -52,7 +52,7 @@ import {
   type QuickViewKey,
 } from '@/features/findings/lib/quick-views'
 import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
-import { openFormHref } from '@/lib/open-form'
+import { useCreateActions } from '@/hooks/use-create-actions'
 import { usePaletteSearch } from '@/features/command-palette/use-palette-search'
 import type { PaletteEntityKind } from '@/features/command-palette/palette-search'
 
@@ -100,27 +100,14 @@ export function CommandMenu() {
   const quickViews = knownQuickViews(quickViewData?.views)
   const includeInfo = quickViewData?.include_informational ?? false
   // Open-a-form commands only: every write stays on its page, behind that
-  // page's own confirmation and step-up. Each is offered with its permission.
-  const commands = [
-    hasPermission(Permission.ScansWrite) && {
-      key: 'new-scan',
-      label: t('nav.palette.command.newScan', 'New scan'),
-      href: openFormHref('/scans', 'scan'),
-    },
-    hasPermission('findings:write') &&
-      hasPermission('assets:write') &&
-      hasPermission('assets:import') && {
-        key: 'import',
-        label: t('nav.palette.command.import', 'Import results'),
-        href: openFormHref('/findings', 'import'),
-      },
-    hasPermission(Permission.RemediationWrite) &&
-      canFindings && {
-        key: 'task',
-        label: t('nav.palette.command.createTask', 'Create remediation task'),
-        href: openFormHref('/remediation/tasks', 'task'),
-      },
-  ].filter(Boolean) as { key: string; label: string; href: string }[]
+  // page's own confirmation and step-up. The same list, with the same gates,
+  // as the header's Create menu (src/hooks/use-create-actions.ts).
+  const createActions = useCreateActions()
+  const commands = createActions.map((a) => ({
+    key: a.id,
+    label: t(a.labelKey, a.label),
+    href: a.href,
+  }))
   const kindHeading: Record<PaletteEntityKind, string> = {
     finding: t('nav.palette.group.findings', 'Findings'),
     asset: t('nav.palette.group.assets', 'Assets'),

@@ -1,24 +1,28 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { replaceUrlSearch } from './use-url-param'
-import { requestedForm, type OpenForm } from '@/lib/open-form'
+import { useEffect } from 'react'
+import { replaceUrlSearch, useUrlParam, useUrlSettled } from './use-url-param'
+import type { OpenForm } from '@/lib/open-form'
 
 /**
  * Opens a page's create form when the address asks for it (`?new=<form>`,
- * from the command palette) and the caller may (`allowed`), once, then
- * removes the param. Without the permission nothing opens (the param stays,
- * harmless: permissions may still be loading).
+ * from the Create menu, its chords or the command palette) and the caller may
+ * (`allowed`, the page's own gate), then removes the param from the current
+ * history entry. So the form opens once: Back, Forward or a reload return to
+ * the address without the flag. It also opens when the flag arrives on the
+ * page already showing (Create > New finding while on Findings). Without the
+ * permission nothing opens (the param stays, harmless: permissions may still
+ * be loading).
  */
 export function useOpenForm(form: OpenForm, allowed: boolean, open: () => void): void {
-  const done = useRef(false)
+  const requested = useUrlParam('new')
+  // The address bar must belong to this page (use-url-param.ts).
+  const settled = useUrlSettled()
   useEffect(() => {
-    if (done.current || typeof window === 'undefined') return
+    if (!settled || requested !== form || !allowed) return
     const params = new URLSearchParams(window.location.search)
-    if (requestedForm(params) !== form || !allowed) return
-    done.current = true
     params.delete('new')
     replaceUrlSearch(params)
     open()
-  }, [form, allowed, open])
+  }, [settled, requested, form, allowed, open])
 }

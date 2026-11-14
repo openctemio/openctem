@@ -62,10 +62,15 @@ export function InventoryAddButton({
   registry,
   view,
   onAdd,
+  open,
+  onOpenChange,
 }: {
   registry: AssetTypeRegistry | undefined
   view: TypeView | null
   onAdd: (view: TypeView) => void
+  /** The type menu's open state, when the page opens it (`?new=asset`). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const { t } = useTranslation()
   if (view) {
@@ -78,7 +83,7 @@ export function InventoryAddButton({
   }
   if (!registry?.types?.length) return null
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button size="sm">
           <Plus className="me-2 h-4 w-4" />
