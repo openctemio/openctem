@@ -172,8 +172,21 @@ func TestAssetIPTab_ExplainUsesIndexes(t *testing.T) {
 		w := compileAssets(t, sys, c.doc)
 		//nolint:gosec // G202: compiled from registry constants
 		q := "EXPLAIN (FORMAT JSON) SELECT a.id FROM assets a WHERE a.deleted_at IS NULL AND " + w.SQL
+		// Sequential scans are off for this transaction only: the plan then
+		// proves the index path exists and is usable, whatever the planner
+		// would prefer on statistics other tests can change.
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+			_ = tx.Rollback()
+			t.Fatal(err)
+		}
 		var raw []byte
-		if err := db.QueryRowContext(ctx, q, w.Args...).Scan(&raw); err != nil {
+		err = tx.QueryRowContext(ctx, q, w.Args...).Scan(&raw)
+		_ = tx.Rollback()
+		if err != nil {
 			t.Fatalf("%s: explain: %v", c.name, err)
 		}
 		plan := planText(t, raw)
