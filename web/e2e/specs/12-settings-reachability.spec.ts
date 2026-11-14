@@ -91,10 +91,7 @@ for (const vp of [
       await page.setViewportSize({ width: vp.width, height: vp.height })
       await page.goto('/settings/members')
       if (vp.name === 'phone') {
-        await page
-          .getByRole('button', { name: /toggle sidebar/i })
-          .first()
-          .click()
+        await page.getByRole('button', { name: 'Open sidebar' }).first().click()
       }
       const nav = page.locator(rail)
       await expect(nav).toBeVisible({ timeout: 30_000 })
