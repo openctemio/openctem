@@ -17,18 +17,20 @@ disagree. Change both together.
 
 ### Control heights
 
-| Context                                                               | Token                  | px  |
-| --------------------------------------------------------------------- | ---------------------- | --- |
-| App page: every control in a row (buttons, fields, selects)           | `--control-h`          | 32  |
-| Small sizes (`sm`, `icon-sm`) inside a dense place (table, bulk bar)  | `--control-h-sm`       | 28  |
-| Segment inside a 32 px track                                          | `--control-h-seg`      | 26  |
-| Info icon (`xs`)                                                      | `--control-h-xs`       | 24  |
-| Entry page without the app sidebar (sign-in, onboarding, invitations) | `--control-h-entry`    | 36  |
-| Text field, select (= the row height)                                 | `--control-h-field`    | 32  |
-| Below 768 px: buttons, fields, selects, search (as the live UI)       | `--control-h-touch`    | 36  |
-| Below 768 px: small sizes (`sm`, `icon-sm`)                           | `--control-h-touch-sm` | 32  |
-| Below 768 px: large (`lg`)                                            | `--control-h-touch-lg` | 40  |
-| Below 768 px: invisible touch target height of every button           | `--touch-target`       | 44  |
+| Context                                                               | Token                     | px  |
+| --------------------------------------------------------------------- | ------------------------- | --- |
+| App page: every control in a row (buttons, fields, selects)           | `--control-h`             | 32  |
+| Small sizes (`sm`, `icon-sm`) inside a dense place (table, bulk bar)  | `--control-h-sm`          | 28  |
+| Segment inside a 32 px track                                          | `--control-h-seg`         | 26  |
+| Info icon (`xs`)                                                      | `--control-h-xs`          | 24  |
+| Entry page without the app sidebar (sign-in, onboarding, invitations) | `--control-h-entry`       | 36  |
+| Text field, select (= the row height)                                 | `--control-h-field`       | 32  |
+| Below 768 px: buttons, fields, selects, search (as the live UI)       | `--control-h-touch`       | 36  |
+| Below 768 px: small sizes (`sm`, `icon-sm`) inside a dense place      | `--control-h-touch-sm`    | 32  |
+| Below 768 px: small sizes anywhere else (= the default)               | `--control-h-touch-dense` | 36  |
+| Below 768 px: segment inside a 36 px track (`icon-seg`)               | `--control-h-touch-seg`   | 30  |
+| Below 768 px: large (`lg`)                                            | `--control-h-touch-lg`    | 40  |
+| Below 768 px: invisible touch target height of every button           | `--touch-target`          | 44  |
 
 - Below 768 px buttons have compact content: text 13 px (`text-dense`), padding
   10 px (8 beside an icon), icon 16, gap 6. Fields keep 16 px text (`text-base`),
@@ -39,7 +41,21 @@ disagree. Change both together.
   square (`PHONE_TOUCH_SQUARE` in `components/layout/header-controls.ts`); in
   the phone bar they are 36 wide and 8 apart, so the squares meet but never
   overlap (`e2e/specs/58-phone-bar.spec.ts`).
-- Icon-only buttons are squares at every size (`icon`, `icon-sm`, `xs`, or
+- Every control in a row has one height and one centre line: a small size is
+  smaller than the default only in a dense place (a table row, the bulk bar,
+  `DensityScope`), where every control of the row is small. The page-rhythm
+  probe (`probeRowMix` in `e2e/helpers/page-anatomy.ts`) measures each row of
+  buttons, fields and selects on every page at 1440 and 390.
+- Pages do not restyle kit controls: add a variant to the kit instead. Page
+  and feature code (`src/app`, `src/features`, `console/src`) composes
+  `Button`, `Input`, `SelectTrigger`, `ListSearch`, `TabsTrigger` and `Badge`
+  with their sizes and variants, and never passes a height (`h-*`,
+  `min-h-*`, `size-*`), a fixed width on an icon size, padding, a text size or
+  a colour in `className`; layout (`w-full`, margins, `shrink-0`) is fine.
+  `src/components/ui/__tests__/kit-restyle-ratchet.test.ts` counts today's
+  overrides per file (`scripts/kit-restyle-debt.json`, `node
+scripts/kit-restyle.mjs --files`); the count may only go down.
+- Icon-only buttons are squares at every size (`icon`, `icon-sm`, `icon-seg`, `xs`, or
   `iconOnlyBelow` when the label shows only from a width up), in the tenant
   app and the platform console (`console/src`);
   `src/components/ui/__tests__/icon-button-guard.test.ts` and the page-rhythm

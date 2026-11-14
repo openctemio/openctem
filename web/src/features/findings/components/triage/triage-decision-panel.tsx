@@ -52,7 +52,10 @@ function ActionButton({
       disabled={disabled}
       aria-keyshortcuts={keyLabel === 'Esc' ? 'Escape' : keyLabel}
       data-triage-action={action}
-      className={cn('h-auto min-h-9 justify-start gap-2 py-1.5 text-start', wide && 'col-span-2')}
+      className={cn(
+        'h-auto min-h-control justify-start gap-2 py-1.5 text-start max-md:min-h-control-touch',
+        wide && 'col-span-2'
+      )}
     >
       {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Kbd>{keyLabel}</Kbd>}
       <span className="flex min-w-0 flex-1 flex-col">

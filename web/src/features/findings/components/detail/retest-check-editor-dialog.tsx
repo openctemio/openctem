@@ -654,7 +654,7 @@ function MatcherEditor({
           }}
         >
           <SelectTrigger
-            className="h-8 w-auto"
+            className="w-auto"
             aria-label={t('findings.retestCheck.matcherType', 'Matcher {n} type', { n })}
           >
             <SelectValue />
@@ -670,7 +670,7 @@ function MatcherEditor({
         {row.type !== 'status' && (
           <Select value={row.part} onValueChange={(v) => onChange({ part: v as MatcherPart })}>
             <SelectTrigger
-              className="h-8 w-auto"
+              className="w-auto"
               aria-label={t('findings.retestCheck.matcherPart', 'Matcher {n} part', { n })}
             >
               <SelectValue />
@@ -689,7 +689,7 @@ function MatcherEditor({
             onValueChange={(v) => onChange({ condition: v as 'and' | 'or' })}
           >
             <SelectTrigger
-              className="h-8 w-auto"
+              className="w-auto"
               aria-label={t('findings.retestCheck.wordCondition', 'Matcher {n} words', { n })}
             >
               <SelectValue />

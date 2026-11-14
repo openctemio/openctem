@@ -471,7 +471,7 @@ export function ApprovalRuleEditor({ open, rule, onOpenChange, onSave }: Approva
                   }}
                 >
                   <SelectTrigger
-                    className="h-8 w-auto gap-1"
+                    className="w-auto gap-1"
                     aria-label={t('scans.ruleEditor.addCondition', 'Add condition')}
                   >
                     <Plus className="size-4" />

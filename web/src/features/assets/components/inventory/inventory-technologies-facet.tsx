@@ -88,7 +88,7 @@ export function InventoryTechnologiesFacet({
           placeholder={t('assets.technologies.filter.search', 'Search technologies')}
           aria-label={t('assets.technologies.filter.search', 'Search technologies')}
           maxLength={128}
-          className="h-8 pl-7 text-sm"
+          className="pl-7 text-sm"
         />
       </div>
       {shown.map((k) => (

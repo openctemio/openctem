@@ -23,7 +23,7 @@ export function findIconButtons(web, { write = false } = {}) {
     .split('\n')
     .filter((f) => f && !/__tests__|\.test\.tsx$|\/components\/ui\//.test(f))
 
-  const ICON_SIZES = new Set(['icon', 'icon-sm', 'xs'])
+  const ICON_SIZES = new Set(['icon', 'icon-sm', 'icon-seg', 'xs'])
   const MAP = { default: 'icon', sm: 'icon-sm', lg: 'icon' }
   let total = 0
   const report = []

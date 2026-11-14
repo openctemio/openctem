@@ -204,7 +204,7 @@ export function MappingPreview({ profileId, kind, fields, dirty }: Props) {
                 {t('ticketMapping.status.simCurrent', 'Finding is')}
               </Label>
               <Select value={current} onValueChange={setCurrent}>
-                <SelectTrigger id="tm-prev-cur" className="h-9 w-40">
+                <SelectTrigger id="tm-prev-cur" className="w-40">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

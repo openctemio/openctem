@@ -23,6 +23,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - an empty list shows no pagination ("Showing 0 - 0 of 0", "Page 1 of 0");
  * - a table's name column keeps a readable width at 1440px;
  * - no horizontal page scroll;
+ * - controls side by side in a row (buttons, fields, selects) share one
+ *   height and one centre line (probeRowMix; open rows are listed in
+ *   ROW_MIX_DEBT in helpers/page-anatomy.ts, which only shrinks);
  * - a settings page (/settings, /account) shows no Save button at rest: its
  *   form saves through the sticky SettingsSaveBar, shown while there are
  *   unsaved changes (SAVE_EXCEPTIONS lists the pages not moved yet);
@@ -59,11 +62,20 @@ function staticRoutes(): string[] {
  * Detail pages, opened on the first row the seeded organization has. The id
  * comes from the list endpoint through the console's own proxy.
  */
-const DETAIL_ROUTES: { route: string; list: string }[] = [
+const DETAIL_ROUTES: { route: string; list: string; key?: string }[] = [
   { route: '/assets/{id}', list: '/api/v1/assets?per_page=1' },
+  { route: '/assets/groups/{id}', list: '/api/v1/asset-groups?per_page=1' },
+  { route: '/components/{id}', list: '/api/v1/components?per_page=1' },
   { route: '/findings/{id}', list: '/api/v1/findings?per_page=1' },
   { route: '/scans/{id}', list: '/api/v1/scans?per_page=1' },
   { route: '/remediation/campaigns/{id}', list: '/api/v1/remediation/campaigns?per_page=1' },
+  { route: '/remediation/tasks/{id}', list: '/api/v1/remediation/tasks?per_page=1' },
+  { route: '/pentest/campaigns/{id}', list: '/api/v1/pentest/campaigns?per_page=1' },
+  {
+    route: '/vulnerabilities/{id}',
+    list: '/api/v1/vulnerability-exposures?per_page=1',
+    key: 'cve_id',
+  },
 ]
 
 /** Pages that are not a page of blocks, with the reason. */
@@ -86,28 +98,33 @@ for (const route of staticRoutes()) {
     test.skip(!(await open(page, route)), `${route} redirects`)
     // The page renders a block layout once its header is drawn.
     await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
-    for (const width of [1440, 390]) await checkAnatomy(page, route, width, OWN_LAYOUT)
+    for (const width of [1440, 390])
+      await checkAnatomy(page, route, width, OWN_LAYOUT, { rowMix: true })
     if (info.errors.length > 0) {
       await info.attach(route, { body: await page.screenshot(), contentType: 'image/png' })
     }
   })
 }
 
-for (const { route, list } of DETAIL_ROUTES) {
+for (const { route, list, key } of DETAIL_ROUTES) {
   test(`page anatomy on ${route}`, { tag: ['@shell'] }, async ({ page }) => {
     await page.goto('/')
-    const id = await page.evaluate(async (url) => {
-      const res = await fetch(url, { credentials: 'same-origin' })
-      if (!res.ok) return null
-      const body = await res.json()
-      const rows = body.data ?? body.items ?? body
-      return Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : null
-    }, list)
+    const id = await page.evaluate(
+      async ({ url, field }) => {
+        const res = await fetch(url, { credentials: 'same-origin' })
+        if (!res.ok) return null
+        const body = await res.json()
+        const rows = body.data ?? body.items ?? body
+        return Array.isArray(rows) && rows[0]?.[field] ? String(rows[0][field]) : null
+      },
+      { url: list, field: key ?? 'id' }
+    )
     test.skip(!id, `no row to open for ${route}`)
     const url = route.replace('{id}', encodeURIComponent(id!))
     await open(page, url)
     await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
-    for (const width of [1440, 390]) await checkAnatomy(page, url, width, OWN_LAYOUT)
+    for (const width of [1440, 390])
+      await checkAnatomy(page, url, width, OWN_LAYOUT, { rowMix: true })
   })
 }
 

@@ -193,7 +193,7 @@ export function MultiFacetSection({
             aria-label={t('assets.facetPanel.searchFacetAria', 'Search {facet}', {
               facet: facet.label.toLowerCase(),
             })}
-            className="h-8 ps-7 text-xs"
+            className="ps-7 text-xs"
           />
         </div>
       )}

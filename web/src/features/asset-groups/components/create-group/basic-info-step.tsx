@@ -188,7 +188,6 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
               placeholder="e.g., Payment Gateway Services"
               value={data.name}
               onChange={(e) => onChange({ name: e.target.value })}
-              className="h-10"
             />
           </div>
 

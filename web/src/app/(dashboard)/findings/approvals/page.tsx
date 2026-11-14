@@ -348,7 +348,6 @@ export default function ApprovalsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8"
                   disabled={busy}
                   onClick={() => handleApproveClick(approval)}
                 >
@@ -358,7 +357,6 @@ export default function ApprovalsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8"
                   disabled={busy}
                   onClick={() => handleRejectClick(approval)}
                 >

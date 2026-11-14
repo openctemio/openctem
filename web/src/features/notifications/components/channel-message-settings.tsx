@@ -96,7 +96,7 @@ export function ChannelMessageSettings({
           {t('notificationTypes.message.levelLabel')}
         </Label>
         <Select value={detailLevel} onValueChange={(v) => onDetailLevelChange(v as DetailLevel)}>
-          <SelectTrigger id={`${idPrefix}_detail_level`} className="h-9">
+          <SelectTrigger id={`${idPrefix}_detail_level`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -119,7 +119,7 @@ export function ChannelMessageSettings({
           </Label>
           <Select value={preset} onValueChange={(v) => choosePreset(v as TemplatePresetId)}>
             <SelectTrigger
-              className="h-8 w-[180px]"
+              className="w-[180px]"
               aria-label={t('notificationTypes.message.presetLabel')}
             >
               <SelectValue />
@@ -165,7 +165,7 @@ export function ChannelMessageSettings({
             onValueChange={(v) => setEventType(v as (typeof PREVIEW_EVENTS)[number])}
           >
             <SelectTrigger
-              className="h-8 w-[180px]"
+              className="w-[180px]"
               aria-label={t('notificationTypes.message.previewEvent')}
             >
               <SelectValue />

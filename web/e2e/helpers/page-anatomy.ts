@@ -1,3 +1,4 @@
+import fs from 'fs'
 import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 
@@ -33,6 +34,55 @@ const SAVE_EXCEPTIONS = new Set<string>([
 ])
 
 const NAME_MIN_1440 = 160
+
+/**
+ * Rows with controls of different heights that are still open, per
+ * "route@width" (probeRowMix). The list only shrinks: each entry names the
+ * owner of the fix. A route that is not listed may have none.
+ */
+const ROW_MIX_DEBT: Record<string, number> = {
+  // DataTable's Display menu trigger (h-9 in data-table.tsx, 36 beside 32) and the
+  // chip-shaped Add filter (28) beside Query (32): the list family's table and
+  // toolbar PRs.
+  '/assets@1440': 2,
+  '/assets/changes@1440': 1,
+  '/assets/groups@1440': 1,
+  '/attack-surface/certificates@1440': 1,
+  '/attack-surface/exposures@1440': 1,
+  '/attack-surface/external@1440': 1,
+  '/attack-surface/technologies@1440': 1,
+  '/attack-surface/web@1440': 1,
+  '/business-services@1440': 1,
+  '/business-units@1440': 1,
+  '/credentials@1440': 1,
+  '/crown-jewels@1440': 1,
+  '/exceptions@1440': 1,
+  '/exposures@1440': 1,
+  '/findings@1440': 2,
+  '/findings/approvals@1440': 1,
+  '/my-work@1440': 1,
+  '/priority-rules@1440': 1,
+  '/scans@1440': 1,
+  '/scans/workflows@1440': 1,
+  '/scans/runs@1440': 1,
+  '/scope@1440': 1,
+  '/sensors@1440': 1,
+  '/settings/audit-log@1440': 1,
+  '/settings/content@1440': 1,
+  '/settings/members@1440': 1,
+  '/settings/pentest/templates@1440': 1,
+  '/settings/roles@1440': 1,
+  '/settings/scanning/capabilities@1440': 1,
+  '/settings/scanning/profiles@1440': 1,
+  '/settings/scanning/tools@1440': 1,
+  '/threat-intel/iocs@1440': 1,
+  '/vulnerabilities@1440': 1,
+  '/scans/{id}@1440': 1,
+  // The Assign tile (two-line action tile, 34) beside its person picker (32).
+  '/findings/triage@1440': 1,
+  // Phone scan cards: the latest-run status chip (24) beside the row menu (36), one per card.
+  '/scans@390': 3,
+}
 
 type Probe = {
   /** The spacing tokens as the page resolves them (src/styles/theme.css). */
@@ -237,11 +287,175 @@ export async function probe(page: Page): Promise<Probe> {
   })
 }
 
+/** One control of a row: its accessible name (or tag) and its drawn box. */
+export type RowControl = { name: string; height: number; centre: number }
+/** A row whose controls differ in height or do not share one centre line. */
+export type MixedRow = { row: string; controls: RowControl[] }
+
+/**
+ * Controls side by side in one row are drawn at one height on one centre
+ * line ("Sizes" in docs/ui-style-contract.md: every control in a row the same
+ * height). A row is the controls of one container (a list toolbar, a page or
+ * card header, a form row, a bulk bar, the app header; otherwise the widest
+ * ancestor that is still one line high) whose boxes overlap vertically.
+ * Controls: buttons, button-like links, text fields, selects and comboboxes.
+ * Not compared: checkboxes, radios and switches, text links, what sits inside
+ * a chip (its remove button), a button placed over a field (a search field's
+ * clear button), and controls of different table cells.
+ */
+export async function probeRowMix(page: Page): Promise<MixedRow[]> {
+  return page.evaluate(() => {
+    const TOL = 0.5
+    const CONTAINERS = [
+      '[data-slot=list-toolbar-region]',
+      '[data-slot=list-toolbar]',
+      '[data-slot=page-header]',
+      '[data-slot=card-header]',
+      '[data-slot=bulk-action-bar]',
+      '[data-slot=settings-save-bar]',
+      '[data-slot=dialog-footer]',
+      '[role=toolbar]',
+      'header',
+    ].join(',')
+    const STOP = 'td,th,[role=cell],[role=gridcell],[role=columnheader],[role=row],li,main,body'
+    const overlay = (el: Element) =>
+      !!el.closest('[role=dialog],[data-slot=sheet-content],[data-radix-popper-content-wrapper]')
+    const shown = (el: Element) => {
+      const r = el.getBoundingClientRect()
+      const s = getComputedStyle(el)
+      return (
+        r.width > 1 &&
+        r.height > 1 &&
+        s.visibility !== 'hidden' &&
+        s.display !== 'none' &&
+        s.opacity !== '0' &&
+        !el.closest('[aria-hidden=true],.sr-only')
+      )
+    }
+    const rawControls = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        [
+          'button',
+          '[role=button]',
+          'a[data-slot=button]',
+          '[role=combobox]',
+          'select',
+          'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]):not([type=file])',
+        ].join(',')
+      )
+    ).filter((el) => {
+      if (!shown(el) || overlay(el)) return false
+      if (el.matches('[role=checkbox],[role=radio],[role=switch],[role=tab],[role=menuitem]'))
+        return false
+      if (el.closest('[data-slot=checkbox],[data-slot=switch],[data-slot=radio-group-item]'))
+        return false
+      // A link-styled button is a text link.
+      if (el.getAttribute('data-variant') === 'link') return false
+      // Inside a chip (its remove button) or over a field (a clear button).
+      if (
+        el.closest(
+          '[data-testid^=filter-chip],[data-slot=locked-chip],[data-slot=badge],[data-slot=signal-chip],[data-slot=status-lozenge]'
+        )
+      )
+        return false
+      if (getComputedStyle(el).position === 'absolute') return false
+      // A control nested in another control counts once (the outer one).
+      const outer = el.parentElement?.closest('button,[role=button],a[data-slot=button]')
+      if (outer && outer !== el) return false
+      return true
+    })
+    // A bordered group is one control (a filter select with its clear
+    // button, a view switcher's segments): measured by its box.
+    const GROUPS = '[data-slot=filter-select],[data-slot=view-switcher]'
+    const seen = new Set<HTMLElement>()
+    const controls = rawControls
+      .map((el) => el.closest<HTMLElement>(GROUPS) ?? el)
+      .filter((el) => (seen.has(el) ? false : (seen.add(el), true)))
+    const label = (el: Element) => {
+      const n =
+        el.getAttribute('aria-label') ||
+        (el as HTMLElement).innerText?.trim().split('\n')[0] ||
+        el.getAttribute('placeholder') ||
+        el.getAttribute('title') ||
+        ''
+      const tag = el.getAttribute('data-slot') || el.tagName.toLowerCase()
+      return `${tag}${n ? ` "${n.slice(0, 40)}"` : ''}`
+    }
+    const containerOf = (el: Element): Element => {
+      const named = el.parentElement?.closest(CONTAINERS)
+      const stop = el.parentElement?.closest(STOP)
+      // A table cell, a list item or a row ends the search before a far-away container.
+      if (named && !(stop && named.contains(stop))) return named
+      // Otherwise the widest ancestor that is still one line high.
+      let c: Element = el.parentElement ?? document.body
+      const h = el.getBoundingClientRect().height
+      while (c.parentElement && !c.matches(STOP) && !c.parentElement.matches(STOP)) {
+        const ph = c.parentElement.getBoundingClientRect().height
+        if (ph > h * 1.5 + 8) break
+        c = c.parentElement
+      }
+      return c
+    }
+    const byContainer = new Map<Element, HTMLElement[]>()
+    for (const el of controls) {
+      const c = containerOf(el)
+      byContainer.set(c, [...(byContainer.get(c) ?? []), el])
+    }
+    const describe = (c: Element) => {
+      const slot = c.getAttribute('data-slot')
+      if (slot) return slot
+      const id = c.id ? `#${c.id}` : ''
+      const lab = c.getAttribute('aria-label')
+      return `${c.tagName.toLowerCase()}${id}${lab ? ` "${lab}"` : ''}`
+    }
+    const out: { row: string; controls: { name: string; height: number; centre: number }[] }[] = []
+    for (const [c, els] of byContainer) {
+      if (els.length < 2) continue
+      const boxes = els
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .sort((a, b) => a.r.top - b.r.top)
+      // Rows: controls whose boxes overlap vertically (transitively).
+      const rows: (typeof boxes)[] = []
+      for (const b of boxes) {
+        const row = rows.find((rw) =>
+          rw.some((o) => b.r.top < o.r.bottom - 1 && b.r.bottom > o.r.top + 1)
+        )
+        if (row) row.push(b)
+        else rows.push([b])
+      }
+      for (const rw of rows) {
+        if (rw.length < 2) continue
+        const hs = rw.map((b) => b.r.height)
+        const cs = rw.map((b) => b.r.top + b.r.height / 2)
+        const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs)
+        if (spread(hs) <= TOL && spread(cs) <= TOL) continue
+        rw.sort((a, b) => a.r.left - b.r.left)
+        out.push({
+          row: `${describe(c)} at y=${Math.round(rw[0].r.top)}`,
+          controls: rw.map((b) => ({
+            name: label(b.el),
+            height: Math.round(b.r.height * 10) / 10,
+            centre: Math.round((b.r.top + b.r.height / 2) * 10) / 10,
+          })),
+        })
+      }
+    }
+    return out
+  })
+}
+
+/** `list-toolbar at y=488: dropdown-menu-trigger "Views" 32px @504, button "Refresh" 36px @504` */
+export function formatMixedRow(m: MixedRow): string {
+  const parts = m.controls.map((c) => `${c.name} ${c.height}px @${c.centre}`)
+  return `${m.row}: ${parts.join(', ')}`
+}
+
 export async function checkAt(
   page: Page,
   route: string,
   width: number,
-  ownLayoutRoutes: RegExp[] = []
+  ownLayoutRoutes: RegExp[] = [],
+  opts: { rowMix?: boolean } = {}
 ) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   // Let a resize settle (the tab strip re-measures what fits).
@@ -262,6 +476,20 @@ export async function checkAt(
       .toBeLessThanOrEqual(1)
   }
   expect.soft(r.oblongIconButtons, `${at}: icon-only buttons are squares`).toEqual([])
+  if (opts.rowMix) {
+    const mixed = await probeRowMix(page)
+    if (process.env.ROWMIX_OUT) {
+      fs.appendFileSync(process.env.ROWMIX_OUT, JSON.stringify({ route, width, mixed }) + '\n')
+    }
+    const key = `${route.split('?')[0].replace(/\/[0-9a-f-]{36}(?=\/|$)/g, '/{id}')}@${width}`
+    expect
+      .soft(
+        mixed.length,
+        `${at}: controls in one row share one height and centre (allowed ${ROW_MIX_DEBT[key] ?? 0}):\n` +
+          mixed.map(formatMixedRow).join('\n')
+      )
+      .toBeLessThanOrEqual(ROW_MIX_DEBT[key] ?? 0)
+  }
   expect.soft(r.tabRows, `${at}: one tab row per page`).toBeLessThanOrEqual(1)
   expect
     .soft(r.rowFilterSegmented, `${at}: a row filter is a filter token, not a segmented control`)

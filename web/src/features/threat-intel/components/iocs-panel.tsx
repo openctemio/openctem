@@ -223,7 +223,7 @@ export function IOCsPanel() {
     <>
       <Select value={typeFilter} onValueChange={setTypeFilter}>
         <SelectTrigger
-          className="h-9 w-36"
+          className="w-36"
           aria-label={t('threatIntel.iocs.filterType', 'Filter by type')}
         >
           <SelectValue placeholder={t('threatIntel.iocs.allTypes', 'All types')} />
@@ -239,7 +239,7 @@ export function IOCsPanel() {
       </Select>
       <Select value={statusFilter} onValueChange={setStatusFilter}>
         <SelectTrigger
-          className="h-9 w-36"
+          className="w-36"
           aria-label={t('threatIntel.iocs.filterStatus', 'Filter by status')}
         >
           <SelectValue placeholder={t('threatIntel.iocs.allStatuses', 'All statuses')} />

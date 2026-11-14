@@ -202,7 +202,7 @@ export function CapabilitiesSection() {
     <>
       {categories.length > 0 && (
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="h-9 w-[160px]" aria-label="Category">
+          <SelectTrigger className="w-[160px]" aria-label="Category">
             <SelectValue placeholder="All categories" />
           </SelectTrigger>
           <SelectContent>

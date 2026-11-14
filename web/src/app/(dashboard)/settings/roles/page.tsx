@@ -390,7 +390,7 @@ export default function RolesPage() {
                           onValueChange={(v) => setTypeFilter(v as TypeFilter)}
                         >
                           <SelectTrigger
-                            className="h-9 w-[130px]"
+                            className="w-[130px]"
                             aria-label={t('org.rolesPage.typeLabel', 'Role type')}
                           >
                             <SelectValue />

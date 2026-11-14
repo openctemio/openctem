@@ -1533,7 +1533,7 @@ function FindingsTab({
                   value={severityFilter}
                   onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
                 >
-                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                  <SelectTrigger className="w-[110px] text-xs">
                     <SelectValue placeholder="Severity" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1549,7 +1549,7 @@ function FindingsTab({
                   value={statusFilter}
                   onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
                 >
-                  <SelectTrigger className="w-[110px] h-9 text-xs">
+                  <SelectTrigger className="w-[110px] text-xs">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1566,7 +1566,7 @@ function FindingsTab({
                   value={scannerFilter}
                   onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
                 >
-                  <SelectTrigger className="w-[120px] h-9 text-xs">
+                  <SelectTrigger className="w-[120px] text-xs">
                     <SelectValue placeholder="Scanner" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1583,7 +1583,7 @@ function FindingsTab({
                     value={branchFilter}
                     onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
                   >
-                    <SelectTrigger className="w-[160px] h-9 text-xs">
+                    <SelectTrigger className="w-[160px] text-xs">
                       <SelectValue placeholder="Branch" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1606,7 +1606,7 @@ function FindingsTab({
                       handleFilterChange(setBranchStatusFilter, 'branch_status', v)
                     }
                   >
-                    <SelectTrigger className="w-[130px] h-9 text-xs">
+                    <SelectTrigger className="w-[130px] text-xs">
                       <SelectValue placeholder="On branch" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1906,14 +1906,9 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
                 value={branchPatternInput}
                 onChange={(e) => setBranchPatternInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddPattern()}
-                className="h-8 text-sm"
+                className="text-sm"
               />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleAddPattern}
-                className="h-8 shrink-0"
-              >
+              <Button variant="outline" size="sm" onClick={handleAddPattern} className="shrink-0">
                 Add
               </Button>
             </div>

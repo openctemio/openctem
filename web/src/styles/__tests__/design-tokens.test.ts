@@ -132,6 +132,8 @@ describe('control scale and rows', () => {
     expect(px(root['--control-h-touch-sm'])).toBe(32)
     expect(px(root['--control-h-touch-lg'])).toBe(40)
     expect(px(root['--touch-target'])).toBe(44)
+    // Phone small sizes: 36 like the default, 32 only in a dense place.
+    expect(root['--control-h-touch-dense']).toBe('var(--control-h-touch)')
   })
 
   it('every control height is a Tailwind spacing key (h-control, h-control-sm, ...)', () => {
@@ -146,6 +148,8 @@ describe('control scale and rows', () => {
       '-touch-lg',
       '-field',
       '-dense',
+      '-touch-dense',
+      '-touch-seg',
     ]) {
       expect(theme[`--spacing-control${k}`]).toBe(`var(--control-h${k})`)
     }

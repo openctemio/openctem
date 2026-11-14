@@ -489,7 +489,7 @@ function DigestSection({
           disabled={disabled || !enabled}
           onValueChange={(v) => void onSave({ digest_weekday: Number(v) })}
         >
-          <SelectTrigger id="easm-digest-day" className="h-8 w-40">
+          <SelectTrigger id="easm-digest-day" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -531,7 +531,7 @@ function IntervalSelect({
         {t('attackSurface.monitoring.howOften', 'How often')}
       </Label>
       <Select value={String(value)} disabled={disabled} onValueChange={(v) => onChange(Number(v))}>
-        <SelectTrigger id={id} className="h-8 w-40">
+        <SelectTrigger id={id} className="w-40">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

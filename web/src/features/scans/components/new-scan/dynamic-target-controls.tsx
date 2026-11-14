@@ -219,7 +219,7 @@ export function SelectorOptions({ options, onChange, workflow }: SelectorOptions
               value={String(seenWithin)}
               onValueChange={(v) => set({ seen_within_days: Number(v) || undefined })}
             >
-              <SelectTrigger id="dyn-seen-within" className="h-8 w-28">
+              <SelectTrigger id="dyn-seen-within" className="w-28">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -371,7 +371,7 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                     </Label>
                     <Input
                       type="date"
-                      className="h-8 w-40"
+                      className="w-40"
                       value={until}
                       min={minUntil}
                       disabled={duration !== 'until'}

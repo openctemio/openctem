@@ -127,7 +127,7 @@ export function DependencyGraphView({
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t('components.graph.search', 'Find a package…')}
             aria-label={t('components.graph.searchLabel', 'Find a package in the graph')}
-            className="h-9 ps-8"
+            className="ps-8"
           />
         </div>
         <SegmentedLens<View>

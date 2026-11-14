@@ -107,7 +107,6 @@ export function DashboardSwitcher({
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('dashboards.switcher.search', 'Search dashboards')}
               aria-label={t('dashboards.switcher.search', 'Search dashboards')}
-              className="h-8"
             />
           </div>
         )}

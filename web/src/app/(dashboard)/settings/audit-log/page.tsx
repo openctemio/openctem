@@ -332,7 +332,7 @@ export default function AuditLogPage() {
           setPage(1)
         }}
       >
-        <SelectTrigger className="h-9 w-[130px]" aria-label={t('auditLog.filter.result', 'Result')}>
+        <SelectTrigger className="w-[130px]" aria-label={t('auditLog.filter.result', 'Result')}>
           <SelectValue placeholder={t('auditLog.filter.result', 'Result')} />
         </SelectTrigger>
         <SelectContent>
@@ -351,10 +351,7 @@ export default function AuditLogPage() {
           setPage(1)
         }}
       >
-        <SelectTrigger
-          className="h-9 w-[140px]"
-          aria-label={t('auditLog.filter.severity', 'Severity')}
-        >
+        <SelectTrigger className="w-[140px]" aria-label={t('auditLog.filter.severity', 'Severity')}>
           <SelectValue placeholder={t('auditLog.filter.severity', 'Severity')} />
         </SelectTrigger>
         <SelectContent>
@@ -398,7 +395,7 @@ export default function AuditLogPage() {
       {hasAuditPermission && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9" disabled={isExporting}>
+            <Button variant="outline" size="sm" disabled={isExporting}>
               <Download className="me-2 h-4 w-4" aria-hidden="true" />
               {t('auditLog.export.button', 'Export')}
             </Button>

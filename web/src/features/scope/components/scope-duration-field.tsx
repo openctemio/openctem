@@ -163,7 +163,7 @@ export function ScopeDurationField({
               if (n >= 1)
                 onChange({ kind: 'days', days: Math.min(n, policy.maxDays), custom: true })
             }}
-            className="h-8 w-40 text-xs"
+            className="w-40 text-xs"
           />
           <span className="text-xs text-muted-foreground">
             {t('scope.duration.limit', 'Latest {date} (your organization’s limit).', {
