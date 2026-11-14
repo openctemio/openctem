@@ -14,9 +14,9 @@
 import { useEffect, useState, type HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
-import { useLayout } from '@/context/layout-provider'
+import { useLayoutOrNull } from '@/context/layout-provider'
 import { Separator } from '@/components/ui/separator'
-import { BreadcrumbNav } from './breadcrumb-nav'
+import { BreadcrumbNav, type CrumbTrail } from './breadcrumb-nav'
 import { HeaderActions } from './header-actions'
 import { HEADER_ICON_BUTTON } from './header-controls'
 import { PhoneBarTitle } from './phone-bar-title'
@@ -37,6 +37,11 @@ interface HeaderProps extends HTMLAttributes<HTMLElement> {
    * @default true
    */
   showHeaderActions?: boolean
+  /**
+   * The breadcrumb's levels, for a shell whose pages are not the tenant app's
+   * (the platform console). Default: built from the URL.
+   */
+  crumbs?: CrumbTrail
 }
 
 export function Header({
@@ -44,12 +49,14 @@ export function Header({
   fixed,
   showBreadcrumb = true,
   showHeaderActions = true,
+  crumbs,
   children,
   ...props
 }: HeaderProps) {
   const [offset, setOffset] = useState(0)
   const { state, isMobile } = useSidebar()
-  const { collapsible } = useLayout()
+  // The platform console has no LayoutProvider: its sidebar is always `icon`.
+  const collapsible = useLayoutOrNull()?.collapsible ?? 'icon'
   // The desktop toggle lives in the sidebar's brand row. The header keeps one
   // only where the sidebar cannot show its own: on phones (sheet), and when an
   // offcanvas sidebar is collapsed fully off screen.
@@ -94,7 +101,9 @@ export function Header({
         {isMobile && <PhoneBarTitle />}
         {/* From 768px; it folds by width (breadcrumb-fold.ts). A phone shows no
             trail: the page title says where you are. */}
-        {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 flex-1 basis-0 md:flex" />}
+        {showBreadcrumb && (
+          <BreadcrumbNav trail={crumbs} className="hidden min-w-0 flex-1 basis-0 md:flex" />
+        )}
         {children}
         {showHeaderActions && <HeaderActions />}
       </div>
