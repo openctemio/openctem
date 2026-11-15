@@ -227,9 +227,12 @@ for (const locale of ['en', 'vi'] as const) {
           .locator('[data-slot="page-header"]')
           .getByRole('button', { name: l.more })
         await expect(headerMore).toBeVisible({ timeout: 45_000 })
-        // Shrink the screen to just past the trigger: no room above or below.
+        // Shrink the screen so the two-row menu (98 px) has no room below the
+        // trigger (90 px left after the gutter) nor above it, while the sheet
+        // still fits without scrolling.
         const t = await settledRect(headerMore)
-        const height = Math.max(t.bottom + 40, 200)
+        expect(t.top - 4 - GUTTER, 'precondition: no room above').toBeLessThan(98)
+        const height = t.bottom + 4 + GUTTER + 90
         await page.setViewportSize({ width, height })
 
         const sheet = page.getByRole('dialog', { name: l.title })
