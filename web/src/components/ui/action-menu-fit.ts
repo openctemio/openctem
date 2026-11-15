@@ -63,9 +63,9 @@ export type PhoneMenuSpace = {
   above: number
 }
 
-/** Items counted against the limit: every row, and every heading after the first. */
 type CountShape = { rows: readonly unknown[]; headings: number }
 
+/** Items counted against the limit: every row, and every heading after the first. */
 export function countedItems(shape: CountShape): number {
   return shape.rows.length + Math.max(0, shape.headings - 1)
 }
