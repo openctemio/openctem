@@ -155,7 +155,8 @@ export function measureBottomObstruction(): number {
   return Math.round(inset)
 }
 
-function measureEnvironment(): FloatingEnvironment {
+/** Safe area and fixed bottom rows, measured now. */
+export function measureFloatingEnvironment(): FloatingEnvironment {
   return { safe: measureSafeArea(), bottomObstruction: measureBottomObstruction() }
 }
 
@@ -207,7 +208,7 @@ function useFloatingAnchorState(open: boolean): FloatingAnchorState {
         const dir = getComputedStyle(el).direction === 'rtl' ? 'rtl' : 'ltr'
         setAlign(chooseAlign(el.getBoundingClientRect(), window.innerWidth, dir))
       }
-      const next = measureEnvironment()
+      const next = measureFloatingEnvironment()
       setEnv((prev) => (sameEnvironment(prev, next) ? prev : next))
     }
     measure()

@@ -735,13 +735,24 @@ object's name (`title`) and the sheet's purpose (`label`).
 - From 768 px up it is the anchored menu: rows 32 (44 under a coarse pointer),
   an unavailable item dimmed with its reason on hover or focus (and as a second
   line under a coarse pointer), shortcuts with a fine pointer only.
-- Below 768 px it is a bottom sheet: the object's name as the title and a close
-  button in a 48 px header, rows 48 with 16 px text, no icons, groups split by
-  a divider, the destructive group last in red, an unavailable item's reason as
-  visible text under its label, a submenu opened in place with a Back row. It
-  closes on the close button, Escape (one level back first), a tap on the scrim,
-  a swipe down or a chosen action; the focus returns to the trigger. Its code
-  loads the first time a phone opens one.
+- Below 768 px the menu chooses by fit, measured each time it opens
+  (`action-menu-fit.ts`); the call site never chooses:
+
+  | Phone menu                                                                                                                                                                         | Shown as                                                                 |
+  | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+  | At most 6 items (unavailable items count; dividers and a single heading do not), no submenu, no text field, every label within 2 lines, fits above or below the trigger unscrolled | Anchored menu: rows 44, 16 px gutter, placed like every anchored surface |
+  | Anything else (more items, a submenu, a longer label, no room beside the trigger)                                                                                                  | Bottom sheet                                                             |
+
+- The bottom sheet: the object's name as the title and a close button in a
+  48 px header, rows 48 with 16 px text, no icons, groups split by a divider,
+  the destructive group last in red, a submenu opened in place with a Back row,
+  at least 16 px (or the safe area) under the last row, and its bottom on the
+  visible screen's bottom, above a browser toolbar. It closes on the close
+  button, Escape (one level back first), a tap on the scrim, a swipe down or a
+  chosen action; the focus returns to the trigger. Its code loads only when a
+  phone needs it.
+- On a phone (and under a coarse pointer at any width) an unavailable item's
+  reason is visible text under its label, in the menu and in the sheet.
 - The items decide nothing about access: hide an item the user may not use,
   and give an item that does not apply a `disabledReason`. Both renderers use
   the same items, so an item is never enabled on one width and disabled on the
