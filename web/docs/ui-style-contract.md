@@ -724,6 +724,47 @@ sites pass nothing for them.
 | Motion      | No open or close animation under reduced motion.                                                                                                                                                                                      |
 | Fixed align | Only the shell's design-fixed menus pass `align` (`floating-align-guard.test.ts` lists them).                                                                                                                                         |
 
+#### Action menus: `ActionMenu`
+
+A "⋯" menu (row, card, page-header More, toolbar More, bulk More) is one
+`ActionMenu` (`src/components/ui/action-menu.tsx`): the call site passes the
+items (label, `onSelect` or `href`, optional `group`, `icon`, `destructive`,
+`disabledReason`, `shortcut`, or a `kind: 'sub'` submenu), the trigger, the
+object's name (`title`) and the sheet's purpose (`label`).
+
+- From 768 px up it is the anchored menu: rows 32 (44 under a coarse pointer),
+  an unavailable item dimmed with its reason on hover or focus (and as a second
+  line under a coarse pointer), shortcuts with a fine pointer only.
+- Below 768 px it is a bottom sheet: the object's name as the title and a close
+  button in a 48 px header, rows 48 with 16 px text, no icons, groups split by
+  a divider, the destructive group last in red, an unavailable item's reason as
+  visible text under its label, a submenu opened in place with a Back row. It
+  closes on the close button, Escape (one level back first), a tap on the scrim,
+  a swipe down or a chosen action; the focus returns to the trigger. Its code
+  loads the first time a phone opens one.
+- The items decide nothing about access: hide an item the user may not use,
+  and give an item that does not apply a `disabledReason`. Both renderers use
+  the same items, so an item is never enabled on one width and disabled on the
+  other. A destructive item's `onSelect` opens the confirmation; it never acts
+  directly.
+- Content rules (`normalizeActionItems`): groups in the order given,
+  destructive items last on their own, a group heading only for two items or
+  more in a menu of two groups or more, icons for every item or none, empty
+  submenus dropped, no menu at all when no item is left.
+
+The Findings page-header More is the reference; the other "⋯" menus move to
+`ActionMenu` next (planned).
+
+By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
+
+| Surface                                                          | Desktop and tablet                      | Phone                                                         |
+| ---------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------- |
+| Action menus "⋯" (`ActionMenu`)                                  | Anchored menu, rows 32 (44 under touch) | Bottom sheet titled with the object's name, rows 48, no icons |
+| Account menu, notifications                                      | Anchored to the trigger's end           | Top sheet under the bar, 8 px from the edges                  |
+| Choice menus without search (theme, sort, group, views), selects | Anchored, rows 32                       | Anchored                                                      |
+| Pickers with a search field (`ResponsivePopover`)                | Anchored popover                        | Sheet, keyboard-aware                                         |
+| Submenus                                                         | One level, as a flyout                  | Opened in place inside the sheet, with a Back row             |
+
 ## 9. Responsiveness
 
 - Must work from 1000px wide with the sidebar expanded: nothing clipped, no
