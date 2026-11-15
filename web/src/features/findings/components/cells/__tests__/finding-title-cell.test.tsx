@@ -6,6 +6,29 @@ import { FindingTitleCell, TARGET_MIDDLE, shownTarget } from '../finding-title-c
 import { findingLocation } from '../../../lib/finding-location'
 
 describe('FindingTitleCell', () => {
+  it('with href the title is a link: a plain click opens the drawer, a modified click the page', () => {
+    const onOpen = vi.fn()
+    const onRow = vi.fn()
+    render(
+      <div onClick={onRow}>
+        <FindingTitleCell
+          title="SQL injection"
+          onOpen={onOpen}
+          openLabel="SQL injection, view details"
+          findingId="f-1"
+        />
+      </div>
+    )
+    const link = screen.getByRole('link', { name: 'SQL injection, view details' })
+    expect(link).toHaveAttribute('href', '/findings/f-1')
+    expect(fireEvent.click(link)).toBe(false) // default prevented: no navigation
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    // Ctrl-click is the browser's (new tab): no drawer, the row stays closed.
+    expect(fireEvent.click(link, { ctrlKey: true })).toBe(true)
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onRow).not.toHaveBeenCalled()
+  })
+
   it('makes only the title the open button, its name starting with the title', () => {
     const onOpen = vi.fn()
     render(

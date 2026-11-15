@@ -1,7 +1,7 @@
 /**
  * The Findings list's saved-view state and its primary action: columns and
  * density live in the URL and are saved with a view, Priority is always shown,
- * Severity starts hidden in the Active view, the unsaved-changes dot compares
+ * Severity shows in every view (only a narrow frame drops it), the unsaved-changes dot compares
  * the list with the open view, and Triage opens triage mode on the Needs
  * triage queue (or, with nothing to triage, the Needs triage view).
  */
@@ -189,11 +189,12 @@ describe('Findings columns', () => {
     expect(headers()).toContain('Title')
   })
 
-  it('Severity starts hidden in the Active view and shown in Needs triage', () => {
+  it('Severity and the asset show by default in every view', () => {
     listState.rows = [row('1')]
     openAt('')
     const { unmount } = render(<FindingsPage />)
-    expect(headers()).not.toContain('Severity')
+    expect(headers()).toContain('Severity')
+    expect(headers()).toContain('Location')
     unmount()
     openAt('?status=new&state=all')
     render(<FindingsPage />)
@@ -245,7 +246,7 @@ describe('Findings columns', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
-    expect(params().get('columns')).toBe('status,slaStatus')
+    expect(params().get('columns')).toBe('asset,status,slaStatus')
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
     expect(params().has('columns')).toBe(false)
