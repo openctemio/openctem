@@ -174,9 +174,16 @@ test.describe('Query editor controls on a phone', { tag: ['@findings'] }, () => 
       // The text keeps at least 55 % of the field at 375 px.
       await page.setViewportSize({ width: 375, height: 812 })
       const share = await box.evaluate((el: HTMLInputElement) => {
+        // The text's box: the field less its borders and paddings (icons, controls).
         const cs = getComputedStyle(el)
-        const text = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
-        return text / el.getBoundingClientRect().width
+        const width = el.getBoundingClientRect().width
+        const text =
+          width -
+          parseFloat(cs.borderLeftWidth) -
+          parseFloat(cs.borderRightWidth) -
+          parseFloat(cs.paddingLeft) -
+          parseFloat(cs.paddingRight)
+        return text / width
       })
       expect(share).toBeGreaterThanOrEqual(0.55)
       await page.setViewportSize({ width: 390, height: 844 })
