@@ -57,6 +57,7 @@ import {
 import { EndpointSheet, RISK_LABEL, SOURCE_LABEL } from './endpoint-sheet'
 import { MethodBadge, PathText } from './web-surface-badges'
 import { EVENT_KINDS, num, useEndpointColumns, useEventColumns } from './web-surface-columns'
+import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
 
 const PAGE_SIZES = [20, 50, 100]
 const SECTION_TABS = ['overview', 'endpoints', 'parameters', 'changes'] as const
@@ -77,7 +78,7 @@ export function isWebOriginType(type: string | undefined): boolean {
 
 function usePaging() {
   const [pageIndex, setPageIndex] = useState(0)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
   return {
     pagination: { pageIndex, pageSize },
     setPagination: (n: { pageIndex: number; pageSize: number }) => {

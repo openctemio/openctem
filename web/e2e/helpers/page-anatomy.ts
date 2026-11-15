@@ -314,7 +314,7 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
       tabStrips,
       wrappedChips,
       middotChips,
-      emptyPagination: /Page 1 of 0|Showing 0\s*[-–]\s*0 of 0/.test(main.textContent ?? ''),
+      emptyPagination: /Page 1 of 0|Showing 0\s*(?:[-–]|to)\s*0 of 0/.test(main.textContent ?? ''),
       nameColumns,
       pageOverflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
       restingSave: Array.from(main.querySelectorAll('button'))

@@ -1,6 +1,28 @@
-import { chromium } from '@playwright/test'
+import { chromium, expect, type Page } from '@playwright/test'
 import { AUTH_DIR, credentials, STATE_FILE, answerCode, saveCredentials } from './helpers/session'
 import fs from 'node:fs'
+
+/**
+ * Opens the sign-in page. A navigation of the page's own (the console's full
+ * reload after a sign-in or a password change, a server that has only just
+ * started answering) can abort this one: Chromium reports net::ERR_ABORTED, or
+ * "interrupted by another navigation" when the page is itself going to /login.
+ * It is retried, a bounded number of times, for those two answers only; any
+ * other failure throws.
+ */
+async function openLogin(page: Page) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.waitForLoadState('load', { timeout: 15_000 }).catch(() => undefined)
+      await page.goto('/login', { waitUntil: 'domcontentloaded' })
+      return
+    } catch (err) {
+      if (attempt >= 4 || !/net::ERR_ABORTED|interrupted by another navigation/.test(String(err)))
+        throw err
+      await page.waitForTimeout(500 * attempt)
+    }
+  }
+}
 
 /**
  * Signs the platform administrator in once and saves the session. The sign-in
@@ -41,10 +63,23 @@ export default async function globalSetup() {
       }
     })
     const signIn = async (pw: string) => {
-      await page.goto('/login')
-      await page.getByLabel('Email').fill(email)
-      await page.getByLabel('Password', { exact: true }).fill(pw)
-      await page.getByRole('button', { name: 'Continue' }).click()
+      await openLogin(page)
+      // The form is server-rendered, then hydrated: text typed before React
+      // has taken the inputs over is lost, and typing the same text again is
+      // ignored (React compares it with the value it saw), so Continue stays
+      // disabled for good. Empty the fields first, then fill, until the button
+      // is enabled: that is the proof the page is live.
+      const next = page.getByRole('button', { name: 'Continue' })
+      const emailField = page.getByLabel('Email')
+      const passwordField = page.getByLabel('Password', { exact: true })
+      await expect(async () => {
+        await emailField.fill('')
+        await passwordField.fill('')
+        await emailField.fill(email)
+        await passwordField.fill(pw)
+        await expect(next).toBeEnabled({ timeout: 1_000 })
+      }).toPass({ timeout: 30_000 })
+      await next.click()
       await answerCode(page, () => secret)
       // The sixth digit submits the step by itself.
       await page.waitForURL((u) => !u.pathname.startsWith('/login'), { timeout: 60_000 })
@@ -83,10 +118,14 @@ export default async function globalSetup() {
     saveCredentials({ email, password: current, totpSecret: secret })
     await context.storageState({ path: STATE_FILE })
   } catch (err) {
-    await browser
-      .contexts()[0]
-      ?.pages()[0]
-      ?.screenshot({ path: `${AUTH_DIR}/setup-failed.png` })
+    // The picture is a courtesy: when the page is closed or mid-navigation the
+    // capture itself fails, and that failure must never replace the real error.
+    const failed = browser.contexts()[0]?.pages()[0]
+    if (failed && !failed.isClosed()) {
+      await failed
+        .screenshot({ path: `${AUTH_DIR}/setup-failed.png`, timeout: 5_000 })
+        .catch(() => undefined)
+    }
     throw err
   } finally {
     await browser.close()
