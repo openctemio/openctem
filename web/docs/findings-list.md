@@ -4,6 +4,20 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 `src/features/findings/components/` (`finding-row-menu.tsx`, `finding-phone-card.tsx`) and the shared
 `src/features/shared/components/data-table/`.
 
+## Columns
+
+- Priority, the title (a real link to `/findings/{id}`: a plain click opens the drawer, Ctrl/Cmd/Shift or a
+  middle click opens the page in a new tab), Location (the asset), Severity, Signals and EPSS, Status and
+  Due / SLA show by default in every view; Source and Created are under Display. Columns and their widths:
+  select 40, Priority 60, title at least 280 (it takes the rest), Location 112 to 160, Severity 88, Signals
+  and EPSS 140, Status 120, Due / SLA 112, Source 130, Created 104, actions 48.
+- Column priority keeps the title at 280 or more: the table drops Severity below a 1,154 px frame (a 1480
+  screen with the sidebar open), Signals and EPSS below 994 (1320) and Due / SLA below 834 (1160). Turning
+  a dropped column on under Display shows it again while the list is open; the saved columns are not
+  changed by the width.
+- With no `sort` in the URL the list is in the server's order (priority first), and the Priority header
+  says so (`aria-sort`). The footer counts "findings".
+
 ## Selection
 
 - A selection belongs to the rows on screen. Changing the page, the page size, the sort, the search, a

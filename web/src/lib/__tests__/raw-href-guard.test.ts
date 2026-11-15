@@ -50,6 +50,9 @@ const SAFE_CALLS = new Set([
   // filters as URLSearchParams values.
   'cveFindingsHref',
   'findingsHrefForSources',
+  // features/findings/lib/finding-link.ts: `/findings/` with the id URI-encoded
+  // as one path segment.
+  'findingDetailHref',
   // features/exploration/lib/leads.ts: `/exploration` with the asset and lead
   // ids only as URLSearchParams values.
   'explorationHref',
