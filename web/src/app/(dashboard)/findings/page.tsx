@@ -32,7 +32,6 @@ import {
 } from '@/features/findings/lib/bulk-result'
 import { formatCalendarDate } from '@/lib/format-metric'
 import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode } from 'react'
-import Link from '@/components/link'
 import {
   DEFAULT_FINDING_LENS,
   lensLabelKey,
@@ -104,6 +103,7 @@ import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { DecorativeText } from '@/components/ui/decorative-text'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -117,7 +117,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -2635,6 +2634,27 @@ function FindingsContent() {
     />
   ) : undefined
 
+  // The page's other actions, under More: a menu on a desktop, a sheet on a phone.
+  const headerMoreItems: ActionMenuEntry[] = [
+    ...(canImport
+      ? [
+          {
+            id: 'import',
+            group: t('findings.header.create', 'Create'),
+            label: t('findings.header.importResults', 'Import results'),
+            icon: FileUp,
+            onSelect: () => setImportDialogOpen(true),
+          },
+        ]
+      : []),
+    {
+      id: 'approvals',
+      label: t('findings.header.approvals', 'Approvals'),
+      icon: ClipboardList,
+      href: '/findings/approvals',
+    },
+  ]
+
   return (
     <>
       <Main>
@@ -2642,8 +2662,13 @@ function FindingsContent() {
           <PageHeader title={t('findings.page.title', 'Findings')} description={drillBreadcrumb}>
             {/* One primary action (Triage) and single buttons: the page's other
               actions are under More, never a split button. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              title={t('findings.page.title', 'Findings')}
+              label={t('common.actionMenu.label', 'Actions for {name}', {
+                name: t('findings.page.title', 'Findings'),
+              })}
+              items={headerMoreItems}
+              trigger={
                 <Button
                   variant="outline"
                   size="icon"
@@ -2651,26 +2676,8 @@ function FindingsContent() {
                 >
                   <MoreHorizontal aria-hidden />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {canImport && (
-                  <>
-                    <DropdownMenuLabel>{t('findings.header.create', 'Create')}</DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => setImportDialogOpen(true)}>
-                      <FileUp className="me-2 h-4 w-4" aria-hidden />
-                      {t('findings.header.importResults', 'Import results')}
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
-                <DropdownMenuItem asChild>
-                  <Link href="/findings/approvals">
-                    <ClipboardList className="me-2 h-4 w-4" aria-hidden />
-                    {t('findings.header.approvals', 'Approvals')}
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
             {hasPermission('findings:write') && (
               <Button
                 iconOnlyBelow="sm"

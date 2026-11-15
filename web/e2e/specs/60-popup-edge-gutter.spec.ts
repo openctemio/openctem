@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
+import { layoutIssues } from '../design/layout-checks'
 
 /**
  * Popups keep the page gutter (owner report 2026-11-15, /findings at 390 px):
@@ -13,6 +14,12 @@ import { test, expect } from '../fixtures/authenticated-page'
  * header More menu and the Group select list stay inside the gutter, the
  * select list opens below or above its trigger and never over it, and an open
  * popup never makes the page scroll sideways.
+ *
+ * Below 768 px the header More is an action sheet: titled with the page, a
+ * close button, rows of 48 (at least 44), no heading over a single item, no
+ * icons, inside the viewport; the close button, Escape and a tap on the scrim
+ * close it and the focus returns to the trigger. From 768 px up it is the
+ * anchored menu.
  */
 
 const GUTTER = 16
@@ -42,20 +49,17 @@ async function edges(page: Page, trigger: Locator) {
 
 for (const width of [375, 390] as const) {
   test(
-    `More menus on /findings keep the page gutter at ${width}px`,
+    `The toolbar More menu on /findings keeps the page gutter at ${width}px`,
     { tag: ['@findings', '@shell', '@phone'] },
     async ({ page }) => {
       await page.setViewportSize({ width, height: 844 })
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.goto('/findings')
 
-      const header = page.locator('[data-slot="page-header"]')
-      const headerMore = header.getByRole('button', { name: 'More actions' })
-      await expect(headerMore).toBeVisible({ timeout: 45_000 })
-      const h = await edges(page, headerMore)
-      test.info().annotations.push({ type: 'header More', description: JSON.stringify(h) })
-      expect(h.left, 'header More: left gutter').toBeGreaterThanOrEqual(GUTTER)
-      expect(h.right, 'header More: right gutter').toBeLessThanOrEqual(h.width - GUTTER)
+      // The header More is an action sheet on a phone (tested below).
+      await expect(
+        page.locator('[data-slot="page-header"]').getByRole('button', { name: 'More actions' })
+      ).toBeVisible({ timeout: 45_000 })
 
       const toolbarMore = page
         .getByTestId('findings-toolbar-primary')
@@ -105,16 +109,20 @@ for (const width of [375, 390, 768, 1440] as const) {
         .locator('[data-slot="page-header"]')
         .getByRole('button', { name: 'More actions' })
       await expect(headerMore).toBeVisible({ timeout: 45_000 })
-      await headerMore.click()
-      const menu = page.getByRole('menu')
-      await expect(menu).toBeVisible()
-      const m = await settledRect(menu)
-      test.info().annotations.push({ type: 'header More', description: JSON.stringify(m) })
-      expect(m.left, 'header More: left gutter').toBeGreaterThanOrEqual(GUTTER)
-      expect(m.right, 'header More: right gutter').toBeLessThanOrEqual(width - GUTTER)
-      expect(await noSidewaysScroll(page), 'no sideways page scroll with a menu open').toBe(true)
-      await page.keyboard.press('Escape')
-      await expect(menu).toBeHidden()
+      if (width >= 768) {
+        await headerMore.click()
+        const menu = page.getByRole('menu')
+        await expect(menu).toBeVisible()
+        const m = await settledRect(menu)
+        test.info().annotations.push({ type: 'header More', description: JSON.stringify(m) })
+        expect(m.left, 'header More: left gutter').toBeGreaterThanOrEqual(GUTTER)
+        expect(m.right, 'header More: right gutter').toBeLessThanOrEqual(width - GUTTER)
+        expect(await noSidewaysScroll(page), 'no sideways page scroll with a menu open').toBe(true)
+        const issues = await page.evaluate(layoutIssues)
+        expect(issues.filter((i) => i.kind === 'popup' || i.kind === 'target')).toEqual([])
+        await page.keyboard.press('Escape')
+        await expect(menu).toBeHidden()
+      }
 
       const group = page.getByRole('combobox', { name: 'Group findings' })
       await expect(group).toBeVisible()
@@ -140,6 +148,65 @@ for (const width of [375, 390, 768, 1440] as const) {
       expect(await noSidewaysScroll(page), 'no sideways page scroll with a list open').toBe(true)
       await page.keyboard.press('Escape')
       await expect(list).toBeHidden()
+    }
+  )
+}
+
+for (const width of [375, 390] as const) {
+  test(
+    `The findings header More is an action sheet at ${width}px`,
+    { tag: ['@findings', '@shell', '@phone'] },
+    async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await page.goto('/findings')
+      const headerMore = page
+        .locator('[data-slot="page-header"]')
+        .getByRole('button', { name: 'More actions' })
+      await expect(headerMore).toBeVisible({ timeout: 45_000 })
+      await expect(headerMore).toHaveAttribute('aria-haspopup', 'dialog')
+
+      const sheet = page.getByRole('dialog', { name: 'Findings' })
+      const open = async () => {
+        await headerMore.click()
+        await expect(sheet).toBeVisible()
+        await settledRect(sheet)
+      }
+
+      await open()
+      expect(await page.getByRole('menu').count(), 'no anchored menu on a phone').toBe(0)
+      const rows = sheet.locator('[data-slot="action-sheet-row"]')
+      await expect(rows.first()).toBeVisible()
+      const heights = await rows.evaluateAll((els) =>
+        els.map((e) => Math.round(e.getBoundingClientRect().height))
+      )
+      test.info().annotations.push({ type: 'sheet rows', description: JSON.stringify(heights) })
+      for (const h of heights) expect(h, 'sheet row height').toBeGreaterThanOrEqual(48)
+      expect(await sheet.locator('[data-slot="action-sheet-row"] svg').count(), 'no icons').toBe(0)
+      await expect(sheet.getByText('Create', { exact: true })).toHaveCount(0)
+      const s = await settledRect(sheet)
+      expect(s.left).toBeGreaterThanOrEqual(0)
+      expect(s.right).toBeLessThanOrEqual(width)
+      expect(s.bottom).toBeLessThanOrEqual(844)
+      expect(await noSidewaysScroll(page)).toBe(true)
+      const issues = await page.evaluate(layoutIssues)
+      expect(issues.filter((i) => i.kind === 'popup' || i.kind === 'target')).toEqual([])
+
+      // Close button, then Escape, then a tap on the scrim.
+      await sheet.getByRole('button', { name: 'Close' }).click()
+      await expect(sheet).toBeHidden()
+      await expect(headerMore).toBeFocused()
+      await open()
+      await page.keyboard.press('Escape')
+      await expect(sheet).toBeHidden()
+      await open()
+      await page.mouse.click(width / 2, 20)
+      await expect(sheet).toBeHidden()
+
+      // A row acts: Approvals navigates.
+      await open()
+      await sheet.getByRole('link', { name: 'Approvals' }).click()
+      await expect(page).toHaveURL(/\/findings\/approvals/)
     }
   )
 }
