@@ -74,12 +74,10 @@ const REVIEWED: Record<string, string> = {
 
 /**
  * Menus whose padding width goes in a change that owns the file (the list
- * toolbar, saved views, the assets page). Remove an entry with its width;
+ * toolbar, saved views, the data table). Remove an entry with its width;
  * never add one for new code.
  */
 const PENDING = new Set([
-  'features/assets/components/attention/attention-queue-header.tsx DropdownMenuContent',
-  'features/assets/components/inventory/inventory-add-button.tsx DropdownMenuContent',
   'features/saved-views/components/saved-views-menu.tsx DropdownMenuContent',
   'features/shared/components/data-table/data-table.tsx DropdownMenuContent',
   'features/shared/components/filter-select.tsx DropdownMenuContent',
