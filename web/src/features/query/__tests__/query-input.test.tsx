@@ -356,6 +356,19 @@ describe('QueryInput', () => {
     expect(again.selectionStart).toBe(20)
   })
 
+  it('autoFocus focuses the field once it is enabled (a list prints its text first)', () => {
+    const props = {
+      entity: 'findings' as const,
+      onChange: vi.fn(),
+      ariaLabel: 'search',
+      autoFocus: true,
+    }
+    const { rerender } = render(<QueryInput {...props} value="" disabled />)
+    expect(document.activeElement).not.toBe(screen.getByRole('combobox'))
+    rerender(<QueryInput {...props} value="severity>=high" />)
+    expect(document.activeElement).toBe(screen.getByRole('combobox'))
+  })
+
   it('on a touch screen the expanded editor does not take the focus (no keyboard on open)', () => {
     const before = window.matchMedia
     window.matchMedia = ((q: string) => ({

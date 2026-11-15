@@ -148,9 +148,15 @@ export function QueryInput({
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const bigRef = useRef<HTMLDivElement>(null)
-  // The editor's first mount may take the focus (`autoFocus`); swapping the
-  // one-line field and the expanded editor moves it by hand (setBig).
-  const [swapped, setSwapped] = useState(false)
+  // `autoFocus` focuses the field once, as soon as it can take the focus
+  // (a list's editor is disabled while its text is printed); swapping the
+  // one-line field and the expanded editor moves the focus by hand (setBig).
+  const focusedOnce = useRef(false)
+  useEffect(() => {
+    if (!autoFocus || disabled || focusedOnce.current) return
+    focusedOnce.current = true
+    ref.current?.focus()
+  }, [autoFocus, disabled])
   const listAnchor = useMemo(
     () => ({
       current: {
@@ -182,7 +188,6 @@ export function QueryInput({
     const el = ref.current
     const from = el?.selectionStart ?? value.length
     const to = el?.selectionEnd ?? from
-    setSwapped(true)
     // One line cannot hold a line break: each becomes a space, so the
     // conditions stay apart and the caret keeps its place.
     if (!on && /[\r\n]/.test(value)) onChange(value.replace(/[\r\n]/g, ' '))
@@ -434,7 +439,6 @@ export function QueryInput({
     id: inputId,
     value,
     disabled,
-    autoFocus: autoFocus && !swapped,
     spellCheck: false,
     autoComplete: 'off',
     maxLength: 4096,
