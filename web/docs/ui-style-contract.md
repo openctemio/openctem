@@ -196,6 +196,7 @@ the phone top bar (the account menu, notifications), which keeps the bar's
 | 2026-11-13 | Organization chip initials 12 px 600 (the 12 px floor holds)                                                                                                          | Design                                                        |
 | 2026-11-13 | Phone heights = the live UI (36, small 32, large 40; fields 36 with 16 px text), compact button content, 44 px as an invisible touch target, icon-only buttons square | Owner, after viewing the preview and the live UI on his phone |
 | 2026-11-15 | Popups keep 16 px from every screen edge (phone top-bar sheets keep the bar's 8 px, as the shell package set them)                                                    | Owner                                                         |
+| 2026-11-15 | On a touch screen no popup focuses a text field on open (typing surfaces listed once); a picker sheet follows the visible viewport when the keyboard opens            | Owner                                                         |
 
 ## 1. Page anatomy
 
@@ -796,6 +797,38 @@ By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
 | Choice menus without search (theme, sort, group, views), selects | Anchored, rows 32                       | Anchored                                                      |
 | Pickers with a search field (`ResponsivePopover`)                | Anchored popover                        | Sheet, keyboard-aware                                         |
 | Submenus                                                         | One level, as a flyout                  | Opened in place inside the sheet, with a Back row             |
+
+#### Focus on open: no keyboard until the user taps a field
+
+On a touch screen (a coarse pointer that cannot hover, `isTouchPrimary()` in
+`src/components/ui/touch-focus.ts`) a popover, picker, sheet or dialog never
+focuses a text field when it opens, so the on-screen keyboard does not cover
+the options before the user has seen them. Focus goes to the surface: the
+option list of a picker (the first option active, so Enter and the arrow keys
+of an attached keyboard work) or the dialog body. The keyboard opens when the
+user taps the field. With a mouse or trackpad the field gets focus on open.
+
+- The kit applies it: the focus trap of `PopoverContent`, `DialogContent`,
+  `SheetContent`, and `autoFocus` on `Input`, `Textarea` and `CommandInput`
+  that appear with any of them (and with `AlertDialogContent`). A field that
+  appears later, after a tap inside the open surface (Edit name, a picked
+  filter field), keeps its `autoFocus`: the user asked to type. Call sites
+  pass nothing.
+- Exceptions, surfaces whose one purpose is typing, are listed once in
+  `TOUCH_TYPING_SURFACES` (command palettes, step-up confirmation, typed
+  confirmation, one-field forms such as a new name or a label) and opt in
+  with `typingSurface`. `touch-focus-guard.test.ts` lists every opt-in, every
+  raw `<input autoFocus>` and every `onOpenAutoFocus` that moves focus
+  itself; a new one fails until it is reviewed.
+- A picker with a search field on a phone (`ResponsivePopover`): the field is
+  pinned at the top of the sheet, the list scrolls under it with sticky group
+  headings, rows 44. When the keyboard opens the sheet sits on it and is never
+  taller than the visible part of the screen (`--modal-kb`, `--modal-vvh` from
+  `visualViewport`), so the field and the rows under it stay in view even
+  when the browser pans the page. At least 16 px (or the safe area) under the
+  last row while the keyboard is down. Enter picks the highlighted option; the
+  clear button empties the field without taking its focus; closing the sheet
+  blurs the field so the keyboard closes with it.
 
 ## 9. Responsiveness
 

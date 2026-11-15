@@ -765,7 +765,7 @@ export default function ScanWorkflowsPage() {
 
       {/* Clone Template Dialog */}
       <Dialog open={cloneDialogOpen} onOpenChange={handleCloseCloneDialog}>
-        <DialogContent size="sm">
+        <DialogContent size="sm" typingSurface="single-field">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {cloningWorkflow?.is_system_template ? (
