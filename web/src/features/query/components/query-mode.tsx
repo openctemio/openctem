@@ -11,7 +11,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import type { ListSearchQuery } from '@/features/shared/components/list-search'
+import type { ListSearchMode, ListSearchQuery } from '@/features/shared/components/list-search'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -149,6 +149,9 @@ export interface ListQueryModeOptions {
 export function useListQueryMode(opts: ListQueryModeOptions): {
   active: boolean
   setActive: (on: boolean) => void
+  /** The mode, for a switch drawn outside the field (`ListSearchModeSwitch`). */
+  mode: ListSearchMode
+  onModeChange: (mode: ListSearchMode) => void
   query: ListSearchQuery
 } {
   const { t } = useTranslation()
@@ -263,7 +266,8 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
       </div>
     ),
   }
-  return { active, setActive, query }
+  const onModeChange = useCallback((m: ListSearchMode) => setActive(m === 'query'), [setActive])
+  return { active, setActive, mode: active ? 'query' : 'basic', onModeChange, query }
 }
 
 /** The chip of an fq filter: its text, opening the editor; X removes it. */
