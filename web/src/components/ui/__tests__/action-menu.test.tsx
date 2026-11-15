@@ -93,8 +93,8 @@ function setWidth(w: number) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
 }
 
-/** On a phone the menu code loads lazily: wait until the trigger is the real one. */
-async function phoneReady() {
+/** The menu code loads lazily: wait until the trigger is the real one. */
+async function menuReady() {
   await waitFor(() => expect(document.querySelector('[data-action-menu-pending]')).toBeNull())
 }
 
@@ -142,6 +142,7 @@ describe('ActionMenu from 768 px up', () => {
 
   it('is an anchored menu (APG menu button) with no heading over a single item', async () => {
     render(<Harness />)
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
     await userEvent.click(trigger)
@@ -154,6 +155,30 @@ describe('ActionMenu from 768 px up', () => {
     await userEvent.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
     expect(trigger).toHaveFocus()
+  })
+
+  it('opens for a press made while its code was still loading', async () => {
+    // A fresh module: React.lazy keeps what it loaded once, per module instance.
+    vi.resetModules()
+    const { ActionMenu: FreshMenu } = await import('../action-menu')
+    const onRow = vi.fn()
+    render(
+      <div onClick={onRow}>
+        <FreshMenu
+          title="Findings"
+          label="Actions for Findings"
+          trigger={<button aria-label="More actions">More</button>}
+          items={[{ id: 'import', label: 'Import results' }]}
+        />
+      </div>
+    )
+    const pending = screen.getByRole('button', { name: 'More actions' })
+    expect(pending).toHaveAttribute('data-action-menu-pending')
+    expect(pending).toHaveAttribute('aria-busy', 'true')
+    await userEvent.click(pending)
+    const menu = await screen.findByRole('menu', { name: 'More actions' })
+    expect(within(menu).getByRole('menuitem', { name: 'Import results' })).toBeVisible()
+    expect(onRow).not.toHaveBeenCalled()
   })
 
   it('keeps clicks on the trigger and in the menu from reaching a clickable row', async () => {
@@ -183,7 +208,7 @@ describe('ActionMenu below 768 px', () => {
 
   async function openSheet(onImport?: () => void) {
     render(<Harness onImport={onImport} />)
-    await phoneReady()
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
     await userEvent.click(trigger)
@@ -204,6 +229,25 @@ describe('ActionMenu below 768 px', () => {
     )
     // Destructive group last.
     expect(rows.at(-1)).toContain('Delete view')
+  })
+
+  it('opens the sheet for a press made while its code was still loading', async () => {
+    // A fresh module: React.lazy keeps what it loaded once, per module instance.
+    vi.resetModules()
+    const { ActionMenu: FreshMenu } = await import('../action-menu')
+    render(
+      <FreshMenu
+        title="Findings"
+        label="Actions for Findings"
+        trigger={<button aria-label="More actions">More</button>}
+        items={Array.from({ length: 7 }, (_, i) => ({ id: `a${i}`, label: `Action ${i + 1}` }))}
+      />
+    )
+    const pending = screen.getByRole('button', { name: 'More actions' })
+    expect(pending).toHaveAttribute('data-action-menu-pending')
+    await userEvent.click(pending)
+    const sheet = await screen.findByRole('dialog', { name: 'Findings' })
+    expect(within(sheet).getByRole('button', { name: 'Action 7' })).toBeVisible()
   })
 
   it('shows the reason of an unavailable item as text and does not act on it', async () => {
@@ -233,7 +277,7 @@ describe('ActionMenu below 768 px', () => {
         <Harness onImport={onImport} />
       </div>
     )
-    await phoneReady()
+    await menuReady()
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
     const sheet = await screen.findByRole('dialog', { name: 'Findings' })
     await userEvent.click(within(sheet).getByRole('button', { name: 'Import results' }))
@@ -255,7 +299,7 @@ describe('ActionMenu below 768 px', () => {
 
   it('focuses the first row only when opened from the keyboard', async () => {
     render(<Harness />)
-    await phoneReady()
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     trigger.focus()
     await userEvent.keyboard('{Enter}')
@@ -286,7 +330,7 @@ describe('ActionMenu below 768 px, by fit', () => {
 
   it('a short menu that fits is an anchored menu with visible reasons', async () => {
     render(<Harness items={short} />)
-    await phoneReady()
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
     await userEvent.click(trigger)
@@ -305,7 +349,7 @@ describe('ActionMenu below 768 px, by fit', () => {
       label: `Action ${i}`,
     }))
     render(<Harness items={many} />)
-    await phoneReady()
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
     await userEvent.click(trigger)
@@ -316,7 +360,7 @@ describe('ActionMenu below 768 px, by fit', () => {
   it('a short menu without room beside its trigger opens the sheet', async () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
     render(<Harness items={short} />)
-    await phoneReady()
+    await menuReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     await userEvent.click(trigger)
     expect(await screen.findByRole('dialog', { name: 'Findings' })).toBeInTheDocument()
@@ -326,7 +370,7 @@ describe('ActionMenu below 768 px, by fit', () => {
   it('from the keyboard, a menu without room opens the sheet on its first row', async () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
     render(<Harness items={short} />)
-    await phoneReady()
+    await menuReady()
     screen.getByRole('button', { name: 'More actions' }).focus()
     await userEvent.keyboard('{Enter}')
     const sheet = await screen.findByRole('dialog', { name: 'Findings' })

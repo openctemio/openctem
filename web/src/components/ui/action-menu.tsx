@@ -11,16 +11,19 @@
  *
  * Both renderers take the same items, so an item is never enabled on one and
  * disabled on the other. A click inside the menu or the sheet stays in it:
- * it never reaches a clickable row or card the trigger sits in. Permission gating stays with the caller: pass only
- * the items the user may see (hidden without permission), and give an item
- * that does not apply a `disabledReason`. A destructive item opens a
- * confirmation from its `onSelect`; it never acts directly.
+ * it never reaches a clickable row or card the trigger sits in. Permission
+ * gating stays with the caller: pass only the items the user may see (hidden
+ * without permission), and give an item that does not apply a
+ * `disabledReason`. A destructive item opens a confirmation from its
+ * `onSelect`; it never acts directly.
+ *
+ * Only this file is in the routes' first-load code: the menu itself
+ * (`action-menu-impl.tsx`) loads right after the page shows. A press on the
+ * trigger before it is in is kept, and opens the menu when it arrives.
  */
 import * as React from 'react'
 
-import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { ActionMenuEntry } from '@/components/ui/action-menu-model'
-import { useIsMobile } from '@/hooks/use-mobile'
 
 export type {
   ActionMenuAction,
@@ -41,63 +44,41 @@ export type ActionMenuProps = {
   label: string
 }
 
-// Only the trigger is in the routes' shared code: the menu's items (and on a
-// phone the fit measuring and the sheet) load right after the page shows.
-const ActionMenuContent = React.lazy(() => import('./action-menu-content'))
-const PhoneActionMenu = React.lazy(() => import('./action-menu-phone'))
+/** A press on the trigger that came before the menu's code: by pointer or by Enter/Space. */
+export type PendingOpen = 'pointer' | 'keyboard'
+
+const ActionMenuImpl = React.lazy(() => import('./action-menu-impl'))
 
 /** False when no item would show (an empty list, or only empty submenus). */
 function hasItems(items: ActionMenuEntry[]): boolean {
   return items.some((e) => e.kind !== 'sub' || e.items.length > 0)
 }
 
-export function ActionMenu({ items, trigger, title, label }: ActionMenuProps) {
-  const isMobile = useIsMobile()
-  if (!hasItems(items)) return null
-  if (!isMobile) return <AnchoredActionMenu items={items} trigger={trigger} />
+/**
+ * The trigger as it shows while the menu's code loads: marked busy, and a
+ * press on it is kept (`onPress`) instead of lost.
+ */
+export function pendingTrigger(
+  trigger: React.ReactElement,
+  onPress: (how: PendingOpen) => void
+): React.ReactElement {
+  return React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
+    'aria-busy': true,
+    'data-action-menu-pending': '',
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation()
+      // A click with no pointer position came from Enter or Space.
+      onPress(e.detail === 0 ? 'keyboard' : 'pointer')
+    },
+  })
+}
+
+export function ActionMenu(props: ActionMenuProps) {
+  const [pending, setPending] = React.useState<PendingOpen | undefined>(undefined)
+  if (!hasItems(props.items)) return null
   return (
-    // Until the phone code is in (a moment after the page shows), the trigger
-    // shows as it is and is marked busy.
-    <React.Suspense
-      fallback={React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
-        'aria-busy': true,
-        'data-action-menu-pending': '',
-      })}
-    >
-      <PhoneActionMenu items={items} trigger={trigger} title={title} label={label} />
+    <React.Suspense fallback={pendingTrigger(props.trigger, setPending)}>
+      <ActionMenuImpl {...props} pendingOpen={pending} />
     </React.Suspense>
   )
-}
-
-export type TriggerHandlers = Pick<
-  React.ComponentProps<typeof DropdownMenuTrigger>,
-  'ref' | 'onPointerDown' | 'onKeyDown' | 'onClick'
->
-
-export function AnchoredActionMenu({
-  items,
-  trigger,
-  triggerHandlers,
-  onOpenChange,
-}: {
-  items: ActionMenuEntry[]
-  trigger: React.ReactElement
-  triggerHandlers?: TriggerHandlers
-  onOpenChange?: (open: boolean) => void
-}) {
-  return (
-    <DropdownMenu onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild onClick={stopClick} {...triggerHandlers}>
-        {trigger}
-      </DropdownMenuTrigger>
-      <React.Suspense fallback={null}>
-        <ActionMenuContent items={items} />
-      </React.Suspense>
-    </DropdownMenu>
-  )
-}
-
-/** Keeps a click on the trigger from reaching a clickable row or card around it. */
-function stopClick(e: React.MouseEvent) {
-  e.stopPropagation()
 }

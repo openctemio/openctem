@@ -8,7 +8,8 @@
  */
 import * as React from 'react'
 
-import { AnchoredActionMenu, type TriggerHandlers } from '@/components/ui/action-menu'
+import type { PendingOpen } from '@/components/ui/action-menu'
+import { AnchoredActionMenu, type TriggerHandlers } from '@/components/ui/action-menu-impl'
 import {
   normalizeActionItems,
   type ActionMenuEntry,
@@ -51,11 +52,14 @@ export default function PhoneActionMenu({
   trigger,
   title,
   label,
+  pendingOpen,
 }: {
   items: ActionMenuEntry[]
   trigger: React.ReactElement
   title: string
   label: string
+  /** A press on the trigger made while this code loaded: opened now. */
+  pendingOpen?: PendingOpen
 }) {
   const menu = React.useMemo(() => normalizeActionItems(items), [items])
   const model = React.useMemo(() => phoneMenuModel(menu), [menu])
@@ -84,11 +88,27 @@ export default function PhoneActionMenu({
     return () => window.cancelIdleCallback(id)
   }, [mayBeMenu])
 
-  const openSheet = (keyboard: boolean) => {
+  const openSheet = React.useCallback((keyboard: boolean) => {
     setByKeyboard(keyboard)
     setMounted(true)
     setOpen(true)
-  }
+  }, [])
+
+  // Measured at the moment it opens: the screen, where the trigger is and
+  // how wide the labels are in this language.
+  const fitsAsMenu = React.useCallback(() => {
+    const el = triggerRef.current
+    return !!el && measurePhoneFit(el, model) === 'menu'
+  }, [model])
+
+  // A press kept while this code loaded opens what that press would have.
+  const pendingDone = React.useRef(false)
+  React.useEffect(() => {
+    if (!pendingOpen || pendingDone.current) return
+    pendingDone.current = true
+    if (mayBeMenu && fitsAsMenu()) setMenuOpen(true)
+    else openSheet(pendingOpen === 'keyboard')
+  }, [pendingOpen, mayBeMenu, fitsAsMenu, openSheet])
 
   const sheet = mounted && (
     <React.Suspense fallback={null}>
@@ -105,12 +125,6 @@ export default function PhoneActionMenu({
   )
 
   if (mayBeMenu) {
-    // Measured at the moment it opens: the screen, where the trigger is and
-    // how wide the labels are in this language.
-    const fitsAsMenu = () => {
-      const el = triggerRef.current
-      return !!el && measurePhoneFit(el, model) === 'menu'
-    }
     const handlers: TriggerHandlers = {
       ref: (el: HTMLButtonElement | null) => {
         triggerRef.current = el
@@ -142,6 +156,7 @@ export default function PhoneActionMenu({
           items={items}
           trigger={trigger}
           triggerHandlers={handlers}
+          open={menuOpen}
           onOpenChange={setMenuOpen}
         />
         {sheet}

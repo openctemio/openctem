@@ -9,7 +9,6 @@ import {
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
-  DisabledMenuItem,
   MetricStrip,
   DetailCallout,
   DetailCopyId,
@@ -21,6 +20,7 @@ import {
   DetailStatGrid,
   PageStack,
 } from '@/features/shared'
+import { DisabledMenuItem } from '@/features/shared/components/disabled-menu-item'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
