@@ -1,7 +1,5 @@
 'use client'
 
-import { CveLink } from '@/features/vulnerabilities/components/cve-link'
-import { MetaLine } from '@/features/shared/components/text-layout'
 import {
   decodeDensity,
   encodeDensity,
@@ -207,7 +205,7 @@ import { listQuery, writeListContext } from '@/features/findings/lib/list-contex
 import { FindingAssetCell } from '@/features/findings/components/cells/finding-asset-cell'
 import { DuplicatesChip } from '@/features/findings/components/cells/duplicates-chip'
 import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
-import { AssetMarkers } from '@/features/findings/components/cells/asset-markers'
+import { FindingRowId } from '@/features/findings/components/cells/finding-row-id'
 import { findingRowTone } from '@/features/findings/lib/row-tone'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import { BranchOnlyBadge } from '@/features/findings/components/branch-only-badge'
@@ -487,14 +485,21 @@ function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
 }
 
 /**
+ * The Priority column holds its header word with the sort arrow in English and
+ * Vietnamese ("Priority" needs 72, "Ưu tiên" 70, with the cell padding); the
+ * class badge needs less.
+ */
+const FINDINGS_PRIORITY_WIDTH = 76
+
+/**
  * Column priority (the table's frame width below which a column drops), so the
- * title never gets narrower than 280: Severity below a 1480 px screen, Signals
- * and EPSS below 1320, Due / SLA below 1160, with the 256 px sidebar open
+ * title never gets narrower than 280: Severity below a 1496 px screen, Signals
+ * and EPSS below 1336, Due / SLA below 1176, with the 256 px sidebar open
  * (the frame is the screen less the sidebar, the page padding and the
  * scrollbar gutter: 326 px). The frame decides, so a collapsed sidebar or the
  * filter panel open move the points with it.
  */
-const FINDINGS_HIDE_BELOW = { severity: 1154, signals: 994, slaStatus: 834 } as const
+const FINDINGS_HIDE_BELOW = { severity: 1170, signals: 1010, slaStatus: 850 } as const
 
 /**
  * Table columns the API can sort by (FindingAllowedSortFields), keyed by column
@@ -1598,7 +1603,13 @@ function FindingsContent() {
     const cols: ColumnDef<Finding>[] = [
       {
         accessorKey: 'priorityClass',
-        meta: { kind: 'priority', width: 60, label: t('findings.columns.priority', 'Priority') },
+        meta: {
+          kind: 'priority',
+          width: FINDINGS_PRIORITY_WIDTH,
+          // Priority and the title identify the row: frozen while the table scrolls sideways.
+          pin: 'start',
+          label: t('findings.columns.priority', 'Priority'),
+        },
         enableHiding: false,
         header: ({ column }) => (
           <DataTableColumnHeader
@@ -1620,6 +1631,7 @@ function FindingsContent() {
         meta: {
           kind: 'name',
           minWidth: 280,
+          pin: 'start',
           label: t('findings.columns.title', 'Title'),
           primary: true,
         },
@@ -1635,11 +1647,11 @@ function FindingsContent() {
             row.original.hasDataFlow || (row.original.dataFlow?.steps.length ?? 0) > 0
 
           return (
-            // The title is a link to the finding's page (its name starts with
-            // the visible title): a plain click opens the drawer, a modified or
-            // middle click the page in a new tab. The rest of the cell opens
-            // the drawer through the row; it holds the CVE link, so it is not
-            // a link itself.
+            // One line: the title (a link to the finding's page whose name
+            // starts with the visible title: a plain click opens the drawer, a
+            // modified or middle click the page in a new tab), then its id (the
+            // CVE, else the rule). The target is the Location column, the
+            // asset markers sit beside it there, the scanner is in the drawer.
             <div className="min-w-0">
               <FindingTitleCell
                 title={row.getValue('title')}
@@ -1648,16 +1660,9 @@ function FindingsContent() {
                 openLabel={t('findings.list.openRow', '{title}, view details', {
                   title: toDisplayText(row.getValue('title'), 300),
                 })}
-                target={row.original.location?.full}
-                markers={
-                  <AssetMarkers
-                    interactive={false}
-                    internetFacing={row.original.assets[0]?.isInternetAccessible}
-                    crownJewel={row.original.assets[0]?.isCrownJewel}
-                  />
-                }
                 chips={
                   <>
+                    <FindingRowId cve={row.original.cve} ruleId={row.original.ruleId} />
                     <DuplicatesChip count={row.original.duplicatesMarked} interactive={false} />
                     {row.original.branchOnly && <BranchOnlyBadge />}
                     {hasDataFlow && (
@@ -1674,15 +1679,6 @@ function FindingsContent() {
                       </Tooltip>
                     )}
                   </>
-                }
-                meta={
-                  <MetaLine
-                    className="flex-nowrap overflow-hidden whitespace-nowrap"
-                    items={[
-                      row.original.cve && <CveLink id={row.original.cve} stopPropagation />,
-                      row.original.scanner,
-                    ]}
-                  />
                 }
               />
             </div>
@@ -1719,7 +1715,8 @@ function FindingsContent() {
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
-            title={t('findings.columns.severity', 'Severity')}
+            // The header's short word (88 wide); Display names it in full.
+            title={t('findings.columns.severityShort', 'Severity')}
           />
         ),
         cell: ({ row }) => <SeverityBadge severity={row.getValue('severity')} />,
@@ -1756,9 +1753,10 @@ function FindingsContent() {
           <DataTableColumnHeader column={column} title={t('findings.columns.status', 'Status')} />
         ),
         cell: ({ row }) => (
-          <span className="inline-flex flex-wrap items-center gap-1">
+          // One line: a sub-status sits beside the status and gives way first.
+          <span className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap">
             <FindingStatusBadge status={row.getValue('status')} />
-            <FindingSubStatus subStatusId={row.original.subStatusId} />
+            <FindingSubStatus subStatusId={row.original.subStatusId} className="min-w-0 truncate" />
           </span>
         ),
         filterFn: (row, id, value) => {
@@ -1800,7 +1798,8 @@ function FindingsContent() {
       },
       {
         accessorKey: 'createdAt',
-        meta: { kind: 'date', width: 104, label: t('findings.columns.created', 'Created') },
+        // 120: "15 thg 11, 2026" on one line.
+        meta: { kind: 'date', width: 120, label: t('findings.columns.created', 'Created') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.created', 'Created')} />
         ),

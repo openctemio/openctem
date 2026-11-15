@@ -38,6 +38,13 @@ export interface DataTableColumnMeta {
   minWidth?: number
   /** Widest the column may get, in px; longer values end in an ellipsis. */
   maxWidth?: number
+  /**
+   * Freeze the column at the start while the table scrolls sideways (the
+   * row's identifying columns). The table keeps the frozen group within a
+   * share of its frame (`pinStartColumns`), so the scrolling part never
+   * collapses. The row actions column is frozen at the end on its own.
+   */
+  pin?: 'start'
   /** Hide the column while the table frame is narrower than this (px). */
   hideBelow?: number
   /** The direction of the first click on the header. */
