@@ -114,10 +114,17 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
   const { entity, fq, params, resultCount, preferFields, recentScope, ariaLabel, testId } = opts
   const [active, setActiveState] = useState(false)
   const applied = useFilterText(entity, fq, params, active)
-  const [draft, setDraft] = useState<string | null>(null)
+  const [draft, setDraftState] = useState<string | null>(null)
+  // The server's refusal of a text the mode switch tried to apply, shown in
+  // the editor until the text changes.
+  const [refused, setRefused] = useState<ParseResult | null>(null)
+  const setDraft = useCallback((text: string | null) => {
+    setDraftState(text)
+    setRefused(null)
+  }, [])
   useEffect(() => {
     setDraft(applied)
-  }, [applied])
+  }, [applied, setDraft])
 
   const latest = useRef({ draft, applied, onApply: opts.onApply })
   useEffect(() => {
@@ -138,7 +145,10 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
       queryApi
         .parse({ entity, text })
         .then((r) => {
-          if (!r.valid) return
+          if (!r.valid) {
+            setRefused(r)
+            return
+          }
           onApply(r)
           setActiveState(false)
         })
@@ -148,7 +158,7 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
   )
 
   const onSubmit = useCallback((r: ParseResult) => latest.current.onApply(r), [])
-  const revert = useCallback(() => setDraft(latest.current.applied), [])
+  const revert = useCallback(() => setDraft(latest.current.applied), [setDraft])
 
   const query: ListSearchQuery = {
     active,
@@ -173,6 +183,8 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
             entity={entity}
             value={draft ?? ''}
             onChange={setDraft}
+            applied={applied ?? ''}
+            checked={refused}
             disabled={draft === null}
             autoFocus
             resultCount={resultCount}

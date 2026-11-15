@@ -161,6 +161,44 @@ export function applyFix(text: string, start: number, end: number, fix: string):
   return text.slice(0, start) + fix + text.slice(end)
 }
 
+/** A problem found without asking the server, with its range in the text. */
+export interface LocalProblem {
+  code: 'unclosed_quote' | 'unclosed_paren' | 'extra_paren'
+  start: number
+  end: number
+}
+
+/**
+ * Checks what can be checked while typing, in the browser: quotes and
+ * parentheses that do not pair up. Field names, operators and values are the
+ * server's to judge (it knows short names and the caller's own fields), once,
+ * when the text is applied.
+ */
+export function localProblem(text: string): LocalProblem | null {
+  const open: number[] = []
+  let quote = -1
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (quote >= 0) {
+      if (c === '\\') i++
+      else if (c === '"') quote = -1
+      continue
+    }
+    if (c === '"') quote = i
+    else if (c === '(') open.push(i)
+    else if (c === ')') {
+      if (open.length === 0) return { code: 'extra_paren', start: i, end: i + 1 }
+      open.pop()
+    }
+  }
+  if (quote >= 0) return { code: 'unclosed_quote', start: quote, end: quote + 1 }
+  if (open.length > 0) {
+    const at = open[open.length - 1]
+    return { code: 'unclosed_paren', start: at, end: at + 1 }
+  }
+  return null
+}
+
 /** Counts the way lists show them: exact up to 10,000, then "10,000+". */
 export const COUNT_CAP = 10000
 

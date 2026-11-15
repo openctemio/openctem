@@ -536,6 +536,17 @@
   }
 }
 
+/* Code text (query editors, regular expressions, YAML and JSON, CVE and rule
+   ids, hashes) shows the literal characters: no ligatures, no contextual
+   alternates, whatever element or utility draws it in the mono face. Not in
+   a layer, so no utility turns it back on. */
+:where(.font-mono, code, kbd, samp, pre) {
+  font-variant-ligatures: none;
+  font-feature-settings:
+    'liga' 0,
+    'calt' 0;
+}
+
 @theme inline {
   /* Sidebar open/collapse motion (class: ease-sidebar). One curve for the
      sidebar, its gap, the nav rows and the section disclosures so they move as
@@ -562,6 +573,12 @@
   --font-mono:
     'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
     monospace;
+  /* Mono text is code: it shows exactly the characters typed. JetBrains Mono
+     draws `!=` as one "not equal" glyph and `->`, `>=`, `==` likewise through
+     ligatures and contextual alternates; both are off (with the rule on
+     .font-mono, code, kbd, samp and pre below), and Inter's cv11/ss01 from
+     the body do not reach the mono face. */
+  --font-mono--font-feature-settings: 'liga' 0, 'calt' 0;
 
   /* Type scale (research/244). One size and one line height per role; nothing
      under 12px. Classes: text-title, text-section, text-body, text-meta,
