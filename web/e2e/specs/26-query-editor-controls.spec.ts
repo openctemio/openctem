@@ -69,17 +69,36 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
         (t) => document.documentElement.classList.toggle('dark', t === 'dark'),
         theme
       )
+      // Colours resolved by the browser (oklch, alpha) and composited on a
+      // 1x1 canvas: every background from the page down, then the text.
       const pairs = await page.evaluate(() => {
+        const canvas = document.createElement('canvas')
+        canvas.width = canvas.height = 1
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })!
         const copy = document.querySelector('[data-slot="query-highlight"]')!
-        let el: Element | null = copy
-        let bg = 'rgba(0, 0, 0, 0)'
-        while (el && /rgba\(0, 0, 0, 0\)|transparent/.test(bg)) {
-          bg = getComputedStyle(el).backgroundColor
-          el = el.parentElement
+        const chain: string[] = []
+        for (let el: Element | null = copy; el; el = el.parentElement)
+          chain.unshift(getComputedStyle(el).backgroundColor)
+        const paint = (colors: string[]) => {
+          ctx.globalCompositeOperation = 'copy'
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, 1, 1)
+          ctx.globalCompositeOperation = 'source-over'
+          for (const c of colors) {
+            ctx.fillStyle = c
+            ctx.fillRect(0, 0, 1, 1)
+          }
+          const [r, g, b2] = ctx.getImageData(0, 0, 1, 1).data
+          return `rgb(${r}, ${g}, ${b2})`
         }
+        const bg = paint(chain)
         return [...copy.querySelectorAll('span')]
           .filter((s) => s.textContent?.trim())
-          .map((s) => ({ text: s.textContent, fg: getComputedStyle(s).color, bg }))
+          .map((s) => ({
+            text: s.textContent,
+            fg: paint([...chain, getComputedStyle(s).color]),
+            bg,
+          }))
       })
       expect(pairs.length).toBeGreaterThan(5)
       for (const p of pairs)
