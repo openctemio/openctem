@@ -200,3 +200,25 @@ describe('values the design has not settled (one token each, today’s value)', 
     )
   })
 })
+
+describe('mono text shows the characters typed', () => {
+  // JetBrains Mono turns `!=` into one "not equal" glyph (and `->`, `>=`,
+  // `==`) through ligatures and contextual alternates: a query editor, a
+  // regular expression or a hash must show exactly what was typed.
+  it('the font-mono token turns ligatures and contextual alternates off', () => {
+    const settings = theme['--font-mono--font-feature-settings'] ?? ''
+    expect(settings.replace(/\s+/g, ' ')).toMatch(/'liga' 0/)
+    expect(settings).toMatch(/'calt' 0/)
+  })
+  it('every mono element and the font-mono utility have no ligatures, outside any layer', () => {
+    const at = css.indexOf(':where(.font-mono, code, kbd, samp, pre) {')
+    expect(at).toBeGreaterThan(-1)
+    const rule = css.slice(at, css.indexOf('}', at))
+    expect(rule).toMatch(/font-variant-ligatures:\s*none;/)
+    expect(rule).toMatch(/'liga' 0/)
+    expect(rule).toMatch(/'calt' 0/)
+  })
+  it('theme.css declares no cascade layer (the rule above must beat the utilities)', () => {
+    expect(css).not.toMatch(/@layer\b/)
+  })
+})

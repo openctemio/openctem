@@ -3,6 +3,14 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { QueryInput } from '../components/query-input'
 import type { ParseResult } from '../api/query-api'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 const api = vi.hoisted(() => ({ parse: vi.fn(), values: vi.fn() }))
 vi.mock('../api/query-api', () => ({
@@ -111,6 +119,54 @@ describe('QueryInput', () => {
     })
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ valid: true }))
     expect(window.localStorage.getItem('recent-queries:findings')).toContain('severity>=high')
+  })
+
+  it('draws the suggestions as a floating list in a portal, sized by the room and the field', () => {
+    const { container } = render(<Box />)
+    const box = screen.getByRole('combobox')
+    expect(box.getAttribute('aria-controls')).toBeNull()
+    fireEvent.change(box, { target: { value: 'sev', selectionStart: 3 } })
+    const list = screen.getByRole('listbox')
+    // Outside the field's own tree: no scroll container around the field
+    // (a dialog body) can clip it.
+    expect(container.contains(list)).toBe(false)
+    expect(document.body.contains(list)).toBe(true)
+    expect(box.getAttribute('aria-controls')).toBe(list.id)
+    expect(box.getAttribute('aria-activedescendant')).toBe(`${list.id}-0`)
+    expect(list.className).toContain('--radix-popover-content-available-height')
+    expect(list.className).toContain('--radix-popover-trigger-width')
+    expect(list.className).toContain('overflow-y-auto')
+    // It never takes focus: the caret stays in the field.
+    expect(document.activeElement).not.toBe(list)
+  })
+
+  it('Escape closes the suggestions first and keeps the dialog open', async () => {
+    const onOpenChange = vi.fn()
+    function InDialog() {
+      const [v, setV] = useState('')
+      return (
+        <Dialog open onOpenChange={onOpenChange}>
+          <DialogContent size="xl">
+            <DialogHeader>
+              <DialogTitle>title</DialogTitle>
+              <DialogDescription>description</DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <QueryInput entity="findings" value={v} onChange={setV} multiline ariaLabel="q" />
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
+      )
+    }
+    render(<InDialog />)
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'sev', selectionStart: 3 } })
+    expect(screen.getByRole('listbox')).toBeTruthy()
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
   it('drops a stale answer', async () => {
