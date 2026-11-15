@@ -33,8 +33,15 @@ const TabsVariantContext = React.createContext<TabsVariant>('line')
  * Tabs sit 20px apart on a phone (24px from `sm`): three tabs with counts fit
  * a 390px phone instead of cutting the last label by a few pixels.
  */
-export const TAB_STRIP_CLASS =
-  'flex h-10 w-full max-w-full items-stretch justify-start gap-5 overflow-x-auto sm:gap-6 overflow-y-hidden overscroll-x-contain border-b text-muted-foreground no-scrollbar data-[fade-end=true]:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] data-[fade-start=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem)] data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]'
+/**
+ * The edge fade of a row that scrolls sideways: an edge with hidden items
+ * fades out. `useTabStripScroll` sets the `data-fade-start` / `data-fade-end`
+ * it reads. Shared by the tab strips and the filter chips row on a phone.
+ */
+export const EDGE_FADE_X_CLASS =
+  'data-[fade-end=true]:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] data-[fade-start=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem)] data-[fade-start=true]:data-[fade-end=true]:[mask-image:linear-gradient(to_right,transparent,black_2.5rem,black_calc(100%-2.5rem),transparent)]'
+
+export const TAB_STRIP_CLASS = `flex h-10 w-full max-w-full items-stretch justify-start gap-5 overflow-x-auto sm:gap-6 overflow-y-hidden overscroll-x-contain border-b text-muted-foreground no-scrollbar ${EDGE_FADE_X_CLASS}`
 
 /** One underline tab in a `TAB_STRIP_CLASS` strip. */
 export const TAB_CLASS =
@@ -51,7 +58,11 @@ export const TAB_CLASS =
  * (`data-state=active` or `aria-current=page`) into view on load and whenever
  * it changes, so a tab past the edge is never selected but invisible.
  */
-export function useTabStripScroll(ref: React.RefObject<HTMLElement | null>) {
+export function useTabStripScroll(
+  ref: React.RefObject<HTMLElement | null>,
+  /** Re-attach when this changes (a strip that mounts after its owner). */
+  attachKey?: unknown
+) {
   React.useEffect(() => {
     const el = ref.current
     if (!el) return
@@ -103,7 +114,7 @@ export function useTabStripScroll(ref: React.RefObject<HTMLElement | null>) {
       ro?.disconnect()
       mo?.disconnect()
     }
-  }, [ref])
+  }, [ref, attachKey])
 }
 
 function TabsList({

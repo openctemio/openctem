@@ -162,7 +162,8 @@ describe('Findings list filters', () => {
     render(<FindingsPage />)
     expect(lastListFilters().practice_not).toBe('compliance')
     expect(lastListFilters().practice).toBeUndefined()
-    expect(screen.getByTestId('findings-practice-switch')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Practice: Vulnerabilities' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'State: Open' })).toBeInTheDocument()
   })
 
   it('shows compliance, one practice, or everything from the practice param', () => {
@@ -171,6 +172,10 @@ describe('Findings list filters', () => {
     expect(lastListFilters().practice).toBe('compliance')
     expect(lastListFilters().practice_not).toBeUndefined()
     expect(screen.queryByText(/Practice is/)).toBeNull()
+    // A deep link reads in the base chip.
+    expect(screen.getAllByRole('button', { name: 'Practice: Compliance' }).length).toBeGreaterThan(
+      0
+    )
 
     openAt('?practice=all')
     render(<FindingsPage />)
@@ -191,8 +196,8 @@ describe('Findings list filters', () => {
     openAt('?severity=high&status=new')
     render(<FindingsPage />)
     const bar = screen.getByTestId('findings-filter-bar')
-    expect(within(bar).getByText('Severity is High')).toBeInTheDocument()
-    expect(within(bar).getByText('Status is New')).toBeInTheDocument()
+    expect(within(bar).getByText('Severity: High')).toBeInTheDocument()
+    expect(within(bar).getByText('Status: New')).toBeInTheDocument()
   })
 
   it('sends a filter the page does not draw itself, as it is, and asks for the contract', () => {

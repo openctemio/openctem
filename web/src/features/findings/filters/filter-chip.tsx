@@ -31,6 +31,13 @@ export function useChipText() {
     const shown = filter.values.map((v) => toDisplayText(valueLabel(field, v), 80))
     const list =
       shown.length > 3 ? `${shown.slice(0, 3).join(', ')} +${shown.length - 3}` : shown.join(', ')
+    // "Severity: Critical, High": a plain match reads as label and value; other
+    // operators keep their word ("Status is not Accepted", "EPSS ≥ 0.5").
+    const plain =
+      filter.op === 'in' ||
+      (filter.op === 'eq' && field.type !== 'number' && field.type !== 'integer')
+    if (plain)
+      return t('findings.filter.chipValue', '{field}: {values}', { field: name, values: list })
     return `${name} ${opLabel(filter.op, field)} ${list}`
   }
 }

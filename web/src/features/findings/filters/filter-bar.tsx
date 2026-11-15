@@ -7,18 +7,14 @@ import { Button } from '@/components/ui/button'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { AddFilterPopover } from './add-filter-popover'
 import { FilterChip } from './filter-chip'
 import { AdvancedChip, FQ_PARAM } from './filter-query-mode'
 import {
   readFilters,
-  viewFields,
   viewFilters,
-  withFilter,
   withoutParam,
   type FieldContract,
   type FilterContract,
-  type FilterOp,
 } from './model'
 
 interface FilterBarProps {
@@ -26,18 +22,12 @@ interface FilterBarProps {
   search: URLSearchParams
   /** The contract to read chips with (the loaded one plus the page-owned fields). */
   contract: FilterContract
-  /** The picker's contract: only the loaded one, so it never offers the fallback subset. */
-  pickerContract: FilterContract | undefined
-  contractLoading: boolean
-  contractFailed: boolean
   /** Params something else draws (the context chips). */
   skip: ReadonlySet<string>
   /** The open saved view's filter: its chips are locked. */
   viewFilter?: Record<string, unknown>
-  canReadAssets: boolean
   /** The context chips (an asset, a scan...), drawn first. */
   leading?: ReactNode
-  onPickerOpenChange: (open: boolean) => void
   /** Navigate to a new query (the page replaces the URL). */
   onSearchChange: (next: URLSearchParams) => void
   /** The open saved view differs from what is stored: Clear becomes "Reset to view". */
@@ -54,21 +44,17 @@ interface FilterBarProps {
 }
 
 /**
- * Every active filter as a chip, then Add filter. Chips from the open saved
+ * Every active filter as a chip (Add filter sits on the toolbar row, see
+ * `AddFilterPopover`). Chips from the open saved
  * view come first and are locked; a param no registry field knows is shown as
  * an unknown filter to remove, never silently ignored.
  */
 export function FilterBar({
   search,
   contract,
-  pickerContract,
-  contractLoading,
-  contractFailed,
   skip,
   viewFilter,
-  canReadAssets,
   leading,
-  onPickerOpenChange,
   onSearchChange,
   viewChanged,
   onResetToView,
@@ -85,7 +71,6 @@ export function FilterBar({
     [search, contract, skip]
   )
   const fromView = useMemo(() => viewFilters(viewFilter, contract), [viewFilter, contract])
-  const lockedFields = useMemo(() => viewFields(viewFilter), [viewFilter])
 
   const chips: ReactElement[] = [
     ...(fq
@@ -171,28 +156,15 @@ export function FilterBar({
       leading={leading}
       chips={chips}
       trailing={
-        <>
-          <AddFilterPopover
-            contract={pickerContract}
-            contractLoading={contractLoading}
-            contractFailed={contractFailed}
-            canReadAssets={canReadAssets}
-            lockedFields={lockedFields}
-            onOpenChange={onPickerOpenChange}
-            onApply={(field: FieldContract, op: FilterOp, values: string[]) =>
-              onSearchChange(withFilter(search, field, op, values))
-            }
-          />
-          {viewChanged && onResetToView ? (
-            <Button variant="ghost" size="sm" onClick={onResetToView}>
-              {t('findings.filter.resetToView', 'Reset to view')}
-            </Button>
-          ) : filters.length + unknown.length + (fq ? 1 : 0) > 1 ? (
-            <Button variant="ghost" size="sm" onClick={clearAll}>
-              {t('findings.filter.clearAll', 'Clear filters')}
-            </Button>
-          ) : null}
-        </>
+        viewChanged && onResetToView ? (
+          <Button variant="ghost" size="sm" onClick={onResetToView}>
+            {t('findings.filter.resetToView', 'Reset to view')}
+          </Button>
+        ) : filters.length + unknown.length + (fq ? 1 : 0) > 1 ? (
+          <Button variant="ghost" size="sm" onClick={clearAll}>
+            {t('findings.filter.clearAll', 'Clear filters')}
+          </Button>
+        ) : undefined
       }
     />
   )

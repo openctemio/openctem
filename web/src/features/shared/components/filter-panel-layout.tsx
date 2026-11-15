@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -40,8 +40,33 @@ export function useFilterPanelOpen(
   return [open, setOpen]
 }
 
+/**
+ * Where the facet panel opens on this screen: beside the list from `lg` up
+ * (`onPanel`), in a sheet below (`onSheet`). For an "Open the filter panel"
+ * action that is not the panel's own toggle.
+ */
+export function openFilterPanel(onPanel: () => void, onSheet: () => void) {
+  const wide =
+    typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1024px)').matches
+  if (wide) onPanel()
+  else onSheet()
+}
+
+/** The open side panel's close action, read by `FacetPanel` for its header. */
+const FilterPanelCloseContext = createContext<(() => void) | undefined>(undefined)
+
+/** The close action of the side panel around this content, if it has one. */
+export function useFilterPanelClose() {
+  return useContext(FilterPanelCloseContext)
+}
+
 export interface FilterPanelSlotProps {
   open: boolean
+  /**
+   * Close the panel from its own header. Pass it when the toolbar has no
+   * toggle for the panel (`FilterPanelToggle sheetOnly`).
+   */
+  onClose?: () => void
   /** `id` the page's `FilterPanelToggle` points `controlsId` at. */
   id: string
   /** Accessible name of the panel (translated). */
@@ -56,7 +81,7 @@ export interface FilterPanelSlotProps {
  * contents never reflow mid-animation. `inert` while closed keeps the hidden
  * controls out of the tab order.
  */
-export function FilterPanelSlot({ open, id, label, children }: FilterPanelSlotProps) {
+export function FilterPanelSlot({ open, onClose, id, label, children }: FilterPanelSlotProps) {
   // The panel's contents mount the first time it opens and stay mounted after,
   // so closing can animate. A panel that never opens costs no requests (the
   // facets load their own data).
@@ -77,7 +102,11 @@ export function FilterPanelSlot({ open, id, label, children }: FilterPanelSlotPr
         // while the page scrolls: long filter lists scroll inside it.
         className="flex h-[calc(100svh-7.5rem)] w-64 flex-col rounded-lg border bg-card p-4"
       >
-        <div className="flex min-h-0 flex-1 flex-col">{everOpened ? children : null}</div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <FilterPanelCloseContext.Provider value={onClose}>
+            {everOpened ? children : null}
+          </FilterPanelCloseContext.Provider>
+        </div>
       </aside>
     </div>
   )

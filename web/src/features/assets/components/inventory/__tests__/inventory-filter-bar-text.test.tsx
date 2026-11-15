@@ -93,9 +93,7 @@ function setup(qs: string) {
         <ListSearch value="" onChange={() => undefined} placeholder="Search" query={mode.query} />
         <InventoryFilterBar
           chips={chips}
-          groups={groups}
           filters={filters}
-          stats={stats}
           onChange={onChange}
           onClearAll={vi.fn()}
           queryActive={mode.active}
@@ -160,15 +158,13 @@ describe('InventoryFilterBar and the Query mode', () => {
     expect(next.criticalities).toBeUndefined()
   })
 
-  it('Query mode owns the filter: the chips and Add filter step aside', async () => {
+  it('Query mode owns the filter: the chips step aside', async () => {
     api.parse.mockResolvedValue({ valid: true, text: 'criticality:high' })
     setup('criticalities=high')
     expect(screen.getByTestId('inventory-filter-chip')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Add filter' })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Query' }))
     await waitFor(() => expect(screen.getByLabelText('query')).toHaveValue('criticality:high'))
     expect(screen.queryByTestId('inventory-filter-chip')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Add filter' })).toBeNull()
   })
 
   it('the Advanced chip opens Query mode with its text', async () => {

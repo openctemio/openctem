@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { AddFilterButton } from '@/features/shared/components/filter-button'
+import { AddFilterButton, ShowFilterPanelButton } from '@/features/shared/components/filter-button'
 import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import {
   Command,
@@ -82,6 +82,8 @@ interface AddFilterPopoverProps {
   lockedFields?: ReadonlySet<string>
   onOpenChange?: (open: boolean) => void
   onApply: (field: FieldContract, op: FilterOp, values: string[]) => void
+  /** Open the list's facet panel (its last row), where the list has one. */
+  onOpenPanel?: () => void
 }
 
 /**
@@ -99,6 +101,7 @@ export function AddFilterPopover({
   lockedFields,
   onOpenChange,
   onApply,
+  onOpenPanel,
 }: AddFilterPopoverProps) {
   const { t } = useTranslation()
   const labels = useFilterLabels()
@@ -194,6 +197,14 @@ export function AddFilterPopover({
               </CommandGroup>
             ))}
           </CommandList>
+          {onOpenPanel && (
+            <ShowFilterPanelButton
+              onClick={() => {
+                setOpen(false)
+                onOpenPanel()
+              }}
+            />
+          )}
         </Command>
       )}
     </ResponsivePopover>

@@ -233,7 +233,7 @@
   "assets.chip.between": "{field} từ {from} đến {to}",
   "assets.chip.expires": "Hết hạn",
   "assets.chip.firstSeen": "Thấy lần đầu",
-  "assets.chip.is": "{field} là {values}",
+  "assets.chip.is": "{field}: {values}",
   "assets.chip.isNot": "{field} không là {values}",
   "assets.chip.lastSeen": "Thấy lần cuối",
   "assets.chip.lessThan": "{field} nhỏ hơn {value}",

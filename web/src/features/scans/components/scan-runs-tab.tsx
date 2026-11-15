@@ -430,7 +430,9 @@ function ScanRunsTable() {
   // out together, so a "Failed" tile could not equal the list it opens.
 
   const toolbarStart = (
-    <div className="flex flex-wrap items-center gap-2">
+    // Items of the shared toolbar (no wrapper of their own), so the toolbar
+    // lays them out: one line, scrolling on a phone.
+    <>
       <FilterSelect<RunOriginFilterValue>
         clearable={false}
         label={t('scans.runs.filterOrigin')}
@@ -476,7 +478,7 @@ function ScanRunsTable() {
           <X className="ms-1.5 h-3.5 w-3.5" aria-hidden />
         </Button>
       )}
-    </div>
+    </>
   )
 
   // People's runs are the default view, not a filter someone set; an

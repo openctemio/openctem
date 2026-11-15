@@ -18,7 +18,7 @@ test.describe('Asset filters', { tag: ['@assets'] }, () => {
     await page.getByRole('button', { name: 'Done' }).click()
     const chip = page
       .getByTestId('inventory-filter-chip')
-      .filter({ hasText: 'Criticality is Critical' })
+      .filter({ hasText: 'Criticality: Critical' })
     await expect(chip).toBeVisible()
     await chip.getByRole('button', { name: /remove filter/i }).click()
     await expect(page).not.toHaveURL(/criticalities=/)

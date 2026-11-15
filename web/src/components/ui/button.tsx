@@ -62,6 +62,11 @@ const ICON_ONLY_BELOW = {
   // The list toolbar's container (DataTable): the label shows from @2xl.
   '@2xl/toolbar':
     '@max-2xl/toolbar:aspect-square @max-2xl/toolbar:px-0 @max-2xl/toolbar:has-[>svg]:px-0',
+  // The list toolbar's view controls (Views, Group, Display): labels from a
+  // 64rem toolbar (a 1366px screen with the sidebar), icons below it.
+  // Also icon-only while the toolbar folds to fit one line (`data-fold`).
+  '@5xl/toolbar':
+    '@max-5xl/toolbar:aspect-square @max-5xl/toolbar:px-0 @max-5xl/toolbar:has-[>svg]:px-0 group-data-[fold=true]/toolbar:aspect-square group-data-[fold=true]/toolbar:px-0 group-data-[fold=true]/toolbar:has-[>svg]:px-0',
 } as const
 
 function Button({
