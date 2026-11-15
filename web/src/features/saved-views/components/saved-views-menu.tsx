@@ -359,7 +359,7 @@ export function SavedViewsMenu({
       >
         <DropdownMenuTrigger asChild>
           <Button
-            iconOnlyBelow="@2xl/toolbar"
+            iconOnlyBelow="@5xl/toolbar"
             variant="outline"
             size="sm"
             className="max-w-[14rem]"
@@ -378,8 +378,10 @@ export function SavedViewsMenu({
             onFocus={() => setWanted(true)}
           >
             {/* Label by the list toolbar's width (DataTable's size container). */}
-            <Bookmark className="h-4 w-4 @2xl/toolbar:me-2" />
-            <span className="hidden truncate @2xl/toolbar:inline">{triggerName}</span>
+            <Bookmark className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
+            <span className="hidden truncate @5xl/toolbar:inline group-data-[fold=true]/toolbar:hidden">
+              {triggerName}
+            </span>
             {dirty && (
               // The unsaved-changes dot: state by shape and colour, never colour alone
               // (the button's name says it too).

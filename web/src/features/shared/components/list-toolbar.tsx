@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { EDGE_FADE_X_CLASS, useTabStripScroll } from '@/components/ui/tabs'
 import { ListSearch, type ListSearchProps } from './list-search'
 import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
 
@@ -34,10 +35,13 @@ import { FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
  * 28rem of toolbar width (a phone) the start group always takes the whole
  * first line, so the end buttons never cut the search placeholder short. The
  * row is a size container: controls switch their labels to icons by the
- * toolbar's own width (`@xl/toolbar:`). With a chips row, below 28rem the
- * end group joins that row instead of taking a line of its own: the search
- * on the first line, then Add filter and the chips at the start and the end
- * group at the end of the second.
+ * toolbar's own width (`@xl/toolbar:`); the view controls (Views, Group, Display) show their labels from a 64rem toolbar (`iconOnlyBelow="@5xl/toolbar"`).
+ *
+ * Below 28rem (a phone) the toolbar is two lines, never more: the search alone
+ * on the first; on the second the `start` tokens and the chips row at the
+ * start, the `end` icon actions pinned at the end. Nothing wraps: tokens that
+ * do not fit scroll sideways in their strip (with a fade on an edge that hides
+ * more), and so do the chips (`FilterChipsRow`).
  *
  * Keyboard (the first toolbar on the page answers): `/` focuses the search;
  * `f` opens the filters (the filter trigger) on a list without "Add filter",
@@ -114,6 +118,58 @@ function useListShortcuts(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref])
 }
 
+/**
+ * Whether the toolbar must fold its labels to fit one line: true once the
+ * start group wraps or the end group drops under it (long translations, a
+ * side panel open), back to false once the toolbar is wider than where it
+ * folded (so the two states never flip back and forth). Read by the base
+ * chips' keys and the view controls' labels through `data-fold`.
+ */
+function useToolbarFold(
+  toolbarRef: React.RefObject<HTMLDivElement | null>,
+  startRef: React.RefObject<HTMLDivElement | null>,
+  endRef: React.RefObject<HTMLDivElement | null>
+) {
+  const [fold, setFold] = React.useState(false)
+  const foldedAt = React.useRef(0)
+  React.useLayoutEffect(() => {
+    const bar = toolbarRef.current
+    if (!bar || typeof ResizeObserver === 'undefined') return
+    const check = () => {
+      const width = bar.getBoundingClientRect().width
+      // A phone lends the toolbar's controls to its region (no box): two
+      // fixed lines there, nothing to fold.
+      if (width === 0) return setFold(false)
+      if (fold) {
+        if (width > foldedAt.current + 24) setFold(false)
+        return
+      }
+      const start = startRef.current
+      const items = start
+        ? Array.from(
+            start.querySelectorAll<HTMLElement>(
+              ':scope > *, :scope > [data-slot=list-toolbar-tokens] > *'
+            )
+          ).filter((el) => getComputedStyle(el).display !== 'contents' && el.offsetWidth > 0)
+        : []
+      const tops = items.map((el) => el.getBoundingClientRect().top)
+      const endTop = endRef.current?.getBoundingClientRect().top
+      const wrapped =
+        (tops.length > 1 && Math.max(...tops) - Math.min(...tops) > 4) ||
+        (endTop !== undefined && tops.length > 0 && endTop - Math.min(...tops) > 4)
+      if (wrapped) {
+        foldedAt.current = width
+        setFold(true)
+      }
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(bar)
+    return () => ro.disconnect()
+  }, [toolbarRef, startRef, endRef, fold])
+  return fold
+}
+
 export function ListToolbar({
   search,
   filterToggle,
@@ -128,6 +184,11 @@ export function ListToolbar({
   useListShortcuts(ref)
 
   const lead = search ? <ListSearch {...search} filter={filter} /> : filter
+  const tokensRef = React.useRef<HTMLDivElement>(null)
+  useTabStripScroll(tokensRef, !!start)
+  const startRef = React.useRef<HTMLDivElement>(null)
+  const endRef = React.useRef<HTMLDivElement>(null)
+  const fold = useToolbarFold(ref, startRef, endRef)
   // In Query mode a problem line may sit under the field: the row aligns on
   // the controls' top edge (all one height), so nothing moves when it shows.
   const top = !!search?.query?.active
@@ -143,31 +204,65 @@ export function ListToolbar({
         // region around it (same width). Below 28rem (a phone) that toolbar
         // lends its controls to the region: the search keeps the first line
         // and the end group joins the chips row, one row fewer before the data.
-        below ? 'min-w-0 basis-full @max-md/toolbar:contents' : '@container/toolbar',
+        below ? 'min-w-0 basis-full @max-md/toolbar:contents' : 'group/toolbar @container/toolbar',
         className
       )}
+      data-fold={!below && fold ? 'true' : undefined}
     >
       {lead || start ? (
         // No min-w-0: the group must not shrink below its widest control, or a
         // button spills over the search box beside it. It wraps instead.
         <div
+          ref={startRef}
           data-slot="list-toolbar-start"
           className={cn(
-            'flex flex-[1_1_12rem] flex-wrap gap-2 @max-md/toolbar:basis-full',
+            'flex flex-[1_1_12rem] flex-wrap gap-2 @max-md/toolbar:contents',
             top ? 'items-start' : 'items-center'
           )}
         >
-          {lead}
-          {start}
+          {search ? (
+            // A phone gives the search its own line.
+            <div
+              data-slot="list-toolbar-lead"
+              className="contents @max-md/toolbar:flex @max-md/toolbar:min-w-0 @max-md/toolbar:basis-full"
+            >
+              {lead}
+            </div>
+          ) : (
+            lead
+          )}
+          {start ? (
+            // A phone keeps the tokens on the actions' line in a strip that
+            // scrolls sideways instead of wrapping (edge fade when more is
+            // hidden). With a chips row they follow the chips, beside the
+            // icon actions (Add filter stays with them), and take at most 60%
+            // of the line so the chips keep room.
+            <div
+              ref={tokensRef}
+              data-slot="list-toolbar-tokens"
+              className={cn(
+                'contents @max-md/toolbar:flex @max-md/toolbar:flex-nowrap @max-md/toolbar:items-center @max-md/toolbar:gap-2 @max-md/toolbar:*:max-w-none @max-md/toolbar:*:shrink-0',
+                // The padding keeps focus rings inside the scroll box.
+                'no-scrollbar @max-md/toolbar:-my-1 @max-md/toolbar:min-w-0 @max-md/toolbar:overflow-x-auto @max-md/toolbar:overscroll-x-contain @max-md/toolbar:py-1',
+                EDGE_FADE_X_CLASS,
+                below
+                  ? '@max-md/toolbar:order-last @max-md/toolbar:max-w-[60%] @max-md/toolbar:flex-[0_1_auto]'
+                  : '@max-md/toolbar:flex-[1_1_0%]'
+              )}
+            >
+              {start}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {end ? (
         // Never wider than the toolbar: on a phone its controls wrap onto a
         // second line instead of running past the edge.
         <div
+          ref={endRef}
           data-slot="list-toolbar-end"
           className={cn(
-            'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2',
+            'ms-auto flex max-w-full shrink-0 flex-wrap justify-end gap-2 @max-md/toolbar:flex-nowrap',
             top ? 'items-start' : 'items-center',
             below && '@max-md/toolbar:order-last'
           )}
@@ -184,13 +279,16 @@ export function ListToolbar({
     // controls answer by the same width when the toolbar box is lent out.
     <div
       data-slot="list-toolbar-region"
-      className="@container/toolbar flex min-w-0 flex-wrap items-center gap-2"
+      data-fold={fold ? 'true' : undefined}
+      className="group/toolbar @container/toolbar flex min-w-0 flex-wrap items-center gap-2"
     >
       {toolbar}
       <div
         data-testid="data-table-toolbar-below"
         data-slot="list-toolbar-below"
-        className="flex min-w-0 basis-full flex-wrap items-center gap-2 @max-md/toolbar:flex-[1_1_0%] @max-md/toolbar:basis-auto"
+        // Hidden while it holds nothing to show: an empty row, or a chips row
+        // whose only (leading) chip renders nothing.
+        className="flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden @max-md/toolbar:min-w-0 @max-md/toolbar:flex-[1_1_0%]"
       >
         {below}
       </div>

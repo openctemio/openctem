@@ -22,7 +22,7 @@ describe('filters the page has no control for', () => {
     const f = parseInventoryFilters(q('network=198.51.100.0/24&port_gte=1&service_not=ssh'))
     const chips = inventoryChips(f, ctx)
     expect(chips.map((c) => c.text)).toEqual([
-      'network is 198.51.100.0/24',
+      'network: 198.51.100.0/24',
       'port at least 1',
       'service is not ssh',
     ])

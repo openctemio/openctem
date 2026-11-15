@@ -105,9 +105,52 @@ describe('ListToolbar slots', () => {
     expect(bar.className).not.toMatch(/(^|\s)@container\/toolbar/)
     const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
     expect(end.className).toContain('@max-md/toolbar:order-last')
+    // Basis 0: the chips take the room the actions leave, never a line of their own.
     expect(screen.getByTestId('data-table-toolbar-below').className).toContain(
-      '@max-md/toolbar:basis-auto'
+      '@max-md/toolbar:flex-[1_1_0%]'
     )
+    expect(screen.getByTestId('data-table-toolbar-below').className).not.toContain('basis-auto')
+  })
+
+  it('on a phone is two lines: the search alone, then tokens scrolling beside the pinned actions', () => {
+    render(
+      <ListToolbar
+        search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
+        start={<button type="button">Status: Open</button>}
+        end={<button type="button">Refresh</button>}
+      />
+    )
+    const lead = document.querySelector('[data-slot="list-toolbar-lead"]') as HTMLElement
+    expect(lead.className).toContain('@max-md/toolbar:basis-full')
+    const startGroup = document.querySelector('[data-slot="list-toolbar-start"]') as HTMLElement
+    expect(startGroup.className).toContain('@max-md/toolbar:contents')
+    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    // One scrolling strip with the edge fade, never a wrap.
+    expect(tokens.className).toContain('@max-md/toolbar:overflow-x-auto')
+    expect(tokens.className).toContain('@max-md/toolbar:flex-nowrap')
+    expect(tokens.className).toContain('data-[fade-end=true]')
+    expect(tokens).toHaveTextContent('Status: Open')
+    const end = document.querySelector('[data-slot="list-toolbar-end"]') as HTMLElement
+    expect(end.className).toContain('@max-md/toolbar:flex-nowrap')
+    // Desktop: the wrappers draw no box, the row is as before.
+    expect(lead.className).toMatch(/(^|\s)contents(\s|$)/)
+    expect(tokens.className).toMatch(/(^|\s)contents(\s|$)/)
+  })
+
+  it('on a phone with a chips row pins the tokens (Add filter) after the chips, beside the actions', () => {
+    render(
+      <ListToolbar
+        search={{ value: '', onChange: () => {}, placeholder: 'Search things' }}
+        start={<button type="button">Add filter</button>}
+        end={<button type="button">Views</button>}
+        below={<span>chip</span>}
+      />
+    )
+    const tokens = document.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    expect(tokens.className).toContain('@max-md/toolbar:order-last')
+    // Capped, so the chips keep room; it scrolls past that.
+    expect(tokens.className).toContain('@max-md/toolbar:max-w-[60%]')
+    expect(tokens.className).toContain('@max-md/toolbar:overflow-x-auto')
   })
 
   it('without a chips row keeps the toolbar a box of its own', () => {
