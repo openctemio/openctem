@@ -7,4 +7,6 @@
   unavailable item always says why (a general reason where the page gives none), as visible text on a phone.
 - Row menu buttons are named after their row ("Actions for {name}") instead of "Open row actions".
 - A click in a row menu or its sheet no longer reaches the clickable row or card around it.
+- The menu's code loads right after the page shows instead of with it; a tap made before it is in still opens the
+  menu. Pages' first-load JavaScript is unchanged (median 458 KB).
 - Docs: web/docs/ui-style-contract.md ("Action menus: ActionMenu")

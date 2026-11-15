@@ -765,6 +765,9 @@ object's name (`title`) and the sheet's purpose (`label`).
   items apart with a divider and no heading.
 - A click on the trigger or inside the menu or sheet never reaches a clickable
   row or card around it.
+- Only a small wrapper is in a page's first-load code: the menu loads right
+  after the page shows (the trigger is marked busy until then), and a press
+  made before it is in opens the menu or the sheet when it arrives.
 
 `ActionMenu` users: the page-header More (Findings), every table row menu
 (`DataTableRowActions`: items gated by `permission` or `route` are hidden from
