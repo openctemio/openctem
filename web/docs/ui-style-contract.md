@@ -800,8 +800,14 @@ a user who may not use them, `separatorBefore` starts a section, a disabled
 item without its own reason says "Not available right now", `title` is the
 row's name), the finding row and card menu (`FindingRowMenu`, titled with the
 finding) and the bulk bar's More (`BulkActionBar` `more` and the data table's
-`bulk.more` take `ActionMenuEntry[]`, titled with the selection count). The
-other "⋯" menus move to it next (planned).
+`bulk.more` take `ActionMenuEntry[]`, titled with the selection count), the
+detail drawer's More (`DetailHeader` `menu`, titled with the record) and the
+"⋯" menus of the list pages (scans, workflows, automations, exceptions,
+controls, dashboards, approvals, notification outbox, members, asset group).
+`action-menu-guard.test.ts` fails on a hand-built `DropdownMenu` whose trigger
+holds a More icon; menus that are not action menus (breadcrumb levels, editor
+formatting, a menu of choices) are listed there with the reason, and the
+feature menus still to move are listed as pending (planned).
 
 By surface and width (phone < 768 px, tablet 768 to 1023, desktop 1024 and up):
 

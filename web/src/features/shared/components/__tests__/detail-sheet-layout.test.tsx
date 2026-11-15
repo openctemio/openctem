@@ -129,7 +129,10 @@ describe('DetailSheet + DetailHeader', () => {
     ]
     renderSheet({ menu })
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
-    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toHaveClass('text-destructive')
+    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toHaveAttribute(
+      'data-variant',
+      'destructive'
+    )
     expect(screen.getByRole('separator')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('menuitem', { name: 'Rotate key' }))
     expect(rotate).toHaveBeenCalled()

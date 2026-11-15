@@ -33,7 +33,6 @@ const DESIGN_FIXED = new Set([
  * alignment is gone; never add one for new code.
  */
 const PENDING = new Set([
-  'app/(dashboard)/(discovery)/scans/page.tsx',
   'app/(dashboard)/findings/page.tsx',
   'features/saved-views/components/saved-views-menu.tsx',
   'features/shared/components/filter-chips-row.tsx',

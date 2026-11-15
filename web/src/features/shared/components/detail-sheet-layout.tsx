@@ -49,14 +49,21 @@ import * as React from 'react'
 import { createPortal } from 'react-dom'
 import dynamic from 'next/dynamic'
 import Link from '@/components/link'
-import { ChevronDown, ExternalLink, Maximize2, MoreHorizontal, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ExternalLink,
+  Maximize2,
+  MoreHorizontal,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
@@ -67,8 +74,6 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
 import { MetaLine } from './text-layout'
-
-type IconType = React.ElementType
 
 // ============================================================================
 // DetailSheet — the drawer itself
@@ -356,7 +361,7 @@ export function scrollDetailBodyTo(el: HTMLElement | null) {
 
 export interface DetailMenuItem {
   label: string
-  icon?: IconType
+  icon?: LucideIcon
   onSelect: () => void
   /** Delete, revoke, …: drawn in the destructive colour. */
   destructive?: boolean
@@ -412,6 +417,31 @@ export function DetailHeader({
 }: DetailHeaderProps) {
   const { t } = useTranslation()
   const fullPageLabel = t('common.openFullPage', 'Open full page')
+  const moreLabel = t('common.actionMenu.more', 'More actions')
+  // The record's own page first, then the caller's items; a divider
+  // (separatorBefore) starts a new section.
+  const moreItems: ActionMenuEntry[] = []
+  if (fullPageHref) {
+    moreItems.push({
+      id: 'full-page',
+      label: fullPageLabel,
+      icon: ExternalLink,
+      href: fullPageHref,
+      section: 'page',
+    })
+  }
+  let section = 0
+  ;(menu ?? []).forEach((item, i) => {
+    if (item.separatorBefore && i > 0) section += 1
+    moreItems.push({
+      id: `item-${i}`,
+      label: item.label,
+      icon: item.icon,
+      onSelect: item.onSelect,
+      destructive: item.destructive,
+      section: `menu-${section}`,
+    })
+  })
   const parts = (meta ?? []).filter((p) => p !== null && p !== undefined && p !== false && p !== '')
   return (
     <div data-slot="detail-header">
@@ -432,7 +462,9 @@ export function DetailHeader({
             </SheetDescription>
           ) : (
             // Radix wants a description; keep it for screen readers only.
-            <SheetDescription className="sr-only">Details</SheetDescription>
+            <SheetDescription className="sr-only">
+              {t('common.detailSheet.description', 'Details')}
+            </SheetDescription>
           )}
         </div>
         <div className="-me-2 flex shrink-0 items-center gap-3">
@@ -450,53 +482,28 @@ export function DetailHeader({
               </Tooltip>
             </TooltipProvider>
           )}
-          {((menu && menu.length > 0) || fullPageHref) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+          {moreItems.length > 0 && (
+            <ActionMenu
+              items={moreItems}
+              title={typeof title === 'string' ? title : moreLabel}
+              label={moreLabel}
+              trigger={
                 <Button
                   variant="ghost"
                   size="icon"
                   className={HEADER_ICON_BUTTON}
-                  aria-label="More actions"
+                  aria-label={moreLabel}
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-48">
-                {fullPageHref && (
-                  <DropdownMenuItem asChild>
-                    <Link href={fullPageHref}>
-                      <ExternalLink className="h-4 w-4" />
-                      {fullPageLabel}
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {fullPageHref && menu && menu.length > 0 && <DropdownMenuSeparator />}
-                {(menu ?? []).map((item, i) => {
-                  const Icon = item.icon
-                  return (
-                    <React.Fragment key={item.label}>
-                      {item.separatorBefore && i > 0 && <DropdownMenuSeparator />}
-                      <DropdownMenuItem
-                        className={cn(
-                          item.destructive && 'text-destructive focus:text-destructive'
-                        )}
-                        onClick={item.onSelect}
-                      >
-                        {Icon && <Icon className="h-4 w-4" />}
-                        {item.label}
-                      </DropdownMenuItem>
-                    </React.Fragment>
-                  )
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           )}
           <Button
             variant="ghost"
             size="icon"
             className={HEADER_ICON_BUTTON}
-            aria-label="Close"
+            aria-label={t('common.actionMenu.close', 'Close')}
             onClick={onClose}
           >
             <X className="h-4 w-4" />

@@ -12,12 +12,7 @@ import {
   EmptyState,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -348,30 +343,34 @@ export default function CompensatingControlsPage() {
                   <FlaskConical className="me-1 h-3 w-3" />
                   {t('validation.controls.test', 'Test')}
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                <ActionMenu
+                  title={control.name}
+                  label={t('common.actionMenu.label', 'Actions for {name}', {
+                    name: control.name,
+                  })}
+                  items={[
+                    {
+                      id: 'delete',
+                      label: t('validation.controls.deleteAria', 'Delete {name}', {
+                        name: control.name,
+                      }),
+                      icon: Trash2,
+                      destructive: true,
+                      onSelect: () => setDeleteControl(control),
+                    },
+                  ]}
+                  trigger={
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={t('validation.controls.moreAria', 'More actions for {name}', {
+                      aria-label={t('common.actionMenu.label', 'Actions for {name}', {
                         name: control.name,
                       })}
                     >
-                      <MoreHorizontal className="h-4 w-4" />
+                      <MoreHorizontal className="h-4 w-4" aria-hidden />
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onSelect={() => setDeleteControl(control)}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      {t('validation.controls.deleteAria', 'Delete {name}', {
-                        name: control.name,
-                      })}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  }
+                />
               </div>
             </Can>
           )

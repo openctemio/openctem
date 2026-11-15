@@ -34,7 +34,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 describe('Dashboards list delete', () => {
   it('asks before deleting a dashboard and names it', async () => {
     render(<DashboardsPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'More actions for Ops wallboard' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Ops wallboard' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }))
     expect(deleteDashboard).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')

@@ -3,7 +3,6 @@
 import { IntensityBadge } from '@/features/scans/components/intensity-badge'
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { ErrorState } from '@/features/shared/components/error-state'
@@ -28,13 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import {
   ConfirmDialog,
   ConfirmSample,
@@ -59,7 +52,7 @@ import {
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import { replaceUrlSearch, useUrlParams } from '@/hooks/use-url-param'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 import {
   useScanConfigs,
   useScanConfigStats,
@@ -215,77 +208,98 @@ interface ConfigActionsCellProps {
 
 function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActionsCellProps) {
   const { t } = useTranslation()
+  const { can } = usePermissions()
   // A platform policy owns a managed scan: nothing to edit, run, pause or
   // delete here. View it, or clone it into a scan of your own.
   const managed = isManagedScan(config)
+  const canWrite = can(Permission.ScansWrite)
+  const items: ActionMenuEntry[] = [
+    {
+      id: 'view',
+      label: t('scans.row.view'),
+      icon: Eye,
+      href: `/scans/${config.id}`,
+    },
+    ...(!managed && canWrite
+      ? [
+          {
+            id: 'edit',
+            label: t('scans.row.edit'),
+            icon: Pencil,
+            onSelect: () => onAction('edit', config),
+          },
+        ]
+      : []),
+    // Trigger, clone, pause and resume all need scans:write.
+    ...(canWrite && !managed
+      ? [
+          {
+            id: 'run',
+            label: triggering ? t('scans.row.starting') : t('scans.row.run'),
+            icon: triggering ? Loader2 : Play,
+            disabledReason: triggering
+              ? t('scans.row.startingReason', 'This scan is already starting.')
+              : undefined,
+            onSelect: () => onAction('trigger', config),
+          },
+        ]
+      : []),
+    ...(canWrite
+      ? [
+          {
+            id: 'clone',
+            label: managed ? t('scans.managed.clone') : t('scans.row.clone'),
+            icon: Copy,
+            onSelect: () => onAction('clone', config),
+          },
+        ]
+      : []),
+    ...(canWrite && !managed && config.status === 'active'
+      ? [
+          {
+            id: 'pause',
+            section: 'state',
+            label: t('scans.row.pause'),
+            icon: Pause,
+            onSelect: () => onAction('pause', config),
+          },
+        ]
+      : []),
+    ...(canWrite && !managed && config.status === 'paused'
+      ? [
+          {
+            id: 'resume',
+            section: 'state',
+            label: t('scans.row.resume'),
+            icon: Play,
+            onSelect: () => onAction('activate', config),
+          },
+        ]
+      : []),
+    ...(!managed && can(Permission.ScansDelete)
+      ? [
+          {
+            id: 'delete',
+            label: t('scans.row.delete'),
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => onAction('delete', config),
+          },
+        ]
+      : []),
+  ]
+  const label = t('common.actionMenu.label', 'Actions for {name}', { name: config.name })
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className="p-0" aria-label={t('scans.row.actions')}>
-          <MoreHorizontal className="h-4 w-4" />
+    <ActionMenu
+      title={config.name}
+      label={label}
+      items={items}
+      trigger={
+        <Button variant="ghost" size="icon-sm" className="p-0" aria-label={label}>
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link href={`/scans/${config.id}`} className="flex items-center">
-            <Eye className="me-2 h-4 w-4" />
-            {t('scans.row.view')}
-          </Link>
-        </DropdownMenuItem>
-        {!managed && (
-          <Can permission={Permission.ScansWrite}>
-            <DropdownMenuItem onClick={() => onAction('edit', config)}>
-              <Pencil className="me-2 h-4 w-4" />
-              {t('scans.row.edit')}
-            </DropdownMenuItem>
-          </Can>
-        )}
-        {/* Trigger, clone, pause and resume all need scans:write. */}
-        <Can permission={Permission.ScansWrite}>
-          {!managed && (
-            <DropdownMenuItem disabled={triggering} onClick={() => onAction('trigger', config)}>
-              {triggering ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="me-2 h-4 w-4" />
-              )}
-              {triggering ? t('scans.row.starting') : t('scans.row.run')}
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onClick={() => onAction('clone', config)}>
-            <Copy className="me-2 h-4 w-4" />
-            {managed ? t('scans.managed.clone') : t('scans.row.clone')}
-          </DropdownMenuItem>
-          {!managed && (config.status === 'active' || config.status === 'paused') && (
-            <DropdownMenuSeparator />
-          )}
-          {!managed && config.status === 'active' && (
-            <DropdownMenuItem onClick={() => onAction('pause', config)}>
-              <Pause className="me-2 h-4 w-4" />
-              {t('scans.row.pause')}
-            </DropdownMenuItem>
-          )}
-          {!managed && config.status === 'paused' && (
-            <DropdownMenuItem onClick={() => onAction('activate', config)}>
-              <Play className="me-2 h-4 w-4" />
-              {t('scans.row.resume')}
-            </DropdownMenuItem>
-          )}
-        </Can>
-        {!managed && (
-          <Can permission={Permission.ScansDelete}>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => onAction('delete', config)}
-            >
-              <Trash2 className="me-2 h-4 w-4" />
-              {t('scans.row.delete')}
-            </DropdownMenuItem>
-          </Can>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      }
+    />
   )
 }
 

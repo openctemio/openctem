@@ -44,7 +44,7 @@ describe('Compensating controls delete', () => {
     // No bare trash button next to Test.
     expect(screen.queryByRole('button', { name: /^Delete / })).toBeNull()
     await userEvent.click(
-      await screen.findByRole('button', { name: 'More actions for WAF in front of billing' })
+      await screen.findByRole('button', { name: 'Actions for WAF in front of billing' })
     )
     await userEvent.click(await screen.findByRole('menuitem', { name: /Delete WAF/ }))
     const dialog = await screen.findByRole('alertdialog')

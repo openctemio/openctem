@@ -108,6 +108,7 @@ vi.mock('@/features/findings/api/use-approval-batches', () => ({
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
   Permission: { FindingsApprove: 'findings:approve', FindingsWrite: 'findings:write' },
+  usePermissions: () => ({ can: () => true }),
 }))
 
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'user-1' }) }))
@@ -813,12 +814,12 @@ describe('ApprovalsPage deciding', () => {
     expect(container).toHaveTextContent('Your request')
   })
 
-  it('the more-actions menu is named after the finding', () => {
+  it('the actions menu is named after the finding', () => {
     render(<ApprovalsPage />)
     const { container } = cell('actions', { ...otherRow, requested_by: 'user-1' })
     expect(
       within(container).getByRole('button', {
-        name: 'More actions for SQL injection in orders search',
+        name: 'Actions for SQL injection in orders search',
       })
     ).toBeInTheDocument()
   })
