@@ -5,6 +5,7 @@ import * as SelectPrimitive from '@radix-ui/react-select'
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { FLOATING_COLLISION_PADDING } from '@/components/ui/floating'
 
 function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />
@@ -65,6 +66,7 @@ function SelectContent({
   children,
   position = 'item-aligned',
   align = 'center',
+  collisionPadding = FLOATING_COLLISION_PADDING,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -79,6 +81,7 @@ function SelectContent({
         )}
         position={position}
         align={align}
+        collisionPadding={collisionPadding}
         {...props}
       >
         <SelectScrollUpButton />

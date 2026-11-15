@@ -20,6 +20,7 @@ import { LanguageSwitcher } from '@/components/language-switcher'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { cn } from '@/lib/utils'
+import { PHONE_BAR_COLLISION_PADDING } from '@/components/ui/floating'
 import {
   HEADER_MENU,
   PHONE_BAR_MENU,
@@ -76,7 +77,7 @@ export function ProfileDropdown() {
         <DropdownMenuContent
           className={cn(HEADER_MENU, 'w-64', PHONE_BAR_MENU)}
           align="end"
-          collisionPadding={8}
+          collisionPadding={PHONE_BAR_COLLISION_PADDING}
           forceMount
         >
           <DropdownMenuLabel className="font-normal">

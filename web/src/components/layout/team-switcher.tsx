@@ -277,7 +277,6 @@ export function TeamSwitcher() {
             align="start"
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={isMobile ? 4 : 8}
-            collisionPadding={16}
             aria-label={t('org.details', 'Organization details')}
             // Copying over plain HTTP focuses a hidden textarea on <body>
             // (src/lib/clipboard.ts); that is not the user leaving the card.

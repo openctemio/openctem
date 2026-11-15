@@ -162,6 +162,15 @@ text-muted-foreground`), 16 px above, 8 px below; folds away on the rail.
 | Cards, menus              | `--radius-lg`     | 8   |
 | Dialogs (open: 10 or 8)   | `--dialog-radius` | 8   |
 
+### Popups
+
+Menus, popovers, select lists, tooltips and date pickers keep 16 px from every
+screen edge (`FLOATING_COLLISION_PADDING` in `src/components/ui/floating.ts`,
+passed by every kit wrapper). A popup aligns with its trigger when it fits and
+slides inward otherwise, never to the edge. Call sites do not set their own
+`collisionPadding`; the one exception is a sheet opened from the phone top bar
+(the account menu, notifications), which keeps the bar's 8 px.
+
 ### Decisions
 
 | Date       | Decision                                                                                                                                                              | By                                                            |
@@ -170,6 +179,7 @@ text-muted-foreground`), 16 px above, 8 px below; folds away on the rail.
 | 2026-11-13 | Text fields and selects share the row height (32), not 36                                                                                                             | Coordinator, under the owner's "do the best"                  |
 | 2026-11-13 | Organization chip initials 12 px 600 (the 12 px floor holds)                                                                                                          | Design                                                        |
 | 2026-11-13 | Phone heights = the live UI (36, small 32, large 40; fields 36 with 16 px text), compact button content, 44 px as an invisible touch target, icon-only buttons square | Owner, after viewing the preview and the live UI on his phone |
+| 2026-11-15 | Popups keep 16 px from every screen edge (phone top-bar sheets keep the bar's 8 px, as the shell package set them)                                                    | Owner                                                         |
 
 ## 1. Page anatomy
 
