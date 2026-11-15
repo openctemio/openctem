@@ -5,14 +5,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import type { VisibilityState } from '@tanstack/react-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '../data-table'
 
 type Row = { name: string; owner: string; seen: string }
 const columns: ColumnDef<Row>[] = [
   { accessorKey: 'name', header: 'Name', enableHiding: false },
-  { id: 'owner', accessorKey: 'owner', header: 'Owner', meta: { hideBelow: 800 } },
-  { id: 'seen', accessorKey: 'seen', header: 'Last seen', meta: { hideBelow: 1000 } },
+  { id: 'owner', accessorKey: 'owner', header: 'Owner', meta: { hideBelow: 800, label: 'Owner' } },
+  // No explicit id: the accessor key names it.
+  { accessorKey: 'seen', header: 'Last seen', meta: { hideBelow: 1000, label: 'Last seen' } },
 ]
 const rows = [{ name: 'a', owner: 'o', seen: 's' }]
 
@@ -29,9 +32,9 @@ beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',
     class {
-      constructor(private cb: () => void) {}
+      constructor(private cb: (entries: unknown[]) => void) {}
       observe() {
-        this.cb()
+        this.cb([])
       }
       disconnect() {}
       unobserve() {}
@@ -76,5 +79,41 @@ describe('DataTable column priority (meta.hideBelow)', () => {
     frame = 0
     render(<DataTable columns={columns} data={rows} mobileCards={false} />)
     expect(headers()).toEqual(['Name', 'Owner', 'Last seen'])
+  })
+
+  it('a controlled table (every column named) still drops columns on a narrow frame', () => {
+    frame = 900
+    render(
+      <DataTable
+        columns={columns}
+        data={rows}
+        mobileCards={false}
+        columnVisibility={{ owner: true, seen: true }}
+        onColumnVisibilityChange={() => {}}
+      />
+    )
+    expect(headers()).toEqual(['Name', 'Owner'])
+  })
+
+  it('a click on an auto-hidden column shows it; the page keeps its own values', async () => {
+    frame = 700
+    const changes: VisibilityState[] = []
+    render(
+      <DataTable
+        columns={columns}
+        data={rows}
+        mobileCards={false}
+        columnVisibility={{ owner: true, seen: true }}
+        onColumnVisibilityChange={(v) => changes.push(v)}
+      />
+    )
+    expect(headers()).toEqual(['Name'])
+    await userEvent.click(screen.getByRole('button', { name: /display/i }))
+    const owner = await screen.findByRole('menuitemcheckbox', { name: 'Owner' })
+    expect(owner).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(owner)
+    expect(headers()).toEqual(['Name', 'Owner'])
+    // The width's choice for Last seen never reaches the page.
+    expect(changes.at(-1)).toEqual({ owner: true, seen: true })
   })
 })

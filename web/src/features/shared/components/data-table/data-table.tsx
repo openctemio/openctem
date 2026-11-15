@@ -524,6 +524,13 @@ function AutoMobileCard<TData>({
   )
 }
 
+/** A column definition's id as TanStack derives it (`id`, else the accessor key). */
+function columnIdOf<TData, TValue>(c: ColumnDef<TData, TValue>): string | undefined {
+  if (c.id) return c.id
+  const key = (c as { accessorKey?: unknown }).accessorKey
+  return typeof key === 'string' ? key.replace(/\./g, '_') : undefined
+}
+
 /** Elements inside a row that act on their own instead of opening the row. */
 const INTERACTIVE_SELECTOR =
   'button, a[href], input, select, textarea, label, [role="checkbox"], [role="switch"], [role="menuitem"], [data-radix-collection-item]'
@@ -688,9 +695,11 @@ export function DataTable<TData, TValue>({
   const columnVisibility = columnVisibilityProp ?? ownVisibility
   // Column priority: a column whose `meta.hideBelow` is wider than the
   // table's frame is hidden, so a narrow screen drops the least important
-  // columns instead of scrolling the table sideways. A column the viewer
-  // turned on or off under Columns keeps that choice (the state has its key);
-  // the menu shows an auto-hidden column as off, so turning it on is one click.
+  // columns instead of scrolling the table sideways. The menu shows an
+  // auto-hidden column as off, so turning it on is one click, and that wins
+  // while the table is open. An uncontrolled table also keeps any column the
+  // viewer turned on or off (the state has its key); a controlled one's state
+  // names every column, so only the click counts there.
   const [frameWidth, setFrameWidth] = React.useState(0)
   React.useEffect(() => {
     const el = tableWrapRef.current
@@ -699,20 +708,55 @@ export function DataTable<TData, TValue>({
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
-  const effectiveVisibility = React.useMemo(() => {
-    if (frameWidth === 0) return columnVisibility
-    const auto: VisibilityState = {}
+  const [forcedOn, setForcedOn] = React.useState<ReadonlySet<string>>(() => new Set())
+  const visibilityControlled = columnVisibilityProp !== undefined
+  const autoHidden = React.useMemo(() => {
+    const ids = new Set<string>()
+    if (frameWidth === 0) return ids
     for (const c of columns) {
+      const id = columnIdOf(c)
       const hideBelow = (c.meta as { hideBelow?: number } | undefined)?.hideBelow
-      if (c.id && hideBelow && frameWidth < hideBelow) auto[c.id] = false
+      if (!id || !hideBelow || frameWidth >= hideBelow || forcedOn.has(id)) continue
+      if (!visibilityControlled && id in columnVisibility) continue
+      ids.add(id)
     }
-    return { ...auto, ...columnVisibility }
-  }, [columns, columnVisibility, frameWidth])
-  const columnVisibilityRef = React.useRef(columnVisibility)
-  columnVisibilityRef.current = columnVisibility
+    return ids
+  }, [columns, columnVisibility, frameWidth, forcedOn, visibilityControlled])
+  const effectiveVisibility = React.useMemo(() => {
+    if (autoHidden.size === 0) return columnVisibility
+    const next: VisibilityState = { ...columnVisibility }
+    for (const id of autoHidden) next[id] = false
+    return next
+  }, [columnVisibility, autoHidden])
+  const visibilityRef = React.useRef({ columnVisibility, effectiveVisibility, autoHidden })
+  visibilityRef.current = { columnVisibility, effectiveVisibility, autoHidden }
   const setColumnVisibility = React.useCallback(
     (updater: VisibilityState | ((old: VisibilityState) => VisibilityState)) => {
-      const next = typeof updater === 'function' ? updater(columnVisibilityRef.current) : updater
+      const {
+        columnVisibility: own,
+        effectiveVisibility: shown,
+        autoHidden: auto,
+      } = visibilityRef.current
+      const toggled = typeof updater === 'function' ? updater(shown) : updater
+      // A click on an auto-hidden column turns it on for as long as the table
+      // is open; turning a column off ends that.
+      const turnedOn = [...auto].filter((id) => toggled[id] === true)
+      const turnedOff = Object.keys(toggled).filter((id) => toggled[id] === false && !auto.has(id))
+      if (turnedOn.length > 0 || turnedOff.length > 0)
+        setForcedOn((prev) => {
+          const set = new Set(prev)
+          for (const id of turnedOn) set.add(id)
+          for (const id of turnedOff) set.delete(id)
+          return set
+        })
+      // The page stores its own choice: an auto-hidden column it did not
+      // click keeps the page's value, never the width's.
+      const next: VisibilityState = { ...toggled }
+      for (const id of auto) {
+        if (toggled[id] === true) continue
+        if (id in own) next[id] = own[id]
+        else delete next[id]
+      }
       if (columnVisibilityProp !== undefined || onColumnVisibilityChange) {
         onColumnVisibilityChange?.(next)
       } else {
