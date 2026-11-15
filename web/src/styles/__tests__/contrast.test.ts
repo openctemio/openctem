@@ -120,6 +120,8 @@ describe('brand tokens', () => {
         pair('--foreground', bg, 7)
         pair('--muted-foreground', bg, 4.5)
         pair('--fg-dim', bg, 4.5)
+        // Sidebar rows at rest, on the ground and on the current-row fill.
+        pair('--nav-fg', bg, 7)
       }
     })
 

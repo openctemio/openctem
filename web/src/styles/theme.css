@@ -23,6 +23,7 @@
   --border-subtle: #e7e9ee; /* inner dividers */
   --border-strong: #7d8799; /* inputs, edges (3:1 on white) */
   --fg-dim: #5e6673; /* low-priority rows: a colour, never opacity */
+  --nav-fg: #3a4452; /* sidebar rows at rest: ink 80% over paper, as a colour */
   --card: #ffffff;
   --card-foreground: var(--foreground);
   --popover: #ffffff;
@@ -233,6 +234,19 @@
   /* The app header (sticky table headers stop under it). */
   --app-header-h: 3rem;
 
+  /* Sidebar navigation (owner, 2026-11-15: the nav reads like the old
+     sidebar, not like a dense table): every row 36 with a 20px icon, a
+     group's child rows 32 with a 16px icon, 44 in the phone drawer. One text
+     colour for every row (links and section headers alike); only the current
+     page is filled and 500. Dense 32/16 is for controls and tables. Classes:
+     h-nav-row, h-nav-sub, h-nav-touch, size-nav-icon, size-nav-sub-icon,
+     text-nav-fg. */
+  --nav-row-h: 2.25rem;
+  --nav-sub-row-h: 2rem;
+  --nav-row-h-touch: 2.75rem;
+  --nav-icon: 1.25rem;
+  --nav-sub-icon: 1rem;
+
   /* Spacing names (Tailwind's 4px steps give gap-1..8): a section's own gap
      and the gap between the blocks of a page. */
   --sp-1: 0.25rem;
@@ -320,6 +334,7 @@
   --border-subtle: #1b2a43;
   --border-strong: #63728a; /* 3.4:1 on a card */
   --fg-dim: #97a2b3;
+  --nav-fg: #cacccf; /* paper 80% over ink */
   --card: #0f1d33; /* ink, lighter, same hue */
   --popover: #15253f;
   --hov: color-mix(in srgb, var(--foreground) 4%, transparent);
@@ -633,6 +648,14 @@
   --spacing-control-touch-dense: var(--control-h-touch-dense);
   --spacing-row: var(--row-h);
   --spacing-th: var(--th-h);
+  /* Sidebar rows and icons: h-nav-row, h-nav-sub, h-nav-touch,
+     size-nav-icon, size-nav-sub-icon (also min-h-*). */
+  --spacing-nav-row: var(--nav-row-h);
+  --spacing-nav-sub: var(--nav-sub-row-h);
+  --spacing-nav-touch: var(--nav-row-h-touch);
+  --spacing-nav-icon: var(--nav-icon);
+  --spacing-nav-sub-icon: var(--nav-sub-icon);
+  --color-nav-fg: var(--nav-fg);
 
   --color-sel: var(--sel);
   --color-border-strong-hover: var(--border-strong-hover);

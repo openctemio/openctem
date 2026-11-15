@@ -74,6 +74,8 @@ import { ariaSort, columnLayout, type ColumnLayout, type DataTableColumnMeta } f
 import { RelativeTime } from '../relative-time'
 import { PAGE_TITLE_ID } from '../page-header'
 import { TableRefreshBar } from './table-refresh-bar'
+import { bulkSelectColumn, useRangeSelection, type DataTableBulk } from './data-table-selection'
+import { BulkActionBar } from '../bulk-action-bar'
 import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES, pageSizeChoices } from '@/lib/page-size-options'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
@@ -320,6 +322,14 @@ interface DataTableProps<TData, TValue> {
    * sideways only).
    */
   stickyHeader?: boolean
+  /**
+   * Several rows at once: the table adds the checkbox column (pinned first,
+   * header checkbox for the page, Shift-click and Shift+x ranges, `x` on the
+   * focused row) and the bulk bar. Pass it only when the user holds the bulk
+   * permission: without `bulk` there is no checkbox column. A page's own
+   * `select` column is replaced by the table's.
+   */
+  bulk?: DataTableBulk<TData>
 }
 
 /** The two kinds of empty list (`emptyState`). */
@@ -586,8 +596,37 @@ export function DataTable<TData, TValue>({
   pageSizeLabel,
   defaultDensity = 'default',
   stickyHeader = true,
+  bulk,
 }: DataTableProps<TData, TValue>) {
   const { t } = useTranslation()
+  // With `bulk`, the table owns the checkbox column (the page's own `select`
+  // column, if any, is dropped). The row label is read through a ref so the
+  // columns keep their identity while the page re-renders.
+  const bulkRowLabel = React.useRef(bulk?.rowLabel)
+  bulkRowLabel.current = bulk?.rowLabel
+  const bulkCheckboxLabel = React.useRef(bulk?.checkboxLabel)
+  bulkCheckboxLabel.current = bulk?.checkboxLabel
+  const hasBulk = !!bulk
+  const selectAllLabel = t('common.table.selectAllOnPage', 'Select all rows on this page')
+  const tableColumns = React.useMemo(
+    () =>
+      hasBulk
+        ? [
+            bulkSelectColumn<TData>({
+              allOnPage: selectAllLabel,
+              row: (row) =>
+                bulkCheckboxLabel.current?.(row) ??
+                t('common.table.selectRow', 'Select {name}', {
+                  name: bulkRowLabel.current?.(row) ?? '',
+                }),
+            }) as ColumnDef<TData, TValue>,
+            ...columns.filter((c) => c.id !== 'select'),
+          ]
+        : columns,
+    // t is stable for a locale; selectAllLabel changes with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasBulk, columns, selectAllLabel]
+  )
   const errorState =
     errorStateProp ??
     (error && data.length === 0 ? (
@@ -706,7 +745,7 @@ export function DataTable<TData, TValue>({
   const table = useReactTable({
     // A failed read shows its error instead of rows left over from an earlier one.
     data: errorState ? (NO_ROWS as TData[]) : data,
-    columns,
+    columns: tableColumns,
     ...(getRowId ? { getRowId } : {}),
     onSortingChange: serverSorting
       ? (updater) => onSortingChange(typeof updater === 'function' ? updater(sorting) : updater)
@@ -850,12 +889,15 @@ export function DataTable<TData, TValue>({
   const pageScope = manualPagination
     ? `${pagination?.pageIndex ?? 0}|${pagination?.pageSize ?? pageSize}|${JSON.stringify(sorting)}`
     : ''
+  // "Select all N that match": the selection is the list's filter, not ids.
+  const [matchingSelected, setMatchingSelected] = React.useState(false)
   const lastResetKey = React.useRef(`${resetSelectionKey}|${pageScope}`)
   React.useEffect(() => {
     const next = `${resetSelectionKey}|${pageScope}`
     if (lastResetKey.current === next) return
     lastResetKey.current = next
     setRowSelection({})
+    setMatchingSelected(false)
   }, [resetSelectionKey, pageScope])
 
   // Rows of this page in display order: one pseudo-group without rowGroups.
@@ -886,6 +928,31 @@ export function DataTable<TData, TValue>({
 
   const selectedCount = table.getFilteredSelectedRowModel().rows.length
   const totalCount = table.getFilteredRowModel().rows.length
+  const hasSelectColumn = canSelectGroups
+  const { onSelectCellClickCapture, onBodyKeyDown } = useRangeSelection(table, hasSelectColumn)
+
+  // The whole page checked and more rows behind the filter: offer them all.
+  const allPageSelected = pageRows.length > 0 && table.getIsAllPageRowsSelected()
+  const matchingTotal = bulk?.matching?.total ?? 0
+  const matchingMax = bulk?.matching?.max
+  const canOfferMatching = !!bulk?.matching && allPageSelected && matchingTotal > pageRows.length
+  // Unchecking a row leaves the filter selection: what is checked is what is selected.
+  React.useEffect(() => {
+    if (matchingSelected && !allPageSelected) setMatchingSelected(false)
+  }, [matchingSelected, allPageSelected])
+  const filterSelected = matchingSelected && canOfferMatching
+  const onBulkSelectionChangeRef = React.useRef(bulk?.onSelectionChange)
+  onBulkSelectionChangeRef.current = bulk?.onSelectionChange
+  React.useEffect(() => {
+    const rows = table.getFilteredSelectedRowModel().rows.map((r) => r.original)
+    onBulkSelectionChangeRef.current?.(
+      filterSelected
+        ? { kind: 'filter', total: matchingTotal }
+        : rows.length > 0
+          ? { kind: 'ids', rows }
+          : null
+    )
+  }, [rowSelection, filterSelected, matchingTotal, table])
 
   // Lift the internally-owned selection up to an optional parent callback so a
   // bulk-action bar can react. Ref keeps the effect from depending on an inline
@@ -956,6 +1023,17 @@ export function DataTable<TData, TValue>({
             page: pageIndex + 1,
             pages: Math.max(1, table.getPageCount()),
           }),
+    selectionKey: filterSelected ? `all:${matchingTotal}` : String(selectedCount),
+    selectionMessage: () =>
+      filterSelected
+        ? t('common.table.allMatchingSelected', 'All {count} that match are selected', {
+            count: matchingTotal.toLocaleString(),
+          })
+        : selectedCount > 0
+          ? t('common.table.selectedCount', '{count} selected', {
+              count: selectedCount.toLocaleString(),
+            })
+          : t('common.table.selectionCleared', 'Selection cleared'),
     refreshing: isRefreshing,
     refreshedMessage: () =>
       t('common.table.resultsCount', '{count} {noun}', {
@@ -1028,7 +1106,7 @@ export function DataTable<TData, TValue>({
           <>
             {toolbarEnd}
             {/* Selection info - hidden on mobile when no selection */}
-            {showSelectionCount && selectedCount > 0 && (
+            {showSelectionCount && !bulk && selectedCount > 0 && (
               <span className="text-sm text-muted-foreground hidden sm:inline">
                 {t('common.table.selectedOf', '{selected} of {total} selected', {
                   selected: selectedCount,
@@ -1277,6 +1355,7 @@ export function DataTable<TData, TValue>({
                   id={rowGroups ? ids.rows : undefined}
                   aria-labelledby={rowGroups ? ids.header : undefined}
                   className={cn(gi < displayGroups.length - 1 && '[&_tr:last-child]:border-b')}
+                  onKeyDown={onBodyKeyDown}
                 >
                   {rowGroups && (
                     <TableRow data-slot="row-group-header" className="hover:bg-transparent">
@@ -1304,6 +1383,7 @@ export function DataTable<TData, TValue>({
                     group.rows.map((row) => (
                       <TableRow
                         key={row.id}
+                        data-row-id={row.id}
                         data-state={row.getIsSelected() && 'selected'}
                         data-tone={rowTone?.(row.original)}
                         className={cn(
@@ -1324,11 +1404,28 @@ export function DataTable<TData, TValue>({
                           }
                         }}
                       >
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id} {...cellProps(cell.column.id, false)}>
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                          </TableCell>
-                        ))}
+                        {row.getVisibleCells().map((cell) => {
+                          const props = cellProps(cell.column.id, false)
+                          // While rows are selected the bulk bar is the one
+                          // place to act: row menus wait (inert, dimmed).
+                          const waiting =
+                            hasSelectColumn && selectedCount > 0 && cell.column.id === 'actions'
+                          return (
+                            <TableCell
+                              key={cell.id}
+                              {...props}
+                              className={cn(props.className, waiting && 'opacity-50')}
+                              onClickCapture={
+                                cell.column.id === 'select'
+                                  ? (e) => onSelectCellClickCapture(e, row)
+                                  : undefined
+                              }
+                              inert={waiting || undefined}
+                            >
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </TableCell>
+                          )
+                        })}
                       </TableRow>
                     ))}
                   {loading &&
@@ -1392,10 +1489,46 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {/* The table's polite live region: sort, page and refresh results. */}
+      {/* The table's polite live region: sort, selection, page and refresh results. */}
       <div role="status" aria-live="polite" className="sr-only" data-slot="table-announcer">
         {announce}
       </div>
+
+      {bulk && (
+        <BulkActionBar
+          count={filterSelected ? matchingTotal : selectedCount}
+          noun={bulk.noun}
+          onClear={() => {
+            setMatchingSelected(false)
+            table.resetRowSelection()
+          }}
+          more={bulk.more}
+          status={
+            filterSelected ? (
+              <span className="text-cap text-muted-foreground whitespace-nowrap">
+                {t('common.table.allMatchingSelected', 'All {count} that match are selected', {
+                  count: matchingTotal.toLocaleString(),
+                })}
+              </span>
+            ) : canOfferMatching && matchingMax != null && matchingTotal > matchingMax ? (
+              // Above the server's limit for one change: say why there is no offer.
+              <span className="text-cap text-muted-foreground whitespace-nowrap">
+                {t('common.table.matchingTooMany', 'Up to {max} at once: narrow the filters', {
+                  max: matchingMax.toLocaleString(),
+                })}
+              </span>
+            ) : canOfferMatching ? (
+              <Button variant="ghost" size="sm" onClick={() => setMatchingSelected(true)}>
+                {t('common.table.selectAllMatching', 'Select all {count} that match', {
+                  count: matchingTotal.toLocaleString(),
+                })}
+              </Button>
+            ) : undefined
+          }
+        >
+          {bulk.actions}
+        </BulkActionBar>
+      )}
 
       {/* A stale read with no pager (an empty list) still says how old it is. */}
       {staleNote && !(showPagination && !errorState && paginationTotal > 0) && (
@@ -1585,6 +1718,8 @@ function useTableAnnouncements({
   sortMessage,
   pageIndex,
   pageMessage,
+  selectionKey,
+  selectionMessage,
   refreshing,
   refreshedMessage,
 }: {
@@ -1592,21 +1727,24 @@ function useTableAnnouncements({
   sortMessage: () => string
   pageIndex: number
   pageMessage: () => string
+  selectionKey: string
+  selectionMessage: () => string
   refreshing: boolean
   refreshedMessage: () => string
 }): string {
   const [message, setMessage] = React.useState('')
-  const messages = React.useRef({ sortMessage, pageMessage, refreshedMessage })
+  const messages = React.useRef({ sortMessage, pageMessage, selectionMessage, refreshedMessage })
   React.useLayoutEffect(() => {
-    messages.current = { sortMessage, pageMessage, refreshedMessage }
+    messages.current = { sortMessage, pageMessage, selectionMessage, refreshedMessage }
   })
-  const last = React.useRef({ sortKey, pageIndex, refreshing })
+  const last = React.useRef({ sortKey, pageIndex, selectionKey, refreshing })
   React.useEffect(() => {
     const prev = last.current
-    last.current = { sortKey, pageIndex, refreshing }
+    last.current = { sortKey, pageIndex, selectionKey, refreshing }
     if (prev.sortKey !== sortKey) setMessage(messages.current.sortMessage())
     else if (prev.pageIndex !== pageIndex) setMessage(messages.current.pageMessage())
+    else if (prev.selectionKey !== selectionKey) setMessage(messages.current.selectionMessage())
     else if (prev.refreshing && !refreshing) setMessage(messages.current.refreshedMessage())
-  }, [sortKey, pageIndex, refreshing])
+  }, [sortKey, pageIndex, selectionKey, refreshing])
   return message
 }
