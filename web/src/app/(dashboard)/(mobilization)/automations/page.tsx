@@ -704,7 +704,7 @@ export default function WorkflowsPage() {
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
               <DropdownMenuItem onClick={() => handleViewWorkflow(workflow)}>
                 <Eye className="me-2 h-4 w-4" />
                 {t('automations.menu.viewDetails', 'View details')}

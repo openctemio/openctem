@@ -394,7 +394,7 @@ export default function ExceptionsPage() {
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
                 {rule.status === 'pending' && (
                   <Can permission={Permission.SuppressionsApprove}>
                     <DropdownMenuItem onClick={() => openApprove(rule)}>

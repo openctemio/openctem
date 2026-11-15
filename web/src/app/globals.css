@@ -131,6 +131,31 @@
   @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,_transparent_10%,_var(--background)_70%)] md:after:block;
 }
 
+/* Scroll cue of a floating surface (menu, popover) that scrolls inside: an
+   8 px shade at the edge where more content is, shown only while there is
+   more that way. Pure CSS: the two covers in the surface's own colour scroll
+   with the content (local) and hide the shades (fixed to the box) at the
+   ends. Background images only, so the surface keeps its bg-* colour. */
+@utility scroll-cue {
+  background-image:
+    linear-gradient(var(--popover) 40%, transparent),
+    linear-gradient(transparent, var(--popover) 60%),
+    linear-gradient(color-mix(in oklab, var(--foreground) 14%, transparent), transparent),
+    linear-gradient(transparent, color-mix(in oklab, var(--foreground) 14%, transparent));
+  background-position:
+    top center,
+    bottom center,
+    top center,
+    bottom center;
+  background-size:
+    100% 1rem,
+    100% 1rem,
+    100% 0.5rem,
+    100% 0.5rem;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
 /* Scroll fade indicators for horizontal scrollable content */
 @utility scroll-fade-x {
   position: relative;

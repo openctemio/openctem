@@ -389,7 +389,7 @@ export default function ApprovalsPage() {
                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent>
                 {mineSelf && (
                   <Can permission={Permission.FindingsApprove}>
                     <DropdownMenuItem onClick={() => setSelfApproveTarget(approval)}>

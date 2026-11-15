@@ -139,7 +139,7 @@ export function LifecycleSnoozeMenu({
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent>
           <DropdownMenuLabel>
             {isStaleOrInactive
               ? t('assets.snooze.reactivateFor', 'Reactivate and pause the worker for…')

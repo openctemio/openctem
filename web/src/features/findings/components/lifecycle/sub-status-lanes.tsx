@@ -172,7 +172,7 @@ export function SubStatusLanes({
                             <MoreHorizontal className="size-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent>
                           {!s.archived ? (
                             <>
                               <DropdownMenuItem onClick={() => setDialog({ status, sub: s })}>

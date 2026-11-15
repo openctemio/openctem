@@ -249,7 +249,7 @@ export function ScanProfilesSection() {
             <ChevronDown className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent>
           <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
             <Plus className="me-2 h-4 w-4" />
             {t('scans.profiles.addCustom')}
