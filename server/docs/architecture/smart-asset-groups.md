@@ -40,6 +40,8 @@ A versioned JSON document in `asset_groups.rule`:
   `tags_mode`, `exclude_tags`, `search`, `min_risk_score`, `has_findings`, `in_cidr`, `environments`,
   `technology`, `scope_status`, `attribution`, and so on). It is validated by the same input rules and compiled by
   the same filter compiler (`asset.BuildAssetFilter`), so what the Assets page shows is what the rule matches.
+  `in_cidr` matches an asset whose name or recorded address is inside a range, with the same condition as the
+  Assets `ip` filter and the findings `asset_ip` filter ([asset-addresses.md](asset-addresses.md)).
 - `domains` match the name itself and, with `subdomains`, every name below it on a label boundary:
   `example.com` never matches `evilexample.com` or `example.com.evil.com`. Names are lowercased and converted to
   punycode; a leading `*.` is accepted and means the domain and everything below it. A URL, port, path, address or
@@ -118,6 +120,6 @@ matching", and offers "Save filter as group" which creates a group with the filt
 |---|---|
 | Domain | `pkg/domain/assetgroup/rule.go`, `paste.go`, `rule_repository.go` |
 | Service | `internal/app/asset/group_rule.go`, `group_rule_members.go`, `group_rule_scheduler.go` |
-| Store | `internal/infra/postgres/asset_group_rule_repository.go`, migration `003440_smart_asset_groups` |
+| Store | `internal/infra/postgres/asset_group_rule_repository.go`, migration `003528_smart_asset_groups` |
 | API | `internal/infra/http/handler/asset_group_rule_handler.go`, routes in `routes/assets.go` |
 | Safety net | `internal/infra/controller/asset_group_rules.go` |

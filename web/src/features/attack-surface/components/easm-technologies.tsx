@@ -228,7 +228,6 @@ export function EASMTechnologies() {
     setPagination,
   } = useListParams({
     pageSizes: PAGE_SIZES,
-    defaultPageSize: 20,
     sortFields: SORT_FIELDS,
     defaultSort: '-asset_count',
     filters: { category: '', version: '', cves: '', kev: '' },

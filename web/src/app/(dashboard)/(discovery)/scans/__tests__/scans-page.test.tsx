@@ -121,7 +121,7 @@ describe('Scans › Configurations', () => {
     render(<ScansPage />)
     expect(configCalls.at(-1)).toMatchObject({ page: 2, per_page: 25, sort: '-last_run_at' })
     // The footer counts the server's total, not the rows on screen.
-    expect(screen.getByText(/^Showing/).textContent).toMatch(/26\s*-\s*50\s*of\s*57\s*scans/)
+    expect(screen.getByText(/^Showing/).textContent).toMatch(/26 to 50 of 57\s*scans/)
     expect(screen.queryByText('Runs (listed)')).not.toBeInTheDocument()
   })
 

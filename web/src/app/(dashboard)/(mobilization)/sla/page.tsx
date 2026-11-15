@@ -46,7 +46,6 @@ export default function SlaCompliancePage() {
   const sla = useSlaCompliance()
   const { pagination, setPagination } = useListParams({
     pageSizes: PAGE_SIZES,
-    defaultPageSize: 20,
   })
 
   // The breached list is a server page over the same filter as the Past due tile.

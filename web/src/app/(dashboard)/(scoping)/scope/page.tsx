@@ -67,7 +67,7 @@ export default function ScopePage() {
   const [q, setQ] = useUrlFilter('q', '')
   const [kind, setKind] = useUrlFilter('kind', 'all')
   const [status, setStatus] = useUrlFilter('status', 'all')
-  const list = useListParams({ pageSizes: SCOPE_PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: SCOPE_PAGE_SIZES })
   const { page, perPage, setPage } = list
   const [searchInput, setSearchInput] = useState(q)
   const debounced = useSearchQuery(searchInput).term

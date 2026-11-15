@@ -52,6 +52,7 @@ import { CIRunSheet, RunAttempt, VerdictBadge } from './ci-runs-view'
 import { CIRepositorySettingsTab } from './ci-repo-settings'
 import { runAttempts } from '../lib/gate-settings'
 import { useTranslation } from '@/context/i18n-provider'
+import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
 
 export type PipelineTab = 'overview' | 'runs' | 'branches' | 'settings'
 export const PIPELINE_TABS: { value: PipelineTab; label: string }[] = [
@@ -261,7 +262,7 @@ function Overview({ p }: { p: CIPipelineDetail }) {
 
 function Runs({ pipelineId }: { pipelineId: string }) {
   const { t } = useTranslation()
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: DEFAULT_TABLE_PAGE_SIZE })
   const [run, setRun] = useState<string | null>(null)
   const { data, error, isLoading } = useCIRuns({
     pipelineId,

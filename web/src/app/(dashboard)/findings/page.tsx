@@ -676,7 +676,7 @@ function FindingsContent() {
   // 100 rows even when the tenant had thousands of findings).
   // The whole view is in the URL — tab, page, page size and sort as well as
   // filters — so any screen of this list can be shared or bookmarked.
-  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
   // No tabs: grouping is a view of the same findings ("Group by"), and the
   // verification queue is reached from its metric. Legacy ?tab= links map over.

@@ -76,7 +76,7 @@ import { PAGE_TITLE_ID } from '../page-header'
 import { TableRefreshBar } from './table-refresh-bar'
 import { bulkSelectColumn, useRangeSelection, type DataTableBulk } from './data-table-selection'
 import { BulkActionBar } from '../bulk-action-bar'
-import { pageSizeChoices } from '@/lib/page-size-options'
+import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES, pageSizeChoices } from '@/lib/page-size-options'
 
 export { groupRowsForDisplay, rowsForServerGroups, type DataTableRowGroups }
 
@@ -105,7 +105,13 @@ interface DataTableProps<TData, TValue> {
   showColumnToggle?: boolean
   showPagination?: boolean
   showSearch?: boolean
+  /** First page size of a client-paged list (default 25). */
   pageSize?: number
+  /**
+   * @deprecated Every list offers 25, 50 and 100 (`TABLE_PAGE_SIZES`). Only
+   * one entry still has a meaning: a list with one fixed size shows no
+   * Rows per page choice.
+   */
   pageSizeOptions?: number[]
   emptyMessage?: string
   emptyDescription?: string
@@ -533,8 +539,8 @@ export function DataTable<TData, TValue>({
   showColumnToggle = true,
   showPagination = true,
   showSearch = true,
-  pageSize = 10,
-  pageSizeOptions = [10, 20, 30, 50, 100],
+  pageSize = DEFAULT_TABLE_PAGE_SIZE,
+  pageSizeOptions,
   emptyMessage,
   emptyDescription,
   emptyState,
@@ -1540,12 +1546,12 @@ export function DataTable<TData, TValue>({
               ? pageIndex * ps + data.length
               : Math.min((pageIndex + 1) * ps, total)
             return (
-              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted-foreground sm:justify-start">
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-cap text-muted-foreground tabular-nums sm:justify-start">
                 {staleNote}
                 {countUnavailable ? (
                   <>
                     <span>
-                      {t('common.table.showingNoTotal', 'Showing {start} - {end}', {
+                      {t('common.table.showingNoTotal', 'Showing {start} to {end}', {
                         start,
                         end,
                       })}
@@ -1564,7 +1570,7 @@ export function DataTable<TData, TValue>({
                   </>
                 ) : (
                   <span>
-                    {t('common.table.showing', 'Showing {start} - {end} of {total} {noun}', {
+                    {t('common.table.showing', 'Showing {start} to {end} of {total} {noun}', {
                       start,
                       end,
                       total: rowCountCapped
@@ -1582,39 +1588,42 @@ export function DataTable<TData, TValue>({
 
           {/* Pagination controls - centered on mobile */}
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 sm:gap-4">
-            {/* Page size selector */}
-            <div className="hidden sm:flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">{pageSizeLabel}</span>
-              <Select
-                value={`${table.getState().pagination.pageSize}`}
-                onValueChange={(value) => {
-                  table.setPageSize(Number(value))
-                }}
-              >
-                <SelectTrigger
-                  className="h-8 w-[70px]"
-                  aria-label={`${pageSizeLabel}: ${table.getState().pagination.pageSize}`}
+            {/* Rows per page: one set for every list (25, 50, 100), plus the
+                size in use when a link asked for another. A list with one
+                fixed size (pageSizeOptions of one) has no choice to offer. */}
+            {pageSizeOptions?.length !== 1 && (
+              <div className="hidden sm:flex items-center gap-2">
+                <span className="text-cap text-muted-foreground">{pageSizeLabel}</span>
+                <Select
+                  value={`${table.getState().pagination.pageSize}`}
+                  onValueChange={(value) => {
+                    table.setPageSize(Number(value))
+                  }}
                 >
-                  <SelectValue placeholder={table.getState().pagination.pageSize} />
-                </SelectTrigger>
-                <SelectContent side="top">
-                  {pageSizeChoices(pageSizeOptions, table.getState().pagination.pageSize).map(
-                    (size) => (
-                      <SelectItem key={size} value={`${size}`}>
-                        {size}
-                      </SelectItem>
-                    )
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
+                  <SelectTrigger
+                    className="w-[72px]"
+                    aria-label={`${pageSizeLabel}: ${table.getState().pagination.pageSize}`}
+                  >
+                    <SelectValue placeholder={table.getState().pagination.pageSize} />
+                  </SelectTrigger>
+                  <SelectContent side="top">
+                    {pageSizeChoices(TABLE_PAGE_SIZES, table.getState().pagination.pageSize).map(
+                      (size) => (
+                        <SelectItem key={size} value={`${size}`}>
+                          {size}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Page navigation */}
             <div className="flex items-center gap-1">
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
-
                 aria-label={t('common.table.firstPage', 'First page')}
                 onClick={() => table.setPageIndex(0)}
                 disabled={!table.getCanPreviousPage()}
@@ -1622,9 +1631,8 @@ export function DataTable<TData, TValue>({
                 <ChevronsLeft className="h-4 w-4" />
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
-
                 aria-label={t('common.table.previousPage', 'Previous page')}
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
@@ -1633,8 +1641,8 @@ export function DataTable<TData, TValue>({
               </Button>
 
               {/* Page indicator */}
-              <span className="text-sm text-muted-foreground">
-                {countUnavailable
+              <span className="text-cap text-muted-foreground tabular-nums">
+                {countUnavailable || rowCountCapped
                   ? t('common.table.pageOnly', 'Page {page}', {
                       page: table.getState().pagination.pageIndex + 1,
                     })
@@ -1645,26 +1653,27 @@ export function DataTable<TData, TValue>({
               </span>
 
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
-
                 aria-label={t('common.table.nextPage', 'Next page')}
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
-              <Button
-                variant="outline"
-                size="icon"
-
-                aria-label={t('common.table.lastPage', 'Last page')}
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                // Without a known total there is no last page to go to.
-                disabled={countUnavailable || !table.getCanNextPage()}
-              >
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
+              {/* Without a known total (a failed or capped count) there is no
+                  last page to go to, so there is no Last button. */}
+              {!countUnavailable && !rowCountCapped && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t('common.table.lastPage', 'Last page')}
+                  onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                  disabled={!table.getCanNextPage()}
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
         </div>

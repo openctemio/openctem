@@ -215,7 +215,7 @@ export default function ExposuresPage() {
     () => categoryParam.filter((c): c is ExposureDisplayCategory => isExposureDisplayCategory(c)),
     [categoryParam]
   )
-  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
 

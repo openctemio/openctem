@@ -146,7 +146,7 @@ export default function AuditLogPage() {
   const [severityParam, setSeverityParam] = useUrlFilter('severity', 'all')
   const [hideSystemParam, setHideSystemParam] = useUrlFilter('hide_system', 'false')
   const [sortParam, setSortParam] = useUrlFilter('sort', '')
-  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
 
