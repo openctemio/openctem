@@ -181,7 +181,7 @@ describe('Scan page', () => {
     expect(runCalls).toContainEqual({ page: 2, perPage: 25 })
     // The page is in the URL, so a reload or a shared link keeps it.
     expect(urlState.page).toBe('2')
-    expect(screen.getByText(/^Showing/).textContent).toMatch(/26\s*-\s*50\s*of\s*60\s*runs/)
+    expect(screen.getByText(/^Showing/).textContent).toMatch(/26 to 50 of 60\s*runs/)
     expect(screen.getByRole('link', { name: 'View all runs' })).toHaveAttribute(
       'href',
       '/scans/runs?scan_id=s1'

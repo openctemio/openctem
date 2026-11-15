@@ -194,7 +194,6 @@ export function EASMCertificates() {
     setPagination,
   } = useListParams({
     pageSizes: PAGE_SIZES,
-    defaultPageSize: 20,
     filters: { status: '' },
   })
   const statusParam = urlFilters.status

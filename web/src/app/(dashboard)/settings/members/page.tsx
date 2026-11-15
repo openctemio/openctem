@@ -684,7 +684,7 @@ export default function UsersPage() {
   // Paged, searched and filtered on the server. The list used to load one
   // capped page (100) and filter it in the browser, so every member past the
   // cap was unreachable (23a B20).
-  const list = useListParams({ pageSizes: MEMBER_PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: MEMBER_PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
   const offset = (list.page - 1) * list.perPage

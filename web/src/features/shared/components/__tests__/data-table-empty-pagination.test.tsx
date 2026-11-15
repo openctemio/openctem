@@ -36,7 +36,7 @@ describe('DataTable pagination on an empty list', () => {
 
   it('shows it, never "of 0", once there are rows', () => {
     render(<DataTable columns={columns} data={[{ id: '1', name: 'a' }]} />)
-    expect(screen.getByText(/Showing 1 - 1 of 1/)).toBeInTheDocument()
+    expect(screen.getByText(/Showing 1 to 1 of 1/)).toBeInTheDocument()
     expect(screen.getByText('Page 1 of 1')).toBeInTheDocument()
   })
 })

@@ -175,7 +175,7 @@ export default function AssetChangesPage() {
   const [viewParam, setViewParam] = useUrlFilter('view', 'appeared')
   const [periodParam, setPeriodParam] = useUrlFilter('period', '7d')
   const [internetParam, setInternetParam] = useUrlFilter('internet', 'false')
-  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
   // End of the period window. Set by Refresh so "the last 7 days" is
   // recomputed from now.
