@@ -35,11 +35,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  mayBeAnchoredOnPhone,
-  measurePhoneFit,
-  type PhoneMenuModel,
-} from '@/components/ui/action-menu-fit'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
 
@@ -147,30 +142,35 @@ export type ActionMenuProps = {
   label: string
 }
 
-const ActionSheet = React.lazy(() => import('./action-sheet'))
-
-/** Starts loading the sheet as soon as a finger lands on the trigger. */
-function preloadSheet() {
-  void import('./action-sheet')
-}
+// The phone path (fit measuring, the small menu or the sheet) loads only on a
+// phone, so the routes' shared code carries the desktop menu alone.
+const PhoneActionMenu = React.lazy(() => import('./action-menu-phone'))
 
 export function ActionMenu({ items, trigger, title, label }: ActionMenuProps) {
   const isMobile = useIsMobile()
   const menu = React.useMemo(() => normalizeActionItems(items), [items])
   if (menu.groups.length === 0) return null
-  return isMobile ? (
-    <PhoneActionMenu menu={menu} trigger={trigger} title={title} label={label} />
-  ) : (
-    <AnchoredActionMenu menu={menu} trigger={trigger} />
+  if (!isMobile) return <AnchoredActionMenu menu={menu} trigger={trigger} />
+  return (
+    // Until the phone code is in (a moment after the page shows), the trigger
+    // shows as it is and is marked busy.
+    <React.Suspense
+      fallback={React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
+        'aria-busy': true,
+        'data-action-menu-pending': '',
+      })}
+    >
+      <PhoneActionMenu menu={menu} trigger={trigger} title={title} label={label} />
+    </React.Suspense>
   )
 }
 
-type TriggerHandlers = Pick<
+export type TriggerHandlers = Pick<
   React.ComponentProps<typeof DropdownMenuTrigger>,
   'ref' | 'onPointerDown' | 'onKeyDown' | 'onClick'
 >
 
-function AnchoredActionMenu({
+export function AnchoredActionMenu({
   menu,
   trigger,
   triggerHandlers,
@@ -268,157 +268,7 @@ function AnchoredItem({ item, icons }: { item: ActionMenuAction; icons: boolean 
   )
 }
 
-/** What the phone fit decision needs from a menu. */
-export function phoneMenuModel(menu: NormalizedActionMenu): PhoneMenuModel {
-  const entries = menu.groups.flatMap((g) => g.items)
-  return {
-    rows: entries.map((e) => ({
-      label: e.label,
-      reason: e.kind === 'sub' ? undefined : e.disabledReason,
-    })),
-    headings: menu.groups.flatMap((g) => (g.label ? [g.label] : [])),
-    separators: Math.max(0, menu.groups.length - 1),
-    hasSubmenu: entries.some((e) => e.kind === 'sub'),
-    // The item model has no text fields; a menu that needs one is a picker.
-    hasInput: false,
-    icons: menu.icons,
-  }
-}
-
 /** Keeps a click in the menu from reaching a clickable row or card around the trigger. */
-function stopClick(e: React.MouseEvent) {
+export function stopClick(e: React.MouseEvent) {
   e.stopPropagation()
-}
-
-const OPEN_KEYS = new Set(['Enter', ' ', 'ArrowDown'])
-
-function PhoneActionMenu({
-  menu,
-  trigger,
-  title,
-  label,
-}: {
-  menu: NormalizedActionMenu
-  trigger: React.ReactElement
-  title: string
-  label: string
-}) {
-  const model = React.useMemo(() => phoneMenuModel(menu), [menu])
-  // Ruled out by the item model alone (too many items, a submenu): always the sheet.
-  const mayBeMenu = mayBeAnchoredOnPhone({
-    rows: model.rows,
-    headings: model.headings.length,
-    hasSubmenu: model.hasSubmenu,
-    hasInput: model.hasInput,
-  })
-  const [open, setOpen] = React.useState(false)
-  // Mounted after the first open and kept, so the sheet can animate closed.
-  const [mounted, setMounted] = React.useState(false)
-  const [byKeyboard, setByKeyboard] = React.useState(false)
-  const [menuOpen, setMenuOpen] = React.useState(false)
-  const triggerRef = React.useRef<HTMLElement | null>(null)
-  // A pointer press measured the menu as not fitting: the click opens the sheet.
-  const sheetOnClick = React.useRef(false)
-
-  // When the sheet is certain, fetch it while the page is idle, so the first
-  // tap opens it at once. A menu that may stay anchored loads it only when a
-  // press finds it does not fit.
-  React.useEffect(() => {
-    if (mayBeMenu || typeof window.requestIdleCallback !== 'function') return
-    const id = window.requestIdleCallback(preloadSheet, { timeout: 4000 })
-    return () => window.cancelIdleCallback(id)
-  }, [mayBeMenu])
-
-  const openSheet = (keyboard: boolean) => {
-    setByKeyboard(keyboard)
-    setMounted(true)
-    setOpen(true)
-  }
-
-  const sheet = mounted && (
-    <React.Suspense fallback={null}>
-      <ActionSheet
-        open={open}
-        onOpenChange={setOpen}
-        menu={menu}
-        title={title}
-        label={label}
-        focusFirstRow={byKeyboard}
-        returnFocusTo={triggerRef}
-      />
-    </React.Suspense>
-  )
-
-  if (mayBeMenu) {
-    // Measured at the moment it opens: the screen, where the trigger is and
-    // how wide the labels are in this language.
-    const fitsAsMenu = () => {
-      const el = triggerRef.current
-      return !!el && measurePhoneFit(el, model) === 'menu'
-    }
-    const handlers: TriggerHandlers = {
-      ref: (el: HTMLButtonElement | null) => {
-        triggerRef.current = el
-      },
-      onPointerDown: (e) => {
-        sheetOnClick.current = false
-        if (menuOpen || e.button !== 0 || e.ctrlKey || fitsAsMenu()) return
-        // Keeps the menu from opening; the sheet opens on the click, so the
-        // rest of this tap does not land on its scrim.
-        e.preventDefault()
-        sheetOnClick.current = true
-        preloadSheet()
-      },
-      onKeyDown: (e) => {
-        if (menuOpen || !OPEN_KEYS.has(e.key) || fitsAsMenu()) return
-        e.preventDefault()
-        openSheet(true)
-      },
-      onClick: (e) => {
-        e.stopPropagation()
-        if (!sheetOnClick.current) return
-        sheetOnClick.current = false
-        openSheet(false)
-      },
-    }
-    return (
-      <>
-        <AnchoredActionMenu
-          menu={menu}
-          trigger={trigger}
-          triggerHandlers={handlers}
-          onOpenChange={setMenuOpen}
-        />
-        {sheet}
-      </>
-    )
-  }
-
-  const triggerProps = trigger.props as {
-    onClick?: (e: React.MouseEvent<HTMLElement>) => void
-    onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void
-  }
-  const opener = React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
-    ref: triggerRef,
-    'aria-haspopup': 'dialog',
-    'aria-expanded': open,
-    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
-      triggerProps.onPointerDown?.(e)
-      preloadSheet()
-    },
-    onClick: (e: React.MouseEvent<HTMLElement>) => {
-      triggerProps.onClick?.(e)
-      e.stopPropagation()
-      if (e.defaultPrevented) return
-      // A click with no pointer position came from Enter or Space.
-      openSheet(e.detail === 0)
-    },
-  })
-
-  return (
-    <>
-      {opener}
-      {sheet}
-    </>
-  )
 }

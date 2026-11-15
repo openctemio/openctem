@@ -92,6 +92,11 @@ function setWidth(w: number) {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: w })
 }
 
+/** On a phone the menu code loads lazily: wait until the trigger is the real one. */
+async function phoneReady() {
+  await waitFor(() => expect(document.querySelector('[data-action-menu-pending]')).toBeNull())
+}
+
 function Harness({ items, onImport }: { items?: ActionMenuEntry[]; onImport?: () => void }) {
   return (
     <ActionMenu
@@ -177,6 +182,7 @@ describe('ActionMenu below 768 px', () => {
 
   async function openSheet(onImport?: () => void) {
     render(<Harness onImport={onImport} />)
+    await phoneReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
     await userEvent.click(trigger)
@@ -226,6 +232,7 @@ describe('ActionMenu below 768 px', () => {
         <Harness onImport={onImport} />
       </div>
     )
+    await phoneReady()
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
     const sheet = await screen.findByRole('dialog', { name: 'Findings' })
     await userEvent.click(within(sheet).getByRole('button', { name: 'Import results' }))
@@ -247,6 +254,7 @@ describe('ActionMenu below 768 px', () => {
 
   it('focuses the first row only when opened from the keyboard', async () => {
     render(<Harness />)
+    await phoneReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     trigger.focus()
     await userEvent.keyboard('{Enter}')
@@ -277,6 +285,7 @@ describe('ActionMenu below 768 px, by fit', () => {
 
   it('a short menu that fits is an anchored menu with visible reasons', async () => {
     render(<Harness items={short} />)
+    await phoneReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
     await userEvent.click(trigger)
@@ -295,6 +304,7 @@ describe('ActionMenu below 768 px, by fit', () => {
       label: `Action ${i}`,
     }))
     render(<Harness items={many} />)
+    await phoneReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
     await userEvent.click(trigger)
@@ -305,6 +315,7 @@ describe('ActionMenu below 768 px, by fit', () => {
   it('a short menu without room beside its trigger opens the sheet', async () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
     render(<Harness items={short} />)
+    await phoneReady()
     const trigger = screen.getByRole('button', { name: 'More actions' })
     await userEvent.click(trigger)
     expect(await screen.findByRole('dialog', { name: 'Findings' })).toBeInTheDocument()
@@ -314,6 +325,7 @@ describe('ActionMenu below 768 px, by fit', () => {
   it('from the keyboard, a menu without room opens the sheet on its first row', async () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
     render(<Harness items={short} />)
+    await phoneReady()
     screen.getByRole('button', { name: 'More actions' }).focus()
     await userEvent.keyboard('{Enter}')
     const sheet = await screen.findByRole('dialog', { name: 'Findings' })
