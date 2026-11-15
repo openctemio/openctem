@@ -202,8 +202,8 @@ describe('the menu of a view with unsaved changes', () => {
 })
 
 describe('sharing', () => {
-  async function openSave() {
-    menu({ activeId: undefined, changes: undefined })
+  async function openSave(props: Partial<React.ComponentProps<typeof SavedViewsMenu>> = {}) {
+    menu({ activeId: undefined, changes: undefined, ...props })
     await userEvent.click(screen.getByRole('button', { name: 'Views' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /save current filters/i }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Visible to' }))
@@ -245,7 +245,27 @@ describe('sharing', () => {
     expect(typeof body.query).toBe('string')
     expect(Object.keys(body).sort()).toEqual(expect.arrayContaining(['name', 'page', 'query']))
     for (const k of Object.keys(body)) {
-      expect(['page', 'name', 'query', 'group_id', 'group_by', 'columns', 'density']).toContain(k)
+      expect([
+        'page',
+        'name',
+        'query',
+        'group_id',
+        'group_by',
+        'columns',
+        'density',
+        'page_params',
+      ]).toContain(k)
     }
+  })
+
+  it('saves the search mode beside the filter, as a page param', async () => {
+    await openSave({ pageParams: { mode: 'query' } })
+    await userEvent.click(await screen.findByRole('option', { name: 'Only me' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'Query view')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(createSavedView).toHaveBeenCalled())
+    const body = vi.mocked(createSavedView).mock.calls.at(-1)![0]
+    expect(body.page_params).toEqual({ mode: 'query' })
+    expect(body.query ?? '').not.toContain('mode=')
   })
 })

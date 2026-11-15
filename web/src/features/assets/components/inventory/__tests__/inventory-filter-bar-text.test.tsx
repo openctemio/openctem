@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import type { ParseResult } from '@/features/query/api/query-api'
 import { ListSearch } from '@/features/shared/components/list-search'
 import { useListQueryMode } from '@/features/query/components/query-mode'
@@ -80,11 +81,18 @@ function setup(qs: string) {
     formatDate: (s) => s,
   })
   function Harness() {
+    // As the page: the mode is part of the filters' URL (`mode=query`).
+    const [active, setActive] = useState(!!filters.queryMode)
     const mode = useListQueryMode({
       entity: 'assets',
+      active,
+      onActiveChange: setActive,
       fq: filters.advanced ?? null,
       params: textParams(filters),
-      onApply: (r) => onChange({ ...applyTextResult(filters, r), page: 1 }),
+      onApply: (r, on) => {
+        onChange({ ...applyTextResult(filters, r), page: 1, queryMode: on || undefined })
+        setActive(on)
+      },
       preferFields: ['ip', 'network'],
       testId: 'inventory-query-editor',
     })
@@ -144,6 +152,8 @@ describe('InventoryFilterBar and the Query mode', () => {
       })
     )
     expect(onChange.mock.calls[0][0].advanced).toBeUndefined()
+    // Enter keeps Query mode, in the URL.
+    expect(onChange.mock.calls[0][0].queryMode).toBe(true)
   })
 
   it('a text chips cannot show is kept whole as one Advanced chip that removes alone', async () => {
@@ -172,6 +182,13 @@ describe('InventoryFilterBar and the Query mode', () => {
     setup('fq=port%3D22+OR+port%3D23&lens=data')
     fireEvent.click(screen.getByText('port=22 OR port=23'))
     await waitFor(() => expect(screen.getByLabelText('query')).toHaveValue('port=22 OR port=23'))
+  })
+
+  it('a link in Query mode opens with the text in the field, no Advanced chip', async () => {
+    api.parse.mockResolvedValue({ valid: true, text: 'port=22 OR port=23' })
+    setup('fq=port%3D22+OR+port%3D23&lens=data&mode=query')
+    await waitFor(() => expect(screen.getByLabelText('query')).toHaveValue('port=22 OR port=23'))
+    expect(screen.queryByTestId('filter-chip-advanced')).toBeNull()
   })
 
   it('draws an fq filter as one Advanced chip, removable', () => {

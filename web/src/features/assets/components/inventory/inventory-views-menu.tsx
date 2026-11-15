@@ -10,6 +10,7 @@
  * open saved view, or the starter views that are on.
  */
 
+import { modePageParams } from '@/features/query/components/query-mode'
 import {
   CalendarClock,
   CalendarX,
@@ -82,6 +83,7 @@ export function InventoryViewsMenu({
     <SavedViewsMenu
       page="assets"
       resolveFilter={resolveFilter}
+      pageParams={modePageParams(!!filters.queryMode)}
       builtIn={builtIn}
       builtInLabel={t('assets.views.starter', 'Starter views')}
       activeId={filters.view}

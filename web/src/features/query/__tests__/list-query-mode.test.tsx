@@ -1,7 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { ListSearch } from '@/features/shared/components/list-search'
-import { joinFilterText, useListQueryMode } from '../components/query-mode'
+import {
+  joinFilterText,
+  modePageParams,
+  queryModeIn,
+  useListQueryMode,
+  viewOpensInQueryMode,
+  withQueryMode,
+} from '../components/query-mode'
 import type { ParseRequest, ParseResult } from '../api/query-api'
 
 const api = vi.hoisted(() => ({ parse: vi.fn(), values: vi.fn() }))
@@ -53,15 +61,25 @@ function serve(texts: Record<string, ParseResult>) {
 function Harness({
   onApply,
   fq = null,
+  initialActive = false,
 }: {
   onApply: (r: ParseResult) => void
   fq?: string | null
+  /** The page URL says Query mode (a link, a reload). */
+  initialActive?: boolean
 }) {
+  // The page keeps the mode in its URL; here, in state.
+  const [active, setActive] = useState(initialActive)
   const mode = useListQueryMode({
     entity: 'findings',
+    active,
+    onActiveChange: setActive,
     fq,
     params: 'severity=critical&state=open&practice_not=compliance',
-    onApply,
+    onApply: (r, on) => {
+      onApply(r)
+      setActive(on)
+    },
     testId: 'q-editor',
   })
   return (
@@ -190,6 +208,55 @@ describe('the list search field Query mode', () => {
     await settle()
     expect(toggle()).toHaveAttribute('aria-pressed', 'true')
     expect(box().value).toBe('practice!=compliance severity=critical state=open')
+  })
+
+  it('a link in Query mode opens with the text in the field, unfocused, checked once', async () => {
+    const text =
+      'practice!=compliance severity=critical state=open (is_in_kev=true OR severity=high)'
+    serve({ [text]: result({ text, advanced: true }) })
+    render(<Harness onApply={vi.fn()} fq="is_in_kev=true OR severity=high" initialActive />)
+    await settle()
+    expect(query()).toHaveAttribute('aria-pressed', 'true')
+    expect(box().value).toBe(text)
+    expect(document.activeElement).not.toBe(box())
+    // The printer (params) and one check of the whole text.
+    expect(api.parse).toHaveBeenCalledTimes(2)
+    expect(api.parse).toHaveBeenLastCalledWith({ entity: 'findings', text })
+    expect(box()).not.toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('a link in Query mode whose text the server refuses opens in Query mode with the problem', async () => {
+    serve({})
+    render(<Harness onApply={vi.fn()} fq="severity=bogus" initialActive />)
+    await settle()
+    expect(query()).toHaveAttribute('aria-pressed', 'true')
+    expect(box().value).toBe('practice!=compliance severity=critical state=open (severity=bogus)')
+    expect(box()).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText(/Column 11\./)).toBeTruthy()
+  })
+
+  it('switching to Query mode by hand checks nothing more and takes the focus', async () => {
+    serve({})
+    render(<Harness onApply={vi.fn()} fq="kev=true" />)
+    fireEvent.click(query())
+    await settle()
+    // Only the printer: the person is about to edit the text.
+    expect(api.parse).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(box())
+  })
+
+  it('the mode is a URL param: absent is Basic, a saved view keeps it', () => {
+    expect(queryModeIn(new URLSearchParams('severity=high'))).toBe(false)
+    expect(queryModeIn(new URLSearchParams('mode=query&fq=a'))).toBe(true)
+    expect(queryModeIn(new URLSearchParams('mode=basic'))).toBe(false)
+    const on = withQueryMode(new URLSearchParams('fq=a&view=v'), true)
+    expect(on.toString()).toBe('fq=a&view=v&mode=query')
+    expect(withQueryMode(on, false).toString()).toBe('fq=a&view=v')
+    expect(modePageParams(true)).toEqual({ mode: 'query' })
+    expect(modePageParams(false)).toEqual({ mode: 'basic' })
+    expect(viewOpensInQueryMode({ page_params: { mode: 'query' } })).toBe(true)
+    expect(viewOpensInQueryMode({ page_params: { mode: 'basic' } })).toBe(false)
+    expect(viewOpensInQueryMode({})).toBe(false)
   })
 
   it('an fq filter is shown after the printed params, both applying', () => {

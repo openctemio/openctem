@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { ListSearch } from '@/features/shared/components/list-search'
 
@@ -14,8 +15,10 @@ vi.mock('@/features/query/components/query-input', () => ({
 
 import { ScanQueryChip, useScanQueryMode } from '../scan-query-bar'
 
-function Field({ search }: { search: URLSearchParams }) {
-  const mode = useScanQueryMode(search, vi.fn())
+function Field({ search: initial }: { search: URLSearchParams }) {
+  // The page URL: the mode is written into it.
+  const [search, setSearch] = useState(initial)
+  const mode = useScanQueryMode(search, setSearch)
   return <ListSearch value="" onChange={() => undefined} placeholder="Search" query={mode.query} />
 }
 
@@ -55,5 +58,10 @@ describe('the scans Query mode', () => {
     const box = await screen.findByTestId('query-input')
     expect(box).toHaveAttribute('data-entity', 'scans')
     expect(box).toHaveAttribute('aria-label', 'Filter scans as query text')
+  })
+
+  it('a link with mode=query opens in Query mode', async () => {
+    render(<Field search={new URLSearchParams('mode=query&fq=total_runs%3E%3D3')} />)
+    expect(await screen.findByTestId('query-input')).toHaveAttribute('data-entity', 'scans')
   })
 })
