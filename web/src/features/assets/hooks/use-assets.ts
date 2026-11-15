@@ -690,23 +690,28 @@ export async function fetchAllAssets(
  * Hook to fetch paginated assets list
  * Only fetches if user has assets:read permission
  */
+/** The request (and cache key) `useAssets` sends for these filters. */
+export function assetListKey(filters?: AssetSearchFilters): string {
+  const queryParams = buildAssetQueryParams(filters)
+  const queryString =
+    Object.keys(queryParams).length > 0 ? '?' + new URLSearchParams(queryParams).toString() : ''
+  return `/api/v1/assets${queryString}`
+}
+
 export function useAssets(filters?: AssetSearchFilters) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const canReadAssets = can(Permission.AssetsRead)
 
-  // Build query string from filters
-  const queryParams = buildAssetQueryParams(filters)
-  const queryString =
-    Object.keys(queryParams).length > 0 ? '?' + new URLSearchParams(queryParams).toString() : ''
+  const key = assetListKey(filters)
 
   // Only fetch if user has permission, tenant context, and not skipped
   const shouldFetch = currentTenant && canReadAssets && !filters?.skip
 
   // Use stable string key (queryString) instead of object reference to prevent cache bloat
   const { data, error, isLoading, mutate } = useSWR<BackendListResponse<BackendAsset>>(
-    shouldFetch ? `/api/v1/assets${queryString}` : null,
-    () => fetchAssetPage(`/api/v1/assets${queryString}`),
+    shouldFetch ? key : null,
+    () => fetchAssetPage(key),
     {
       revalidateOnFocus: false,
       dedupingInterval: 10000,
