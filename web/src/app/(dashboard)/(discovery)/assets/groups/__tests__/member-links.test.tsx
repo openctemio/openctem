@@ -24,41 +24,43 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({ id: ID }),
   usePathname: () => `/assets/${ID}`,
 }))
-// The detail page's own data sections (identity, attribution, ...) fetch on
-// their own; stub every `*Section(s)` export so a section added later does not
-// need this test to change. The page shell under test stays real.
 // The page waits for the team and needs assets:read before it renders an asset.
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ isLoading: false }) }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({ can: () => true }),
 }))
+// The asset under test comes from the hook's own module (not a barrel), so the
+// stub holds however the page imports it.
+vi.mock('@/features/assets/hooks/use-assets', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useAsset: () => ({ asset: current, isLoading: false, error: null }),
+  useAssetPage: () => ({ asset: current, isLoading: false, error: null }),
+}))
+// Every section of the page (identity, attribution, coverage, ...) fetches its
+// own data through the API client. Stub that one seam with requests that never
+// settle: each section stays in its loading state, the page shell under test
+// stays real, and a section added later or an import path that changes does
+// not need this test to change.
+vi.mock('@/lib/api/client', async (importOriginal) => {
+  const pending = () => new Promise<never>(() => {})
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    apiClient: pending,
+    get: pending,
+    post: pending,
+    put: pending,
+    patch: pending,
+    del: pending,
+    fetcher: pending,
+    fetcherWithOptions: pending,
+  }
+})
 // The repository workspace fetches its own data; a stub shows it rendered.
 vi.mock('@/features/repositories/components/repository-workspace', () => ({
   RepositoryWorkspace: ({ repositoryId }: { repositoryId: string }) => (
     <div>repository workspace {repositoryId}</div>
   ),
-}))
-vi.mock('@/features/scan-windows', () => ({ AssetScanWindowCard: () => null }))
-vi.mock('@/features/attack-surface', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  AssetWebEvidenceCard: () => null,
-}))
-vi.mock('@/features/assets', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>()
-  const sections = Object.keys(actual)
-    .filter((k) => /^Asset\w*(Sections?|Timeline)$/.test(k))
-    .map((k) => [k, () => null])
-  return {
-    ...actual,
-    ...Object.fromEntries(sections),
-    useAsset: () => ({ asset: current, isLoading: false, error: null }),
-    useAssetPage: () => ({ asset: current, isLoading: false, error: null }),
-  }
-})
-vi.mock('@/features/assets/components/resolved-ports-section', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  ResolvedPortsSection: () => null,
 }))
 
 /**
@@ -159,10 +161,11 @@ describe('asset group member links', () => {
     }
   )
 
-  it('/assets/{id} opens a repository in its workspace, at the same URL', () => {
+  it('/assets/{id} opens a repository in its workspace, at the same URL', async () => {
     current = asset('repository')
     render(<AssetDetailPage />)
-    expect(screen.getByText(`repository workspace ${ID}`)).toBeInTheDocument()
+    // The workspace code loads on demand.
+    expect(await screen.findByText(`repository workspace ${ID}`)).toBeInTheDocument()
     expect(replace).not.toHaveBeenCalled()
     expect(resolvePage(`/assets/repositories/${ID}`)).toBeNull()
   })
