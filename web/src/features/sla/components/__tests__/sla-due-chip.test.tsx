@@ -51,10 +51,19 @@ describe('slaCountdown', () => {
 describe('SlaDueChip', () => {
   const wrap = (ui: React.ReactNode) => render(<TooltipProvider>{ui}</TooltipProvider>)
 
-  it('shows the status, the countdown, and why a KEV cap set the deadline', () => {
+  it('one line: the countdown as a pill in the state colour, the state in its name, the KEV reason', () => {
     const soon = new Date(Date.now() + 5 * 3_600_000 + 60_000).toISOString()
     const { container } = wrap(<SlaDueChip status="warning" deadline={soon} kevCapped />)
-    expect(screen.getByText(/findings\.slaDue\.leftHours\|5 left/)).toBeInTheDocument()
+    const pill = container.querySelector('[data-slot="sla-countdown"]') as HTMLElement
+    expect(pill.textContent).toMatch(
+      /findings\.sla\.warning\|Warning: .*findings\.slaDue\.leftHours\|In 5 h/
+    )
+    expect(pill.className).toContain('border')
+    expect(pill.getAttribute('title')).toContain('Warning')
+    // No second line: no stacked column, no visible "KEV cap" word.
+    const chip = container.querySelector('[data-slot="sla-due-chip"]') as HTMLElement
+    expect(chip.className).not.toContain('flex-col')
+    expect(chip.className).toContain('whitespace-nowrap')
     const cap = container.querySelector('[data-slot="sla-kev-capped"]')
     expect(cap).not.toBeNull()
     expect(cap).toHaveAttribute('aria-label', expect.stringContaining('slaKevCapped'))
@@ -63,8 +72,26 @@ describe('SlaDueChip', () => {
   it('says overdue in days and shows no KEV marker without the cap', () => {
     const late = new Date(Date.now() - 4 * 86_400_000 - 60_000).toISOString()
     const { container } = wrap(<SlaDueChip status="overdue" deadline={late} />)
-    expect(screen.getByText(/findings\.slaDue\.overdueDays\|4 past due/)).toBeInTheDocument()
+    expect(screen.getByText(/findings\.slaDue\.overdueDays\|4 d overdue/)).toBeInTheDocument()
     expect(container.querySelector('[data-slot="sla-kev-capped"]')).toBeNull()
+  })
+
+  it('on track is plain text, not a pill; a passed deadline reads as late at once', () => {
+    const later = new Date(Date.now() + 9 * 86_400_000 + 60_000).toISOString()
+    const { container, unmount } = wrap(<SlaDueChip status="on_track" deadline={later} />)
+    const plain = container.querySelector('[data-slot="sla-countdown"]') as HTMLElement
+    expect(plain.textContent).toContain('In 9 d')
+    expect(plain.className).not.toContain('border')
+    unmount()
+    const past = new Date(Date.now() - 2 * 86_400_000 - 60_000).toISOString()
+    const late = wrap(<SlaDueChip status="on_track" deadline={past} />)
+    const pill = late.container.querySelector('[data-slot="sla-countdown"]') as HTMLElement
+    expect(pill.className).toContain('text-destructive')
+  })
+
+  it('shows the state word when there is no deadline', () => {
+    wrap(<SlaDueChip status="exceeded" />)
+    expect(screen.getByText(/findings\.sla\.exceeded\|Exceeded/)).toBeInTheDocument()
   })
 
   it('says No SLA for a finding without one', () => {
