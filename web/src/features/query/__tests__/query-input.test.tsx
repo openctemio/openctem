@@ -96,7 +96,8 @@ describe('QueryInput', () => {
         ],
       })
     )
-    render(<Box initial="severty=high" />)
+    render(<Box initial="severty=high" onSubmit={vi.fn()} />)
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
     })
@@ -169,45 +170,115 @@ describe('QueryInput', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('drops a stale answer', async () => {
-    let first!: (r: ParseResult) => void
-    api.parse
-      .mockImplementationOnce(() => new Promise<ParseResult>((r) => (first = r)))
-      .mockResolvedValueOnce(ok({ text: 'kev=true' }))
-    const onParsed = vi.fn()
-    function Two() {
-      const [v, setV] = useState('severity=x')
+  it('sends nothing while typing; one check on Enter', async () => {
+    api.parse.mockResolvedValue(ok({ text: 'severity>=high kev=true' }))
+    const onSubmit = vi.fn()
+    render(<Box onSubmit={onSubmit} />)
+    const box = screen.getByRole('combobox')
+    const text = 'severity>=high kev=t'
+    for (let i = 1; i <= text.length; i++) {
+      fireEvent.change(box, { target: { value: text.slice(0, i), selectionStart: i } })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50)
+      })
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    expect(api.parse).not.toHaveBeenCalled()
+    expect(api.values).not.toHaveBeenCalled()
+    fireEvent.keyDown(box, { key: 'Escape' })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(api.parse).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for server values only after two characters and a pause, cancelling the one in flight', async () => {
+    const signals: AbortSignal[] = []
+    api.values.mockImplementation((...args: unknown[]) => {
+      signals.push(args[4] as AbortSignal)
+      return new Promise(() => {})
+    })
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    const type = async (v: string, wait: number) => {
+      fireEvent.change(box, { target: { value: v, selectionStart: v.length } })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(wait)
+      })
+    }
+    await type('tool_name=', 1000)
+    await type('tool_name=n', 1000)
+    expect(api.values).not.toHaveBeenCalled()
+    await type('tool_name=nu', 299)
+    expect(api.values).not.toHaveBeenCalled()
+    await type('tool_name=nuc', 300)
+    expect(api.values).toHaveBeenCalledTimes(1)
+    expect(api.values.mock.calls[0].slice(0, 3)).toEqual(['findings', 'tool_name', 'nuc'])
+    await type('tool_name=nucl', 300)
+    expect(api.values).toHaveBeenCalledTimes(2)
+    expect(signals[0].aborted).toBe(true)
+    expect(signals[1].aborted).toBe(false)
+  })
+
+  it('Ctrl+Space asks for values at once, whatever was typed', async () => {
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'tool_name=', selectionStart: 10 } })
+    fireEvent.keyDown(box, { key: ' ', ctrlKey: true })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(api.values).toHaveBeenCalledTimes(1)
+  })
+
+  it('a quote or parenthesis that does not pair up is refused without asking the server', async () => {
+    const onSubmit = vi.fn()
+    render(<Box onSubmit={onSubmit} initial={'tool_name="nuclei'} />)
+    const box = screen.getByRole('combobox')
+    expect(box.getAttribute('aria-invalid')).toBe('false')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(api.parse).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(box.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByText(/quote is not closed/i)).toBeTruthy()
+  })
+
+  it('shows Apply, enabled and announced while the text differs from the applied one', async () => {
+    api.parse.mockResolvedValue(ok({ text: 'kev=true' }))
+    const onSubmit = vi.fn()
+    function Applied() {
+      const [v, setV] = useState('severity>=high')
       return (
-        <>
-          <QueryInput
-            entity="findings"
-            value={v}
-            onChange={setV}
-            onParsed={onParsed}
-            ariaLabel="search"
-          />
-          <button onClick={() => setV('kev=true')}>next</button>
-        </>
+        <QueryInput
+          entity="findings"
+          value={v}
+          onChange={setV}
+          applied="severity>=high"
+          onSubmit={onSubmit}
+          ariaLabel="search"
+          quietStatus
+        />
       )
     }
-    render(<Two />)
+    render(<Applied />)
+    const apply = screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement
+    expect(apply.disabled).toBe(true)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'kev=true' } })
+    expect(apply.disabled).toBe(false)
+    expect(screen.getByText(/not applied yet/i)).toBeTruthy()
+    expect(api.parse).not.toHaveBeenCalled()
+    fireEvent.click(apply)
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(300)
+      await vi.runOnlyPendingTimersAsync()
     })
-    fireEvent.click(screen.getByText('next'))
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300)
-    })
-    await act(async () => {
-      first(
-        ok({
-          valid: false,
-          problems: [
-            { code: 'unknown_value', message: '', start: 9, end: 10, line: 1, column: 10 },
-          ],
-        })
-      )
-    })
-    expect(onParsed).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'kev=true' }))
+    expect(api.parse).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ valid: true }))
   })
 })
