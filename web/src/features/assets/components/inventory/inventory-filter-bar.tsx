@@ -9,9 +9,10 @@
  * appears behind the popover at once.
  */
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { AddFilterButton } from '@/features/shared/components/filter-button'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import {
@@ -25,13 +26,7 @@ import {
 import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
-import {
-  AdvancedChip,
-  QueryEditor,
-  QueryModeToggle,
-  useFilterText,
-} from '@/features/query/components/query-mode'
-import { applyTextResult, textParams } from '../../lib/inventory-text'
+import { AdvancedChip } from '@/features/query/components/query-mode'
 import type { AssetStatsData } from '../../hooks/use-assets'
 import type { FacetGroup } from '../../lib/inventory-facets'
 import type { InventoryChip } from '../../lib/inventory-chips'
@@ -184,23 +179,7 @@ function AddFilter({
       onOpenChange={setOpen}
       title={t('assets.filters.add', 'Add filter')}
       className="w-80"
-      trigger={
-        <Button
-          variant="outline"
-          size="sm"
-          className={`h-7 gap-1 rounded-full border-dashed px-2.5 text-xs ${className ?? ''}`}
-          aria-keyshortcuts="f"
-        >
-          <Plus className="size-3" aria-hidden />
-          {t('assets.filters.add', 'Add filter')}
-          <kbd
-            className="ms-1 hidden rounded border px-1 font-sans text-xs text-muted-foreground md:inline"
-            aria-hidden
-          >
-            f
-          </kbd>
-        </Button>
-      }
+      trigger={<AddFilterButton className={className} />}
     >
       {picked ? (
         <div className="flex max-h-[min(28rem,70svh)] flex-col">
@@ -280,8 +259,8 @@ export function InventoryFilterBar({
   onClearAll,
   onPickerOpenChange,
   resultLabel,
-  resultCount,
-  preferFields,
+  queryActive,
+  onOpenQuery,
 }: {
   chips: InventoryChip[]
   /** What the default list hides (a `LockedChip`), first in the row. */
@@ -294,27 +273,30 @@ export function InventoryFilterBar({
   onPickerOpenChange?: (open: boolean) => void
   /** "361 assets", at the end of the row. */
   resultLabel?: string
-  /** The list's total, for the text mode's status line. */
-  resultCount?: number | null
-  /** The open tab's own fields, listed first by the text mode's completion. */
-  preferFields?: string[]
+  /**
+   * The search field is in Query mode (lib/inventory-text): the text owns the
+   * filter, so the chips, Add filter and Clear step aside.
+   */
+  queryActive?: boolean
+  /** Open the search field's Query mode (the Advanced chip's text). */
+  onOpenQuery?: () => void
 } & EditorProps) {
   const { t } = useTranslation()
   const fields = useFilterFields(groups, attributeFacets, tagTypes)
-  // Text mode: the same filter as one line of query text. Chips and text are
-  // two views of one state (see lib/inventory-text).
-  const [textMode, setTextMode] = useState(false)
-  const toggleText = useCallback(() => setTextMode((v) => !v), [])
-  const text = useFilterText('assets', filters.advanced ?? null, textParams(filters), textMode)
   const advancedChip = filters.advanced ? (
     <AdvancedChip
       key="advanced"
       text={filters.advanced}
-      onOpen={() => setTextMode(true)}
+      onOpen={() => onOpenQuery?.()}
       onRemove={() => onChange({ ...filters, advanced: undefined, page: 1 })}
     />
   ) : null
-  const row = (
+  if (queryActive) {
+    return locked ? (
+      <FilterChipsRow data-testid="inventory-filter-bar" leading={locked} chips={[]} />
+    ) : null
+  }
+  return (
     <FilterChipsRow
       data-testid="inventory-filter-bar"
       leading={locked}
@@ -326,7 +308,6 @@ export function InventoryFilterBar({
       ]}
       trailing={
         <>
-          <QueryModeToggle active={textMode} onToggle={toggleText} />
           <AddFilter
             className="hidden lg:inline-flex"
             fields={fields}
@@ -336,12 +317,7 @@ export function InventoryFilterBar({
             onOpenChange={onPickerOpenChange}
           />
           {chips.length + (advancedChip ? 1 : 0) > 1 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={onClearAll}
-            >
+            <Button variant="ghost" size="sm" onClick={onClearAll}>
               {t('assets.filters.clearAll', 'Clear filters')}
             </Button>
           )}
@@ -349,23 +325,5 @@ export function InventoryFilterBar({
       }
       end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
     />
-  )
-  if (!textMode) return row
-  return (
-    <div className="space-y-2">
-      <QueryEditor
-        entity="assets"
-        testId="inventory-query-editor"
-        initial={text}
-        resultCount={resultCount}
-        preferFields={preferFields}
-        recentScope={filters.tab ? `assets:${filters.tab}` : 'assets'}
-        onResult={(r) => {
-          onChange({ ...applyTextResult(filters, r), page: 1 })
-          setTextMode(false)
-        }}
-      />
-      {row}
-    </div>
   )
 }

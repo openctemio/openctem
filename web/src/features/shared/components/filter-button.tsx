@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ListFilter } from 'lucide-react'
+import { ListFilter, ListFilterPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -142,5 +142,32 @@ export function FilterPanelToggle({
         label={label}
       />
     </>
+  )
+}
+
+/**
+ * The "Add filter" trigger of a list whose filters are chips: an icon-only
+ * square at the toolbar's control height (32, 36 on a phone), solid outline,
+ * named "Add filter" with its key `f` in the tooltip. Pass it as the trigger of
+ * the list's filter picker (it forwards the trigger's props and ref).
+ */
+export function AddFilterButton({
+  className,
+  ...props
+}: Omit<React.ComponentProps<typeof Button>, 'children' | 'variant' | 'size'>) {
+  const { t } = useTranslation()
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      data-slot="add-filter"
+      aria-label={t('common.addFilter.label', 'Add filter')}
+      title={t('common.addFilter.hint', 'Add filter (f)')}
+      aria-keyshortcuts="f"
+      className={cn(className)}
+      {...props}
+    >
+      <ListFilterPlus aria-hidden="true" />
+    </Button>
   )
 }

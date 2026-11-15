@@ -33,7 +33,7 @@ test.describe('Asset inventory search', { tag: ['@assets'] }, () => {
     await expect(page.getByRole('radiogroup', { name: /asset type/i })).toHaveCount(0)
   })
 
-  test('the Query toggle edits the filter as text, written back as flat params', async ({
+  test('Query mode of the search field edits the filter as text, written back as flat params', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -46,6 +46,9 @@ test.describe('Asset inventory search', { tag: ['@assets'] }, () => {
     await box.press('Enter')
     await expect(page).toHaveURL(/port_gte=1/)
     await expect(page).toHaveURL(/tab=ip_address/)
+    // The field stays in Query mode; back in Basic the same filter is a chip.
+    await expect(box).toHaveValue(/port>=1/)
+    await page.getByRole('button', { name: /^basic$/i }).click()
     await expect(page.getByTestId('inventory-filter-chip').first()).toContainText(/port/i)
   })
 })

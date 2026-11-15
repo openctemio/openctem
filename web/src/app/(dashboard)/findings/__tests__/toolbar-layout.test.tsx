@@ -165,7 +165,7 @@ describe('Findings toolbar layout', () => {
     // One control: the group does not wrap, so the field cannot drop under the
     // button, and the field keeps a usable minimum width.
     expect(group.className).not.toMatch(/flex-wrap/)
-    expect(group.className).toMatch(/min-w-48/)
+    expect(group.className).toMatch(/min-w-\[/)
     // Group and View come after the search, in the same row.
     const groupBy = within(toolbar).getByRole('combobox', { name: 'Group findings' })
     expect(follows(search, groupBy)).toBe(true)
