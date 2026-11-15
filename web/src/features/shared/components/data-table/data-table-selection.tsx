@@ -9,6 +9,7 @@
 
 import * as React from 'react'
 import type { ColumnDef, Row, Table as TanstackTable } from '@tanstack/react-table'
+import type { ActionMenuEntry } from '@/components/ui/action-menu'
 import { Checkbox } from '@/components/ui/checkbox'
 
 /**
@@ -34,8 +35,8 @@ export interface DataTableBulk<TData> {
    * status"); the rest go in `more`.
    */
   actions: React.ReactNode
-  /** `DropdownMenuItem`s of the bar's More menu. */
-  more?: React.ReactNode
+  /** The bar's More menu: items of the shared `ActionMenu`. */
+  more?: ActionMenuEntry[]
   /**
    * Offer "Select all N that match" once the whole page is checked and the
    * list has more rows than the page. Pass it only where the page can apply

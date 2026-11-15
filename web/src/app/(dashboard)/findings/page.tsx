@@ -7,7 +7,6 @@ import {
   type DataTableSelection,
   type TableDensity,
 } from '@/features/shared/components/data-table'
-import { DisabledMenuItem } from '@/features/shared/components/data-table-row-actions'
 import {
   BULK_BY_FILTER_MAX,
   operationAsBulkResult,
@@ -2095,23 +2094,22 @@ function FindingsContent() {
   )
   // Adding to remediation works on rows: by filter it is not offered (disabled
   // with the reason).
-  const bulkMore = canBulkRemediate ? (
-    byFilter ? (
-      <DisabledMenuItem
-        label={t('remediationClaim.menu.bulk')}
-        icon={Wrench}
-        reason={t(
-          'findings.bulk.remediationRowsOnly',
-          'Works on checked rows: pick the findings on this page'
-        )}
-      />
-    ) : (
-      <DropdownMenuItem onSelect={() => openRemediationFor(selectedFindings)}>
-        <Wrench className="me-2 h-4 w-4" />
-        {t('remediationClaim.menu.bulk')}
-      </DropdownMenuItem>
-    )
-  ) : undefined
+  const bulkMore: ActionMenuEntry[] | undefined = canBulkRemediate
+    ? [
+        {
+          id: 'remediate',
+          label: t('remediationClaim.menu.bulk'),
+          icon: Wrench,
+          onSelect: () => openRemediationFor(selectedFindings),
+          disabledReason: byFilter
+            ? t(
+                'findings.bulk.remediationRowsOnly',
+                'Works on checked rows: pick the findings on this page'
+              )
+            : undefined,
+        },
+      ]
+    : undefined
   // No bulk action for this user: no checkbox column either (`bulk` omitted).
   const findingsBulk: DataTableBulk<Finding> | undefined = canSelect
     ? {
@@ -2577,6 +2575,7 @@ function FindingsContent() {
       onOpen={handleRowClick}
       menu={
         <FindingRowMenu
+          size="icon"
           title={f.title}
           onAction={(action) => handleRowAction(action, f)}
           canAssign={canAssignOne}

@@ -180,6 +180,10 @@ export function ScanProfilesSection() {
           return (
             <Can permission={[Permission.ScanProfilesWrite, Permission.ScanProfilesDelete]}>
               <DataTableRowActions
+                title={profile.name}
+                label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                  name: profile.name,
+                })}
                 actions={[
                   ...(!profile.is_default && canSetDefault
                     ? ([

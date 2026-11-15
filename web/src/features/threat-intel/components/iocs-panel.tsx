@@ -184,6 +184,10 @@ export function IOCsPanel() {
         id: 'actions',
         cell: ({ row }) => (
           <DataTableRowActions
+            title={row.original.value}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+              name: row.original.value,
+            })}
             actions={[
               {
                 label: t('threatIntel.iocs.viewDetails', 'View details'),

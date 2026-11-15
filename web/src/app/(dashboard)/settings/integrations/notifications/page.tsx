@@ -542,7 +542,15 @@ export default function NotificationIntegrationsPage() {
               route: 'DELETE /api/v1/integrations/{id}',
             },
           ]
-          return <DataTableRowActions actions={actions} />
+          return (
+            <DataTableRowActions
+              title={integration.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: integration.name,
+              })}
+              actions={actions}
+            />
+          )
         },
       },
     ],

@@ -207,6 +207,10 @@ export function ThreatActorsPanel() {
         id: 'actions',
         cell: ({ row }) => (
           <DataTableRowActions
+            title={row.original.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+              name: row.original.name,
+            })}
             actions={[
               {
                 label: t('threatIntel.actors.viewDetails'),

@@ -9,7 +9,6 @@ import {
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
-  DisabledMenuItem,
   MetricStrip,
   DetailCallout,
   DetailCopyId,
@@ -21,6 +20,7 @@ import {
   DetailStatGrid,
   PageStack,
 } from '@/features/shared'
+import { DisabledMenuItem } from '@/features/shared/components/disabled-menu-item'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -1379,6 +1379,10 @@ export default function UsersPage() {
       enableHiding: false,
       cell: ({ row }) => (
         <DataTableRowActions
+          title={row.original.email}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: row.original.email,
+          })}
           actions={[
             ...(new Date(row.original.expires_at).getTime() <= Date.now()
               ? [

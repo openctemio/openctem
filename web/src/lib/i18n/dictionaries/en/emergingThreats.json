@@ -3,6 +3,7 @@
   "emergingThreats.action.patch_now": "Patch now: this is known to be exploited and your assets are confirmed affected.",
   "emergingThreats.action.patch_within_sla": "Patch within your SLA: it is not known to be exploited yet.",
   "emergingThreats.actions.acknowledge": "Acknowledge",
+  "emergingThreats.actions.busy": "Update in progress",
   "emergingThreats.actions.cancel": "Cancel",
   "emergingThreats.actions.close": "Close",
   "emergingThreats.actions.menu": "Actions for {vulnId}",

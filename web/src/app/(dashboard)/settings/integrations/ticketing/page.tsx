@@ -720,7 +720,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   if (!supported) {
     return (
       <>
-        <DataTableRowActions actions={[{ ...deleteAction, separatorBefore: false }]} />
+        <DataTableRowActions
+          title={integration.name}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: integration.name,
+          })}
+          actions={[{ ...deleteAction, separatorBefore: false }]}
+        />
         {confirmDelete}
       </>
     )
@@ -729,6 +735,8 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   return (
     <>
       <DataTableRowActions
+        title={integration.name}
+        label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: integration.name })}
         actions={[
           ...(integration.provider === 'jira'
             ? [
@@ -751,6 +759,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                   icon: PlugZap,
                   onClick: () => void handleTest(),
                   disabled: isTesting,
+                  disabledReason: isTesting
+                    ? t('ticketingIntegration.actions.testBusy', 'Test in progress')
+                    : undefined,
                   route: 'POST /api/v1/integrations/{id}/test' as const,
                 },
               ]
@@ -764,6 +775,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                   icon: RefreshCw,
                   onClick: () => setSyncOpen(true),
                   disabled: isSyncing,
+                  disabledReason: isSyncing
+                    ? t('ticketingIntegration.actions.syncBusy', 'Sync in progress')
+                    : undefined,
                   route: 'POST /api/v1/integrations/{id}/sync' as const,
                 },
               ]
@@ -773,6 +787,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             icon: Route,
             onClick: () => setRoutingOpen(true),
             disabled: !jiraReady,
+            disabledReason: !jiraReady
+              ? t('ticketingIntegration.actions.needsJira', 'Needs a connected Jira integration')
+              : undefined,
             route: 'PUT /api/v1/integrations/{id}' as const,
           },
           {
@@ -780,6 +797,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             icon: Settings,
             onClick: () => setConfigOpen(true),
             disabled: !jiraReady,
+            disabledReason: !jiraReady
+              ? t('ticketingIntegration.actions.needsJira', 'Needs a connected Jira integration')
+              : undefined,
             route: 'PUT /api/v1/integrations/{id}' as const,
           },
           {
@@ -787,6 +807,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             icon: SlidersHorizontal,
             onClick: () => setPolicyOpen(true),
             disabled: !jiraReady,
+            disabledReason: !jiraReady
+              ? t('ticketingIntegration.actions.needsJira', 'Needs a connected Jira integration')
+              : undefined,
             route: 'PUT /api/v1/integrations/{id}/ticket-create-policy' as const,
           },
           ...(integration.provider === 'jira'

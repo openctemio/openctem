@@ -295,6 +295,8 @@ function useItemColumns(h: RowHandlers): ColumnDef<ExposureItemRow>[] {
           return (
             <div onClick={(ev) => ev.stopPropagation()}>
               <DataTableRowActions
+                title={e.title}
+                label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: e.title })}
                 actions={[
                   ...(open
                     ? [
