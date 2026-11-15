@@ -5,11 +5,17 @@
  * (server/docs/architecture/query-language.md, "Short form"). People type plain
  * words (a text search) or conditions such as
  * `severity>=high kev=true -status:accepted last_seen<7d`; the long form
- * (`findings where ...`) is accepted too. The server parses and checks the
- * text (POST /api/v1/query/parse) for the caller's own fields; this box only
- * completes fields, operators and values near the caret, shows the first
- * problem with its fix, and keeps recent queries in this browser. The text
- * is plain text: nothing is rendered as HTML.
+ * (`findings where ...`) is accepted too. The text is plain text: nothing is
+ * rendered as HTML.
+ *
+ * Typing sends nothing to the server. Fields, operators and enum values come
+ * from the entity's schema, read once and kept for the session; the caret's
+ * context is read here; quotes and parentheses are checked here. The server
+ * checks the text once, when it is applied (Enter, Ctrl/Cmd+Enter in a text
+ * area, or the Apply button), and its first problem shows under the box with
+ * its fix. Values only the server knows (tools, CVEs, domains) are asked for
+ * after two characters or Ctrl+Space, 300 ms after the last key, and a newer
+ * key cancels the request in flight.
  */
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -32,17 +38,19 @@ import {
   contextAt,
   fieldCompletions,
   formatCount,
+  localProblem,
   localValues,
   quoteValue,
   type CaretContext,
   type Completion,
+  type LocalProblem,
 } from '../lib/complete'
 import { pushRecent, readRecent } from '../lib/recent'
 
-/** Server check delay after the last keystroke. */
-export const CHECK_DELAY_MS = 250
-/** Value lookup delay. */
-const VALUES_DELAY_MS = 250
+/** Value lookup delay after the last key. */
+export const VALUES_DELAY_MS = 300
+/** Characters of a value typed before the server is asked for values (Ctrl+Space asks at once). */
+export const VALUES_MIN_PREFIX = 2
 const MAX_OPTIONS = 10
 
 /**
@@ -60,10 +68,24 @@ export interface QueryInputProps {
   entity: QueryEntity
   value: string
   onChange: (text: string) => void
-  /** Enter with a valid filter (single-line boxes), with the server's answer. */
+  /**
+   * Apply: Enter (Ctrl/Cmd+Enter in a text area) or the Apply button. The
+   * server checks the text once; a valid answer is handed over, a refusal
+   * shows under the box.
+   */
   onSubmit?: (result: ParseResult) => void
-  /** Every finished check: the server's answer, or null for empty text. */
-  onParsed?: (result: ParseResult | null) => void
+  /**
+   * The text that is in force (a list's current filter). With `onSubmit` the
+   * box shows an Apply button, enabled while the text differs from it, and
+   * says the edit is not applied yet.
+   */
+  applied?: string
+  /**
+   * A server answer the owner of the box obtained for the current text (a
+   * mode switch, a preview): its problem shows under the box. The owner
+   * clears it when the text changes.
+   */
+  checked?: ParseResult | null
   /** Recent queries are kept per scope (an entity and tab, "findings"). */
   recentScope?: string
   /** The result count of the current filter, shown under the box. */
@@ -97,7 +119,8 @@ export function QueryInput({
   value,
   onChange,
   onSubmit,
-  onParsed,
+  applied,
+  checked,
   recentScope,
   resultCount,
   multiline,
@@ -132,48 +155,15 @@ export function QueryInput({
   const [caret, setCaret] = useState(0)
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
-  const [result, setResult] = useState<ParseResult | null>(null)
+  // Ctrl+Space: values are asked for at once, whatever was typed.
+  const [explicit, setExplicit] = useState(false)
+  // The server's answer to the text it was asked about on Apply.
+  const [answer, setAnswer] = useState<{ text: string; result: ParseResult } | null>(null)
+  // Apply refused before asking (quotes or parentheses do not pair up).
+  const [refused, setRefused] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
   const [remote, setRemote] = useState<{ key: string; options: Completion[] } | null>(null)
-  const seq = useRef(0)
-  // The latest onParsed, so the check below reruns on the text only.
-  const onParsedRef = useRef(onParsed)
-  useEffect(() => {
-    onParsedRef.current = onParsed
-  }, [onParsed])
-
-  // Server check, debounced; a stale answer never replaces a newer one.
-  useEffect(() => {
-    const text = value.trim()
-    if (!text || disabled) {
-      setResult(null)
-      setFailed(false)
-      onParsedRef.current?.(null)
-      return
-    }
-    const mine = ++seq.current
-    const timer = setTimeout(() => {
-      setChecking(true)
-      queryApi
-        .parse({ entity, text })
-        .then((res) => {
-          if (mine !== seq.current) return
-          setResult(res)
-          setFailed(false)
-          onParsedRef.current?.(res)
-        })
-        .catch(() => {
-          if (mine !== seq.current) return
-          setResult(null)
-          setFailed(true)
-        })
-        .finally(() => {
-          if (mine === seq.current) setChecking(false)
-        })
-    }, CHECK_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [value, entity, disabled])
 
   const ctx: CaretContext = useMemo(() => contextAt(value, caret), [value, caret])
   const field = useMemo(
@@ -181,21 +171,27 @@ export function QueryInput({
     [ctx, fields]
   )
   const remoteKey = ctx.kind === 'value' ? `${ctx.path}\u0000${ctx.prefix}\u0000${ctx.rest}` : ''
-  const needsRemote = open && ctx.kind === 'value' && localValues(field, ctx) === null && !!ctx.path
+  const needsRemote =
+    open &&
+    ctx.kind === 'value' &&
+    !!ctx.path &&
+    localValues(field, ctx) === null &&
+    (explicit || ctx.prefix.length >= VALUES_MIN_PREFIX)
 
   // Values of string fields (tools, CVEs, domains): the server's top values
-  // in the caller's scope, under the rest of the filter.
+  // in the caller's scope, under the rest of the filter. Only on demand, after
+  // a pause; the next key cancels the request in flight.
   useEffect(() => {
     if (!needsRemote || !ctx.path) return
-    let cancelled = false
+    const abort = new AbortController()
     const timer = setTimeout(() => {
       queryApi
-        .values(entity, ctx.path ?? '', ctx.prefix, ctx.rest)
+        .values(entity, ctx.path ?? '', ctx.prefix, ctx.rest, abort.signal)
         .then((res) => {
-          if (cancelled) return
+          if (abort.signal.aborted) return
           setRemote({
             key: remoteKey,
-            options: res.values.map((v) => ({
+            options: res.values.slice(0, MAX_OPTIONS).map((v) => ({
               kind: 'value' as const,
               label: String(v.value),
               insert: quoteValue(String(v.value)),
@@ -204,12 +200,12 @@ export function QueryInput({
           })
         })
         .catch(() => {
-          if (!cancelled) setRemote({ key: remoteKey, options: [] })
+          if (!abort.signal.aborted) setRemote({ key: remoteKey, options: [] })
         })
     }, VALUES_DELAY_MS)
     return () => {
-      cancelled = true
       clearTimeout(timer)
+      abort.abort()
     }
   }, [needsRemote, remoteKey, entity, ctx.path, ctx.prefix, ctx.rest])
 
@@ -224,7 +220,7 @@ export function QueryInput({
     if (ctx.kind === 'value') {
       const local = localValues(field, ctx)
       if (local) return local.slice(0, MAX_OPTIONS)
-      return remote?.key === remoteKey ? remote.options.slice(0, MAX_OPTIONS) : []
+      return remote?.key === remoteKey ? remote.options : []
     }
     return []
   }, [open, value, ctx, fields, field, remote, remoteKey, scope])
@@ -253,9 +249,20 @@ export function QueryInput({
     setOpen(o.kind === 'field' || o.kind === 'operator')
   }
 
+  /** Selects a range of the text: the field scrolls to it, typing replaces it. */
+  const select = (start: number, end: number) => {
+    const el = ref.current
+    if (!el) return
+    const s = Math.min(start, value.length)
+    el.focus()
+    el.setSelectionRange(s, Math.max(s, Math.min(end, value.length)))
+    setCaret(s)
+  }
+
   const submit = () => {
-    if (!onSubmit) return
-    if (value.trim() === '') {
+    if (!onSubmit || checking) return
+    const text = value
+    if (text.trim() === '') {
       onSubmit({
         entity,
         valid: true,
@@ -267,35 +274,39 @@ export function QueryInput({
       })
       return
     }
+    // The suggestions close so the problem line shows.
+    setOpen(false)
+    const local = localProblem(text)
+    if (local) {
+      // A text that cannot be read is not sent.
+      setRefused(text)
+      select(local.start, local.end)
+      return
+    }
+    setRefused(null)
+    setFailed(null)
+    setChecking(true)
     queryApi
-      .parse({ entity, text: value })
+      .parse({ entity, text })
       .then((res) => {
-        setResult(res)
+        setAnswer({ text, result: res })
         if (res.valid) {
-          pushRecent(scope, res.text || value)
+          pushRecent(scope, res.text || text)
           onSubmit(res)
-          setOpen(false)
           return
         }
-        // Select the first problem: the field scrolls to it, and typing
-        // replaces it. The suggestions close so the problem line shows.
-        setOpen(false)
         const p = res.problems[0]
-        const el = ref.current
-        if (p && el) {
-          const start = Math.min(p.start, value.length)
-          el.focus()
-          el.setSelectionRange(start, Math.max(start, Math.min(p.end, value.length)))
-          setCaret(start)
-        }
+        if (p) select(p.start, p.end)
       })
-      .catch(() => setFailed(true))
+      .catch(() => setFailed(text))
+      .finally(() => setChecking(false))
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const listOpen = options.length > 0
     if (e.key === ' ' && e.ctrlKey) {
       e.preventDefault()
+      setExplicit(true)
       setOpen(true)
       return
     }
@@ -315,7 +326,7 @@ export function QueryInput({
       e.preventDefault()
       accept(options[Math.min(active, options.length - 1)])
     } else if (e.key === 'Enter' && !e.shiftKey) {
-      if (listOpen) {
+      if (listOpen && !e.ctrlKey && !e.metaKey) {
         e.preventDefault()
         accept(options[Math.min(active, options.length - 1)])
       } else if (!multiline || e.ctrlKey || e.metaKey) {
@@ -336,7 +347,15 @@ export function QueryInput({
     }
   }
 
-  const problem = result && !result.valid ? result.problems[0] : undefined
+  // The server's word on this very text: from Apply, or from the box's owner.
+  const server = answer?.text === value ? answer.result : (checked ?? null)
+  const problem = server && !server.valid ? server.problems[0] : undefined
+  // Pairing problems are found while typing; they are drawn as a problem
+  // once Apply was refused for them, and read out (muted) before that.
+  const local = problem ? null : localProblem(value)
+  const localShown = !!local && refused === value
+  const dirty = applied !== undefined && value.trim() !== applied.trim()
+  const showApply = !!onSubmit && applied !== undefined
   const expanded = options.length > 0
   const shared = {
     id: inputId,
@@ -354,11 +373,12 @@ export function QueryInput({
     'aria-controls': expanded ? listId : undefined,
     'aria-activedescendant': expanded ? `${listId}-${active}` : undefined,
     'aria-describedby': statusId,
-    'aria-invalid': !!problem,
+    'aria-invalid': !!problem || localShown,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       onChange(e.target.value)
       setCaret(e.target.selectionStart ?? e.target.value.length)
       setActive(0)
+      setExplicit(false)
       setOpen(true)
     },
     onKeyDown,
@@ -368,6 +388,7 @@ export function QueryInput({
     onBlur: () => setOpen(false),
   }
 
+  const drawn = !!problem || localShown || failed === value
   return (
     <Popover
       open={expanded}
@@ -377,18 +398,34 @@ export function QueryInput({
     >
       <PopoverAnchor asChild>
         <div ref={anchorRef} className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
-          <div className="relative">
-            {multiline ? (
-              <Textarea
-                ref={ref}
-                rows={3}
-                className={cn('font-mono text-sm', inputClassName)}
-                {...shared}
-              />
-            ) : (
-              <Input ref={ref} className={cn('font-mono', inputClassName)} {...shared} />
+          <div className="flex items-start gap-2">
+            <div className="relative min-w-0 flex-1">
+              {multiline ? (
+                <Textarea
+                  ref={ref}
+                  rows={3}
+                  className={cn('font-mono text-sm', inputClassName)}
+                  {...shared}
+                />
+              ) : (
+                <Input ref={ref} className={cn('font-mono', inputClassName)} {...shared} />
+              )}
+              {adornments}
+            </div>
+            {showApply && (
+              <Button
+                type="button"
+                data-slot="query-apply"
+                variant={dirty ? 'default' : 'outline'}
+                disabled={disabled || !dirty || checking}
+                aria-describedby={statusId}
+                // The caret stays in the box.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={submit}
+              >
+                {t('queryInput.apply')}
+              </Button>
             )}
-            {adornments}
           </div>
           <div
             id={statusId}
@@ -396,7 +433,7 @@ export function QueryInput({
             className={cn(
               'text-muted-foreground min-h-5 text-xs',
               // A list field adds no space under itself until there is a problem.
-              quietStatus && (problem || failed ? 'mt-1' : 'sr-only')
+              quietStatus && (drawn ? 'mt-1' : 'sr-only')
             )}
           >
             {problem ? (
@@ -409,10 +446,14 @@ export function QueryInput({
                   )
                 }
               />
+            ) : local ? (
+              <LocalProblemLine problem={local} text={value} strong={localShown} />
             ) : checking ? (
               <span>{t('queryInput.checking')}</span>
-            ) : failed ? (
+            ) : failed === value ? (
               <span>{t('queryInput.unavailable')}</span>
+            ) : dirty ? (
+              <span>{t('queryInput.pending')}</span>
             ) : typeof resultCount === 'number' && value.trim() !== '' ? (
               <span>
                 {t('queryInput.results', undefined, { count: formatCount(resultCount, locale) })}
@@ -463,6 +504,25 @@ export function QueryInput({
         </ul>
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** A quote or parenthesis that does not pair up, found while typing. */
+function LocalProblemLine({
+  problem,
+  text,
+  strong,
+}: {
+  problem: LocalProblem
+  text: string
+  strong: boolean
+}) {
+  const { t } = useTranslation()
+  const column = [...text.slice(0, problem.start)].length + 1
+  return (
+    <span className={cn(strong && 'text-destructive')}>
+      {t(`queryInput.local.${problem.code}`)} {t('queryInput.atColumn', undefined, { column })}
+    </span>
   )
 }
 
