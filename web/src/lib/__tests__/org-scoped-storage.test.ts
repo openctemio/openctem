@@ -58,6 +58,8 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/features/auth/lib/invitation-token.ts': 'not-org-data',
   'src/features/components/components/components-list-view.tsx': 'not-org-data',
   'src/features/dashboards/layout-hint.ts': 'not-org-data',
+  // The expanded query editor's height (a UI preference).
+  'src/features/query/components/query-input.tsx': 'not-org-data',
   'src/features/remediation-hub/components/task-detail.tsx': 'not-org-data',
   'src/features/sensors/components/tool-settings-list.tsx': 'not-org-data',
   'src/features/shared/components/data-table/use-table-density.ts': 'not-org-data',
