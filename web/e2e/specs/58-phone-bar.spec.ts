@@ -12,7 +12,7 @@ import { ICON_CONTRAST_FLOOR, iconContrast } from '../helpers/icon-contrast'
  *   - Create, Full screen and Theme are not in the bar; Theme is in the account
  *     menu (a label and Light / Dark / System rows of 44, above Sign out);
  *   - the drawer: 288 wide, "Close sidebar" 36 with a 44 touch square, org
- *     trigger and nav rows 44 with 16/24 text and 16 px icons;
+ *     trigger and nav rows 44 with 16/24 text and 20 px icons;
  *   - nothing scrolls sideways.
  * At 768 the desktop bar is back (32 px controls, Theme in the bar).
  */
@@ -239,7 +239,7 @@ test(
     expect(m.orgFont).toBe('16px/24px')
     expect(m.rowHeights).toEqual([44])
     expect(m.rowFonts).toEqual(['16px/24px'])
-    expect(m.icons).toEqual([16])
+    expect(m.icons).toEqual([20])
     await drawer.getByRole('button', { name: 'Close sidebar' }).click()
     await expect(drawer).toBeHidden()
   }

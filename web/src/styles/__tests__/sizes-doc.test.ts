@@ -77,7 +77,13 @@ function table(heading: string): string[][] {
 const code = (cell: string) => [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1])
 
 describe('the Sizes section of the UI style contract', () => {
-  for (const heading of ['Control heights', 'Spacing', 'Row density', 'Radii']) {
+  for (const heading of [
+    'Control heights',
+    'Sidebar navigation',
+    'Spacing',
+    'Row density',
+    'Radii',
+  ]) {
     it(`"${heading}" matches theme.css`, () => {
       const rows = table(heading)
       expect(rows.length).toBeGreaterThan(0)

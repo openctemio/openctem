@@ -95,6 +95,28 @@ describe('NavSection header', () => {
     renderSection('Scoping')
     const header = screen.getByRole('button', { name: 'Scoping' })
     expect(header).toHaveAttribute('aria-expanded', 'true')
+    // Open, the header reads like any other row: its filled child row marks
+    // the current page.
+    expect(header).toHaveAttribute('data-current', 'false')
+  })
+
+  it('marks a folded section that holds the current page (and only then)', async () => {
+    vi.mocked(usePathname).mockReturnValue('/scoping')
+    renderSection('Scoping')
+    const header = screen.getByRole('button', { name: 'Scoping' })
+    await userEvent.click(header)
+    expect(header).toHaveAttribute('aria-expanded', 'false')
     expect(header).toHaveAttribute('data-current', 'true')
+  })
+
+  it('draws the header as a plain row: no own weight or colour, a muted chevron', () => {
+    renderSection('Scoping')
+    const header = screen.getByRole('button', { name: 'Scoping' })
+    const classes = header.className.split(/\s+/)
+    expect(classes).not.toContain('font-medium')
+    expect(classes).not.toContain('text-sidebar-foreground')
+    expect(classes).toContain('text-nav-fg')
+    const chevron = header.querySelector('svg:last-child')!
+    expect(chevron.getAttribute('class')).toContain('text-muted-foreground')
   })
 })
