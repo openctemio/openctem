@@ -83,3 +83,128 @@ for (const list of LISTS) {
     }
   )
 }
+
+/** The shell on a phone: nothing but the page scroller moves, sideways never. */
+async function readPhoneShell(page: Page) {
+  return page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>('main#content')!
+    const header = document.querySelector('header')!
+    const scrolledAncestors: string[] = []
+    for (let el = main.parentElement; el; el = el.parentElement) {
+      if (el.scrollTop !== 0 || el.scrollLeft !== 0) {
+        scrolledAncestors.push(`${el.tagName} ${el.dataset.slot ?? ''}`)
+      }
+    }
+    const se = document.scrollingElement!
+    return {
+      doc: se.scrollTop,
+      sideways: se.scrollWidth > se.clientWidth || main.scrollWidth > main.clientWidth,
+      scroller: main.scrollTop,
+      scrolledAncestors,
+      headerTop: header.getBoundingClientRect().top,
+    }
+  })
+}
+
+function expectShellStill(s: Awaited<ReturnType<typeof readPhoneShell>>, what: string) {
+  expect(s.doc, `document scroll after ${what}`).toBe(0)
+  expect(s.scrolledAncestors, `scrolled shell ancestors after ${what}`).toEqual([])
+  expect(s.sideways, `horizontal scroll after ${what}`).toBe(false)
+  expect(s.headerTop, `app header at the top after ${what}`).toBe(0)
+}
+
+/** A finger swipe up on the page (a real touch scroll gesture). */
+async function swipeUp(page: Page, distance: number) {
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.synthesizeScrollGesture', {
+    x: 195,
+    y: 600,
+    yDistance: -distance,
+    gestureSourceType: 'touch',
+    speed: 2000,
+  })
+  await cdp.detach()
+}
+
+test.describe('on a phone with touch', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+
+  for (const list of LISTS) {
+    test(
+      `${list.path}: the page scrolls in its scroller, views open at the top, the keyboard moves nothing else`,
+      { tag: ['@shell', '@phone'] },
+      async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        await page.goto(list.path)
+        await expect(page.locator('main h1')).toBeVisible({ timeout: 45_000 })
+        await page.waitForLoadState('networkidle')
+        expectAtTop(await readShell(page), 'the first load')
+        expectShellStill(await readPhoneShell(page), 'the first load')
+
+        // A swipe scrolls the page scroller (the clipped shell does not stop
+        // it) and the header stays put.
+        const scrollable = await page
+          .locator('main#content')
+          .evaluate((m) => m.scrollHeight > m.clientHeight + 40)
+        if (scrollable) {
+          await swipeUp(page, 300)
+          const swiped = await readPhoneShell(page)
+          expect(swiped.scroller, 'the page scroller moved with the swipe').toBeGreaterThan(0)
+          expectShellStill(swiped, 'a swipe')
+        }
+
+        // Every quick view from the sidebar sheet, from a scrolled page.
+        const trigger = page.locator('[data-sidebar="trigger"]').first()
+        await trigger.tap()
+        const drawer = page.locator('[data-mobile="true"]')
+        const views = drawer.getByRole('list', { name: list.views })
+        await expect(views).toBeVisible({ timeout: 20_000 })
+        expectShellStill(await readPhoneShell(page), 'opening the sidebar sheet')
+        const count = await views.getByRole('link').count()
+        await page.keyboard.press('Escape')
+        await expect(drawer).toBeHidden()
+        for (let i = 0; i < count; i++) {
+          await page.evaluate(() => document.querySelector('main#content')?.scrollTo(0, 200))
+          await trigger.tap()
+          await expect(views).toBeVisible({ timeout: 20_000 })
+          const link = views.getByRole('link').nth(i)
+          const name = (await link.textContent())?.trim()
+          await link.tap()
+          await expect(drawer).toBeHidden()
+          await page.waitForLoadState('networkidle')
+          expectAtTop(await readShell(page), `${name} on a phone`)
+          expectShellStill(await readPhoneShell(page), `${name} on a phone`)
+        }
+
+        // The finding detail opens over the page and closes back to it.
+        if (list.path === '/findings') {
+          const title = page.locator('[data-slot="finding-title-link"]').first()
+          if (await title.isVisible().catch(() => false)) {
+            await title.tap()
+            const detail = page.getByRole('dialog')
+            await expect(detail).toBeVisible()
+            expectShellStill(await readPhoneShell(page), 'opening the finding detail')
+            await page.keyboard.press('Escape')
+            await expect(detail).toBeHidden()
+            expectShellStill(await readPhoneShell(page), 'closing the finding detail')
+          }
+        }
+
+        // The keyboard: the visual viewport shrinks while the search field has
+        // the focus; only the page scroller may move to keep the field in view.
+        const search = page.locator('main [data-slot="list-search-input"]').first()
+        if (await search.isVisible().catch(() => false)) {
+          await search.tap()
+          await page.setViewportSize({ width: 390, height: 480 })
+          await expect(search).toBeFocused()
+          expectShellStill(await readPhoneShell(page), 'the keyboard opening')
+          await search.blur()
+          await page.setViewportSize({ width: 390, height: 844 })
+          await page.evaluate(() => document.querySelector('main#content')?.scrollTo(0, 0))
+          expectAtTop(await readShell(page), 'the keyboard closing')
+          expectShellStill(await readPhoneShell(page), 'the keyboard closing')
+        }
+      }
+    )
+  }
+})
