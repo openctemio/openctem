@@ -108,6 +108,8 @@ export function viewQueryFromSearch(search: string): string {
   const out = new URLSearchParams()
   params.forEach((value, key) => {
     if (PAGE_ONLY.has(key)) return
+    // Where the person came from (a group drill-down, a remediation task), not a condition.
+    if (key === 'from' && /^(group|task):/.test(value)) return
     if (key === 'view' && !savedViewId(value)) return
     // The findings practice switch's "All" is no practice condition.
     if (key === 'practice' && value.trim().toLowerCase() === 'all') return
