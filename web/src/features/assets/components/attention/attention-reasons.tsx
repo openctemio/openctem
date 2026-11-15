@@ -2,8 +2,10 @@
 
 /**
  * Assets › Needs attention, the landing (research/249): the reasons as a queue
- * list under the page's one tab row. Two groups, in a fixed order: "Fix on the
- * asset" (filters of the inventory) and "Review" (their own rows). Each row is
+ * list under the page's one tab row. Three groups, in a fixed order: "Scoping
+ * decisions" and "Fix on the asset" (filters of the inventory) and "Review"
+ * (their own rows). The Needs attention tab carries how many assets wait for
+ * a scoping decision; the inventory itself shows no queue entry point. Each row is
  * one link with the reason, one line of why, and its count; a reason the
  * reader may not open (module off, no permission) is not listed. Counts come
  * from the queues' own list endpoints, so they are scoped to the reader.
@@ -24,19 +26,11 @@ const GROUPS: readonly { id: AttentionReasonDef['group']; key: string; fallback:
   { id: 'review', key: 'assets.attention.group.review', fallback: 'Review' },
 ]
 
-function ReasonRow({
-  reason,
-  hideWhenEmpty = false,
-}: {
-  reason: AttentionReasonDef
-  /** Render nothing while loading or when the queue is empty (the inventory's cards). */
-  hideWhenEmpty?: boolean
-}) {
+function ReasonRow({ reason }: { reason: AttentionReasonDef }) {
   const { t } = useTranslation()
   const count = useAttentionCount(reason.id)
   const Icon = reason.icon
   const empty = count === 0
-  if (hideWhenEmpty && !count) return null
   return (
     <li>
       <Link
@@ -105,32 +99,5 @@ export function AttentionReasons() {
         )
       })}
     </div>
-  )
-}
-
-/**
- * The scoping decisions as cards above the inventory: one card per decision
- * that has assets waiting (none while loading or when nothing waits), each
- * opening its queue, where the monitoring control decides a row in one click.
- * The same rows as the Needs attention landing.
- */
-export function ScopingDecisionCards() {
-  const { t } = useTranslation()
-  const visible = useVisibleSectionTabs(ASSET_ATTENTION_REASONS).filter((r) => r.group === 'decide')
-  if (visible.length === 0) return null
-  return (
-    <section
-      aria-label={t('assets.attention.group.decide', 'Scoping decisions')}
-      data-testid="scoping-decision-cards"
-      // No card has anything waiting: the section takes no space in the
-      // page's gap rhythm.
-      className="[&:not(:has(li))]:hidden"
-    >
-      <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
-        {visible.map((r) => (
-          <ReasonRow key={r.id} reason={r} hideWhenEmpty />
-        ))}
-      </ul>
-    </section>
   )
 }
