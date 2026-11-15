@@ -16,6 +16,9 @@ export interface QueryToken {
 const KEYWORDS = new Set(['and', 'or', 'not', 'in', 'where', 'findings', 'assets', 'scans'])
 const OPERATOR = /^(>=|<=|!=|=|:|>|<|~)/ // separator-ok: regex alternation, not a text separator
 const NAME = /^[A-Za-z_][\w.]*/
+// An operator, or (not) in, after a name makes it a field.
+const OP_AFTER = /^\s*(>=|<=|!=|=|:|>|<|~)/ // separator-ok: regex alternation, not a text separator
+const IN_AFTER = /^\s+(not\s+)?in\b/i
 const WORD = /^[^\s"(),=!<>:~]+/
 
 /** The tokens of `text`; joined, their values give back `text` exactly. */
@@ -70,7 +73,7 @@ export function queryTokens(text: string): QueryToken[] {
       if (KEYWORDS.has(ident[0].toLowerCase())) {
         push('keyword', ident[0])
         afterOperator = ident[0].toLowerCase() === 'in'
-      } else if (/^\s*(>=|<=|!=|=|:|>|<|~)/.test(after) || /^\s+(not\s+)?in\b/i.test(after)) {
+      } else if (OP_AFTER.test(after) || IN_AFTER.test(after)) {
         push('function', ident[0])
       } else {
         push('type', ident[0])
