@@ -24,7 +24,6 @@
  */
 
 import { useOpenForm } from '@/hooks/use-open-form'
-import { ScopingDecisionCards } from '../attention/attention-reasons'
 import { AssetsSectionTabs } from '../assets-section-tabs'
 import { useCallback, useEffect, useEffectEvent, useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
@@ -755,9 +754,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
           )}
         </PageHeader>
         <AssetsSectionTabs />
-        {/* Scoping decisions waiting (root domains to validate, names to
-            decide), only on the whole inventory and only when some wait. */}
-        {!typeView && !scopeLabel && <ScopingDecisionCards />}
 
         {inTabsLens && (
           <InventoryTypeTabs

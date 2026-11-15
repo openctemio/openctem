@@ -54,6 +54,12 @@ interface SectionTabsProps {
    * Suggestions shows the pending suggestions). Zero and absent show nothing.
    */
   counts?: Readonly<Record<string, number | undefined>>
+  /**
+   * The accessible name of a tab while its count shows, keyed by href
+   * ("Needs attention, 462 assets waiting"): it starts with the visible label
+   * and says what the number counts. Without one the name is label + number.
+   */
+  countLabels?: Readonly<Record<string, string | undefined>>
 }
 
 /** Space between two tabs (`gap-6`), in px. */
@@ -134,7 +140,13 @@ export function fitTabs(
  * drops its icons, then moves the last tabs into a More menu, keeping the
  * current tab in view. Labels are always whole.
  */
-export function SectionTabs({ tabs, className, label = 'Sections', counts }: SectionTabsProps) {
+export function SectionTabs({
+  tabs,
+  className,
+  label = 'Sections',
+  counts,
+  countLabels,
+}: SectionTabsProps) {
   const pathname = usePathname()
   const { t } = useTranslation()
   const navRef = React.useRef<HTMLElement>(null)
@@ -199,6 +211,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
   const text = (tab: SectionTab) => (tab.labelKey ? t(tab.labelKey, tab.label) : tab.label)
   const count = (tab: SectionTab) =>
     counts?.[tab.href] ? <TabsCount value={counts[tab.href]} /> : null
+  const countLabel = (tab: SectionTab) => (counts?.[tab.href] ? countLabels?.[tab.href] : undefined)
   const moreLabel = t('common.tabs.more', 'More')
   const overflowActive = fit.overflow.some((i) => i === activeIndex)
 
@@ -223,6 +236,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
             key={tab.href}
             href={tab.href}
             aria-current={tab.href === active ? 'page' : undefined}
+            aria-label={countLabel(tab)}
             className={TAB_CLASS}
           >
             {Icon && <Icon aria-hidden data-slot="tab-icon" />}
@@ -249,6 +263,7 @@ export function SectionTabs({ tabs, className, label = 'Sections', counts }: Sec
                   <Link
                     href={tab.href}
                     aria-current={tab.href === active ? 'page' : undefined}
+                    aria-label={countLabel(tab)}
                     className="flex items-center justify-between gap-3"
                   >
                     <span>{text(tab)}</span>

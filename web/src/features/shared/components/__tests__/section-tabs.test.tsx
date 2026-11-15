@@ -55,6 +55,19 @@ describe('SectionTabs', () => {
     expect(screen.getByRole('link', { name: 'Inventory' })).not.toHaveAttribute('aria-current')
   })
 
+  it('names a tab by its count label while the count shows, by its label at zero', () => {
+    const labels = { '/account/security': 'Security, 3 sessions open' }
+    const { rerender } = render(
+      <SectionTabs tabs={tabs} counts={{ '/account/security': 3 }} countLabels={labels} />
+    )
+    const link = screen.getByRole('link', { name: 'Security, 3 sessions open' })
+    expect(link.querySelector('[data-slot=tabs-count]')).toHaveTextContent('3')
+    rerender(<SectionTabs tabs={tabs} counts={{ '/account/security': 0 }} countLabels={labels} />)
+    const plain = screen.getByRole('link', { name: 'Security' })
+    expect(plain).not.toHaveAttribute('aria-label')
+    expect(plain.querySelector('[data-slot=tabs-count]')).toBeNull()
+  })
+
   it('draws icons only when every tab has its own', () => {
     const iconTabs = [
       { label: 'Profile', href: '/account', icon: User },
