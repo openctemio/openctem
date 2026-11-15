@@ -50,9 +50,7 @@ test.describe('Query mode applies on request only', { tag: ['@findings'] }, () =
     console.log(`requests after Enter: ${JSON.stringify(seen)}`)
   })
 
-  test('Basic mode: typed search waits for a pause (one list fetch for a word)', async ({
-    page,
-  }) => {
+  test('Basic mode: typed search waits for pauses and never parses', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/findings')
     const search = page.getByRole('searchbox', { name: /search findings/i })
@@ -65,7 +63,9 @@ test.describe('Query mode applies on request only', { tag: ['@findings'] }, () =
     await search.pressSequentially('remote code', { delay: 60 })
     await page.waitForTimeout(1500)
     console.log(`basic-mode requests for 11 keys: ${JSON.stringify(seen)}`)
-    expect(seen.filter((s) => s.endsWith('/findings')).length).toBeLessThanOrEqual(1)
+    // useSearchQuery: 300 ms after a pause, 2 characters at least (one fetch per word typed at
+    // a steady pace, not one per key).
+    expect(seen.filter((s) => s.endsWith('/findings')).length).toBeLessThanOrEqual(2)
     expect(seen.filter((s) => s.includes('/query/'))).toEqual([])
   })
 })
