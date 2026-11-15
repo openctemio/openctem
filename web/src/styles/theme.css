@@ -499,6 +499,12 @@
   --control-h-touch-dense: var(--control-h-touch-sm);
 }
 
+/* A place that is dense on a desktop only (the bulk bar): below 768px its
+   small sizes keep the default 36, every control of the phone bar one height. */
+[data-control-density='dense'][data-touch-density='default'] {
+  --control-h-touch-dense: var(--control-h-touch);
+}
+
 /* Entry pages without the app sidebar (sign-in, onboarding, invitations):
    every control 36. Custom properties resolve where they are declared, so the
    names that derive from --control-h are declared again here. */
