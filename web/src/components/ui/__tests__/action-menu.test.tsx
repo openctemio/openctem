@@ -210,3 +210,69 @@ describe('ActionMenu below 768 px', () => {
     )
   })
 })
+
+describe('ActionMenu below 768 px, by fit', () => {
+  const desktopHeight = window.innerHeight
+  beforeEach(() => setWidth(390))
+  afterEach(() => {
+    setWidth(desktopWidth)
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: desktopHeight })
+  })
+
+  const short: ActionMenuEntry[] = [
+    { id: 'import', label: 'Import results', icon: FileUp },
+    {
+      id: 'approvals',
+      label: 'Approvals',
+      icon: ClipboardList,
+      disabledReason: 'Needs the approver role',
+    },
+  ]
+
+  it('a short menu that fits is an anchored menu with visible reasons', async () => {
+    render(<Harness items={short} />)
+    const trigger = screen.getByRole('button', { name: 'More actions' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    await userEvent.click(trigger)
+    const menu = await screen.findByRole('menu', { name: 'More actions' })
+    expect(within(menu).getByRole('menuitem', { name: 'Import results' })).toBeVisible()
+    expect(within(menu).getByText('Needs the approver role')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(trigger).toHaveFocus()
+  })
+
+  it('seven items open the sheet', async () => {
+    const many: ActionMenuEntry[] = Array.from({ length: 7 }, (_, i) => ({
+      id: `a${i}`,
+      label: `Action ${i}`,
+    }))
+    render(<Harness items={many} />)
+    const trigger = screen.getByRole('button', { name: 'More actions' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+    await userEvent.click(trigger)
+    expect(await screen.findByRole('dialog', { name: 'Findings' })).toBeInTheDocument()
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('a short menu without room beside its trigger opens the sheet', async () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
+    render(<Harness items={short} />)
+    const trigger = screen.getByRole('button', { name: 'More actions' })
+    await userEvent.click(trigger)
+    expect(await screen.findByRole('dialog', { name: 'Findings' })).toBeInTheDocument()
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('from the keyboard, a menu without room opens the sheet on its first row', async () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 90 })
+    render(<Harness items={short} />)
+    screen.getByRole('button', { name: 'More actions' }).focus()
+    await userEvent.keyboard('{Enter}')
+    const sheet = await screen.findByRole('dialog', { name: 'Findings' })
+    await waitFor(() =>
+      expect(within(sheet).getByRole('button', { name: 'Import results' })).toHaveFocus()
+    )
+  })
+})

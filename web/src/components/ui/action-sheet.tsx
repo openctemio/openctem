@@ -4,7 +4,9 @@
  * The phone renderer of `ActionMenu` (loaded on first use): a bottom sheet
  * titled with the object's name, one 48 px row per action, no icons, groups
  * split by a divider, the destructive group last, submenus drilled into with a
- * Back row. It is a modal dialog (focus trapped and returned, page scroll
+ * Back row. It sits on the bottom of the visible screen, above the browser's
+ * own toolbar, with at least 16 px (or the safe area) under its last row. It
+ * is a modal dialog (focus trapped and returned, page scroll
  * locked); it closes on the close button, Escape, a tap on the scrim, a swipe
  * down or a chosen action.
  */
@@ -80,6 +82,8 @@ export default function ActionSheet({
     item.onSelect?.()
   }
 
+  const lift = useVisibleBottomGap(open)
+
   const groups: ActionMenuGroup[] = sub ? [{ key: sub.id, items: sub.items }] : menu.groups
 
   return (
@@ -87,7 +91,12 @@ export default function ActionSheet({
       <DrawerContent
         ref={contentRef}
         data-slot="action-sheet"
-        className="max-h-[calc(85dvh-var(--modal-kb,0px))] bg-popover pb-[env(safe-area-inset-bottom)] outline-none"
+        className="max-h-[calc(85dvh-var(--sheet-lift,0px))] bg-popover pb-[max(1rem,env(safe-area-inset-bottom))] outline-none"
+        style={
+          lift > 0
+            ? ({ bottom: lift, '--sheet-lift': `${lift}px` } as React.CSSProperties)
+            : undefined
+        }
         onOpenAutoFocus={(e) => {
           e.preventDefault()
           if (focusFirstRow) focusFirst()
@@ -122,7 +131,7 @@ export default function ActionSheet({
         <div
           ref={bodyRef}
           data-slot="action-sheet-body"
-          className="scroll-cue min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2"
+          className="scroll-cue min-h-0 flex-1 overflow-y-auto overscroll-contain"
         >
           {sub && (
             <button
@@ -180,6 +189,30 @@ export default function ActionSheet({
       </DrawerContent>
     </Drawer>
   )
+}
+
+/**
+ * How far the bottom of the visible screen sits above the layout viewport's
+ * bottom (a browser toolbar that overlays the page), measured while the sheet
+ * is open. Zero when pinch-zoomed: the zoomed viewport is not a toolbar.
+ */
+function useVisibleBottomGap(open: boolean): number {
+  const [gap, setGap] = React.useState(0)
+  React.useEffect(() => {
+    const vv = window.visualViewport
+    if (!open || !vv) return
+    const update = () => {
+      const next =
+        Math.abs(vv.scale - 1) > 0.01
+          ? 0
+          : Math.max(0, Math.round(window.innerHeight - vv.offsetTop - vv.height))
+      setGap(next)
+    }
+    update()
+    vv.addEventListener('resize', update)
+    return () => vv.removeEventListener('resize', update)
+  }, [open])
+  return gap
 }
 
 function SheetRow({
