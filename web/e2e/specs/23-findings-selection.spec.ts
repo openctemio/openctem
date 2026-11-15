@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/authenticated-page'
+import { openFindingsPhoneSelect } from '../helpers/table'
 
 /**
  * Findings list selection. A selection belongs to the rows on screen, so a
@@ -10,20 +11,6 @@ import { test, expect } from '../fixtures/authenticated-page'
 
 const bulkBar = (page: import('@playwright/test').Page) =>
   page.getByRole('toolbar', { name: /actions for selected rows/i })
-
-/** Phone: the list's More (title row) starts with Select, as a menu or a sheet by fit. */
-async function openPhoneSelect(page: import('@playwright/test').Page) {
-  await page
-    .getByTestId('findings-toolbar-primary')
-    .getByRole('button', { name: /more actions|thao tác khác/i })
-    .filter({ visible: true })
-    .click()
-  await page
-    .locator('[role="menuitem"], [data-slot="action-sheet-row"]')
-    .filter({ visible: true })
-    .first()
-    .click()
-}
 
 test.describe('Findings selection', { tag: ['@findings'] }, () => {
   test('a search change clears the selection', async ({ page }) => {
@@ -80,7 +67,7 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
     // Select is the first item of the list's More (title row); the toolbar
     // has no More of its own.
     await expect(page.locator('[data-slot="table-phone-more"]')).toHaveCount(0)
-    await openPhoneSelect(page)
+    await openFindingsPhoneSelect(page)
     await expect(bulkBar(page)).toBeVisible()
     await card.getByRole('checkbox').check()
     await expect(bulkBar(page).getByRole('button', { name: /selection options/i })).toHaveText(
@@ -111,7 +98,7 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
         'No findings on this stack'
       )
 
-      await openPhoneSelect(page)
+      await openFindingsPhoneSelect(page)
       const bar = page.locator('[data-slot="bulk-action-bar"]')
       await expect(bar).toBeVisible()
       const count = bar.locator('[data-slot="bulk-bar-select-menu"]')
