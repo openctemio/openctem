@@ -67,7 +67,27 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     await expect(big).toBeFocused()
     await expect(big).toHaveValue('severity>=high')
     expect(await big.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(3)
-    expect((await big.boundingBox())!.height).toBeGreaterThanOrEqual(200)
+    // Its height grows in over 200 ms: measured once it has grown.
+    await expect
+      .poll(async () => (await big.boundingBox())!.height, { timeout: 2_000 })
+      .toBeGreaterThanOrEqual(200)
+    test.info().annotations.push({
+      type: 'expanded editor',
+      description: JSON.stringify(
+        await page.evaluate(() =>
+          Object.fromEntries(
+            [
+              ['editor', '[data-slot="query-editor-expanded"] textarea'],
+              ['field', 'main [data-slot="list-search"]'],
+              ['addFilter', 'main [data-slot="add-filter"]'],
+            ].map(([k, sel]) => {
+              const r = document.querySelector(sel)?.getBoundingClientRect()
+              return [k, r && { x: r.x, y: r.y, w: r.width, h: r.height }]
+            })
+          )
+        )
+      ),
+    })
     expect(await addFilter.boundingBox()).toEqual(before)
 
     // Colours: every kind readable (4.5:1) on the editor, light and dark.
