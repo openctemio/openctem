@@ -13,7 +13,7 @@ import {
 import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
 import { OrgLinkGate } from '@/components/layout/org-link-gate'
-import { StepUpDialogHost } from '@/components/step-up-dialog'
+import { LazyStepUpDialogHost } from '@/components/step-up-dialog-lazy'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
@@ -101,7 +101,7 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
             </SidebarProvider>
           </TenantGate>
           {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}
-          <StepUpDialogHost />
+          <LazyStepUpDialogHost />
           {hasPendingLink && <LazyPendingLinkPrompt />}
           <SettingsAnchorHighlighter />
         </LayoutProvider>

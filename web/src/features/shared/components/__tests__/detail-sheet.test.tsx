@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Server } from 'lucide-react'
 import {
@@ -12,6 +12,18 @@ import {
   DetailCallout,
 } from '../detail-sheet'
 import { DetailHeader, DetailSheet } from '../detail-sheet-layout'
+
+// The phone drawer loads on demand in the app; these tests render it at once.
+vi.mock('next/dynamic', async () => {
+  const phone = await import('../detail-sheet-phone')
+  const actual = await vi.importActual<typeof import('next/dynamic')>('next/dynamic')
+  return {
+    default: (loader: () => Promise<unknown>, options?: object) =>
+      String(loader).includes('detail-sheet-phone')
+        ? phone.PhoneDrawer
+        : actual.default(loader as never, options as never),
+  }
+})
 
 describe('DetailSheetHeader', () => {
   it('renders title, subtitle, status, badges and actions', () => {
