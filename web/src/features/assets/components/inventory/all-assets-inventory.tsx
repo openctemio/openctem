@@ -71,7 +71,8 @@ import {
 import { advancedAssetsDocument } from '../../api/advanced-fetch'
 import { queryApi } from '@/features/query/api/query-api'
 import { useSavedViews, type SavedView } from '@/features/saved-views/api/use-saved-views'
-import { applyTextResult } from '../../lib/inventory-text'
+import { applyTextResult, textParams } from '../../lib/inventory-text'
+import { useListQueryMode } from '@/features/query/components/query-mode'
 import { formatTotal } from '../../lib/capped-count'
 import { TABS_LENS, openTab, tabCounts, withTab } from '../../lib/inventory-tabs'
 import { InventoryTypeTabs } from './inventory-type-tabs'
@@ -567,6 +568,19 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     }
   }, [exporting, searchFilters, typeView, t])
 
+  // Query mode of the search field: the same filter as one line of query
+  // text (chips and text are two views of one state, lib/inventory-text).
+  const queryMode = useListQueryMode({
+    entity: 'assets',
+    fq: filters.advanced ?? null,
+    params: textParams(filters),
+    onApply: (r) => setFilters({ ...applyTextResult(filters, r), page: 1 }),
+    resultCount: isLoading ? null : total,
+    preferFields: tab?.fields,
+    recentScope: filters.tab ? `assets:${filters.tab}` : 'assets',
+    testId: 'inventory-query-editor',
+  })
+
   if (!canRead) {
     return (
       <Main>
@@ -625,6 +639,7 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
     onChange: setSearchInput,
     placeholder: t('assets.inventoryPage.search', 'Search name, description or alias…'),
     label: t('assets.inventoryPage.searchAria', 'Search assets'),
+    query: queryMode.query,
   }
 
   const refreshButton = (
@@ -898,8 +913,8 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                             }
                           )
                     }
-                    resultCount={total}
-                    preferFields={tab?.fields}
+                    queryActive={queryMode.active}
+                    onOpenQuery={() => queryMode.setActive(true)}
                   />
                 }
                 hasFilters={!isInventoryFilterEmpty(filters)}

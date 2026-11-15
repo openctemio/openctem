@@ -6,8 +6,8 @@ import { test, expect } from '../fixtures/authenticated-page'
  * 2026-10-25, /findings at 390px): the locked "Informational hidden / Show"
  * chip was drawn under the next chip. At 390px and 375px, with the locked chip
  * and one to three filter chips:
- *   1. no two items of the row overlap (locked chip, chips, "+N more", Add
- *      filter, the count) and none sticks out of the row;
+ *   1. no two items of the row overlap (locked chip, chips, "+N more", Clear)
+ *      and none sticks out of the row (the count is beside the view name);
  *   2. every filter chip is either shown or counted in "+N more";
  *   3. the page does not scroll sideways;
  *   4. the search box takes the toolbar's first line (the end buttons move
@@ -51,7 +51,6 @@ for (const width of [390, 375] as const) {
         await page.goto(`/findings?${FILTERS.slice(0, n).join('&')}`)
         const row = page.getByTestId('findings-filter-bar')
         await expect(row.getByTestId('informational-chip')).toBeVisible({ timeout: 45_000 })
-        await expect(row.locator('[data-slot="filter-chips-end"]')).toBeVisible()
         // Folding settles after the chips are measured.
         await expect
           .poll(async () => {

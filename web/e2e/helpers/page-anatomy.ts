@@ -41,9 +41,6 @@ const NAME_MIN_1440 = 160
  * owner of the fix. A route that is not listed may have none.
  */
 const ROW_MIX_DEBT: Record<string, number> = {
-  // The chip-shaped Add filter (28) beside Query (32): the list toolbar PR (T4).
-  '/assets@1440': 1,
-  '/findings@1440': 1,
   // A wrapped toolbar: its second line's controls sit on another centre line.
   '/attack-surface/exposures@1440': 1,
   // The "SLA due in 72 hours" toggle (28) beside the Display menu (32).
@@ -403,7 +400,7 @@ export async function probeRowMix(page: Page): Promise<MixedRow[]> {
       // Inside a chip (its remove button) or over a field (a clear button).
       if (
         el.closest(
-          '[data-testid^=filter-chip],[data-slot=locked-chip],[data-slot=badge],[data-slot=signal-chip],[data-slot=status-lozenge]'
+          '[data-testid^=filter-chip],[data-slot=locked-chip],[data-slot=badge],[data-slot=signal-chip],[data-slot=status-lozenge],[data-slot=list-search-end]'
         )
       )
         return false

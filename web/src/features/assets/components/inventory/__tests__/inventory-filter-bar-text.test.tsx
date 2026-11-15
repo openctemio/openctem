@@ -1,13 +1,16 @@
 /**
- * The inventory filter bar's text mode: chips and text are two views of one
- * filter. The text shown is what POST /query/parse prints for the page's list
+ * The inventory's Query mode (the search field's Basic | Query switch, wired
+ * as the page wires it): chips and text are two views of one filter. The text shown is what POST /query/parse prints for the page's list
  * params; a submitted text comes back as page filters when chips can show it,
  * and as one Advanced chip (fq) when they cannot.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ParseResult } from '@/features/query/api/query-api'
+import { ListSearch } from '@/features/shared/components/list-search'
+import { useListQueryMode } from '@/features/query/components/query-mode'
 import { InventoryFilterBar } from '../inventory-filter-bar'
+import { applyTextResult, textParams } from '../../../lib/inventory-text'
 import { buildFacetGroups } from '../../../lib/inventory-facets'
 import { inventoryChips } from '../../../lib/inventory-chips'
 import { parseInventoryFilters, type InventoryFilters } from '../../../lib/inventory-url'
@@ -76,27 +79,42 @@ function setup(qs: string) {
     propertyLabel: (k) => k,
     formatDate: (s) => s,
   })
-  render(
-    <InventoryFilterBar
-      chips={chips}
-      groups={groups}
-      filters={filters}
-      stats={stats}
-      onChange={onChange}
-      onClearAll={vi.fn()}
-      preferFields={['ip', 'network']}
-    />
-  )
+  function Harness() {
+    const mode = useListQueryMode({
+      entity: 'assets',
+      fq: filters.advanced ?? null,
+      params: textParams(filters),
+      onApply: (r) => onChange({ ...applyTextResult(filters, r), page: 1 }),
+      preferFields: ['ip', 'network'],
+      testId: 'inventory-query-editor',
+    })
+    return (
+      <>
+        <ListSearch value="" onChange={() => undefined} placeholder="Search" query={mode.query} />
+        <InventoryFilterBar
+          chips={chips}
+          groups={groups}
+          filters={filters}
+          stats={stats}
+          onChange={onChange}
+          onClearAll={vi.fn()}
+          queryActive={mode.active}
+          onOpenQuery={() => mode.setActive(true)}
+        />
+      </>
+    )
+  }
+  render(<Harness />)
   return { onChange }
 }
 
-describe('InventoryFilterBar text mode', () => {
+describe('InventoryFilterBar and the Query mode', () => {
   beforeEach(() => api.parse.mockReset())
 
   it('shows the page filter as text, printed by the server from the list params only', async () => {
     api.parse.mockResolvedValue({ valid: true, text: 'criticality:high network=198.51.100.0/24' })
     setup('lens=external_surface&tab=ip_address&criticalities=high&network=198.51.100.0/24&page=2')
-    fireEvent.click(screen.getByRole('button', { name: /query/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }))
     await waitFor(() =>
       expect(screen.getByLabelText('query')).toHaveValue('criticality:high network=198.51.100.0/24')
     )
@@ -112,7 +130,7 @@ describe('InventoryFilterBar text mode', () => {
   it('a text chips can show comes back as page filters, tab kept', async () => {
     api.parse.mockResolvedValue({ valid: true, text: '' })
     const { onChange } = setup('lens=external_surface&tab=ip_address')
-    fireEvent.click(screen.getByRole('button', { name: /query/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }))
     await waitFor(() => expect(screen.getByLabelText('query')).not.toBeDisabled())
     fireEvent.change(screen.getByLabelText('query'), {
       target: { value: 'port>=1 criticality:high' },
@@ -133,13 +151,31 @@ describe('InventoryFilterBar text mode', () => {
   it('a text chips cannot show is kept whole as one Advanced chip that removes alone', async () => {
     api.parse.mockResolvedValue({ valid: true, text: '' })
     const { onChange } = setup('criticalities=high')
-    fireEvent.click(screen.getByRole('button', { name: /query/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }))
     await waitFor(() => expect(screen.getByLabelText('query')).not.toBeDisabled())
     fireEvent.change(screen.getByLabelText('query'), { target: { value: 'port=22 OR port=23' } })
     fireEvent.click(screen.getByRole('button', { name: 'run' }))
     const next = onChange.mock.calls[0][0]
     expect(next.advanced).toBe('port=22 OR port=23')
     expect(next.criticalities).toBeUndefined()
+  })
+
+  it('Query mode owns the filter: the chips and Add filter step aside', async () => {
+    api.parse.mockResolvedValue({ valid: true, text: 'criticality:high' })
+    setup('criticalities=high')
+    expect(screen.getByTestId('inventory-filter-chip')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add filter' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }))
+    await waitFor(() => expect(screen.getByLabelText('query')).toHaveValue('criticality:high'))
+    expect(screen.queryByTestId('inventory-filter-chip')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add filter' })).toBeNull()
+  })
+
+  it('the Advanced chip opens Query mode with its text', async () => {
+    api.parse.mockResolvedValue({ valid: true, text: '' })
+    setup('fq=port%3D22+OR+port%3D23&lens=data')
+    fireEvent.click(screen.getByText('port=22 OR port=23'))
+    await waitFor(() => expect(screen.getByLabelText('query')).toHaveValue('port=22 OR port=23'))
   })
 
   it('draws an fq filter as one Advanced chip, removable', () => {
