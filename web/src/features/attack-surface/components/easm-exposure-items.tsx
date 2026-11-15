@@ -490,7 +490,6 @@ export function EASMExposureItems() {
     setPagination,
   } = useListParams({
     pageSizes: PAGE_SIZES,
-    defaultPageSize: 20,
     sortFields: SORT_FIELDS,
     defaultSort: '-severity',
     filters: {

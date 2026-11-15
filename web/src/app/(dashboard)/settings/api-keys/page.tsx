@@ -181,7 +181,7 @@ const API_KEY_PAGE_SIZES = [10, 20, 50, 100]
 
 export default function APIKeysPage() {
   const { t } = useTranslation()
-  const list = useListParams({ pageSizes: API_KEY_PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: API_KEY_PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
   const [searchParam, setSearchParam] = useUrlFilter('q', '')

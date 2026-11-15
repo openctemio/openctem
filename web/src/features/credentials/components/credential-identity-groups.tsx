@@ -28,6 +28,7 @@ import type {
   ApiIdentityExposure,
 } from '../api/credential-api.types'
 import { mapCredentialsToAssets } from '../lib'
+import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
 
 /** Identities open on arrival; the rest load when opened. */
 const OPEN_ON_ARRIVAL = 3
@@ -126,7 +127,10 @@ export function CredentialIdentityGroups({
   emptyDescription,
 }: CredentialIdentityGroupsProps) {
   // Identities arrive all at once; the table pages through them.
-  const [pagination, setPagination] = React.useState({ pageIndex: 0, pageSize: 20 })
+  const [pagination, setPagination] = React.useState({
+    pageIndex: 0,
+    pageSize: DEFAULT_TABLE_PAGE_SIZE,
+  })
   const [prevReset, setPrevReset] = React.useState(resetKey)
   if (prevReset !== resetKey) {
     setPrevReset(resetKey)

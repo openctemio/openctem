@@ -79,7 +79,7 @@ export default function RelationshipSuggestionsPage() {
   const { t } = useTranslation()
   // Search and page live in the URL so a review queue position can be linked to.
   const [searchParam, setSearchParam] = useUrlFilter('q', '')
-  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: PAGE_SIZES })
   const { page, setPage } = list
   const [searchValue, setSearchValue] = useState(searchParam)
   const debouncedSearch = useSearchQuery(searchValue).term
