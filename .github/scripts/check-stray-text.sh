@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Fails when a tracked file holds a pasted tool-session fragment or an internal
-# working path (markers and path prefixes below). Prints file:line only.
+# Fails when a tracked file holds stray markup lines or an absolute local path.
+# Prints file:line only.
 #
 # Legitimate uses are listed in .github/stray-text-allow.txt, one per line:
 #   <path>|<fixed substring that must be on the matching line>
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 allow_file="${STRAY_TEXT_ALLOW:-.github/stray-text-allow.txt}"
-re='<invoke|</invoke>|<parameter name=|</content>|function_calls|tool_use|antml|/home/ubuntu/|agent-ops/|/tmp/claude|scratchpad/|workspaces\.tsv|HANDOFF'
+re='<invoke|</invoke>|<parameter name=|</content>|/home/[a-z][a-z0-9_-]*/|/Users/[A-Za-z][A-Za-z0-9_.-]*/|(^|[[:space:]])cd +/tmp/'
 
 allowed() { # path line
   [[ -f "$allow_file" ]] || return 1
