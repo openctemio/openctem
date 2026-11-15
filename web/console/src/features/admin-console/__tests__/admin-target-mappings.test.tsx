@@ -240,7 +240,8 @@ describe('TargetMappingsPage', () => {
     render(<TargetMappingsPage />)
     expect(screen.getByRole('button', { name: /new mapping/i })).toBeInTheDocument()
     await openRowMenu(user)
-    expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument()
+    // The menu's code loads after the page: its items appear a moment later.
+    expect(await screen.findByRole('menuitem', { name: 'Edit' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Deactivate' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
   })

@@ -155,11 +155,11 @@ export function FindingRowMenu({
       trigger={
         // Literal sizes: the icon-button guard reads them statically.
         size === 'icon' ? (
-          <Button size="icon" variant="ghost" className="p-0" aria-label={label}>
+          <Button size="icon" variant="ghost" aria-label={label}>
             <MoreHorizontal className="h-4 w-4" aria-hidden />
           </Button>
         ) : (
-          <Button size="icon-sm" variant="ghost" className="p-0" aria-label={label}>
+          <Button size="icon-sm" variant="ghost" aria-label={label}>
             <MoreHorizontal className="h-4 w-4" aria-hidden />
           </Button>
         )
