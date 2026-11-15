@@ -484,7 +484,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
                   <MoreHorizontal className="size-4" aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent>
                 {task.state === 'on_hold' ? (
                   <DropdownMenuItem onSelect={() => void setHold(false)}>
                     <PlayCircle className="size-4" aria-hidden />

@@ -435,7 +435,7 @@ export default function AttackPathsPage() {
                     {t('prioritization.attackPath.how', 'How')}
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-80 text-sm" align="end">
+                <PopoverContent className="w-80 text-sm">
                   <p className="font-semibold">
                     {t('prioritization.attackPath.howTitle', 'How a path is scored')}
                   </p>

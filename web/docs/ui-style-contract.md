@@ -166,10 +166,13 @@ text-muted-foreground`), 16 px above, 8 px below; folds away on the rail.
 
 Menus, popovers, select lists, tooltips and date pickers keep 16 px from every
 screen edge (`FLOATING_COLLISION_PADDING` in `src/components/ui/floating.ts`,
-passed by every kit wrapper). A popup aligns with its trigger when it fits and
-slides inward otherwise, never to the edge. Call sites do not set their own
-`collisionPadding`; the one exception is a sheet opened from the phone top bar
-(the account menu, notifications), which keeps the bar's 8 px.
+passed by every kit wrapper), at least the safe area, and 16 px above a fixed
+bottom row such as the bulk bar. A popup lines up with the start or end edge of
+its trigger by the half of the screen the trigger is in, and slides inward when
+it does not fit, never to the edge. Call sites do not set their own
+`collisionPadding` or a fixed `align`; the one exception is a sheet opened from
+the phone top bar (the account menu, notifications), which keeps the bar's
+8 px. All rules: "Floating surfaces" in section 8.
 
 ### Decisions
 
@@ -695,6 +698,27 @@ load.
     confirmation, the approver's buttons). Do not build a second band.
   - The step-up dialog says the action continues right away once the identity
     is confirmed; it never describes the act.
+
+### Floating surfaces
+
+Every anchored surface (menu, popover, select list, tooltip, date picker) gets
+these rules from the kit wrappers in `src/components/ui` (`floating.ts`); call
+sites pass nothing for them.
+
+| Rule        | What the kit does                                                                                                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Side        | Below the trigger; above it when the room below is shorter than the popup and the room above is larger. Beside the trigger (left or right) only for sidebar flyouts and submenus.                                                     |
+| Alignment   | Measured when it opens: the trigger's centre in the start half of the screen lines the popup up with the trigger's start edge, otherwise with its end edge (logical, so a right-to-left page mirrors). Tooltips stay centred.         |
+| Gutter      | 16 px from every screen edge, at least the safe area (notch, home indicator); with a fixed bottom row shown (the bulk bar of selected rows, registered with `useFloatingObstruction`), 16 px above that row. Phone top-bar sheets: 8. |
+| Keyboard    | Placement uses the visible viewport, so a popup stays above the on-screen keyboard.                                                                                                                                                   |
+| Height      | At most the room on its side; more content scrolls inside, with an 8 px shade (`scroll-cue`) at the edge where there is more. Select lists keep their scroll arrows.                                                                  |
+| Width       | Never wider than the screen less both gutters (343 px at 375, 288 at 320); never narrower than its trigger; menus at least 160 px.                                                                                                    |
+| Trigger     | A select list opens under (or above) its trigger, never laid over it.                                                                                                                                                                 |
+| Headings    | A menu heading over exactly one item is hidden: the item says it. A label over no items (the signed-in account) stays.                                                                                                                |
+| Shortcuts   | Shortcut hints in menus are hidden under a coarse pointer (phones, touch tablets).                                                                                                                                                    |
+| Tooltips    | Open after 400 ms of rest, 100 ms to the next one; never the only place information lives.                                                                                                                                            |
+| Motion      | No open or close animation under reduced motion.                                                                                                                                                                                      |
+| Fixed align | Only the shell's design-fixed menus pass `align` (`floating-align-guard.test.ts` lists them).                                                                                                                                         |
 
 ## 9. Responsiveness
 

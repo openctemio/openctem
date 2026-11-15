@@ -662,7 +662,7 @@ export default function AssetGroupsPage() {
             <span className="sr-only md:not-sr-only">{t('assetGroups.export', 'Export')}</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent>
           <DropdownMenuItem onClick={handleExportCsv} disabled={groups.length === 0}>
             {t('assetGroups.exportCsv', 'Export as CSV')}
           </DropdownMenuItem>

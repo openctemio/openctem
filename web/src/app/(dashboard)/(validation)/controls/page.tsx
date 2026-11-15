@@ -360,7 +360,7 @@ export default function CompensatingControlsPage() {
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent>
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onSelect={() => setDeleteControl(control)}

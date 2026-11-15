@@ -49,6 +49,8 @@ import { PopoverContent } from '../popover'
 import { TooltipContent } from '../tooltip'
 import { SelectContent } from '../select'
 
+const gutter = { top: 16, right: 16, bottom: 16, left: 16 }
+
 describe('floating surfaces keep the page gutter', () => {
   beforeEach(() => {
     for (const k of Object.keys(seen)) delete seen[k]
@@ -69,11 +71,16 @@ describe('floating surfaces keep the page gutter', () => {
       </>
     )
     expect(seen).toEqual({
-      dropdown: 16,
-      dropdownSub: 16,
-      popover: 16,
+      dropdown: gutter,
+      dropdownSub: gutter,
+      popover: gutter,
       tooltip: 16,
-      select: 16,
+      select: gutter,
     })
+  })
+
+  it('keeps a smaller gutter a call site asks for (phone top-bar sheets)', () => {
+    render(<DropdownMenuContent collisionPadding={8} />)
+    expect(seen.dropdown).toEqual({ top: 8, right: 8, bottom: 8, left: 8 })
   })
 })

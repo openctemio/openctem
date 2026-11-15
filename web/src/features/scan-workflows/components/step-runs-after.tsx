@@ -53,7 +53,7 @@ export function StepRunsAfter({
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent className="w-64">
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           {t('scans.workflowForm.runsAfter.label')}
         </DropdownMenuLabel>

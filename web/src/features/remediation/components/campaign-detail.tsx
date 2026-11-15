@@ -280,7 +280,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                   <MoreHorizontal className="size-4" aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent>
                 {!c.ticket && (
                   <DropdownMenuItem onSelect={() => setJiraOpen(true)}>
                     <ExternalLink className="size-4" aria-hidden />
@@ -432,7 +432,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                           <MoreHorizontal className="size-4" aria-hidden />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
+                      <DropdownMenuContent>
                         <DropdownMenuItem onSelect={() => setRemoveTask(task)}>
                           <XCircle className="size-4" aria-hidden />
                           {t('remediationCampaigns.actions.removeTask')}

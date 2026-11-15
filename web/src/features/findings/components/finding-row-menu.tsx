@@ -77,7 +77,7 @@ export function FindingRowMenu({
           <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent>
         <DropdownMenuItem onClick={() => onAction('view')}>
           <ExternalLink className="me-2 h-4 w-4" aria-hidden />
           {t('findings.row.viewDetails', 'View details')}
