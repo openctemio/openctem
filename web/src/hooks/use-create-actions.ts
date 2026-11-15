@@ -12,8 +12,9 @@ import {
 } from 'lucide-react'
 import { usePermissions } from '@/context/permission-provider'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
-import { useCanMutate } from '@/lib/permissions'
-import { Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
+import { usePermissions as useGatePermissions } from '@/lib/permissions/hooks'
+import { passesRouteGate, type RouteGate } from '@/lib/permissions/route-gate'
 import { openFormHref, type OpenForm } from '@/lib/open-form'
 
 /**
@@ -86,6 +87,15 @@ export const CREATE_ACTION_DEFS: readonly (Omit<CreateAction, 'href'> & { path: 
 ]
 
 /**
+ * The gate of POST /api/v1/tenants/{tenant}/invitations, written out so the
+ * shell does not carry the whole generated route table (about 9 KB gzipped) in
+ * every page's first load. A test compares it with the generated entry, so a
+ * changed gate fails there.
+ */
+export const INVITE_ROUTE_KEY = 'POST /api/v1/tenants/{tenant}/invitations'
+export const INVITE_GATE: RouteGate = { permissions: ['team:members:invite'], min_role: 'admin' }
+
+/**
  * The create actions this caller may take now. Each gate is the one the
  * target page applies before it opens the form, so a listed action always
  * opens its form.
@@ -94,7 +104,8 @@ export function useCreateActions(): CreateAction[] {
   const { hasPermission } = usePermissions()
   const scansOn = useModuleEnabled('scans')
   const remediationOn = useModuleEnabled('remediation')
-  const canInvite = useCanMutate('POST /api/v1/tenants/{tenant}/invitations')
+  const { permissions, tenantRole } = useGatePermissions()
+  const canInvite = passesRouteGate(INVITE_GATE, permissions, tenantRole)
   const allowed: Record<OpenForm, boolean> = {
     // scans-section-tabs.tsx
     scan: scansOn && hasPermission(Permission.ScansWrite),

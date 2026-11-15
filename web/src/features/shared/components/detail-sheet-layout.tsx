@@ -47,6 +47,7 @@
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
+import dynamic from 'next/dynamic'
 import Link from '@/components/link'
 import { ChevronDown, ExternalLink, Maximize2, MoreHorizontal, X } from 'lucide-react'
 
@@ -58,7 +59,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Drawer, DrawerContent, DrawerHandle } from '@/components/ui/drawer'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { TAB_CLASS, Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -129,23 +129,12 @@ function assignRef<T>(ref: React.Ref<T> | undefined, node: T | null) {
   else if (ref) ref.current = node
 }
 
-/**
- * Inputs and other controls never start a drag: dragging on a text field
- * selects text or moves the caret, a slider slides. Vaul skips any element
- * under `[data-vaul-no-drag]`, so the control under the finger is tagged as
- * the press starts, before Vaul decides.
- */
-const NO_DRAG_SELECTOR =
-  'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="slider"], [role="textbox"]'
-
-function keepControlsFromDragging(e: React.PointerEvent) {
-  const target = e.target
-  if (!(target instanceof Element)) return
-  const control = target.closest(NO_DRAG_SELECTOR)
-  if (control && !control.hasAttribute('data-vaul-no-drag')) {
-    control.setAttribute('data-vaul-no-drag', '')
-  }
-}
+// The phone sheet is a Vaul drawer (detail-sheet-phone.tsx). Vaul is about 9 KB
+// gzipped and only a phone needs it, so it downloads when a phone mounts a sheet
+// (below), not with every list page. The desktop drawer is a Radix sheet.
+const PhoneDrawer = dynamic(() => import('./detail-sheet-phone').then((m) => m.PhoneDrawer), {
+  ssr: false,
+})
 
 // The footer's mount point, owned by the sheet. A tab component renders its
 // "View all" through <DetailSheetFooter>, which portals into it.
@@ -204,6 +193,11 @@ export function DetailSheet({
   // drawer. Read on the first render, so an opening sheet never starts as one
   // and becomes the other.
   const isPhone = useIsMobile()
+  // Warm the phone drawer's code as soon as a phone mounts a sheet, so opening
+  // it does not wait on the download.
+  React.useEffect(() => {
+    if (isPhone) void import('./detail-sheet-phone')
+  }, [isPhone])
   const pad = isPhone ? 'px-4' : 'px-5'
   const panelId = React.useId()
 
@@ -308,25 +302,20 @@ export function DetailSheet({
 
   if (isPhone) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent
-          data-slot="detail-sheet"
-          className={cn(
-            'w-full gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0 outline-none',
-            // One height whatever the content (svh: the browser's bars never
-            // cover it), clear of the home indicator.
-            'rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)]',
-            phoneHeight === 'auto' ? 'max-h-[92svh]' : 'h-[92svh]',
-            className
-          )}
-          onPointerDownCapture={keepControlsFromDragging}
-          onOpenAutoFocus={onOpenAutoFocus}
-          onCloseAutoFocus={onCloseAutoFocus}
-        >
-          <DrawerHandle />
-          {frame}
-        </DrawerContent>
-      </Drawer>
+      <PhoneDrawer
+        open={open}
+        onOpenChange={onOpenChange}
+        className={cn(
+          // One height whatever the content (svh: the browser's bars never
+          // cover it), clear of the home indicator.
+          phoneHeight === 'auto' ? 'max-h-[92svh]' : 'h-[92svh]',
+          className
+        )}
+        onOpenAutoFocus={onOpenAutoFocus}
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
+        {frame}
+      </PhoneDrawer>
     )
   }
 

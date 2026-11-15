@@ -19,9 +19,12 @@ vi.mock('@/context/brand-provider', async (orig) => ({
   ...(await orig<typeof import('@/context/brand-provider')>()),
   useDocsHref: () => (u: string) => u,
 }))
+vi.mock('@/lib/permissions/hooks', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions/hooks')>()),
+  usePermissions: () => ({ permissions: [], tenantRole: 'member' }),
+}))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
-  useCanMutate: () => false,
   useFilteredSidebarData: () => ({
     data: { navGroups: [{ title: 'Overview', items: sidebarItems }] },
   }),

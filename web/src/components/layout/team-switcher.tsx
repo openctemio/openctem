@@ -33,7 +33,6 @@ import { SIDEBAR_CHIP_CLASS, SIDEBAR_CONTEXT_ROW_CLASS } from './sidebar-brand'
 import { toast } from 'sonner'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
-import { useMemberStats } from '@/features/organization/api/use-members'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import dynamic from 'next/dynamic'
@@ -42,7 +41,7 @@ import type { OrgCardOrganization } from './org-card'
 
 // The organization card (member counts, invitations, search) is the popover's
 // content: it loads when the popover first opens, not with every page.
-const OrgCard = dynamic(() => import('./org-card').then((m) => m.OrgCard), {
+const OrgCard = dynamic(() => import('./org-card').then((m) => m.OrgCardWithMembers), {
   ssr: false,
   loading: () => <div className="h-40" aria-hidden />,
 })
@@ -80,12 +79,6 @@ export function TeamSwitcher() {
     }
     return { membersLink: link('members'), apiKeysLink: link('api-keys') }
   }, [settingsNav])
-
-  // Member count: one cheap stats call, only once the card is open and only
-  // when the user may read members (the hook also checks the permission).
-  const { stats: memberStats, isLoading: memberStatsLoading } = useMemberStats(
-    isOpen && membersLink ? currentTenant?.id : undefined
-  )
 
   // The organizations to list. If the API returned none but we know the
   // current one (from the cookie), list that.
@@ -292,8 +285,6 @@ export function TeamSwitcher() {
               }}
               organizations={organizations}
               membersLink={membersLink}
-              memberCount={memberStats?.total_members}
-              memberCountLoading={memberStatsLoading}
               apiKeysLink={apiKeysLink}
               canCreate={canCreate}
               email={user?.email}

@@ -89,7 +89,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react'
-import { Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
 import { matchesAllWords } from './settings-search'
 import { webExtension } from '@/lib/extension'
 import { mergeSettingsGroups } from '@/lib/extension/merge'

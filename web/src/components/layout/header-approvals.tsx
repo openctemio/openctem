@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { usePendingApprovalCount } from '@/hooks/use-dynamic-badges'
-import { Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
 import { HEADER_BADGE, HEADER_ICON_BUTTON } from './header-controls'
 
 /**
