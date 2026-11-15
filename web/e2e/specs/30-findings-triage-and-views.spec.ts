@@ -72,6 +72,92 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
     }
   })
 
+  test('rows are one line at the kit heights (40, 32 compact, 52 comfortable); the Priority header is not cut', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 })
+    await page.goto('/findings')
+    // The person's density (Display menu) is kept in the browser under its stored word.
+    for (const [density, height] of [
+      ['comfortable', 40],
+      ['compact', 32],
+      ['spacious', 52],
+    ] as const) {
+      await page.evaluate((d) => localStorage.setItem('openctem:table-density', d), density)
+      await page.reload()
+      await expect(page.getByRole('columnheader', { name: 'Title' })).toBeVisible({
+        timeout: 20_000,
+      })
+      if (!(await page.locator('[data-slot="finding-title-link"]').first().isVisible())) return
+      const heights = await page
+        .locator('main tbody tr')
+        .evaluateAll((rows) => rows.map((tr) => Math.round(tr.getBoundingClientRect().height)))
+      if (density === 'compact') {
+        // The row menu's trigger still draws 32 in a compact row (its dense
+        // size comes with the row menu change); every other cell fits 32.
+        for (const h of heights) expect(h, `rows at ${density}`).toBeLessThanOrEqual(height + 1)
+      } else {
+        expect(new Set(heights), `rows at ${density}`).toEqual(new Set([height]))
+      }
+      const cut = await page
+        .getByRole('columnheader', { name: 'Priority' })
+        .locator('[data-slot="sort-button"] span')
+        .evaluate((s) => s.scrollWidth > s.clientWidth)
+      expect(cut, 'Priority header label cut').toBe(false)
+    }
+  })
+
+  test('frozen start columns: header and body cells stay together; the row menu scrolls in last', async ({
+    page,
+  }) => {
+    for (const width of [1440, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 })
+      // Every column turned on, so the table is wider than its frame.
+      await page.goto('/findings?columns=severity,asset,source,status,slaStatus,createdAt')
+      await expect(page.getByRole('columnheader', { name: 'Title' })).toBeVisible({
+        timeout: 20_000,
+      })
+      if (!(await page.locator('[data-slot="finding-title-link"]').first().isVisible())) return
+      const frame = page.locator('main [data-slot="table-container"]')
+      const read = () =>
+        frame.evaluate((f) => {
+          const ths = [...f.querySelectorAll('thead th')]
+          const tds = [...(f.querySelector('tbody tr')?.children ?? [])]
+          const frozen = tds
+            .map((td, i) => ({ td, th: ths[i] }))
+            .filter(({ td }) => getComputedStyle(td).position === 'sticky')
+            .map(({ td, th }) => ({
+              th: Math.round(th.getBoundingClientRect().left),
+              td: Math.round(td.getBoundingClientRect().left),
+            }))
+          const fr = f.getBoundingClientRect()
+          const last = ths[ths.length - 1].getBoundingClientRect()
+          const head = f.querySelector('thead')!.getBoundingClientRect()
+          const row = f.querySelector('tbody tr')!.getBoundingClientRect()
+          return {
+            frozen,
+            wide: f.scrollWidth > f.clientWidth + 1,
+            lastInside: last.left >= fr.left - 1 && last.right <= fr.left + f.clientWidth + 1,
+            rowClear: row.top >= head.bottom - 1,
+          }
+        })
+      const rest = await read()
+      expect(rest.rowClear, `first row clear of the header at ${width}`).toBe(true)
+      expect(rest.frozen.length, `frozen columns at ${width}`).toBeGreaterThanOrEqual(2)
+      for (const c of rest.frozen) expect(c.th, `header x = body x at ${width}`).toBe(c.td)
+      if (!rest.wide) continue
+      await frame.evaluate((f) => (f.scrollLeft = 200))
+      const mid = await read()
+      for (const [i, c] of mid.frozen.entries()) {
+        expect(c.th, `header x = body x after a scroll at ${width}`).toBe(c.td)
+        expect(c.td, `frozen column ${i} stays put at ${width}`).toBe(rest.frozen[i].td)
+      }
+      await frame.evaluate((f) => (f.scrollLeft = f.scrollWidth))
+      const end = await read()
+      expect(end.lastInside, `row menu column inside the frame at max scroll, ${width}`).toBe(true)
+    }
+  })
+
   test('there is no page-level horizontal scroll at 1024, 1280 and 1440', async ({ page }) => {
     for (const width of [1024, 1280, 1440]) {
       await page.setViewportSize({ width, height: 900 })

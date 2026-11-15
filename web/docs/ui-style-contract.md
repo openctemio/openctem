@@ -157,6 +157,15 @@ text-muted-foreground`), 16 px above, 8 px below; folds away on the rail.
 | Table header                               | `--th-h`                                    | 36  |
 | Table header, compact                      | `--th-h` in `[data-density='compact']`      | 32  |
 
+A table cell has no vertical padding: the row height and middle alignment place its content, so a row
+measures its density height as long as its content is one line.
+
+A table that scrolls sideways freezes its identifying columns at the start: the checkbox and the
+columns marked `pin: 'start'` (else the first data column), within 45 % of the table's frame; a frozen
+column without a fixed width keeps its floor and is capped at 420 px. The header cells freeze with the
+body cells. A soft edge shows after the frozen group only while content is hidden under it. The row
+actions column scrolls with the table as its last column (`pinActions` freezes it, off by default).
+
 ### Radii
 
 | Role                      | Token             | px  |
