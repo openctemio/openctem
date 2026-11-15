@@ -289,3 +289,89 @@ for (const locale of ['en', 'vi'] as const) {
     )
   }
 }
+
+/**
+ * Owner report (desktop): the status menu of the finding drawer ("New",
+ * items "Confirmed" and "False positive") opened as a 256 px panel hanging to
+ * the left of its trigger, out over the dimmed page. A menu is as wide as its
+ * content (at least 160 px with icons) and lines up with its trigger's start
+ * edge unless that would cross the room it has; inside a drawer that room is
+ * the drawer.
+ */
+async function newFindingId(page: Page): Promise<string | null> {
+  return page.evaluate(async () => {
+    const res = await fetch('/api/v1/findings?per_page=50')
+    const body = (await res.json().catch(() => null)) as {
+      data?: Array<{ id: string; status: string }>
+    } | null
+    return body?.data?.find((f) => f.status === 'new')?.id ?? null
+  })
+}
+
+for (const width of [1440, 390] as const) {
+  test(
+    `The finding drawer's status menu opens under its trigger, inside the drawer, at ${width}px`,
+    { tag: ['@findings', ...(width < 768 ? ['@phone'] : [])] },
+    async ({ page }) => {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await page.goto('/findings')
+      await page.waitForLoadState('networkidle')
+      const id = await newFindingId(page)
+      test.skip(!id, 'No finding in "New": seed findings to enable this test')
+
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      // The page reads the hash once, on load: leave first so this is a load.
+      await page.goto('about:blank')
+      await page.goto(`/findings#finding=${id}`)
+      const drawer = page.getByRole('dialog')
+      await expect(drawer).toBeVisible({ timeout: 45_000 })
+      const status = drawer.getByRole('button', { name: /^New$/ }).first()
+      await expect(status).toBeVisible()
+      const d = await settledRect(drawer)
+      const t = await settledRect(status)
+
+      await status.click()
+      const menu = page.getByRole('menu')
+      await expect(menu.getByRole('menuitem').first()).toBeVisible()
+      const m = await settledRect(menu)
+      // Widest row: its children (icon, text) plus the row and panel padding.
+      const content = await menu.evaluate((el) => {
+        let widest = 0
+        for (const row of el.querySelectorAll('[role="menuitem"]')) {
+          const cs = getComputedStyle(row)
+          let w = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+          const kids = [...row.children]
+          for (const c of kids) w += c.getBoundingClientRect().width
+          w += parseFloat(cs.columnGap || '0') * Math.max(0, kids.length - 1)
+          widest = Math.max(widest, w)
+        }
+        const ps = getComputedStyle(el)
+        return Math.ceil(
+          widest +
+            parseFloat(ps.paddingLeft) +
+            parseFloat(ps.paddingRight) +
+            parseFloat(ps.borderLeftWidth) +
+            parseFloat(ps.borderRightWidth)
+        )
+      })
+      test.info().annotations.push({
+        type: 'drawer status menu',
+        description: JSON.stringify({ drawer: d, trigger: t, menu: m, content }),
+      })
+      expect(Math.abs(m.left - t.left), "menu's left edge on the trigger's").toBeLessThanOrEqual(1)
+      expect(m.top, 'under its trigger').toBeGreaterThanOrEqual(t.bottom)
+      expect(m.left, 'inside the drawer (left)').toBeGreaterThanOrEqual(d.left)
+      expect(m.right, 'inside the drawer (right)').toBeLessThanOrEqual(d.right)
+      expect(m.right - m.left, 'as wide as its content').toBeLessThanOrEqual(
+        Math.max(160, t.right - t.left, content) + 1
+      )
+      expect(await noSidewaysScroll(page)).toBe(true)
+      const issues = await page.evaluate(layoutIssues)
+      expect(issues.filter((i) => i.kind === 'popup')).toEqual([])
+      await page.keyboard.press('Escape')
+      await expect(menu).toBeHidden()
+      await expect(drawer).toBeVisible()
+    }
+  )
+}
