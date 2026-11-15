@@ -46,7 +46,7 @@ import { FindingsBaseChips } from '@/features/findings/components/base-chips'
 import { AddFilterPopover } from '@/features/findings/filters/add-filter-popover'
 import { ComplianceBenchmarksPanel } from '@/features/findings/components/compliance-benchmarks-panel'
 import { usePracticeCountsList } from '@/features/findings/api/use-practice-counts'
-import { mapDataFlow } from '@/features/findings/lib/finding-detail'
+import { findingSourceText, mapDataFlow } from '@/features/findings/lib/finding-detail'
 import {
   readFindingHash,
   useDrawerKeyboardNav,
@@ -104,7 +104,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { DecorativeText } from '@/components/ui/decorative-text'
-import { Badge } from '@/components/ui/badge'
+import { Tag } from '@/components/ui/tag'
 import {
   Select,
   SelectContent,
@@ -486,6 +486,16 @@ function FindingsTableSkeleton({ contextChips }: { contextChips?: ReactNode }) {
 }
 
 /**
+ * Column priority (the table's frame width below which a column drops), so the
+ * title never gets narrower than 280: Severity below a 1480 px screen, Signals
+ * and EPSS below 1320, Due / SLA below 1160, with the 256 px sidebar open
+ * (the frame is the screen less the sidebar, the page padding and the
+ * scrollbar gutter: 326 px). The frame decides, so a collapsed sidebar or the
+ * filter panel open move the points with it.
+ */
+const FINDINGS_HIDE_BELOW = { severity: 1154, signals: 994, slaStatus: 834 } as const
+
+/**
  * Table columns the API can sort by (FindingAllowedSortFields), keyed by column
  * id. Title, location and SLA have no server sort field, so those headers are
  * plain text rather than a control that reorders only the rows on screen.
@@ -514,6 +524,12 @@ function parseSortParam(value: string): SortingState {
   // invert: the API ranks critical / P0 first ascending; the table calls that descending.
   return [{ id, desc: col.invert ? !descending : descending }]
 }
+
+/** The list's order with no `sort` in the URL: the server ranks priority first. */
+const DEFAULT_SORTING: SortingState = [{ id: 'priorityClass', desc: true }]
+
+const sameSorting = (a: SortingState, b: SortingState) =>
+  a.length === b.length && a.every((s, i) => s.id === b[i]?.id && s.desc === b[i]?.desc)
 
 /** Table sorting → API `sort` (newest first as the tie-breaker). */
 function toApiSort(sorting: SortingState): string | undefined {
@@ -738,10 +754,16 @@ function FindingsContent() {
   const [autoAssignOpen, setAutoAssignOpen] = useState(false)
   const [hasUnassignedGroup, setHasUnassignedGroup] = useState(false)
   const [sortParam, setSortParam] = useUrlFilter('sort', '')
-  const sorting = useMemo<SortingState>(() => parseSortParam(sortParam), [sortParam])
+  // No sort in the URL: the server's order (priority first), shown on the
+  // Priority header so the sorted column is announced at rest.
+  const sorting = useMemo<SortingState>(() => {
+    const parsed = parseSortParam(sortParam)
+    return parsed.length > 0 ? parsed : DEFAULT_SORTING
+  }, [sortParam])
   // The URL holds the API sort (e.g. `-created_at` or `severity,-created_at`).
   const handleSortingChange = useCallback(
-    (next: SortingState) => setSortParam(toApiSort(next) ?? ''),
+    (next: SortingState) =>
+      setSortParam(sameSorting(next, DEFAULT_SORTING) ? '' : (toApiSort(next) ?? '')),
     [setSortParam]
   )
   // Filter panel: closed by default so the table gets the width; the viewer's
@@ -857,20 +879,11 @@ function FindingsContent() {
   // Columns and density are part of the view: the URL holds a choice only
   // while it differs from what the open view (or the list's default) shows,
   // and the saved view stores them.
-  const plainActive =
-    !savedId &&
-    quickViewIsActive(withInformational(searchParams, true, false), {
-      key: 'active',
-      count: 0,
-      params: 'state=open',
-    })
   const viewColumns = openView?.columns
   const baselineColumns = useMemo(
     () =>
-      viewColumns && viewColumns.length > 0
-        ? normalizeColumns(viewColumns)
-        : defaultColumns(plainActive),
-    [viewColumns, plainActive]
+      viewColumns && viewColumns.length > 0 ? normalizeColumns(viewColumns) : defaultColumns(),
+    [viewColumns]
   )
   const columnsParam = useUrlParam('columns')
   const shownColumns = useMemo(
@@ -1584,7 +1597,7 @@ function FindingsContent() {
     const cols: ColumnDef<Finding>[] = [
       {
         accessorKey: 'priorityClass',
-        meta: { label: t('findings.columns.priority', 'Priority') },
+        meta: { kind: 'priority', width: 60, label: t('findings.columns.priority', 'Priority') },
         enableHiding: false,
         header: ({ column }) => (
           <DataTableColumnHeader
@@ -1593,7 +1606,9 @@ function FindingsContent() {
           />
         ),
         cell: ({ row }) => {
-          return <PriorityClassBadge priorityClass={row.original.priorityClass} showWord />
+          // The class only (P0..P3, 60 wide); its word and SLA window are the
+          // badge's name and tooltip.
+          return <PriorityClassBadge priorityClass={row.original.priorityClass} />
         },
         filterFn: (row, id, value) => {
           return value.includes(row.getValue(id))
@@ -1601,7 +1616,12 @@ function FindingsContent() {
       },
       {
         accessorKey: 'title',
-        meta: { label: t('findings.columns.title', 'Title'), primary: true },
+        meta: {
+          kind: 'name',
+          minWidth: 280,
+          label: t('findings.columns.title', 'Title'),
+          primary: true,
+        },
         enableSorting: false,
         enableHiding: false,
         header: ({ column }) => (
@@ -1614,16 +1634,16 @@ function FindingsContent() {
             row.original.hasDataFlow || (row.original.dataFlow?.steps.length ?? 0) > 0
 
           return (
-            // The title is the control that opens the finding (its name starts
-            // with the visible title); the rest of the cell opens it on a click
-            // too, but holds the CVE link, so it is not a button itself.
-            <div
-              className="cursor-pointer max-w-[220px] sm:max-w-[360px] 2xl:max-w-xl"
-              onClick={() => handleRowClick(row.original)}
-            >
+            // The title is a link to the finding's page (its name starts with
+            // the visible title): a plain click opens the drawer, a modified or
+            // middle click the page in a new tab. The rest of the cell opens
+            // the drawer through the row; it holds the CVE link, so it is not
+            // a link itself.
+            <div className="min-w-0">
               <FindingTitleCell
                 title={row.getValue('title')}
                 onOpen={() => handleRowClick(row.original)}
+                findingId={row.original.id}
                 openLabel={t('findings.list.openRow', '{title}, view details', {
                   title: toDisplayText(row.getValue('title'), 300),
                 })}
@@ -1669,8 +1689,32 @@ function FindingsContent() {
         },
       },
       {
+        id: 'asset',
+        meta: {
+          kind: 'asset',
+          // 160 when there is room; the title takes the rest. A table frame
+          // gives spare width to columns without a width, so the cap is the width.
+          width: 160,
+          minWidth: 112,
+          label: t('findings.list.location'),
+        },
+        enableSorting: false,
+        accessorFn: (row) => row.assets[0]?.name || '-',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('findings.list.location')} />
+        ),
+        cell: ({ row }) => <FindingAssetCell finding={row.original} />,
+      },
+      {
         accessorKey: 'severity',
-        meta: { label: t('findings.columns.severity', 'Severity') },
+        // An explicit id: column priority finds the column by it.
+        id: 'severity',
+        meta: {
+          kind: 'severity',
+          width: 88,
+          hideBelow: FINDINGS_HIDE_BELOW.severity,
+          label: t('findings.columns.severity', 'Severity'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -1683,8 +1727,30 @@ function FindingsContent() {
         },
       },
       {
+        id: 'signals',
+        meta: {
+          kind: 'signals',
+          width: 140,
+          hideBelow: FINDINGS_HIDE_BELOW.signals,
+          label: t('findings.columns.exploitSignals', 'Signals and EPSS'),
+        },
+        enableSorting: false,
+        // Always part of the list (not a saved column); a narrow frame drops it.
+        enableHiding: false,
+        header: () => t('findings.columns.exploitSignals', 'Signals and EPSS'),
+        cell: ({ row }) => (
+          <ExploitSignals
+            variant="cell"
+            isInKev={row.original.isInKev}
+            kevDueDate={row.original.kevDueDate}
+            kevRansomware={row.original.kevRansomware}
+            epssScore={row.original.epssScore}
+          />
+        ),
+      },
+      {
         accessorKey: 'status',
-        meta: { label: t('findings.columns.status', 'Status') },
+        meta: { kind: 'status', width: 120, label: t('findings.columns.status', 'Status') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.status', 'Status')} />
         ),
@@ -1699,46 +1765,14 @@ function FindingsContent() {
         },
       },
       {
-        id: 'signals',
-        meta: { label: t('findings.columns.exploitSignals', 'Exploit signals') },
-        enableSorting: false,
-        header: () => t('findings.columns.exploitSignals', 'Exploit signals'),
-        cell: ({ row }) => (
-          <ExploitSignals
-            variant="cell"
-            isInKev={row.original.isInKev}
-            kevDueDate={row.original.kevDueDate}
-            kevRansomware={row.original.kevRansomware}
-            epssScore={row.original.epssScore}
-          />
-        ),
-      },
-      {
-        id: 'source',
-        meta: { label: t('findings.columns.source', 'Source') },
-        accessorFn: (row) => row.source || '-',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('findings.columns.source', 'Source')} />
-        ),
-        cell: ({ row }) => (
-          <Badge variant="outline" className="text-xs uppercase">
-            {row.getValue('source')}
-          </Badge>
-        ),
-      },
-      {
-        id: 'asset',
-        meta: { label: t('findings.list.location') },
-        enableSorting: false,
-        accessorFn: (row) => row.assets[0]?.name || '-',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('findings.list.location')} />
-        ),
-        cell: ({ row }) => <FindingAssetCell finding={row.original} />,
-      },
-      {
         accessorKey: 'slaStatus',
-        meta: { label: t('findings.columns.sla', 'Due / SLA') },
+        id: 'slaStatus',
+        meta: {
+          kind: 'due',
+          width: 112,
+          hideBelow: FINDINGS_HIDE_BELOW.slaStatus,
+          label: t('findings.columns.sla', 'Due / SLA'),
+        },
         enableSorting: true,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.sla', 'Due / SLA')} />
@@ -1752,8 +1786,20 @@ function FindingsContent() {
         ),
       },
       {
+        id: 'source',
+        meta: { width: 130, label: t('findings.columns.source', 'Source') },
+        accessorFn: (row) => row.source || '-',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('findings.columns.source', 'Source')} />
+        ),
+        cell: ({ row }) => (
+          // How the finding was found: a classification, named in words.
+          <Tag label={findingSourceText(t, row.original.source)} />
+        ),
+      },
+      {
         accessorKey: 'createdAt',
-        meta: { label: t('findings.columns.created', 'Created') },
+        meta: { kind: 'date', width: 104, label: t('findings.columns.created', 'Created') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.created', 'Created')} />
         ),
@@ -1765,6 +1811,7 @@ function FindingsContent() {
       },
       {
         id: 'actions',
+        meta: { kind: 'actions' },
         enableHiding: false,
         cell: ({ row }) => {
           const finding = row.original
@@ -2833,6 +2880,7 @@ function FindingsContent() {
                     pagination={pagination}
                     onPaginationChange={setPagination}
                     pageSizeOptions={PAGE_SIZES}
+                    paginationNoun={t('findings.list.paginationNoun', 'findings')}
                     sorting={sorting}
                     onSortingChange={handleSortingChange}
                     // No bulk action for this user: no checkbox column either.

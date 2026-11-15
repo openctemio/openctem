@@ -78,6 +78,7 @@ export type StepUpHandler = (prompt?: StepUpPrompt) => Promise<boolean>
 
 let handler: StepUpHandler | null = null
 let inFlight: Promise<boolean> | null = null
+const registrationWaiters = new Set<(h: StepUpHandler) => void>()
 
 /**
  * Registers the dialog that answers step-up prompts. Returns the function
@@ -85,9 +86,24 @@ let inFlight: Promise<boolean> | null = null
  */
 export function registerStepUpHandler(h: StepUpHandler): () => void {
   handler = h
+  for (const wake of [...registrationWaiters]) wake(h)
   return () => {
     if (handler === h) handler = null
   }
+}
+
+/**
+ * Resolves with the next dialog that registers. A placeholder handler that is
+ * still loading the real dialog waits on this, then hands the prompt over.
+ * `stop` stops waiting (the dialog failed to load).
+ */
+export function nextStepUpHandler(): { ready: Promise<StepUpHandler>; stop: () => void } {
+  let wake!: (h: StepUpHandler) => void
+  const ready = new Promise<StepUpHandler>((resolve) => {
+    wake = resolve
+    registrationWaiters.add(resolve)
+  })
+  return { ready, stop: () => registrationWaiters.delete(wake) }
 }
 
 /**

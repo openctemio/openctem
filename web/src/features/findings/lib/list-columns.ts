@@ -9,11 +9,11 @@ import type { VisibilityState } from '@tanstack/react-table'
 
 /** Column ids a person can hide, in table order. */
 export const OPTIONAL_COLUMNS = [
-  'severity',
   'asset',
-  'source',
+  'severity',
   'status',
   'slaStatus',
+  'source',
   'createdAt',
 ] as const
 
@@ -23,18 +23,17 @@ export type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number]
 export const LOCKED_COLUMNS = ['title', 'priorityClass'] as const
 
 /**
- * What the list shows with no choice made: the scanner and first-seen date stay
- * in the detail, and the target is the line under each title (FindingTitleCell),
- * so the Location column is off unless someone turns it on.
+ * What the list shows with no choice made: the asset, severity, status and
+ * due date beside the always-shown priority, title and signals. The scanner
+ * and first-seen date stay in the detail. On a narrow frame the table drops
+ * Severity, then Signals, then Due (column priority), so the title keeps its
+ * room; `activeView` no longer changes the set (the width decides).
  */
-const BASE_VISIBLE: readonly OptionalColumn[] = ['severity', 'status', 'slaStatus']
+const BASE_VISIBLE: readonly OptionalColumn[] = ['asset', 'severity', 'status', 'slaStatus']
 
-/**
- * The default columns. Severity is part of Priority, so the Active view leaves
- * it out; the other views (Needs triage, a filter someone built) show it.
- */
-export function defaultColumns(activeView: boolean): OptionalColumn[] {
-  return BASE_VISIBLE.filter((c) => !(activeView && c === 'severity'))
+/** The default columns (the same for every view). */
+export function defaultColumns(): OptionalColumn[] {
+  return [...BASE_VISIBLE]
 }
 
 const isOptional = (id: string): id is OptionalColumn =>

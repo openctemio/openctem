@@ -33,12 +33,12 @@ async function findingIds(page: Page): Promise<string[]> {
 }
 
 /**
- * A finding row's open button: "{title}, view details". The seed's findings
+ * A finding row's title link: "{title}, view details". The seed's findings
  * read "Switch A finding NN" (rule switch-A-NN).
  */
 function rowsOf(page: Page, org: 'A' | 'B') {
   const title = `(Switch ${org} finding \\d+|switch-${org}-\\d+)`
-  return page.getByRole('button', { name: new RegExp(`^${title}, view details$`) })
+  return page.getByRole('link', { name: new RegExp(`^${title}, view details$`) })
 }
 
 async function signInToA(page: Page) {
