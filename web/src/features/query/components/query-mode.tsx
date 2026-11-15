@@ -11,7 +11,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import type { ListSearchQuery } from '@/features/shared/components/list-search'
+import type { ListSearchMode, ListSearchQuery } from '@/features/shared/components/list-search'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -23,6 +23,37 @@ const QueryInput = lazy(() => import('./query-input').then((m) => ({ default: m.
 
 /** The URL param of a filter chips cannot show. */
 export const FQ_PARAM = 'fq'
+
+/**
+ * The URL param of the search field's mode: `mode=query` opens the list in
+ * Query mode, with the filter as text in the field; absent, Basic. It is page
+ * state, never a filter: no chip, no request param.
+ */
+export const MODE_PARAM = 'mode'
+const QUERY_MODE = 'query'
+
+/** Whether a list URL opens in Query mode. */
+export function queryModeIn(search: URLSearchParams): boolean {
+  return search.get(MODE_PARAM) === QUERY_MODE
+}
+
+/** A copy of a list URL in the given mode (Basic is the absent param). */
+export function withQueryMode(search: URLSearchParams, active: boolean): URLSearchParams {
+  const next = new URLSearchParams(search)
+  if (active) next.set(MODE_PARAM, QUERY_MODE)
+  else next.delete(MODE_PARAM)
+  return next
+}
+
+/** A saved view's page params for the mode on screen (saved with the view). */
+export function modePageParams(active: boolean): Record<string, string> {
+  return { [MODE_PARAM]: active ? QUERY_MODE : 'basic' }
+}
+
+/** Whether a saved view opens in Query mode. */
+export function viewOpensInQueryMode(view: { page_params?: Record<string, string> }): boolean {
+  return view.page_params?.[MODE_PARAM] === QUERY_MODE
+}
 
 /**
  * The text of the current filter: the page's flat list params printed by the
@@ -75,12 +106,20 @@ export function joinFilterText(printed: string, fq: string | null): string {
 
 export interface ListQueryModeOptions {
   entity: QueryEntity
+  /** Query mode is on: the page's URL says so (`mode=query`, `queryModeIn`). */
+  active: boolean
+  /** Write the mode alone into the page's URL. */
+  onActiveChange: (active: boolean) => void
   /** The fq text, when the filter has one. */
   fq: string | null
   /** The filter as the list's params (API names), for the server's printer. */
   params: string
-  /** Write a checked text back to the page. */
-  onApply: (result: ParseResult) => void
+  /**
+   * Write a checked text back to the page, with the mode the field is left
+   * in, in one URL write (Enter keeps Query mode; switching to Basic with an
+   * edit applies it and leaves Query mode).
+   */
+  onApply: (result: ParseResult, active: boolean) => void
   /** The list's total, read out under the field. */
   resultCount?: number | null
   /** Fields the completion lists first (the open tab's own fields). */
@@ -104,20 +143,28 @@ export interface ListQueryModeOptions {
  * - Query to Basic with an edit not applied yet applies it first, so the
  *   switch never drops what was typed; an invalid text keeps Query mode with
  *   its problem shown.
+ * - The mode is the page's, kept in its URL (`mode=query`): a shared link,
+ *   a reload or a saved view opens in the mode it was left in.
  */
 export function useListQueryMode(opts: ListQueryModeOptions): {
   active: boolean
   setActive: (on: boolean) => void
+  /** The mode, for a switch drawn outside the field (`ListSearchModeSwitch`). */
+  mode: ListSearchMode
+  onModeChange: (mode: ListSearchMode) => void
   query: ListSearchQuery
 } {
   const { t } = useTranslation()
-  const { entity, fq, params, resultCount, preferFields, recentScope, ariaLabel, testId } = opts
-  const [active, setActiveState] = useState(false)
+  const { entity, fq, params, active, resultCount, preferFields, recentScope, ariaLabel, testId } =
+    opts
   const applied = useFilterText(entity, fq, params, active)
   const [draft, setDraftState] = useState<string | null>(null)
-  // The server's refusal of a text the mode switch tried to apply, shown in
-  // the editor until the text changes.
+  // The server's refusal of a text the mode switch tried to apply, or of a
+  // link's text, shown in the editor until the text changes.
   const [refused, setRefused] = useState<ParseResult | null>(null)
+  // The field takes the focus when the person switches to Query mode, not
+  // when a link or a reload opens the page in it.
+  const [switched, setSwitched] = useState(false)
   const setDraft = useCallback((text: string | null) => {
     setDraftState(text)
     setRefused(null)
@@ -126,20 +173,39 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
     setDraft(applied)
   }, [applied, setDraft])
 
-  const latest = useRef({ draft, applied, onApply: opts.onApply })
+  const latest = useRef({ draft, applied, onApply: opts.onApply, onActive: opts.onActiveChange })
   useEffect(() => {
-    latest.current = { draft, applied, onApply: opts.onApply }
+    latest.current = { draft, applied, onApply: opts.onApply, onActive: opts.onActiveChange }
   })
+
+  // A link (or a reload) that opens in Query mode with a text chips cannot
+  // show: the text is checked once, so a text the server refuses shows its
+  // problem in the field instead of an empty list without a reason.
+  const firstText = useRef(true)
+  useEffect(() => {
+    if (applied === null || !firstText.current) return
+    firstText.current = false
+    if (switched || !fq || applied.trim() === '') return
+    const text = applied
+    queryApi
+      .parse({ entity, text })
+      .then((r) => {
+        // Only while the field still holds that text.
+        if (!r.valid && latest.current.draft === text) setRefused(r)
+      })
+      .catch(() => undefined)
+  }, [applied, entity, fq, switched])
 
   const setActive = useCallback(
     (on: boolean) => {
+      const { draft: text, applied: was, onApply, onActive } = latest.current
       if (on) {
-        setActiveState(true)
+        setSwitched(true)
+        onActive(true)
         return
       }
-      const { draft: text, applied: was, onApply } = latest.current
       if (text === null || text.trim() === (was ?? '').trim()) {
-        setActiveState(false)
+        onActive(false)
         return
       }
       queryApi
@@ -149,15 +215,14 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
             setRefused(r)
             return
           }
-          onApply(r)
-          setActiveState(false)
+          onApply(r, false)
         })
         .catch(() => undefined)
     },
     [entity]
   )
 
-  const onSubmit = useCallback((r: ParseResult) => latest.current.onApply(r), [])
+  const onSubmit = useCallback((r: ParseResult) => latest.current.onApply(r, true), [])
   const revert = useCallback(() => setDraft(latest.current.applied), [setDraft])
 
   const query: ListSearchQuery = {
@@ -186,7 +251,7 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
             applied={applied ?? ''}
             checked={refused}
             disabled={draft === null}
-            autoFocus
+            autoFocus={switched}
             resultCount={resultCount}
             preferFields={preferFields}
             recentScope={recentScope}
@@ -201,7 +266,8 @@ export function useListQueryMode(opts: ListQueryModeOptions): {
       </div>
     ),
   }
-  return { active, setActive, query }
+  const onModeChange = useCallback((m: ListSearchMode) => setActive(m === 'query'), [setActive])
+  return { active, setActive, mode: active ? 'query' : 'basic', onModeChange, query }
 }
 
 /** The chip of an fq filter: its text, opening the editor; X removes it. */

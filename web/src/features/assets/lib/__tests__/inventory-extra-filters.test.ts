@@ -53,3 +53,14 @@ describe('the starter views of the IP addresses tab', () => {
     expect(open.isActive(off)).toBe(false)
   })
 })
+
+describe('the search mode in the inventory URL', () => {
+  it('mode=query round-trips; anything else is Basic and not written', () => {
+    const on = parseInventoryFilters(new URLSearchParams('fq=port%3D22+OR+port%3D23&mode=query'))
+    expect(on.queryMode).toBe(true)
+    expect(serializeInventoryFilters(on).get('mode')).toBe('query')
+    const off = parseInventoryFilters(new URLSearchParams('mode=basic&criticalities=high'))
+    expect(off.queryMode).toBeUndefined()
+    expect(serializeInventoryFilters(off).has('mode')).toBe(false)
+  })
+})

@@ -49,6 +49,12 @@ export interface ListSearchQuery {
   onActiveChange: (active: boolean) => void
   /** The query editor, drawn in place of the input in Query mode. */
   renderEditor: (slots: ListSearchFieldSlots) => React.ReactNode
+  /**
+   * The page draws the Basic | Query switch itself (`ListSearchModeSwitch`),
+   * outside the field; the field's end then holds only its own controls.
+   * Ctrl+/ still switches modes.
+   */
+  switchOutside?: boolean
 }
 
 export interface ListSearchProps {
@@ -103,47 +109,13 @@ export function ListSearch({
     return () => window.removeEventListener('keydown', onKey)
   }, [hasQuery, setQueryActive, queryActive])
 
-  const modeSwitch = query ? (
-    <>
-      {/* From 768: a two-segment switch, the current mode filled. */}
-      <div
-        role="group"
-        data-slot="list-search-mode"
-        aria-label={t('common.listSearch.mode', 'Search mode')}
-        className="hidden h-control-seg items-center gap-0.5 rounded-sm bg-muted p-0.5 md:flex"
-      >
-        {(
-          [
-            [false, t('common.listSearch.basic', 'Basic')],
-            [true, t('common.listSearch.query', 'Query')],
-          ] as const
-        ).map(([on, text]) => (
-          <button
-            key={String(on)}
-            type="button"
-            aria-pressed={queryActive === on}
-            title={t('common.listSearch.modeHint', 'Switch between search and query text (Ctrl+/)')}
-            onClick={() => queryActive !== on && query.onActiveChange(on)}
-            className="h-full rounded-xs px-2 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground"
-          >
-            {text}
-          </button>
-        ))}
-      </div>
-      {/* On a phone: one icon toggle, pressed in Query mode. */}
-      <button
-        type="button"
-        data-slot="list-search-mode"
-        aria-pressed={queryActive}
-        aria-label={t('common.listSearch.queryMode', 'Query mode')}
-        title={t('common.listSearch.queryMode', 'Query mode')}
-        onClick={() => query.onActiveChange(!queryActive)}
-        className="relative flex size-7 items-center justify-center rounded-sm text-muted-foreground outline-none before:absolute before:inset-[-8px] hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground md:hidden"
-      >
-        <Code2 className="size-4" aria-hidden="true" />
-      </button>
-    </>
-  ) : null
+  const modeSwitch =
+    query && !query.switchOutside ? (
+      <ListSearchModeSwitch
+        mode={queryActive ? 'query' : 'basic'}
+        onModeChange={(m) => query.onActiveChange(m === 'query')}
+      />
+    ) : null
 
   const endGroup = (
     <div
@@ -245,6 +217,68 @@ export function ListSearch({
         </div>
       )}
     </div>
+  )
+}
+
+/** The search mode of a list field. */
+export type ListSearchMode = 'basic' | 'query'
+
+/**
+ * The Basic | Query switch (a two-segment switch from 768 px, one icon toggle
+ * on a phone). `ListSearch` draws it at the field's end; a page that places it
+ * elsewhere passes `query.switchOutside` and draws this with the same mode
+ * (`useListQueryMode().mode` / `onModeChange`).
+ */
+export function ListSearchModeSwitch({
+  mode,
+  onModeChange,
+}: {
+  mode: ListSearchMode
+  onModeChange: (mode: ListSearchMode) => void
+}) {
+  const { t } = useTranslation()
+  const active = mode === 'query'
+  const onActiveChange = (on: boolean) => onModeChange(on ? 'query' : 'basic')
+  return (
+    <>
+      {/* From 768: a two-segment switch, the current mode filled. */}
+      <div
+        role="group"
+        data-slot="list-search-mode"
+        aria-label={t('common.listSearch.mode', 'Search mode')}
+        className="hidden h-control-seg items-center gap-0.5 rounded-sm bg-muted p-0.5 md:flex"
+      >
+        {(
+          [
+            [false, t('common.listSearch.basic', 'Basic')],
+            [true, t('common.listSearch.query', 'Query')],
+          ] as const
+        ).map(([on, text]) => (
+          <button
+            key={String(on)}
+            type="button"
+            aria-pressed={active === on}
+            title={t('common.listSearch.modeHint', 'Switch between search and query text (Ctrl+/)')}
+            onClick={() => active !== on && onActiveChange(on)}
+            className="h-full rounded-xs px-2 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+      {/* On a phone: one icon toggle, pressed in Query mode. */}
+      <button
+        type="button"
+        data-slot="list-search-mode"
+        aria-pressed={active}
+        aria-label={t('common.listSearch.queryMode', 'Query mode')}
+        title={t('common.listSearch.queryMode', 'Query mode')}
+        onClick={() => onActiveChange(!active)}
+        className="relative flex size-7 items-center justify-center rounded-sm text-muted-foreground outline-none before:absolute before:inset-[-8px] hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground md:hidden"
+      >
+        <Code2 className="size-4" aria-hidden="true" />
+      </button>
+    </>
   )
 }
 
