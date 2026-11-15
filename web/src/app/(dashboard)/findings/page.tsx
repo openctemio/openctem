@@ -39,6 +39,7 @@ import {
   PRACTICE_PARAM,
   parsePracticeView,
   practiceViewParams,
+  type PracticeView,
 } from '@/features/findings/lib/practice'
 import { FindingsBaseChips } from '@/features/findings/components/base-chips'
 import { AddFilterPopover } from '@/features/findings/filters/add-filter-popover'
@@ -172,7 +173,7 @@ import {
 } from '@/features/findings/lib/list-columns'
 import { viewChanges } from '@/features/saved-views/lib/view-changes'
 import { viewFields, viewFilters, withFilter } from '@/features/findings/filters/model'
-import { findingsEmptyKind } from '@/features/findings/lib/empty-kind'
+import { findingsEmptyKind, practiceKnownToHoldFindings } from '@/features/findings/lib/empty-kind'
 import { downloadFindingsExport, exportTruncated } from '@/features/findings/api/export-findings'
 import { FindingsEmptyState } from '@/features/findings/components/findings-empty-state'
 import {
@@ -2211,8 +2212,32 @@ function FindingsContent() {
   // A practice with nothing at all is its own first run, not a view filtered
   // to zero: its total in every state (the scope-only stats with the practice
   // condition) is asked for only when the list came back empty with nothing
-  // else narrowing it, so typing or filtering sends no request for it.
+  // else narrowing it, so typing or filtering sends no request for it, and
+  // only when the page has not already seen that practice hold findings in
+  // this scope (rows, or its count in the practice switch), so switching to
+  // an empty state lens sends none either.
   const listUnnarrowed = activeCount === 0 && searchQuery.trim() === '' && !hasContextScope
+  const practiceScopeKey = JSON.stringify(overviewStatsFilters)
+  const [practicesWithFindings, setPracticesWithFindings] = useState<{
+    scope: string
+    practices: ReadonlySet<PracticeView>
+  }>({ scope: '', practices: new Set() })
+  const practiceSeen =
+    practicesWithFindings.scope === practiceScopeKey &&
+    practicesWithFindings.practices.has(practiceView)
+  const practiceHoldsNow = practiceKnownToHoldFindings(practiceView, {
+    listTotal: findingsResponse?.total,
+    counts: practiceCounts,
+  })
+  useEffect(() => {
+    if (!practiceHoldsNow) return
+    setPracticesWithFindings((prev) => {
+      if (prev.scope === practiceScopeKey && prev.practices.has(practiceView)) return prev
+      const practices = new Set(prev.scope === practiceScopeKey ? prev.practices : [])
+      practices.add(practiceView)
+      return { scope: practiceScopeKey, practices }
+    })
+  }, [practiceHoldsNow, practiceScopeKey, practiceView])
   const practiceStatsFilters = useMemo(
     (): FindingStatsFilters => ({ ...overviewStatsFilters, ...practiceViewParams(practiceView) }),
     [overviewStatsFilters, practiceView]
@@ -2223,6 +2248,9 @@ function FindingsContent() {
       !fqParam &&
       practiceView !== 'all' &&
       listUnnarrowed &&
+      !practiceSeen &&
+      !practiceHoldsNow &&
+      (findingStats?.by_state?.all ?? 0) > 0 &&
       !!findingsResponse &&
       (findingsResponse.total ?? 0) === 0,
   })
