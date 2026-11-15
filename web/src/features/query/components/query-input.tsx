@@ -265,7 +265,8 @@ export function QueryInput({
           return
         }
         // Select the first problem: the field scrolls to it, and typing
-        // replaces it.
+        // replaces it. The suggestions close so the problem line shows.
+        setOpen(false)
         const p = res.problems[0]
         const el = ref.current
         if (p && el) {

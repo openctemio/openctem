@@ -159,7 +159,7 @@ describe('the list search field Query mode', () => {
     await settle()
     expect(onApply).not.toHaveBeenCalled()
     expect(box()).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByText(/at column 11/)).toBeTruthy()
+    expect(screen.getByText(/Column 11\./)).toBeTruthy()
     // The field selects the problem, so it scrolls there.
     expect(box().selectionStart).toBe(10)
     expect(box().selectionEnd).toBe(13)

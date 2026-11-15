@@ -1,6 +1,6 @@
 {
   "queryInput.allowedOperators": "Dùng được ở đây: {ops}",
-  "queryInput.atColumn": "tại cột {column}",
+  "queryInput.atColumn": "Cột {column}.",
   "queryInput.checking": "Đang kiểm tra…",
   "queryInput.didYouMean": "Có phải bạn muốn",
   "queryInput.hint": "Gõ từ khóa để tìm, hoặc điều kiện như severity>=high. Nhấn Ctrl+Space để xem gợi ý.",

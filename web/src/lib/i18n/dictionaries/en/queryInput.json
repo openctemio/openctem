@@ -1,6 +1,6 @@
 {
   "queryInput.allowedOperators": "Allowed here: {ops}",
-  "queryInput.atColumn": "at column {column}",
+  "queryInput.atColumn": "Column {column}.",
   "queryInput.checking": "Checking…",
   "queryInput.didYouMean": "Did you mean",
   "queryInput.hint": "Type words to search, or conditions such as severity>=high. Press Ctrl+Space for suggestions.",
