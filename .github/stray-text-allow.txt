@@ -1,0 +1,2 @@
+# Legitimate lines for .github/scripts/check-stray-text.sh: <path>|<substring of the line>
+server/internal/app/aiprompt/aiprompt.go|tool_use
