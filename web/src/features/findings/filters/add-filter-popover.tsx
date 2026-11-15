@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { AddFilterButton } from '@/features/shared/components/filter-button'
 import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import {
   Command,
@@ -139,23 +140,7 @@ export function AddFilterPopover({
       onOpenChange={setOpen}
       title={t('findings.filter.add', 'Add filter')}
       className="w-80"
-      trigger={
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1 rounded-full border-dashed px-2.5 text-xs"
-          aria-keyshortcuts="f"
-        >
-          <Plus className="size-3" aria-hidden />
-          {t('findings.filter.add', 'Add filter')}
-          <kbd
-            className="ms-1 hidden rounded border px-1 font-sans text-xs text-muted-foreground md:inline"
-            aria-hidden
-          >
-            f
-          </kbd>
-        </Button>
-      }
+      trigger={<AddFilterButton />}
     >
       {picked ? (
         <FieldEditor

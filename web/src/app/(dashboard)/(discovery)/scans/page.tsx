@@ -100,7 +100,7 @@ import { ScanMobileCard } from '@/features/scans/components/scan-mobile-card'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
 import { isManagedScan, lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
-import { ScanQueryBar } from '@/features/scans/components/scan-query-bar'
+import { ScanQueryChip, useScanQueryMode } from '@/features/scans/components/scan-query-bar'
 import {
   DEFAULT_SCAN_CONFIG_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -454,6 +454,9 @@ function ConfigurationsTab() {
       setPageParam(Math.max(1, totalPages))
     }
   }, [configsResponse, pageParam, totalPages, setPageParam])
+
+  // The search field's Query mode (the same filter as query text).
+  const queryMode = useScanQueryMode(urlParams, replaceUrlSearch, configsResponse?.total)
 
   // Narrowing the list starts again at page 1 (page 3 of the old result may
   // not exist in the new one). Skipped on mount so a shared link keeps its page.
@@ -909,11 +912,6 @@ function ConfigurationsTab() {
         )}
 
         <div className="min-w-0 flex-1">
-          <ScanQueryBar
-            search={urlParams}
-            resultCount={configsResponse?.total}
-            onSearchChange={replaceUrlSearch}
-          />
           {isLoadingConfigs && !configsResponse ? (
             <TableSkeleton />
           ) : (
@@ -929,7 +927,17 @@ function ConfigurationsTab() {
                 onChange: setSearchQuery,
                 placeholder: t('scans.configs.searchPlaceholder', 'Search configurations…'),
                 label: t('scans.configs.searchLabel', 'Search scan configurations'),
+                query: queryMode.query,
               }}
+              toolbarBelow={
+                queryMode.active || !fqFilter ? undefined : (
+                  <ScanQueryChip
+                    search={urlParams}
+                    onOpen={() => queryMode.setActive(true)}
+                    onSearchChange={replaceUrlSearch}
+                  />
+                )
+              }
               filterToggle={{
                 open: filtersOpen,
                 onToggle: () => setFiltersOpen((o) => !o),

@@ -1,5 +1,6 @@
 {
   "queryInput.allowedOperators": "Allowed here: {ops}",
+  "queryInput.atColumn": "at column {column}",
   "queryInput.checking": "Checking…",
   "queryInput.didYouMean": "Did you mean",
   "queryInput.hint": "Type words to search, or conditions such as severity>=high. Press Ctrl+Space for suggestions.",
@@ -11,8 +12,6 @@
   "queryInput.mode.advanced": "Advanced:",
   "queryInput.mode.label": "Filter as query text",
   "queryInput.mode.removeAdvanced": "Remove the advanced filter",
-  "queryInput.mode.toggle": "Query",
-  "queryInput.mode.toggleHint": "Edit the filter as text (Ctrl+/)",
   "queryInput.placeholder.assets": "Search, or e.g. ip=10.0.0.0/16 type=ip_address last_seen<7d",
   "queryInput.placeholder.findings": "Search, or e.g. severity>=high kev=true -status:accepted",
   "queryInput.problem.bad_value": "This value does not fit the field.",

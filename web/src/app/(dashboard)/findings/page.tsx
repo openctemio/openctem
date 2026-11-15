@@ -115,6 +115,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -157,6 +158,8 @@ import {
   withOwnedFields,
 } from '@/features/findings/filters/contract'
 import { NON_FILTER_PARAMS, readFilters } from '@/features/findings/filters/model'
+import { applyTextFilter, filterParams } from '@/features/findings/filters/filter-query-mode'
+import { useListQueryMode } from '@/features/query/components/query-mode'
 import { useSavedViews } from '@/features/saved-views/api/use-saved-views'
 import {
   columnsToSave,
@@ -181,7 +184,6 @@ import {
   Flag,
   Plus,
   ListChecks,
-  ChevronDown,
   FileUp,
   Loader2,
   Route,
@@ -2179,11 +2181,32 @@ function FindingsContent() {
     controlsId: 'finding-filters',
   }
 
+  // Query mode of the search field: the whole filter as query text, the
+  // State lens and the Practice switch included as the list applies them
+  // (filter-query-mode.tsx), so the round trip never changes the list.
+  const textScope = useMemo(
+    () => ({
+      ...(!savedId || rawLens ? { state: lens } : {}),
+      ...(!savedId || rawPractice ? practiceViewParams(practiceView) : {}),
+    }),
+    [savedId, rawLens, lens, rawPractice, practiceView]
+  )
+  const queryMode = useListQueryMode({
+    entity: 'findings',
+    fq: fqParam,
+    params: filterParams(searchParams, FILTER_BAR_SKIP_PARAMS, textScope),
+    onApply: (r) => replaceUrlSearch(applyTextFilter(searchParams, FILTER_BAR_SKIP_PARAMS, r)),
+    resultCount: findingsLoading ? null : total,
+    recentScope: 'findings',
+    testId: 'findings-query-editor',
+  })
+
   const search = {
     value: searchQuery,
     onChange: setSearchQuery,
     placeholder: t('findings.toolbar.searchPlaceholder', 'Search title, CVE, rule or location…'),
     label: t('findings.toolbar.searchLabel', 'Search findings'),
+    query: queryMode.query,
   }
 
   const groupBySelect = (
@@ -2365,14 +2388,8 @@ function FindingsContent() {
       onSearchChange={replaceUrlSearch}
       viewChanged={!!openView && (changeList?.length ?? 0) > 0}
       onResetToView={() => openSavedView(openView ?? null)}
-      resultCount={findingsLoading ? null : total}
-      resultLabel={
-        findingsLoading
-          ? undefined
-          : t('findings.filter.results', '{count, plural, one {# finding} other {# findings}}', {
-              count: total,
-            })
-      }
+      queryActive={queryMode.active}
+      onOpenQuery={() => queryMode.setActive(true)}
     />
   )
 
@@ -2589,40 +2606,50 @@ function FindingsContent() {
       <Main>
         <PageStack>
           <PageHeader title={t('findings.page.title', 'Findings')} description={drillBreadcrumb}>
-            <Button iconOnlyBelow="sm" variant="outline" size="sm" asChild>
-              <Link href="/findings/approvals">
-                <ClipboardList className="h-4 w-4 sm:me-2" aria-hidden />
-                <span className="sr-only sm:not-sr-only">
-                  {t('findings.header.approvals', 'Approvals')}
-                </span>
-              </Link>
-            </Button>
-            {(canImport || hasPermission('findings:write')) && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button iconOnlyBelow="sm" variant="outline" size="sm">
-                    <Plus className="h-4 w-4 sm:me-2" aria-hidden />
-                    <span className="sr-only sm:not-sr-only">
-                      {t('findings.header.add', 'Add')}
-                    </span>
-                    <ChevronDown className="ms-1 hidden h-3.5 w-3.5 sm:block" aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {hasPermission('findings:write') && (
-                    <DropdownMenuItem onSelect={() => setCreateDialogOpen(true)}>
-                      <Plus className="me-2 h-4 w-4" aria-hidden />
-                      {t('findings.header.addFinding', 'Add finding')}
-                    </DropdownMenuItem>
-                  )}
-                  {canImport && (
+            {/* One primary action (Triage) and single buttons: the page's other
+              actions are under More, never a split button. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t('findings.header.more', 'More actions')}
+                >
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canImport && (
+                  <>
+                    <DropdownMenuLabel>{t('findings.header.create', 'Create')}</DropdownMenuLabel>
                     <DropdownMenuItem onSelect={() => setImportDialogOpen(true)}>
                       <FileUp className="me-2 h-4 w-4" aria-hidden />
                       {t('findings.header.importResults', 'Import results')}
                     </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem asChild>
+                  <Link href="/findings/approvals">
+                    <ClipboardList className="me-2 h-4 w-4" aria-hidden />
+                    {t('findings.header.approvals', 'Approvals')}
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {hasPermission('findings:write') && (
+              <Button
+                iconOnlyBelow="sm"
+                variant="outline"
+                size="sm"
+                onClick={() => setCreateDialogOpen(true)}
+                aria-label={t('findings.header.addFinding', 'Add finding')}
+              >
+                <Plus className="h-4 w-4 sm:me-2" aria-hidden />
+                <span className="sr-only sm:not-sr-only">
+                  {t('findings.header.finding', 'Finding')}
+                </span>
+              </Button>
             )}
             {/* The one primary action of the page: deciding, for someone who may
               change a finding's status. With nothing to triage it stays, as a
@@ -2635,32 +2662,9 @@ function FindingsContent() {
                 variant={triageKnown && triageCount === 0 ? 'outline' : 'default'}
                 onClick={openTriage}
                 aria-keyshortcuts="t"
-                aria-label={
-                  triageCount > 0
-                    ? t(
-                        'findings.header.triageCount',
-                        '{count, plural, one {Triage # finding to triage} other {Triage # findings to triage}}',
-                        { count: triageCount }
-                      )
-                    : undefined
-                }
               >
                 <ListChecks className="h-4 w-4 me-2" aria-hidden />
-                {/* The page's primary action keeps its word on a phone, so the
-                    count beside it reads as the number to triage. */}
-                <span>
-                  {triageCount > 0
-                    ? t('findings.header.triage', 'Triage')
-                    : t('findings.header.triageView', 'Triage view')}
-                </span>
-                {/* A space, not only a margin, between the word and the count:
-                    the visible label reads "Triage 26", as the name does. */}
-                {triageCount > 0 && ' '}
-                {triageCount > 0 && (
-                  <span className="ms-1 text-xs tabular-nums" data-testid="triage-count">
-                    {triageCount.toLocaleString()}
-                  </span>
-                )}
+                {t('findings.header.triage', 'Triage')}
                 <DecorativeText
                   as="kbd"
                   text="t"

@@ -69,7 +69,7 @@ export const PRACTICE_VIEW_TEXT: Record<PracticeView, { label: string; descripti
 export const practiceLabelKey = (v: PracticeView) => `findings.practice.${v}.label`
 export const practiceDescriptionKey = (v: PracticeView) => `findings.practice.${v}.description`
 
-function isPractice(v: string): v is FindingPractice {
+export function isPractice(v: string): v is FindingPractice {
   return (FINDING_PRACTICES as string[]).includes(v)
 }
 

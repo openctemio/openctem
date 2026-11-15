@@ -386,7 +386,7 @@ export async function probeRowMix(page: Page): Promise<MixedRow[]> {
       // Inside a chip (its remove button) or over a field (a clear button).
       if (
         el.closest(
-          '[data-testid^=filter-chip],[data-slot=locked-chip],[data-slot=badge],[data-slot=signal-chip],[data-slot=status-lozenge]'
+          '[data-testid^=filter-chip],[data-slot=locked-chip],[data-slot=badge],[data-slot=signal-chip],[data-slot=status-lozenge],[data-slot=list-search-end]'
         )
       )
         return false

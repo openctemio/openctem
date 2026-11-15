@@ -12,7 +12,7 @@
  * is plain text: nothing is rendered as HTML.
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -67,6 +67,17 @@ export interface QueryInputProps {
   ariaLabel?: string
   /** Fields completion lists first (the open tab's own fields). */
   preferFields?: string[]
+  /** Extra classes for the input (a list search field leaves room for its icons). */
+  inputClassName?: string
+  /** Controls drawn over the input (a list search field's icon and mode switch). */
+  adornments?: ReactNode
+  /**
+   * Show only problems under the box (a list toolbar keeps one line): the
+   * hint, the check and the result count are still read out, not drawn.
+   */
+  quietStatus?: boolean
+  /** Escape with no suggestion open (a list search field reverts its text). */
+  onEscape?: () => void
 }
 
 export function QueryInput({
@@ -85,6 +96,10 @@ export function QueryInput({
   className,
   ariaLabel,
   preferFields,
+  inputClassName,
+  adornments,
+  quietStatus,
+  onEscape,
 }: QueryInputProps) {
   const { t, locale } = useTranslation()
   const ownId = useId()
@@ -247,6 +262,17 @@ export function QueryInput({
           pushRecent(scope, res.text || value)
           onSubmit(res)
           setOpen(false)
+          return
+        }
+        // Select the first problem: the field scrolls to it, and typing
+        // replaces it.
+        const p = res.problems[0]
+        const el = ref.current
+        if (p && el) {
+          const start = Math.min(p.start, value.length)
+          el.focus()
+          el.setSelectionRange(start, Math.max(start, Math.min(p.end, value.length)))
+          setCaret(start)
         }
       })
       .catch(() => setFailed(true))
@@ -286,6 +312,10 @@ export function QueryInput({
       if (listOpen) {
         e.stopPropagation()
         setOpen(false)
+      } else if (onEscape) {
+        e.preventDefault()
+        e.stopPropagation()
+        onEscape()
       } else {
         ref.current?.blur()
       }
@@ -328,10 +358,16 @@ export function QueryInput({
     <div className={cn('min-w-0 space-y-1', className)}>
       <div className="relative">
         {multiline ? (
-          <Textarea ref={ref} rows={3} className="font-mono text-sm" {...shared} />
+          <Textarea
+            ref={ref}
+            rows={3}
+            className={cn('font-mono text-sm', inputClassName)}
+            {...shared}
+          />
         ) : (
-          <Input ref={ref} className="font-mono" {...shared} />
+          <Input ref={ref} className={cn('font-mono', inputClassName)} {...shared} />
         )}
+        {adornments}
         <ul
           id={listId}
           role="listbox"
@@ -366,7 +402,14 @@ export function QueryInput({
           ))}
         </ul>
       </div>
-      <div id={statusId} aria-live="polite" className="text-muted-foreground min-h-5 text-xs">
+      <div
+        id={statusId}
+        aria-live="polite"
+        className={cn(
+          'text-muted-foreground min-h-5 text-xs',
+          quietStatus && !problem && !failed && 'sr-only'
+        )}
+      >
         {problem ? (
           <ProblemLine
             problem={problem}
@@ -400,6 +443,9 @@ function ProblemLine({ problem, onFix }: { problem: QueryProblem; onFix: (fix: s
       <span>
         {known ? t(`queryInput.problem.${problem.code}`) : t('queryInput.problem.invalid')}
         {DETAILED.has(problem.code) && problem.message ? ` (${problem.message})` : ''}
+        {problem.column > 0
+          ? ` ${t('queryInput.atColumn', undefined, { column: problem.column })}`
+          : ''}
         {problem.code === 'operator_not_allowed' && problem.suggestions?.length
           ? ' ' +
             t('queryInput.allowedOperators', undefined, { ops: problem.suggestions.join(' ') })

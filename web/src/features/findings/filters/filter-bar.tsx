@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from 'react'
+import { useMemo, type ReactElement, type ReactNode } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { AddFilterPopover } from './add-filter-popover'
 import { FilterChip } from './filter-chip'
-import { AdvancedChip, FQ_PARAM, FilterQueryEditor, QueryModeToggle } from './filter-query-mode'
+import { AdvancedChip, FQ_PARAM } from './filter-query-mode'
 import {
   readFilters,
   viewFields,
@@ -44,10 +44,13 @@ interface FilterBarProps {
   viewChanged?: boolean
   /** Go back to the open saved view as stored. */
   onResetToView?: () => void
-  /** "1,284 findings", pinned at the end of the row. */
-  resultLabel?: string
-  /** The list's total, for the text mode's status line. */
-  resultCount?: number | null
+  /**
+   * The search field is in Query mode: the text owns the filter, so the
+   * chips, Add filter and Clear step aside (the context chips stay).
+   */
+  queryActive?: boolean
+  /** Open the search field's Query mode (the Advanced chip's text). */
+  onOpenQuery?: () => void
 }
 
 /**
@@ -69,12 +72,10 @@ export function FilterBar({
   onSearchChange,
   viewChanged,
   onResetToView,
-  resultLabel,
-  resultCount,
+  queryActive,
+  onOpenQuery,
 }: FilterBarProps) {
   const { t } = useTranslation()
-  const [textMode, setTextMode] = useState(false)
-  const toggleText = useCallback(() => setTextMode((v) => !v), [])
   const fq = search.get(FQ_PARAM)
   const fieldOf = (name: string): FieldContract | undefined =>
     contract.fields.find((f) => f.name === name)
@@ -92,7 +93,7 @@ export function FilterBar({
           <AdvancedChip
             key="advanced"
             text={fq}
-            onOpen={() => setTextMode(true)}
+            onOpen={() => onOpenQuery?.()}
             onRemove={() => onSearchChange(withoutParam(search, FQ_PARAM))}
           />,
         ]
@@ -159,14 +160,18 @@ export function FilterBar({
     onSearchChange(next)
   }
 
-  const row = (
+  if (queryActive) {
+    return leading ? (
+      <FilterChipsRow data-testid="findings-filter-bar" leading={leading} chips={[]} />
+    ) : null
+  }
+  return (
     <FilterChipsRow
       data-testid="findings-filter-bar"
       leading={leading}
       chips={chips}
       trailing={
         <>
-          <QueryModeToggle active={textMode} onToggle={toggleText} />
           <AddFilterPopover
             contract={pickerContract}
             contractLoading={contractLoading}
@@ -179,43 +184,17 @@ export function FilterBar({
             }
           />
           {viewChanged && onResetToView ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={onResetToView}
-            >
+            <Button variant="ghost" size="sm" onClick={onResetToView}>
               {t('findings.filter.resetToView', 'Reset to view')}
             </Button>
           ) : filters.length + unknown.length + (fq ? 1 : 0) > 1 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={clearAll}
-            >
+            <Button variant="ghost" size="sm" onClick={clearAll}>
               {t('findings.filter.clearAll', 'Clear filters')}
             </Button>
           ) : null}
         </>
       }
-      end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
     />
-  )
-  if (!textMode) return row
-  return (
-    <div className="space-y-2">
-      <FilterQueryEditor
-        search={search}
-        skip={skip}
-        resultCount={resultCount}
-        onSearchChange={(next) => {
-          onSearchChange(next)
-          setTextMode(false)
-        }}
-      />
-      {row}
-    </div>
   )
 }
 
