@@ -10,6 +10,8 @@ interface GatedSectionTabsProps {
   label?: string
   /** A count after a tab's label, keyed by href (see `SectionTabs`). */
   counts?: Readonly<Record<string, number | undefined>>
+  /** Screen-reader words after a tab's count, keyed by href (see `SectionTabs`). */
+  countUnits?: Readonly<Record<string, string | undefined>>
 }
 
 /**
@@ -18,8 +20,22 @@ interface GatedSectionTabsProps {
  * open is left out, the same decision the sidebar row makes. With one tab
  * left there is nothing to switch between, so no strip is drawn.
  */
-export function GatedSectionTabs({ tabs, className, label, counts }: GatedSectionTabsProps) {
+export function GatedSectionTabs({
+  tabs,
+  className,
+  label,
+  counts,
+  countUnits,
+}: GatedSectionTabsProps) {
   const visible = useVisibleSectionTabs(tabs)
   if (visible.length < 2) return null
-  return <SectionTabs tabs={visible} className={className} label={label} counts={counts} />
+  return (
+    <SectionTabs
+      tabs={visible}
+      className={className}
+      label={label}
+      counts={counts}
+      countUnits={countUnits}
+    />
+  )
 }
