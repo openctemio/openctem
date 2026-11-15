@@ -1471,7 +1471,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 			Registry:   vulnerability.FindingFields,
 			Permission: permission.FindingsRead.String(),
 			GroupBy:    vulnerability.FindingGroupDimensions(),
-			Extra:      []string{"branch_status"},
+			Extra:      []string{"branch_status", savedviewapp.ModeParam},
+			Params:     savedviewapp.ListModeParams,
 		},
 		// The vulnerabilities list: the findings filter plus the list's own
 		// params (kev, epss_gte, q, sort...). The /views routes need
@@ -1487,7 +1488,8 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		savedview.PageAssets: {
 			Registry:   assetlist.Fields,
 			Permission: permission.AssetsRead.String(),
-			Extra:      []string{"properties", "with_triage"},
+			Extra:      []string{"properties", "with_triage", savedviewapp.ModeParam},
+			Params:     savedviewapp.ListModeParams,
 		},
 	}, log)
 	s.SavedView.SetAuditService(s.Audit)

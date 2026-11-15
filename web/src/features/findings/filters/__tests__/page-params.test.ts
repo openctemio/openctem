@@ -29,6 +29,7 @@ const WRITTEN_NON_FILTERS = [
   'state',
   'strict',
   'fq',
+  'mode',
 ]
 
 describe('params the findings page writes', () => {
@@ -45,6 +46,9 @@ describe('params the findings page writes', () => {
       join(root, 'app', '(dashboard)', 'findings', 'page.tsx'),
       join(root, 'features', 'findings', 'lib', 'drilldown.ts'),
       join(root, 'features', 'findings', 'components', 'finding-detail-drawer.tsx'),
+      // The shared Query mode writes fq and the search mode into the page URL.
+      join(root, 'features', 'findings', 'filters', 'filter-query-mode.tsx'),
+      join(root, 'features', 'query', 'components', 'query-mode.tsx'),
     ]
     const known = new Set<string>([
       ...NON_FILTER_PARAMS,
@@ -52,13 +56,24 @@ describe('params the findings page writes', () => {
       ...CONTEXT_FILTER_PARAMS,
     ])
     const written = new Set<string>()
-    for (const f of files) {
-      const src = readFileSync(f, 'utf8')
+    const sources = files.map((f) => readFileSync(f, 'utf8'))
+    // Param names held in constants (`const MODE_PARAM = 'mode'`).
+    const constants = new Map<string, string>()
+    for (const src of sources) {
+      for (const m of src.matchAll(/const ([A-Z][A-Z_]*) = '([a-z_]+)'/g)) constants.set(m[1], m[2])
+    }
+    for (const src of sources) {
       for (const m of src.matchAll(/(?:\.set|useUrlFilter|useUrlFilterList)\(\s*'([a-z_]+)'/g)) {
         written.add(m[1])
       }
+      for (const m of src.matchAll(/\.set\(\s*([A-Z][A-Z_]*)\b/g)) {
+        const name = constants.get(m[1])
+        if (name) written.add(name)
+      }
     }
     expect(written.size).toBeGreaterThan(5)
+    expect(written).toContain('fq')
+    expect(written).toContain('mode')
     // Every written literal is a filter the page owns or draws, or a non-filter.
     expect([...written].filter((p) => !known.has(p))).toEqual([])
   })

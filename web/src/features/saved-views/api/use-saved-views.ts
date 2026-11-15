@@ -54,6 +54,8 @@ export interface SaveViewInput {
   columns?: string[]
   /** The row density the list showed (saved with the view). */
   density?: string
+  /** The page's own params beside the filter, e.g. the search mode (`mode=query`). */
+  page_params?: Record<string, string>
 }
 
 export const savedViewsKey = (page: SavedViewPage) => `/api/v1/views?page=${page}`
@@ -96,7 +98,7 @@ export function savedViewId(viewParam: string | null | undefined): string | unde
 }
 
 /** The page params that are not part of a view's filter. */
-const PAGE_ONLY = new Set(['page', 'per_page', 'group', 'tab', 'density', 'columns'])
+const PAGE_ONLY = new Set(['page', 'per_page', 'group', 'tab', 'density', 'columns', 'mode'])
 
 /**
  * The filter part of a page query string, to save as a view: the API's own

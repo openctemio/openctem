@@ -83,6 +83,10 @@ type Input struct {
 	GroupBy      string
 	Columns      []string
 	Density      string
+	// PageParams are page params sent beside the filter (a filter document
+	// has no room for them), validated by the page's Params like the ones
+	// read from a Query, and laid over them.
+	PageParams map[string]string
 	// baseFilter is a stored FilterDocument the Query is laid over (a
 	// duplicated view with page params).
 	baseFilter []byte
@@ -363,6 +367,10 @@ func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageC
 			params = MergeParams(view.PageParams, params)
 		}
 		doc, err := spec.DocumentJSON()
+		if err != nil {
+			return nil, nil, err
+		}
+		params, err = pageParams(cfg, params, in.PageParams)
 		return doc, params, err
 	default:
 		raw := in.Filter
@@ -374,7 +382,46 @@ func (s *Service) document(ctx context.Context, c Caller, page string, cfg PageC
 			return nil, nil, err
 		}
 		doc, err := spec.DocumentJSON()
-		return doc, nil, err
+		if err != nil {
+			return nil, nil, err
+		}
+		params, err := pageParams(cfg, nil, in.PageParams)
+		return doc, params, err
+	}
+}
+
+// MaxPageParams caps the page params a request may send beside the filter.
+const MaxPageParams = 16
+
+// pageParams lays the request's page params (validated by the page) over
+// the ones read from its query. A page without params takes none.
+func pageParams(cfg PageConfig, fromQuery, sent map[string]string) (map[string]string, error) {
+	if len(sent) == 0 {
+		return fromQuery, nil
+	}
+	if cfg.Params == nil || len(sent) > MaxPageParams {
+		return nil, fmt.Errorf("%w: page_params not accepted", savedview.ErrInvalid)
+	}
+	extra, err := cfg.Params(paramValues(sent))
+	if err != nil {
+		return nil, err
+	}
+	return MergeParams(fromQuery, extra), nil
+}
+
+// ModeParam is the search field's mode a list view keeps (Basic or Query).
+const ModeParam = "mode"
+
+// ListModeParams reads the search field's mode, the one page param of the
+// findings and asset lists: "basic" or "query", nothing else.
+func ListModeParams(q url.Values) (map[string]string, error) {
+	switch v := q.Get(ModeParam); v {
+	case "":
+		return nil, nil
+	case "basic", "query":
+		return map[string]string{ModeParam: v}, nil
+	default:
+		return nil, fmt.Errorf("%w: mode must be basic or query", savedview.ErrInvalid)
 	}
 }
 
