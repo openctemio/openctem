@@ -32,8 +32,8 @@ test.describe('Query mode applies on request only', { tag: ['@findings'] }, () =
     expect(seen).toEqual([])
     // The edit is marked and announced, and the run control is enabled.
     await expect(page.getByText(/not applied yet/i)).toBeAttached()
-    await box.press('Escape') // close the suggestions
-    await box.fill('severity>=high kev=true')
+    // A field the schema knows completes locally: no value lookup.
+    await box.fill('severity>=high is_in_kev=true')
     await page.waitForTimeout(800)
     expect(seen).toEqual([])
 
