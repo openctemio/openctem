@@ -3,6 +3,7 @@ import Link from '@/components/link'
 import { AlertCircle, Bell, CheckCheck, Loader2, RotateCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { PHONE_BAR_COLLISION_PADDING } from '@/components/ui/floating'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Counter } from '@/components/ui/counter'
@@ -104,7 +105,7 @@ export function NotificationBell() {
         align="end"
         aria-label={t('notifications.bell.labelNone', 'Notifications')}
         sideOffset={8}
-        collisionPadding={8}
+        collisionPadding={PHONE_BAR_COLLISION_PADDING}
       >
         <div className="flex min-h-14 items-center justify-between gap-2 px-4 py-2">
           <h4 className="text-section truncate">
