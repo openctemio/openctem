@@ -105,6 +105,14 @@ jobs:
             echo "::notice::Denylist secrets are not required here (fork or Dependabot run); the checks skip when they are unset."
           fi
 
+      # Fails when a tracked file holds stray markup or an absolute local path.
+      # Legitimate lines go in .github/stray-text-allow.txt.
+      - name: Stray text (self-test)
+        run: bash .github/scripts/check-stray-text.test.sh >/dev/null
+
+      - name: Stray text
+        run: bash .github/scripts/check-stray-text.sh
+
       - name: Customer identifiers (self-test)
         run: bash .github/scripts/check-customer-identifiers.test.sh >/dev/null
 

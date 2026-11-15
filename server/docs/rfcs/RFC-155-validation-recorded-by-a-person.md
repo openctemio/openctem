@@ -413,5 +413,3 @@ No contract step: nothing is renamed or removed. Each step is its own PR
 4. **Production testing.** Should a record with `environment=production` and
    method `manual_exploit` require a written authorization reference, like
    the production rule planned for simulations? (Legal weight: owner only.)
-</content>
-</invoke>
