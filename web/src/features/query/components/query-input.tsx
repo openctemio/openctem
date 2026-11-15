@@ -22,6 +22,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useId,
   useMemo,
   useRef,
@@ -66,6 +67,45 @@ export const VALUES_DELAY_MS = 300
 /** Characters of a value typed before the server is asked for values (Ctrl+Space asks at once). */
 export const VALUES_MIN_PREFIX = 2
 const MAX_OPTIONS = 10
+
+/** The expanded editor: lines at least, at most (or half the screen), at first. */
+export const EDITOR_MIN_LINES = 4
+export const EDITOR_MAX_LINES = 16
+const EDITOR_DEFAULT_LINES = 10
+/** Its height animates this long when it opens or folds (none with reduced motion). */
+export const EDITOR_ANIMATION_MS = 200
+/** Room kept under it on a short screen: the top of the list stays in reach. */
+const EDITOR_KEEP_BELOW = 104
+const EDITOR_HEIGHT_KEY = 'query-editor-height'
+// Room for the field's own controls and the host's (phone: overflow and run,
+// 2 x 28 px; from 768: help, expand, run, 3 x 24 px).
+const FIELD_CONTROLS_ROOM =
+  'pe-[calc(var(--list-search-end,0.5rem)+3.75rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
+
+/** The height the person last dragged the expanded editor to (this browser). */
+function readEditorHeight(): number | null {
+  try {
+    const v = Number(window.localStorage.getItem(EDITOR_HEIGHT_KEY))
+    return Number.isFinite(v) && v > 0 ? v : null
+  } catch {
+    return null
+  }
+}
+
+function writeEditorHeight(h: number) {
+  try {
+    window.localStorage.setItem(EDITOR_HEIGHT_KEY, String(Math.round(h)))
+  } catch {
+    // A preference only.
+  }
+}
+
+function reducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  )
+}
 
 /**
  * The suggestion list is a kit popover in a portal, so a dialog body or any
@@ -157,7 +197,6 @@ export function QueryInput({
   const statusId = `${ownId}-status`
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
-  const bigRef = useRef<HTMLDivElement>(null)
   // `autoFocus` focuses the field once, as soon as it can take the focus
   // (a list's editor is disabled while its text is printed); swapping the
   // one-line field and the expanded editor moves the focus by hand (setBig).
@@ -173,8 +212,7 @@ export function QueryInput({
   const listAnchor = useMemo(
     () => ({
       current: {
-        getBoundingClientRect: () =>
-          (bigRef.current ?? anchorRef.current)?.getBoundingClientRect() ?? new DOMRect(),
+        getBoundingClientRect: () => anchorRef.current?.getBoundingClientRect() ?? new DOMRect(),
       },
     }),
     []
@@ -193,51 +231,112 @@ export function QueryInput({
   const [active, setActive] = useState(0)
   // Ctrl+Space: values are asked for at once, whatever was typed.
   const [explicit, setExplicit] = useState(false)
-  // The list field's expanded editor (several lines, over the content below)
-  // and the text it opened with (Escape folds it back when unchanged).
-  const [big, setBigState] = useState(false)
+  // The list field's expanded editor: the field itself grows in place, in
+  // the page's flow (what is below moves down), and the text it opened with
+  // (Escape folds it back when unchanged). Opening and folding animate the
+  // height (`animating`); the size the person drags it to is remembered.
+  const [phase, setPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>('closed')
+  const big = phase !== 'closed'
+  const [animating, setAnimating] = useState(false)
   const [bigFrom, setBigFrom] = useState('')
+  const [fieldH, setFieldH] = useState(32)
+  const [lineH, setLineH] = useState(20)
+  const [prefH, setPrefH] = useState<number | null>(readEditorHeight)
+  // The room on screen below the editor's top (a phone keyboard, a zoomed
+  // page), so the run icon and the top of the list stay reachable.
+  const [room, setRoom] = useState(Number.POSITIVE_INFINITY)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingFocus = useRef<[number, number] | null>(null)
+  useEffect(() => () => clearTimeout(timer.current ?? undefined), [])
+  const frame = fieldH - lineH // the editor's paddings and borders
+  const maxH = Math.max(
+    frame + 2 * lineH,
+    Math.min(
+      frame + EDITOR_MAX_LINES * lineH,
+      typeof window === 'undefined' ? Infinity : window.innerHeight / 2,
+      room
+    )
+  )
+  const minH = Math.min(frame + EDITOR_MIN_LINES * lineH, maxH)
+  const openH = Math.round(
+    Math.min(maxH, Math.max(minH, prefH ?? frame + EDITOR_DEFAULT_LINES * lineH))
+  )
   const setBig = (on: boolean) => {
     const el = ref.current
     const from = el?.selectionStart ?? value.length
     const to = el?.selectionEnd ?? from
-    // One line cannot hold a line break: each becomes a space, so the
-    // conditions stay apart and the caret keeps its place.
-    if (!on && /[\r\n]/.test(value)) onChange(value.replace(/[\r\n]/g, ' '))
-    setBigState(on)
-    setBigFrom(value)
+    clearTimeout(timer.current ?? undefined)
     setOpen(false)
-    requestAnimationFrame(() => {
-      const next = ref.current
-      // On a touch screen the keyboard opens only when the person taps the text.
-      if (!next || coarsePointer()) return
-      next.focus()
-      next.setSelectionRange(from, to)
-      setCaret(from)
-    })
+    setAnimating(true)
+    const settle = reducedMotion() ? 0 : EDITOR_ANIMATION_MS + 20
+    if (on) {
+      if (el) {
+        setFieldH(el.offsetHeight || 32)
+        setLineH(parseFloat(getComputedStyle(el).lineHeight) || 20)
+      }
+      setBigFrom(value)
+      setPhase('opening')
+      timer.current = setTimeout(() => setAnimating(false), settle)
+    } else {
+      // One line cannot hold a line break: each becomes a space, so the
+      // conditions stay apart and the caret keeps its place.
+      if (/[\r\n]/.test(value)) onChange(value.replace(/[\r\n]/g, ' '))
+      setPhase('closing')
+      timer.current = setTimeout(() => {
+        setPhase('closed')
+        setAnimating(false)
+      }, settle)
+    }
+    // The focus and selection move to the element drawn next (below).
+    pendingFocus.current = [from, to]
   }
-  // The expanded editor fits the visible part of the screen (above a phone's
-  // keyboard, inside a zoomed page), following the visual viewport.
+  // Opening: the editor is drawn at the field's height first, then grows.
+  useLayoutEffect(() => {
+    if (phase === 'opening') {
+      void ref.current?.offsetHeight // the start height, so the change animates
+      setPhase('open')
+    }
+    if (phase !== 'opening' && phase !== 'closed') return
+    const sel = pendingFocus.current
+    const next = ref.current
+    pendingFocus.current = null
+    // On a touch screen the keyboard opens only when the person taps the text.
+    if (!sel || !next || coarsePointer()) return
+    next.focus()
+    next.setSelectionRange(sel[0], sel[1])
+    setCaret(sel[0])
+  }, [phase])
+  // The editor follows the visual viewport (a phone keyboard, a zoomed page).
   useEffect(() => {
     const vv = typeof window === 'undefined' ? null : window.visualViewport
     if (!big || !vv) return
     const fit = () => {
-      const box = bigRef.current
-      if (!box) return
-      const status = box.lastElementChild?.getBoundingClientRect().height ?? 0
-      const room = vv.offsetTop + vv.height - box.getBoundingClientRect().top - status - 16
-      box.style.setProperty('--query-editor-room', `${Math.max(96, Math.floor(room))}px`)
+      const top = ref.current?.getBoundingClientRect().top
+      if (top === undefined) return
+      setRoom(Math.floor(vv.offsetTop + vv.height - top - EDITOR_KEEP_BELOW))
     }
     fit()
     vv.addEventListener('resize', fit)
     vv.addEventListener('scroll', fit)
-    window.addEventListener('scroll', fit, { passive: true })
     return () => {
       vv.removeEventListener('resize', fit)
       vv.removeEventListener('scroll', fit)
-      window.removeEventListener('scroll', fit)
     }
   }, [big])
+  // A drag of the resize handle: kept for next time (this browser).
+  useEffect(() => {
+    const el = ref.current
+    if (phase !== 'open' || animating || !el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      const h = el.offsetHeight
+      if (h > 0 && Math.abs(h - openH) > 2) {
+        setPrefH(h)
+        writeEditorHeight(h)
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [phase, animating, openH])
   // The server's answer to the text it was asked about on Apply.
   const [answer, setAnswer] = useState<{ text: string; result: ParseResult } | null>(null)
   // Apply refused before asking (quotes or parentheses do not pair up).
@@ -486,7 +585,7 @@ export function QueryInput({
       className={cn(
         'text-muted-foreground min-h-5 text-xs',
         // A list field adds no space under itself until there is a problem.
-        big ? 'px-3 pb-2' : quietStatus && (drawn ? 'mt-1' : 'sr-only')
+        quietStatus && (drawn ? 'mt-1' : 'sr-only')
       )}
     >
       {problem ? (
@@ -533,30 +632,20 @@ export function QueryInput({
               {...shared}
             />
           ) : big ? (
-            <>
-              {/* Keeps the toolbar row one line high: the editor opens over
-                    the content below, so no other control moves. */}
-              <Input
-                aria-hidden
-                tabIndex={-1}
-                readOnly
-                value=""
-                className={cn('invisible', inputClassName)}
+            <div data-slot="query-editor-expanded">
+              <HighlightedTextarea
+                textareaRef={ref}
+                style={{ height: phase === 'open' ? openH : fieldH, maxHeight: maxH }}
+                className={cn(
+                  'min-h-0 resize-y py-1.5 font-mono',
+                  inputClassName,
+                  FIELD_CONTROLS_ROOM,
+                  animating &&
+                    'transition-[height] duration-200 ease-out motion-reduce:transition-none'
+                )}
+                {...shared}
               />
-              <div
-                ref={bigRef}
-                data-slot="query-editor-expanded"
-                className="bg-popover absolute inset-x-0 top-0 z-40 rounded-md shadow-md"
-              >
-                <HighlightedTextarea
-                  textareaRef={ref}
-                  rows={10}
-                  className="max-h-[min(60vh,var(--query-editor-room,60vh))] min-h-[min(15rem,var(--query-editor-room,15rem))] resize-y pe-24 font-mono text-sm"
-                  {...shared}
-                />
-                {statusLine}
-              </div>
-            </>
+            </div>
           ) : (
             <Input
               ref={ref}
@@ -564,107 +653,106 @@ export function QueryInput({
                 'font-mono',
                 inputClassName,
                 // Room for the field's own controls and the host's.
-                // (phone: overflow and run, 2 x 28 px; from 768: help, expand, run, 3 x 24 px)
-                inline &&
-                  'pe-[calc(var(--list-search-end,0.5rem)+3.75rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
+                inline && FIELD_CONTROLS_ROOM
               )}
               {...shared}
             />
           )}
-          {!big && adornments}
-          {inline && (
-            <Popover open={helpOpen} onOpenChange={setHelpOpen}>
-              <PopoverAnchor asChild>
-                <div
-                  ref={controlsRef}
-                  data-slot="query-field-controls"
-                  className={cn(
-                    'absolute z-50 flex items-center gap-0.5',
-                    big
-                      ? 'end-2 top-1.5'
-                      : // Just before the host's end controls (a list search field's switch).
-                        'end-[calc(var(--list-search-end,0.5rem)-0.125rem)] top-1/2 -translate-y-1/2'
-                  )}
-                >
-                  {/* Help and expand: in the field from 768 px, and in the
+          {/* The icon, the host's end controls and the field's own sit on the
+              first line, the same in one line and expanded. */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-control-field max-md:h-control-touch [&>*]:pointer-events-auto">
+            {adornments}
+            {inline && (
+              <Popover open={helpOpen} onOpenChange={setHelpOpen}>
+                <PopoverAnchor asChild>
+                  <div
+                    ref={controlsRef}
+                    data-slot="query-field-controls"
+                    className={cn(
+                      // Just before the host's end controls (a list search field's switch).
+                      'absolute end-[calc(var(--list-search-end,0.5rem)-0.125rem)] top-1/2 z-50 flex -translate-y-1/2 items-center gap-0.5'
+                    )}
+                  >
+                    {/* Help and expand: in the field from 768 px, and in the
                       expanded editor's header; on a phone's one-line field
                       they sit behind one overflow, so the text keeps its room. */}
-                  <PopoverTrigger asChild>
+                    <PopoverTrigger asChild>
+                      <FieldIconButton
+                        label={t('queryInput.help.open')}
+                        className={big ? undefined : 'hidden md:flex'}
+                      >
+                        <CircleHelp className="size-4 md:size-3.5" aria-hidden />
+                      </FieldIconButton>
+                    </PopoverTrigger>
                     <FieldIconButton
-                      label={t('queryInput.help.open')}
+                      label={t(big ? 'queryInput.collapse' : 'queryInput.expand')}
+                      pressed={big}
                       className={big ? undefined : 'hidden md:flex'}
+                      onClick={() => setBig(!big)}
                     >
-                      <CircleHelp className="size-4 md:size-3.5" aria-hidden />
+                      {big ? (
+                        <Minimize2 className="size-4 md:size-3.5" aria-hidden />
+                      ) : (
+                        <Maximize2 className="size-4 md:size-3.5" aria-hidden />
+                      )}
                     </FieldIconButton>
-                  </PopoverTrigger>
-                  <FieldIconButton
-                    label={t(big ? 'queryInput.collapse' : 'queryInput.expand')}
-                    pressed={big}
-                    className={big ? undefined : 'hidden md:flex'}
-                    onClick={() => setBig(!big)}
-                  >
-                    {big ? (
-                      <Minimize2 className="size-4 md:size-3.5" aria-hidden />
-                    ) : (
-                      <Maximize2 className="size-4 md:size-3.5" aria-hidden />
+                    {!big && (
+                      <span className="contents md:hidden">
+                        <ActionMenu
+                          title={t('queryInput.mode.label')}
+                          label={t('queryInput.more')}
+                          items={[
+                            {
+                              id: 'help',
+                              label: t('queryInput.help.open'),
+                              icon: CircleHelp,
+                              // After the menu has given the focus back.
+                              onSelect: () => setTimeout(() => setHelpOpen(true), 0),
+                            },
+                            {
+                              id: 'expand',
+                              label: t('queryInput.expand'),
+                              icon: Maximize2,
+                              onSelect: () => setBig(true),
+                            },
+                          ]}
+                          trigger={
+                            <FieldIconButton label={t('queryInput.more')} keepFocus={false}>
+                              <MoreHorizontal className="size-4" aria-hidden />
+                            </FieldIconButton>
+                          }
+                        />
+                      </span>
                     )}
-                  </FieldIconButton>
-                  {!big && (
-                    <span className="contents md:hidden">
-                      <ActionMenu
-                        title={t('queryInput.mode.label')}
-                        label={t('queryInput.more')}
-                        items={[
-                          {
-                            id: 'help',
-                            label: t('queryInput.help.open'),
-                            icon: CircleHelp,
-                            // After the menu has given the focus back.
-                            onSelect: () => setTimeout(() => setHelpOpen(true), 0),
-                          },
-                          {
-                            id: 'expand',
-                            label: t('queryInput.expand'),
-                            icon: Maximize2,
-                            onSelect: () => setBig(true),
-                          },
-                        ]}
-                        trigger={
-                          <FieldIconButton label={t('queryInput.more')} keepFocus={false}>
-                            <MoreHorizontal className="size-4" aria-hidden />
-                          </FieldIconButton>
-                        }
-                      />
-                    </span>
-                  )}
-                  <FieldIconButton
-                    label={t('queryInput.run')}
-                    slot="query-apply"
-                    disabled={disabled || !dirty || checking}
-                    emphasis={dirty}
-                    shortcut="Enter"
-                    onClick={submit}
-                  >
-                    <Play className="size-4 md:size-3.5" aria-hidden />
-                  </FieldIconButton>
-                </div>
-              </PopoverAnchor>
-              <PopoverContent
-                className="w-[min(24rem,calc(100vw-2rem))] space-y-3 text-xs"
-                data-slot="query-help"
-                // Opened from the phone's overflow: the focus coming back to
-                // the field's controls does not close it.
-                onInteractOutside={(e) => {
-                  if (e.target instanceof Node && controlsRef.current?.contains(e.target))
-                    e.preventDefault()
-                }}
-              >
-                <QuerySyntaxHelp entity={entity} />
-              </PopoverContent>
-            </Popover>
-          )}
+                    <FieldIconButton
+                      label={t('queryInput.run')}
+                      slot="query-apply"
+                      disabled={disabled || !dirty || checking}
+                      emphasis={dirty}
+                      shortcut="Enter"
+                      onClick={submit}
+                    >
+                      <Play className="size-4 md:size-3.5" aria-hidden />
+                    </FieldIconButton>
+                  </div>
+                </PopoverAnchor>
+                <PopoverContent
+                  className="w-[min(24rem,calc(100vw-2rem))] space-y-3 text-xs"
+                  data-slot="query-help"
+                  // Opened from the phone's overflow: the focus coming back to
+                  // the field's controls does not close it.
+                  onInteractOutside={(e) => {
+                    if (e.target instanceof Node && controlsRef.current?.contains(e.target))
+                      e.preventDefault()
+                  }}
+                >
+                  <QuerySyntaxHelp entity={entity} />
+                </PopoverContent>
+              </Popover>
+            )}
+          </div>
         </div>
-        {!big && statusLine}
+        {statusLine}
       </div>
       <PopoverContent
         asChild
