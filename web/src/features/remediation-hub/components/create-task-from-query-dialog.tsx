@@ -232,7 +232,6 @@ export function CreateTaskFromQueryDialog({
               onChange={setQuery}
               onParsed={setParsed}
               multiline
-              autoFocus
             />
             {ignoredFilters && ignoredFilters.length > 0 && (
               <p className="text-xs text-warning">
