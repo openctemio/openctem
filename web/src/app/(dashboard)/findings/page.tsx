@@ -1644,7 +1644,7 @@ function FindingsContent() {
               <FindingTitleCell
                 title={row.getValue('title')}
                 onOpen={() => handleRowClick(row.original)}
-                href={`/findings/${encodeURIComponent(row.original.id)}`}
+                findingId={row.original.id}
                 openLabel={t('findings.list.openRow', '{title}, view details', {
                   title: toDisplayText(row.getValue('title'), 300),
                 })}

@@ -15,7 +15,7 @@ describe('FindingTitleCell', () => {
           title="SQL injection"
           onOpen={onOpen}
           openLabel="SQL injection, view details"
-          href="/findings/f-1"
+          findingId="f-1"
         />
       </div>
     )
