@@ -31,8 +31,12 @@ test(
       .getByRole('checkbox', { name: /^select finding/i })
       .check()
 
-    // The bulk bar offers the remediation task; the dialog starts on "New task".
-    await page.getByRole('button', { name: 'Remediation task', exact: true }).click()
+    // The bulk bar offers the remediation task under More; the dialog starts on "New task".
+    await page
+      .getByRole('toolbar', { name: 'Actions for selected rows' })
+      .getByRole('button', { name: 'More actions' })
+      .click()
+    await page.getByRole('menuitem', { name: 'Remediation task', exact: true }).click()
     const dialog = page.getByRole('dialog')
     await expect(
       dialog.getByRole('heading', { name: 'Add 2 findings to remediation' })

@@ -56,6 +56,7 @@ const NOT_MUTATIONS = new Set([
   'revokeObjectURL', // URL.revokeObjectURL after a download
   'resetPage', // pagination
   'resetListPage',
+  'resetRowSelection', // a table's checkboxes (TanStack), nothing is saved
   'removeCookie',
   'removeStoredPermissions',
   'destroyWebSocketClient',

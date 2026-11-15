@@ -15,6 +15,7 @@ import {
   DataTable,
   ErrorState,
   SeverityBadge,
+  type DataTableBulk,
   type DataTableRowGroups,
   type MobileRowSelection,
 } from '@/features/shared'
@@ -293,6 +294,8 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   onViewGroup?: (group: FindingGroup) => void
   onRowClick?: (row: TRow) => void
   onSelectionChange?: (rows: TRow[]) => void
+  /** Several rows at once: the table's checkbox column and bulk bar. */
+  bulk?: DataTableBulk<TRow>
   resetSelectionKey?: string | number
   mobileRow?: (row: TRow, selection: MobileRowSelection) => React.ReactNode
   filterToggle?: FilterPanelToggleProps
@@ -324,6 +327,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   onViewGroup,
   onRowClick,
   onSelectionChange,
+  bulk,
   resetSelectionKey,
   mobileRow,
   filterToggle,
@@ -626,6 +630,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       isLoading={isLoading && !data}
       onRowClick={onRowClick}
       onSelectionChange={onSelectionChange}
+      bulk={bulk}
       resetSelectionKey={resetSelectionKey}
       showSelectionCount={false}
       mobileRow={mobileRow}

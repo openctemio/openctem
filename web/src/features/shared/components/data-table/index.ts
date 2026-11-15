@@ -7,6 +7,7 @@ export {
   type MobileRowSelection,
 } from './data-table'
 export { DataTableColumnHeader } from './data-table-column-header'
+export { type DataTableBulk, type DataTableSelection } from './data-table-selection'
 export { TableRefreshBar } from './table-refresh-bar'
 export {
   useTableDensity,
