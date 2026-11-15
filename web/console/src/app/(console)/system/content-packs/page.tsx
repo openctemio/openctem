@@ -145,6 +145,51 @@ export default function ContentPacksPage() {
   )
 
   const channelRows: ContentChannelResponse[] = channels.data?.data ?? []
+  // Which pack each channel points at: a short list in the shared table, so
+  // it gets the same header, states and phone cards as every list.
+  const channelColumns = useMemo<ColumnDef<ContentChannelResponse>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: t('admin.cp.col.pack', 'Pack'),
+        meta: { kind: 'name' },
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: 'channel',
+        header: t('admin.cp.channel', 'Channel'),
+        meta: { kind: 'status' },
+        cell: ({ row }) => (
+          <Badge variant={row.original.channel === 'stable' ? 'secondary' : 'outline'}>
+            {row.original.channel}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: 'version',
+        header: t('admin.cp.version', 'Version'),
+        meta: { kind: 'text' },
+        cell: ({ row }) => <span className="tabular-nums">{row.original.version}</span>,
+      },
+      {
+        accessorKey: 'digest',
+        header: t('admin.cp.digest', 'Digest'),
+        meta: { kind: 'id' },
+        cell: ({ row }) => (
+          <span className="font-mono text-xs" title={row.original.digest}>
+            {shortDigest(row.original.digest)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'updated_at',
+        header: t('admin.cp.updated', 'Updated'),
+        meta: { kind: 'datetime-recent' },
+        cell: ({ row }) => <RelativeTime date={row.original.updated_at} />,
+      },
+    ],
+    [t]
+  )
 
   return (
     <Main>
@@ -179,57 +224,22 @@ export default function ContentPacksPage() {
               <CardTitle className="text-base">{t('admin.cp.channels', 'Channels')}</CardTitle>
             </CardHeader>
             <CardContent>
-              {channelRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    'admin.cp.noChannels',
-                    'No channel points at a pack yet. Open a pack and promote it.'
-                  )}
-                </p>
-              ) : (
-                <div>
-                  <table className="w-full text-sm">
-                    <thead className="text-muted-foreground">
-                      <tr>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.col.pack', 'Pack')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.channel', 'Channel')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.version', 'Version')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.digest', 'Digest')}
-                        </th>
-                        <th className="py-2 text-start font-medium">
-                          {t('admin.cp.updated', 'Updated')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {channelRows.map((c) => (
-                        <tr key={`${c.name}-${c.channel}`}>
-                          <td className="py-2 pe-3 font-medium">{c.name}</td>
-                          <td className="py-2 pe-3">
-                            <Badge variant={c.channel === 'stable' ? 'secondary' : 'outline'}>
-                              {c.channel}
-                            </Badge>
-                          </td>
-                          <td className="py-2 pe-3 tabular-nums">{c.version}</td>
-                          <td className="py-2 pe-3 font-mono text-xs" title={c.digest}>
-                            {shortDigest(c.digest)}
-                          </td>
-                          <td className="py-2">
-                            <RelativeTime date={c.updated_at} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <DataTable
+                columns={channelColumns}
+                data={channelRows}
+                getRowId={(c) => `${c.name}-${c.channel}`}
+                caption={t('admin.cp.channels', 'Channels')}
+                isLoading={channels.isLoading}
+                showSearch={false}
+                showColumnToggle={false}
+                showSelectionCount={false}
+                showPagination={false}
+                mobileCards
+                emptyMessage={t(
+                  'admin.cp.noChannels',
+                  'No channel points at a pack yet. Open a pack and promote it.'
+                )}
+              />
             </CardContent>
           </Card>
           <Card>
