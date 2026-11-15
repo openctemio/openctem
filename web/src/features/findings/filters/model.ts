@@ -47,6 +47,10 @@ export const NON_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'tab',
   'state',
   'strict',
+  // Where the person came from (`group:<dimension>` after a group drill-down,
+  // `task:<id>` from a remediation task): navigation the breadcrumb reads,
+  // never a filter, so it is no chip, no count, no saved-view condition.
+  'from',
   // A filter chips cannot show, as query text (filter-query-mode.tsx).
   'fq',
 ])
