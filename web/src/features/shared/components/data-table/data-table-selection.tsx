@@ -4,7 +4,7 @@
  * Row selection of the shared table: the checkbox column the table adds when
  * the page passes `bulk`, Shift-click and Shift+x ranges, `x` on the focused
  * row, and the selection the bulk bar acts on (rows on this page, or every
- * row the list's filter selects). Spec: agent-ops table spec 2.7-2.8.
+ * row the list's filter selects).
  */
 
 import * as React from 'react'
