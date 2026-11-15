@@ -101,7 +101,8 @@ async function checkPage(page: Page, route: string, consoleErrors: string[]) {
     const sep = await separators(page)
     if (!MIDDOT_PENDING.has(route)) expect(sep.middot, `${at}: no " · "`).toEqual([])
     expect(sep.emDash, `${at}: no em dash (the lone empty-cell placeholder is allowed)`).toEqual([])
-    await checkAt(page, route, vp.width)
+    // Every console table, raw ones included, follows the header rule.
+    await checkAt(page, route, vp.width, [], { allTables: true })
   }
   expect(consoleErrors, `${route}: no console error`).toEqual([])
 }
