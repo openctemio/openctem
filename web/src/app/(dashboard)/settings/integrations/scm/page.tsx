@@ -325,7 +325,15 @@ export default function SCMConnectionsPage() {
               route: 'DELETE /api/v1/integrations/{id}',
             },
           ]
-          return <DataTableRowActions actions={actions} />
+          return (
+            <DataTableRowActions
+              title={connection.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: connection.name,
+              })}
+              actions={actions}
+            />
+          )
         },
       },
     ],

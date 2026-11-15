@@ -267,6 +267,8 @@ export function AssignmentRulesSection({ header }: SectionProps) {
 
         return (
           <DataTableRowActions
+            title={rule.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: rule.name })}
             actions={[
               {
                 label: t('org.assignmentRules.viewDetails', 'View details'),

@@ -56,9 +56,12 @@ test.describe('Findings selection', { tag: ['@findings'] }, () => {
 
     // Outside select mode a card has no checkbox, only its menu.
     await expect(card.getByRole('checkbox')).toHaveCount(0)
+    // Its long menu opens as a bottom sheet on a phone.
     await card.getByRole('button', { name: /actions for/i }).click()
-    await expect(page.getByRole('menuitem', { name: /view details/i })).toBeVisible()
+    const sheet = page.locator('[data-slot="action-sheet"]')
+    await expect(sheet.getByRole('button', { name: /view details/i })).toBeVisible()
     await page.keyboard.press('Escape')
+    await expect(sheet).toBeHidden()
 
     await page.getByRole('button', { name: 'More list actions' }).click()
     await page.getByRole('menuitemcheckbox', { name: 'Select' }).click()

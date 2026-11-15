@@ -276,6 +276,10 @@ export default function AttackerProfilesPage() {
           if (profile.is_default) return null
           return (
             <DataTableRowActions
+              title={profile.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: profile.name,
+              })}
               actions={[
                 {
                   label: t('confirm.delete', 'Delete'),

@@ -32,6 +32,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), back: vi.
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
+  usePermissions: () => ({ can: () => true, permissions: [], isLoading: false }),
   Permission: {
     NotificationsWrite: 'notifications:write',
     NotificationsDelete: 'notifications:delete',

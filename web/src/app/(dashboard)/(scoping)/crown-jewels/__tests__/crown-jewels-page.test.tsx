@@ -20,6 +20,11 @@ vi.mock('@/features/crown-jewels/api/use-crown-jewels', () => ({
 vi.mock('@/lib/permissions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/permissions')>()),
   useHasPermission: () => canWrite,
+  usePermissions: () => ({
+    can: (p: string) => p !== 'assets:write' || canWrite,
+    permissions: [],
+    isLoading: false,
+  }),
   Can: ({ children, permission }: { children: React.ReactNode; permission: string }) =>
     permission === 'assets:write' && !canWrite ? null : children,
 }))
@@ -56,7 +61,7 @@ describe('crown jewels page', () => {
   it('opens the edit form with the stored business impact notes', async () => {
     const user = userEvent.setup()
     render(<CrownJewelsPage />)
-    await user.click(screen.getByRole('button', { name: /open row actions/i }))
+    await user.click(screen.getByRole('button', { name: 'Actions for Payments DB' }))
     await user.click(await screen.findByRole('menuitem', { name: 'Edit' }))
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByLabelText(/business impact notes/i)).toHaveValue(
@@ -77,7 +82,7 @@ describe('crown jewels page', () => {
     canWrite = false
     const user = userEvent.setup()
     render(<CrownJewelsPage />)
-    await user.click(screen.getByRole('button', { name: /open row actions/i }))
+    await user.click(screen.getByRole('button', { name: 'Actions for Payments DB' }))
     expect(await screen.findByRole('menuitem', { name: 'View details' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Edit' })).toBeNull()
   })

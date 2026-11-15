@@ -275,6 +275,7 @@ export function AIAgentsSection() {
                   <TableCell>{formatDateSafe(a.attest_due_at)}</TableCell>
                   <TableCell>
                     <DataTableRowActions
+                      title={toDisplayText(a.name, 80)}
                       actions={actionsOf(a)}
                       label={t('settings.ai.agents.rowActions', 'Actions for {name}', {
                         name: toDisplayText(a.name, 80),

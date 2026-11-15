@@ -209,6 +209,10 @@ export function MembersTab({
                   </Badge>
                   {(onRemoveMember || onChangeEnd) && (
                     <DataTableRowActions
+                      title={member.name}
+                      label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                        name: member.name,
+                      })}
                       actions={[
                         ...(onChangeEnd
                           ? [

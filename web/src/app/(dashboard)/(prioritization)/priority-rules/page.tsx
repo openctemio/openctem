@@ -484,6 +484,8 @@ export default function PriorityRulesPage() {
           return (
             <Can permission={Permission.PriorityRulesWrite}>
               <DataTableRowActions
+                title={rule.name}
+                label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: rule.name })}
                 actions={[
                   {
                     label: t('prioritization.rules.action.edit', 'Edit'),

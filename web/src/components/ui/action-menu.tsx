@@ -10,121 +10,28 @@
  * phone needs it). Call sites never choose.
  *
  * Both renderers take the same items, so an item is never enabled on one and
- * disabled on the other. Permission gating stays with the caller: pass only
- * the items the user may see (hidden without permission), and give an item
- * that does not apply a `disabledReason`. A destructive item opens a
- * confirmation from its `onSelect`; it never acts directly.
+ * disabled on the other. A click inside the menu or the sheet stays in it:
+ * it never reaches a clickable row or card the trigger sits in. Permission
+ * gating stays with the caller: pass only the items the user may see (hidden
+ * without permission), and give an item that does not apply a
+ * `disabledReason`. A destructive item opens a confirmation from its
+ * `onSelect`; it never acts directly.
+ *
+ * Only this file is in the routes' first-load code: the menu itself
+ * (`action-menu-impl.tsx`) loads right after the page shows. A press on the
+ * trigger before it is in is kept, and opens the menu when it arrives.
  */
 import * as React from 'react'
-import type { LucideIcon } from 'lucide-react'
 
-import Link from '@/components/link'
-import { safeHref } from '@/lib/safe-href'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  mayBeAnchoredOnPhone,
-  measurePhoneFit,
-  type PhoneMenuModel,
-} from '@/components/ui/action-menu-fit'
-import { useIsMobile } from '@/hooks/use-mobile'
-import { cn } from '@/lib/utils'
+import type { ActionMenuEntry } from '@/components/ui/action-menu-model'
 
-type ActionBase = {
-  id: string
-  label: string
-  icon?: LucideIcon
-  /** Heading of the group the item belongs to; items without one share a group. */
-  group?: string
-}
-
-export type ActionMenuAction = ActionBase & {
-  kind?: 'item'
-  onSelect?: () => void
-  /** Navigates instead (an internal path). */
-  href?: string
-  /** The item does not apply here: shown dimmed with this reason. */
-  disabledReason?: string
-  /** Deletes or revokes: red, in the last group; its onSelect opens the confirmation. */
-  destructive?: boolean
-  /** Keyboard shortcut hint (desktop with a fine pointer only). */
-  shortcut?: string
-}
-
-export type ActionMenuSubmenu = ActionBase & {
-  kind: 'sub'
-  items: ActionMenuAction[]
-}
-
-export type ActionMenuEntry = ActionMenuAction | ActionMenuSubmenu
-
-export type ActionMenuGroup<T = ActionMenuEntry> = {
-  key: string
-  /** Shown only when the menu has two groups or more and this one has two items or more. */
-  label?: string
-  items: T[]
-}
-
-export type NormalizedActionMenu = {
-  groups: ActionMenuGroup[]
-  /** Icons are shown for every item or for none. */
-  icons: boolean
-}
-
-const DESTRUCTIVE_GROUP = '\u0000destructive'
-
-function isDestructive(entry: ActionMenuEntry): boolean {
-  return entry.kind !== 'sub' && !!entry.destructive
-}
-
-/**
- * The content rules every action menu follows, whatever the call site passes:
- * groups in first-seen order, destructive items last in a group of their own,
- * empty submenus dropped, a group heading only for a group of two items or
- * more in a menu of two groups or more, icons for all items or none.
- */
-export function normalizeActionItems(entries: ActionMenuEntry[]): NormalizedActionMenu {
-  const order: string[] = []
-  const byKey = new Map<string, ActionMenuEntry[]>()
-  const add = (key: string, entry: ActionMenuEntry) => {
-    if (!byKey.has(key)) {
-      byKey.set(key, [])
-      order.push(key)
-    }
-    byKey.get(key)!.push(entry)
-  }
-  for (const entry of entries) {
-    if (entry.kind === 'sub') {
-      const items = entry.items.filter(Boolean)
-      if (items.length === 0) continue
-      add(entry.group ?? '', { ...entry, items })
-    } else {
-      add(isDestructive(entry) ? DESTRUCTIVE_GROUP : (entry.group ?? ''), entry)
-    }
-  }
-  const keys = order.filter((k) => k !== DESTRUCTIVE_GROUP)
-  if (byKey.has(DESTRUCTIVE_GROUP)) keys.push(DESTRUCTIVE_GROUP)
-  const many = keys.length >= 2
-  const groups = keys.map((key) => {
-    const items = byKey.get(key)!
-    const named = key !== '' && key !== DESTRUCTIVE_GROUP
-    return { key, label: named && many && items.length >= 2 ? key : undefined, items }
-  })
-  const all = groups.flatMap((g) => g.items)
-  return { groups, icons: all.length > 0 && all.every((e) => !!e.icon) }
-}
+export type {
+  ActionMenuAction,
+  ActionMenuEntry,
+  ActionMenuGroup,
+  ActionMenuSubmenu,
+  NormalizedActionMenu,
+} from '@/components/ui/action-menu-model'
 
 export type ActionMenuProps = {
   /** The menu's items, in order of use (most frequent first). */
@@ -137,271 +44,41 @@ export type ActionMenuProps = {
   label: string
 }
 
-const ActionSheet = React.lazy(() => import('./action-sheet'))
+/** A press on the trigger that came before the menu's code: by pointer or by Enter/Space. */
+export type PendingOpen = 'pointer' | 'keyboard'
 
-/** Starts loading the sheet as soon as a finger lands on the trigger. */
-function preloadSheet() {
-  void import('./action-sheet')
+const ActionMenuImpl = React.lazy(() => import('./action-menu-impl'))
+
+/** False when no item would show (an empty list, or only empty submenus). */
+function hasItems(items: ActionMenuEntry[]): boolean {
+  return items.some((e) => e.kind !== 'sub' || e.items.length > 0)
 }
 
-export function ActionMenu({ items, trigger, title, label }: ActionMenuProps) {
-  const isMobile = useIsMobile()
-  const menu = React.useMemo(() => normalizeActionItems(items), [items])
-  if (menu.groups.length === 0) return null
-  return isMobile ? (
-    <PhoneActionMenu menu={menu} trigger={trigger} title={title} label={label} />
-  ) : (
-    <AnchoredActionMenu menu={menu} trigger={trigger} />
-  )
-}
-
-type TriggerHandlers = Pick<
-  React.ComponentProps<typeof DropdownMenuTrigger>,
-  'ref' | 'onPointerDown' | 'onKeyDown' | 'onClick'
->
-
-function AnchoredActionMenu({
-  menu,
-  trigger,
-  triggerHandlers,
-  onOpenChange,
-}: {
-  menu: NormalizedActionMenu
-  trigger: React.ReactElement
-  triggerHandlers?: TriggerHandlers
-  onOpenChange?: (open: boolean) => void
-}) {
-  return (
-    <DropdownMenu onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild {...triggerHandlers}>
-        {trigger}
-      </DropdownMenuTrigger>
-      {/* Named by its trigger (APG menu button). */}
-      <DropdownMenuContent>
-        {menu.groups.map((group, i) => (
-          <React.Fragment key={group.key}>
-            {i > 0 && <DropdownMenuSeparator />}
-            <DropdownMenuGroup>
-              {group.label && <DropdownMenuLabel>{group.label}</DropdownMenuLabel>}
-              {group.items.map((entry) =>
-                entry.kind === 'sub' ? (
-                  <DropdownMenuSub key={entry.id}>
-                    <DropdownMenuSubTrigger className={ROW}>
-                      {menu.icons && entry.icon && <entry.icon aria-hidden />}
-                      {entry.label}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent>
-                      {entry.items.map((item) => (
-                        <AnchoredItem key={item.id} item={item} icons={false} />
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                ) : (
-                  <AnchoredItem key={entry.id} item={entry} icons={menu.icons} />
-                )
-              )}
-            </DropdownMenuGroup>
-          </React.Fragment>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-/** 32 px rows; 44 on a phone and under a coarse pointer (touch tablets). */
-const ROW = 'pointer-coarse:min-h-11 max-md:min-h-11'
-
-function AnchoredItem({ item, icons }: { item: ActionMenuAction; icons: boolean }) {
-  const icon = icons && item.icon ? <item.icon aria-hidden /> : null
-  const variant = item.destructive ? 'destructive' : 'default'
-  if (item.disabledReason) {
-    // A disabled item gets no pointer or focus events: the reason sits on a
-    // focusable wrapper (hover, keyboard) and, on a phone or under a coarse
-    // pointer, as a visible line under the label (no hover on touch).
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div tabIndex={0} aria-label={`${item.label}: ${item.disabledReason}`}>
-            <DropdownMenuItem disabled variant={variant} className={cn(ROW, 'items-start')}>
-              {icon}
-              <span className="flex min-w-0 flex-col">
-                <span>{item.label}</span>
-                <span className="hidden text-cap text-muted-foreground max-md:block pointer-coarse:block">
-                  {item.disabledReason}
-                </span>
-              </span>
-            </DropdownMenuItem>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="left">{item.disabledReason}</TooltipContent>
-      </Tooltip>
-    )
-  }
-  const content = (
-    <>
-      {icon}
-      {item.label}
-      {item.shortcut && <DropdownMenuShortcut>{item.shortcut}</DropdownMenuShortcut>}
-    </>
-  )
-  if (item.href) {
-    return (
-      <DropdownMenuItem asChild variant={variant} className={ROW}>
-        <Link href={safeHref(item.href) ?? '#'}>{content}</Link>
-      </DropdownMenuItem>
-    )
-  }
-  return (
-    <DropdownMenuItem variant={variant} className={ROW} onSelect={item.onSelect}>
-      {content}
-    </DropdownMenuItem>
-  )
-}
-
-/** What the phone fit decision needs from a menu. */
-export function phoneMenuModel(menu: NormalizedActionMenu): PhoneMenuModel {
-  const entries = menu.groups.flatMap((g) => g.items)
-  return {
-    rows: entries.map((e) => ({
-      label: e.label,
-      reason: e.kind === 'sub' ? undefined : e.disabledReason,
-    })),
-    headings: menu.groups.flatMap((g) => (g.label ? [g.label] : [])),
-    separators: Math.max(0, menu.groups.length - 1),
-    hasSubmenu: entries.some((e) => e.kind === 'sub'),
-    // The item model has no text fields; a menu that needs one is a picker.
-    hasInput: false,
-    icons: menu.icons,
-  }
-}
-
-const OPEN_KEYS = new Set(['Enter', ' ', 'ArrowDown'])
-
-function PhoneActionMenu({
-  menu,
-  trigger,
-  title,
-  label,
-}: {
-  menu: NormalizedActionMenu
-  trigger: React.ReactElement
-  title: string
-  label: string
-}) {
-  const model = React.useMemo(() => phoneMenuModel(menu), [menu])
-  // Ruled out by the item model alone (too many items, a submenu): always the sheet.
-  const mayBeMenu = mayBeAnchoredOnPhone({
-    rows: model.rows,
-    headings: model.headings.length,
-    hasSubmenu: model.hasSubmenu,
-    hasInput: model.hasInput,
-  })
-  const [open, setOpen] = React.useState(false)
-  // Mounted after the first open and kept, so the sheet can animate closed.
-  const [mounted, setMounted] = React.useState(false)
-  const [byKeyboard, setByKeyboard] = React.useState(false)
-  const [menuOpen, setMenuOpen] = React.useState(false)
-  const triggerRef = React.useRef<HTMLElement | null>(null)
-  // A pointer press measured the menu as not fitting: the click opens the sheet.
-  const sheetOnClick = React.useRef(false)
-
-  // When the sheet is certain, fetch it while the page is idle, so the first
-  // tap opens it at once. A menu that may stay anchored loads it only when a
-  // press finds it does not fit.
-  React.useEffect(() => {
-    if (mayBeMenu || typeof window.requestIdleCallback !== 'function') return
-    const id = window.requestIdleCallback(preloadSheet, { timeout: 4000 })
-    return () => window.cancelIdleCallback(id)
-  }, [mayBeMenu])
-
-  const openSheet = (keyboard: boolean) => {
-    setByKeyboard(keyboard)
-    setMounted(true)
-    setOpen(true)
-  }
-
-  const sheet = mounted && (
-    <React.Suspense fallback={null}>
-      <ActionSheet
-        open={open}
-        onOpenChange={setOpen}
-        menu={menu}
-        title={title}
-        label={label}
-        focusFirstRow={byKeyboard}
-        returnFocusTo={triggerRef}
-      />
-    </React.Suspense>
-  )
-
-  if (mayBeMenu) {
-    // Measured at the moment it opens: the screen, where the trigger is and
-    // how wide the labels are in this language.
-    const fitsAsMenu = () => {
-      const el = triggerRef.current
-      return !!el && measurePhoneFit(el, model) === 'menu'
-    }
-    const handlers: TriggerHandlers = {
-      ref: (el: HTMLButtonElement | null) => {
-        triggerRef.current = el
-      },
-      onPointerDown: (e) => {
-        sheetOnClick.current = false
-        if (menuOpen || e.button !== 0 || e.ctrlKey || fitsAsMenu()) return
-        // Keeps the menu from opening; the sheet opens on the click, so the
-        // rest of this tap does not land on its scrim.
-        e.preventDefault()
-        sheetOnClick.current = true
-        preloadSheet()
-      },
-      onKeyDown: (e) => {
-        if (menuOpen || !OPEN_KEYS.has(e.key) || fitsAsMenu()) return
-        e.preventDefault()
-        openSheet(true)
-      },
-      onClick: () => {
-        if (!sheetOnClick.current) return
-        sheetOnClick.current = false
-        openSheet(false)
-      },
-    }
-    return (
-      <>
-        <AnchoredActionMenu
-          menu={menu}
-          trigger={trigger}
-          triggerHandlers={handlers}
-          onOpenChange={setMenuOpen}
-        />
-        {sheet}
-      </>
-    )
-  }
-
-  const triggerProps = trigger.props as {
-    onClick?: (e: React.MouseEvent<HTMLElement>) => void
-    onPointerDown?: (e: React.PointerEvent<HTMLElement>) => void
-  }
-  const opener = React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
-    ref: triggerRef,
-    'aria-haspopup': 'dialog',
-    'aria-expanded': open,
-    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
-      triggerProps.onPointerDown?.(e)
-      preloadSheet()
-    },
-    onClick: (e: React.MouseEvent<HTMLElement>) => {
-      triggerProps.onClick?.(e)
-      if (e.defaultPrevented) return
+/**
+ * The trigger as it shows while the menu's code loads: marked busy, and a
+ * press on it is kept (`onPress`) instead of lost.
+ */
+export function pendingTrigger(
+  trigger: React.ReactElement,
+  onPress: (how: PendingOpen) => void
+): React.ReactElement {
+  return React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
+    'aria-busy': true,
+    'data-action-menu-pending': '',
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation()
       // A click with no pointer position came from Enter or Space.
-      openSheet(e.detail === 0)
+      onPress(e.detail === 0 ? 'keyboard' : 'pointer')
     },
   })
+}
 
+export function ActionMenu(props: ActionMenuProps) {
+  const [pending, setPending] = React.useState<PendingOpen | undefined>(undefined)
+  if (!hasItems(props.items)) return null
   return (
-    <>
-      {opener}
-      {sheet}
-    </>
+    <React.Suspense fallback={pendingTrigger(props.trigger, setPending)}>
+      <ActionMenuImpl {...props} pendingOpen={pending} />
+    </React.Suspense>
   )
 }
