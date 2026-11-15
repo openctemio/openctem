@@ -29,6 +29,38 @@ test.describe('Findings filters', { tag: ['@findings'] }, () => {
     ).toBeVisible()
   })
 
+  test('Query mode shows the whole filter as server text and writes it back losslessly', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/findings?severity=critical')
+    await page.getByRole('button', { name: /^query$/i }).click()
+    const box = page.getByRole('combobox', { name: /filter as query text/i })
+    await expect(box).toBeEnabled({ timeout: 20_000 })
+    // The State lens and the Practice switch are part of the printed filter.
+    await expect(box).toHaveValue(/state=open/)
+    await expect(box).toHaveValue(/practice!=compliance/)
+    await expect(box).toHaveValue(/severity=critical/)
+    // A refused text is never applied: one line with its column under the field.
+    await box.fill('severity= AND kev=true')
+    await box.press('Enter')
+    await expect(box).toHaveAttribute('aria-invalid', 'true')
+    await expect(page.getByText(/Column \d+\./)).toBeVisible()
+    await expect(page).toHaveURL(/severity=critical/)
+    // The suggestions stay closed so the problem line shows; Escape puts the
+    // applied text back; Enter on a valid text applies it.
+    await expect(box).toHaveAttribute('aria-expanded', 'false')
+    await box.press('Escape')
+    await expect(box).toHaveValue(/severity=critical/)
+    await box.fill('kev=true')
+    await box.press('Enter')
+    await expect(page).toHaveURL(/is_in_kev=true/)
+    await expect(page).toHaveURL(/state=all/)
+    await expect(page).not.toHaveURL(/severity=critical/)
+    await page.getByRole('button', { name: /^basic$/i }).click()
+    await expect(page.getByTestId('filter-chip').first()).toBeVisible()
+  })
+
   test('the f key opens Add filter, not while typing in search', async ({ page }) => {
     await page.goto('/findings')
     const search = page.getByRole('searchbox', { name: /search findings/i })

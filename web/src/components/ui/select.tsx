@@ -18,27 +18,43 @@ function SelectValue({ ...props }: React.ComponentProps<typeof SelectPrimitive.V
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
 
+/**
+ * Icon-only below a width (a toolbar select whose value is `sr-only` there):
+ * drawn as a square with no chevron, like an icon button.
+ */
+const SELECT_ICON_ONLY_BELOW = {
+  '@2xl/toolbar': {
+    trigger: '@max-2xl/toolbar:aspect-square @max-2xl/toolbar:justify-center @max-2xl/toolbar:px-0',
+    chevron: '@max-2xl/toolbar:hidden',
+  },
+} as const
+
 function SelectTrigger({
   className,
   size = 'default',
+  iconOnlyBelow,
   children,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: 'sm' | 'default'
+  /** Icon-only below this toolbar width: a square with no chevron. */
+  iconOnlyBelow?: keyof typeof SELECT_ICON_ONLY_BELOW
 }) {
+  const iconOnly = iconOnlyBelow ? SELECT_ICON_ONLY_BELOW[iconOnlyBelow] : undefined
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
       className={cn(
         "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-body whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-control-field data-[size=sm]:h-control-dense max-md:data-[size=default]:h-control-touch max-md:data-[size=sm]:h-control-touch-dense *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        iconOnly?.trigger,
         className
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="size-4 opacity-50" />
+        <ChevronDownIcon className={cn('size-4 opacity-50', iconOnly?.chevron)} />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )

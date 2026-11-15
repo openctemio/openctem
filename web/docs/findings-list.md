@@ -74,7 +74,8 @@ the dashboard owns the KPI tiles.
 
 ## Filters
 
-Every active filter is a chip, then **Add filter** (shortcut `f`). Code: `src/features/findings/filters/`.
+Every active filter is a chip, then **Add filter** (shortcut `f`): an icon-only square at the toolbar's control
+height (the shared `AddFilterButton`). Code: `src/features/findings/filters/`.
 
 - The page URL carries the API's own filter params (`severity`, `severity_not`, `epss_score_gte`...), so a
   filter is a URL param and a chip is a reading of one. The facet panel and Add filter write the same params.
@@ -97,10 +98,30 @@ Every active filter is a chip, then **Add filter** (shortcut `f`). Code: `src/fe
 - Chip text is escaped, isolated text; a value from a link never becomes markup.
 - The row is the shared `FilterChipsRow`: the quiet locked chip for what the list leaves out (informational
   findings, drawn with the shared `LockedChip`) first, the chips (the ones that do not fit fold into "+N
-  more"), Add filter, then the count at the end. Nothing in the row shrinks under its content. When the locked
-  chip, Add filter, the count and "+N more" do not fit on one line (a phone), the locked chip takes a line of
-  its own above the rest. On a phone the search box takes the toolbar's first line and the saved views and
+  more"), Add filter and Clear. The count is said once, beside the view name in the first row, never on the
+  chips row. Nothing in the row shrinks under its content. When the locked chip, Add filter and "+N more" do
+  not fit on one line (a phone), the locked chip takes a line of its own above the rest. On a phone the search box takes the toolbar's first line and the saved views and
   group buttons sit under it.
+
+## Query mode
+
+The search field has a Basic | Query switch at its end (one code icon toggle on a phone; Ctrl+/ switches
+too): one field, two ways to write the same filter (`ListSearch` `query`, `useListQueryMode` in
+`features/query`). Assets and scans use the same field.
+
+- Basic to Query shows the whole filter as text printed by the server (`POST /query/parse` with the page's
+  params), the State lens and the Practice switch included as the list applies them (`state=open
+practice!=compliance`). The client never builds query text itself.
+- Enter applies a valid text and the field stays in Query mode: a filter chips can show is written back as the
+  flat params (links keep their form), anything else as one `fq` text. The text owns the State lens and the
+  Practice switch: what it leaves out is not restricted (`state=all`, `practice=all`), and a practice set the
+  switch cannot show keeps the whole text as `fq`. A round trip without an edit changes nothing.
+- Escape puts back the applied text. Switching to Basic with an edit not applied yet applies it first; a text
+  the parser refuses keeps Query mode.
+- A refused text shows one line under the field with the problem and its column, and the field selects the
+  problem (it scrolls there). The list keeps the last valid result.
+- In Query mode the chips, Add filter and Clear step aside (the context chips stay); in Basic mode an `fq`
+  filter is one Advanced chip whose text opens Query mode.
 
 ## Request budget
 
