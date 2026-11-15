@@ -44,6 +44,9 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     expect(cb.x + cb.width).toBeLessThanOrEqual(field.x + field.width)
     expect(cb.y).toBeGreaterThanOrEqual(field.y)
     expect(cb.y + cb.height).toBeLessThanOrEqual(field.y + field.height)
+    // They end before the Basic | Query switch (its width is measured by the field).
+    const sw = (await page.locator('[data-slot="list-search-mode"]:visible').boundingBox())!
+    expect(cb.x + cb.width).toBeLessThanOrEqual(sw.x)
 
     // Help: the syntax and the person's own fields, from the schema already read.
     await page.getByRole('button', { name: /query syntax/i }).click()
@@ -55,10 +58,15 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     // Expand: over the list, the toolbar (Views) does not move.
     const addFilter = page.getByRole('button', { name: /^views$/i })
     const before = (await addFilter.boundingBox())!
+    // The text and the caret carry over into the expanded editor.
+    await box.fill('severity>=high')
+    await box.evaluate((el: HTMLInputElement) => el.setSelectionRange(3, 3))
     await page.getByRole('button', { name: /expand the editor/i }).click()
     const big = page.locator('[data-slot="query-editor-expanded"] textarea')
     await expect(big).toBeVisible()
     await expect(big).toBeFocused()
+    await expect(big).toHaveValue('severity>=high')
+    expect(await big.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(3)
     expect((await big.boundingBox())!.height).toBeGreaterThanOrEqual(200)
     expect(await addFilter.boundingBox()).toEqual(before)
 
@@ -139,4 +147,41 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     await expect(again).toBeEnabled({ timeout: 20_000 })
     await expect(again).toHaveValue(/is_in_kev=true OR severity=critical/)
   })
+})
+
+test.describe('Query editor controls on a phone', { tag: ['@findings'] }, () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  for (const locale of ['en', 'vi'] as const) {
+    test(`the expanded editor fits the screen, wraps, and opens no keyboard (390 touch, ${locale})`, async ({
+      page,
+      baseURL,
+    }) => {
+      await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
+      await page.goto('/findings')
+      await page.locator('[data-slot="list-search-mode"]:visible').click()
+      const box = page.locator('[data-slot="list-search-query"] [role="combobox"]')
+      await expect(box).toBeEnabled({ timeout: 20_000 })
+      const field = (await box.boundingBox())!
+      const controls = page.locator('[data-slot="query-field-controls"]')
+      const cb = (await controls.boundingBox())!
+      const sw = (await page.locator('[data-slot="list-search-mode"]:visible').boundingBox())!
+      expect(cb.x).toBeGreaterThanOrEqual(field.x)
+      expect(cb.x + cb.width).toBeLessThanOrEqual(sw.x)
+      await box.fill('severity>=high AND is_in_kev=true AND status!=accepted AND tool="nuclei"')
+      await box.blur()
+      await controls.getByRole('button').nth(1).tap()
+      const big = page.locator('[data-slot="query-editor-expanded"] textarea')
+      await expect(big).toBeVisible()
+      await expect(big).not.toBeFocused()
+      // Long text wraps: no sideways scroll; the editor stays on screen.
+      expect(
+        await big.evaluate((el: HTMLTextAreaElement) => el.scrollWidth <= el.clientWidth + 1)
+      ).toBe(true)
+      const room = await page.evaluate(() => window.visualViewport?.height ?? window.innerHeight)
+      const eb = (await page.locator('[data-slot="query-editor-expanded"]').boundingBox())!
+      expect(eb.y + eb.height).toBeLessThanOrEqual(room)
+      expect(eb.x).toBeGreaterThanOrEqual(0)
+      expect(eb.x + eb.width).toBeLessThanOrEqual(390)
+    })
+  }
 })

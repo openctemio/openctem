@@ -329,6 +329,71 @@ describe('QueryInput', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
+  it('expanding and folding keep the text and the caret; line breaks become spaces on one line', () => {
+    const { container } = render(<ListField onSubmit={vi.fn()} />)
+    const line = screen.getByRole('combobox') as HTMLInputElement
+    line.focus()
+    line.setSelectionRange(3, 5)
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    act(() => {
+      vi.advanceTimersByTime(50)
+    })
+    const big = screen.getByRole('combobox') as HTMLTextAreaElement
+    expect(big.tagName).toBe('TEXTAREA')
+    expect(big.value).toBe('severity>=high')
+    expect(document.activeElement).toBe(big)
+    expect([big.selectionStart, big.selectionEnd]).toEqual([3, 5])
+    fireEvent.change(big, { target: { value: 'severity=critical\nkev=true' } })
+    big.setSelectionRange(20, 20)
+    fireEvent.click(screen.getByRole('button', { name: /collapse the editor/i }))
+    act(() => {
+      vi.advanceTimersByTime(50)
+    })
+    expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeNull()
+    const again = screen.getByRole('combobox') as HTMLInputElement
+    expect(again.value).toBe('severity=critical kev=true')
+    expect(document.activeElement).toBe(again)
+    expect(again.selectionStart).toBe(20)
+  })
+
+  it('on a touch screen the expanded editor does not take the focus (no keyboard on open)', () => {
+    const before = window.matchMedia
+    window.matchMedia = ((q: string) => ({
+      matches: q.includes('coarse'),
+      media: q,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia
+    try {
+      function Touch() {
+        const [v, setV] = useState('severity>=high')
+        return (
+          <QueryInput
+            entity="findings"
+            value={v}
+            onChange={setV}
+            applied="severity>=high"
+            onSubmit={vi.fn()}
+            ariaLabel="search"
+            autoFocus
+            quietStatus
+          />
+        )
+      }
+      render(<Touch />)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+      act(() => {
+        vi.advanceTimersByTime(50)
+      })
+      const big = screen.getByRole('combobox')
+      expect(big.tagName).toBe('TEXTAREA')
+      expect(document.activeElement).not.toBe(big)
+    } finally {
+      window.matchMedia = before
+    }
+  })
+
   it("the help lists the syntax and the person's own fields with their operators", async () => {
     render(<ListField onSubmit={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /query syntax/i }))

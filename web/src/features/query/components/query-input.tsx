@@ -18,17 +18,7 @@
  * key cancels the request in flight.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -158,32 +148,9 @@ export function QueryInput({
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const bigRef = useRef<HTMLDivElement>(null)
-  // The field's own controls sit just before the host's end controls (the
-  // list search field's mode switch), measured, so they never overlap.
-  const fieldRef = useRef<HTMLDivElement>(null)
-  const hostEndEl = useRef<HTMLElement | null>(null)
-  const hostEndObserver = useRef<ResizeObserver | null>(null)
-  const [hostEnd, setHostEnd] = useState(0)
-  // After every render: the host may swap its end controls (a lazy editor
-  // replacing its placeholder); one observer follows the current element.
-  useLayoutEffect(() => {
-    const host =
-      fieldRef.current?.querySelector<HTMLElement>('[data-slot="list-search-end"]') ?? null
-    if (host === hostEndEl.current) return
-    hostEndEl.current = host
-    hostEndObserver.current?.disconnect()
-    hostEndObserver.current = null
-    if (!host) {
-      setHostEnd(0)
-      return
-    }
-    const read = () => setHostEnd(Math.ceil(host.getBoundingClientRect().width))
-    read()
-    if (typeof ResizeObserver === 'undefined') return
-    hostEndObserver.current = new ResizeObserver(read)
-    hostEndObserver.current.observe(host)
-  }, [adornments])
-  useEffect(() => () => hostEndObserver.current?.disconnect(), [])
+  // The editor's first mount may take the focus (`autoFocus`); swapping the
+  // one-line field and the expanded editor moves it by hand (setBig).
+  const [swapped, setSwapped] = useState(false)
   const listAnchor = useMemo(
     () => ({
       current: {
@@ -212,16 +179,47 @@ export function QueryInput({
   const [big, setBigState] = useState(false)
   const [bigFrom, setBigFrom] = useState('')
   const setBig = (on: boolean) => {
+    const el = ref.current
+    const from = el?.selectionStart ?? value.length
+    const to = el?.selectionEnd ?? from
+    setSwapped(true)
+    // One line cannot hold a line break: each becomes a space, so the
+    // conditions stay apart and the caret keeps its place.
+    if (!on && /[\r\n]/.test(value)) onChange(value.replace(/[\r\n]/g, ' '))
     setBigState(on)
     setBigFrom(value)
     setOpen(false)
     requestAnimationFrame(() => {
-      const el = ref.current
-      if (!el) return
-      el.focus()
-      el.setSelectionRange(el.value.length, el.value.length)
+      const next = ref.current
+      // On a touch screen the keyboard opens only when the person taps the text.
+      if (!next || coarsePointer()) return
+      next.focus()
+      next.setSelectionRange(from, to)
+      setCaret(from)
     })
   }
+  // The expanded editor fits the visible part of the screen (above a phone's
+  // keyboard, inside a zoomed page), following the visual viewport.
+  useEffect(() => {
+    const vv = typeof window === 'undefined' ? null : window.visualViewport
+    if (!big || !vv) return
+    const fit = () => {
+      const box = bigRef.current
+      if (!box) return
+      const status = box.lastElementChild?.getBoundingClientRect().height ?? 0
+      const room = vv.offsetTop + vv.height - box.getBoundingClientRect().top - status - 16
+      box.style.setProperty('--query-editor-room', `${Math.max(96, Math.floor(room))}px`)
+    }
+    fit()
+    vv.addEventListener('resize', fit)
+    vv.addEventListener('scroll', fit)
+    window.addEventListener('scroll', fit, { passive: true })
+    return () => {
+      vv.removeEventListener('resize', fit)
+      vv.removeEventListener('scroll', fit)
+      window.removeEventListener('scroll', fit)
+    }
+  }, [big])
   // The server's answer to the text it was asked about on Apply.
   const [answer, setAnswer] = useState<{ text: string; result: ParseResult } | null>(null)
   // Apply refused before asking (quotes or parentheses do not pair up).
@@ -436,7 +434,7 @@ export function QueryInput({
     id: inputId,
     value,
     disabled,
-    autoFocus,
+    autoFocus: autoFocus && !swapped,
     spellCheck: false,
     autoComplete: 'off',
     maxLength: 4096,
@@ -509,11 +507,7 @@ export function QueryInput({
           the expanded editor while it is open. */}
       <PopoverAnchor virtualRef={listAnchor} />
       <div ref={anchorRef} className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
-        <div
-          ref={fieldRef}
-          className="relative"
-          style={{ '--query-controls-end': `${hostEnd + 6}px` } as CSSProperties}
-        >
+        <div className="relative">
           {multiline ? (
             <HighlightedTextarea
               textareaRef={ref}
@@ -540,7 +534,7 @@ export function QueryInput({
                 <HighlightedTextarea
                   textareaRef={ref}
                   rows={10}
-                  className="max-h-[60vh] min-h-60 resize-y pe-24 font-mono text-sm"
+                  className="max-h-[min(60vh,var(--query-editor-room,60vh))] min-h-[min(15rem,var(--query-editor-room,15rem))] resize-y pe-24 font-mono text-sm"
                   {...shared}
                 />
                 {statusLine}
@@ -553,7 +547,7 @@ export function QueryInput({
                 'font-mono',
                 inputClassName,
                 // Room for the field's own controls and the host's.
-                inline && 'pe-[calc(var(--query-controls-end)+5rem)]'
+                inline && 'pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
               )}
               {...shared}
             />
@@ -564,7 +558,10 @@ export function QueryInput({
               data-slot="query-field-controls"
               className={cn(
                 'absolute z-50 flex items-center gap-0.5',
-                big ? 'end-2 top-1.5' : 'end-(--query-controls-end) top-1/2 -translate-y-1/2'
+                big
+                  ? 'end-2 top-1.5'
+                  : // Just before the host's end controls (a list search field's switch).
+                    'end-[calc(var(--list-search-end,0.5rem)-0.125rem)] top-1/2 -translate-y-1/2'
               )}
             >
               <QuerySyntaxHelp entity={entity} />
@@ -689,6 +686,11 @@ function HighlightedTextarea({
       />
     </div>
   )
+}
+
+/** A touch screen without a mouse: the keyboard is not opened for the person. */
+function coarsePointer(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
 }
 
 /** An icon button inside the field (help, expand, run): 24 px, labelled. */
