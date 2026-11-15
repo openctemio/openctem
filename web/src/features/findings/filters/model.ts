@@ -53,6 +53,8 @@ export const NON_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'from',
   // A filter chips cannot show, as query text (filter-query-mode.tsx).
   'fq',
+  // The search field's mode (`mode=query`, features/query/components/query-mode.tsx).
+  'mode',
 ])
 
 /** The URL suffix each operator uses, longest first (`_gte` before `_gt`). */
