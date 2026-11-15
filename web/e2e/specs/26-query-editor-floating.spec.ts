@@ -13,16 +13,32 @@ import { test, expect } from '../fixtures/authenticated-page'
 
 async function openTaskDialog(page: Page) {
   await page.goto('/findings')
-  const direct = page.getByRole('button', { name: /^(task from filters|nhiệm vụ từ bộ lọc)$/i })
-  if (await direct.isVisible({ timeout: 20_000 }).catch(() => false)) {
+  await page.waitForLoadState('networkidle')
+  const name = /^(task from filters|nhiệm vụ từ bộ lọc)$/i
+  const direct = page.getByRole('button', { name })
+  if (await direct.isVisible()) {
     await direct.click()
   } else {
-    await page
-      .locator('[data-slot="page-header"], main')
-      .getByRole('button', { name: /more actions|thao tác khác/i })
-      .first()
-      .click()
-    await page.getByRole('menuitem', { name: /task from filters|nhiệm vụ từ bộ lọc/i }).click()
+    // On a narrow screen the action sits in one of the "More" menus.
+    const mores = page.getByRole('button', {
+      name: /^(more actions|more list actions|thao tác khác|thêm thao tác danh sách)$/i,
+    })
+    const item = page.getByRole('menuitem', { name }).or(page.getByRole('button', { name }))
+    let found = false
+    for (let i = 0; i < (await mores.count()) && !found; i++) {
+      await mores.nth(i).click()
+      found = await item
+        .first()
+        .waitFor({ state: 'visible', timeout: 2_000 })
+        .then(() => true)
+        .catch(() => false)
+      if (!found) {
+        await page.keyboard.press('Escape')
+        await expect(page.getByRole('menu')).toHaveCount(0)
+      }
+    }
+    expect(found).toBe(true)
+    await item.first().click()
   }
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
@@ -92,13 +108,20 @@ async function checkSuggestions(page: Page, touch: boolean) {
 
   // The hint under the field stays readable: the list does not cover it.
   const statusId = await box.getAttribute('aria-describedby')
-  const sb = (await page.locator(`[id="${statusId}"]`).boundingBox())!
-  const overlaps =
-    sb.x < lb.x + lb.width &&
-    lb.x < sb.x + sb.width &&
-    sb.y < lb.y + lb.height &&
-    lb.y < sb.y + sb.height
-  expect(overlaps).toBe(false)
+  // Measured fresh each time: the status line may change (a check finishing)
+  // and the list follows it.
+  await expect
+    .poll(async () => {
+      const sb = (await page.locator(`[id="${statusId}"]`).boundingBox())!
+      const l = (await list.boundingBox())!
+      return (
+        sb.x < l.x + l.width &&
+        l.x < sb.x + sb.width &&
+        sb.y < l.y + l.height &&
+        l.y < sb.y + sb.height
+      )
+    })
+    .toBe(false)
 
   // Escape closes the list first and keeps the dialog.
   await box.press('Escape')
