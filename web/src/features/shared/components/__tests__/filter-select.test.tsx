@@ -58,4 +58,33 @@ describe('FilterSelect', () => {
     await screen.findByRole('menuitemradio', { name: /Approved/ })
     expect(screen.queryByRole('menuitemradio', { name: /^All/ })).not.toBeInTheDocument()
   })
+
+  it('as a base chip folds its key on a narrow toolbar and keeps it in the name', () => {
+    render(
+      <FilterSelect
+        label="Practice"
+        value="pending"
+        options={options}
+        clearable={false}
+        foldLabel
+        onChange={() => {}}
+      />
+    )
+    const trigger = screen.getByRole('button', { name: 'Practice: Pending' })
+    expect(trigger.querySelector('span')).toHaveClass('@max-4xl/toolbar:hidden')
+  })
+
+  it('reads its fallback label when no value is chosen (a saved view sets it)', () => {
+    render(
+      <FilterSelect
+        label="State"
+        value=""
+        allLabel="Set by the view"
+        options={options}
+        clearable={false}
+        onChange={() => {}}
+      />
+    )
+    expect(screen.getByRole('button', { name: 'State: Set by the view' })).toBeInTheDocument()
+  })
 })

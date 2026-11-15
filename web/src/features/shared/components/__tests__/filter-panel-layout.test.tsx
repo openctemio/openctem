@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { FilterPanelSlot, useFilterPanelOpen } from '../filter-panel-layout'
+import { FilterPanelSlot, openFilterPanel, useFilterPanelOpen } from '../filter-panel-layout'
+import { FacetPanel } from '../facet-filter-panel'
 import { FilterPanelToggle } from '../filter-button'
 
 globalThis.ResizeObserver ??= class {
@@ -75,5 +76,45 @@ describe('useFilterPanelOpen + FilterPanelSlot', () => {
     expect(screen.getByText('facet')).toBeInTheDocument()
     get.mockRestore()
     set.mockRestore()
+  })
+})
+
+describe('FilterPanelSlot without a toolbar toggle', () => {
+  it('closes from the close button in the facet panel header', () => {
+    const onClose = vi.fn()
+    render(
+      <FilterPanelSlot open onClose={onClose} id="p" label="Test filters">
+        <FacetPanel activeCount={0} onClearAll={() => {}}>
+          <div />
+        </FacetPanel>
+      </FilterPanelSlot>
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Hide the filter panel' }))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('shows no close button where nothing closes it (the sheet has its own)', () => {
+    render(
+      <FacetPanel activeCount={0} onClearAll={() => {}}>
+        <div />
+      </FacetPanel>
+    )
+    expect(screen.queryByRole('button', { name: 'Hide the filter panel' })).toBeNull()
+  })
+
+  it('opens the side panel from lg up and the sheet below', () => {
+    const panel = vi.fn()
+    const sheet = vi.fn()
+    const mm = window.matchMedia
+    try {
+      window.matchMedia = ((q: string) => ({ matches: q.includes('1024') })) as typeof mm
+      openFilterPanel(panel, sheet)
+      window.matchMedia = (() => ({ matches: false })) as unknown as typeof mm
+      openFilterPanel(panel, sheet)
+    } finally {
+      window.matchMedia = mm
+    }
+    expect(panel).toHaveBeenCalledOnce()
+    expect(sheet).toHaveBeenCalledOnce()
   })
 })

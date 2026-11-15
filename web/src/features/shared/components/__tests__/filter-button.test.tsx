@@ -3,7 +3,7 @@ import { createRef } from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { FilterButton, FilterPanelToggle } from '../filter-button'
+import { FilterButton, FilterPanelToggle, ShowFilterPanelButton } from '../filter-button'
 import { FilterSheet } from '../filter-sheet'
 
 // Radix Popover/Tooltip measure their content; jsdom has no ResizeObserver.
@@ -111,6 +111,35 @@ describe('FilterPanelToggle', () => {
     expect(panel).toHaveAttribute('aria-pressed', 'true')
     expect(panel).toHaveClass('bg-accent')
     expect(panel.querySelector('svg')).toHaveClass('lucide-list-filter')
+  })
+})
+
+describe('FilterPanelToggle sheetOnly (the list has Add filter)', () => {
+  it('drops the desktop panel toggle and keeps the sheet trigger below lg', () => {
+    const onOpenSheet = vi.fn()
+    render(
+      <FilterPanelToggle
+        open={false}
+        onToggle={() => {}}
+        onOpenSheet={onOpenSheet}
+        activeCount={0}
+        controlsId="x-filters"
+        sheetOnly
+      />
+    )
+    const buttons = screen.getAllByRole('button', { name: 'Filters' })
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]).toHaveClass('lg:hidden')
+    expect(buttons[0]).not.toHaveAttribute('aria-pressed')
+    fireEvent.click(buttons[0])
+    expect(onOpenSheet).toHaveBeenCalledOnce()
+  })
+
+  it('Add filter ends with a row that opens the panel', () => {
+    const onClick = vi.fn()
+    render(<ShowFilterPanelButton onClick={onClick} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Show the filter panel' }))
+    expect(onClick).toHaveBeenCalledOnce()
   })
 })
 

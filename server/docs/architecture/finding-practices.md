@@ -57,10 +57,13 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
 
 ## The findings list's practice switch (shipped)
 
-- A tab strip above the list: **Vulnerabilities** (the default: every
-  practice except compliance, `practice_not=compliance`), **Compliance**, each
-  other practice that holds findings, and **All**, each with the caller's
-  count. One click shows compliance.
+- A base chip first on the list toolbar, "Practice: Vulnerabilities": its
+  menu holds **Vulnerabilities** (the default: every practice except
+  compliance, `practice_not=compliance`), **Compliance**, each other practice
+  that holds findings, and **All**. It is never removed and shows no counts
+  (the list's count shows once, beside the view name); the counts below decide
+  which practices the menu lists. On a phone it is at the top of the Filters
+  sheet.
 - The choice is the page's `practice` URL param (absent = Vulnerabilities,
   `all` = no condition, else the practice), so it is linkable and a saved view
   keeps it (`all` is saved as no condition). Like the state lens, the default
@@ -75,7 +78,7 @@ bounty), `identity` (identity assets), `runtime` (runtime detections),
   the counts with page 1 only; a later page reads them from page 1's cached
   answer, the grouped view asks for one row with them, and an `fq` filter
   (`POST /findings/search`) has none. A hard load of `/findings` therefore
-  sends no request for the switch.
+  sends no request for the practice chip.
 - `compliance_result` is an ordinary filter in the filter picker (pass, fail,
   manual, not_applicable, error, unknown).
 - Settings > SLA policies: a new policy is created for Vulnerabilities or

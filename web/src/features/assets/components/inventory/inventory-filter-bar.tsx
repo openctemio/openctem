@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { AddFilterButton } from '@/features/shared/components/filter-button'
+import { AddFilterButton, ShowFilterPanelButton } from '@/features/shared/components/filter-button'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import {
@@ -138,18 +138,29 @@ function useShortcut(onOpen: () => void) {
   }, [onOpen])
 }
 
-function AddFilter({
-  fields,
+/**
+ * The inventory's "Add filter", on the toolbar row after the search (from
+ * `lg` up; below it the Filters sheet holds every facet).
+ */
+export function InventoryAddFilter({
+  groups,
+  attributeFacets = [],
+  tagTypes,
   filters,
   stats,
   onChange,
-  className,
   onOpenChange,
+  onOpenPanel,
 }: {
-  fields: FilterField[]
-  className?: string
+  groups: FacetGroup[]
+  attributeFacets?: AttributeFacet[]
+  tagTypes?: string[]
+  /** Told when Add filter opens or closes (to load what its editors label). */
   onOpenChange?: (open: boolean) => void
+  /** Open the facet panel (the picker's last row). */
+  onOpenPanel?: () => void
 } & EditorProps) {
+  const fields = useFilterFields(groups, attributeFacets, tagTypes)
   const { t } = useTranslation()
   const [open, setOpenState] = useState(false)
   const [picked, setPicked] = useState<FilterField | null>(null)
@@ -179,7 +190,7 @@ function AddFilter({
       onOpenChange={setOpen}
       title={t('assets.filters.add', 'Add filter')}
       className="w-80"
-      trigger={<AddFilterButton className={className} />}
+      trigger={<AddFilterButton className="hidden lg:inline-flex" />}
     >
       {picked ? (
         <div className="flex max-h-[min(28rem,70svh)] flex-col">
@@ -220,6 +231,14 @@ function AddFilter({
               </CommandGroup>
             ))}
           </CommandList>
+          {onOpenPanel && (
+            <ShowFilterPanelButton
+              onClick={() => {
+                setOpen(false)
+                onOpenPanel()
+              }}
+            />
+          )}
         </Command>
       )}
     </ResponsivePopover>
@@ -250,14 +269,9 @@ export function InventoryFilterChip({
 export function InventoryFilterBar({
   chips,
   locked,
-  groups,
-  attributeFacets = [],
-  tagTypes,
   filters,
-  stats,
   onChange,
   onClearAll,
-  onPickerOpenChange,
   resultLabel,
   queryActive,
   onOpenQuery,
@@ -265,12 +279,7 @@ export function InventoryFilterBar({
   chips: InventoryChip[]
   /** What the default list hides (a `LockedChip`), first in the row. */
   locked?: ReactNode
-  groups: FacetGroup[]
-  attributeFacets?: AttributeFacet[]
-  tagTypes?: string[]
   onClearAll: () => void
-  /** Told when Add filter opens or closes (to load what its editors label). */
-  onPickerOpenChange?: (open: boolean) => void
   /** "361 assets", at the end of the row. */
   resultLabel?: string
   /**
@@ -280,9 +289,8 @@ export function InventoryFilterBar({
   queryActive?: boolean
   /** Open the search field's Query mode (the Advanced chip's text). */
   onOpenQuery?: () => void
-} & EditorProps) {
+} & Pick<EditorProps, 'filters' | 'onChange'>) {
   const { t } = useTranslation()
-  const fields = useFilterFields(groups, attributeFacets, tagTypes)
   const advancedChip = filters.advanced ? (
     <AdvancedChip
       key="advanced"
@@ -307,21 +315,11 @@ export function InventoryFilterBar({
         )),
       ]}
       trailing={
-        <>
-          <AddFilter
-            className="hidden lg:inline-flex"
-            fields={fields}
-            filters={filters}
-            stats={stats}
-            onChange={onChange}
-            onOpenChange={onPickerOpenChange}
-          />
-          {chips.length + (advancedChip ? 1 : 0) > 1 && (
-            <Button variant="ghost" size="sm" onClick={onClearAll}>
-              {t('assets.filters.clearAll', 'Clear filters')}
-            </Button>
-          )}
-        </>
+        chips.length + (advancedChip ? 1 : 0) > 1 ? (
+          <Button variant="ghost" size="sm" onClick={onClearAll}>
+            {t('assets.filters.clearAll', 'Clear filters')}
+          </Button>
+        ) : undefined
       }
       end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
     />

@@ -28,6 +28,11 @@ const SELECT_ICON_ONLY_BELOW = {
     trigger: '@max-2xl/toolbar:aspect-square @max-2xl/toolbar:justify-center @max-2xl/toolbar:px-0',
     chevron: '@max-2xl/toolbar:hidden',
   },
+  '@5xl/toolbar': {
+    trigger:
+      '@max-5xl/toolbar:aspect-square @max-5xl/toolbar:justify-center @max-5xl/toolbar:px-0 group-data-[fold=true]/toolbar:aspect-square group-data-[fold=true]/toolbar:justify-center group-data-[fold=true]/toolbar:px-0',
+    chevron: '@max-5xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden',
+  },
 } as const
 
 function SelectTrigger({
