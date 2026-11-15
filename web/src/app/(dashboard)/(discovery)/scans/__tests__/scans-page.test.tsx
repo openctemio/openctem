@@ -142,9 +142,10 @@ describe('Scans › Configurations', () => {
   it('sorts on the server from a column header and returns to page 1', async () => {
     urlState.page = '2'
     render(<ScansPage />)
+    // One click on the header's sort button sorts by the column, in its
+    // first direction (ascending until the column declares its kind).
     await userEvent.click(screen.getByRole('button', { name: /^Runs/ }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Desc/ }))
-    expect(urlState.sort).toBe('-total_runs')
+    expect(urlState.sort).toBe('total_runs')
     expect(urlState.page).toBeUndefined()
   })
 

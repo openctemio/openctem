@@ -51,6 +51,7 @@ export const SPACING_NAMES = [
   'control-dense',
   'control-touch-dense',
   'row',
+  'th',
   'page',
   'page-tight',
   'section',
