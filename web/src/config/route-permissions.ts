@@ -18,7 +18,7 @@
  * - Exact matches take precedence over wildcards
  */
 
-import { Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
 import { Module } from './modules.generated'
 
 export interface RoutePermissionConfig {

@@ -19,8 +19,10 @@ vi.mock('@/context/tenant-provider', () => ({
   useTenant: () => ({ currentTenant: { id: 't1' } }),
 }))
 vi.mock('@/context/bootstrap-provider', () => ({ useBootstrapPending: () => false }))
-vi.mock('@/lib/permissions', () => ({
+vi.mock('@/lib/permissions/hooks', () => ({
   usePermissions: () => ({ can: () => true }),
+}))
+vi.mock('@/lib/permissions/constants', () => ({
   Permission: new Proxy({}, { get: (_t, k) => String(k) }),
 }))
 vi.mock('@/lib/env', () => ({ env: { features: { sidebarBadges: false } } }))
