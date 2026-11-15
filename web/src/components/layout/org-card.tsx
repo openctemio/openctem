@@ -23,6 +23,7 @@ import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { copyToClipboard } from '@/lib/clipboard'
+import { useMemberStats } from '@/features/organization/api/use-members'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { orgInitials } from './org-initials'
@@ -411,4 +412,17 @@ export function OrgCard({
       )}
     </div>
   )
+}
+
+/**
+ * The card with its member count. The count is one cheap stats call made when
+ * the card opens (only when the user may open the members page and so read
+ * it; the hook also checks the permission). It lives here, not in the sidebar
+ * header, so the members API code downloads with the card.
+ */
+export function OrgCardWithMembers(
+  props: Omit<OrgCardProps, 'memberCount' | 'memberCountLoading'>
+) {
+  const { stats, isLoading } = useMemberStats(props.membersLink ? props.current.id : undefined)
+  return <OrgCard {...props} memberCount={stats?.total_members} memberCountLoading={isLoading} />
 }

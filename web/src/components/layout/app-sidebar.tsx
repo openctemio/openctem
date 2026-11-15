@@ -4,7 +4,7 @@ import { useLayout } from '@/context/layout-provider'
 import { Sidebar, SidebarContent, SidebarHeader, SidebarRail } from '@/components/ui/sidebar'
 // Use centralized sidebar data from features
 import { sidebarData } from '@/config/sidebar-data'
-import { useFilteredSidebarData } from '@/lib/permissions'
+import { useFilteredSidebarData } from '@/lib/permissions/use-filtered-sidebar'
 import { NAV_COLUMN_CLASS, NavClusterDivider, NavClusterLabel, NavGroup } from './nav-group'
 import { useTranslation } from '@/context/i18n-provider'
 import { TeamSwitcher } from './team-switcher'

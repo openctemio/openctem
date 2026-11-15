@@ -70,7 +70,7 @@ import { type SidebarData } from '@/components/types'
 import { webExtension } from '@/lib/extension'
 import { mergeNavGroups } from '@/lib/extension/merge'
 import { isGrantOn } from '@/lib/extension/grants'
-import { Permission, Role } from '@/lib/permissions'
+import { Permission, Role } from '@/lib/permissions/constants'
 import {
   ASSETS_SECTION_TABS,
   SCANS_SECTION_TABS,

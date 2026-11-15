@@ -5,7 +5,8 @@ import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { get } from '@/lib/api/client'
 import { useBootstrapPending } from '@/context/bootstrap-provider'
 import type { EASMSuggestionCards } from '@/lib/api/generated'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
+import { usePermissions } from '@/lib/permissions/hooks'
 import { EASM_SUGGESTIONS_COUNT_URL } from '@/context/bootstrap-session'
 
 /** GET /api/v1/easm/suggestions: the attack surface suggestion cards. */

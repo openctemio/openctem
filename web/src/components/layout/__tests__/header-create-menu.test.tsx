@@ -12,9 +12,13 @@ vi.mock('@/context/permission-provider', () => ({
 vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
   useModuleEnabled: (id: string) => modules.includes(id),
 }))
-vi.mock('@/lib/permissions', async (orig) => ({
-  ...(await orig<typeof import('@/lib/permissions')>()),
-  useCanMutate: () => canInvite,
+// The invite gate (team:members:invite, admin) is applied by the create actions.
+vi.mock('@/lib/permissions/hooks', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions/hooks')>()),
+  usePermissions: () => ({
+    permissions: canInvite ? ['team:members:invite'] : [],
+    tenantRole: canInvite ? 'admin' : 'member',
+  }),
 }))
 
 import { HeaderCreateMenu } from '../header-create-menu'
