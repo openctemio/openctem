@@ -32,7 +32,7 @@
   "src/app/(dashboard)/account/activity/page.tsx": 1,
   "src/app/(dashboard)/account/page.tsx": 3,
   "src/app/(dashboard)/findings/approvals/page.tsx": 2,
-  "src/app/(dashboard)/findings/page.tsx": 3,
+  "src/app/(dashboard)/findings/page.tsx": 2,
   "src/app/(dashboard)/notifications/page.tsx": 2,
   "src/app/(dashboard)/settings/api-keys/page.tsx": 2,
   "src/app/(dashboard)/settings/audit-log/page.tsx": 2,
