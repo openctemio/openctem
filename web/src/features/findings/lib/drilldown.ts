@@ -36,7 +36,7 @@ export const DRILL_PARAM: Record<GroupByDimension, string> = {
 }
 
 /** Parameters that describe the page, not the filter; dropped on drill-down. */
-const PAGE_PARAMS = ['group', 'page', 'from']
+export const PAGE_PARAMS = ['group', 'page', 'from']
 
 /**
  * The search of the list a group drills into: the current filters, minus the

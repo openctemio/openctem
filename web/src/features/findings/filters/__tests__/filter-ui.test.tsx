@@ -404,6 +404,20 @@ describe('FilterBar', () => {
     return { onSearchChange }
   }
 
+  it('a group drill-down URL draws one Rule chip, no unknown chip, and counts one', () => {
+    const withRule: FilterContract = {
+      fields: [...contract.fields, { name: 'rule_id', type: 'string', ops: ['in', 'not_in'] }],
+    }
+    bar('rule_id=github-pat&from=group:rule_id', {
+      contract: withRule,
+      pickerContract: withRule,
+      skip: new Set(),
+    })
+    expect(screen.getAllByTestId('filter-chip')).toHaveLength(1)
+    expect(screen.queryByTestId('filter-chip-unknown')).toBeNull()
+    expect(screen.queryByRole('button', { name: /clear filters/i })).toBeNull()
+  })
+
   it('draws a chip per filter, the facet ones included', () => {
     bar('severity=critical&status=new&epss_score_gte=0.5&is_in_kev=true')
     expect(screen.getAllByTestId('filter-chip')).toHaveLength(4)
