@@ -56,7 +56,7 @@ import { subModuleStatus } from '@/lib/permissions/sub-modules'
 import { activeSubItemUrl, checkIsActive, sectionHasActiveRoute } from './nav-active'
 import { NavPendingHint, SidebarLink } from './sidebar-link'
 import { FindingsQuickViews } from './findings-quick-views'
-import { AssetsQuickViews } from './assets-quick-views'
+import { LazyAssetsQuickViews } from './assets-quick-views-lazy'
 
 /** Maps a sidebar group title to its i18n key, e.g. "Scoping" → "nav.group.scoping". */
 function groupTitleKey(title: string): string {
@@ -491,7 +491,7 @@ const NavSubLeaf = memo(function NavSubLeaf({
           )}
         </SidebarLink>
       </SidebarMenuSubButton>
-      {item.quickViews === 'assets' && <AssetsQuickViews />}
+      {item.quickViews === 'assets' && <LazyAssetsQuickViews />}
     </SidebarMenuSubItem>
   )
 })
