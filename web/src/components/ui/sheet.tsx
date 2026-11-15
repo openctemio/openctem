@@ -6,6 +6,7 @@ import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { ignoreToasterInteractions } from '@/components/ui/toaster-guard'
+import { FloatingFocusScope, type TouchTypingSurface } from '@/components/ui/touch-focus'
 import {
   ModalBody,
   ModalForm,
@@ -83,11 +84,17 @@ function SheetContent({
   showCloseButton = true,
   onInteractOutside,
   onOpenAutoFocus,
+  typingSurface,
   ref,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
   showCloseButton?: boolean
+  /**
+   * Its one purpose is typing (`TOUCH_TYPING_SURFACES`): its first field gets
+   * focus on open on a touch screen too.
+   */
+  typingSurface?: TouchTypingSurface
 }) {
   const contentRef = React.useRef<HTMLDivElement | null>(null)
   const [node, setNode] = React.useState<HTMLDivElement | null>(null)
@@ -106,7 +113,7 @@ function SheetContent({
   )
   const layout = useModalLayoutState(closeButton)
   useKeyboardInset(node)
-  const autoFocus = useOpenAutoFocus(contentRef, 'sheet-body', onOpenAutoFocus)
+  const autoFocus = useOpenAutoFocus(contentRef, 'sheet-body', onOpenAutoFocus, typingSurface)
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -115,7 +122,9 @@ function SheetContent({
         data-slot="sheet-content"
         data-layout={layout.sections ? 'sections' : 'block'}
         className={cn(
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:animate-none fixed z-50 flex flex-col shadow-lg ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+          // transition-none: the durations time the open/close animation
+          // only; a sheet lifted by the keyboard must follow it at once.
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:animate-none fixed z-50 flex flex-col shadow-lg transition-none ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
           layout.sections
             ? 'gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip'
             : 'gap-4 overflow-y-auto',
@@ -133,7 +142,9 @@ function SheetContent({
         onOpenAutoFocus={autoFocus}
         {...props}
       >
-        <ModalLayoutContext.Provider value={layout}>{children}</ModalLayoutContext.Provider>
+        <ModalLayoutContext.Provider value={layout}>
+          <FloatingFocusScope typingSurface={typingSurface}>{children}</FloatingFocusScope>
+        </ModalLayoutContext.Provider>
         {showCloseButton && !layout.sections && (
           <SheetCloseButton className="absolute top-3 right-3" />
         )}

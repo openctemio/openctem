@@ -6,6 +6,7 @@ import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { ignoreToasterInteractions } from '@/components/ui/toaster-guard'
+import { FloatingFocusScope, type TouchTypingSurface } from '@/components/ui/touch-focus'
 import {
   MODAL_SIZE,
   ModalBody,
@@ -95,6 +96,7 @@ function DialogContent({
   size = 'md',
   onInteractOutside,
   onOpenAutoFocus,
+  typingSurface,
   ref,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
@@ -105,6 +107,11 @@ function DialogContent({
    */
   showCloseButton?: boolean
   size?: DialogSize
+  /**
+   * Its one purpose is typing (`TOUCH_TYPING_SURFACES`): its first field gets
+   * focus on open on a touch screen too.
+   */
+  typingSurface?: TouchTypingSurface
 }) {
   const contentRef = React.useRef<HTMLDivElement | null>(null)
   const [node, setNode] = React.useState<HTMLDivElement | null>(null)
@@ -123,7 +130,7 @@ function DialogContent({
   )
   const layout = useModalLayoutState(closeButton)
   useKeyboardInset(node)
-  const autoFocus = useOpenAutoFocus(contentRef, 'dialog-body', onOpenAutoFocus)
+  const autoFocus = useOpenAutoFocus(contentRef, 'dialog-body', onOpenAutoFocus, typingSurface)
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -143,7 +150,9 @@ function DialogContent({
         onOpenAutoFocus={autoFocus}
         {...props}
       >
-        <ModalLayoutContext.Provider value={layout}>{children}</ModalLayoutContext.Provider>
+        <ModalLayoutContext.Provider value={layout}>
+          <FloatingFocusScope typingSurface={typingSurface}>{children}</FloatingFocusScope>
+        </ModalLayoutContext.Provider>
         {showCloseButton && !layout.sections && (
           <DialogCloseButton className="absolute top-3 right-3" />
         )}

@@ -2,9 +2,11 @@
 
 import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
-import { SearchIcon } from 'lucide-react'
+import { SearchIcon, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
+import { useSurfaceAutoFocus, type TouchTypingSurface } from '@/components/ui/touch-focus'
 import {
   Dialog,
   DialogContent,
@@ -33,12 +35,15 @@ function CommandDialog({
   className,
   showCloseButton = true,
   filter,
+  typingSurface = 'command-menu',
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  /** A palette is for typing: its search gets focus on open on a touch screen too. */
+  typingSurface?: TouchTypingSurface
   /** cmdk filter; omit for cmdk's default fuzzy score. */
   filter?: React.ComponentProps<typeof CommandPrimitive>['filter']
 }) {
@@ -51,6 +56,7 @@ function CommandDialog({
       <DialogContent
         className={cn('overflow-hidden p-0', className)}
         showCloseButton={showCloseButton}
+        typingSurface={typingSurface}
       >
         <Command
           filter={filter}
@@ -63,25 +69,68 @@ function CommandDialog({
   )
 }
 
+/**
+ * The search field of a `Command`. Inside a floating surface on a touch
+ * screen its `autoFocus` is dropped (`touch-focus.ts`). With text in it, a
+ * clear button empties it without taking the focus, so an open keyboard
+ * stays open.
+ */
 function CommandInput({
   className,
+  autoFocus,
+  value,
+  onValueChange,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
+  const { t } = useTranslation()
+  const focusOnMount = useSurfaceAutoFocus(autoFocus)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const [ownValue, setOwnValue] = React.useState('')
+  const controlled = value !== undefined
+  const current = controlled ? value : ownValue
+  const change = React.useCallback(
+    (next: string) => {
+      if (!controlled) setOwnValue(next)
+      onValueChange?.(next)
+    },
+    [controlled, onValueChange]
+  )
   return (
     <div data-slot="command-input-wrapper" className="flex h-9 items-center gap-2 border-b px-3">
       <SearchIcon className="size-4 shrink-0 opacity-50" />
       <CommandPrimitive.Input
+        ref={inputRef}
         data-slot="command-input"
         // A search box: the phone keyboard shows "Search", and 16px text
         // below `md` keeps iOS from zooming the page on focus.
         inputMode="search"
         enterKeyHint="search"
+        autoFocus={focusOnMount}
+        value={current}
+        onValueChange={change}
         className={cn(
           'placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent py-3 text-base outline-hidden disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
           className
         )}
         {...props}
       />
+      {current ? (
+        <button
+          type="button"
+          data-slot="command-input-clear"
+          aria-label={t('common.listSearch.clear', 'Clear search')}
+          // Pressing it must not move the focus: the field keeps it, and the
+          // on-screen keyboard stays up.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            change('')
+            if (document.activeElement === e.currentTarget) inputRef.current?.focus()
+          }}
+          className="-me-2 flex size-8 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none max-md:size-11"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </button>
+      ) : null}
     </div>
   )
 }
