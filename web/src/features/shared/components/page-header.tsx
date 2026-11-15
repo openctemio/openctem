@@ -21,6 +21,12 @@ interface PageHeaderProps {
 }
 
 /**
+ * The id of the page title. A page has one PageHeader (one h1); a table with
+ * no caption of its own takes its name from it (DataTable).
+ */
+export const PAGE_TITLE_ID = 'page-title'
+
+/**
  * The title block shrinks and wraps (`flex-1 min-w-0`); the actions keep their
  * size and wrap onto their own line when the row runs out. The title block used
  * to be `shrink-0`, so a long description held it at its one-line width and
@@ -48,7 +54,7 @@ export function PageHeader({
       {/* basis-60: on a phone the title and a couple of icon actions share a
           row; wider actions wrap onto their own line instead of squeezing. */}
       <div className="min-w-0 flex-1 basis-60">
-        <h1 ref={titleRef} className="text-page tracking-tight text-balance">
+        <h1 id={PAGE_TITLE_ID} ref={titleRef} className="text-page tracking-tight text-balance">
           {title}
         </h1>
         {description && (

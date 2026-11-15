@@ -293,7 +293,6 @@
   "src/features/sensors/components/sensors-section.tsx": 1,
   "src/features/sensors/components/tool-settings-list.tsx": 9,
   "src/features/shared/components/ai-badge.tsx": 1,
-  "src/features/shared/components/data-table/data-table-column-header.tsx": 1,
   "src/features/shared/components/data-table/data-table.tsx": 1,
   "src/features/shared/components/detail-sheet.tsx": 1,
   "src/features/shared/components/facet-filter-panel.tsx": 1,

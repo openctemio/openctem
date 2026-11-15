@@ -6,9 +6,10 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { DataTable } from '../data-table/data-table'
 import { TABLE_DENSITY_STORAGE_KEY } from '../data-table/use-table-density'
 
-// Table density (style contract D14): compact (32px) or comfortable (40px),
-// switched from every table's View menu, one per-user preference that every
-// table follows; a table's own default applies until the user chooses.
+// Table density: compact (32px), default (40px) or comfortable (52px),
+// switched from every table's Display menu, one per-user preference that every
+// table follows; a table's own default applies until the user chooses. Stored
+// words keep their earlier meaning: "comfortable" was 40 and stays 40.
 
 type Row = { id: string; name: string }
 const columns: ColumnDef<Row>[] = [{ accessorKey: 'name', header: 'Name' }]
@@ -40,13 +41,27 @@ describe('DataTable density', () => {
       <DataTable columns={columns} data={data} defaultDensity="compact" />
     )
     expect(frame(container)).toHaveAttribute('data-density', 'compact')
-    expect(within(frame(container)).getByText('edge-1').closest('td')).toHaveClass('py-1')
+    expect(within(frame(container)).getByText('edge-1').closest('td')).toHaveClass('py-0.5')
   })
 
-  it('is comfortable by default, so existing tables look the same', () => {
+  it('is default (40) by default', () => {
     const { container } = render(<DataTable columns={columns} data={data} />)
+    expect(frame(container)).toHaveAttribute('data-density', 'default')
+    expect(within(frame(container)).getByText('edge-1').closest('td')).not.toHaveClass('py-0.5')
+  })
+
+  it('reads the earlier stored word "comfortable" as the 40 px default, never as 52', () => {
+    window.localStorage.setItem(TABLE_DENSITY_STORAGE_KEY, 'comfortable')
+    const { container } = render(<DataTable columns={columns} data={data} />)
+    expect(frame(container)).toHaveAttribute('data-density', 'default')
+  })
+
+  it('stores the 52 px level as "spacious", which the earlier console ignores', async () => {
+    const { container } = render(<DataTable columns={columns} data={data} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Display: density and columns' }))
+    await userEvent.click(await screen.findByRole('menuitemradio', { name: 'Comfortable' }))
+    expect(window.localStorage.getItem(TABLE_DENSITY_STORAGE_KEY)).toBe('spacious')
     expect(frame(container)).toHaveAttribute('data-density', 'comfortable')
-    expect(within(frame(container)).getByText('edge-1').closest('td')).not.toHaveClass('py-1')
   })
 
   it('switches from the View menu, is remembered, and every table follows', async () => {
@@ -73,7 +88,9 @@ describe('DataTable density', () => {
   it('keeps the menu even when columns cannot be toggled', async () => {
     render(<DataTable columns={columns} data={data} showColumnToggle={false} />)
     await userEvent.click(screen.getByRole('button', { name: 'Display: density and columns' }))
-    expect(await screen.findByRole('menuitemradio', { name: 'Comfortable' })).toBeInTheDocument()
+    for (const name of ['Compact', 'Default', 'Comfortable']) {
+      expect(await screen.findByRole('menuitemradio', { name })).toBeInTheDocument()
+    }
     expect(screen.queryByText('Columns')).not.toBeInTheDocument()
   })
 
@@ -81,7 +98,7 @@ describe('DataTable density', () => {
     window.localStorage.setItem(TABLE_DENSITY_STORAGE_KEY, '<script>')
     const { container, unmount } = render(<DataTable columns={columns} data={data} />)
     // Never the stored garbage: a known density (this page load's choice, or the default).
-    expect(frame(container).getAttribute('data-density')).toMatch(/^(compact|comfortable)$/)
+    expect(frame(container).getAttribute('data-density')).toMatch(/^(compact|default|comfortable)$/)
     unmount()
 
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {

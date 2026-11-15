@@ -180,8 +180,9 @@ describe('ScanRunsTab', () => {
   it('sorts on the server from a column header and returns to page 1', async () => {
     urlState.page = '2'
     render(<ScanRunsTab />)
+    // One click on the header's sort button: the list starts newest first,
+    // so the click reverses it to oldest first.
     await userEvent.click(screen.getByRole('button', { name: /^Started/ }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Asc/ }))
     expect(urlState.sort).toBe('started_at')
     expect(urlState.page).toBeUndefined()
   })
